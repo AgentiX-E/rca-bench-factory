@@ -292,8 +292,12 @@ describe('scripts · the battery report is published to a channel that carries c
     );
     expect(workflow).toMatch(/permissions:\n\s+contents: write/);
     expect(workflow).not.toMatch(/contents: write[\s\S]{0,400}?refs\/heads\/master/);
+    // Keys may sit between the name and the condition: v3.25 gave every step of the
+    // batteries job a `timeout-minutes` of its own, so the publish step carries one too.
+    // What is asserted is that `if: always()` is still there -- a publish that only ran
+    // on success would be silent in exactly the run whose report is worth reading.
     expect(workflow).toMatch(
-      /- name: Publish the gate-test battery report\n\s+if: always\(\)/,
+      /- name: Publish the gate-test battery report\n(?:\s+[a-z-]+: .*\n)*\s+if: always\(\)/,
     );
   });
 

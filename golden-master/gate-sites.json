@@ -1,6 +1,6 @@
 {
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
-  "scanned": 67,
+  "scanned": 70,
   "excluded": {
     "zero": 13,
     "indirect": 3,
@@ -59,6 +59,30 @@
       "diagnostic": "check-backend-support: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/check-backend-support.test.ts"
+    },
+    {
+      "script": "scripts/check-battery-budget.mjs",
+      "line": 33,
+      "condition": "workflow.errors.length > 0",
+      "diagnostic": "check-battery-budget: ci.yml does not parse:\\n ${workflow.errors.join('\\n ')}\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/battery-budget.test.ts"
+    },
+    {
+      "script": "scripts/check-battery-budget.mjs",
+      "line": 41,
+      "condition": "workflow.errors.length > 0",
+      "diagnostic": "check-battery-budget: no recording at ${BASELINE} -- ${String(error)}\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/battery-budget.test.ts"
+    },
+    {
+      "script": "scripts/check-battery-budget.mjs",
+      "line": 48,
+      "condition": "errors.length > 0",
+      "diagnostic": "check-battery-budget: ${error}\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/battery-budget.test.ts"
     },
     {
       "script": "scripts/check-citations.mjs",
@@ -469,6 +493,14 @@
       "diagnostic": "install-git-hooks: FAILED (${result.state}) — ${result.message}\\n",
       "status": "proved",
       "provedBy": "packages/core/test/git-hooks.test.ts"
+    },
+    {
+      "script": "scripts/measure-ci-baseline.mjs",
+      "line": 41,
+      "condition": "TOKEN === '' || !/^\\d+$/.test(RUN)",
+      "diagnostic": "usage: GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs <run-id>\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/battery-budget.test.ts"
     },
     {
       "script": "scripts/measure-doc-counts.mjs",

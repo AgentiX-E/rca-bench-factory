@@ -610,6 +610,8 @@ it has changed.
 
 ### Readings
 
+
+> Ledger for `v3.13`.
 | what | reading |
 | --- | --- |
 | delete the install line | **3 tests red in 2 files** (was: suite green, no gauge) |
@@ -781,6 +783,8 @@ and to 3 there. The cap's effect alone is the row that was not touched: `ingest-
 
 ### Readings
 
+
+> Ledger for `v3.14`.
 | what | reading |
 | --- | --- |
 | the corpus | **24 of 30 samples**, floor raised 23 → 24 |
@@ -896,6 +900,8 @@ to decide which keys are descriptive and nothing in the file says.
 
 ### Readings
 
+
+> Ledger for `v3.15`.
 | what | this round |
 | --- | --- |
 | corpus | **27 of 30** samples carry a four-layer case; `floor 27` |
@@ -1003,6 +1009,8 @@ refusing to push eb311d4: tree b7442537b carries no verify:local receipt
 
 ### Readings
 
+
+> Ledger for `v3.16`.
 | what | this round |
 | --- | --- |
 | suite counts | **+1 file and +18 tests in `core`**; the absolutes are in the status table in `volume-05.md` |
@@ -1179,6 +1187,8 @@ Three things about writing it are worth keeping:
 
 ### Readings
 
+
+> Ledger for `v3.17`.
 | what | this round |
 | --- | --- |
 | the corpus | **30 of 30** samples, the floor at 30, **P1 closed** |
@@ -1411,6 +1421,8 @@ tree to the index, not the tree to what it was meant to be. Restored in the next
 
 ### Readings
 
+
+> Ledger for `v3.18`.
 | what | this round |
 | --- | --- |
 | the export | `logs.csv`'s `timestamp` is nanoseconds; the claim is a table row per column |
@@ -1521,6 +1533,8 @@ claim this round makes about a clone rather than about the tree.
 
 ### Readings
 
+
+> Ledger for `v3.19`.
 | what | this round |
 | --- | --- |
 | the guard | `.githooks/pre-commit` → `check-staged-mutation.mjs` → `staged-mutation.mjs`; one comparison, three readers of one journal format |
@@ -1616,6 +1630,8 @@ failure a bounded second chance.
 
 ### Readings
 
+
+> Ledger for `v3.20`.
 | item | value |
 | --- | --- |
 | tests in `publish-battery-report.test.ts` | 6 → **13** |
@@ -1843,6 +1859,8 @@ that every row is carried and every column that should agree does.
 
 ### Readings
 
+
+> Ledger for `v3.21`.
 | item | value |
 | --- | --- |
 | `core` suite | **207 files, 5047 tests passed** |
@@ -1988,6 +2006,8 @@ the modalities arrived, which no count of cases could.
 
 ### Readings
 
+
+> Ledger for `v3.22`.
 | item | value |
 | --- | --- |
 | `core` test suite | **207 files, 5076 tests passed** (as of `3334f81`) |
@@ -2130,6 +2150,8 @@ decoration. `63 exact, 12 through containment, 0 refused` after the repair.
 
 ### Readings
 
+
+> Ledger for `v3.23`.
 | item | value |
 | --- | --- |
 | `core` test suite | **208 files, 5104 tests passed** (as of `2aed8ce`) |
@@ -2278,11 +2300,13 @@ a bare duration in a log.
 
 ### Readings
 
+
+> Ledger for `v3.24`.
 | item | value |
 | --- | --- |
-| `core` test suite | **209 files, 5128 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **213 files, 5315 tests passed** (as of this commit) |
+| `core` test suite | **209 files, 5128 tests passed** (as of `7b5d792`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `7b5d792`) |
+| repo test suite | **213 files, 5315 tests passed** (as of `7b5d792`) |
 | coverage | **99.97 / 99.73 / 100 / 99.97** (cli 100 / 100 / 100 / 100) -- branches down 0.03, from the new module |
 | parameters | **34 of 98 (35 percent)** cited; **64 explained by a note**, shortest 110 characters |
 | keys with no explanation | **0**, refused by name -- it was 69 in 30 of 30 cases |
@@ -2298,13 +2322,13 @@ a bare duration in a log.
 - **The exporters publish `signal_ref` as the metric name alone.** Unchanged this round: a checkpoint
   of a two-carrier metric still reaches `rca100`, `openrca2` and `itbench` as a bare name.
   `[open: the export format is a published contract with three targets, and widening it is a decision
-  rather than a fix]`
+  rather than a repair, so it is not this round's to take]`
 - **The two ledger rules read presence, not ownership** (finding 309). Two rounds whose ledgers were
   swapped would each hold exactly one and pass. `[open: the mechanism that would close it is a
   provenance marker per ledger -- an anchor commit plus a date, strictly increasing in file order --
   and it is a round of its own rather than a clause in this one]`
-- **19 of 30 cases still have no log line and 25 no span.** `[open: the corpus-authoring round is still
-  unstarted, and the shares did not move this round]`
+- **19 of 30 cases still have no log line and 25 no span.** `[open: the corpus-authoring round has not
+  started, and this round changed a guard rather than a case, so the shares are exactly what they were]`
 - **The upstream SLI table** and **the battery budget** (17 minutes of 30). `[open: both are v3.25, and
   the first needs a decision about which upstream table the corpus is allowed to trust]`
 
@@ -2313,3 +2337,132 @@ a bare duration in a log.
 The corpus size, the metric tables, the anchors, the backends, the localisation readings and the
 published success ratios. The two gauges changed what is *measured* about the suite and nothing about
 what it measures; the parameter notes changed what the corpus says about itself and no case's answer.
+
+## v3.25 — a ledger that names its round, and a job whose twenty-two steps stop sharing one budget
+
+Two of the three items the last round left were promises about **attribution**: a ledger that says
+which round measured it, and a budget that names the battery that hung. Both were already written down
+as the mechanism -- `[open: an anchor commit plus a date, strictly increasing in file order]` and
+`[open: both are v3.25]` -- and neither survived contact with what the tree could actually check.
+
+### One: the ledger names its round, because a position is not an owner
+
+Finding 309 closed the half of its own defect that a count can see -- two `### Readings` in one round,
+a round after the convention with none -- and stated the half it could not:
+
+> Checking ownership would mean re-deriving each round's numbers from the tree as it stood in that
+> round, which is a git checkout per round and a question this repository has no way to answer for a
+> round that was never committed.
+
+The cheaper question is the one the block can answer about itself. A ledger is a table of numbers one
+round measured, and the round has a name, so the first line above the table is now:
+
+```
+> Ledger for `v3.24`.
+```
+
+and the guard compares that name with the title above it. A line that restates the heading adds nothing
+where it sits; what it is worth is that it **travels with the block**, which is exactly what finding
+309's accident did -- the insertion aimed at `### Readings`, the block stayed, the new round opened
+above it. Twelfth-of-twelve ledgers now name their round; before this round, none did.
+
+The anchor this campaign had planned for (a commit plus a date, strictly increasing) was **dropped on
+the evidence**: eleven of the twelve rounds share a day with a neighbour, so a date cannot order them,
+and a commit per round would have to be typed by hand into a document no rule can date-check. What
+replaced it is arithmetic the file already holds -- see the second rule below -- and the plan is
+corrected here rather than left in the log as a promise the tree cannot keep.
+
+### Two: one ledger describes one tree
+
+`schema` is not the only place a number can be restated. Two ledgers already carried
+`(as of \`3334f81\`)` and `(as of \`2aed8ce\`)` on their suite rows, and that idiom is what makes a
+copied half visible: one ledger describes one commit, so the `(as of …)` markers inside a ledger must
+all name the same one. Ten of the twelve name none, because they state movement rather than an absolute
+count -- the shape v3.13 chose for a reason -- and a rule **requiring** one would have been a rule
+against the log's own history.
+
+Proved on a copy of the live log, swapping two adjacent ledger lines and nothing else:
+
+```
+volume-08.md: `## v3.22 — …` holds a `### Readings` section that says it measured `v3.23`: the block
+  was written for one round and filed under another (finding 309)
+volume-08.md: `## v3.23 — …` holds a `### Readings` section that says it measured `v3.22`: …
+```
+
+Both directions, both rounds named. The two rules that existed before this round are silent on the same
+tree, which is the measurement that says a new rule was needed rather than a stricter old one.
+
+### Three: the batteries job had one budget and twenty-two steps
+
+The job spends twenty of its thirty minutes, and every one of those minutes belonged to the **job**. A
+mutation that hangs -- and a battery's whole subject is mutations -- spends the pool, the job is
+cancelled, and the verdict names fourteen steps and none of them guilty. `gate-steps.mjs` has read
+step-level `timeout-minutes` since the plan was written; no step in that job declared one.
+
+The number could not be typed. `golden-master/ci-baseline.json` records one run's step timestamps
+(`41180476384` at `85f7b1e80`, 22 steps, 1,230 s), written by `scripts/measure-ci-baseline.mjs` and by
+nothing else, and the rule is a multiple rather than a table: **twice the measurement, three-minute
+floor**. Twice, because a battery's cost is a deterministic function of its mutation count and the
+suite and the variance is the machine; three minutes, because no measurement taken after the first run
+can see a cold package index.
+
+The rule that makes a bound mean something is arithmetic: **the bound plus everything measured before
+it has to land inside the job's budget**, or the job dies first and the message still names nothing.
+That is what sizes the two largest rather than a rounder guess -- `Backend-support` measured 383 s and
+sits 13 min in, so 13 min is the largest bound that can still expire first. Nine steps take the floor;
+the bounds total 90 minutes against a 30-minute job, which is the right shape: **the bounds attribute,
+they do not partition.**
+
+### Four: a line in the plan that stopped being true
+
+`verify:local --list` said, on every run of every round since the plan existed:
+
+> `` `timeout-minutes:` is a budget for the whole job, not for each step ``
+
+True of five jobs, now true of four. The plan prints two clauses -- the pool for the jobs that still
+share one, and `batteries bounds all 16 of its step(s) on its own (largest 13m of the job's 30m) — a
+hang there names the step rather than the job`. Found by reading the output, not by a test, and the
+test that covered the old sentence was corrected to cover both.
+
+### Readings
+
+> Ledger for `v3.25`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **210 files, 5156 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **214 files, 5343 tests passed** (as of this commit) |
+| coverage | **99.97 / 99.73 / 100 / 99.97** (cli 100 / 100 / 100 / 100) -- identical to the last round, because every line this round changed lives in `scripts/`, which the coverage surface does not include |
+| ledgers naming their round | **12 of 12** (was 0 of 12) |
+| a swapped pair, on a copy of the live log | **FAILED, exit 1**, both rounds named |
+| steps of `batteries` with their own bound | **22 of 22** (was 0 of 22) |
+| the recording behind them | 22 steps / 1,230 s at `41180476384` |
+| tightest bound | `Backend-support` at **2.0x** its measurement, 13 min of the job's 30 |
+| `battery-budget.test.ts` | **new, 21 tests**: six refusals, two arithmetic cases, three gate paths, the recording's usage, the shipped tree |
+| `progress-volumes.test.ts` | 31 → **38**: the swap, the missing line, the blank line, the unnamed round, two trees, one tree, none |
+| export failure sites | **99** across 52 of 70 scripts, all annotated |
+| audits | 1–**330**, **327 findings** (absent: 118, 132–133) |
+
+### Left open
+
+- **The exporters publish `signal_ref` as the metric name alone.** Unchanged: a checkpoint of a
+  two-carrier metric still reaches `rca100`, `openrca2` and `itbench` as a bare name.
+  `[open: the export format is a published contract with three targets, and widening it is a decision
+  rather than a fix]`
+- **The upstream SLI table.** The last item of the eight, and the one that needs a decision rather than
+  a repair: `main.py` matches the *path* against a fixed list of corpus tokens and raises
+  `SLI not implemented` for anything else. `[open: v3.26, and the decision is whether a case declares
+  its own SLI as a reading the guard can resolve, or the exporter copies the corpus's token list --
+  which is the allow-list this campaign rejected in v3.24]`
+- **19 of 30 cases still have no log line and 25 no span.** `[open: the corpus-authoring round is still
+  unstarted, and the shares did not move this round]`
+- **The bounds have never expired.** A bound that has not fired is a bound nobody has seen work, and
+  the recording it is sized from is one run on one runner. `[open: the refresh is a deliberate act
+  (`measure-ci-baseline.mjs`), and the next round that adds mutations to a battery re-takes it]`
+
+### Unchanged
+
+The corpus, the metric tables, the anchors, the backends, the localisation readings, the published
+success ratios, and every budget number the plan already enforced. The two rules changed what the log
+can be asked about itself and what the plan can attribute; no case's answer moved.

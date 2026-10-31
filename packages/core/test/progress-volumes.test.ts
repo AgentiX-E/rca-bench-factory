@@ -361,6 +361,8 @@ describe('the closing sections a round owns', () => {
         '',
         '### Readings',
         '',
+        '> Ledger for `v3.01`.',
+        '',
         '| what | this round |',
         '',
         '### Left open',
@@ -370,6 +372,8 @@ describe('the closing sections a round owns', () => {
         '## v3.02 — the second round',
         '',
         '### Readings',
+        '',
+        '> Ledger for `v3.02`.',
         '',
         '| what | this round |',
         '',
@@ -398,6 +402,8 @@ describe('the closing sections a round owns', () => {
         '## v3.01 — the first round',
         '',
         '### Readings',
+        '',
+        '> Ledger for `v3.01`.',
         '',
         '| what | this round |',
         '',
@@ -441,10 +447,190 @@ describe('the closing sections a round owns', () => {
         '',
         '### Readings',
         '',
+        '> Ledger for `v3.01`.',
+        '',
         '| what | this round |',
         '',
       ].join('\n'),
     });
     expect(check(indexFor([['volume-01.md', 1, 'v3.01', 'v3.01']]), dir).errors).toEqual([]);
+  });
+});
+
+/**
+ * Which round a ledger belongs to, as the ledger itself states it.
+ *
+ * The two rules above count sections, and counting cannot see a swap: two rounds whose
+ * ledgers were exchanged each hold exactly one, each well formed. Finding 309 recorded
+ * that as the half it left open, and closed it with a sentence -- "checking ownership
+ * would mean re-deriving each round's numbers from the tree as it stood in that round".
+ * That is one way to ask. The cheaper one is to ask the block, because the block knows:
+ * it is a table of numbers some round measured, and the round has a name.
+ *
+ * What the answer buys is that the claim **travels with the block**. An insertion at the
+ * wrong heading now carries the wrong name into the round it landed in, which is the
+ * accident finding 309 describes. It does not stop a forger who edits the name as well,
+ * and the guard is not pretending otherwise -- the subject is the accident.
+ */
+describe('the round a ledger says it measured', () => {
+  it('accepts a ledger that names the round above it', () => {
+    const dir = volumesOf({
+      'volume-01.md': [
+        '## v3.01 — the first round',
+        '',
+        '### Readings',
+        '',
+        '> Ledger for `v3.01`.',
+        '',
+        '| what | this round |',
+        '',
+      ].join('\n'),
+    });
+    expect(check(indexFor([['volume-01.md', 1, 'v3.01', 'v3.01']]), dir).errors).toEqual([]);
+  });
+
+  it('refuses two ledgers that were exchanged, and names both rounds', () => {
+    // The defect the counting rules cannot see, in the smallest form that has it: one
+    // line each, swapped, everything else untouched. Both rounds still hold exactly one
+    // `### Readings`, both still close themselves once, and the log still concatenates.
+    const dir = volumesOf({
+      'volume-01.md': [
+        '## v3.01 — the first round',
+        '',
+        '### Readings',
+        '',
+        '> Ledger for `v3.02`.',
+        '',
+        '| what | this round |',
+        '',
+        '## v3.02 — the second round',
+        '',
+        '### Readings',
+        '',
+        '> Ledger for `v3.01`.',
+        '',
+        '| what | this round |',
+        '',
+      ].join('\n'),
+    });
+    const errors = check(indexFor([['volume-01.md', 2, 'v3.01', 'v3.02']]), dir).errors.join('\n');
+    expect(errors).toContain('says it measured `v3.02`');
+    expect(errors).toContain('says it measured `v3.01`');
+    expect(errors).toContain('filed under another');
+    expect(errors.match(/finding 309/g)).toHaveLength(2);
+  });
+
+  it('refuses a ledger whose first line is the table, and quotes what it found', () => {
+    // The shape every ledger had before this rule: the table is right there under the
+    // heading, which is why position looked like ownership. The refusal quotes the line
+    // so the repair is "write this line", not "something is wrong here".
+    const dir = volumesOf({
+      'volume-01.md': [
+        '## v3.01 — the first round',
+        '',
+        '### Readings',
+        '',
+        '| what | this round |',
+        '',
+      ].join('\n'),
+    });
+    const errors = check(indexFor([['volume-01.md', 1, 'v3.01', 'v3.01']]), dir).errors.join('\n');
+    expect(errors).toContain('first line is `| what | this round |`');
+    expect(errors).toContain('a position is not an owner');
+  });
+
+  it('accepts the ledger line after a blank line, because a markdown table needs the break', () => {
+    // The line sits between the heading and the table, so there are two blank lines where
+    // there was one. Reading the *first non-blank* line rather than the next line is what
+    // lets the shape be markdown.
+    const dir = volumesOf({
+      'volume-01.md': [
+        '## v3.01 — the first round',
+        '',
+        '### Readings',
+        '',
+        '',
+        '> Ledger for `v3.01`.',
+        '',
+        '| what | this round |',
+        '',
+      ].join('\n'),
+    });
+    expect(check(indexFor([['volume-01.md', 1, 'v3.01', 'v3.01']]), dir).errors).toEqual([]);
+  });
+
+  it('refuses a ledger under a round that has no label to give', () => {
+    // `## Finding 124` and `## Iteration` are rounds outside both numberings. A ledger
+    // needs a name, and inventing one here would make the log claim an order it has not
+    // got -- the same reason `labelOf` returns null rather than a number.
+    const dir = volumesOf({
+      'volume-01.md': [
+        '## Iteration — F-41 / F-42 / F-43',
+        '',
+        '### Readings',
+        '',
+        '> Ledger for `Iteration`.',
+        '',
+        '| what | this round |',
+        '',
+      ].join('\n'),
+    });
+    const errors = check(indexFor([['volume-01.md', 1, 'Iteration', 'Iteration']]), dir).errors.join('\n');
+    expect(errors).toContain('no label a reader could cite');
+  });
+
+  it('refuses one ledger measured on two trees', () => {
+    // A ledger assembled by copying half of another round's ledger is two measurements
+    // under one title, and the numbers that disagree will be read as a change.
+    const dir = volumesOf({
+      'volume-01.md': [
+        '## v3.01 — the first round',
+        '',
+        '### Readings',
+        '',
+        '> Ledger for `v3.01`.',
+        '',
+        '| `core` test suite | **209 files** (as of `7b5d792`) |',
+        '| `cli` test suite | **4 files** (as of `2aed8ce`) |',
+        '',
+      ].join('\n'),
+    });
+    const errors = check(indexFor([['volume-01.md', 1, 'v3.01', 'v3.01']]), dir).errors.join('\n');
+    expect(errors).toContain('measures one ledger against 2 trees');
+    expect(errors).toContain('7b5d792, 2aed8ce');
+  });
+
+  it('accepts a ledger whose rows all name one tree, and one that names none', () => {
+    const one = volumesOf({
+      'volume-01.md': [
+        '## v3.01 — the first round',
+        '',
+        '### Readings',
+        '',
+        '> Ledger for `v3.01`.',
+        '',
+        '| `core` test suite | **209 files** (as of `7b5d792`) |',
+        '| `cli` test suite | **4 files** (as of `7b5d792`) |',
+        '',
+      ].join('\n'),
+    });
+    expect(check(indexFor([['volume-01.md', 1, 'v3.01', 'v3.01']]), one).errors).toEqual([]);
+
+    // A ledger of relative statements names no tree, and that is a shape the log uses:
+    // rounds before v3.22 wrote movement rather than an absolute count, because a count
+    // retyped in a narrative is a row that goes stale in one round.
+    const none = volumesOf({
+      'volume-01.md': [
+        '## v3.01 — the first round',
+        '',
+        '### Readings',
+        '',
+        '> Ledger for `v3.01`.',
+        '',
+        '| suite | **seven more tests than the round before** |',
+        '',
+      ].join('\n'),
+    });
+    expect(check(indexFor([['volume-01.md', 1, 'v3.01', 'v3.01']]), none).errors).toEqual([]);
   });
 });

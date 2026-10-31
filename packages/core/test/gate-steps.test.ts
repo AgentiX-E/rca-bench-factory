@@ -1862,9 +1862,15 @@ describe('scripts/verify-local.mjs as a command', () => {
     // The budget, stated as what it is: a pool per job. A line that said "15m" on
     // every step of `verify` would be read as fifteen minutes each, which is the
     // number CI does not enforce.
-    expect(result.stdout).toContain('`timeout-minutes:` is a budget for the whole job, not for each step');
+    expect(result.stdout).toContain('`timeout-minutes:` on a job is a budget for the whole job, not for each step');
     expect(result.stdout).toContain('verify 15m across 7 step(s)');
-    expect(result.stdout).toContain('batteries 30m across 16 step(s)');
+    // `batteries` is the exception, and the line says so instead of listing it as a pool:
+    // v3.25 gave every one of its steps a `timeout-minutes` of its own, so a hang there is
+    // reported against the step that hung rather than against the job.
+    expect(result.stdout).not.toContain('batteries 30m across');
+    expect(result.stdout).toContain('batteries bounds all 16 of its step(s) on its own');
+    expect(result.stdout).toContain("largest 13m of the job's 30m");
+    expect(result.stdout).toContain('a hang there names the step rather than the job');
     // And the condition, which is the last default this runner had to state: a step
     // runs only after the ones before it have passed, which is GitHub's default and
     // is what makes a failure meaningful.

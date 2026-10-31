@@ -164,6 +164,13 @@ const REGISTER: Record<string, Entry> = {
   'apply-pins.mjs': { class: 'gate' },
   'build-example-bundle.mjs': { class: 'gate' },
   'check-backend-support.mjs': { class: 'gate' },
+  'check-battery-budget.mjs': {
+    class: 'gate',
+    why:
+      'The verdict for the batteries job\'s step budgets. It had no subject until v3.25: the job spent ' +
+      'twenty of its thirty minutes and every minute of it belonged to the job, so a mutation that hung ' +
+      'was reported as "the job timed out", naming fourteen steps and none of them guilty.',
+  },
   'check-cli-reference.mjs': { class: 'gate' },
   'check-data-model-vocabularies.mjs': { class: 'gate' },
   'check-aggregate-tables.mjs': {
@@ -329,6 +336,14 @@ const REGISTER: Record<string, Entry> = {
   'fetch-official.mjs': { class: 'gate' },
   'gen-examples.mjs': { class: 'gate' },
   'gen-rcaeval-cases.mjs': { class: 'gate' },
+  'measure-ci-baseline.mjs': {
+    class: 'probe',
+    why:
+      'It records how long each step of the batteries job took, from one workflow run, into ' +
+      'golden-master/ci-baseline.json. It decides nothing and exits zero or with a usage error; the ' +
+      'verdict on what it wrote is check-battery-budget.mjs, which is a gate and may not reach the ' +
+      'network while this one must.',
+  },
   'measure-doc-counts.mjs': { class: 'gate' },
   'score-fault-extraction.mjs': { class: 'gate' },
   'verify-example-pack.mjs': { class: 'gate' },
@@ -384,6 +399,18 @@ const REGISTER: Record<string, Entry> = {
   // verdict" were indistinguishable, and the register recorded the second as the
   // first.
   'inject-stability.mjs': { class: 'gate' },
+  // The reading behind `check-battery-budget.mjs`, and the reason it is not one file: the
+  // gate may not reach the network, and this one must. It records how long each step of one
+  // CI job took, with the run id it came from, so that a bound is a multiple of a
+  // measurement rather than a number somebody remembered (finding 202).
+  'battery-budget.mjs': {
+    class: 'data',
+    why:
+      'What a per-step budget has to satisfy, as functions: it declares its own bound, the bound is at ' +
+      'least twice the measurement and at least the floor, and it can expire before the job does. No ' +
+      'main and no exit -- check-battery-budget.mjs holds the verdict and is spawned, because a gate a ' +
+      'test imports cannot be proved by emptying it.',
+  },
   'inject-component-rule.mjs': { class: 'gate' },
   'inject-m1-ceiling-tests.mjs': { class: 'gate' },
 

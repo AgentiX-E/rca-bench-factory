@@ -42,6 +42,17 @@
  *    before v3.17's own `### Readings`, so v3.17 lost its ledger and v3.18 held two.
  *    Concatenation does not notice -- both halves are in the file, in order -- which
  *    is why the boundary needed a rule of its own rather than an eyeball.
+ * 7. A ledger **names the round it belongs to**, on its first line: `> Ledger for
+ *    \`v3.24\`.`, and the name is the round whose title sits above it. Rule 6 counts
+ *    sections and cannot see a swap -- two rounds whose ledgers were exchanged each
+ *    hold exactly one, each well formed -- and finding 309 recorded that as the half
+ *    it left open. The block can answer the question if it is asked, and the answer
+ *    travels with the block: an insertion at the wrong heading now carries the wrong
+ *    name into the round it landed in. What this cannot do is stop a forger who edits
+ *    the name as well; the guard's subject is the accident, not the lie.
+ * 8. One ledger describes **one tree**: the `(as of \`sha\`)` markers inside a ledger,
+ *    where it has any, all name the same commit. A ledger assembled by copying half of
+ *    another round's ledger is two measurements under one title.
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -130,6 +141,66 @@ export function closingSectionsIn(lines, from, to) {
   return counts;
 }
 
+/**
+ * The line that says which round a ledger belongs to.
+ *
+ * A ledger is a table of numbers measured against a tree, and the tree belongs to one
+ * round. Where the table sits is a **position**, and a position is what finding 309
+ * proved insufficient: v3.18 was inserted at v3.17's `### Readings` heading, so the
+ * table stayed where it was and the block opened above it -- every byte present, in
+ * order, and the round that produced the numbers was not the round they appeared in.
+ *
+ * So the ledger states its own subject, in one line, above the table. It is a claim
+ * rather than a comment: it can be wrong, and being wrong is the point.
+ */
+export const LEDGER_LINE = /^> Ledger for `([^`]+)`\.$/;
+
+/** `(as of \`2aed8ce\`)`, the count-row idiom the ledger's suite rows already carry. */
+const AS_OF = /as of `([0-9a-f]{7,40})`/g;
+
+/**
+ * What one ledger says about itself: the round it names, and the trees it was measured on.
+ *
+ * `anchor` is `null` when the first non-blank line is not the ledger line, and `first`
+ * carries that line so the refusal can quote what it found instead of describing it.
+ * `shas` is every distinct `(as of \`sha\`)` in the section, in order of appearance.
+ */
+export function ledgerOf(lines, from, to) {
+  let fenced = false;
+  let first = null;
+  const shas = [];
+  for (const raw of lines.slice(from, to)) {
+    if (/^\s*(```|~~~)/.test(raw)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced) continue;
+    if (first === null) {
+      if (raw.trim() === '') continue;
+      first = raw.trim();
+      for (const match of first.matchAll(AS_OF)) if (!shas.includes(match[1])) shas.push(match[1]);
+      continue;
+    }
+    for (const match of raw.matchAll(AS_OF)) if (!shas.includes(match[1])) shas.push(match[1]);
+  }
+  const anchor = LEDGER_LINE.exec(first ?? '');
+  return { first, anchor: anchor === null ? null : anchor[1], shas };
+}
+
+/** The line index of a closing section inside one round, or `null` when it holds none. */
+function sectionLineOf(lines, from, to, name) {
+  let fenced = false;
+  for (let at = from; at < to; at += 1) {
+    const raw = lines[at];
+    if (/^\s*(```|~~~)/.test(raw)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (!fenced && raw.trim() === name) return at;
+  }
+  return null;
+}
+
 /** Every volume, in order, with what it holds and what is wrong with it. */
 export function readVolumes(dir = VOLUMES) {
   let names;
@@ -190,12 +261,43 @@ export function readVolumes(dir = VOLUMES) {
     if (entries.length === 0) errors.push(`${name}: no \`## \` heading, so it holds no round`);
     const lines = text.split('\n');
     for (const [position, entry] of entries.entries()) {
-      entry.sections = closingSectionsIn(lines, entry.line + 1, entries[position + 1]?.line ?? lines.length);
+      const end = entries[position + 1]?.line ?? lines.length;
+      entry.sections = closingSectionsIn(lines, entry.line + 1, end);
       for (const [section, count] of entry.sections) {
         if (count > 1) {
           errors.push(
             `${name}: \`${entry.heading.trim()}\` holds ${String(count)} \`${section}\` sections -- a round ` +
               `closes itself once, and the second one belongs to the round that was inserted before it (finding 309)`,
+          );
+        }
+      }
+      const ledgerLine = sectionLineOf(lines, entry.line + 1, end, '### Readings');
+      if (ledgerLine !== null) {
+        const ledger = ledgerOf(lines, ledgerLine + 1, end);
+        entry.ledger = ledger;
+        if (entry.label === null) {
+          errors.push(
+            `${name}: \`${entry.heading.trim()}\` carries a \`### Readings\` section and no label a reader could ` +
+              'cite: a ledger names the round it belongs to, and this one has no name to give',
+          );
+        } else if (ledger.anchor === null) {
+          errors.push(
+            `${name}: \`${entry.heading.trim()}\` holds a \`### Readings\` section whose first line is ` +
+              `\`${(ledger.first ?? '').slice(0, 60)}\`, not \`> Ledger for \`${entry.label}\`.\` -- the table states ` +
+              'which round measured it, and a position is not an owner (finding 309)',
+          );
+        } else if (ledger.anchor !== entry.label) {
+          errors.push(
+            `${name}: \`${entry.heading.trim()}\` holds a \`### Readings\` section that says it measured ` +
+              `\`${ledger.anchor}\`: the ledger belongs to the round whose title sits above it, and this one is ` +
+              `\`${entry.label}\` -- the block was written for one round and filed under another (finding 309)`,
+          );
+        }
+        if (ledger.shas.length > 1) {
+          errors.push(
+            `${name}: \`${entry.heading.trim()}\` measures one ledger against ${String(ledger.shas.length)} trees ` +
+              `(${ledger.shas.join(', ')}): one ledger describes one commit, and rows from two rounds under one ` +
+              'title are two measurements that will drift apart',
           );
         }
       }

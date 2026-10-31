@@ -3034,3 +3034,136 @@ than a bare duration in a log.
 | the 5,000 ms wait | a literal | **twenty times a measured reap**, five-second floor, both named on failure |
 | `stall-budget.test.ts` | 9 tests | **11**: the two bounds, the report line, the quiet path |
 | `step-process.test.ts` | 11 tests | 11, with the wait calibrated before them |
+
+## Finding 329 — a ledger that says which round it belongs to
+
+Finding 309 left one thing open, and stated it rather than guessing: the two rules that came out of
+v3.18's misplaced ledger read **presence**, not **ownership**. Two rounds whose ledgers were exchanged
+hold exactly one `### Readings` each, both close themselves once, both are well formed, and the log
+still concatenates -- so both rules pass. The finding's own sentence about how to close it was:
+
+> Checking ownership would mean re-deriving each round's numbers from the tree as it stood in that
+> round, which is a git checkout per round and a question this repository has no way to answer for a
+> round that was never committed.
+
+**That is one way to ask the question.** The cheaper one is to ask the block, because the block knows:
+a ledger is a table of numbers some round measured, and the round has a name. So the ledger now names
+it, on the first line, above the table:
+
+```
+### Readings
+
+> Ledger for `v3.24`.
+```
+
+and `progress-volumes.mjs` compares that name with the title above it.
+
+### Why this is not the tautology it looks like
+
+A line that restates the heading adds nothing **where it sits**. What it is worth is that it travels
+with the block: an insertion at the wrong heading carries the wrong name into the round it landed in.
+The accident finding 309 describes is exactly that -- `### Readings` was the anchor the insertion was
+aimed at, the block stayed where it was, and the new round opened above it -- and the name is what
+would have said so first.
+
+Measured on a copy of the live log, swapping two adjacent ledgers and nothing else:
+
+```
+volume-08.md: `## v3.22 — …` holds a `### Readings` section that says it measured `v3.23`: …
+  the block was written for one round and filed under another (finding 309)
+volume-08.md: `## v3.23 — …` holds a `### Readings` section that says it measured `v3.22`: …
+```
+
+Two rounds named, both directions, and the old rules are silent about the same tree.
+
+### What it cannot do, stated rather than implied
+
+It does not stop a forger who edits the name as well. The guard's subject is the accident -- a block
+written in one round and filed in another -- and a deliberate forgery is out of scope for every rule in
+this file. The reading is also a **claim**, not a proof: nothing checks that `v3.23`'s numbers came
+from a tree whose tests ran, which is `check-doc-counts`'s job for the newest round and no rule's job
+for a closed one.
+
+### The second rule: one ledger, one tree
+
+Two ledgers in `volume-08.md` already carried `(as of \`sha\`)` on their suite rows, and the idiom is
+what makes a copied half visible: **one ledger describes one commit**. So the `(as of \`…\`)` markers
+inside a ledger, where it has any, must all name the same commit, and a ledger with two is two
+measurements under one title. Ten of the twelve ledgers name none, because they state movement rather
+than an absolute count -- which is the shape v3.13 chose for a reason (a count retyped in a narrative
+goes stale in one round) -- and a rule requiring one would have been a rule against the log's own
+history.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| ledgers that name their round | **0 of 12** | **12 of 12** |
+| a swapped pair, on a copy of the live log | passes both rules | **FAILED, exit 1**, both rounds named |
+| a ledger whose first line is the table | accepted | refused, quoting the line it found |
+| a ledger under a round with no label | accepted | refused -- `## Iteration` has no name to give |
+| one ledger across two trees | accepted | refused, naming both commits |
+| `progress-volumes.test.ts` | 31 tests | **38**: the swap, the missing line, the blank line, the unnamed round, the two trees, the one tree, the none |
+
+## Finding 330 — the batteries job had one budget and twenty-two steps
+
+The batteries job spends **20 of its 30 minutes**, and until this round every one of those minutes
+belonged to the job. A mutation that hangs -- and a battery's whole subject is mutations -- spends the
+pool, the job is cancelled, and the verdict is a sentence about the job that names fourteen steps and
+none of them guilty. `gate-steps.mjs` has read step-level `timeout-minutes` since the plan was written;
+no step in that job declared one.
+
+### The number, and where it comes from
+
+A bound is a claim about how long a legitimate run takes, so it comes from a run:
+`golden-master/ci-baseline.json` records one, with the run id and the commit
+(`41180476384` / `85f7b1e80`), written by `scripts/measure-ci-baseline.mjs` and by nothing else. The
+numbers it holds are the runner's own step timestamps, rounded up to whole seconds -- 22 steps,
+1,230 s.
+
+The rule is a **multiple**, not a table: twice the measurement, with a three-minute floor.
+
+| multiple | why |
+| --- | --- |
+| **2×** | a battery's cost is a deterministic function of its mutation count and the suite; the variance is the machine, and twice a measured run covers a runner twice as slow |
+| **3 min floor** | the measurement cannot see what the first run of the day sees: a cold `apt-get update`, a missed pnpm cache, a first-time build |
+
+Both are stated rather than tuned. A bound that has to be raised after it fires was wrong, and the
+honest repair is to measure again.
+
+### The rule that makes a bound mean something
+
+A bound larger than the job's own budget is a number with no effect -- the job dies first, and the
+message still names nothing. So the last rule is arithmetic over the recording: **the bound, plus
+every step measured before it, has to land inside the job's budget.**
+
+That is what sizes the two big ones rather than a rounder guess: `Backend-support` measured 383 s and
+sits 13 min into the job, so 13 min is the largest bound that can still expire first. Nine of the
+twenty-two steps measured under ten seconds and take the floor; the bounds total 90 minutes against a
+30-minute job, which is the right shape -- **the bounds attribute, they do not partition.**
+
+### The line that stopped being true
+
+`verify:local --list` said, on every run:
+
+> `` `timeout-minutes:` is a budget for the whole job, not for each step ``
+
+which was true of all five jobs and is now true of four. The plan prints two clauses instead: the pool
+for the jobs that still share one, and `batteries bounds all 16 of its step(s) on its own (largest 13m
+of the job's 30m) — a hang there names the step rather than the job`. A statement that was true
+yesterday and is half-true today is the defect this campaign keeps finding, and it was found by
+reading the output rather than by a test.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| steps of `batteries` with a bound of their own | **0 of 22** | **22 of 22** |
+| the reading behind the bounds | none | **22 steps / 1,230 s**, run `41180476384` at `85f7b1e80` |
+| a step that inherits | accepted | refused, naming the batteries whose budget it would spend |
+| a bound under 2× its measurement | -- | refused, both numbers in the sentence |
+| a bound under the floor | -- | refused, with the cold-cache reason |
+| a bound that cannot expire first | -- | refused, with the arithmetic (`expires at 33 min`) |
+| a recording with no run / no commit / no date | -- | refused, each by name |
+| a recording older than the job's budget | -- | refused, "re-measured together" |
+| `battery-budget.test.ts` | did not exist | **17 tests**, one of them the shipped tree |

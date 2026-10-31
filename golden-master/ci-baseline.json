@@ -1,0 +1,31 @@
+{
+  "run": 41180476384,
+  "commit": "85f7b1e809742a721d3e1b73d552249664c28fe6",
+  "measured": "2026-10-31",
+  "job": "batteries",
+  "jobTimeoutMinutes": 30,
+  "steps": {
+    "Check out": 1,
+    "Set up Node.js": 0,
+    "Set up pnpm": 2,
+    "Install dependencies": 1,
+    "Install the shells the suite cross-checks against": 9,
+    "Build (core then cli; cli resolves core's dist)": 4,
+    "Scorer stability battery (no survivors, no inert mutations)": 6,
+    "Component rule battery (no survivors, no inert mutations)": 9,
+    "M1-ceiling probe battery (no survivors, no inert mutations)": 0,
+    "M1-ceiling probe test battery (no survivors, no inert mutations)": 8,
+    "Type-miss probe battery (no survivors, no inert, no blind mutations)": 351,
+    "Every gate can be shown to fail": 124,
+    "Fault-extraction scoring battery (no survivors)": 13,
+    "Fault-extraction workflow battery (no survivors, negative control)": 10,
+    "Fetch-official retry battery (no survivors)": 104,
+    "Gate-test battery (each gate's test provably fails when its guard is removed)": 132,
+    "Doc-count shape battery (no survivors, no inert, no misattributed mutations)": 23,
+    "Backend-support battery (no survivors, no inert, no misattributed mutations)": 383,
+    "Round-trip record battery (no survivors, no inert, no misattributed mutations)": 46,
+    "Publish the gate-test battery report": 3,
+    "Upload the gate-test battery report": 1,
+    "Scorer-stability probe battery (the stability gate refuses a broken scorer)": 0
+  }
+}

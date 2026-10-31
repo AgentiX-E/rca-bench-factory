@@ -1267,11 +1267,42 @@ export function describePlan(plan) {
   // every step of `verify` would reasonably think each of them has fifteen minutes.
   const pools = new Map();
   for (const step of plan.local) {
-    const entry = pools.get(step.job) ?? { minutes: step.jobBudgetMinutes ?? null, steps: 0 };
+    const entry = pools.get(step.job) ?? {
+      minutes: step.jobBudgetMinutes ?? null,
+      steps: 0,
+      own: 0,
+      largest: 0,
+    };
     entry.steps += 1;
+    // A step that declares its own `timeout-minutes` is bounded on its own; one that
+    // inherits is bounded by the job. The two are different promises and the line
+    // below says which a job is making.
+    if (step.timeoutFrom === 'step') {
+      entry.own += 1;
+      entry.largest = Math.max(entry.largest, step.timeoutMinutes ?? 0);
+    }
     pools.set(step.job, entry);
   }
   const pooled = [...pools.entries()].filter(([, one]) => one.minutes !== null);
+  const shared = pooled.filter(([, one]) => one.own < one.steps);
+  const attributed = pooled.filter(([, one]) => one.own === one.steps && one.steps > 0);
+  const sharedLine =
+    shared.length === 0
+      ? ''
+      : `  \`timeout-minutes:\` on a job is a budget for the whole job, not for each step: ${shared
+          .map(([job, one]) => `${job} ${String(one.minutes)}m across ${String(one.steps)} step(s)`)
+          .join(', ')} — a run that spends one is killed at whatever step is running`;
+  const attributedLine =
+    attributed.length === 0
+      ? ''
+      : `  ${attributed
+          .map(
+            ([job, one]) =>
+              `${job} bounds all ${String(one.steps)} of its step(s) on its own (largest ${String(
+                one.largest,
+              )}m of the job's ${String(one.minutes)}m)`,
+          )
+          .join(', ')} — a hang there names the step rather than the job`;
   const poolLine =
     plan.local.length === 0
       ? // No local step at all: the header already says so, and `Math.min()` of
@@ -1280,9 +1311,7 @@ export function describePlan(plan) {
       : pooled.length === 0
         ? `  no job declares \`timeout-minutes:\`, so nothing here is bounded (CI's six-hour default is not ` +
           'applied: a local run that waited six hours would not have learned anything sooner)'
-        : `  \`timeout-minutes:\` is a budget for the whole job, not for each step: ${pooled
-            .map(([job, one]) => `${job} ${String(one.minutes)}m across ${String(one.steps)} step(s)`)
-            .join(', ')} — a run that spends one is killed at whatever step is running` +
+        : [sharedLine, attributedLine].filter((line) => line !== '').join(';\n') +
           (pooled.length === pools.size ? '' : ` (${String(pools.size - pooled.length)} job(s) declare none)`);
   const lines = [
     `verify:local — ${String(plan.local.length)} of ${String(plan.remote.length + plan.local.length)} run steps can run here`,

@@ -203,22 +203,27 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out
+        timeout-minutes: 3
         uses: actions/checkout@v4
 
       - name: Set up Node.js
+        timeout-minutes: 3
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Set up pnpm
+        timeout-minutes: 3
         uses: pnpm/action-setup@v4
         with:
           version: 10
 
       - name: Install dependencies
+        timeout-minutes: 3
         run: pnpm install --frozen-lockfile
 
       - name: Install the shells the suite cross-checks against
+        timeout-minutes: 3
         # `check-no-unsafe-shell.test.ts` compares the gate's rule against what
         # `zsh` and `bash` actually do with the same string, which is the
         # strongest acceptance criterion in the tree: the thing being modelled is
@@ -234,9 +239,11 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
+        timeout-minutes: 3
         run: pnpm build
 
       - name: Scorer stability battery (no survivors, no inert mutations)
+        timeout-minutes: 3
         run: node scripts/inject-stability.mjs
 
       # The `component` rule battery, for the same reason as the one above and
@@ -247,6 +254,7 @@ jobs:
       # Each rewrite was driven by this battery reporting SURVIVED, so it is the
       # reason the assertions are load-bearing rather than decorative.
       - name: Component rule battery (no survivors, no inert mutations)
+        timeout-minutes: 3
         run: node scripts/inject-component-rule.mjs
 
       # The M1-ceiling probe reports the number the milestone's exit condition is
@@ -257,6 +265,7 @@ jobs:
       # both halves of that, and its partition guard is what makes an injection
       # which lets the two halves disagree fail rather than print a tidy number.
       - name: M1-ceiling probe battery (no survivors, no inert mutations)
+        timeout-minutes: 3
         run: python3 scripts/injection/m1-ceiling-probe.py
 
       # The second half of the same standard, applied to the assertions about the
@@ -266,6 +275,7 @@ jobs:
       # mutation the runner cannot survive and a mutation nothing detects must not
       # print the same word, so the battery now reads the total test count.
       - name: M1-ceiling probe test battery (no survivors, no inert mutations)
+        timeout-minutes: 3
         run: node scripts/inject-m1-ceiling-tests.mjs
 
       # The `type`-miss classifier reports the partition that decides whether the
@@ -286,6 +296,7 @@ jobs:
       # not been exercised. It is checked for data-only injections, where "the
       # partition must move" is the whole point of the edit.
       - name: Type-miss probe battery (no survivors, no inert, no blind mutations)
+        timeout-minutes: 12
         run: python3 scripts/injection/type-miss-probe.py
 
       # Every gate, emptied and watched.
@@ -300,6 +311,7 @@ jobs:
       # gate that can be emptied without a test noticing, or that no test names at
       # all, fails the build.
       - name: Every gate can be shown to fail
+        timeout-minutes: 5
         run: node scripts/verify-gates-are-testable.mjs
 
       # The three batteries below were written, repaired, and never invoked. Each
@@ -321,12 +333,15 @@ jobs:
       # `battery-summary-survives-ci-output.test.ts`, alongside the two readers
       # finding 147 fixed.
       - name: Fault-extraction scoring battery (no survivors)
+        timeout-minutes: 3
         run: python3 scripts/injection/fault-extraction-scoring.py
 
       - name: Fault-extraction workflow battery (no survivors, negative control)
+        timeout-minutes: 3
         run: python3 scripts/injection/fault-extraction-workflow.py
 
       - name: Fetch-official retry battery (no survivors)
+        timeout-minutes: 4
         run: python3 scripts/injection/fetch-official-retry.py
 
       # The five gate scripts above are covered by CI *running* them against the
@@ -342,6 +357,7 @@ jobs:
       # in the battery's `EXPECTED_SURVIVORS` with its reason, and the run fails
       # if it ever turns into a genuine survivor.
       - name: Gate-test battery (each gate's test provably fails when its guard is removed)
+        timeout-minutes: 5
         run: python3 scripts/injection/gate-tests-battery.py
 
       # `check-doc-counts.mjs` read three shapes of a published count while the
@@ -357,6 +373,7 @@ jobs:
       # that claimed to pin the added shape only asserted exit 0, which the bare
       # shape also satisfies, so the file count was read but never used.
       - name: Doc-count shape battery (no survivors, no inert, no misattributed mutations)
+        timeout-minutes: 3
         run: python3 scripts/injection/doc-counts-shapes.py
 
       # P1-5 asks for T2's six backends to be measured and the unsupported ones
@@ -370,6 +387,7 @@ jobs:
       # was mutated, and a mutation that never applied is not evidence about
       # anything.
       - name: Backend-support battery (no survivors, no inert, no misattributed mutations)
+        timeout-minutes: 13
         run: python3 scripts/injection/backend-support.py
 
       # The fourth anchor's path now runs on the real corpus: run 38250480271
@@ -384,6 +402,7 @@ jobs:
       # scoped the document by any line mentioning the section and so read the
       # headline table's cross-reference instead of the section.
       - name: Round-trip record battery (no survivors, no inert, no misattributed mutations)
+        timeout-minutes: 3
         run: python3 scripts/injection/roundtrip-record.py
 
       # The battery's verdicts, published to a branch so they can be read from
@@ -408,6 +427,7 @@ jobs:
       # success is a report about the case that needs no explanation; every
       # question this answers is about a run that failed.
       - name: Publish the gate-test battery report
+        timeout-minutes: 3
         if: always()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -417,6 +437,7 @@ jobs:
       # page. Redundant with the branch above on purpose and cheap -- the branch is
       # for this project's development environment, the artifact is for the UI.
       - name: Upload the gate-test battery report
+        timeout-minutes: 3
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -431,6 +452,7 @@ jobs:
       # looked for -- so this battery mutates the built scorer and requires the gate
       # to name the property that broke. See finding 83.
       - name: Scorer-stability probe battery (the stability gate refuses a broken scorer)
+        timeout-minutes: 3
         run: python3 scripts/injection/scorer-stability-probe.py
 
 
