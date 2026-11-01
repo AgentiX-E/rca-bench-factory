@@ -250,7 +250,18 @@ afterAll(() => {
   for (const dir of made) rmSync(dir, { recursive: true, force: true });
 });
 
-describe('the corpus guard, with and without the background', () => {
+/**
+ * The suite's budget, stated once for the file rather than per test.
+ *
+ * Measured: this file costs 1 344 ms standalone, and one of its four corpus checks was reported at
+ * `Test timed out in 5000ms` in a full-suite run -- 226 files, four workers on a four-CPU quota,
+ * every test in the run passing. The check costs 364 ms alone and 5 002 ms in that run, which is the
+ * difference between work and scheduling (finding 297's measurement, `timeout-budget.test.ts`'s
+ * second arm). A stall does not respect test boundaries, so the number goes on the suite.
+ */
+const SUITE_BUDGET_MS = 30_000;
+
+describe('the corpus guard, with and without the background', { timeout: SUITE_BUDGET_MS }, () => {
   it('accepts the shipped corpus', () => {
     const result = run(copyCorpus());
     expect(result.status, result.out).toBe(0);

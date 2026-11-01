@@ -330,8 +330,16 @@ describe('scripts/check-official.mjs · the round trip leaves the default verdic
     writeCases(cases, ['RE2-ob-cpu_1']);
     const result = await run(['--official-dir', root, '--cases', cases]);
     const afterSummary = result.stdout.split('skipped by contract)')[1] ?? '';
-    for (const line of afterSummary.split('\n').filter((l) => l.trim() !== '')) {
-      expect(line.startsWith('ROUNDTRIP')).toBe(true);
+    // Two prefixes, not one, and the set is closed. `CENSUS` is the census block's prefix in
+    // `census-corpus.mjs`, and it is reused verbatim here so the two readings cannot drift --
+    // a second spelling of the same table is how two readers come to disagree. What the rule
+    // is for is unchanged: an *unprefixed* line is the failure mode, because a verdict reader
+    // scanning the log could then pick up a sentence.
+    const prefixes = new Set(['ROUNDTRIP', 'CENSUS']);
+    const lines = afterSummary.split('\n').filter((l) => l.trim() !== '');
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) {
+      expect(prefixes.has(line.split(' ')[0]!), line).toBe(true);
     }
   });
 
@@ -1754,6 +1762,104 @@ describe('scripts/check-official.mjs · the RE3 slice, whose fault label is an i
     expect(result.stdout).toContain('ROUNDTRIP ACCOUNTED 2 = 1 round-tripped + 1 refused by contract');
     expect(result.stdout).toMatch(/ROUNDTRIP PASS .*emailservice_f1/);
     expect(result.stdout).toMatch(/ROUNDTRIP SKIP .*emailservice_cpu/);
+  });
+
+  /**
+   * A label nothing here can name is refused, not coined.
+   *
+   * This is the difference between v3.34 and the taxonomy, and it is one case wide. In v3.34
+   * the suite stamped `code` on every RE3 label `inferFaultCategory` could not read, which
+   * was right for `f1`…`f5` by coincidence of the corpus. A corpus whose RE3 slice carries a
+   * label the taxonomy does not name would have been scored anyway -- the case passing
+   * because of the directory it sat in, not because of anything read about it.
+   *
+   * `zzz` is that case. The assertion is not that the run fails -- a refusal is neither a
+   * pass nor a failure -- but that the refusal *happens*, that the census names the token,
+   * and that the case is counted as refused rather than scored.
+   */
+  it('refuses a case whose fault label nothing here can name, instead of stamping the suite on it', async () => {
+    const root = freshRoot();
+    const caseId = 'RE3-OB/emailservice_zzz/1';
+    writeRe3Case(root, caseId);
+    const cases = join(scratch, 're3-unnamed.json');
+    writeFileSync(
+      cases,
+      JSON.stringify({
+        schema: 'rca-bench-rcaeval-cases/1',
+        counts: { RE1: 0, RE2: 0, RE3: 1 },
+        cases: [
+          {
+            caseId,
+            component: 'emailservice',
+            faultType: 'zzz',
+            injectTime: new Date(1_700_000_000_000).toISOString(),
+            pathPrefix: `${caseId}/`,
+            suite: 'RE3',
+          },
+        ],
+      }),
+    );
+
+    const result = await run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    // The negative control is v3.34: `zzz` was stamped `code` and this case scored 1.00.
+    expect(result.stdout).not.toMatch(/ROUNDTRIP PASS\s+\d/);
+    expect(result.stdout).toContain('reason=RE3 targets code-level faults only');
+    expect(result.stdout).toContain('ROUNDTRIP ACCOUNTED 1 = 0 round-tripped + 1 refused by contract');
+    // And the census says which token went unread, so the refusal is not a mystery.
+    expect(result.stdout).toContain('CENSUS unnameable 1 case(s): zzz (1)');
+  });
+
+  /**
+   * Every round trip prints what the corpus contains, by category.
+   *
+   * v3.34's fix turned on a sentence -- "RE3 is the code-level slice" -- that no reading here
+   * had ever checked against a case. The census is that reading, and printing it from the
+   * round trip means the anchors and `census-corpus.mjs` agree by construction rather than by
+   * both having been written down.
+   */
+  it('prints the corpus’s fault census, with the corpus’s own names for its faults', async () => {
+    const root = freshRoot();
+    writeRe3Case(root, 'RE3-OB/emailservice_f1/1');
+    writeRe3Case(root, 'RE3-OB/emailservice_f4/1');
+    const cases = join(scratch, 're3-census.json');
+    writeFileSync(
+      cases,
+      JSON.stringify({
+        schema: 'rca-bench-rcaeval-cases/1',
+        counts: { RE1: 0, RE2: 0, RE3: 2 },
+        cases: [
+          {
+            caseId: 'RE3-OB/emailservice_f1/1',
+            component: 'emailservice',
+            faultType: 'f1',
+            injectTime: new Date(1_700_000_000_000).toISOString(),
+            pathPrefix: 'RE3-OB/emailservice_f1/1/',
+            suite: 'RE3',
+          },
+          {
+            caseId: 'RE3-OB/emailservice_f4/1',
+            component: 'emailservice',
+            faultType: 'f4',
+            injectTime: new Date(1_700_000_000_000).toISOString(),
+            pathPrefix: 'RE3-OB/emailservice_f4/1/',
+            suite: 'RE3',
+          },
+        ],
+      }),
+    );
+
+    const result = await run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.stdout).toContain('CENSUS 2 case(s) in 1 suite(s), 2 fault type(s): code 2');
+    expect(result.stdout).toContain('CENSUS   RE3  code       f1       1  Incorrect parameter values');
+    expect(result.stdout).toContain('CENSUS   RE3  code       f4       1  Incorrect Return Values');
+    expect(result.stdout).toContain('CENSUS unnameable 0 case(s)');
+    // A census that printed after the verdict would be decoration; it prints before the
+    // account line, which is the line a reader stops at.
+    expect(result.stdout.indexOf('CENSUS 2 case(s)')).toBeLessThan(result.stdout.indexOf('ROUNDTRIP ACCOUNTED'));
   });
 
   /**

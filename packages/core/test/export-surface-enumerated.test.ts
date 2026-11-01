@@ -163,6 +163,8 @@ const ENUMERATED_MODULES = [
   'fault/component-agreement.ts',
   'fault/agreement-baseline.ts',
   'fault/category-derivation.ts',
+  'fault/corpus-fault-taxonomy.ts',
+  'fault/corpus-census.ts',
   'fault/injector.ts',
   'fault/importer.ts',
   'fault/modality-evidence.ts',
@@ -296,6 +298,12 @@ const EXEMPT_EXPORTS: Record<string, string> = {
   'fault/pool-width.ts::PoolTally': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/pool-width.ts::RunComparison': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/pool-width.ts::UnscorableCase': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/corpus-fault-taxonomy.ts::CorpusFault': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/corpus-fault-taxonomy.ts::CorpusFaultDescription': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/corpus-census.ts::CategoryTally': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/corpus-census.ts::CensusCase': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/corpus-census.ts::CensusRow': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/corpus-census.ts::CorpusCensus': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/modality-evidence.ts::ChainStep': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/modality-evidence.ts::EvidenceModality': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/modality-evidence.ts::ModalityAnswer': 'type-only declaration; erases at runtime, so no consumer can name it',
@@ -1113,6 +1121,15 @@ const TESTED = [
   'rejectProposal',
   'triggerFromGateReport',
   'triggerFromScoreReport',
+  // fault/corpus-fault-taxonomy.ts -- the corpus's own eleven fault types, because the classifier
+  // reads six of them and calls the other 135 cases of 735 `unknown`.
+  'describeCorpusFault',
+  'RCAEVAL_CORPUS_FAULTS',
+  'RCAEVAL_FAULT_TAXONOMY_SOURCE',
+  'readCorpusFault',
+  // fault/corpus-census.ts -- the grouped reading finding 343 turned on and no document had taken.
+  'censusCorpus',
+  'describeCensus',
   // fault/collector.ts
   'inferFaultCategory',
   'normalizeFaultType',

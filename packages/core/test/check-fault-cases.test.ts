@@ -19,6 +19,20 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const SCRIPT = resolve(ROOT, 'scripts', 'check-fault-cases.mjs');
+
+/**
+ * The suite's budget, stated on each describe rather than left to the default.
+ *
+ * Measured: this file is the suite's heaviest by child count -- **150** spawned runs of the corpus
+ * guard, 23 s of test time standalone -- and one of them was reported at `Test timed out in 5000ms`
+ * in a full-suite run of 226 files on a four-CPU quota, with every other test in the run passing.
+ * The test that failed costs under 500 ms on its own. That is the scheduling failure
+ * `timeout-budget.test.ts`'s second arm describes, not work, and a stall does not respect test
+ * boundaries -- so the number is stated on every describe in this file rather than on the one that
+ * happened to be running.
+ */
+const SUITE_BUDGET_MS = 30_000;
+
 const CASES = resolve(ROOT, 'golden-master', 'fault-cases');
 const SAMPLES = resolve(ROOT, 'golden-master', 'fault-extraction', 'samples.json');
 
@@ -348,7 +362,7 @@ async function run(args: string[]): Promise<{ status: number | null; out: string
   return { status, out };
 }
 
-describe('check-fault-cases · the corpus as it stands', () => {
+describe('check-fault-cases · the corpus as it stands', { timeout: SUITE_BUDGET_MS }, () => {
   it('accepts the shipped corpus and reports how many samples carry a case', async () => {
     const result = await run([]);
     expect(result.status, result.out).toBe(0);
@@ -402,7 +416,7 @@ describe('check-fault-cases · the corpus as it stands', () => {
   });
 });
 
-describe('check-fault-cases · a case that is not complete', () => {
+describe('check-fault-cases · a case that is not complete', { timeout: SUITE_BUDGET_MS }, () => {
   it('refuses a case whose causal chain was deleted, naming the layer and the reason', async () => {
     const dir = corpus({
       mutate: (faultCase) => {
@@ -454,7 +468,7 @@ describe('check-fault-cases · a case that is not complete', () => {
   });
 });
 
-describe('check-fault-cases · the link back to the extraction key', () => {
+describe('check-fault-cases · the link back to the extraction key', { timeout: SUITE_BUDGET_MS }, () => {
   it('refuses a case annotated from a sample the key does not carry', async () => {
     // Otherwise the coverage figure is a number about a directory rather than about the key.
     const dir = corpus({ entry: { sampleId: 'no-such-sample' } });
@@ -548,7 +562,7 @@ describe('check-fault-cases · the link back to the extraction key', () => {
   });
 });
 
-describe('check-fault-cases · the floor moves up, and cannot be quietly lowered', () => {
+describe('check-fault-cases · the floor moves up, and cannot be quietly lowered', { timeout: SUITE_BUDGET_MS }, () => {
   it('refuses a corpus below its own floor', async () => {
     const dir = corpus({ min: 2 });
     const result = await run(['--cases', dir]);
@@ -570,7 +584,7 @@ describe('check-fault-cases · the floor moves up, and cannot be quietly lowered
   });
 });
 
-describe('check-fault-cases · inputs it will not guess at', () => {
+describe('check-fault-cases · inputs it will not guess at', { timeout: SUITE_BUDGET_MS }, () => {
   it('refuses a case that does not parse, with exit 1 and the schema message', async () => {
     const dir = corpus({
       mutate: (faultCase) => {
@@ -619,7 +633,7 @@ describe('check-fault-cases · inputs it will not guess at', () => {
   });
 });
 
-describe('check-fault-cases · every layer shows the sentence it came from', () => {
+describe('check-fault-cases · every layer shows the sentence it came from', { timeout: SUITE_BUDGET_MS }, () => {
   type Source = { layer: string; quote: string; why: string };
 
   /** The real annotation's sources, deep-copied so an edit cannot leak into the next test. */
@@ -685,7 +699,7 @@ describe('check-fault-cases · every layer shows the sentence it came from', () 
   });
 });
 
-describe('check-fault-cases · the case is also held to L2, not only to its four layers', () => {
+describe('check-fault-cases · the case is also held to L2, not only to its four layers', { timeout: SUITE_BUDGET_MS }, () => {
   // Finding 233: `assessFourLayer` answers "are the layers filled", not "is this a case". The
   // corpus carried three cases whose timestamps were `...:00Z` -- canonical to a human and not to
   // `checkG1Structural`, which requires milliseconds. Nothing noticed, because the guard had never
@@ -719,7 +733,7 @@ describe('check-fault-cases · the case is also held to L2, not only to its four
   });
 });
 
-describe('check-fault-cases · the units in a checkpoint have to exist', () => {
+describe('check-fault-cases · the units in a checkpoint have to exist', { timeout: SUITE_BUDGET_MS }, () => {
   // The second half of L2 that this guard did not ask for. Two of the three cases carried units a
   // person writes and the conversion table does not have: `m` for millicores, `messages` for a
   // lag, `x` for a multiple. Nothing downstream could ever convert them, and nothing noticed
@@ -761,7 +775,7 @@ describe('check-fault-cases · the units in a checkpoint have to exist', () => {
   });
 });
 
-describe('check-fault-cases · derived telemetry is a claim G3 can refuse', () => {
+describe('check-fault-cases · derived telemetry is a claim G3 can refuse', { timeout: SUITE_BUDGET_MS }, () => {
   // The step that changes what the corpus is: without signals a case is an annotation, and with
   // them G1's signal rules, G2's window rule and G3's anomaly rule all have something to judge.
   // The values are derived from the two numbers the text states -- so the same quote mechanism
@@ -825,7 +839,7 @@ describe('check-fault-cases · derived telemetry is a claim G3 can refuse', () =
   });
 });
 
-describe('check-fault-cases · G5 is asked of every case, because it needs no telemetry', () => {
+describe('check-fault-cases · G5 is asked of every case, because it needs no telemetry', { timeout: SUITE_BUDGET_MS }, () => {
   it('refuses a case that does not isolate its answer key', async () => {
     // `answerKeyIsolated` is a claim the case makes about itself, and until this round nothing
     // read it. A case whose answer key sits beside its query is a case whose oracle is the payload.
@@ -840,7 +854,7 @@ describe('check-fault-cases · G5 is asked of every case, because it needs no te
   });
 });
 
-describe('check-fault-cases · origin is a closed vocabulary, not a sentence', () => {
+describe('check-fault-cases · origin is a closed vocabulary, not a sentence', { timeout: SUITE_BUDGET_MS }, () => {
   // The report says which cases carry *derived* signals, and a reader decides how much to trust a
   // number on the strength of that word. A free string would let a case claim anything that reads
   // well, so the field is one of two values and anything else is refused.
@@ -887,7 +901,7 @@ describe('check-fault-cases · origin is a closed vocabulary, not a sentence', (
   });
 });
 
-describe('check-fault-cases · G4, the last gate that needed a run rather than a derivation', () => {
+describe('check-fault-cases · G4, the last gate that needed a run rather than a derivation', { timeout: SUITE_BUDGET_MS }, () => {
   // G4 reads outcomes, so asking it of the corpus required a localiser. `fault/baseline-localiser.ts`
   // is that run: peak |z| per service against its own baseline, ranked, with the answer key never
   // read. These tests are the gate's side of it -- the case must be *solvable*, and a case whose
@@ -933,7 +947,7 @@ describe('check-fault-cases · G4, the last gate that needed a run rather than a
   });
 });
 
-describe('check-fault-cases · two baselines, and the shape that separates them', () => {
+describe('check-fault-cases · two baselines, and the shape that separates them', { timeout: SUITE_BUDGET_MS }, () => {
   // G4 with one solver asks whether a method agrees with the construction it was pointed at. With
   // `minSolvers: 2` it asks whether the case is locatable by two methods that fail differently --
   // and the only way to know the second solver is being consulted rather than counted is a case
@@ -1080,7 +1094,7 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
   });
 });
 
-describe('check-fault-cases · the corpus through the coverage report and the exporter', () => {
+describe('check-fault-cases · the corpus through the coverage report and the exporter', { timeout: SUITE_BUDGET_MS }, () => {
   // Neither number existed before finding 238. The coverage report was only ever handed bundles
   // bound for official scoring, and the exporter only ever saw datasets that already carried the
   // modalities it writes. Asked of the annotated corpus, the two disagree: coverage says RE2 is
@@ -1206,7 +1220,7 @@ describe('check-fault-cases · the corpus through the coverage report and the ex
   });
 });
 
-describe('check-fault-cases · a log line, which is the first modality a metric could not supply', () => {
+describe('check-fault-cases · a log line, which is the first modality a metric could not supply', { timeout: SUITE_BUDGET_MS }, () => {
   // RE2 writes a `logs.csv`, and every one this corpus produced had a header and no rows until
   // finding 239. A log has no baseline and no threshold, so the only thing that holds it to the
   // incident is the quote -- the same rule the four layers use, applied to the one modality where
@@ -1383,7 +1397,7 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
   });
 });
 
-describe('check-fault-cases · a span, which is the last modality and the only one with a parent', () => {
+describe('check-fault-cases · a span, which is the last modality and the only one with a parent', { timeout: SUITE_BUDGET_MS }, () => {
   // A span has a start, a duration and a parent, and the cart case states both of its durations --
   // 900ms on the caller and 11ms in the callee -- so the pair is quoted rather than invented. What
   // the parent adds is the property a metric and a log cannot express: that the 11ms sits *inside*
@@ -1487,7 +1501,7 @@ describe('check-fault-cases · a span, which is the last modality and the only o
   });
 });
 
-describe('check-fault-cases · the first code-level case', () => {
+describe('check-fault-cases · the first code-level case', { timeout: SUITE_BUDGET_MS }, () => {
   it('writes an RE3 case, which no annotation could do before', async () => {
     // RE3 selects on `category === 'code'`, and the corpus had none: four cases of resource,
     // network and middleware. The fifth is an uncaught exception in a CSV writer, so the suite that
@@ -1505,7 +1519,7 @@ describe('check-fault-cases · the first code-level case', () => {
   });
 });
 
-describe('check-fault-cases · a checkpoint says what its reference is a reference to', () => {
+describe('check-fault-cases · a checkpoint says what its reference is a reference to', { timeout: SUITE_BUDGET_MS }, () => {
   // One optional string used to carry four different things and nothing resolved it: eight of eleven
   // checkpoints named a series that did not exist (finding 243). `signalKind` separates them, and
   // each kind has the rule that can be applied to it.
@@ -1663,7 +1677,7 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
   });
 });
 
-describe('check-fault-cases · a series reference names an entity and a metric', () => {
+describe('check-fault-cases · a series reference names an entity and a metric', { timeout: SUITE_BUDGET_MS }, () => {
   // Finding 323, and the half of finding 299's repair that makes it a rule rather than a wish.
   //
   // A series is a reading taken *on* something, so `(entity, metric)` is its identity -- the pair
@@ -1831,7 +1845,7 @@ describe('check-fault-cases · a series reference names an entity and a metric',
 
 });
 
-describe('check-fault-cases · a derived checkpoint states the arithmetic it claims', () => {
+describe('check-fault-cases · a derived checkpoint states the arithmetic it claims', { timeout: SUITE_BUDGET_MS }, () => {
   // Finding 245. `cp-processing-tripled` asserted `== 3` over a series whose post value is `0.06`,
   // because the 3 was `0.06 / 0.02` and the divisor appeared nowhere in the annotation. The guard
   // could only check that the series existed. Now the expression is the reference and the number is
@@ -1999,7 +2013,7 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
     expect(result.out).toContain('1 of 3 comparable assertion(s) fail');
   });
 });
-describe('check-fault-cases · a configuration checkpoint cites a fact the case declares', () => {
+describe('check-fault-cases · a configuration checkpoint cites a fact the case declares', { timeout: SUITE_BUDGET_MS }, () => {
   // Finding 247. The rule used to be negative -- "must not collide with a series" -- which caught a
   // modelling error and said nothing about whether the quota was the one the case ran under. Now the
   // reference names a key of `fault.parameters` and the comparison is against what that key holds.
@@ -2121,7 +2135,7 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
   });
 });
 
-describe('check-fault-cases · a declared reading stays inside the range its unit admits', () => {
+describe('check-fault-cases · a declared reading stays inside the range its unit admits', { timeout: SUITE_BUDGET_MS }, () => {
   // Finding 252. A share of exactly 1 -- "every request 503'd" -- used to come out of the expansion as
   // 1.02, and the annotation could not fix it: any value at or below 0.98 understates the sentence.
   // The clamp handles the noise; this rule handles the declaration, because `post: 120` in `%` is a
@@ -2178,7 +2192,7 @@ describe('check-fault-cases · a declared reading stays inside the range its uni
   });
 });
 
-describe('check-fault-cases · a reading can cite a parameter instead of copying it', () => {
+describe('check-fault-cases · a reading can cite a parameter instead of copying it', { timeout: SUITE_BUDGET_MS }, () => {
   // Finding 258. The pool's ceiling was a reading (`connections in use == 20`) and a parameter
   // (`poolSize: 20`), kept in step by being edited together. `post` may now be `{ parameter: 'x' }`,
   // resolved against the case's own parameters, and the four refusals below are the ways that can go
@@ -2259,7 +2273,7 @@ describe('check-fault-cases · a reading can cite a parameter instead of copying
   });
 });
 
-describe('check-fault-cases · the corpus has to be able to be wrong', () => {
+describe('check-fault-cases · the corpus has to be able to be wrong', { timeout: SUITE_BUDGET_MS }, () => {
   /**
    * The shipped corpus, in a scratch directory, cut down to one case.
    *
@@ -2315,7 +2329,7 @@ describe('check-fault-cases · the corpus has to be able to be wrong', () => {
   }
 });
 
-describe('check-fault-cases · the difficulty distribution is a property of the corpus', () => {
+describe('check-fault-cases · the difficulty distribution is a property of the corpus', { timeout: SUITE_BUDGET_MS }, () => {
   // The rule lived inside a gate this script asked of a one-case bundle, so `graded.length` was 0
   // or 1 against a minimum of ten and the branches could not be taken. A rule no caller can reach
   // is not a gate, and the only way to know it is reachable is to make the corpus reach it.
@@ -2374,7 +2388,7 @@ describe('check-fault-cases · the difficulty distribution is a property of the 
   });
 });
 
-describe('check-fault-cases · a key nothing cites has to say why it is there', () => {
+describe('check-fault-cases · a key nothing cites has to say why it is there', { timeout: SUITE_BUDGET_MS }, () => {
   // The rule's own module is `fault/parameter-notes.ts`, and `parameter-notes.test.ts` holds its six
   // refusals apart from any corpus. What these cases check is the wiring: that the guard asks the
   // question of every annotated case, that its answer reaches the reader as a problem, and that the
@@ -2487,7 +2501,7 @@ describe('check-fault-cases · a key nothing cites has to say why it is there', 
   });
 });
 
-describe('check-fault-cases · a case has to say which reading ranks it', () => {
+describe('check-fault-cases · a case has to say which reading ranks it', { timeout: SUITE_BUDGET_MS }, () => {
   // `main.py` ranks by a column named after the path, so a corpus that stays silent leaves the
   // ranking series to be guessed and a corpus that publishes a share under a `_latency` name hands
   // the consumer a number about a different quantity. The module's own refusals are held apart in
@@ -2586,7 +2600,7 @@ describe('check-fault-cases · a case has to say which reading ranks it', () => 
   });
 });
 
-describe('check-fault-cases · a checkpoint no step cites is a fact two targets never receive', () => {
+describe('check-fault-cases · a checkpoint no step cites is a fact two targets never receive', { timeout: SUITE_BUDGET_MS }, () => {
   // The third reference defect, and the only one whose repair is not in the reference itself. The
   // guard already refused an entity ref no graph answers and a step citing a checkpoint the case
   // does not state. It never asked the reverse, and the corpus held nine states of that defect in
@@ -2650,7 +2664,7 @@ describe('check-fault-cases · a checkpoint no step cites is a fact two targets 
   });
 });
 
-describe('check-fault-cases · a reference is the pair, and the corpus has to be able to publish it', () => {
+describe('check-fault-cases · a reference is the pair, and the corpus has to be able to publish it', { timeout: SUITE_BUDGET_MS }, () => {
   // The three graded exporters write `signal_ref` as `<entity name>|<reading>` -- the pair, which is
   // what all three contracts document and what a reading is identified by. They can only do that when
   // the checkpoint's two fields agree, and they refuse the whole *case* when they do not, which is
@@ -2733,7 +2747,7 @@ describe('check-fault-cases · a reference is the pair, and the corpus has to be
   });
 });
 
-describe('check-fault-cases · a case has to answer for the modality it does not show', () => {
+describe('check-fault-cases · a case has to answer for the modality it does not show', { timeout: SUITE_BUDGET_MS }, () => {
   // `logs` and `traces` are lists, so "this case has no line" and "nobody filled this in" were the
   // same bytes: 19 of 30 cases carried no `logs` and 25 no `traces`, and the readout printed those as
   // facts about the incidents. The module's own refusals live in `modality-evidence.test.ts`; these

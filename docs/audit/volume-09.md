@@ -4247,3 +4247,169 @@ It also does not establish that `inferFaultCategory` is the right divider in gen
 single statement of "what category does this slug mean", measured at 19 of 19 and 22 of 22 in
 `fault/category-derivation.ts`, and using it here means the runner and the ingest read one vocabulary instead
 of two. A label it maps to `unknown` still takes the suite's default, which is the case finding 268 was about.
+
+## Finding 344 — the corpus has eleven fault types, and this repository could name six
+
+v3.34 closed on a measurement it could not take:
+
+> It does not establish that the shipped RCAEval corpus contains a resource fault in its RE3 slice. All 735
+> cases round-trip, and no reading here says what their categories are.
+
+That sentence was the round's own open item, and it was the second time the same gap had been named: finding
+343's fix rests on "RE3 is the code-level slice", and nothing here had ever read a category off a case. The
+categories were being read off **suite names** — `RE` plus a digit — which is a statement about a directory's
+parent, not about the fault it holds.
+
+### What the corpus says, measured
+
+GROUP BY category over the 735 published cases, before any change in this round:
+
+```
+resource 360, network 240, unknown 135
+```
+
+**135 of 735 cases (18.4%) had no category.** Not "a category we guessed wrong" — `unknown`, the value
+`inferFaultCategory` returns when no keyword matches. Two families:
+
+| family | cases | `inferFaultCategory` | what the corpus calls it |
+| --- | --- | --- | --- |
+| `socket` | 45 | `unknown` | the fourth **resource** fault |
+| `f1`…`f5` (and `f3_1`) | 90 | `unknown` | the five **code-level** faults |
+
+Both are named by the corpus's own paper, §3.2, which is the sentence this repository was missing:
+
+> We introduce four resource faults into the running container (i.e., service instance) using stress-ng:
+> CPU hog (CPU), Memory leak (MEM), Disk stress (DISK), and Socket stress (SOCK).
+
+> We modify the source code of random services to introduce five bugs commonly found in open-source
+> projects: Incorrect parameter values (F1), Missing parameters (F2), Missing Function Call (F3), Incorrect
+> Return Values (F4), and Missing Exception Handlers (F5).
+
+So `socket` is a resource fault upstream and `unknown` here — and the `-socket` case is not a near miss of an
+existing keyword, which is why it survived every reading this tree takes. And `f1`…`f5` are not five spellings
+of one thing: they are five distinct fault kinds, and the shipped pipeline could say only `code`, only because
+`scripts/check-official.mjs` stamped it from the suite, and it said `code` for all 90 with no way to tell F4
+(incorrect **return values**) from F1 (incorrect **parameter values**).
+
+### The fix is a table that may only add
+
+`packages/core/src/fault/corpus-fault-taxonomy.ts` holds the eleven rows, each with the corpus's own name for
+the fault, and the citation for the names. It is **one-directional**, and the direction is the whole design:
+
+```
+where inferFaultCategory returns a category   -> it decides; the table supplies only the name
+where it returns unknown                      -> the table may decide
+```
+
+The one direction is asserted (`corpus-fault-taxonomy.test.ts`, "never contradicts the classifier where the
+classifier speaks"), because a second table over the same words is how two readings drift: a table that could
+overrule the classifier would make every disagreement between them look like a property of the corpus.
+
+`describeCorpusFault` returns which reading ran — `classifier`, `taxonomy`, `unknown` — so the claim is
+printed rather than argued. The census counts the three:
+
+```
+CENSUS 735 case(s) in 3 suite(s), 12 fault type(s): resource 405, network 240, code 90
+CENSUS unnameable 0 case(s)
+```
+
+405 − 360 = 45 and 90 − 0 = 90: the 135 `unknown` cases are gone, and every one of them went to the category
+the corpus's own paper gives it.
+
+### The label the paper does not name
+
+One of the ninety RE3 directories is `RE3-TT/ts-route-service_f3_1/{1,2,3}`: a fault label carrying an
+instance suffix, which is a spelling the paper's `F1`…`F5` list does not contain. It is read as F3, and the
+rule that allows it is stated and tested — a stem is accepted **only** when what follows it is a number:
+
+```
+f3_1      -> f3   (Missing Function Call)
+cpu_delay -> undefined
+f3_extra  -> undefined
+```
+
+Without the floor, `cpu_delay` would read as a CPU hog and the network fault it names would vanish from every
+count. With it, the corpus's 90 RE3 cases are read as six spellings of five faults rather than as one word.
+
+### What changed in the runner, and why it is narrower
+
+`scripts/check-official.mjs` no longer takes the suite's word for the category:
+
+```js
+// before (v3.34)                          // after (v3.35)
+entry.suite === 'RE3'                      inferFaultCategory(entry.faultType) === 'unknown'
+  && inferFaultCategory(...) === 'unknown'   && corpusFault.category !== 'unknown'
+  ? { faultCategory: 'code' }                ? { faultCategory: corpusFault.category }
+```
+
+The new line is strictly narrower. On the shipped corpus both fire for all 90 RE3 cases, so no verdict moves.
+On a corpus whose RE3 label is neither a category nor a taxonomy token, the old line stamped `code` and the
+case scored; the new line stamps nothing, the export refuses the case, and the refusal travels as a skip the
+ledger can see. Measured on a one-case corpus with the label `zzz`:
+
+```
+ROUNDTRIP SKIP   1/1 RE3-OB/emailservice_zzz/1  reason=RE3 targets code-level faults only
+CENSUS unnameable 1 case(s): zzz (1)
+ROUNDTRIP ACCOUNTED 1 = 0 round-tripped + 1 refused by contract
+```
+
+That is the falsifiable difference between the two versions, and it is one test
+(`refuses a case whose fault label nothing here can name`).
+
+### What this does not establish
+
+It does not establish that `socket` *should* be a resource fault in this repository's own vocabulary rather
+than in the corpus's. `CATEGORY_TERMS` and the classifier's keyword table are unchanged; the taxonomy is a
+reading of a *published corpus*, and the classifier is the reading of a *slug a person wrote*. Those are
+different questions and this round did not merge them, which is why the 45 socket cases are named by the
+taxonomy rather than by adding `socket` to a keyword list that would then also match every slug containing
+the word.
+
+It also does not establish the counts are stable. They are a property of nine archives at nine digests, and
+`golden-master/corpus-census.json` records which digest each row came from so a future run can say *which*
+archive moved rather than only that the total did.
+
+## Finding 345 — the corpus was censused from 1.19 MB of 5.16 GB, and the 736th directory turned up
+
+The instrument is in the finding because the counts are only as good as it.
+
+### A zip states its own contents in a block at the end
+
+Every archive ends with a central directory listing each entry's name, size and offset — 24–139 KB per
+archive, contiguous, and addressable by an HTTP range request. Measured over the nine RCAEval archives,
+`scripts/read-remote-index.mjs` reads all nine lists for **1 190 358 bytes of 5 161 758 943** — 0.023 %, in
+63 seconds — against 5.2 GB of download and ~38 GB of extraction for the same names.
+
+Two things about that reader are facts about the host rather than choices:
+
+- **It names itself.** The corpus host answers `403` to Node's default `User-Agent: node` and `206` to an
+  agent that identifies itself — measured across `curl`, `Wget`, `node-fetch` and this script's own string,
+  all served, with the default refused. A reader that sent no agent would fail in a way that reads as an
+  outage.
+- **It refuses zip64 by name.** All nine archives use 32-bit offsets (the largest, 2.8 GB, holds 1 201
+  entries), so the locator-and-record path has no archive to be tested against. Refusing it with a sentence
+  is a supported-scope statement; reading it with an untested branch would be a guess wearing the same
+  clothes.
+
+### The 736th directory
+
+Parsing the nine lists for the file only a case has — `inject_time.txt` — gives **736** directories for a
+corpus the README calls **735** cases:
+
+```
+RE1-OB 125  RE1-SS 125  RE1-TT 125
+RE2-OB  91  RE2-SS  90  RE2-TT  90
+RE3-OB  30  RE3-SS  30  RE3-TT  30
+```
+
+`RE2-OB/checkoutservice_cpu/multi-source-data/` is the extra one. Its run component is not a number; it holds
+a `.DS_Store`; and its sibling is `multi-source-data.zip`. It is a hand-made bundle committed beside the case
+it was cut from, and it carries the marker file, so anything that walks for `inject_time.txt` sees a 91st case.
+
+Our reader has always refused it — `parseRcaEvalPath` requires the instance component to be digits — which is
+why every round trip this repository has ever run reports 735. **It was right by a rule nobody had written
+down.** A reader that had keyed on anything else would have scored the bundle as a fourth repetition of
+`checkoutservice_cpu`, and no count in any document would have moved: 736 rounds to 736.
+
+The census now prints it by path (`CENSUS not a case: RE2-OB/checkoutservice_cpu/multi-source-data`) and the
+committed census records it, so the rule is a measurement rather than an accident.

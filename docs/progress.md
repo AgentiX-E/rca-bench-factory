@@ -1205,13 +1205,23 @@ settle.
   directory names now wins over the suite's default, the export's own `skipped` entry
   is what the gate reads, and `roundTripped + refused === declared` is printed on every
   run as `ROUNDTRIP ACCOUNTED`.
-- **The RE3 slice's own fault categories have never been counted.** v3.34 found that the round
-  trip would score a resource fault at 1.00 inside the one slice whose published rule admits
-  code-level faults only, and fixed it by letting a directory's category win over the suite's
-  default. The evidence is a two-case fixture: all 735 shipped cases round-trip, and no reading
-  this repository takes says what their categories are -- so a resource fault that is now
-  correctly refused would still go uncounted.
-  `[open: nothing here groups the shipped corpus by fault category, so the refusal is correct and the population it acts on is unknown]`
+- **The RE3 slice's own fault categories have now been counted, and the count was worse than
+  "uncounted".** v3.34 found that the round trip would score a resource fault at 1.00 inside the
+  one slice whose published rule admits code-level faults only, and fixed it by letting a
+  directory's category win over the suite's default. The open item was that no reading here said
+  what the cases' categories were. v3.35 took that reading over the nine published archives'
+  central directories -- 1 190 358 bytes of 5 161 758 943, no telemetry downloaded -- and found
+  **135 of 735 cases (18.4%) with no category at all**: 45 `socket` cases (the fourth *resource*
+  fault, per the corpus's own paper) and 90 `f1`…`f5` cases (five distinct *code-level* faults,
+  which this repository called one word, and only because a suite said so). Both families are now
+  named by `fault/corpus-fault-taxonomy.ts`, which may only add to the classifier and never
+  overrule it; the census reads `resource 405, network 240, code 90, unknown 0`. The same walk
+  turned up the corpus's **736th** `inject_time.txt` --
+  `RE2-OB/checkoutservice_cpu/multi-source-data/`, a hand-made bundle with a `.DS_Store` beside
+  it -- which `parseRcaEvalPath` has always refused by requiring a numeric instance. See findings
+  344 and 345.
+  ~~`[open: nothing here groups the shipped corpus by fault category, so the refusal is correct
+  and the population it acts on is unknown]`~~ — Closed by finding 344.
 - **The export enumeration covers the whole package.** `cli/`, `ingest/`,
   `transform/`, `pack/`, `util/`, `llm/`, `fault/`, `evolution/`, `report/` and
   `entity/` were exempted in `UNENUMERATED` module by module, each with a reason
@@ -1287,7 +1297,7 @@ and this table.
 | [volume-06.md](progress/volume-06.md) | 30 | v2.56 | v2.85 |
 | [volume-07.md](progress/volume-07.md) | 21 | v2.86 | v3.06 |
 | [volume-08.md](progress/volume-08.md) | 14 | v3.07 | v3.20 |
-| [volume-09.md](progress/volume-09.md) | 14 | v3.21 | v3.34 |
+| [volume-09.md](progress/volume-09.md) | 15 | v3.21 | v3.35 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

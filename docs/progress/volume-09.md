@@ -1805,9 +1805,9 @@ against, the unconditional fallback and the correct answer were the same value.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **217 files, 5388 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **221 files, 5575 tests passed** (as of this commit) |
+| `core` test suite | **217 files, 5388 tests passed** (as of `22c7eb2`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `22c7eb2`) |
+| repo test suite | **221 files, 5575 tests passed** (as of `22c7eb2`) |
 | new module | `score/roundtrip-account.ts` — 7 tests, 1 runtime export, 2 types |
 | new round-trip cases | **3** (`refuses a resource fault…`, `adds the two halves…`, `prints the accounting on a run that refuses nothing`) |
 | RE3 resource fault, before → after | `PASS oracle=1.00` → `SKIP, reason=RE3 targets code-level faults only` |
@@ -1831,3 +1831,137 @@ against, the unconditional fallback and the correct answer were the same value.
 The corpus, the answer keys, the checkpoints, the published localisation readings (rank 1: 48 of 60), the
 round trip's three target contracts (375 / 270 / 90), the export, the pool's price and every budget the plan
 enforces. This round moved one verdict on one synthetic corpus and one row of the site ledger.
+
+## v3.35 — the corpus has eleven fault types and this repository could name six
+
+v3.34 ended with the sentence that had been the gap for two rounds: *all 735 cases round-trip, and no reading
+here says what their categories are.* This round took that reading, and the answer is not the one the
+sentence assumed — the corpus does not merely have categories this repository had not counted, it has
+**135 cases whose category this repository could not name at all**.
+
+### One: the reading, and why it is cheap
+
+Nine archives, 5 161 758 943 bytes, ~38 GB extracted. Every question about *labels* is answered by a zip's
+central directory — a contiguous block at the end of the file, 24–139 KB per archive — so
+`scripts/read-remote-index.mjs` reads all nine lists for **1 190 358 bytes, 0.023 % of the corpus, in 63
+seconds**. The reader is a range request, a backwards scan for the end-of-central-directory signature, and a
+fixed-count parse; anything that does not parse is an error rather than an empty list, because an empty list
+would read as a corpus with no cases.
+
+Two host facts are in the finding rather than in a comment: the host answers `403` to Node's default
+`User-Agent` and `206` to an agent that names itself (measured over five strings), and none of the nine
+archives needs zip64 — so that path is refused by name instead of shipped untested.
+
+### Two: what it found
+
+`GROUP BY category` over the 735 cases, before anything changed:
+
+```
+resource 360, network 240, unknown 135
+```
+
+The 135 are two families, and the corpus names both in its own paper §3.2, quoted in `corpus-fault-taxonomy.ts`:
+
+| family | cases | the corpus calls it |
+| --- | --- | --- |
+| `socket` | 45 | the fourth **resource** fault (`stress-ng`, inside the container) |
+| `f1`…`f5`, `f3_1` | 90 | the five **code-level** faults, each with its own name |
+
+So the code-level slice was not one fault called "code": it is **five distinct faults**, and the pipeline
+could not tell `f4` (incorrect *return values*) from `f1` (incorrect *parameter values*) — which is the axis
+the next phase of this campaign is about.
+
+### Three: a table that may only add
+
+`fault/corpus-fault-taxonomy.ts` holds the eleven rows and reads a label in two steps, in this order and
+never the other:
+
+```
+inferFaultCategory(type) !== 'unknown'  ->  it decides; the table only supplies the name
+inferFaultCategory(type) === 'unknown'  ->  the table decides
+```
+
+The direction is a test, not a comment ("never contradicts the classifier where the classifier speaks"). The
+census counts which reading ran per row, so `classifier 600 / taxonomy 135 / unknown 0` is printed rather than
+asserted.
+
+`fault/corpus-census.ts` groups a declared set by suite, category and fault type and prints it. It reports
+three things a count cannot: which reading named each fault, the tokens **no** reading names, and the
+directories that carry a case's marker file and are **not** cases.
+
+### Four: the 736th directory
+
+Walking for `inject_time.txt` gives 736 directories for a corpus the README calls 735 cases. The extra one is
+`RE2-OB/checkoutservice_cpu/multi-source-data/` — a run component that is not a number, a `.DS_Store`, and a
+sibling `multi-source-data.zip`. `parseRcaEvalPath` has always refused it because the instance must be digits,
+so every round trip reports 735: **right by a rule nobody had written down**, and invisible, because 736
+rounds to 736. The census prints it by path and `golden-master/corpus-census.json` records it.
+
+### Five: the runner is narrower, and the difference is one case
+
+```js
+// before (v3.34)                              // after (v3.35)
+entry.suite === 'RE3'                          inferFaultCategory(entry.faultType) === 'unknown'
+  && inferFaultCategory(...) === 'unknown'       && corpusFault.category !== 'unknown'
+  ? { faultCategory: 'code' }                    ? { faultCategory: corpusFault.category }
+```
+
+Identical on the shipped corpus — every RE3 label is a taxonomy token — and different on a corpus whose RE3
+label is neither a category nor a token. Measured on a one-case corpus labelled `zzz`:
+
+```
+ROUNDTRIP SKIP   1/1 RE3-OB/emailservice_zzz/1  reason=RE3 targets code-level faults only
+CENSUS unnameable 1 case(s): zzz (1)
+ROUNDTRIP ACCOUNTED 1 = 0 round-tripped + 1 refused by contract
+```
+
+v3.34 stamped that case `code` and scored it. The new line stamps nothing, and the refusal travels as a skip
+the ledger can see. One test (`refuses a case whose fault label nothing here can name`) is the difference.
+
+### Six: a starvation budget, measured rather than assumed
+
+`background-telemetry.test.ts` reported `Test timed out in 5000ms` on one of its four corpus checks during
+this round's first full-suite run: 226 files, four workers on a four-CPU quota, every test passing. The check
+costs **364 ms** standalone and **5 002 ms** in that run. That is not work; it is scheduling, and the file
+already had the shape that makes it happen — four `spawnSync` calls to `check-fault-cases.mjs`.
+
+The remedy is the one `timeout-budget.test.ts`'s second arm prescribes rather than a smaller fixture: a suite
+budget of `30_000`, stated once for the file, with the measurement recorded in that gate's table. No assertion
+changed.
+
+### Readings
+
+> Ledger for `v3.35`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **222 files, 5456 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **226 files, 5643 tests passed** (as of this commit) |
+| new modules | `fault/corpus-fault-taxonomy.ts` (3 runtime exports, 2 types), `fault/corpus-census.ts` (2 runtime exports, 4 types) |
+| new scripts | `scripts/read-remote-index.mjs`, `scripts/census-corpus.mjs` |
+| new tests | **62** across five files, plus 2 round-trip cases |
+| corpus census, before → after | `resource 360, network 240, unknown 135` → `resource 405, network 240, code 90` |
+| fault types named | 6 of 11 → **11 of 11** (12 tokens including `f3_1`) |
+| the corpus, as bytes | **735 cases** from **1 190 358 of 5 161 758 943 bytes** (0.023 %) |
+| directories that are not cases | **1**, named by path |
+| failure sites | **103** across 54 of 72 scripts; **103 proved, 0 unannotated** (was 99 / 52 of 70) |
+| audits | 1–**345**, **342 findings** (absent: 118, 132–133) |
+| progress volumes | **9** (this one, now 15 rounds: v3.21–v3.35) |
+
+### Left open
+
+- **The taxonomy's names are transcribed from a paper, not measured from the archives.** The *tokens* are read
+  off nine central directories; the *names* — "Incorrect Return Values" for `f4` — come from §3.2 and one
+  worked example in the corpus's own notebook, which is the strongest source that exists for them.
+  `[open: nothing in the corpus states f4's human name in a file; a reader has to trust the citation]`
+- **`socket` is named by the taxonomy and still `unknown` to the classifier.** That is deliberate — they answer
+  different questions — but it means a user-written slug containing "socket" is still `unknown`, and the
+  census's 11-of-11 is a statement about the corpus.
+  `[open: two vocabularies now exist and only one of them reads the corpus]`
+
+### Unchanged
+
+The corpus, the answer keys, the checkpoints, the localisation readings (rank 1: 48 of 60), the round trip's
+three target contracts (375 / 270 / 90), the export, the pool's price, and every budget the plan enforces.
+This round moved one refusal on one synthetic corpus, added a reading, and added four failure sites.

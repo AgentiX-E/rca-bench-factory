@@ -350,6 +350,13 @@ function suiteBudget(source: string): number {
  * needs in order to disagree with the decision rather than re-derive it.
  */
 const SUITE_BUDGET_MS: Readonly<Record<string, { measured: string }>> = {
+  'background-telemetry.test.ts': {
+    measured:
+      '364 ms for the check with the budget, 1 344 ms for the file standalone; reported at ' +
+      '5002 ms in a full-suite run of 226 files on a four-CPU quota, every test passing. The four ' +
+      'checks in that suite each spawn `check-fault-cases.mjs`, so the file is scheduling-sensitive ' +
+      'by construction rather than slow',
+  },
   'gate-sites-are-proven.test.ts': {
     measured:
       '4 / 50 / 44 ms per test and 476 ms per file standalone under v8 coverage; ' +

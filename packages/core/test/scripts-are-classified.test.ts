@@ -99,6 +99,28 @@ const REGISTER: Record<string, Entry> = {
       'tree that spawns it, because the live form needs a token and a network.',
   },
 
+  'census-corpus.mjs': {
+    class: 'gate',
+    why:
+      'It exits 1 when a fault type appears that nothing in this repository can name, 2 when its input ' +
+      'cannot be read or declares no cases, so it is a gate by the inventory rule. ' +
+      '`census-corpus-script.test.ts` spawns it for every exit it owns. It is the reading finding 343 ' +
+      'turned on -- a category read from a suite name rather than from a case -- so its failure mode is ' +
+      'the one that matters: a corpus whose faults land in a bucket labelled "we do not know" while every ' +
+      'figure grouped by category silently averages over them.',
+  },
+
+  'read-remote-index.mjs': {
+    class: 'gate',
+    why:
+      'It exits 3 on a malformed invocation, 2 on bytes that are not a readable zip or an archive that ' +
+      'needs a zip64 central directory, and 1 when the host refuses after retrying, so it is a gate by ' +
+      'the inventory rule -- the same class as `fetch-official.mjs`, which reads the same host. ' +
+      '`read-remote-index.test.ts` spawns it over a zip built by `zip` and a range-honouring server, so ' +
+      'every exit it owns is driven, including the refusal that is this script\'s supported-scope ' +
+      'statement rather than a transport failure.',
+  },
+
   'check-fault-cases.mjs': {
     class: 'gate',
     why:

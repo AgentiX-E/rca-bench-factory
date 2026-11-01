@@ -888,6 +888,22 @@ export type {
   UnscorableCase,
 } from './fault/pool-width.js';
 
+// The corpus's own fault taxonomy, and the two families the general classifier cannot name:
+// `socket` (a resource fault upstream, `unknown` here) and `f1`…`f5` (five distinct code-level
+// faults, of which this repository could previously say only "code", and only by coining it).
+export {
+  describeCorpusFault,
+  RCAEVAL_CORPUS_FAULTS,
+  RCAEVAL_FAULT_TAXONOMY_SOURCE,
+  readCorpusFault,
+} from './fault/corpus-fault-taxonomy.js';
+export type { CorpusFault, CorpusFaultDescription } from './fault/corpus-fault-taxonomy.js';
+
+// What the published corpus contains, by fault category -- the reading that finding 343 turned on
+// and that no document in this repository had ever taken.
+export { censusCorpus, describeCensus } from './fault/corpus-census.js';
+export type { CategoryTally, CensusCase, CensusRow, CorpusCensus } from './fault/corpus-census.js';
+
 // Why the answer is not at rank 1, when it is not: a louder component, a tie broken by name, or a
 // candidate that is a part of the answer. Only the first is evidence a benchmark can rest on.
 // Whose line it is: a log checkpoint names an entity, the line it cites was written by one, and

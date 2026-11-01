@@ -38,9 +38,12 @@
  * round trip reads whatever the operator fetched, so its case count is a fact
  * about that corpus and not something to pin.
  *
- * Every line the round trip adds is prefixed `ROUNDTRIP`, so the nine verdict
- * lines above it stay parseable by the same readers and the two modes cannot be
- * confused in a log.
+ * Every line the round trip adds is prefixed, so the nine verdict lines above it
+ * stay parseable by the same readers and the two modes cannot be confused in a
+ * log. The prefix is `ROUNDTRIP` for everything this mode decides, and `CENSUS`
+ * for the one block it shares with `scripts/census-corpus.mjs` -- reused verbatim
+ * rather than respelled, because a second spelling of the same table is how two
+ * readers of it come to disagree.
  *
  *   node scripts/check-official.mjs
  *   node scripts/check-official.mjs --official-dir /tmp/official --cases /tmp/cases.json
@@ -61,7 +64,10 @@ import { fileURLToPath } from 'node:url';
 
 import {
   accountRoundTrip,
+  censusCorpus,
   compareModalityTables,
+  describeCensus,
+  describeCorpusFault,
   describeModalityComparison,
   exportForScoreTarget,
   inferFaultCategory,
@@ -1115,6 +1121,11 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
     droppedContext.columns += adapted.context.columns;
   }
 
+  // What the corpus says this case's fault is, before anything is stamped on it. Computed
+  // for every case, not only for RE3: `socket` is a RE2 fault the general classifier cannot
+  // name either, and the same rule has to hold for both.
+  const corpusFault = describeCorpusFault(entry.faultType);
+
   const ingested = ingestPrimeDataset(adapted.files, {
     dataset: 'rcaeval',
     system: 'rcaeval',
@@ -1123,22 +1134,28 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
         caseId: entry.caseId,
         component: entry.component,
         faultType: entry.faultType,
-        // RE3 is the code-level slice, and its directories label the fault by an
-        // index (`f1`…`f5`) that carries no category -- `inferFaultCategory('f1')`
-        // is `unknown`, correctly -- so the suite is the only statement of the
-        // category the corpus makes. Without this the RE3 export refuses every case
-        // in the slice that exists to exercise it (finding 268).
+        // Only when the label itself states no category, and only with a category the
+        // corpus's own taxonomy states. Two written rules, both narrower than the one
+        // they replace:
         //
-        // **And only when the directory says nothing.** A category the name carries
-        // wins over the suite's default, because the alternative is the script
-        // overruling the corpus: `RE3-TT/ts-order-service_cpu/1` says `cpu`, and
-        // stamping it `code` round-tripped it `oracle=1.00` inside the one slice
-        // whose published rule admits code-level faults only -- the target's own
-        // contract, waived by its caller, with nothing printed (finding 343).
-        // Consulted first, the export refuses the case and the refusal travels as a
-        // skip the ledger can see.
-        ...(entry.suite === 'RE3' && inferFaultCategory(entry.faultType) === 'unknown'
-          ? { faultCategory: 'code' }
+        //   - the **label** wins when it carries a category. `RE3-TT/ts-order-service_cpu/1`
+        //     says `cpu`, and stamping it `code` round-tripped it `oracle=1.00` inside the
+        //     one slice whose published rule admits code-level faults only -- the target's
+        //     own contract, waived by its caller, with nothing printed (finding 343).
+        //   - the **taxonomy** decides what an otherwise unreadable label means. Until this
+        //     round the fallback was the suite: every RE3 case with an unreadable label got
+        //     `code`, which was right for `f1`…`f5` by coincidence of the corpus and wrong
+        //     in principle. `f1`…`f5` are five *distinct* code-level faults the corpus names
+        //     in its own paper, and `RE3-TT/ts-route-service_f3_1/1` spells one of them with
+        //     an instance suffix; both are read by `corpus-fault-taxonomy.ts`, which cites
+        //     the sentence it reads them from.
+        //
+        // What is left over is a label no reading names, and that case is now *not* stamped:
+        // the export refuses it and the refusal travels as a skip the ledger can see, which
+        // is a statement about the corpus. Stamping it `code` was a statement about the
+        // suite, made on behalf of a case nobody had read.
+        ...(inferFaultCategory(entry.faultType) === 'unknown' && corpusFault.category !== 'unknown'
+          ? { faultCategory: corpusFault.category }
           : {}),
         injectTime: entry.injectTime,
         pathPrefixes: [entry.pathPrefix],
@@ -1450,6 +1467,24 @@ if (declared.length > 0 && !account.accounted) {
 }
 
 emitScoreReport();
+// What this corpus contains, by fault category, on every run.
+//
+// The round trip reports 735 scores and, until now, nothing about what those 735 cases
+// *inject*: v3.34's fix turned on the sentence "RE3 is the code-level slice", and no reading
+// in this repository had ever checked it against a case. `census-corpus.mjs` takes the same
+// census as a gate over the archives; this prints it wherever `--official-dir` points, so the
+// two agree by construction rather than by both being written down.
+if (declared.length > 0) {
+  const census = censusCorpus({
+    cases: (descriptors.cases ?? []).map((entry) => ({
+      caseId: entry.caseId,
+      // A descriptor written by hand may omit the suite; the case id always carries it.
+      suite: entry.suite ?? String(entry.caseId).split('-')[0],
+      faultType: entry.faultType,
+    })),
+  });
+  for (const line of describeCensus(census)) console.log(line);
+}
 // Printed on the passing path too. Before this the equality existed only as a
 // failure condition, so it was evaluated only on the runs that failed -- which, on
 // every corpus this repository ships, meant never.
