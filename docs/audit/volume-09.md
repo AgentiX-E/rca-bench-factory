@@ -4099,3 +4099,132 @@ the site from the derivation, so `gate-sites-are-proven.test.ts`'s byte-identica
 that loses its failure status. That catch is static, and it is why this finding quotes **89** from the
 0-mutant but treats the **88** from the 44-mutant as the sharper number — a different failure code leaves
 the site list untouched, so only a test that runs the script can object.
+
+## Finding 343 — the RE3 slice's category came from the suite, so a resource fault scored 1.00 inside the slice that excludes it
+
+Finding 342 ended with a contradiction it could not resolve: the enumeration gate compared `roundTripped`
+against `declared`, which makes every case the target refuses by contract a gap, while the skip paragraph
+two hundred lines above says such a case "is not a pass and not a failure". The finding said the branch was
+unreachable on the shipped corpus and left the decision open, with the note that the fix "needs a fixture
+corpus whose target refuses a case".
+
+This round went looking for that fixture and found something upstream of it: **the runner could not produce
+a refusal at all**, and the reason it could not is a defect of its own.
+
+### The line that overruled the corpus
+
+```js
+...(entry.suite === 'RE3' ? { faultCategory: 'code' } : {}),
+```
+
+The fallback exists for a real problem. RE3's directories label the fault by an index — `RE3-TT/ts-route-service_f3_1/1`
+— and `inferFaultCategory('f3_1')` is `unknown`, correctly: the token carries no keyword. Without the suite's
+statement of the category, `exportRcaEval` refuses every RE3 case, because it admits an RE3 case only when
+`fault.category === 'code'` (finding 268: ninety cases were being dropped by a reader that never told the
+target what the class was).
+
+But it was applied to **every** RE3 case alike, including the ones whose directory names a category of its
+own. Measured before the change, on a corpus holding one case, `RE3-TT/ts-order-service_cpu/1`:
+
+```
+ROUNDTRIP PASS   1/1 RE3-TT/ts-order-service_cpu/1  target=rcaeval-re3  oracle=1.00 signals=82
+```
+
+A CPU fault in the slice whose published rule admits code-level faults only, scored 1.00. The one contract
+that target exists to enforce was waived by the script that invokes it, and the waiver printed nothing that
+said so. That is worse than the contradiction finding 342 found, because a contradiction at least fails
+loudly once something reaches it; this was a green line over a population the target would have refused.
+
+### What the name says now wins
+
+```js
+...(entry.suite === 'RE3' && inferFaultCategory(entry.faultType) === 'unknown'
+  ? { faultCategory: 'code' }
+  : {}),
+```
+
+Two corpora, two verdicts, same code:
+
+| corpus | before | after |
+| --- | --- | --- |
+| `RE3-OB/emailservice_f1/1` (the label is an index) | `PASS … oracle=1.00` | `PASS … oracle=1.00` — unchanged, finding 268 holds |
+| `RE3-OB/emailservice_cpu/1` (the label is `cpu`) | `PASS … oracle=1.00` | `SKIP … reason=RE3 targets code-level faults only` |
+
+The refusal is not a new mechanism: `exportRcaEval` already wrote it down in `ExportOutcome.skipped`, the
+field whose own doc comment says a caller that takes only `files` "scores a population it cannot name". The
+round trip took only `files`.
+
+### Which made finding 342's branch reachable, and it failed
+
+With a refusal in the corpus for the first time, the enumeration gate ran — and reported:
+
+```
+ROUNDTRIP FAILED
+ROUNDTRIP   - 1 case(s) declared but 0 round-tripped, and no finding names the difference
+```
+
+There was no gap. There was one case, named, with the exporter's sentence beside it. The gate's second clause
+was false, and it was the only clause that mattered: the count differed because a **contract** said so.
+
+The decision finding 342 left open is therefore settled, and by the weaker of its two branches: a refusal the
+**exporter** names is accounted for. Not "a case the target might have refused" — the gate reads
+`exported.skipped` and takes the reason from there, which is the difference between an inference and a
+citation.
+
+### Three reversions, and two of them changed nothing
+
+The repair was made in four edits, and each was reverted on its own to see what the suite would notice. The
+answers are the finding's own quality report:
+
+| reverted edit | effect on the 61-test round-trip file |
+| --- | --- |
+| the category fallback (unconditional again) | **2 tests fail** — the RE3 resource case passes again |
+| the gate's equality (`roundTripped === declared`) | **2 tests fail** — the refusal is reported as a gap again |
+| `allowEmptyReason` restored on the per-case call | **61 pass** |
+| `skipped = report.caseCount === 0` (no refusal read) | **61 pass** |
+
+The last two are cleanups, not repairs, and this finding says so rather than counting four. What they change
+is who is allowed to testify: `allowEmptyReason: 'the round trip names the single target under test'` is a
+statement about the **other eight** targets, and accepting it for this one let `status` read `skipped` for an
+exporter that had written nothing at all; `refusal` replaces "the report looks empty" with "the exporter
+named this case", which is the same move the ledger makes everywhere else. Neither changes a byte of output
+on any corpus this repository ships, which is exactly why they need the measurement rather than an argument.
+
+### The gate stopped being a branch and became a value
+
+`score/roundtrip-account.ts` (new, 7 tests) holds the arithmetic: `accountRoundTrip({declared, roundTripped,
+refused})` returns `{accounted, line, gap}`. The script keeps one `if` whose only job is to exit.
+
+The reason is the one that made the site ledger's new row an `exempt`: **the branch cannot be taken on
+purpose.** Every path that drops a case records a failure first, so a run that reaches the gate and fails it
+means a path was added that drops a case silently — and there is no input to write for a path that does not
+exist. Extracting the sum gives the testable part a signature; what cannot be tested is the exit, which is
+true of all 99 sites.
+
+The equality is also printed on the passing path, which is new:
+
+```
+ROUNDTRIP ACCOUNTED 735 = 735 round-tripped + 0 refused by contract
+```
+
+Before this it existed only as a failure condition, so it was evaluated only on the runs that failed — on
+every corpus here, never. A gate read only when it fires is a gate whose arithmetic nobody has checked.
+
+### The ledger moved by one row, and the row is honest
+
+`golden-master/gate-sites.json` re-derived: **99 sites, 92 `proved`, 7 `exempt`** — the old `check-official.mjs:1378`
+row is gone with its condition, and `:1449` takes its place as the seventh exemption, with the reason written
+where the other six keep theirs. The proved count went **down by one**, which is the correct direction for a
+row that turns out to be an invariant rather than a judgement.
+
+### What this does not establish
+
+It does not establish that the shipped RCAEval corpus contains a resource fault in its RE3 slice. All 735
+cases round-trip, and no reading here says what their categories are — the fallback only fires on a corpus
+that has both shapes, and the evidence for the fix is a two-case fixture. What it establishes is that the
+runner **would** have accepted one at 1.00 and cannot now.
+
+It also does not establish that `inferFaultCategory` is the right divider in general. It is the repository's
+single statement of "what category does this slug mean", measured at 19 of 19 and 22 of 22 in
+`fault/category-derivation.ts`, and using it here means the runner and the ingest read one vocabulary instead
+of two. A label it maps to `unknown` still takes the suite's default, which is the case finding 268 was about.

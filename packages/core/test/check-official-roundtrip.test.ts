@@ -1658,4 +1658,119 @@ describe('scripts/check-official.mjs · the RE3 slice, whose fault label is an i
     // skip is what the same corpus produced while the category was unknown.
     expect(result.stdout).not.toMatch(/ROUNDTRIP SKIP/);
   });
+
+  /**
+   * The other direction, and no corpus in this repository had ever taken it.
+   *
+   * The suite's fallback is for a label that says nothing (`f1`). Applied to a
+   * label that *does* say something it becomes an override, and the runner's
+   * version applied it to every RE3 case alike: `RE3-OB/emailservice_cpu/1` -- a
+   * resource fault inside the slice whose published rule admits code-level faults
+   * only -- round-tripped `oracle=1.00`. The one contract that target exists to
+   * enforce was waived by its caller, and the waiver printed nothing.
+   *
+   * The reading below is the fix's own claim, in two numbers: the export declines
+   * the case with its own sentence, and the enumeration gate counts that refusal as
+   * accounted for rather than as a gap nobody named.
+   */
+  it('refuses a resource fault in the RE3 slice, and counts the refusal as accounted for', async () => {
+    const root = freshRoot();
+    const caseId = 'RE3-OB/emailservice_cpu/1';
+    writeRe3Case(root, caseId);
+    const cases = join(scratch, 're3-resource.json');
+    writeFileSync(
+      cases,
+      JSON.stringify({
+        schema: 'rca-bench-rcaeval-cases/1',
+        counts: { RE1: 0, RE2: 0, RE3: 1 },
+        cases: [
+          {
+            caseId,
+            component: 'emailservice',
+            faultType: 'cpu',
+            injectTime: new Date(1_700_000_000_000).toISOString(),
+            pathPrefix: `${caseId}/`,
+            suite: 'RE3',
+          },
+        ],
+      }),
+    );
+
+    const result = await run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    // The reason is the exporter's sentence. A paraphrase would leave the reader
+    // unable to tell a target's contract from a case whose telemetry was empty.
+    expect(result.stdout).toContain('reason=RE3 targets code-level faults only');
+    // The negative control is the defect: this corpus used to score 1.00 here.
+    expect(result.stdout).not.toMatch(/ROUNDTRIP PASS .*target=rcaeval-re3/);
+    expect(result.stdout).toContain('ROUNDTRIP ACCOUNTED 1 = 0 round-tripped + 1 refused by contract');
+  });
+
+  /**
+   * Both halves of a slice that holds both, in one run.
+   *
+   * The single-case tests above each pin one verdict; this one pins that the gate's
+   * equality is a sum rather than a substitution. Counting refusals as accounted for
+   * could be implemented by counting them as round-tripped -- the same total, and a
+   * report that says two cases were scored by a rule that scored one.
+   */
+  it('adds the two halves rather than folding one into the other', async () => {
+    const root = freshRoot();
+    const indexed = 'RE3-OB/emailservice_f1/1';
+    const resource = 'RE3-OB/emailservice_cpu/1';
+    writeRe3Case(root, indexed);
+    writeRe3Case(root, resource);
+    const cases = join(scratch, 're3-mixed.json');
+    writeFileSync(
+      cases,
+      JSON.stringify({
+        schema: 'rca-bench-rcaeval-cases/1',
+        counts: { RE1: 0, RE2: 0, RE3: 2 },
+        cases: [
+          {
+            caseId: indexed,
+            component: 'emailservice',
+            faultType: 'f1',
+            injectTime: new Date(1_700_000_000_000).toISOString(),
+            pathPrefix: `${indexed}/`,
+            suite: 'RE3',
+          },
+          {
+            caseId: resource,
+            component: 'emailservice',
+            faultType: 'cpu',
+            injectTime: new Date(1_700_000_000_000).toISOString(),
+            pathPrefix: `${resource}/`,
+            suite: 'RE3',
+          },
+        ],
+      }),
+    );
+
+    const result = await run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.stdout).toContain('ROUNDTRIP ACCOUNTED 2 = 1 round-tripped + 1 refused by contract');
+    expect(result.stdout).toMatch(/ROUNDTRIP PASS .*emailservice_f1/);
+    expect(result.stdout).toMatch(/ROUNDTRIP SKIP .*emailservice_cpu/);
+  });
+
+  /**
+   * The equality is printed on the passing path too.
+   *
+   * Before the fix it existed only as a failure condition, so it was evaluated only
+   * on runs that failed -- which, on every corpus this repository ships, meant never.
+   * A gate that is only read when it fires is a gate whose arithmetic nobody has
+   * checked; `1 = 1 + 0` on a green run is the same expression, evaluated.
+   */
+  it('prints the accounting on a run that refuses nothing', async () => {
+    const root = freshRoot();
+    writeCase(root, 'RE2-ob-cpu_1');
+    const cases = join(scratch, 're2-accounted.json');
+    writeCases(cases, ['RE2-ob-cpu_1']);
+    const result = await run(['--official-dir', root, '--cases', cases]);
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.stdout).toContain('ROUNDTRIP ACCOUNTED 1 = 1 round-tripped + 0 refused by contract');
+  });
 });

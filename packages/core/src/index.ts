@@ -535,6 +535,8 @@ export {
 export type { ChecksumReport, ScoreCheck, ScoreReport, StructureReport } from './score/score.js';
 export { SCORE_TARGET_IDS } from './score/targets.js';
 export type { ScoreTargetId } from './score/targets.js';
+export { accountRoundTrip } from './score/roundtrip-account.js';
+export type { RoundTripAccount, RoundTripTally } from './score/roundtrip-account.js';
 export { exportForScoreTarget, EXPORTERS, scoreTargetInvocation } from './score/dispatch.js';
 
 export {

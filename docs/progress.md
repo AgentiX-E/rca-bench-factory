@@ -1197,8 +1197,21 @@ settle.
   with a diagnosis -- `check-official.mjs:1378` is reachable only by a case its target
   skips *by contract*, and the file's own skip paragraph says such a case "is not a
   pass and not a failure" while the enumeration gate counts it as an unnamed gap.
-  See finding 342.
-  `[open: the enumeration gate and the skip paragraph disagree about whether a contract skip is a gap, and deciding that is a behaviour change that needs a fixture corpus whose target refuses a case]`
+  See finding 342. ~~`[open: the enumeration gate and the skip paragraph disagree about
+  whether a contract skip is a gap, and deciding that needs a fixture whose target
+  refuses a case]`~~ — Closed by finding 343, which found that the runner could not
+  produce a refusal at all: `suite === 'RE3'` stamped `code` on every case, so a CPU
+  fault in the code-only slice round-tripped `oracle=1.00` (measured). The category a
+  directory names now wins over the suite's default, the export's own `skipped` entry
+  is what the gate reads, and `roundTripped + refused === declared` is printed on every
+  run as `ROUNDTRIP ACCOUNTED`.
+- **The RE3 slice's own fault categories have never been counted.** v3.34 found that the round
+  trip would score a resource fault at 1.00 inside the one slice whose published rule admits
+  code-level faults only, and fixed it by letting a directory's category win over the suite's
+  default. The evidence is a two-case fixture: all 735 shipped cases round-trip, and no reading
+  this repository takes says what their categories are -- so a resource fault that is now
+  correctly refused would still go uncounted.
+  `[open: nothing here groups the shipped corpus by fault category, so the refusal is correct and the population it acts on is unknown]`
 - **The export enumeration covers the whole package.** `cli/`, `ingest/`,
   `transform/`, `pack/`, `util/`, `llm/`, `fault/`, `evolution/`, `report/` and
   `entity/` were exempted in `UNENUMERATED` module by module, each with a reason
@@ -1274,7 +1287,7 @@ and this table.
 | [volume-06.md](progress/volume-06.md) | 30 | v2.56 | v2.85 |
 | [volume-07.md](progress/volume-07.md) | 21 | v2.86 | v3.06 |
 | [volume-08.md](progress/volume-08.md) | 14 | v3.07 | v3.20 |
-| [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
+| [volume-09.md](progress/volume-09.md) | 14 | v3.21 | v3.34 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

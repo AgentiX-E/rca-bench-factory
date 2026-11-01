@@ -114,6 +114,7 @@ const ENUMERATED_MODULES = [
   'score/dispatch.ts',
   'score/modalities.ts',
   'score/official.ts',
+  'score/roundtrip-account.ts',
   'score/score.ts',
   'score/targets.ts',
   'export/aiops2025.ts',
@@ -238,6 +239,8 @@ const EXEMPT_EXPORTS: Record<string, string> = {
   'export/loader-read.ts::LoaderRead': 'type-only declaration; erases at runtime, so no consumer can name it',
   'export/loader-read.ts::CandidatePool': 'type-only declaration; erases at runtime, so no consumer can name it',
   'export/rcaeval.ts::RcaEvalOutcome': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'score/roundtrip-account.ts::RoundTripAccount': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'score/roundtrip-account.ts::RoundTripTally': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::SignalKind': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::LogSeverity': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::SpanStatus': 'type-only declaration; erases at runtime, so no consumer can name it',
@@ -555,6 +558,10 @@ const TESTED = [
   'COLUMN_TRANSFORMS',
   'compareModalityTables',
   'describeModalityComparison',
+  // score/roundtrip-account.ts -- the enumeration gate's arithmetic, extracted
+  // because the branch it feeds cannot be taken on purpose (finding 343). One
+  // runtime export and two types.
+  'accountRoundTrip',
   // score/official.ts
   'OFFICIAL_FACETS',
   'OFFICIAL_METRICS',

@@ -248,7 +248,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 917,
+      "line": 919,
       "condition": "value === undefined || value.startsWith('--')",
       "diagnostic": "error: ${flag} requires a value",
       "status": "proved",
@@ -256,7 +256,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 978,
+      "line": 980,
       "condition": "failures.length > 0",
       "diagnostic": "- ${f}",
       "status": "proved",
@@ -264,7 +264,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 997,
+      "line": 999,
       "condition": "!existsSync(officialDir)",
       "diagnostic": "Fetch the corpus first: node scripts/fetch-official.mjs --anchor rcaeval-re2 --out /tmp/official",
       "status": "proved",
@@ -272,7 +272,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 1002,
+      "line": 1004,
       "condition": "!existsSync(casesPath)",
       "diagnostic": "Generate it first: node scripts/gen-rcaeval-cases.mjs --official-dir /tmp/official",
       "status": "proved",
@@ -280,7 +280,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 1360,
+      "line": 1415,
       "condition": "roundTripFailures.length > 0",
       "diagnostic": "ROUNDTRIP ${roundTripped} of ${declared.length} declared case(s) round-tripped;",
       "status": "proved",
@@ -288,11 +288,11 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 1378,
-      "condition": "declared.length > 0 && roundTripped !== declared.length",
-      "diagnostic": "\\nROUNDTRIP FAILED\\nROUNDTRIP - ${declared.length} case(s) declared but ${roundTripped} round-tripped,",
-      "status": "proved",
-      "provedBy": "packages/core/test/check-official-roundtrip.test.ts"
+      "line": 1449,
+      "condition": "declared.length > 0 && !account.accounted",
+      "diagnostic": "\\nROUNDTRIP FAILED\\nROUNDTRIP - ${account.gap}",
+      "status": "exempt",
+      "reason": "`scripts/check-official.mjs`'s enumeration gate: it exits only when a declared case is neither round-tripped, nor refused by the target's own contract, nor recorded as a failure -- and every path that drops a case records a failure first, which is the invariant the line states. So no input can be aimed at it: a run that reaches it means a path was added that drops a case silently, and there is nothing to write a fixture for. What can be tested is the arithmetic, and it is -- `roundtrip-account.test.ts` holds `accountRoundTrip` to seven cases, and the same equality is printed as `ROUNDTRIP ACCOUNTED` on every run, which is where the passing path evaluates it."
     },
     {
       "script": "scripts/check-open-list.mjs",

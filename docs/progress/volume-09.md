@@ -1677,9 +1677,9 @@ case, so this round writes the diagnosis and leaves the code alone.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **216 files, 5375 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **220 files, 5562 tests passed** (as of this commit) |
+| `core` test suite | **216 files, 5375 tests passed** (as of `459d6a3`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `459d6a3`) |
+| repo test suite | **220 files, 5562 tests passed** (as of `459d6a3`) |
 | new cases | `audit-citations.test.ts` +1, `pack-verify-script.test.ts` +1 |
 | proved sites caught by the test the ledger names | **88 of 93** at `exit(44)`, **89 of 93** at `exit(0)` |
 | ... after this round's two cases | **90** at `exit(44)`, **91** at `exit(0)` |
@@ -1704,3 +1704,119 @@ metric's own width; none of them was touched this round.
 The corpus, the answer keys, the checkpoints, the published localisation readings (rank 1: 48 of 60), the
 round trip (375 / 270 / 90), the three graded target contracts, the export, the pool's price and every
 budget the plan enforces. This round added two test cases and two measurements; it moved no answer.
+
+## v3.34 — the slice that admits code faults only was scoring a resource fault at 1.00
+
+v3.33 ended with a contradiction it deliberately did not fix: the enumeration gate compared
+`roundTripped` against `declared`, so every case the target refuses by contract counted as an unnamed gap,
+while the skip paragraph above it said such a case "is not a pass and not a failure". The finding left the
+decision open and asked for "a fixture corpus whose target refuses a case".
+
+Looking for that fixture found something upstream of it: the runner **could not produce a refusal at all**,
+and the reason is a defect of its own.
+
+### One: the fallback that became an override
+
+```js
+...(entry.suite === 'RE3' ? { faultCategory: 'code' } : {}),
+```
+
+The fallback exists for a real problem — RE3's directories label the fault by an index (`f1`…`f5`), and
+`inferFaultCategory('f1')` is `unknown`, correctly, so without the suite's statement every RE3 case is
+refused (finding 268). But it was applied to **every** RE3 case alike. Measured on a corpus holding one case:
+
+```
+ROUNDTRIP PASS   1/1 RE3-TT/ts-order-service_cpu/1  target=rcaeval-re3  oracle=1.00 signals=82
+```
+
+A CPU fault, scored 1.00, inside the one slice whose published rule admits code-level faults only. The
+contract the target exists to enforce was waived by the script that invokes it, and the waiver printed
+nothing. That is worse than the contradiction v3.33 found: a contradiction at least fails loudly once
+something reaches it.
+
+### Two: the name now wins, in both directions
+
+```js
+...(entry.suite === 'RE3' && inferFaultCategory(entry.faultType) === 'unknown'
+  ? { faultCategory: 'code' }
+  : {}),
+```
+
+| corpus | before | after |
+| --- | --- | --- |
+| `RE3-OB/emailservice_f1/1` (label is an index) | `PASS … oracle=1.00` | `PASS … oracle=1.00` — finding 268 holds |
+| `RE3-OB/emailservice_cpu/1` (label is `cpu`) | `PASS … oracle=1.00` | `SKIP … reason=RE3 targets code-level faults only` |
+
+The refusal is not a new mechanism: `exportRcaEval` already wrote it into `ExportOutcome.skipped`, the field
+whose doc comment says a caller taking only `files` "scores a population it cannot name". The round trip took
+only `files`.
+
+### Three: which made v3.33's branch reachable, and it failed
+
+```
+ROUNDTRIP FAILED
+ROUNDTRIP   - 1 case(s) declared but 0 round-tripped, and no finding names the difference
+```
+
+There was no gap. There was one case, named, with the exporter's sentence beside it. So the decision v3.33
+left open is settled on the weaker branch: **a refusal the exporter names is accounted for**, and the gate
+takes the reason from `exported.skipped` rather than inferring it from a report that came back empty.
+
+The arithmetic moved out of the script into `score/roundtrip-account.ts` (7 tests), because the branch
+cannot be taken on purpose — every path that drops a case records a failure first, so there is no input to
+write for the path that does not. What the module can be tested on is the sum, the sentence and the gap. The
+equality is also printed on the passing path now, which is new:
+
+```
+ROUNDTRIP ACCOUNTED 735 = 735 round-tripped + 0 refused by contract
+```
+
+### Four: three reversions, and two of them changed nothing
+
+Each edit was reverted on its own, against the 61-test round-trip file:
+
+| reverted edit | effect |
+| --- | --- |
+| the category fallback (unconditional again) | **2 tests fail** |
+| the gate's equality (`roundTripped === declared`) | **2 tests fail** |
+| `allowEmptyReason` restored on the per-case call | **61 pass** |
+| `skipped = report.caseCount === 0` (refusal not read) | **61 pass** |
+
+The last two are cleanups, not repairs, and this round counts them as cleanups. What they change is who may
+testify: `'the round trip names the single target under test'` is a statement about the **other eight**
+targets, and accepting it for this one let `status` read `skipped` for an exporter that had written nothing;
+`refusal` replaces "the report looks empty" with "the exporter named this case". Neither moves a byte on any
+corpus this repository ships — which is precisely why they were measured rather than argued.
+
+### Readings
+
+> Ledger for `v3.34`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **217 files, 5388 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **221 files, 5575 tests passed** (as of this commit) |
+| new module | `score/roundtrip-account.ts` — 7 tests, 1 runtime export, 2 types |
+| new round-trip cases | **3** (`refuses a resource fault…`, `adds the two halves…`, `prints the accounting on a run that refuses nothing`) |
+| RE3 resource fault, before → after | `PASS oracle=1.00` → `SKIP, reason=RE3 targets code-level faults only` |
+| enumeration gate | `roundTripped === declared` → `roundTripped + refused === declared`, printed on every run |
+| failure sites | **99** across 52 of 70 scripts; **92 proved, 7 exempt** (was 93 / 6) |
+| audits | 1–**343**, **340 findings** (absent: 118, 132–133) |
+| progress volumes | **9** (this one, now 14 rounds: v3.21–v3.34) |
+
+### Left open
+
+- **The shipped RCAEval corpus's RE3 categories are unmeasured.** All 735 cases round-trip and nothing here
+  says what their categories are; the fix's evidence is a two-case fixture, and it establishes that the
+  runner would have accepted a resource fault at 1.00, not that the corpus contains one.
+  `[open: the corpus's own fault categories are not in any reading this repository takes]`
+- **The two cleanups in this round have no test that distinguishes them.** Both revert green. They are
+  justified by what they make impossible, not by a reading.
+  `[open: a change whose justification is "who may testify" cannot be falsified by an output that is byte-identical either way]`
+
+### Unchanged
+
+The corpus, the answer keys, the checkpoints, the published localisation readings (rank 1: 48 of 60), the
+round trip's three target contracts (375 / 270 / 90), the export, the pool's price and every budget the plan
+enforces. This round moved one verdict on one synthetic corpus and one row of the site ledger.

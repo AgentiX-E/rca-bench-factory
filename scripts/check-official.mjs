@@ -60,9 +60,11 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  accountRoundTrip,
   compareModalityTables,
   describeModalityComparison,
   exportForScoreTarget,
+  inferFaultCategory,
   ingestPrimeDataset,
   isVocabularyMember,
   MISSING_VALUE_TOKENS,
@@ -1072,6 +1074,15 @@ if (declared.length > 0) {
 
 let roundTripped = 0;
 /**
+ * Cases the target refused by its own contract, each with the exporter's reason.
+ *
+ * Kept as a list rather than a count because the count is what the enumeration
+ * gate needs and the list is what a reader needs: "one case was refused" and "this
+ * case was refused because RE3 admits code-level faults only" are the same fact
+ * with and without the ability to check it.
+ */
+const contractSkips = [];
+/**
  * How much of the corpus described something other than the case's component.
  *
  * A case's table may hold every service in the cluster; only the component's
@@ -1117,7 +1128,18 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
         // is `unknown`, correctly -- so the suite is the only statement of the
         // category the corpus makes. Without this the RE3 export refuses every case
         // in the slice that exists to exercise it (finding 268).
-        ...(entry.suite === 'RE3' ? { faultCategory: 'code' } : {}),
+        //
+        // **And only when the directory says nothing.** A category the name carries
+        // wins over the suite's default, because the alternative is the script
+        // overruling the corpus: `RE3-TT/ts-order-service_cpu/1` says `cpu`, and
+        // stamping it `code` round-tripped it `oracle=1.00` inside the one slice
+        // whose published rule admits code-level faults only -- the target's own
+        // contract, waived by its caller, with nothing printed (finding 343).
+        // Consulted first, the export refuses the case and the refusal travels as a
+        // skip the ledger can see.
+        ...(entry.suite === 'RE3' && inferFaultCategory(entry.faultType) === 'unknown'
+          ? { faultCategory: 'code' }
+          : {}),
         injectTime: entry.injectTime,
         pathPrefixes: [entry.pathPrefix],
         // The declared mapping for every table the case ships. Detection is for
@@ -1185,7 +1207,15 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
   const shape = scoreExport(target, exported.files);
   const report = runAllOfficialRegressions(
     Object.fromEntries(SCORE_TARGET_IDS.map((t) => [t, t === target ? exported.files : {}])),
-    { allowEmptyReason: 'the round trip names the single target under test' },
+    // No `allowEmptyReason` here, and the absence is the fix (finding 343).
+    //
+    // The reason this call used to pass -- "the round trip names the single target
+    // under test" -- explains why the *other* seven targets are empty, which is a
+    // fact about the caller and not about this target. It was accepted for every
+    // target alike, so `status` read `skipped` for an exporter that had written
+    // nothing at all, and the caller then made the same inference a second time
+    // from `caseCount`. What makes an empty read legitimate is decided once,
+    // below, against the answer the exporter itself gave.
   ).find((r) => r.target === target);
 
   if (report === undefined) {
@@ -1196,24 +1226,49 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
 
   const caseReport = report.cases[0];
   const scored = caseReport === undefined ? 0 : caseReport.oracleScore;
-  // RE3 refuses non-code faults, and RCAEval's RE3 slice is exactly the
-  // code-level one. A skip here is the target's own contract, not a pass and not
-  // a failure -- it is reported and not counted.
-  const skipped = report.caseCount === 0;
+  // A target can read zero cases for two reasons, and they are not the same
+  // reason: the target's own contract refused the case, or the export did not
+  // reach it. Only the exporter can tell them apart, because only the exporter
+  // writes down which cases it declined and why -- `ExportOutcome.skipped`, the
+  // field its own doc comment warns a caller not to drop.
+  //
+  // A named refusal is the contract: RE3 admits code-level faults only, so a
+  // resource fault in that slice is not a failed export but a case the slice does
+  // not hold. An empty read with no name beside it is a defect, and reporting it
+  // as a skip is how a case leaves a green run without a line anywhere.
+  const refusal = exported.skipped.find((one) => one.caseId === entry.caseId);
+  const skipped = report.caseCount === 0 && refusal !== undefined;
   const mark = skipped ? 'SKIP' : scored === 1 ? 'PASS' : 'FAIL';
   console.log(
     `ROUNDTRIP ${mark} ${label} target=${target.padEnd(16)} oracle=${scored.toFixed(2)} signals=${signals}`,
   );
 
   if (skipped) {
-    scoreRecords.push({ caseId: entry.caseId, target, status: 'skipped', reason: 'the target refuses this fault class' });
+    // The reason is the exporter's sentence, not a paraphrase of it: a skip that
+    // reads "the target refuses this fault class" for a case dropped because its
+    // telemetry carried no metric names the wrong party.
+    console.log(`ROUNDTRIP SKIP ${label} target=${target} reason=${refusal.reason}`);
+    contractSkips.push({ caseId: entry.caseId, target, reason: refusal.reason });
+    scoreRecords.push({ caseId: entry.caseId, target, status: 'skipped', reason: refusal.reason });
     continue;
   }
 
-  // A skip is not a shape: an RE3 case the exporter refuses writes no files at all,
-  // and judging that empty directory against the layout would report the refusal as
-  // a malformed export.
-  if (!skipped && !shape.passed) {
+  if (report.caseCount === 0) {
+    const reason =
+      `${entry.caseId}: ${target} read no case from the export and the exporter named no reason for it ` +
+      `(it wrote ${String(Object.keys(exported.files).length)} file(s) and declined ` +
+      `${String(exported.skipped.length)} case(s))`;
+    console.log(`ROUNDTRIP FAIL ${label} empty-read`);
+    roundTripFailures.push(reason);
+    scoreRecords.push({ caseId: entry.caseId, target, status: 'failed', reason });
+    continue;
+  }
+
+  // A refusal is not a shape: an RE3 case the exporter declines writes no files at
+  // all, and judging that empty directory against the layout would report the
+  // refusal as a malformed export. Both zero-case paths above `continue` before
+  // this, so what reaches here has files to judge.
+  if (!shape.passed) {
     const failing = shape.checks.filter((c) => !c.passed).map((c) => `${c.id} (${c.detail})`);
     const reason = `${entry.caseId}: the export does not match ${target}'s field contract - ${failing.join('; ')}`;
     console.log(`ROUNDTRIP FAIL ${label} shape=${shape.checks.filter((c) => !c.passed).length}`);
@@ -1367,16 +1422,39 @@ if (roundTripFailures.length > 0) {
 // This is the judgement progress.md states -- a threshold gate prevents
 // regression, an enumeration gate discovers omission -- applied to the one place
 // where the four anchors meet. It is a belt to the braces above: every path that
-// can skip a case already records a failure, so reaching here with a gap means a
-// path was added that does not.
-if (declared.length > 0 && roundTripped !== declared.length) {
-  console.error(
-    `\nROUNDTRIP FAILED\nROUNDTRIP   - ${declared.length} case(s) declared but ${roundTripped} round-tripped, ` +
-      `and no finding names the difference`,
-  );
+// can drop a case records a failure, so reaching here with a gap means a path was
+// added that does not.
+//
+// The arithmetic is not here any more. It is `score/roundtrip-account.ts`, because
+// this branch cannot be taken on purpose: a run that fails it means a path was
+// added that drops a case silently, and there is no input to write for a path that
+// does not exist. Extracting the sum leaves this block holding one decision -- exit
+// or print -- and gives the part that *can* be tested a signature (finding 343).
+//
+// A case the target refused by its own contract counts as accounted for, and the
+// earlier version did not say so: it compared `roundTripped` against `declared`,
+// which made every named refusal a gap as well. The two sentences lived in one
+// file -- the skip above says such a case "is not a pass and not a failure", this
+// gate said it was a difference nobody had named -- and nothing could have noticed,
+// because no corpus the script had ever been run on contained a refusal.
+const account = accountRoundTrip({
+  declared: declared.length,
+  roundTripped,
+  refused: contractSkips.length,
+});
+
+if (declared.length > 0 && !account.accounted) {
+  console.error(`\nROUNDTRIP FAILED\nROUNDTRIP   - ${account.gap}`);
   emitScoreReport();
   process.exit(1);
 }
 
 emitScoreReport();
-console.log(`\nROUNDTRIP PASSED (${roundTripped} case(s) round-tripped through the official layout)`);
+// Printed on the passing path too. Before this the equality existed only as a
+// failure condition, so it was evaluated only on the runs that failed -- which, on
+// every corpus this repository ships, meant never.
+console.log(`\n${account.line}`);
+console.log(
+  `ROUNDTRIP PASSED (${roundTripped} case(s) round-tripped through the official layout` +
+    `${contractSkips.length === 0 ? '' : `, ${contractSkips.length} refused by the target's own contract`})`,
+);

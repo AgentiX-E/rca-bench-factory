@@ -219,6 +219,7 @@ const KNOWN_EXEMPTIONS: readonly string[] = [
   'A probe rather than a gate: `main()` exits non-zero when the built modules deny fewer paths than the inventory expects. `probe-built-module-guards.test.ts` runs it and asserts on the inventory it prints, which is the stronger statement -- the exit is computed from the very numbers that test then reads.',
   '`process.exit(main())`, where `main()` decides from the ceiling it measured. `m1-ceiling-probe.test.ts` drives the probe and asserts on the number it publishes; asserting on this line instead would restate the condition the probe has already evaluated.',
   'The largest probe in the tree, and its exit aggregates several per-type counts. `type-miss-probe.test.ts` runs it and reads those counts directly, so a test pinning this line would be checking a summary of facts the test already holds.',
+  "`scripts/check-official.mjs`'s enumeration gate: it exits only when a declared case is neither round-tripped, nor refused by the target's own contract, nor recorded as a failure -- and every path that drops a case records a failure first, which is the invariant the line states. So no input can be aimed at it: a run that reaches it means a path was added that drops a case silently, and there is nothing to write a fixture for. What can be tested is the arithmetic, and it is -- `roundtrip-account.test.ts` holds `accountRoundTrip` to seven cases, and the same equality is printed as `ROUNDTRIP ACCOUNTED` on every run, which is where the passing path evaluates it.",
 ];
 
 /**
