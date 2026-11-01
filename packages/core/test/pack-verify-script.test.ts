@@ -253,4 +253,21 @@ describe('the pinned pack verification script', () => {
       );
     });
   });
+
+  it('refuses a directory that holds no files, which is the one refusal no pack can produce', () => {
+    // `verify-example-pack.mjs:79` is the only place this gate can say "there is
+    // nothing here". Every case above drives a tree that holds files, so the line was
+    // never entered: changing its `process.exit(1)` to `process.exit(0)` left the whole
+    // suite green, which is a gate that prints its refusal and succeeds anyway. An empty
+    // directory is the cheapest input that reaches it, and the message is asserted
+    // because the verdict is the pair (exit code, sentence).
+    const dir = mkdtempSync(join(tmpdir(), 'verify-pack-empty-'));
+    try {
+      const { output, status } = runVerifier(dir);
+      expect(status).toBe(1);
+      expect(output).toContain('holds no files');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

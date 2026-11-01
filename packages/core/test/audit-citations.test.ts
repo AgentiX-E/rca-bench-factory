@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { dirname, resolve } from 'node:path';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
@@ -100,5 +102,39 @@ describe('a citation of a finding resolves to a heading, or it does not', () => 
     // dense and which numbers are missing.
     expect(result.stdout).toContain('118');
     expect(result.stdout).toContain('133');
+  });
+
+  it('refuses a corpus whose citation names no heading, and says so in the exit code', () => {
+    // `check-citations.mjs:86` is the refusal itself. The case above runs the gate on the
+    // shipped corpus, which passes by construction, so the line was never entered: setting
+    // its `process.exit(1)` to `process.exit(0)` left this whole file green, and a citation
+    // guard that reports its failure and exits 0 is a guard nobody is holding.
+    //
+    // The tree is built rather than borrowed because the gate resolves its corpus from
+    // `dirname(script)/..`; copying the gate and its sibling into a temporary root makes it
+    // read the fixture's documents without a flag existing for the purpose. Two documents
+    // are enough to make the question whole: a heading, and a citation that names a number
+    // the heading set does not contain.
+    const dir = mkdtempSync(join(tmpdir(), 'citations-'));
+    try {
+      mkdirSync(join(dir, 'scripts'), { recursive: true });
+      mkdirSync(join(dir, 'docs'), { recursive: true });
+      for (const name of ['check-citations.mjs', 'audit-citations.mjs']) {
+        writeFileSync(join(dir, 'scripts', name), readFileSync(resolve(ROOT, 'scripts', name), 'utf8'));
+      }
+      writeFileSync(join(dir, 'docs', 'audit.md'), '## Finding 1 — one\n\nclosed by finding 7\n');
+      const result = spawnSync(process.execPath, [join(dir, 'scripts', 'check-citations.mjs')], {
+        cwd: dir,
+        encoding: 'utf8',
+      });
+      expect(result.status, `the gate reported ${result.status}: ${result.stdout}${result.stderr}`).toBe(1);
+      expect(result.stderr).toContain('cites finding 7, which has no heading');
+      expect(result.stderr).toContain('check-citations: FAILED');
+      // The verdict is the pair, so the sum of citations still has to be printed: a refusal
+      // that reported zero citations would be refusing a corpus it never read.
+      expect(result.stderr).toContain('1 citation(s) of 1 number(s)');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

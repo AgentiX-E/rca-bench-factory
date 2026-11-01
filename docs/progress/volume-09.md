@@ -1495,6 +1495,9 @@ now returns `written`, and a skipped case is absent from it because it wrote not
 - **The bounds have never expired.** `[open: `measure-ci-baseline.mjs` refreshes them, and the
   refresh is a deliberate act]`
 
+The four items v3.32 left open stand unchanged, including the corpus-authoring one and the official
+metric's own width; none of them was touched this round.
+
 ### Unchanged
 
 The corpus, the answer keys, the checkpoints, the published localisation readings (rank 1: 48 of 60),
@@ -1576,9 +1579,9 @@ verdict is a battery that CI runs as a step rather than as a unit test — which
 
 | item | value |
 | --- | --- |
-| `core` test suite | **216 files, 5373 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **220 files, 5560 tests passed** (as of this commit) |
+| `core` test suite | **216 files, 5373 tests passed** (as of `a533032`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `a533032`) |
+| repo test suite | **220 files, 5560 tests passed** (as of `a533032`) |
 | `fault/pool-width.ts` | new: 13 tests, 3 runtime exports, 7 type-only |
 | rank 1, as shipped → services only | **48 of 60 → 52**, and 30 → **28** scorable cases |
 | top-3, as shipped → services only | **60 → 56** |
@@ -1600,8 +1603,104 @@ verdict is a battery that CI runs as a step rather than as a unit test — which
   evidence. `[open: the corpus-authoring round is still unstarted, and the reasons say it should not be]`
 - **The bounds have never expired.** `[open: `measure-ci-baseline.mjs` refreshes them, and the refresh is a deliberate act]`
 
+The four items v3.32 left open stand unchanged, including the corpus-authoring one and the official
+metric's own width; none of them was touched this round.
+
 ### Unchanged
 
 The corpus, the answer keys, the checkpoints, the published localisation readings (rank 1: 48 of 60),
 the round trip (375 / 270 / 90), the three graded target contracts, the export, and every budget the
 plan enforces. This round added a measurement and a sentence; it moved no answer.
+
+## v3.33 — the ledger's word was measured against the thing it claims
+
+v3.32 ended by quoting "93 of 93 proved sites are reached by the test that proves them" and adding the
+caveat it could not discharge: the instrument establishes that the line ran, not that the test asserted
+what it prints. This round asks both halves properly, and the first answer is that the sentence was
+sharper than its instrument.
+
+### One: the range is the file for a third of the sites
+
+The reading asked whether the innermost V8 range covering a site's byte offset had a non-zero count. V8
+gives a block hierarchy per **function**; module-level code is one range for the whole body, so a
+`process.exit(1)` inside `if (… ) { … }` at module scope reads "reached" the moment the script starts.
+
+| reading | value |
+| --- | --- |
+| proved sites | **93** |
+| innermost range is a branch block | **60** |
+| innermost range is the module body | **33** |
+| script never loaded | **0** |
+
+Indentation was the first guess at a static shortcut, and it is wrong: `check-fault-cases.mjs:90` is
+indented inside an `if` and still gets the module range, while `apply-pins.mjs:62` is indented the same
+and gets an 83-byte block. The predicate is "inside a function", and it agrees with the prediction on
+**60 of 93** — the guess is the reading's opposite number.
+
+### Two: the falsifiable question needs no coverage
+
+Change the exit and run the test the ledger names. Two mutants, because they answer different things:
+
+| mutant | what a failure means | caught |
+| --- | --- | --- |
+| `process.exit(44)` — a different failure code | the test pins *which* exit ran | **88 of 93** |
+| `process.exit(0)` — the failure becomes a success | the test notices the gate stopped failing | **89 of 93** |
+
+Four sites survive both, and each turned out to be something different:
+
+| site | what it was | outcome |
+| --- | --- | --- |
+| `check-citations.mjs:86` | no test drove a broken corpus | **one case added**, mutation now caught |
+| `verify-example-pack.mjs:79` | no test passed a directory with no files | **one case added**, mutation now caught |
+| `check-cli-reference.mjs:51` | `gates-are-testable.test.ts` drives it; the ledger names a different file | recorded, no test needed |
+| `check-official.mjs:1378` | nothing drives it — see below | left open with a diagnosis |
+
+The two new cases assert the exit code *and* the sentence, because the verdict is the pair; each was
+re-mutated afterwards and now catches.
+
+### Three: the fourth is two sentences in one file disagreeing
+
+`check-official.mjs:1378` is the enumeration gate — "declared but round-tripped, and no finding names
+the difference". Reaching it needs a case that is declared, not round-tripped, and records no failure.
+Every skip path records one, except the contract skip two hundred lines above, whose paragraph says the
+skip "is not a pass and not a failure". A case its target refuses by contract does exactly that: it is
+declared, it does not increment `roundTripped`, and it pushes no failure. The gate would then report that
+"a path was added that does not" about the case the file has just said is not a failure.
+
+Unreachable on the shipped corpus (all 735 score), and not a dead branch — a contradiction. Which
+sentence is right is a behaviour decision, and the fix needs a fixture corpus whose target refuses a
+case, so this round writes the diagnosis and leaves the code alone.
+
+### Readings
+
+> Ledger for `v3.33`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **216 files, 5375 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **220 files, 5562 tests passed** (as of this commit) |
+| new cases | `audit-citations.test.ts` +1, `pack-verify-script.test.ts` +1 |
+| proved sites caught by the test the ledger names | **88 of 93** at `exit(44)`, **89 of 93** at `exit(0)` |
+| ... after this round's two cases | **90** at `exit(44)`, **91** at `exit(0)` |
+| sites whose coverage range is the module body | **33 of 93** |
+| failure sites | **99** across 52 of 70 scripts; **93 proved, 6 exempt** |
+| audits | 1–**342**, **339 findings** (absent: 118, 132–133) |
+| progress volumes | **9** (this one, now 13 rounds: v3.21–v3.33) |
+
+### Left open
+
+- **The enumeration gate and the skip paragraph disagree.** `[open: the enumeration gate and the skip paragraph disagree about whether a contract skip is a gap, and deciding that is a behaviour change that needs a fixture corpus whose target refuses a case]`
+- **`provedBy` names a test that mentions the script, not the test that drives it.** One site is observed
+  only by `gates-are-testable.test.ts`. `[open: the column records a mention, and the file that drives a gate through a fixture table is not the file the deriver can see]`
+- **The per-site run is a measurement, not a CI step.** 93 sub-runs, 6 m 28 s, against a batteries job
+  already at 25 of 30 minutes. `[open: a per-site mutation pass costs a third of the batteries budget and the ledger is checked by hand at each revision]`
+
+The four items v3.32 left open stand unchanged, including the corpus-authoring one and the official
+metric's own width; none of them was touched this round.
+
+### Unchanged
+
+The corpus, the answer keys, the checkpoints, the published localisation readings (rank 1: 48 of 60), the
+round trip (375 / 270 / 90), the three graded target contracts, the export, the pool's price and every
+budget the plan enforces. This round added two test cases and two measurements; it moved no answer.

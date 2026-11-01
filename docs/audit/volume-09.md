@@ -3965,3 +3965,137 @@ It establishes that the line ran, not that the test asserted what it prints. A s
 reached and whose message is not checked is caught by the deriver's naming half and by nothing here. It
 is a measurement at one revision, not a CI step: 41 sub-runs and about two minutes, against a batteries
 job already spending 21 of its 30 declared minutes.
+
+## Finding 341 — "the line ran" is a claim about a range, and for a third of the sites the range is the file
+
+v3.32 closed finding 340's caveat with a reading: 93 of 93 proved sites are reached by the test that
+names them. The instrument asked whether the innermost V8 range covering the site's offset had a
+non-zero count. That question is only as sharp as the range, and V8 does not always give a small one.
+
+### What the ranges actually are
+
+Every proved site was re-read against the 41 attribution directories, this time keeping the width of
+the innermost covering range and the length of the script:
+
+| reading | value |
+| --- | --- |
+| proved sites | **93** |
+| innermost range is a block, count > 0 | **60** |
+| innermost range is the module body (start 0, end = file length) | **33** |
+| script never loaded by its naming test | **0** |
+
+A block range is a reading: `80 bytes, count 0 or 1` says whether that branch body was entered. A
+module range is not: its count says the body was entered, and a `process.exit(1)` inside an `if` at
+module scope is covered by the body's range, so the site reads "reached" the moment the script starts.
+
+The 33 are not a stylistic minority. They are exactly the scripts written in "declarations, then a
+single guarded exit" style:
+
+| script | sites read as module ranges |
+| --- | --- |
+| `check-fault-cases.mjs` | 6 |
+| `check-official.mjs` | 5 |
+| `fetch-official.mjs` | 4 |
+| `check-battery-budget.mjs` | 3 |
+| `verify-example-pack.mjs` | 3 |
+| sixteen others | 12 |
+
+### Why indentation does not predict it
+
+The first guess was "top-level statements are the coarse ones", and it is wrong: `check-fault-cases.mjs:90`
+is indented two spaces inside `if (index.schema !== INDEX_SCHEMA)` and still gets the module range, while
+`apply-pins.mjs:62` is indented the same and gets an 83-byte block. The discriminator is not where the
+statement sits in the source but whether it sits inside a **function**: V8 emits a block hierarchy per
+function, and module-level branches collapse into the body.
+
+Measured against the prediction, indent-zero-vs-not agrees on **60 of 93** — which is to say the guess
+is the reading's opposite number, not a shortcut to it.
+
+### What this changes about finding 340
+
+The claim "93 of 93 reached" is true as stated and weaker than it reads: for 33 sites the reading cannot
+distinguish "the exit ran" from "the script started". The honest version of 340's sentence is
+"93 of 93 are reached at the granularity the range allows, 60 of them at block granularity".
+
+The repair is not a better range — V8 has no finer block for module-level code — it is a different
+instrument, and finding 342 is that instrument.
+
+## Finding 342 — the exit is the thing to change, and four proved sites survive being turned into a success
+
+A coverage reading answers "did this offset execute". The falsifiable question is whether the test the
+ledger names *notices* when the line's verdict is taken away. That needs no coverage: change the exit
+and run the test.
+
+### The measurement
+
+Each of the 93 proved sites was mutated on its own line and its naming test run alone, in a `try/finally`
+whose restore is verified byte for byte against a hash taken before the write. Two mutants, because they
+answer different questions:
+
+| mutant | what a failure means | caught |
+| --- | --- | --- |
+| `process.exit(44)` — still a failure, different code | the test pins *which* exit ran | **88 of 93** |
+| `process.exit(0)` — the failure becomes a success | the test notices the gate stopped failing | **89 of 93** |
+
+The second is the one worth reporting: a gate that prints its refusal and exits 0 is the defect the whole
+ledger exists to prevent, and 4 of 93 sites could be given that defect with the suite green.
+
+### The four, and what each turned out to be
+
+| site | its naming test | after the mutation | what it was |
+| --- | --- | --- | --- |
+| `check-citations.mjs:86` | `audit-citations.test.ts` | green | no test drove a broken corpus |
+| `verify-example-pack.mjs:79` | `pack-verify-script.test.ts` | green | no test passed a directory with no files |
+| `check-cli-reference.mjs:51` | `check-cli-reference.test.ts` | green | `gates-are-testable.test.ts` drives it, and the ledger names the other file |
+| `check-official.mjs:1378` | `check-official-roundtrip.test.ts` | green | nothing drives it; see below |
+
+Two were real gaps and are closed by this round: one case added to each naming test — a temporary tree
+whose citation names a heading that does not exist, and an empty directory — each asserting the exit code
+*and* the sentence, because the verdict is the pair. Both mutations are caught now, verified by re-running
+the same mutation against the new tests.
+
+The third is a naming defect rather than a gap: `gates-are-testable.test.ts` builds an empty reference and
+asserts the refusal, so the site is observed — by a file the ledger does not name. `provedBy` records "a
+test that mentions the script", and mentioning is not driving.
+
+### The fourth is a contradiction inside one file, found by the mutation
+
+`check-official.mjs:1378` is the enumeration gate:
+
+```js
+if (declared.length > 0 && roundTripped !== declared.length) {
+  console.error('ROUNDTRIP FAILED ... and no finding names the difference');
+  process.exit(1);
+}
+```
+
+Reaching it needs a case that is declared and not round-tripped *and* records no failure. Every skip path
+records one — with a single exception, two hundred lines above:
+
+> A skip here is the target's own contract, not a pass and not a failure — it is reported and not counted.
+
+A case its target skips by contract (RE3 refuses a non-code fault) pushes a `skipped` score record and no
+`roundTripFailure`, and does not increment `roundTripped`. So it satisfies the gate's condition exactly:
+`declared` counts it, `roundTripped` does not, and nothing names the difference. The gate would report
+"a path was added that does not" about a case the file has just finished saying is not a failure.
+
+That is unreachable on the shipped corpus — all 735 cases score — and it is not a dead branch: it is a
+branch whose two conditions disagree with the sentence that defines the skip. **This round does not fix
+it**, because which sentence is right is a behaviour decision (is a contract skip a gap?) and the fix
+needs a fixture corpus whose target refuses a case. It is the first item of the next round, with the
+diagnosis written here.
+
+### Why the per-site run is not a CI step
+
+93 sub-runs of one test each, **6 m 28 s**, against a batteries job that already spends 25 of its 30
+declared minutes. The ledger's shape is unchanged; what changed is that four of its rows were checked
+against the thing they claim. The cheap half — 88 sites caught under `exit(44)` — costs the same and is
+not cheap enough.
+
+### What this does not establish
+
+It does not establish that a caught mutation was caught *behaviourally*: `process.exit(0)` also removes
+the site from the derivation, so `gate-sites-are-proven.test.ts`'s byte-identical check fails for any site
+that loses its failure status. That catch is static, and it is why this finding quotes **89** from the
+0-mutant but treats the **88** from the 44-mutant as the sharper number — a different failure code leaves
+the site list untouched, so only a test that runs the script can object.

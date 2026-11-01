@@ -1184,6 +1184,21 @@ settle.
   "doable and not done" exist under other names. What remains is not a gap in the
   gates but a limit of the measurement: it establishes the line ran, not that the
   test asserted what it prints.
+- **The reading that closed the caveat was sharp for only two thirds of the sites,
+  and four sites survive being turned into a success.** v3.32 asked whether the site's
+  byte offset fell in a V8 range with a non-zero count; for **60** of the 93 proved
+  sites that range is a branch block, and for **33** it is the module body -- a
+  `process.exit(1)` inside a module-level `if` reads "reached" the moment the script
+  starts. The falsifiable question needs no coverage: change the exit and run the test.
+  Under `process.exit(44)` **88 of 93** are caught and under `process.exit(0)` **89**;
+  the four that survive both are closed here by one case each in their naming tests
+  (`check-citations.mjs:86`, `verify-example-pack.mjs:79`), found to be driven by a
+  sibling test the ledger does not name (`check-cli-reference.mjs:51`), or left open
+  with a diagnosis -- `check-official.mjs:1378` is reachable only by a case its target
+  skips *by contract*, and the file's own skip paragraph says such a case "is not a
+  pass and not a failure" while the enumeration gate counts it as an unnamed gap.
+  See finding 342.
+  `[open: the enumeration gate and the skip paragraph disagree about whether a contract skip is a gap, and deciding that is a behaviour change that needs a fixture corpus whose target refuses a case]`
 - **The export enumeration covers the whole package.** `cli/`, `ingest/`,
   `transform/`, `pack/`, `util/`, `llm/`, `fault/`, `evolution/`, `report/` and
   `entity/` were exempted in `UNENUMERATED` module by module, each with a reason
@@ -1259,7 +1274,7 @@ and this table.
 | [volume-06.md](progress/volume-06.md) | 30 | v2.56 | v2.85 |
 | [volume-07.md](progress/volume-07.md) | 21 | v2.86 | v3.06 |
 | [volume-08.md](progress/volume-08.md) | 14 | v3.07 | v3.20 |
-| [volume-09.md](progress/volume-09.md) | 12 | v3.21 | v3.32 |
+| [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
