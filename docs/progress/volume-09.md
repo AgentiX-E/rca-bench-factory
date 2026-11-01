@@ -1788,6 +1788,17 @@ targets, and accepting it for this one let `status` read `skipped` for an export
 `refusal` replaces "the report looks empty" with "the exporter named this case". Neither moves a byte on any
 corpus this repository ships — which is precisely why they were measured rather than argued.
 
+### Five: which corpus the fix is for
+
+The correction changes no verdict on the shipped slice, and that is a measurement rather than a hedge.
+RE3's ninety case directories label their fault with an index — `f1`…`f5`, plus one
+`ts-route-service_f3_1` — and `inferFaultCategory` is `unknown` for every spelling of that form, so the
+fallback still fires for every case there. What changed is the handling of a corpus whose directories do
+name a category, which is what `--official-dir` lets an operator point at.
+
+That is also why the defect survived four rounds of reading this file: on every corpus it had been run
+against, the unconditional fallback and the correct answer were the same value.
+
 ### Readings
 
 > Ledger for `v3.34`.

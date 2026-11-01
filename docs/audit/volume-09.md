@@ -4217,6 +4217,25 @@ row is gone with its condition, and `:1449` takes its place as the seventh exemp
 where the other six keep theirs. The proved count went **down by one**, which is the correct direction for a
 row that turns out to be an invariant rather than a judgement.
 
+### The shipped corpus cannot reach either branch
+
+The fix is a defence, not a repair of something already printed, and the reason fits in one table. RE3's
+ninety case directories label their fault with an index -- `f1`…`f5`, plus one `ts-route-service_f3_1` --
+and `inferFaultCategory` returns `unknown` for every spelling of that form:
+
+| label | `inferFaultCategory` |
+| --- | --- |
+| `f1` `f2` `f3` `f4` `f5` | `unknown` |
+| `f3_1` `f1_1` `f2_1` | `unknown` |
+
+So on the shipped slice the fallback still fires for every case, and the corrected line changes no verdict
+there. What it changes is the handling of a corpus whose directories *do* name a category -- which is what
+`--official-dir` lets an operator point at, and what the fixture above is.
+
+That is also why the defect survived four rounds of reading this file. Every corpus it had ever been run
+on made the unconditional fallback look correct, because on every one of them the fallback and the
+correct answer were the same value.
+
 ### What this does not establish
 
 It does not establish that the shipped RCAEval corpus contains a resource fault in its RE3 slice. All 735
