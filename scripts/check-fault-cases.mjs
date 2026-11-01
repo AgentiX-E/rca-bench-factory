@@ -375,6 +375,15 @@ const localisation = [];
 /** Every baseline run, for the corpus-level question about whether any of them can be wrong. */
 const localisationRuns = [];
 /**
+ * One entry per case for the pool question: both rankings with the kind of every candidate.
+ *
+ * The kinds come from the case's own graph rather than from the export's column heads, because the
+ * question is what a services-only *localiser* would see -- and the loader's `-db` rewrites are a
+ * property of the export, not of the topology. A name the graph does not carry is `absent`, which
+ * is not a service and therefore leaves the pool, which is the honest answer for a name nothing has.
+ */
+const poolCases = [];
+/**
  * Every case that parsed, whether or not it carries telemetry.
  *
  * The distribution of levels is a property of the annotations, and a case with no derived signals
@@ -1266,6 +1275,23 @@ for (const entry of index.cases) {
       displacements: displacements.map((one) => one.kind),
     });
     for (const one of displacements) localisationRuns.push(one);
+    // The pool question, per case: both rankings, and what kind each candidate is. It is asked of
+    // every case that ranked at all -- a case whose answer is not a service belongs here precisely
+    // because it is the one a services-only pool cannot score.
+    const kindByName = new Map(parsedGraph.entities.map((one) => [one.name, one.kind]));
+    const answerName = String(parsedCase.groundTruth.rootCauseComponent);
+    poolCases.push({
+      caseId,
+      answer: answerName,
+      answerKind: kindByName.get(answerName) ?? 'absent',
+      runs: outcomes.map((one) => ({
+        method: one.method,
+        candidates: (one.candidates ?? []).map((candidate) => ({
+          name: candidate.service,
+          kind: kindByName.get(candidate.service) ?? 'absent',
+        })),
+      })),
+    });
     if (
       validity.violations.length === 0 &&
       signalStructure.violations.length === 0 &&
@@ -1549,6 +1575,15 @@ const referenceJoin = { published: 0, joined: 0, byEntity: 0, byContainer: 0, by
  * the files, because RE1 and RE2 both write all thirty and a count of cases would hide that.
  */
 const loaderUse = { tables: 0, cases: new Map(), refused: [], empty: [], candidates: [] };
+/**
+ * What the trim would do to the published localisation reading, measured on every run.
+ *
+ * The export's pool and the localisers' ranking are the same set of names, so the decision to keep
+ * the fifteen non-services has a price and a payoff in the readings this file already prints. Asked
+ * here rather than argued in prose: the last round found two sentences in the docs carrying numbers
+ * that had stopped being true, and a number the guard prints cannot do that.
+ */
+let poolNarrowing = null;
 const SUITE_TARGETS = [['RE1', 'rcaeval-re1'], ['RE2', 'rcaeval-re2'], ['RE3', 'rcaeval-re3']];
 
 // The corpus through the two modules that decide whether it can be evaluated at all. Neither number
@@ -1693,6 +1728,7 @@ if (telemetryCases.length > 0 && firstGraph !== null) {
     problems.push(core.describeRenamedAnswer({ caseId, entity: view.label.service, candidate }));
   }
   loaderUse.pool = core.assessCandidatePool({ candidates: loaderUse.candidates, entities: bundle.graph.entities });
+  if (poolCases.length > 0) poolNarrowing = core.assessPoolNarrowing(poolCases);
 }
 
 if (problems.length > 0) {
@@ -1705,6 +1741,7 @@ if (problems.length > 0) {
   logReferenceJoin();
   logExportReading();
   logLoaderRead();
+  logPoolNarrowing();
   logLocalisationReading();
   logCheckpointCounts();
   console.error(
@@ -1739,6 +1776,17 @@ function logExportReading() {
   if (coverageLine === null) return;
   console.log(`check-fault-cases: coverage ${coverageLine}`);
   console.log(`check-fault-cases: export ${exportLines.join(' · ')}`);
+}
+
+/**
+ * The price of the pool decision, printed beside the reading it would change.
+ *
+ * The sentence comes from `fault/pool-width.ts`, which is where the arithmetic and the wording are
+ * tested; this function only decides not to print when there was nothing to rank.
+ */
+function logPoolNarrowing() {
+  if (poolNarrowing === null) return;
+  console.log(`check-fault-cases: ${core.describePoolNarrowing(poolNarrowing)}`);
 }
 
 /**
@@ -1808,6 +1856,7 @@ logSignalRefUse();
 logReferenceJoin();
 logExportReading();
 logLoaderRead();
+logPoolNarrowing();
 logLocalisationReading();
 logCheckpointCounts();
 

@@ -1464,9 +1464,9 @@ now returns `written`, and a skipped case is absent from it because it wrote not
 
 | item | value |
 | --- | --- |
-| `core` test suite | **215 files, 5356 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **219 files, 5543 tests passed** (as of this commit) |
+| `core` test suite | **215 files, 5356 tests passed** (as of `2463304`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `2463304`) |
+| repo test suite | **219 files, 5543 tests passed** (as of `2463304`) |
 | `export/loader-read.ts` | new: 24 tests, four lines, four sentences, one partition |
 | the loader's unpack, on our paths | **30 of 30** leaf directories hold exactly two names |
 | the loader's baseline, on our tables | **30 of 30** non-empty; **8 rows** at the thinnest |
@@ -1500,3 +1500,108 @@ now returns `written`, and a skipped case is absent from it because it wrote not
 The corpus, the answer keys, the checkpoints, the published localisation readings (rank 1: 48 of 60),
 the round trip (375 / 270 / 90), the three graded target contracts, and every budget the plan
 enforces. This round added a reader and a rule; it moved no answer.
+
+## v3.32 — two decisions that carried a sentence where a number belonged
+
+v3.31 ended with two things decided in prose. The candidate pool stayed wide because "both localisers
+rank every metric-bearing entity, and the published readings come from that same pool", and the failure
+sites were called proved because a test *names* each one. Neither sentence had a number beside it, and
+this round is the bill for both: one decision got a price, the other got an instrument, and both now
+read the same surviving verdict — the pool stays, and every proved site fires.
+
+### One: the pool's price, printed every run
+
+The sentence predicted the trim would cost readings. Ranked both ways over the corpus's 30 cases and two
+baselines each:
+
+| reading | as shipped | services only |
+| --- | --- | --- |
+| rank 1, of 60 runs | **48** | **52** |
+| top-3, of 60 | **60** | **56** |
+| answer absent | **0** | **4** |
+| cases a services-only pool can score | **30** | **28** |
+| pool width, per case | 35–37 names | 35 |
+
+Rank 1 goes *up*, and that is the argument against the trim rather than for it. Six runs move up over
+three cases — `ingest-queue` a message queue over `ingest-writer`, two `search-node-*` pods over
+`search-cluster`, `order-node-5` over `payment-gateway` — and none of them was outside the top-3 before,
+so the four new rank-1 placements are promotions inside a window that already held the answer. A
+benchmark that deletes the louder competitor is a benchmark that stopped asking what those cases ask.
+
+What it costs is two cases: `history-middleware-replica-lag-analytics` answers `analytics-replica`, a
+database, and `history-dependency-upstream-5xx-pricing` answers `tax-calculation`, an external
+dependency. One asks *which replica*, the other asks whether the fault is ours at all; a pool of
+services cannot name either, so the trim does not score them worse, it removes them.
+
+### Two: the price is a line, not a paragraph
+
+`fault/pool-width.ts` holds the filter, the two tallies and the sentence; `check-fault-cases` prints it
+after the pool line:
+
+```
+check-fault-cases: narrowing the pool to services: rank 1 48 of 60 -> 52 of 60, top-3 60 -> 56,
+absent 0 -> 4; 'history-dependency-upstream-5xx-pricing' would stop being scorable (tax-calculation is
+an external dependency), 'history-middleware-replica-lag-analytics' would stop being scorable
+(analytics-replica is a db); 6 run(s) it moves up are promotions inside a top-3 that already held the
+answer, and 4 run(s) lose it outright
+```
+
+The sentence refuses to read as a gain: it names both cases it removes, calls the movements promotions,
+and prints `absent` beside rank 1 so `52` cannot be quoted without `4`. `absent` is not a service in the
+filter either — the loader's own `-db` removal produces names no entity carries, and admitting one would
+re-admit what the partition in finding 338 files as "names that no entity carries".
+
+### Three: the branch half of the site ledger
+
+The open list has carried "the meta-gate proves a gate is caught by at least one test, not that every
+exit has one" since the ledger was built. The deriver attaches a naming test; a name is not an
+execution. V8 writes block coverage per process, including every child the suite spawns, so each of the
+41 naming tests was run alone under its own coverage directory and each site's line converted to a byte
+offset:
+
+| reading | value |
+| --- | --- |
+| proved sites | **93** |
+| reached by their own naming test | **93** |
+| naming test files | **41** |
+| exempt sites that fire anywhere | **1 of 6** (`probe-denial-inventory.mjs:229`) |
+
+So the caveat resolves in the direction nobody had checked: every proved site is reached by the test
+that proves it. The five exempt sites that never fire are the injection harnesses and two probes, whose
+verdict is a battery that CI runs as a step rather than as a unit test — which is what `exempt` means.
+
+### Readings
+
+> Ledger for `v3.32`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **216 files, 5373 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **220 files, 5560 tests passed** (as of this commit) |
+| `fault/pool-width.ts` | new: 13 tests, 3 runtime exports, 7 type-only |
+| rank 1, as shipped → services only | **48 of 60 → 52**, and 30 → **28** scorable cases |
+| top-3, as shipped → services only | **60 → 56** |
+| failure sites | **99** across 52 of 70 scripts; **93 proved, 6 exempt** |
+| proved sites reached by their own test | **93 of 93** |
+| audits | 1–**340**, **337 findings** (absent: 118, 132–133) |
+| progress volumes | **9** (this one, now 12 rounds: v3.21–v3.32) |
+
+### Left open
+
+- **The official metric's own width is upstream's to read.** The export keeps every name; what the
+  scorer does with a ranking 35–37 wide is its decision, and the reading here only prices ours.
+  `[open: whether the official metric trims, widens or keeps the pool is a property of the scorer, and nothing in this repository can measure it]`
+- **Five exempt sites never fire.** They belong to the injection harnesses and two probes, whose verdict
+  is a battery step. `[open: a battery step is a CI run rather than a test that names a site, so the ledger cannot hold them the way it holds the other 93]`
+- **18 of 30 cases still have no log line and 24 no span.** Each of the 18 says why in a sentence that
+  names the mechanism: a fault that degrades without failing, a process killed before it wrote, a
+  counter rather than a line, a line that would restate a declaration. Authoring one would invent
+  evidence. `[open: the corpus-authoring round is still unstarted, and the reasons say it should not be]`
+- **The bounds have never expired.** `[open: `measure-ci-baseline.mjs` refreshes them, and the refresh is a deliberate act]`
+
+### Unchanged
+
+The corpus, the answer keys, the checkpoints, the published localisation readings (rank 1: 48 of 60),
+the round trip (375 / 270 / 90), the three graded target contracts, the export, and every budget the
+plan enforces. This round added a measurement and a sentence; it moved no answer.

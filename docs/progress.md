@@ -1171,15 +1171,19 @@ settle.
   live `kubectl apply --dry-run=server`, so a field renamed upstream would not be
   caught here.
   `[open: no test validates the mapping with a live kubectl apply --dry-run=server, so a field renamed upstream would still not be caught here]`
-- **Five gates are covered by CI running them, not by a test that forces them to
-  fail.** `gates-are-testable.test.ts` proves no gate can be hollowed out, which is
-  a floor. It does not reach every branch: `check-readme-sample.mjs`,
-  `build-example-bundle.mjs` and `gen-examples.mjs` have no test naming them, and the
-  second `exit(1)` of `check-cli-reference.mjs` (the drift report, as opposed to the
-  empty-reference guard) and of `gen-rcaeval-cases.mjs` are unexercised. Closing
-  those means fixtures that build a whole synthetic reference or example tree,
-  which is doable and not done. Recorded rather than implied.
-  `[open: the naming half is closed -- all five gates are now CAUGHT with named failing tests and each has a namesake file -- but the branch half is not: the meta-gate proves a gate is caught by at least one test, not that every exit has one]`
+- ~~**Five gates are covered by CI running them, not by a test that forces them to
+  fail.**~~ **Closed by finding 340**, and not by the fixtures this entry predicted.
+  `gates-are-testable.test.ts` proves no gate can be hollowed out, which is a floor:
+  it says a gate is caught by at least one test, not that every exit has one, and the
+  ledger's `proved` was computed from a test that *names* the site. Measured instead
+  of argued: block coverage for each of the 41 naming tests, run alone, with every
+  site's line converted to a byte offset. **93 of 93 proved sites are reached by the
+  test that proves them**, and 1 of the 6 exempt sites fires anywhere. The three
+  scripts this entry named (`check-readme-sample.mjs`, `build-example-bundle.mjs`,
+  `gen-examples.mjs`) all fire, as do both secondary exits — the fixtures it called
+  "doable and not done" exist under other names. What remains is not a gap in the
+  gates but a limit of the measurement: it establishes the line ran, not that the
+  test asserted what it prints.
 - **The export enumeration covers the whole package.** `cli/`, `ingest/`,
   `transform/`, `pack/`, `util/`, `llm/`, `fault/`, `evolution/`, `report/` and
   `entity/` were exempted in `UNENUMERATED` module by module, each with a reason
@@ -1255,7 +1259,7 @@ and this table.
 | [volume-06.md](progress/volume-06.md) | 30 | v2.56 | v2.85 |
 | [volume-07.md](progress/volume-07.md) | 21 | v2.86 | v3.06 |
 | [volume-08.md](progress/volume-08.md) | 14 | v3.07 | v3.20 |
-| [volume-09.md](progress/volume-09.md) | 11 | v3.21 | v3.31 |
+| [volume-09.md](progress/volume-09.md) | 12 | v3.21 | v3.32 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

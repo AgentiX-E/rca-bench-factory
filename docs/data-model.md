@@ -450,6 +450,25 @@ position, and `check-fault-cases` refuses the first one that is.
 decide whether the loader accepts the corpus: that is the **path token**, which is upstream's table
 and an identity this corpus does not have.
 
+#### Keeping the fifteen has a price, and the guard prints it
+
+"A pool narrower than the readings" is a reason, not a number. Both localisers rank the same names the
+export publishes, so finding 339 asks the corpus what a services-only pool would do:
+
+| reading | as shipped | services only |
+| --- | --- | --- |
+| rank 1, of 60 baseline runs | **48** | **52** |
+| top-3 | **60** | **56** |
+| answer absent | **0** | **4** |
+| cases a services-only pool can score | **30** | **28** |
+
+Rank 1 improves, and that is the argument against the trim: the four placements are promotions inside a
+top-3 that already held the answer, bought by deleting the louder competitor — a message queue in one
+case, two pods in another — while two cases leave the corpus entirely because their answer is a database
+and an external dependency. The filter is `kind === 'service'`, and `absent` is not a service: the
+loader's `-db` rewrites produce exactly such names, and admitting one would re-admit what the trim
+removes. `fault/pool-width.ts` holds the arithmetic and the sentence; `check-fault-cases` prints it.
+
 
 ### `fault.parameters` — the facts a checkpoint can cite
 

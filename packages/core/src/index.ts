@@ -868,6 +868,24 @@ export {
 } from './fault/background.js';
 export type { BackgroundDeclaration, BackgroundSeries } from './fault/background.js';
 
+// What narrowing the candidate pool to services would buy and cost. The export hands the official
+// loader every metric-bearing entity, and the trim is a decision -- so the guard ranks both ways on
+// every run rather than trusting the sentence that used to stand in for the measurement.
+export {
+  assessPoolNarrowing,
+  describePoolNarrowing,
+  narrowToServices,
+} from './fault/pool-width.js';
+export type {
+  PoolCandidate,
+  PoolCase,
+  PoolNarrowing,
+  PoolRun,
+  PoolTally,
+  RunComparison,
+  UnscorableCase,
+} from './fault/pool-width.js';
+
 // Why the answer is not at rank 1, when it is not: a louder component, a tie broken by name, or a
 // candidate that is a part of the answer. Only the first is evidence a benchmark can rest on.
 // Whose line it is: a log checkpoint names an entity, the line it cites was written by one, and

@@ -148,6 +148,7 @@ const ENUMERATED_MODULES = [
   'fault/log-attribution.ts',
   'fault/reading-reference.ts',
   'fault/parameter-notes.ts',
+  'fault/pool-width.ts',
   'fault/answer-presence.ts',
   'fault/sample-coverage.ts',
   'fault/baseline-localiser.ts',
@@ -285,6 +286,13 @@ const EXEMPT_EXPORTS: Record<string, string> = {
   'fault/reading-reference.ts::ReadingCarrier': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/parameter-notes.ts::ParameterNoteFault': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/parameter-notes.ts::ParameterNotesReport': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/pool-width.ts::PoolCandidate': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/pool-width.ts::PoolCase': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/pool-width.ts::PoolNarrowing': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/pool-width.ts::PoolRun': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/pool-width.ts::PoolTally': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/pool-width.ts::RunComparison': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/pool-width.ts::UnscorableCase': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/modality-evidence.ts::ChainStep': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/modality-evidence.ts::EvidenceModality': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/modality-evidence.ts::ModalityAnswer': 'type-only declaration; erases at runtime, so no consumer can name it',
@@ -1080,6 +1088,11 @@ const TESTED = [
   // fault/difficulty.ts
   'difficultyFloor',
   'findDifficultyShortfalls',
+  // fault/pool-width.ts -- what trimming the candidate pool to services would buy and cost, which
+  // v3.31 decided by sentence and finding 339 decided by measurement.
+  'assessPoolNarrowing',
+  'describePoolNarrowing',
+  'narrowToServices',
   // evolution/hitl.ts
   'hitlGateFor',
   // evolution/proposal.ts

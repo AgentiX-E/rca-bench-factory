@@ -3829,3 +3829,139 @@ upstream's table: writing `online-boutique` into a synthetic storefront's path w
 claim an identity it does not have, which is the allow-list this campaign refused twice. The corpus
 answers the half that belongs to the data, the guard measures it, and the refusal — should it ever be
 lifted upstream — is one line of their code, not one of ours.
+
+## Finding 339 — the pool was kept for a reason nobody had priced
+
+v3.31 measured the candidate pool the export hands the official loader — **52 names, 35 a service,
+15 an entity of another kind, 2 that name nothing** — and decided to keep all of them:
+
+> The fifteen are reported, not filtered. `rankServicesByPeakZScore` ranks every entity that carries a
+> metric, and the published localisation readings come from that same pool; an export narrowed to
+> services would be narrower than the readings taken from it.
+
+Every clause of that is true and none of it is a number. The sentence predicts what a trim would cost;
+nothing computed it, so the decision could not be reviewed, and this campaign has now watched two
+decisions go stale in prose — the path token, closed by finding 338, and an open entry carrying v3.26's
+population for four rounds. The repair is the same in both cases: make the guard print the price.
+
+### What the trim would do
+
+Both localisers rank the same names the export publishes, so the question is asked of the corpus with
+no new instrument: rank every case both ways, count, print.
+
+| reading | as shipped | services only |
+| --- | --- | --- |
+| rank 1, of 60 baseline runs | **48** | **52** |
+| top-3, of 60 | **60** | **56** |
+| answer absent from the ranking | **0** | **4** |
+| cases a services-only pool can score | **30** | **28** |
+| pool width, per case | 35–37 names | 35 |
+
+The sentence predicted the readings would get worse. **Rank 1 gets better**, and the reason it does is
+the reason the trim is still wrong.
+
+### Where the four gained placements come from
+
+Six runs move up, over three cases and two baselines each. A rank moves up because a competitor was
+removed, and in all three the removed competitor is an entity of another kind:
+
+| case | louder than the answer | answer | before → after |
+| --- | --- | --- | --- |
+| `history-resource-memory-request-ingest-writer` | `ingest-queue`, a message queue | `ingest-writer` | 2 → 1 |
+| `history-network-partition-search-cluster` | `search-node-4` and `search-node-1`, pods | `search-cluster` | 3 → 1 |
+| `history-network-loss-payment-gateway` | `order-node-5`, a node | `payment-gateway` | 3 → 2 |
+
+Two of the three contribute the four rank-1 placements; the third moves from rank 3 to rank 2 and stops
+there. None of the three was outside the top-3 before, so **top-3 does not improve at all** — the four
+are promotions inside a window that already held the answer. A benchmark that deletes the louder
+competitor is a benchmark that stopped asking the question those three cases exist to ask.
+
+### What it costs
+
+Two cases answer with an entity that is not a service, and a services-only pool cannot name their
+answer at all:
+
+| case | answer | kind |
+| --- | --- | --- |
+| `history-middleware-replica-lag-analytics` | `analytics-replica` | a database |
+| `history-dependency-upstream-5xx-pricing` | `tax-calculation` | an external dependency |
+
+Those two are not accidents of the annotation. One asks *which replica* — the read path's own
+component, not the service in front of it — and the other asks whether the fault is ours at all. Both
+questions are invisible to a pool of services, so the trim does not merely score them worse: it removes
+the cases. That is the cost the sentence was reaching for, and it is 2 cases against 4 placements that
+were already inside a correct top-3.
+
+### Why narrowing cannot reorder the survivors
+
+A ranking here is one statistic per candidate, sorted descending with a name tiebreak, so removing
+entries leaves the survivors in the same order. An answer can therefore only move **up**, or leave
+entirely when the answer itself is not a service. `assessPoolNarrowing` reports the two movements
+separately for that reason, and the printed sentence says outright that the runs it gains are
+promotions — a bare `48 -> 52` reads as an improvement and would be quoted without its price.
+
+### `absent` is not a service
+
+The loader's own `-db` removal produces candidate names the graph does not carry (`billing`, `orders`),
+and the partition in finding 338 already files them as "names that no entity carries". A trim that
+treated an unknown name as a service would re-admit exactly what it exists to remove, so the filter is
+`kind === 'service'` and everything else leaves, including `absent`. The three-case corpus test pins it.
+
+### Where the check lives
+
+`fault/pool-width.ts`: `narrowToServices` (the filter), `assessPoolNarrowing` (both tallies, the gained
+and lost runs, the cases that leave) and `describePoolNarrowing` (the sentence), with 13 tests. The
+guard adds one line to every run of `check-fault-cases`, and a test holds it to the localisation line
+beside it: **the same denominator**, because a share over a different population would be a second
+question wearing the first's name.
+
+### What this does not do
+
+It does not change the export. The decision is still *keep*: an official metric that cannot see the
+database a case answers with is not measuring that case. What changed is that the decision now carries
+its price on every run, so the next round that wants to revisit it starts from 48 → 52 and 30 → 28
+rather than from an adjective.
+
+## Finding 340 — a site "proved" by a test is not yet a site the test reaches
+
+`golden-master/gate-sites.json` holds **99 failure sites across 52 of 70 scripts**: 93 `proved` with the
+test that proves them, 6 `exempt` with a reason. The open list has carried the caveat since the ledger
+was built:
+
+> the meta-gate proves a gate is caught by at least one test, not that every exit has one
+
+The deriver computes `provedBy` by finding a test that *names* the site. A name is not an execution, and
+the difference is the whole of this finding: a test can assert that a message exists, that a script
+contains a branch, or that a fixture matches — and never run the line that prints the diagnostic.
+
+### The measurement
+
+V8 writes block coverage per process, including every child the suite spawns, so the question is
+answerable without touching the gates: for each site, convert its line to a byte offset in the script
+and ask whether the innermost coverage range holding that offset has a non-zero count. Run **each of the
+41 naming tests alone**, under its own coverage directory, so a firing is attributable to the test that
+claims it rather than to a neighbour in the same run.
+
+```
+NODE_V8_COVERAGE=<dir> npx vitest run --root packages/core <one naming test>
+```
+
+| reading | value |
+| --- | --- |
+| proved sites | **93** |
+| reached by their own naming test | **93** |
+| naming test files | **41** |
+| processes that wrote coverage | 1130 over the pool run, 41 directories when attributed |
+| exempt sites that fire anywhere in the pool run | **1 of 6** (`probe-denial-inventory.mjs:229`) |
+
+So the branch half holds at this revision: every proved site is not only named but reached, by the test
+that names it. The 5 exempt sites that never fire belong to scripts whose verdict is a battery — the
+injection harnesses and two probes — and CI runs those as steps rather than as unit tests, which is what
+`exempt` means.
+
+### What it does not establish
+
+It establishes that the line ran, not that the test asserted what it prints. A site whose diagnostic is
+reached and whose message is not checked is caught by the deriver's naming half and by nothing here. It
+is a measurement at one revision, not a CI step: 41 sub-runs and about two minutes, against a batteries
+job already spending 21 of its 30 declared minutes.

@@ -1151,6 +1151,41 @@ describe('check-fault-cases · the corpus through the coverage report and the ex
     expect(Number(lost)).toBe(0);
   });
 
+  it('prices the pool decision against the reading it would change', async () => {
+    // The trim was decided by a sentence in v3.31 -- both localisers rank every metric-bearing
+    // entity, so a services-only export would be narrower than the readings taken from it. A
+    // sentence is reviewable only if the number beside it is, so the guard now ranks both ways and
+    // prints what the trim would buy and cost (finding 339).
+    const result = await run(['--cases', corpus({ signals: signals() })]);
+    expect(result.status, result.out).toBe(0);
+    const narrowing =
+      /narrowing the pool to services: rank 1 (\d+) of (\d+) -> (\d+) of (\d+), top-3 (\d+) -> (\d+), absent (\d+) -> (\d+); (.*?); (.*)$/m.exec(
+        result.out,
+      );
+    expect(narrowing, 'the pool narrowing line is missing from the report').not.toBeNull();
+    const [, before1, total, after1, totalAfter, before3, after3, absentBefore, absentAfter, cost, movement] = narrowing!;
+    // Both baselines rank the one case, so the denominator is two and the two totals agree.
+    expect(Number(total)).toBe(2);
+    expect(Number(totalAfter)).toBe(Number(total));
+    // The same denominator as the localisation line beside it, which is the point of printing this
+    // here: a share over a different population would be a second question wearing the first's name.
+    // The tally is a list of `key: count` and a key with no run behind it is absent rather than
+    // zero, so a fixture whose answer never reaches rank 1 has no `rank 1` entry at all.
+    const localisation = /rankings (\d+)-(\d+) candidate\(s\) wide -- (.*?) of (\d+) baseline run\(s\)/.exec(result.out);
+    expect(localisation, 'the localisation line is missing from the report').not.toBeNull();
+    const rank1 = /(?:^|, )rank 1: (\d+)/.exec(localisation![3]);
+    expect(Number(before1)).toBe(rank1 === null ? 0 : Number(rank1[1]));
+    expect(Number(total)).toBe(Number(localisation![4]));
+    expect(Number(after1)).toBeGreaterThanOrEqual(Number(before1));
+    expect(Number(after3)).toBeLessThanOrEqual(Number(before3));
+    // The fixture answers `checkout-api`, a service, and no candidate is louder than it: nothing to
+    // gain, nothing to lose, and the sentence has to say so rather than print two empty lists.
+    expect(absentBefore).toBe('0');
+    expect(absentAfter).toBe('0');
+    expect(cost).toContain('every case keeps its answer');
+    expect(movement).toContain('no case moves');
+  });
+
   it('says nothing about the loader when no case carries telemetry', async () => {
     // Same rule as the coverage line: a corpus with no signals exports no table, so there is no
     // reading of one, and a line of zeroes would be a measurement of nothing.
@@ -1158,6 +1193,7 @@ describe('check-fault-cases · the corpus through the coverage report and the ex
     expect(result.status, result.out).toBe(0);
     expect(result.out).not.toContain('check-fault-cases: upstream reads');
     expect(result.out).not.toContain('the ranking pool it builds from the columns');
+    expect(result.out).not.toContain('narrowing the pool to services');
   });
 
   it('says nothing about coverage when no case carries telemetry, rather than reporting zeroes', async () => {
