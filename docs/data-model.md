@@ -319,6 +319,59 @@ are two readings of one quantity, and a file that could hold only one of them pe
 not state the case (finding 324). The ambiguity that creates is refused where the entity is
 known -- at the checkpoint -- rather than at the file.
 
+#### The export writes the pair, and the IR keeps it in two fields
+
+The pair above is resolved at the guard. It also has to be *published*, and until finding 336 it
+was not: `signal_ref` reached `itbench`, `openrca2` and `rca100` as the bare metric, while all three
+contracts and the three documents describing them print the pair --
+
+```json
+{ "entity": "service:default/order", "signal_ref": "order|cpu_usage", "comparator": ">", "value": 90, "unit": "%" }
+```
+
+-- and `rca100` scores a submission by the token `signal|comparator|value|unit`, whose published
+example is `order|cpu_usage|>=|90|%`. The qualifier was not decoration; it was the half the
+documents and the exporter disagreed about.
+
+`export/signal-ref.ts` is what combines them: the entity's **name** and the checkpoint's reading,
+joined by `SIGNAL_REF_SEPARATOR`. The name rather than the id, because the id is already published
+beside it (`entity` in `itbench`, `entity_id` in the chain) and a reference that carried
+`service:default/order|cpu_usage` would name the same thing twice and read as neither.
+
+| the checkpoint | what `signal_ref` publishes |
+| --- | --- |
+| `{ entityRef: 'pod:…/search-1', signalRef: 'cluster_members_visible' }` | `search-1|cluster_members_visible` |
+| `{ entityRef: 'container:…/reporting-app', signalRef: 'stack-trace', signalKind: 'log' }` | `reporting-app|stack-trace` |
+| `{ entityRef: 'container:…/checkout-api-app', signalRef: 'cpuLimit', signalKind: 'configuration' }` | `checkout-api-app|cpuLimit` |
+| `{ entityRef: 'service:…/cart-service', signalKind: 'derived', expression: '…' }` | `null` -- it names no single reading |
+
+All four kinds are qualified the same way, because a configuration key and a log id are as much a
+property of the entity as a metric is: two containers both declare `cpuLimit`, and two services both
+log a `stack-trace`. A `derived` checkpoint is the one that publishes nothing, and `null` is an
+answer rather than a failure -- both graded contracts declare the field required and nullable, so it
+is written as the absence it is.
+
+**Five refusals, because a name is not always an answer.** The exporter skips the whole case with the
+sentence, and the builder raises `SignalRefRefusedError` for a caller that never screened it:
+
+| refusal | what is wrong | what the reader does |
+| --- | --- | --- |
+| `unresolved` | the entity is not in the graph | fix `entityRef`, or add the entity |
+| `unnamed` | the entity carries no name | name it; an `entityId` is not a name |
+| `ambiguous` | two entities answer to that name, or to an alias of it | rename one, or the qualifier names both |
+| `emptyRef` | `signalRef` is `''` | write the reading, or drop the field |
+| `preQualified` | the ref already carries an owner | drop the owner; `entityRef` holds it |
+
+`preQualified` is the one that mattered. The golden-master fixture wrote
+`"signalRef": "order|cpu_usage"` -- the *output* form, in the input -- the exporter copied it out,
+and the published example was therefore a photograph of the fixture rather than a rendering of the
+IR: nothing could contradict it, and the 30-case corpus, written to the resolution rule above, held
+bare names. Measured on the corpus, 109 references covered **104** distinct strings; five metric
+names were read on two entities each, and one of those pairs is a case's whole argument -- a
+partition's two halves both report `cluster_members_visible`, which as a bare name arrives at two
+targets as two byte-identical evidence entries. After the qualifier the same 109 references are
+**109** distinct strings.
+
 #### A log checkpoint asserts a containment, and the body is where it is checked
 
 A log line has no magnitude, no unit and no order, so the only relation a checkpoint can

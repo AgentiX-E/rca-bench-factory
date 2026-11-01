@@ -3529,3 +3529,121 @@ two. It does not check that the citation is the *right* step either -- `cp-stale
 could cite step 1 and still parse. That question is the reader's, on the same division of labour
 `sli.none`, `fault.parameterNotes` and `noLogs` already use: the gate establishes that the fact is
 present, unique, resolvable and used; whether it is used well is a judgement about the annotation.
+
+## Finding 336 — the published reference was half a pair, and the example was a photograph of the fixture
+
+`EvidenceCheckpoint` holds the two halves of a series identity in two fields: `entityRef` names the
+thing, `signalRef` names the reading taken on it. `fault/reading-reference.ts` resolves them
+together, which is why the guard can check an annotation like
+`{ entityRef: 'pod:…/search-1', signalRef: 'cluster_members_visible' }` at all.
+
+The three graded exporters copied `signalRef` into `signal_ref` and stopped. All three documents
+describing those contracts print the pair instead:
+
+```json
+{ "entity": "service:default/order", "signal_ref": "order|cpu_usage", "comparator": ">", "value": 90, "unit": "%" }
+```
+
+and `rca100` scores with the token `signal|comparator|value|unit`, whose own published example is
+`order|cpu_usage|>=|90|%` — five parts, the first of which is the pair. So the field the evaluator
+reads was documented as the pair and emitted as the metric alone.
+
+### Why nothing could have noticed
+
+The golden-master fixture wrote the *output* form into the *input*:
+
+```json
+{ "checkpointId": "cp-1", "entityRef": "service:default/order", "signalRef": "order|cpu_usage", … }
+```
+
+The exporter copied it out, the example generator photographed the result, and the three documents
+printed that photograph. Every artefact agreed with every other artefact, and the agreement was
+between a field and itself. Asking the check from the other end — does the IR's `signalRef`
+resolve against the series the case declares? — would have said it does not: the fixture's only
+series is `cpu_usage`, and the checkpoint named `order|cpu_usage`.
+
+The 30-case corpus was written against that resolution rule, not against the example, so it held
+bare metric names. Measured on it, **109 references covered 104 distinct strings**: five metric names
+were read on two entities each.
+
+| metric | carriers | what the collision costs |
+| --- | --- | --- |
+| `cluster_members_visible` | `search-node-1`, `search-node-4` | `cp-members-halved` and `cp-members-other-side` — a partition's two halves, which is the case's whole argument — arrive at two targets as two byte-identical evidence entries |
+| `stale_read_ratio` | `search-node-1`, `search-node-4` | the same pair again, for the deletes that did not replicate |
+| `container_restarts_total` | `shipping-service-0`, `media-transcoder-0`, `notification-worker-0` | three cases' evidence is one string |
+| `process_uptime_seconds` | `shipping-service-app`, `notification-worker-app` | two cases' evidence is one string |
+
+### The rule, and its five refusals
+
+`export/signal-ref.ts` combines the halves: `<entity name>|<reading>`, joined by
+`SIGNAL_REF_SEPARATOR`. The **name** rather than the id, because the id is already published beside
+it (`entity` in `itbench`, `entity_id` in the chain) and `service:default/order|cpu_usage` would name
+the same thing twice and read as neither.
+
+The qualifier is a name, and a name is not always an answer. Five states stop it, each with its own
+sentence, because each has a different repair:
+
+| refusal | what is wrong | the sentence's verb |
+| --- | --- | --- |
+| `unresolved` | the entity is not in the graph | "which the topology does not hold, so there is no name to qualify its signal with" |
+| `unnamed` | the entity's `name` is empty | "which carries no name, so there is nothing to qualify its signal with" |
+| `ambiguous` | two entities answer to that name, or to an alias of it | "whose name 'twin' is also answered by … so the qualified form would name both" |
+| `emptyRef` | `signalRef` is `''` | "so the qualified form would read `<entity>|` and name no reading" |
+| `preQualified` | the ref already carries an owner | "writes 'order|cpu_usage' in a field that holds the reading alone, so the owner it carries would be written twice" |
+
+`preQualified` is the one that matters this round: it is exactly what the fixture shipped, and until
+it is refused the mistake is invisible, because a qualified ref in an unqualified field exports to a
+string that looks correct. Its sentence names both fields, since the repair depends on knowing that
+the owner has a field of its own.
+
+`ambiguous` needs the whole answer rather than a lookup. `EntityIndex.byName` resolves a collision by
+writing last, which is right for a resolver and wrong for a *publisher*: a qualifier two entities
+answer to must be refused, and a map that has already chosen cannot say so. `buildEntityIndex` now
+also fills `idsByName` — every id that answers to a name or an alias, sorted, with an entity listed
+once however many of its own aliases coincide. A name that is another entity's alias is the same
+collision as a shared name, because `byName` answers both.
+
+### Where the refusal lands
+
+Per case, not per bundle. A bundle of 1000 cases must not lose 999 to report one mistyped label, so
+`screenSignalRefs` runs before a file of the case is written and the case is skipped with the
+sentence — the same policy the exporters already apply to an unresolved root cause. The builders take
+the other side of it: `assertSignalRef` raises `SignalRefRefusedError` for a caller that went
+straight to `buildCausalPathJson`, because a builder cannot represent a refusal. The only shape it
+has for "no reference" already means something else — a `derived` checkpoint, which is referenced by
+its arithmetic and names no single reading, and is published as `null` rather than as a missing key.
+
+`itbench` had no entity index at all before this: its evidence field was a copy of a string, and a
+copy needs nothing resolved. `buildItBenchScenarioSpec` now takes one, and its required parameter is
+the point — an optional second argument would have been a silently unqualified path.
+
+The two exporters that wrote the same five-field mapping byte for byte now share
+`evidenceFromCheckpoint`, so the field this finding is about has one definition rather than two.
+
+### The corpus guard asks first
+
+`check-fault-cases.mjs` measures the same reading over the corpus, with the function the exporters
+use, and fails on a refusal rather than letting the export skip it silently: a skipped case leaves no
+file, and a score computed over what remains has no denominator that says a case is missing. It
+prints a fraction and a distinct count, both of which a new annotation can move:
+
+```
+signal refs 109 of 120 checkpoint(s) publish one as <entity>|<reading>,
+11 name no single reading, and 0 would be refused at export; the 109 are 109 distinct string(s)
+```
+
+### The fixture, corrected
+
+`golden-master/fixture.json`, `examples/order-prod/bundle.json` and `examples/order-prod/draft.json`
+now write `"signalRef": "cpu_usage"` — the bare reading, which is what the field means. The generated
+example output is **byte-identical**: `signal_ref` still reads `order|cpu_usage`, and the only line
+that changed in `site/assets/data.js` is the echoed input. That is the difference between a rendering
+and a copy, and it is now a test rather than a claim.
+
+### What this does not do
+
+It does not add a field. `itbench` keeps its `entity`, which is an id and a different question. It
+does not check that the named entity is the *right* one for the reading either — `cp-stale-reads`
+could name `search-node-1` and the qualifier would be well-formed, because which side a reading was
+taken on is a judgement about the annotation, on the same division of labour the four-layer rule and
+`sli.none` already use.

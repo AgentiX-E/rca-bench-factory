@@ -126,6 +126,7 @@ const ENUMERATED_MODULES = [
   'export/rca100.ts',
   'export/rcaeval-logts.ts',
   'export/rcaeval.ts',
+  'export/signal-ref.ts',
   'export/sli.ts',
   'export/tokens.ts',
   'gates/gates.ts',
@@ -280,6 +281,10 @@ const EXEMPT_EXPORTS: Record<string, string> = {
   'fault/modality-evidence.ts::ModalityFault': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/modality-evidence.ts::ModalityRead': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/modality-evidence.ts::ServiceCall': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'export/signal-ref.ts::EvidenceEntry': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'export/signal-ref.ts::SignalRefFault': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'export/signal-ref.ts::SignalRefRead': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'export/signal-ref.ts::SignalRefSource': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/reading-reference.ts::ReadingMatch': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/reading-reference.ts::ReadingRefusal': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/expression.ts::ExpressionValue': 'type-only declaration; erases at runtime, so no consumer can name it',
@@ -715,6 +720,17 @@ const TESTED = [
   // in the report; `extraction-diagnostics.test.ts` is the test that drives both.
   'FAILURE_EXCERPT_LIMIT',
   'describeExtractionFailure',
+  // export/signal-ref.ts -- the reference a checkpoint publishes: the pair `(entity, reading)` as one
+  // qualified string, the five refusals that stop it, and the screen the three exporters share. The
+  // separator is exported because it is part of the published shape, not an implementation detail:
+  // a reader parsing `search-node-1|cluster_members_visible` needs the character it may split on.
+  'SIGNAL_REF_SEPARATOR',
+  'SignalRefRefusedError',
+  'assertSignalRef',
+  'describeSignalRefFault',
+  'evidenceFromCheckpoint',
+  'readSignalRef',
+  'screenSignalRefs',
   // export/sli.ts -- which reading ranks a case, and the one column name upstream will look for.
   // The declaration is the corpus's answer and the resolution is the exporter's; the two refusals are
   // separate because a reading on another service is wrong whether or not the series exists

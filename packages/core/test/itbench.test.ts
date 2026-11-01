@@ -6,6 +6,7 @@ import {
   ITBENCH_SRE_DOMAIN,
   ITBENCH_TARGET_ID,
 } from '../src/export/itbench.js';
+import { buildEntityIndex } from '../src/export/rca100.js';
 import type { FaultCase } from '../src/ir/types.js';
 import { validBundle, validCase } from './fixtures.js';
 
@@ -19,7 +20,7 @@ import { validBundle, validCase } from './fixtures.js';
  */
 
 function spec(fc: FaultCase = validCase()): Record<string, unknown> {
-  return buildItBenchScenarioSpec(fc);
+  return buildItBenchScenarioSpec(fc, buildEntityIndex(validBundle().graph));
 }
 
 function diagnosis(s: Record<string, unknown>): Record<string, unknown> {
@@ -179,5 +180,34 @@ describe('exportItBench', () => {
     const { files, skipped } = exportItBench(bundle);
     expect(skipped).toEqual([{ caseId: 'case-001', reason: 'missing root-cause component' }]);
     expect(files).toEqual({});
+  });
+});
+
+/**
+ * The reference this target publishes, and the case it refuses to publish.
+ *
+ * `signal_ref` is `order|cpu_usage` while `entity` is `service:default/order`: a name and an id, which
+ * is two different questions and the reason both fields exist here. The name half is derived from
+ * `entityRef` at export time -- this exporter took no entity index at all until it had to -- and a
+ * checkpoint whose two halves cannot be combined skips its case rather than publishing one of them.
+ */
+describe('the reference a checkpoint publishes', () => {
+  it('combines the entity name with the reading, from two fields of the IR', () => {
+    const condition = (diagnosis(spec()).fault_conditions as Array<Record<string, unknown>>)[0]!;
+    // The fixture writes the bare metric, so this string is a rendering rather than a copy.
+    expect(validCase().groundTruth.evidenceCheckpoints?.[0]?.signalRef).toBe('cpu_usage');
+    expect(condition.signal_ref).toBe('order|cpu_usage');
+    expect(condition.entity).toBe('service:default/order');
+  });
+
+  it('skips a case whose checkpoint writes its own owner into the ref', () => {
+    const bundle = validBundle();
+    bundle.cases[0]!.groundTruth.evidenceCheckpoints![0]!.signalRef = 'order|cpu_usage';
+    const out = exportItBench(bundle);
+    expect(out.files).toEqual({});
+    expect(out.skipped[0]?.reason).toBe(
+      "case-001: checkpoint 'cp-1' writes 'order|cpu_usage' in a field that holds the reading alone, " +
+        'so the owner it carries would be written twice',
+    );
   });
 });

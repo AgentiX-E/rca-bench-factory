@@ -310,6 +310,35 @@ const checkpointRefs = {
   false: 0,
 };
 /**
+ * The reference each checkpoint publishes, and whether the corpus could publish it.
+ *
+ * The three graded exporters write `signal_ref` as `<entity name>|<reading>`, which is the pair a
+ * reading is identified by and the shape all three contracts document. They can only do that when
+ * the checkpoint's own two fields agree: the entity resolves, its name is one entity's, and the ref
+ * is the reading alone. A checkpoint that fails any of those is *skipped with its case* at export
+ * time, so the corpus is right only while `refused` is zero -- and a case that never reaches a
+ * target is not a case with a weak annotation, it is a case that does not exist.
+ *
+ * `distinct` is the reason the qualifier is worth a line of its own. Measured on the shipped corpus,
+ * 109 checkpoints carried 104 distinct metric names: five names were read on two entities each --
+ * `cluster_members_visible` on the partition's two halves, `stale_read_ratio` on the same two,
+ * `container_restarts_total` on three pods, `process_uptime_seconds` on two containers. One of those
+ * pairs is a case's whole point (the second side is what tells a partition from a lost quorum), and
+ * as bare names the two halves arrived at two targets as byte-identical evidence.
+ */
+const signalRefUse = {
+  /** Checkpoints that publish a qualified reference. */
+  qualified: 0,
+  /** Checkpoints that name no single reading, which is what a derived checkpoint is. */
+  absent: 0,
+  /** Checkpoints whose reference cannot be published; each one skips its case. */
+  refused: 0,
+  /** Distinct qualified strings, counted against `qualified`. */
+  distinct: 0,
+};
+/** Every qualified string the corpus publishes, so a collision is a number rather than a suspicion. */
+const publishedRefs = new Set();
+/**
  * How much of the corpus's evidence the causal chain actually uses.
  *
  * `total` is every stated checkpoint; `cited` is the ones at least one step names. The two are
@@ -1121,6 +1150,26 @@ for (const entry of index.cases) {
       }
     }
 
+    // The reference each checkpoint publishes, read with the function the three exporters use, so the
+    // corpus is refused here rather than skipped there. An export drops the whole case when one of
+    // its checkpoints cannot be qualified, and a dropped case is invisible in the artefact: the file
+    // is simply absent, and a score computed over what remains has no denominator saying so.
+    const entityIndex = core.buildEntityIndex(parsedGraph);
+    for (const checkpoint of parsedCase.groundTruth.evidenceCheckpoints ?? []) {
+      const read = core.readSignalRef({ checkpoint, index: entityIndex });
+      if (read.fault !== null) {
+        problems.push(core.describeSignalRefFault(read.fault, caseId, checkpoint.checkpointId));
+        signalRefUse.refused += 1;
+        continue;
+      }
+      if (read.ref === null) {
+        signalRefUse.absent += 1;
+        continue;
+      }
+      signalRefUse.qualified += 1;
+      publishedRefs.add(read.ref);
+    }
+
     // What this case's declarations were for, tallied once the checkpoints have been read: a key is
     // cited if a series point names it or a configuration checkpoint does, and every other key has to
     // say why it is there. Refusing an uncited key outright fails thirty cases for thirty legitimate
@@ -1462,6 +1511,32 @@ function logCheckpointCounts() {
   );
 }
 
+/**
+ * What every checkpoint publishes as its reference, and what the bare name could not say.
+ *
+ * The four kinds are one question here rather than four: a series reference, a configuration key and
+ * a log id are all properties of the entity that carries them, so all three are qualified the same
+ * way and a `derived` checkpoint -- which is referenced by its arithmetic and names no single reading
+ * -- is the one that publishes nothing. That is why the line reads "11 name no single reading" and not
+ * "11 missing": the absence is an answer, and the exporters publish it as `null` rather than as a
+ * field left out, because both graded contracts declare the field required.
+ *
+ * `distinct` is printed beside `qualified` because the two differ exactly when the qualifier was
+ * needed. Before this round the corpus held 109 references across 104 distinct metric names; five
+ * names were read on two entities each and one of those pairs is a case's whole argument.
+ */
+function logSignalRefUse() {
+  signalRefUse.distinct = publishedRefs.size;
+  if (signalRefUse.qualified === 0 && signalRefUse.absent === 0) return;
+  const total = signalRefUse.qualified + signalRefUse.absent + signalRefUse.refused;
+  console.log(
+    `check-fault-cases: signal refs ${String(signalRefUse.qualified)} of ${String(total)} checkpoint(s) publish ` +
+      `one as <entity>|<reading>, ${String(signalRefUse.absent)} name no single reading, and ` +
+      `${String(signalRefUse.refused)} would be refused at export; the ` +
+      `${String(signalRefUse.qualified)} are ${String(signalRefUse.distinct)} distinct string(s)`,
+  );
+}
+
 /** Where the two numbers below are kept, so they can be printed on both exits. */
 let coverageLine = null;
 const exportLines = [];
@@ -1540,6 +1615,7 @@ if (problems.length > 0) {
   logParameterUse();
   logSliUse();
   logModalityUse();
+  logSignalRefUse();
   logExportReading();
   logLocalisationReading();
   logCheckpointCounts();
@@ -1583,6 +1659,7 @@ logDifficultyCoverage();
 logParameterUse();
 logSliUse();
 logModalityUse();
+logSignalRefUse();
 logExportReading();
 logLocalisationReading();
 logCheckpointCounts();

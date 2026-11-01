@@ -2,6 +2,7 @@ import type { EvidenceCheckpoint, FaultCase, IrBundle } from '../ir/types.js';
 import type { ExportOutcome, ExportedFiles, SkippedCase } from './openrca.js';
 import { buildEntityIndex, type EntityIndex } from './rca100.js';
 import { assertExportableBundle } from './guard.js';
+import { evidenceFromCheckpoint, screenSignalRefs } from './signal-ref.js';
 import { renderJson } from '../util/json.js';
 
 /**
@@ -50,13 +51,7 @@ export function buildCausalPathJson(fc: FaultCase, index: EntityIndex): string {
     const evidence = step.evidenceRefs
       .map((ref) => checkpointById.get(ref))
       .filter((c): c is EvidenceCheckpoint => c !== undefined)
-      .map((c) => ({
-        signal_ref: c.signalRef ?? null,
-        comparator: c.comparator,
-        value: c.value,
-        unit: c.unit ?? null,
-        description: c.description,
-      }));
+      .map((c) => evidenceFromCheckpoint({ caseId: fc.caseId, checkpoint: c, index }));
 
     return {
       step: step.step,
@@ -104,6 +99,17 @@ export function exportOpenRca2(bundle: IrBundle): ExportOutcome {
     }
     if (!index.byId.has(fc.groundTruth.rootCauseEntityId)) {
       skipped.push({ caseId: fc.caseId, reason: 'root-cause entity does not resolve into topology' });
+      continue;
+    }
+    // The evidence of a case that cannot be qualified is skipped whole rather than published with a
+    // bare metric name: `signal_ref` is the pair, and half of it names nothing.
+    const refusal = screenSignalRefs({
+      caseId: fc.caseId,
+      checkpoints: fc.groundTruth.evidenceCheckpoints ?? [],
+      index,
+    });
+    if (refusal !== null) {
+      skipped.push({ caseId: fc.caseId, reason: refusal.message });
       continue;
     }
     files[`cases/${fc.caseId}/causal_path.json`] = buildCausalPathJson(fc, index);

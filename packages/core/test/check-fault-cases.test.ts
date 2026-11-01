@@ -67,7 +67,9 @@ const CASE_FILES = INDEX.cases
     (name) =>
       JSON.parse(readFileSync(join(CASES, name), 'utf8')) as {
         fault?: { category?: string };
-        groundTruth?: { evidenceCheckpoints?: unknown[] };
+        groundTruth?: {
+          evidenceCheckpoints?: Array<{ checkpointId?: string; signalRef?: string; signalKind?: string }>;
+        };
       },
   );
 const CODE_LEVEL_CASES = CASE_FILES.filter((one) => one.fault?.category === 'code').length;
@@ -79,6 +81,13 @@ const CODE_LEVEL_CASES = CASE_FILES.filter((one) => one.fault?.category === 'cod
  */
 const TOTAL_CHECKPOINTS = CASE_FILES.reduce(
   (sum, one) => sum + (one.groundTruth?.evidenceCheckpoints ?? []).length,
+  0,
+);
+/** The checkpoints that publish a reference at all: every kind but `derived`, which names none. */
+const REFERRING_CHECKPOINTS = CASE_FILES.reduce(
+  (sum, one) =>
+    sum +
+    (one.groundTruth?.evidenceCheckpoints ?? []).filter((c) => typeof c.signalRef === 'string').length,
   0,
 );
 const REAL_GRAPH = JSON.parse(readFileSync(join(CASES, 'synthetic-storefront-graph.json'), 'utf8')) as unknown;
@@ -2559,6 +2568,89 @@ describe('check-fault-cases · a checkpoint no step cites is a fact two targets 
     expect(result.out).toContain(
       `${String(TOTAL_CHECKPOINTS)} of ${String(TOTAL_CHECKPOINTS)} checkpoint(s) are cited by at least one causal step`,
     );
+  });
+});
+
+describe('check-fault-cases · a reference is the pair, and the corpus has to be able to publish it', () => {
+  // The three graded exporters write `signal_ref` as `<entity name>|<reading>` -- the pair, which is
+  // what all three contracts document and what a reading is identified by. They can only do that when
+  // the checkpoint's two fields agree, and they refuse the whole *case* when they do not, which is
+  // the reason the corpus guard asks first: a skipped case leaves no file, so a score computed over
+  // what remains has no denominator that says a case is missing.
+  //
+  // The defect this closes is one field over from the one the documents had: the golden-master
+  // fixture wrote `signalRef: "order|cpu_usage"` -- the output form, in the input -- the exporter
+  // copied it out, and nothing could contradict the published example because the example was a
+  // photograph of the fixture.
+  // The signals declaration is what makes the guard read the checkpoints at all: a case that
+  // declares no telemetry has nothing to compare an assertion against, so the reading section is
+  // skipped and only the structure is checked -- which is why a fixture for this rule has to carry
+  // one, or it tests the wrong half of the guard.
+  const CHECKOUT_SIGNALS = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  const withRef = (ref: string) => (faultCase: Record<string, unknown>): void => {
+    const truth = faultCase.groundTruth as Record<string, unknown>;
+    const checkpoints = truth.evidenceCheckpoints as Array<Record<string, unknown>>;
+    checkpoints[0]!.signalRef = ref;
+  };
+
+  it('refuses a checkpoint that writes its own owner into the ref', async () => {
+    const result = await run([
+      '--cases',
+      corpus({ signals: CHECKOUT_SIGNALS, mutate: withRef('checkout-api-app|cpuLimit') }),
+    ]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain(
+      "writes 'checkout-api-app|cpuLimit' in a field that holds the reading alone, so the owner it " +
+        'carries would be written twice',
+    );
+  });
+
+  it('names the case and the checkpoint, so the reader knows which of the 120 to open', async () => {
+    const result = await run([
+      '--cases',
+      corpus({ signals: CHECKOUT_SIGNALS, mutate: withRef('a|b') }),
+    ]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain("history-checkout-cpu-saturation: checkpoint 'cp-cpu-limit'");
+  });
+
+  it('refuses a checkpoint whose entity the graph does not hold, on the field the reader can fix', async () => {
+    const result = await run([
+      '--cases',
+      corpus({
+        signals: CHECKOUT_SIGNALS,
+        mutate: (faultCase) => {
+          const truth = faultCase.groundTruth as Record<string, unknown>;
+          const checkpoints = truth.evidenceCheckpoints as Array<Record<string, unknown>>;
+          checkpoints[0]!.entityRef = 'pod:synthetic-storefront/ghost';
+        },
+      }),
+    ]);
+    expect(result.status, result.out).toBe(2);
+    // The same missing entity is already refused by the four-layer rule, and both sentences appear:
+    // one says the reference is unresolved, the other says the graph does not hold the entity a
+    // qualified reference would be built from. Neither stands in for the other.
+    expect(result.out).toContain('which the topology does not hold');
+  });
+
+  it('publishes the fraction and the distinct count, so a collision lowers a number', async () => {
+    const result = await run([]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain(
+      `signal refs ${String(REFERRING_CHECKPOINTS)} of ${String(TOTAL_CHECKPOINTS)} checkpoint(s) publish ` +
+        `one as <entity>|<reading>, ${String(TOTAL_CHECKPOINTS - REFERRING_CHECKPOINTS)} name no single ` +
+        'reading, and 0 would be refused at export',
+    );
+    // The clause that says the qualifier is doing work: every published string is its own, while the
+    // bare metric names behind them are not. Measured before this round, 109 references covered 104
+    // distinct names -- and one of the five collisions is a case's whole argument.
+    const distinct = Number(
+      /the (\d+) are (\d+) distinct string\(s\)/.exec(result.out)?.[2] ?? '0',
+    );
+    expect(distinct).toBe(REFERRING_CHECKPOINTS);
   });
 });
 

@@ -14,6 +14,7 @@ import {
   exportRca100,
   resolveSignalEntity,
 } from '../src/export/rca100.js';
+import { SignalRefRefusedError } from '../src/export/signal-ref.js';
 import { ENTITY_KINDS } from '../src/ir/types.js';
 import type { Entity, EntityGraph, FaultCase, IrBundle, TelemetrySignal } from '../src/ir/types.js';
 
@@ -94,7 +95,7 @@ function rca100Case(overrides: Partial<FaultCase> = {}): FaultCase {
         {
           checkpointId: 'cp-1',
           entityRef: 'service:default/order',
-          signalRef: 'order|cpu_usage',
+          signalRef: 'cpu_usage',
           comparator: '>',
           value: 90,
           unit: '%',
@@ -494,5 +495,45 @@ describe('defensive branches (null/undefined handling)', () => {
     const bundle = rca100Bundle({ signals: {} });
     const { skipped } = exportRca100(bundle);
     expect(skipped[0]?.reason).toBe('no telemetry signals attached');
+  });
+});
+
+/**
+ * The answer key is where a checkpoint's reference becomes a scored token.
+ *
+ * `signal|comparator|value|unit` is the token this target is scored by, so the qualifier is not
+ * decoration: two entities' readings of one metric produce the same token without it, and the pair
+ * that matters most is a partition's two halves -- one case's whole argument.
+ */
+describe('a case whose evidence cannot be qualified', () => {
+  const unqualified = (): FaultCase => {
+    const one = rca100Case();
+    one.groundTruth.evidenceCheckpoints![0]!.signalRef = 'order|cpu_usage';
+    return one;
+  };
+
+  it('is skipped before a single file of it is written', () => {
+    const out = exportRca100(rca100Bundle({ cases: [unqualified()] }));
+    expect(out.files).toEqual({});
+    expect(out.skipped[0]?.reason).toBe(
+      "case-001: checkpoint 'cp-1' writes 'order|cpu_usage' in a field that holds the reading alone, " +
+        'so the owner it carries would be written twice',
+    );
+  });
+
+  it('is refused by the builder too, for a caller that never screened the case', () => {
+    const one = unqualified();
+    expect(() => buildGroundTruthJson(one, buildEntityIndex(fullGraph()))).toThrow(SignalRefRefusedError);
+  });
+
+  it('exports a case that states no checkpoint at all, because there is nothing to qualify', () => {
+    // The screen reads a list that the schema makes optional, and an absent list is not a refusal:
+    // a case whose evidence is empty still has a root cause and a chain, and the process term it
+    // contributes is the absence rather than an error.
+    const one = rca100Case();
+    delete one.groundTruth.evidenceCheckpoints;
+    const out = exportRca100(rca100Bundle({ cases: [one] }));
+    expect(out.skipped).toEqual([]);
+    expect(Object.keys(out.files)).toContain('answer_key/case-001.gt.json');
   });
 });

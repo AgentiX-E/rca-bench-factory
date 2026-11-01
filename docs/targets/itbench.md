@@ -42,7 +42,7 @@
 | `scenario_groundtruth.diagnosis.fault_conditions[]` | array | yes | `GroundTruth.evidenceCheckpoints` |  |
 | `...fault_conditions[].checkpoint_id` | string | yes | `EvidenceCheckpoint.checkpointId` |  |
 | `...fault_conditions[].entity` | string | yes | `EvidenceCheckpoint.entityRef` |  |
-| `...fault_conditions[].signal_ref` | string | no | `EvidenceCheckpoint.signalRef` | Omitted when absent. |
+| `...fault_conditions[].signal_ref` | string | no | `assertSignalRef -- &lt;entity name&gt;\|&lt;signalRef&gt;` | Omitted when the checkpoint is derived and names no single reading. `entity` beside it is the id, which is a different question and is why both are published. |
 | `...fault_conditions[].comparator` | string | yes | `EvidenceCheckpoint.comparator` |  |
 | `...fault_conditions[].value` | number \| string | yes | `EvidenceCheckpoint.value` |  |
 | `...fault_conditions[].unit` | string | no | `EvidenceCheckpoint.unit` | Omitted when absent. |

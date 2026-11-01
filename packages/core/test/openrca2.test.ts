@@ -6,6 +6,7 @@ import {
   exportOpenRca2,
 } from '../src/export/openrca2.js';
 import { buildEntityIndex } from '../src/export/rca100.js';
+import { SignalRefRefusedError } from '../src/export/signal-ref.js';
 import type { FaultCase, IrBundle } from '../src/ir/types.js';
 import { validBundle } from './fixtures.js';
 
@@ -224,5 +225,54 @@ describe('exportOpenRca2', () => {
   it('declares the contract identity', () => {
     expect(OPENRCA2_TARGET_ID).toBe('openrca-2.0');
     expect(OPENRCA2_CONTRACT_VERSION).toBe('pave-v1');
+  });
+});
+
+/**
+ * The evidence a case cannot publish, and the two places it is refused.
+ *
+ * `signal_ref` reaches this contract as `<entity name>|<reading>`, so a checkpoint has to be
+ * qualifiable before any file of its case is written. The exporter skips such a case -- a bundle of
+ * 1000 must not lose 999 to one mistyped label -- and the builder raises for a caller that went
+ * straight to it, because the only shape a builder has for "no reference" already means something
+ * else: a `derived` checkpoint, which is referenced by its arithmetic and names no single reading.
+ */
+describe('a case whose evidence cannot be qualified', () => {
+  const unqualified = (): IrBundle => {
+    const bundle = validBundle();
+    bundle.cases[0]!.groundTruth.evidenceCheckpoints![0]!.signalRef = 'order|cpu_usage';
+    return bundle;
+  };
+
+  it('is skipped with the sentence that says which field holds the owner', () => {
+    const out = exportOpenRca2(unqualified());
+    expect(out.files).toEqual({});
+    expect(out.skipped).toEqual([
+      {
+        caseId: 'case-001',
+        reason:
+          "case-001: checkpoint 'cp-1' writes 'order|cpu_usage' in a field that holds the reading " +
+          'alone, so the owner it carries would be written twice',
+      },
+    ]);
+  });
+
+  it('is refused by the builder too, for a caller that never screened the case', () => {
+    const bundle = unqualified();
+    expect(() => buildCausalPathJson(bundle.cases[0]!, buildEntityIndex(bundle.graph))).toThrow(
+      SignalRefRefusedError,
+    );
+  });
+
+  it('publishes null for a checkpoint that names no single reading, rather than omitting it', () => {
+    // The field is required and nullable in this contract, so a derived checkpoint's absence of a
+    // reference is published as the absence it is: `signal_ref: null`, not a missing key.
+    const bundle = validBundle();
+    const checkpoint = bundle.cases[0]!.groundTruth.evidenceCheckpoints![0]!;
+    delete checkpoint.signalRef;
+    const step = (parse(buildCausalPathJson(bundle.cases[0]!, buildEntityIndex(bundle.graph))).causal_path as Array<
+      Record<string, unknown>
+    >)[0]!;
+    expect((step.evidence as Array<Record<string, unknown>>)[0]!.signal_ref).toBeNull();
   });
 });

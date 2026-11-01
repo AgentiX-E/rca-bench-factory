@@ -10,6 +10,7 @@ import type {
 import { isAlertSignal, isEventSignal, isLogSignal, isMetricSignal, isTraceSignal } from '../ir/guards.js';
 import type { ExportOutcome, ExportedFiles, SkippedCase } from './openrca.js';
 import { assertExportableBundle } from './guard.js';
+import { evidenceFromCheckpoint, screenSignalRefs } from './signal-ref.js';
 import { renderJson } from '../util/json.js';
 
 /**
@@ -88,6 +89,17 @@ const RESOLUTION_KEYS = ['k8s.pod.name', 'k8s.node.name', 'host.name', 'service.
 export interface EntityIndex {
   byId: Map<string, Entity>;
   byName: Map<string, Entity>;
+  /**
+   * Every entity that answers to a name or an alias, by that name.
+   *
+   * `byName` is a lookup, and a lookup that meets two claimants keeps the last one -- the right
+   * answer for resolving a signal against a graph, and the wrong one for *publishing* a name:
+   * `export/signal-ref.ts` qualifies a checkpoint's reference with its entity's name, two entities
+   * that share one would make `twin|cpu_usage` name both, and a map that has already chosen cannot
+   * say so. This holds the whole answer, sorted, with an entity listed once however many of its own
+   * aliases coincide.
+   */
+  idsByName: Map<string, string[]>;
 }
 
 export interface Rca100ModalityTable {
@@ -101,12 +113,24 @@ export interface Rca100ModalityTable {
 export function buildEntityIndex(graph: EntityGraph): EntityIndex {
   const byId = new Map<string, Entity>();
   const byName = new Map<string, Entity>();
+  const claims = new Map<string, Set<string>>();
   for (const e of graph.entities) {
     byId.set(e.entityId, e);
     byName.set(e.name, e);
     for (const alias of e.aliases) byName.set(alias, e);
+    // One set per name, over names and aliases alike: a name that is another entity's alias is the
+    // same collision as a shared name, because `byName` answers both.
+    for (const token of [e.name, ...e.aliases]) {
+      if (token === '') continue;
+      const set = claims.get(token) ?? new Set<string>();
+      set.add(e.entityId);
+      claims.set(token, set);
+    }
   }
-  return { byId, byName };
+  const idsByName = new Map<string, string[]>(
+    [...claims].map(([name, ids]) => [name, [...ids].sort()] as const),
+  );
+  return { byId, byName, idsByName };
 }
 
 /**
@@ -307,13 +331,7 @@ export function buildGroundTruthJson(fc: FaultCase, index: EntityIndex): string 
     const checkpoints = step.evidenceRefs
       .map((ref) => checkpointById.get(ref))
       .filter((c): c is EvidenceCheckpoint => c !== undefined)
-      .map((c) => ({
-        signal_ref: c.signalRef ?? null,
-        comparator: c.comparator,
-        value: c.value,
-        unit: c.unit ?? null,
-        description: c.description,
-      }));
+      .map((c) => evidenceFromCheckpoint({ caseId: fc.caseId, checkpoint: c, index }));
     return {
       role: deriveRole(i, chain.length),
       from_entity: fromEntity?.name ?? null,
@@ -359,6 +377,19 @@ export function exportRca100(bundle: IrBundle): ExportOutcome {
     }
     if (!index.byId.has(fc.groundTruth.rootCauseEntityId)) {
       skipped.push({ caseId: fc.caseId, reason: 'root-cause entity does not resolve into topology' });
+      continue;
+    }
+    // Checked before any file of this case is written: the answer key is the place a checkpoint's
+    // reference becomes a scored token, so a case whose evidence cannot be qualified is not a case
+    // with a weak checkpoint, it is a case whose `process` term would be computed from a name no
+    // entity carries.
+    const refusal = screenSignalRefs({
+      caseId: fc.caseId,
+      checkpoints: fc.groundTruth.evidenceCheckpoints ?? [],
+      index,
+    });
+    if (refusal !== null) {
+      skipped.push({ caseId: fc.caseId, reason: refusal.message });
       continue;
     }
 

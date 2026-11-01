@@ -2467,7 +2467,7 @@ test that covered the old sentence was corrected to cover both.
 | item | value |
 | --- | --- |
 | `core` test suite | **210 files, 5156 tests passed** (as of `45af109e2`) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `45af109e2`) |
 | repo test suite | **214 files, 5343 tests passed** (as of `45af109e2`) |
 | coverage | **99.97 / 99.73 / 100 / 99.97** (cli 100 / 100 / 100 / 100) -- identical to the last round, because every line this round changed lives in `scripts/`, which the coverage surface does not include |
 | ledgers naming their round | **12 of 12** (was 0 of 12) |
@@ -2783,9 +2783,9 @@ to 100 on all four.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **212 files, 5248 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **216 files, 5435 tests passed** (as of this commit) |
+| `core` test suite | **212 files, 5248 tests passed** (as of `2f2dae6`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `2f2dae6`) |
+| repo test suite | **216 files, 5435 tests passed** (as of `2f2dae6`) |
 | checkpoints stated / cited | **120 / 120** (`120 of 120 checkpoint(s) are cited by at least one causal step`) |
 | references in the chain | **129** across 2 chains' worth of steps, 120 distinct |
 | evidence each target publishes | `itbench` **120**, `openrca2` **120**, `rca100` **120** (was 120 / 111 / 111) |
@@ -2816,3 +2816,145 @@ to 100 on all four.
 - **The corpus cannot show a line for an incident that left none.** 18 and 24 are answers rather than
   gaps; closing the gap between them and a filled corpus needs another incident.
   `[open: unchanged this round, and not a matter of writing more sentences]`
+
+## v3.29 — the reference three targets were promised, and the fixture that made the promise untestable
+
+### What the exporter copied, and what the documents printed
+
+A reading is taken on something, so its identity is the pair `(entity, metric)`. The IR keeps the
+halves in two fields and `fault/reading-reference.ts` resolves them together — that is finding 323's
+rule, and it is why the guard can check a corpus annotation at all.
+
+The three graded exporters copied `signalRef` into `signal_ref` and stopped. All three contracts, and
+all three documents describing them, print the pair:
+
+```json
+{ "entity": "service:default/order", "signal_ref": "order|cpu_usage", "comparator": ">", "value": 90, "unit": "%" }
+```
+
+and `rca100` is scored by the token `signal|comparator|value|unit`, whose published example is
+`order|cpu_usage|>=|90|%`. The field was documented as the pair and emitted as the metric alone.
+
+### Why nothing could have contradicted it
+
+The golden-master fixture wrote the *output* form into the *input*: `"signalRef":
+"order|cpu_usage"`, beside a case whose only series is `cpu_usage`. The exporter copied it out, the
+example generator photographed the result, and the three documents printed the photograph. Every
+artefact agreed with every other artefact, and the agreement was a field agreeing with itself.
+
+Asked the other way — does the IR's `signalRef` resolve against the series this case declares? — the
+fixture fails. `fault/reading-reference.ts` would have said `unknownMetric: order|cpu_usage`. Nothing
+asked, because the fixture is not a corpus case and the corpus guard does not read it.
+
+The 30-case corpus was written against that resolution rule rather than against the example, so it
+held bare names. Measured on it before this round:
+
+| reading | value |
+| --- | --- |
+| checkpoints that publish a reference | **109** of 120 (11 are `derived` and name none) |
+| distinct strings those 109 published | **104** |
+| metric names read on two entities each | **4** names, 9 checkpoints |
+
+| metric | carriers | what the collision costs |
+| --- | --- | --- |
+| `cluster_members_visible` | `search-node-1`, `search-node-4` | `cp-members-halved` and `cp-members-other-side` arrive as two byte-identical evidence entries — and that pair is a partition case's whole argument |
+| `stale_read_ratio` | `search-node-1`, `search-node-4` | the same pair again, for the deletes that did not replicate |
+| `container_restarts_total` | three pods | three cases' evidence is one string |
+| `process_uptime_seconds` | two containers | two cases' evidence is one string |
+
+### The rule, its five refusals, and where they land
+
+`export/signal-ref.ts` combines the halves: `<entity name>|<reading>`, joined by
+`SIGNAL_REF_SEPARATOR`. The name, not the id, because the id is published beside it already and
+`service:default/order|cpu_usage` would name the same thing twice.
+
+| refusal | what is wrong | its sentence's verb |
+| --- | --- | --- |
+| `unresolved` | the entity is not in the graph | "which the topology does not hold, so there is no name to qualify its signal with" |
+| `unnamed` | the entity's `name` is empty | "which carries no name, so there is nothing to qualify its signal with" |
+| `ambiguous` | two entities answer to that name, or to an alias of it | "whose name 'twin' is also answered by …, so the qualified form would name both" |
+| `emptyRef` | `signalRef` is `''` | "so the qualified form would read `<entity>|` and name no reading" |
+| `preQualified` | the ref already carries an owner | "writes 'order|cpu_usage' in a field that holds the reading alone, so the owner it carries would be written twice" |
+
+`preQualified` is the one that mattered: it is exactly what the fixture shipped, and it is invisible
+until refused, because a qualified ref in an unqualified field exports to a string that looks right.
+
+`ambiguous` needed a second map. `EntityIndex.byName` resolves a collision by writing last, which is
+right for a resolver and wrong for a publisher; `buildEntityIndex` now also fills `idsByName` over
+names and aliases alike, sorted, one entry per entity however many of its aliases coincide.
+
+The refusal is per case, not per bundle: `screenSignalRefs` runs before a file of the case is written
+and the case is skipped with the sentence, the same policy the exporters already apply to an
+unresolved root cause. `assertSignalRef` raises `SignalRefRefusedError` for a caller that went
+straight to a builder, because a builder has only one shape for "no reference" and it already means
+`derived`.
+
+`itbench` had no entity index at all before this — its evidence field was a copy, and a copy needs
+nothing resolved. `buildItBenchScenarioSpec` now requires one, and the requirement is the point: an
+optional second parameter would be a silently unqualified path.
+
+The two exporters that wrote the same five-field mapping byte for byte now share
+`evidenceFromCheckpoint`, so this field has one definition rather than two.
+
+### The corpus guard asks first, and prints a fraction
+
+`check-fault-cases.mjs` measures the same reading with the same function and fails on a refusal,
+because a skipped case leaves no file and a score over what remains has no denominator that says a
+case is missing. Both exits print:
+
+```
+signal refs 109 of 120 checkpoint(s) publish one as <entity>|<reading>,
+11 name no single reading, and 0 would be refused at export; the 109 are 109 distinct string(s)
+```
+
+The distinct count is the clause that says the qualifier is doing work: 109 published strings, 109
+distinct, against 104 before.
+
+### The fixture, corrected, and the example that did not move
+
+`golden-master/fixture.json`, `examples/order-prod/bundle.json` and `examples/order-prod/draft.json`
+now write `"signalRef": "cpu_usage"`. The generated example output is **byte-identical** — the only
+line that changed in `site/assets/data.js` is the echoed input — and `order|cpu_usage` is now a
+rendering rather than a copy. `itbench.test.ts` asserts both halves of that: the fixture's field is
+`cpu_usage` and the published condition is `order|cpu_usage`.
+
+### The rule biting its own fixtures, for the third round running
+
+The first two tests written for the corpus guard passed a mutated case **without telemetry**, and a
+case that declares no telemetry never reaches the checkpoint section at all — so the run came back
+`OK` with the mutation sitting in the file. The fixture now carries the checkout signals declaration,
+and the reason is recorded where it bites: a fixture for a reading rule has to declare a reading.
+
+### Readings
+
+> Ledger for `v3.29`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **213 files, 5287 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **217 files, 5474 tests passed** (as of this commit) |
+| `core` coverage, statements / branches / functions / lines | **99.97 / 99.75 / 100 / 99.97** |
+| references published | **109 of 120**, **109 distinct** (was 109 across 104) |
+| checkpoints that name no single reading | **11**, published as `null` / omitted, unchanged |
+| cases the three exporters skip | **0** (`0 would be refused at export`) |
+| `order|cpu_usage` in the example output | unchanged, and now derived from `cpu_usage` |
+| `export/signal-ref.ts` | new: 24 tests, **100 / 100 / 100 / 100** |
+| `export-surface-enumerated.test.ts` | 1 module, 7 exports, 4 type exemptions |
+| `signal-ref.test.ts` | **24**: five refusals, four kinds, the separator, the error, the index |
+| `openrca2.test.ts` / `rca100.test.ts` / `itbench.test.ts` | 14 → **17**, 38 → **41**, 17 → **19** |
+| `check-fault-cases.test.ts` | 141 → **145**: the refusal, its name, and the fraction |
+| export failure sites | **99** across 52 of 70 scripts |
+| audits | 1–**336**, **333 findings** (absent: 118, 132–133) |
+
+### Left open
+
+- **A citation is checked for presence, not for being the right step.** Unchanged, and now the same
+  shape one field over: the qualifier is checked for being unambiguous, not for being the entity the
+  reading was really taken on. `[open: whether an annotation is used well stays a judgement]`
+- **Upstream's token table still refuses our path.** `[open: unchanged, and the half that is not ours]`
+- **The corpus cannot show a line for an incident that left none.** 18 and 24 are answers rather than
+  gaps. `[open: unchanged, and not a matter of writing more sentences]`
+- **`openrca-1.0` and the four non-graded targets were not touched.** They do not read checkpoints, so
+  the pair never reached them and there was nothing to qualify.
+  `[open: a new target that does read checkpoints must call the screen, which no enumeration checks]`

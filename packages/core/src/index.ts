@@ -238,6 +238,21 @@ export type { RcaEvalLogsSuite, RcaEvalSuite } from './export/rcaeval.js';
 export { SLI_SUFFIX, describeSliFault, readSliDeclaration, resolveSli, sliColumn } from './export/sli.js';
 export type { CaseSli, SliFault, SliPublication, SliRead } from './export/sli.js';
 
+// The reference a checkpoint publishes: the pair `(entity, reading)`, written as one qualified string
+// because that is the shape all three graded contracts document. `readSignalRef` is the decision,
+// `screenSignalRefs` is the exporter policy, and the error is what a builder raises instead of
+// publishing half of the pair.
+export {
+  SIGNAL_REF_SEPARATOR,
+  SignalRefRefusedError,
+  assertSignalRef,
+  describeSignalRefFault,
+  evidenceFromCheckpoint,
+  readSignalRef,
+  screenSignalRefs,
+} from './export/signal-ref.js';
+export type { EvidenceEntry, SignalRefFault, SignalRefRead, SignalRefSource } from './export/signal-ref.js';
+
 export { LOGTS_BUCKET_SECONDS, buildLogtsCsv } from './export/rcaeval-logts.js';
 export type { LogCluster, LogRow, LogtsTable } from './export/rcaeval-logts.js';
 

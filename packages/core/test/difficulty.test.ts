@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { buildCloudOpsBenchMetadata } from '../src/export/cloudopsbench.js';
 import { DIFFICULTIES, difficultyFor, type Difficulty } from '../src/export/difficulty.js';
 import { buildItBenchScenarioSpec } from '../src/export/itbench.js';
+import { buildEntityIndex } from '../src/export/rca100.js';
 import type { FaultCase } from '../src/ir/types.js';
-import { validCase } from './fixtures.js';
+import { validBundle, validCase } from './fixtures.js';
 
 /**
  * The shared easy/medium/hard vocabulary.
@@ -73,7 +74,7 @@ describe('one vocabulary, two projections', () => {
    */
   it.each(LEVELS)('both exporters emit %s for level %s', (level, word) => {
     const fc = withLevel(level);
-    const itbench = buildItBenchScenarioSpec(fc);
+    const itbench = buildItBenchScenarioSpec(fc, buildEntityIndex(validBundle().graph));
     const cloudOps = buildCloudOpsBenchMetadata(fc);
     expect(itbench.scenario_complexity).toBe(word);
     expect(cloudOps.difficulty).toBe(word);
@@ -83,7 +84,9 @@ describe('one vocabulary, two projections', () => {
   it('emits a word outside the shared vocabulary for no level', () => {
     for (const [level] of LEVELS) {
       const fc = withLevel(level);
-      expect(DIFFICULTIES).toContain(buildItBenchScenarioSpec(fc).scenario_complexity as string);
+      expect(DIFFICULTIES).toContain(
+        buildItBenchScenarioSpec(fc, buildEntityIndex(validBundle().graph)).scenario_complexity as string,
+      );
       expect(DIFFICULTIES).toContain(buildCloudOpsBenchMetadata(fc).difficulty as string);
     }
   });

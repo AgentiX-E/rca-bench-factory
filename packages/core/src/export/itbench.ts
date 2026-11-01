@@ -1,6 +1,8 @@
 import type { FaultCase, FaultCategory, GroundTruth, IrBundle } from '../ir/types.js';
 import type { ExportOutcome, ExportedFiles, SkippedCase } from './openrca.js';
 import { assertExportableBundle } from './guard.js';
+import { buildEntityIndex, type EntityIndex } from './rca100.js';
+import { assertSignalRef, screenSignalRefs } from './signal-ref.js';
 import { difficultyFor } from './difficulty.js';
 
 /**
@@ -101,20 +103,25 @@ function propagationChain(gt: GroundTruth): Array<Record<string, unknown>> {
 }
 
 /** Serialize the evidence checkpoints into ITBench fault conditions. */
-function faultConditions(gt: GroundTruth): Array<Record<string, unknown>> {
-  return (gt.evidenceCheckpoints ?? []).map((c) => ({
-    checkpoint_id: c.checkpointId,
-    entity: c.entityRef,
-    ...(c.signalRef !== undefined ? { signal_ref: c.signalRef } : {}),
-    comparator: c.comparator,
-    value: c.value,
-    ...(c.unit !== undefined ? { unit: c.unit } : {}),
-    description: c.description,
-  }));
+function faultConditions(gt: GroundTruth, index: EntityIndex, caseId: string): Array<Record<string, unknown>> {
+  return (gt.evidenceCheckpoints ?? []).map((c) => {
+    // `signal_ref` is the pair -- the entity's name and the reading taken on it -- while `entity`
+    // beside it is the id. The two are different questions and this target asks both.
+    const signalRef = assertSignalRef({ caseId, checkpoint: c, index });
+    return {
+      checkpoint_id: c.checkpointId,
+      entity: c.entityRef,
+      ...(signalRef !== null ? { signal_ref: signalRef } : {}),
+      comparator: c.comparator,
+      value: c.value,
+      ...(c.unit !== undefined ? { unit: c.unit } : {}),
+      description: c.description,
+    };
+  });
 }
 
 /** Build the `scenario.json` object for one case. */
-export function buildItBenchScenarioSpec(fc: FaultCase): Record<string, unknown> {
+export function buildItBenchScenarioSpec(fc: FaultCase, index: EntityIndex): Record<string, unknown> {
   const gt = fc.groundTruth;
   return {
     scenario_name: fc.caseId,
@@ -126,7 +133,7 @@ export function buildItBenchScenarioSpec(fc: FaultCase): Record<string, unknown>
       diagnosis: {
         entities: diagnosisEntities(gt),
         fault_propagation_chain: propagationChain(gt),
-        fault_conditions: faultConditions(gt),
+        fault_conditions: faultConditions(gt, index, fc.caseId),
       },
     },
   };
@@ -143,13 +150,26 @@ export function exportItBench(bundle: IrBundle): ExportOutcome {
   assertExportableBundle(bundle);
   const files: ExportedFiles = {};
   const skipped: SkippedCase[] = [];
+  // This exporter used to take no index at all: its evidence field was a copy of a string from the
+  // IR, and a copy needs nothing resolved. It does now -- the published reference is the pair, and
+  // the entity's name is the half the IR keeps in another field.
+  const index = buildEntityIndex(bundle.graph);
 
   for (const fc of bundle.cases) {
     if (fc.groundTruth.rootCauseComponent === '') {
       skipped.push({ caseId: fc.caseId, reason: 'missing root-cause component' });
       continue;
     }
-    files[`scenarios/${fc.caseId}/scenario.json`] = JSON.stringify(buildItBenchScenarioSpec(fc), null, 2) + '\n';
+    const refusal = screenSignalRefs({
+      caseId: fc.caseId,
+      checkpoints: fc.groundTruth.evidenceCheckpoints ?? [],
+      index,
+    });
+    if (refusal !== null) {
+      skipped.push({ caseId: fc.caseId, reason: refusal.message });
+      continue;
+    }
+    files[`scenarios/${fc.caseId}/scenario.json`] = JSON.stringify(buildItBenchScenarioSpec(fc, index), null, 2) + '\n';
   }
 
   return { files, skipped };

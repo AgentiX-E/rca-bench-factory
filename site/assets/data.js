@@ -80,7 +80,7 @@ window.RBF_DATA = {
             {
               "checkpointId": "cp-1",
               "entityRef": "service:default/order",
-              "signalRef": "order|cpu_usage",
+              "signalRef": "cpu_usage",
               "comparator": ">",
               "value": 90,
               "unit": "%",
@@ -832,8 +832,8 @@ window.RBF_DATA = {
               "name": "causal_path[].evidence[].signal_ref",
               "type": "string | null",
               "required": true,
-              "source": "EvidenceCheckpoint.signalRef ?? null",
-              "notes": ""
+              "source": "evidenceFromCheckpoint -- <entity name>|<signalRef>",
+              "notes": "The pair, not the metric alone: the entity is half of what a reading identifies. null for a derived checkpoint, which names no single reading. A reference that cannot be qualified skips the case."
             },
             {
               "name": "causal_path[].evidence[].comparator",
@@ -1652,8 +1652,8 @@ window.RBF_DATA = {
               "name": "...checkpoints[].signal_ref",
               "type": "string | null",
               "required": true,
-              "source": "EvidenceCheckpoint.signalRef",
-              "notes": ""
+              "source": "evidenceFromCheckpoint -- <entity name>|<signalRef>",
+              "notes": "The same pair openrca-2.0 publishes; the scored token is `signal|comparator|value|unit`, so the qualifier is what keeps two entities' readings apart."
             },
             {
               "name": "...checkpoints[].comparator",
@@ -2070,8 +2070,8 @@ window.RBF_DATA = {
               "name": "...fault_conditions[].signal_ref",
               "type": "string",
               "required": false,
-              "source": "EvidenceCheckpoint.signalRef",
-              "notes": "Omitted when absent."
+              "source": "assertSignalRef -- <entity name>|<signalRef>",
+              "notes": "Omitted when the checkpoint is derived and names no single reading. `entity` beside it is the id, which is a different question and is why both are published."
             },
             {
               "name": "...fault_conditions[].comparator",

@@ -59,7 +59,7 @@ The telemetry tree of OpenRCA 1.0 is reused unchanged; `causal_path.json` is the
 | `causal_path[].verification.statistical` | boolean | yes | `evidence.length &gt; 0` | Gate 2: at least one evidence checkpoint supports the edge. |
 | `causal_path[].verification.temporal` | boolean | yes | `step &gt; previous.step` | Gate 3: the effect onsets after its cause. |
 | `causal_path[].evidence[]` | array | yes | `CausalStep.evidenceRefs -&gt; EvidenceCheckpoint` | Unresolvable refs are dropped from the array (and then fail gate 2). |
-| `causal_path[].evidence[].signal_ref` | string \| null | yes | `EvidenceCheckpoint.signalRef ?? null` |  |
+| `causal_path[].evidence[].signal_ref` | string \| null | yes | `evidenceFromCheckpoint -- &lt;entity name&gt;\|&lt;signalRef&gt;` | The pair, not the metric alone: the entity is half of what a reading identifies. null for a derived checkpoint, which names no single reading. A reference that cannot be qualified skips the case. |
 | `causal_path[].evidence[].comparator` | string | yes | `EvidenceCheckpoint.comparator` | One of &gt; &gt;= &lt; &lt;= == != contains matches. |
 | `causal_path[].evidence[].value` | number \| string | yes | `EvidenceCheckpoint.value` |  |
 | `causal_path[].evidence[].unit` | string \| null | yes | `EvidenceCheckpoint.unit ?? null` | UCUM-style unit. |

@@ -132,7 +132,7 @@ export function validCase(overrides: Partial<FaultCase> = {}): FaultCase {
         {
           checkpointId: 'cp-1',
           entityRef: 'service:default/order',
-          signalRef: 'order|cpu_usage',
+          signalRef: 'cpu_usage',
           comparator: '>',
           value: 90,
           unit: '%',
