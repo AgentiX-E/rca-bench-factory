@@ -2118,7 +2118,7 @@ the arithmetic is monotonic again. The gate behaved correctly -- it refused rath
 | the `reason` facet vs the `ta` term | one predicate; was exact equality against containment |
 | `reader-against-backend.test.ts` | 9 620 ms, now in `STANDALONE_MS` with a 30 000 ms suite budget |
 | the budget reader's spellings | 3 → **4**, the fourth a name inside an options object |
-| new tests | **13** across four files |
+| new tests | **9** across four files -- 4 in `official.test.ts`, 3 in `corpus-fault-taxonomy.test.ts`, 1 in `timeout-budget.test.ts`, 1 in `aiops2025-evaluator.test.ts`, plus one golden test rewritten in place |
 | targets that score a fault string | **4 of 9**, none of them a corpus name |
 | the corpus's own metric | `ranks` only — AC@k, no type term |
 | the published corpus | unchanged — no verdict moves |
