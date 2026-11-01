@@ -1432,9 +1432,10 @@ are each one case away, and neither was refused by anything.
 ### Three: the third line is where two vocabularies meet
 
 52 distinct heads, of which **35 name a service**, **15 name an entity of another kind** (a pod, a
-container, a node, a broker, a database, an external dependency) and **2 name nothing at all** — `orders` and `billing`, produced by the loader's own
-`.replace("-db", "")` on `orders-db` and `billing-db`. So the pool it builds contains two names no
-graph holds and never contains those two databases under their own names.
+container, a node, a broker, a database, an external dependency) and **2 name nothing at all** —
+`orders` and `billing`, produced by the loader's own `.replace("-db", "")` on `orders-db` and
+`billing-db`. So the pool it builds contains two names no graph holds and never contains those two
+databases under their own names.
 
 No case is harmed today: the answers are 28 services, one database (`analytics-replica`) and one
 external dependency, and none of them is renamed. The rule is written anyway — a case answering
@@ -1470,7 +1471,7 @@ now returns `written`, and a skipped case is absent from it because it wrote not
 | the loader's unpack, on our paths | **30 of 30** leaf directories hold exactly two names |
 | the loader's baseline, on our tables | **30 of 30** non-empty; **8 rows** at the thinnest |
 | the loader's ranking column, by the path's own name | **7 of 30** (was 7 by suffix — the same number, for a reason that is now checked) |
-| the loader's candidate pool | **52 names: 35 services, 15 parts of one, 2 that name no entity** |
+| the loader's candidate pool | **52 names: 35 services, 15 another kind of entity, 2 that name no entity** |
 | names its `-db` removal rewrites | **2** (`billing-db`→`billing`, `orders-db`→`orders`); **0** answers among them |
 | `core` coverage, statements / branches / functions / lines | **99.97 / 99.79 / 100 / 99.97** |
 | export failure sites | **99** across 52 of 70 scripts, all annotated |
@@ -1483,11 +1484,14 @@ now returns `written`, and a skipped case is absent from it because it wrote not
   have, so upstream refuses the path. Everything the loader does *after* that line is answered and
   now measured.~~ Closed by finding 338, as a decision: the corpus answers the data half and does not
   write an identity it does not have.
-- **The fifteen parts in the pool.** Reported, not trimmed, because the readings are taken from the
-  same pool. `[open: whether a pod should be a candidate at all is a question about the metric, not
-  about the export]`
-- **19 of 30 cases still have no log line and 25 no span.** `[open: the corpus-authoring round is
-  still unstarted]`
+- **The fifteen names of another kind in the pool.** Reported, not trimmed, because the readings are
+  taken from the same pool. `[open: whether a pod should be a candidate at all is a question about
+  the metric, not about the export]`
+- **18 of 30 cases still have no log line and 24 no span.** The figure this entry carried until this
+  round -- 19 and 25 -- was v3.26's, and v3.27 moved it by authoring one of each; the guard has
+  printed `logs 12 / traces 6` since, and nothing joins an open entry's number to the line that
+  prints it. Corrected here rather than carried again. `[open: the corpus-authoring round is still
+  unstarted]`
 - **The bounds have never expired.** `[open: `measure-ci-baseline.mjs` refreshes them, and the
   refresh is a deliberate act]`
 
