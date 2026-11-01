@@ -422,6 +422,35 @@ exported files rather than the IR on purpose: a second check of the annotations 
 files disagreed, which is the shape finding 336 removed one field over.
 
 
+#### What the loader does with the tables is a property of the tables
+
+The export is read by `main.py`, and four of its lines decide what a case *is* to the metric. One of
+them is answered by the corpus: which reading ranks a case (`sli`, finding 331). The other three are
+arithmetic over the files, and finding 338 measured them for the first time:
+
+| line | what it needs from the export | reading |
+| --- | --- | --- |
+| `basename(dirname(dirname(path))).split("_")` | the leaf directory splits into exactly two names | **30 of 30** |
+| `data["time"] < inject_time` | at least one row before the injection instant | **30 of 30**, 8 at the thinnest |
+| `{c.split("_")[0].replace("-db","") for c in columns}` | every head names something the loader will treat as a service | **52 names: 35 services, 15 of another kind, 2 nothing** |
+
+The third is the one where our vocabulary and the loader's differ. A column head is a service name to
+it; in this topology it may be a pod, a container or a node, and two heads (`orders-db`,
+`billing-db`) are rewritten by its own `-db` removal into names no graph holds. The pool is therefore
+reported as a partition rather than trimmed: the published localisation readings are taken over the
+same pool, so an export narrower than the readings would be the disagreement this repository keeps
+removing.
+
+The one consequence worth a rule is an **answer** the loader would rename: a case whose root cause is
+a `...-db` component ships a table whose ranking cannot contain its own answer. No case is in that
+position, and `check-fault-cases` refuses the first one that is.
+
+`export/loader-read.ts` holds the four lines as functions (`loaderLabel`, `loaderColumn`,
+`baselineWindow`, `loaderCandidates`), with `assessCandidatePool` for the partition. It does not
+decide whether the loader accepts the corpus: that is the **path token**, which is upstream's table
+and an identity this corpus does not have.
+
+
 ### `fault.parameters` — the facts a checkpoint can cite
 
 `fault.parameters` is the injector's record, open by design: a `container`, a

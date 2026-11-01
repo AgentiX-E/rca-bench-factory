@@ -229,7 +229,7 @@ export {
   casePath,
   exportRcaEval,
 } from './export/rcaeval.js';
-export type { RcaEvalLogsSuite, RcaEvalSuite } from './export/rcaeval.js';
+export type { RcaEvalLogsSuite, RcaEvalOutcome, RcaEvalSuite } from './export/rcaeval.js';
 
 // The ranking declaration: which reading upstream should rank a case by. `readSliDeclaration` is what
 // the corpus guard asks about the file, and `resolveSli` is what the exporter asks about the data;
@@ -237,6 +237,31 @@ export type { RcaEvalLogsSuite, RcaEvalSuite } from './export/rcaeval.js';
 // not the series it names exists (finding 331).
 export { SLI_SUFFIX, describeSliFault, readSliDeclaration, resolveSli, sliColumn } from './export/sli.js';
 export type { CaseSli, SliFault, SliPublication, SliRead } from './export/sli.js';
+
+// The loader's own arithmetic: the second path component unpacked into two names, the baseline cut
+// at `time < inject_time`, and the candidate set built from the column heads. The path *token* is
+// upstream's and is not decided here; everything else it will do to our files is (finding 338).
+export {
+  LOADER_DB_SUFFIX,
+  assessCandidatePool,
+  baselineWindow,
+  describeEmptyBaseline,
+  describeLabelFault,
+  describeRenamedAnswer,
+  loaderCandidates,
+  loaderColumn,
+  loaderLabel,
+  readAsLoader,
+} from './export/loader-read.js';
+export type {
+  BaselineWindow,
+  CandidatePool,
+  LoaderCandidate,
+  LoaderLabel,
+  LoaderLabelFault,
+  LoaderRead,
+  LoaderView,
+} from './export/loader-read.js';
 
 // The reference a checkpoint publishes: the pair `(entity, reading)`, written as one qualified string
 // because that is the shape all three graded contracts document. `readSignalRef` is the decision,

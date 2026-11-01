@@ -1542,6 +1542,13 @@ let coverageLine = null;
 const exportLines = [];
 /** How many published references the rca100 artefact carries, by the way each one landed. */
 const referenceJoin = { published: 0, joined: 0, byEntity: 0, byContainer: 0, byKey: 0, dangling: 0, casesSkipped: 0 };
+/**
+ * What the official loader will do with the tables this corpus exports.
+ *
+ * `cases` is keyed by case id so the two suites that write the same case count once; `tables` counts
+ * the files, because RE1 and RE2 both write all thirty and a count of cases would hide that.
+ */
+const loaderUse = { tables: 0, cases: new Map(), refused: [], empty: [], candidates: [] };
 const SUITE_TARGETS = [['RE1', 'rcaeval-re1'], ['RE2', 'rcaeval-re2'], ['RE3', 'rcaeval-re3']];
 
 // The corpus through the two modules that decide whether it can be evaluated at all. Neither number
@@ -1597,17 +1604,40 @@ if (telemetryCases.length > 0 && firstGraph !== null) {
             return `, ${table} in ${String(carrying.size)} of ${String(dirs.size)}`;
           })
         : [];
-    // The column upstream actually looks for, counted off the tables rather than off the
-    // declarations: `sli` says what the file meant and this says what the dataset carries, and two
-    // instruments for one fact is the only way either of them can be wrong out loud (finding 331).
-    const ranking = Object.entries(outcome.files).filter(
-      ([path, text]) => path.endsWith('/data.csv') && text.split('\n')[0]?.split(',').some((column) => column.endsWith(core.SLI_SUFFIX)),
-    ).length;
-    if (dirs.size > 0) modalities.push(`, a \`${core.SLI_SUFFIX.replace('_', '')}\` column in ${String(ranking)} of ${String(dirs.size)}`);
+    // The ranking column used to be counted here, by asking whether any column ended in the
+    // suffix -- which is not the question: the loader looks for the column named after the service
+    // *in the path*, and a table could carry `cart-service_p99_latency` while the name it would
+    // look for is absent. It is asked in full below, off the same files (finding 338).
     exportLines.push(
       `${suite} ${String(dirs.size)} case(s) written${modalities.join('')}` +
         (outcome.skipped.length === 0 ? '' : `, ${String(outcome.skipped.length)} skipped`),
     );
+
+    // The loader's own arithmetic, run on the two files it reads rather than on the annotations
+    // they were built from. `written` is the exporter's mapping, not a path rebuilt here: the case
+    // index a reader would have to recompute depends on which cases were *written*, and getting
+    // that wrong reports a corpus defect that is really a reader defect (finding 338).
+    for (const [caseId, dir] of Object.entries(outcome.written)) {
+      const table = outcome.files[`${dir}/data.csv`] ?? '';
+      const rows = table.split('\n');
+      const header = (rows[0] ?? '').split(',');
+      // The table ends with a newline, and `Number('')` is 0 -- an instant before every injection.
+      // Left in, the blank row is a baseline sample, and the window reads one row wider than it is.
+      const times = rows
+        .slice(1)
+        .filter((row) => row !== '')
+        .map((row) => Number(row.split(',')[0]));
+      const injectSeconds = Number(outcome.files[`${dir}/inject_time.txt`] ?? Number.NaN);
+      const read = core.readAsLoader({ directory: dir, header, times, injectSeconds });
+      loaderUse.tables += 1;
+      if (read.kind === 'refused') {
+        loaderUse.refused.push({ caseId, fault: read.fault });
+        continue;
+      }
+      if (!loaderUse.cases.has(caseId)) loaderUse.cases.set(caseId, read.view);
+      if (read.view.baseline.rows === 0) loaderUse.empty.push({ caseId, view: read.view });
+      for (const one of core.loaderCandidates(header)) loaderUse.candidates.push(one);
+    }
   }
 
   // The other end of every reference. `signal_ref` is `<entity>|<reading>` since v3.29, and no rule
@@ -1650,6 +1680,19 @@ if (telemetryCases.length > 0 && firstGraph !== null) {
       problems.push(`${fc.caseId}: ${core.describeDanglingReference(one.join, one.checkpointId)}`);
     }
   }
+
+  // Three rules the loader's behaviour implies, and none of them was checked before this round.
+  // Each holds for all thirty cases today -- which is what a rule is for, since the corpus is the
+  // thing that can grow into it: a fault label with an underscore, a window that starts after the
+  // injection instant, and a component named `...-db` are all one case away.
+  for (const one of loaderUse.refused) problems.push(core.describeLabelFault(one.fault, one.caseId));
+  for (const one of loaderUse.empty) problems.push(core.describeEmptyBaseline(one.view, one.caseId));
+  for (const [caseId, view] of loaderUse.cases) {
+    const candidate = view.label.service.replace(core.LOADER_DB_SUFFIX, '');
+    if (candidate === view.label.service) continue;
+    problems.push(core.describeRenamedAnswer({ caseId, entity: view.label.service, candidate }));
+  }
+  loaderUse.pool = core.assessCandidatePool({ candidates: loaderUse.candidates, entities: bundle.graph.entities });
 }
 
 if (problems.length > 0) {
@@ -1661,6 +1704,7 @@ if (problems.length > 0) {
   logSignalRefUse();
   logReferenceJoin();
   logExportReading();
+  logLoaderRead();
   logLocalisationReading();
   logCheckpointCounts();
   console.error(
@@ -1698,6 +1742,42 @@ function logExportReading() {
 }
 
 /**
+ * What the official loader will make of the tables, in the two sentences a reader needs.
+ *
+ * The first is the per-case half: the path unpacks, the ranking column the path implies is present
+ * or the case declared that none can be, and the baseline window has rows. The second is the pool:
+ * every column head becomes a candidate service name, and our topology is not made of services
+ * alone -- which is the one place where a name we wrote and a name the loader reads are two
+ * different words.
+ */
+function logLoaderRead() {
+  if (loaderUse.cases.size === 0) return;
+  const views = [...loaderUse.cases.values()];
+  const carrying = views.filter((view) => view.carries).length;
+  const thinnest = Math.min(...views.map((view) => view.baseline.rows));
+  console.log(
+    `check-fault-cases: upstream reads ${String(views.length)} case(s) from ${String(loaderUse.tables)} exported ` +
+      `table(s) -- every leaf directory unpacks into a service and a fault, the column named after that service ` +
+      `is in ${String(carrying)}, and the pre-injection window holds at least ${String(thinnest)} row(s); the path ` +
+      `token itself is upstream's table and not ours to write`,
+  );
+  const pool = loaderUse.pool;
+  if (pool === undefined || pool.names.length === 0) return;
+  const rewritten = pool.rewritten
+    .map((one) => `${one.name}->${one.candidate}`)
+    .join(', ');
+  const answers = new Set(views.map((view) => view.label.service));
+  const lost = pool.unknown.filter((one) => answers.has(one.name)).length;
+  const unknown = new Set(pool.unknown.map((one) => one.candidate)).size;
+  console.log(
+    `check-fault-cases: the ranking pool it builds from the columns is ${String(pool.names.length)} name(s) -- ` +
+      `${String(pool.services.length)} a service, ${String(pool.nonServices.length)} another kind of entity, and ${String(unknown)} ` +
+      `that name no entity, of which ${String(pool.rewritten.length)} are its own '${core.LOADER_DB_SUFFIX}' removal ` +
+      `(${rewritten === '' ? 'none' : rewritten}); ${String(lost)} answer(s) among them`,
+  );
+}
+
+/**
  * Where each published reference landed in the artefact that publishes it.
  *
  * Four numbers rather than one, because they are four different statements: a match on the stated
@@ -1727,6 +1807,7 @@ logModalityUse();
 logSignalRefUse();
 logReferenceJoin();
 logExportReading();
+logLoaderRead();
 logLocalisationReading();
 logCheckpointCounts();
 

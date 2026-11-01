@@ -1364,9 +1364,9 @@ why, because the next person to add a replica will make the same assumption.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **214 files, 5325 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **218 files, 5512 tests passed** (as of this commit) |
+| `core` test suite | **214 files, 5325 tests passed** (as of `43baf3f29`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `43baf3f29`) |
+| repo test suite | **218 files, 5512 tests passed** (as of `43baf3f29`) |
 | published references that resolve inside the export | **109 of 109** (was 75 of 109) |
 | — on the stated entity / through containment / by parameter | **68 / 17 / 24** |
 | references that name nothing | **0** (was **34**) |
@@ -1393,3 +1393,106 @@ The reference is now a closed loop: the guard resolves `(entity, reading)` again
 exporter publishes the pair, the artefact carries the row the pair names, and the guard proves the
 join over the produced files. What is left of the original three items is the one that is not ours
 (upstream's path table) and one that is a judgement rather than a check.
+
+## v3.31 — the loader's four lines, run on a file we wrote
+
+The item left at the top of v3.30's list was the last one that is not a repair: `main.py` recognises
+a corpus by a token in the path and raises `SLI not implemented` for one it does not know, so an
+export of ours is refused before a single number is compared. That verdict is upstream's to give and
+the corpus already answers the half that is its own (v3.26). What had never been done is the rest of
+the loader's block — the three lines that are not decisions at all, only arithmetic over our files.
+
+### One: three lines, and each can be wrong while everything above it passes
+
+```
+service, metric = basename(dirname(dirname(data_path))).split("_")
+normal_df = data[data["time"] < inject_time].tail(...)
+"service": len({c.split("_")[0].replace("-db", "") for c in _pre_cols if c != "time"})
+```
+
+The first raises before the table is opened if the second path component does not split into exactly
+two names. The second decides what "before" means, and an empty window is not an error — it is a
+ranking computed from nothing. The third turns every column head into a candidate *service* name, and
+our topology is not made of services. All three leave the files well formed, so nothing in this
+repository could see them disagree with the reader.
+
+### Two: what they say, measured on 65 tables over 30 cases
+
+| line | reading |
+| --- | --- |
+| the leaf directory unpacks into a service and a fault | **30 of 30** |
+| `data["time"] < inject_time` selects rows | **30 of 30**, 8 at the thinnest |
+| the column named after the path's service is present | **7 of 30** — exactly the seven that declare a reading |
+
+The numbers are sound. The rules that keep them sound are the finding: a fault label carrying an
+underscore (`ts-route-service_f3_1`, one case in ninety of a real corpus, read here by a parser that
+is deliberately more capable than the loader) and a window that starts after the injection instant
+are each one case away, and neither was refused by anything.
+
+### Three: the third line is where two vocabularies meet
+
+52 distinct heads, of which **35 name a service**, **15 name an entity of another kind** (a pod, a
+container, a node, a broker, a database, an external dependency) and **2 name nothing at all** — `orders` and `billing`, produced by the loader's own
+`.replace("-db", "")` on `orders-db` and `billing-db`. So the pool it builds contains two names no
+graph holds and never contains those two databases under their own names.
+
+No case is harmed today: the answers are 28 services, one database (`analytics-replica`) and one
+external dependency, and none of them is renamed. The rule is written anyway — a case answering
+`orders-db` would ship a table whose ranking cannot contain its own answer, silently. The fifteen
+non-services are reported and **not filtered**: `rankServicesByPeakZScore` ranks every metric-bearing
+entity, which is where the published localisation readings come from, and trimming the artefact
+would make it narrower than the readings taken from it.
+
+### Four: the column, asked by name rather than by suffix
+
+The guard counted the ranking column by asking whether any head ended in `_latency`. That agreed
+with the declarations — 7 of 30 — by the naming convention rather than by construction, and a table
+carrying `cart-service_p99_latency` would have passed it while the name the loader looks for was
+absent. It now derives `{service}_latency` from each case's own leaf directory and asks the header
+for that exact string.
+
+### Five: the mapping only the writer has
+
+Joining a case id to its directory means rebuilding `casePath(suite, fc, index + 1)` — the index
+among the *written* cases — which is a second implementation of the exporter's loop. `exportRcaEval`
+now returns `written`, and a skipped case is absent from it because it wrote nothing to name.
+
+### Readings
+
+> Ledger for `v3.31`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **215 files, 5356 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **219 files, 5543 tests passed** (as of this commit) |
+| `export/loader-read.ts` | new: 24 tests, four lines, four sentences, one partition |
+| the loader's unpack, on our paths | **30 of 30** leaf directories hold exactly two names |
+| the loader's baseline, on our tables | **30 of 30** non-empty; **8 rows** at the thinnest |
+| the loader's ranking column, by the path's own name | **7 of 30** (was 7 by suffix — the same number, for a reason that is now checked) |
+| the loader's candidate pool | **52 names: 35 services, 15 parts of one, 2 that name no entity** |
+| names its `-db` removal rewrites | **2** (`billing-db`→`billing`, `orders-db`→`orders`); **0** answers among them |
+| `core` coverage, statements / branches / functions / lines | **99.97 / 99.79 / 100 / 99.97** |
+| export failure sites | **99** across 52 of 70 scripts, all annotated |
+| audits | 1–**338**, **335 findings** (absent: 118, 132–133) |
+| progress volumes | **9** (this one, now 11 rounds: v3.21–v3.31) |
+
+### Left open
+
+- ~~**The path token.** Unchanged and unchanging: a corpus cannot claim an identity it does not
+  have, so upstream refuses the path. Everything the loader does *after* that line is answered and
+  now measured.~~ Closed by finding 338, as a decision: the corpus answers the data half and does not
+  write an identity it does not have.
+- **The fifteen parts in the pool.** Reported, not trimmed, because the readings are taken from the
+  same pool. `[open: whether a pod should be a candidate at all is a question about the metric, not
+  about the export]`
+- **19 of 30 cases still have no log line and 25 no span.** `[open: the corpus-authoring round is
+  still unstarted]`
+- **The bounds have never expired.** `[open: `measure-ci-baseline.mjs` refreshes them, and the
+  refresh is a deliberate act]`
+
+### Unchanged
+
+The corpus, the answer keys, the checkpoints, the published localisation readings (rank 1: 48 of 60),
+the round trip (375 / 270 / 90), the three graded target contracts, and every budget the plan
+enforces. This round added a reader and a rule; it moved no answer.

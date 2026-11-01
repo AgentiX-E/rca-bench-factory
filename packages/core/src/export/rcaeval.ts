@@ -413,15 +413,30 @@ export function buildTracesCsv(signals: TelemetrySignal[]): string {
 
 
 /**
+ * What an RCAEval export produced, and the one thing only the writer knows.
+ *
+ * `files` is the tree and `skipped` is what did not reach it, both as every exporter reports them.
+ * `written` is the mapping from a case id to the leaf directory it landed in, and it exists because
+ * a reader can only recover that mapping by rebuilding `casePath`'s index arithmetic -- the case's
+ * position among the *written* ones, not among the skipped ones. Any such reconstruction is a second
+ * implementation of the writer's own loop, and a reader that gets it wrong reports a defect of the
+ * corpus (finding 338). There is one writer, so it says where it wrote.
+ */
+export interface RcaEvalOutcome extends ExportOutcome {
+  readonly written: Readonly<Record<string, string>>;
+}
+
+/**
  * Export a bundle in the RCAEval layout.
  *
  * `suite` selects the modality set: RE1 emits metrics only, RE2/RE3 additionally
  * emit logs and traces.
  */
-export function exportRcaEval(bundle: IrBundle, suite: RcaEvalSuite = 'RE2'): ExportOutcome {
+export function exportRcaEval(bundle: IrBundle, suite: RcaEvalSuite = 'RE2'): RcaEvalOutcome {
   assertExportableBundle(bundle);
   const files: ExportedFiles = {};
   const skipped: SkippedCase[] = [];
+  const written: Record<string, string> = {};
 
   bundle.cases.forEach((fc, index) => {
     const signals = bundle.signals[fc.caseId] ?? [];
@@ -460,6 +475,7 @@ export function exportRcaEval(bundle: IrBundle, suite: RcaEvalSuite = 'RE2'): Ex
     }
 
     const dir = casePath(suite, fc, index + 1);
+    written[fc.caseId] = dir;
     files[`${dir}/data.csv`] = buildDataCsv(signals, publication?.publish ?? undefined);
     files[`${dir}/inject_time.txt`] = `${Math.floor(Date.parse(fc.injectTime) / 1000)}`;
 
@@ -472,5 +488,5 @@ export function exportRcaEval(bundle: IrBundle, suite: RcaEvalSuite = 'RE2'): Ex
     }
   });
 
-  return { files, skipped };
+  return { files, skipped, written };
 }

@@ -3729,3 +3729,103 @@ whether the numbers in it support the assertion is `check-fault-cases`'s compari
 annotation is a good one is the reader's judgement. It also does not decide what a checker should do
 with a reference that names nothing: the corpus guard refuses the case, and that is a policy this
 module deliberately does not own.
+
+## Finding 338 — the loader's four lines were never run on a file we wrote
+
+`export/sli.ts` answers one of the four decisions `main.py` makes before it compares a number, and
+its header quotes the other three:
+
+```
+service, metric = basename(dirname(dirname(data_path))).split("_")
+normal_df = data[data["time"] < inject_time].tail(...)
+"service": len({c.split("_")[0].replace("-db", "") for c in _pre_cols if c != "time"})
+sli = "frontend_latency"
+if f"{service}_latency" in data: sli = f"{service}_latency"
+```
+
+The last two are answered: a case declares the reading that ranks it, the exporter publishes it under
+the name the path implies, and `check-fault-cases` counts the column. The first three are *arithmetic
+over our own files* — no product decision, no missing capability — and no round had ever computed
+them from an artefact. Each can be wrong while every check above it passes, because both sides stay
+well formed and only one of them is the reader.
+
+### What the three lines say about the export
+
+Measured on the corpus's own export, 65 tables over 30 cases, reading `data.csv` and `inject_time.txt`
+rather than the IR:
+
+| line | reading |
+| --- | --- |
+| the second path component splits into exactly two names | **30 of 30** |
+| `data["time"] < inject_time` selects rows | **30 of 30**, 8 at the thinnest |
+| the column named after the path's service is present | **7 of 30** — the seven that declare a reading |
+
+So the loader's arithmetic over our files is sound, and the two rules that keep it sound are the
+finding rather than the numbers: a fault label with an underscore breaks the unpack (one real corpus
+ships exactly that case, `ts-route-service_f3_1`, and `parseRcaEvalPath` reads it *deliberately* more
+capably than the loader does), and a window that starts after the injection instant ships a table
+whose baseline is empty — not an error, a ranking computed from nothing.
+
+### The third line is where two vocabularies meet
+
+Every column head becomes a **candidate service name**. Our topology is 96 entities: 35 services, 27
+pods, 15 containers, 8 nodes, 5 databases, 3 brokers, 3 external dependencies. The export carries 52
+distinct heads:
+
+| what the head names | count |
+| --- | --- |
+| a service | **35** |
+| an entity of another kind — pod, container, node, broker, database, external dependency | **15** |
+| a name no entity in the graph has | **2** |
+
+The two are `orders-db` and `billing-db`, and they are the loader's own rewrite: `.replace("-db", "")`
+is its convention for its corpora's database components, applied to a name we wrote. So the pool it
+builds contains `orders` and `billing` — names that exist nowhere — and the databases themselves
+never appear under the name the graph gives them.
+
+Nothing is broken by that today: no case answers with a `-db` component (28 answers are services, one
+is a database — `analytics-replica` — and one an external dependency), so the rule "an answer the
+loader would rename is refused" holds for all thirty. It is written down anyway, because the rewrite
+is a property of the consumer and a component name is free-form: one case named `orders-db` would
+ship a well-formed table whose ranking could not contain its own answer, and nothing downstream could
+see it.
+
+The fifteen non-services are a different question and deliberately *not* filtered. `rankServicesByPeakZScore`
+ranks every entity that carries a metric — that is where the published localisation readings come
+from — and a pod that outranks its service is classified as `same-component` rather than as a strict
+displacement. Filtering the export would make the artefact narrower than the readings taken from it,
+which is the disagreement this repository keeps removing rather than adding; the pool is therefore
+reported, not trimmed.
+
+### The column, asked by name instead of by suffix
+
+The guard counted the ranking column by asking whether any head ended in `_latency`. That is not the
+question: the loader looks for the column named after the service *in the path*, and a table could
+carry `cart-service_p99_latency` while the name it looks for is absent. The count agreed with the
+declarations (7 of 30) — by the naming convention, not by construction. It now derives
+`{service}_latency` from each case's own leaf directory and asks the header for that exact string, and
+the two instruments are compared in `check-fault-cases.test.ts` as before.
+
+### The mapping only the writer has
+
+A reader that wants to join a case id to its directory has to rebuild `casePath(suite, fc, index + 1)`
+— the case's position among the *written* cases, not among all of them. That is a second
+implementation of the exporter's loop, and a reader that gets it wrong reports a corpus defect that is
+really a reader defect. `exportRcaEval` therefore returns `written`, a `caseId → directory` map, and a
+skipped case is absent from it because it wrote nothing to name.
+
+### Where the check lives
+
+`export/loader-read.ts`: `loaderLabel` (the unpack), `loaderColumn` (the name), `baselineWindow` (the
+cut), `loaderCandidates` (the pool) and `assessCandidatePool` (the partition), with a sentence per
+refusal. The measured helper is not a simulator: it implements the four lines as quoted, including
+the strict `<` and the `-db` removal, and the tests are built from `buildDataCsv`'s own output rather
+than from strings written beside it.
+
+### What this does not do
+
+It does not decide whether the loader accepts the corpus. That is the path token, and the token is
+upstream's table: writing `online-boutique` into a synthetic storefront's path would make the dataset
+claim an identity it does not have, which is the allow-list this campaign refused twice. The corpus
+answers the half that belongs to the data, the guard measures it, and the refusal — should it ever be
+lifted upstream — is one line of their code, not one of ours.

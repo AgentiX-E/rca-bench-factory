@@ -170,6 +170,31 @@ describe('RCAEval exporter', () => {
     expect(paths.some((p) => p.endsWith('/inject_time.txt'))).toBe(true);
   });
 
+  it('reports the leaf directory each written case landed in, so a reader need not rebuild it', () => {
+    // The mapping is the writer's own: `casePath(suite, fc, index + 1)` over every case, so a reader
+    // that recomputed it would have to reproduce the loop -- and a reader that got the index wrong
+    // would report a corpus defect that is really a reader defect (finding 338).
+    const outcome = exportRcaEval(validBundle(), 'RE2');
+    const dirs = Object.values(outcome.written);
+    expect(dirs).toHaveLength(Object.keys(outcome.written).length);
+    for (const [caseId, dir] of Object.entries(outcome.written)) {
+      expect(caseId).toBe('case-001');
+      expect(outcome.files[`${dir}/data.csv`]).toBeDefined();
+      expect(dirs).toContain(dir);
+    }
+  });
+
+  it('names no directory for a case it refused, because it wrote nothing to name', () => {
+    // A skipped case leaves no artefacts behind -- the rule the RE3 suite test relies on -- so the
+    // mapping has to be silent about it rather than pointing at a directory that is not there.
+    const noMetrics = validBundle({
+      signals: { 'case-001': validBundle().signals['case-001']!.filter((s) => s.signal !== 'metric') },
+    });
+    const outcome = exportRcaEval(noMetrics, 'RE2');
+    expect(outcome.skipped).toHaveLength(1);
+    expect(outcome.written).toEqual({});
+  });
+
   it('emits logs and traces for RE2 but not for RE1', () => {
     const re2 = exportRcaEval(validBundle(), 'RE2');
     const re1 = exportRcaEval(validBundle(), 'RE1');

@@ -121,6 +121,7 @@ const ENUMERATED_MODULES = [
   'export/difficulty.ts',
   'export/guard.ts',
   'export/itbench.ts',
+  'export/loader-read.ts',
   'export/openrca.ts',
   'export/openrca2.ts',
   'export/rca100.ts',
@@ -228,6 +229,14 @@ const EXEMPT_EXPORTS: Record<string, string> = {
   // line at a time rather than by a wildcard, because a wildcard here was wrong --
   // the "no runtime export" precondition for `*` failed the moment I wrote it, and
   // the check below is what said so.
+  'export/loader-read.ts::LoaderLabel': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'export/loader-read.ts::LoaderLabelFault': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'export/loader-read.ts::LoaderCandidate': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'export/loader-read.ts::BaselineWindow': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'export/loader-read.ts::LoaderView': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'export/loader-read.ts::LoaderRead': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'export/loader-read.ts::CandidatePool': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'export/rcaeval.ts::RcaEvalOutcome': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::SignalKind': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::LogSeverity': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::SpanStatus': 'type-only declaration; erases at runtime, so no consumer can name it',
@@ -753,6 +762,21 @@ const TESTED = [
   'readSliDeclaration',
   'resolveSli',
   'sliColumn',
+  // export/loader-read.ts -- the four lines `main.py` runs before it compares a number, asked of the
+  // files we write. `loaderLabel` unpacks the leaf directory, `loaderColumn` builds the name the
+  // loader will look for, `baselineWindow` cuts `time < inject_time`, and `loaderCandidates` reads
+  // every column head as a candidate service name -- which is where a name we wrote and a name the
+  // loader reads can be two different words (finding 338).
+  'LOADER_DB_SUFFIX',
+  'assessCandidatePool',
+  'baselineWindow',
+  'describeEmptyBaseline',
+  'describeLabelFault',
+  'describeRenamedAnswer',
+  'loaderCandidates',
+  'loaderColumn',
+  'loaderLabel',
+  'readAsLoader',
   // export/tokens.ts -- the two name shapes the layout is built from. They were private functions in
   // `rcaeval.ts` until the ranking column needed the same token the path uses: a second sanitiser
   // would be a column and a directory spelling one service two ways.

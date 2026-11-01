@@ -1112,12 +1112,52 @@ describe('check-fault-cases · the corpus through the coverage report and the ex
     const result = await run(['--cases', corpus({ signals: signals() })]);
     // RE1 declares no modality, so it carries none: asking whether a metric-only suite's cases have
     // logs would report every RE1 export as deficient.
-    expect(result.out).toContain(
-      'export RE1 1 case(s) written, a `latency` column in 1 of 1 · RE2 1 case(s) written, logs in 0 of 1, ' +
-        'traces in 1 of 1, a `latency` column in 1 of 1',
-    );
+    // The ranking column left this line in v3.31: it was counted by asking whether any column ended
+    // in `_latency`, which is not the question the loader asks. The line below carries it again, as
+    // the column named after the service in the path (finding 338).
+    expect(result.out).toContain('export RE1 1 case(s) written · RE2 1 case(s) written, logs in 0 of 1, traces in 1 of 1');
     expect(result.out).toContain('RE3 0 case(s) written, 1 skipped');
     expect(result.out).not.toContain('file(s) with no rows');
+  });
+
+  it('reads the tables the way the loader reads them, and reports the pool it would build', async () => {
+    // Neither line existed before v3.31. The first is the loader's arithmetic over one case's two
+    // files -- the path unpacks into two names, the column named after the service is there, and the
+    // pre-injection window has rows. The second is what the loader believes our topology is made
+    // of: every column head becomes a candidate service name (finding 338).
+    const result = await run(['--cases', corpus({ signals: signals() })]);
+    expect(result.status, result.out).toBe(0);
+    const perCase =
+      /upstream reads 1 case\(s\) from 2 exported table\(s\) -- every leaf directory unpacks into a service and a fault, the column named after that service is in (\d+), and the pre-injection window holds at least (\d+) row\(s\)/.exec(
+        result.out,
+      );
+    expect(perCase, 'the loader line is missing from the report').not.toBeNull();
+    // The fixture's case declares the p99 reading and the table publishes it under the path's name.
+    expect(Number(perCase![1])).toBe(1);
+    expect(Number(perCase![2])).toBeGreaterThan(0);
+
+    const pool =
+      /the ranking pool it builds from the columns is (\d+) name\(s\) -- (\d+) a service, (\d+) another kind of entity, and (\d+) that name no entity, of which (\d+) are its own '-db' removal \((.*?)\); (\d+) answer\(s\) among them/.exec(
+        result.out,
+      );
+    expect(pool, 'the pool line is missing from the report').not.toBeNull();
+    const [, names, services, parts, unknown, rewritten, list, lost] = pool!;
+    // A partition, so the four numbers have to add up to the pool they are a partition of.
+    expect(Number(services) + Number(parts) + Number(unknown)).toBe(Number(names));
+    expect(Number(rewritten)).toBeLessThanOrEqual(Number(unknown));
+    // The fixture graph holds both `-db` entities, so its rewrites are named rather than summed.
+    if (Number(rewritten) > 0) expect(list).toContain('-db->');
+    // The answer of the one case is `checkout-api`: a name no rewrite can touch.
+    expect(Number(lost)).toBe(0);
+  });
+
+  it('says nothing about the loader when no case carries telemetry', async () => {
+    // Same rule as the coverage line: a corpus with no signals exports no table, so there is no
+    // reading of one, and a line of zeroes would be a measurement of nothing.
+    const result = await run(['--cases', corpus({})]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).not.toContain('check-fault-cases: upstream reads');
+    expect(result.out).not.toContain('the ranking pool it builds from the columns');
   });
 
   it('says nothing about coverage when no case carries telemetry, rather than reporting zeroes', async () => {
@@ -2499,11 +2539,14 @@ describe('check-fault-cases · a case has to say which reading ranks it', () => 
     expect(Number(ranking)).toBeGreaterThan(0);
     expect(Number(quiet)).toBeGreaterThan(0);
 
-    const exported = new RegExp(String.raw`RE2 ${String(CORPUS_SIZE)} case\(s\) written.*?, a \`latency\` column in (\d+) of ${String(CORPUS_SIZE)}`).exec(
-      result.out,
-    );
-    expect(exported, 'the export line does not report the ranking column').not.toBeNull();
-    expect(Number(exported![1])).toBe(Number(ranking));
+    // The second instrument moved from a suffix test to the loader's own name in v3.31: it reads
+    // each case's leaf directory, derives `{service}_latency` from it, and asks the header for that
+    // exact column. Agreement is still a measurement over different evidence -- but now it is the
+    // name the loader will look for rather than any column that happens to end in `_latency`
+    // (finding 338).
+    const carried = /the column named after that service is in (\d+)/.exec(result.out);
+    expect(carried, 'the loader line does not report the ranking column').not.toBeNull();
+    expect(Number(carried![1])).toBe(Number(ranking));
   });
 });
 
