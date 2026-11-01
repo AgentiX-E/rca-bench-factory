@@ -1574,11 +1574,69 @@ function facetMatched(facet: OfficialFacet, pred: OfficialPrediction, gt: Offici
   }
 }
 
+/**
+ * Words that cannot name a fault.
+ *
+ * The protocol's TA clause is "keyword detection against the ground-truth fault
+ * descriptions", and it separately truncates the reason "to suppress keyword
+ * stuffing". Two clauses that only mean anything if a keyword is a word the fault
+ * actually put there -- and the implementation read "keyword" as "any token longer
+ * than two characters", which admits `the`.
+ *
+ * Measured on this repository's own golden fixture, whose description is
+ * `CPU saturation on the order service`: a submission whose entire reason was
+ * `the` scored a full Type Accuracy, so 0.4 of Final_A -- the weight of the term
+ * -- was available to an answer that named nothing. That is the free-denominator
+ * defect (finding 159) with a word where the denominator was.
+ *
+ * The list is closed-class English: articles, prepositions, conjunctions,
+ * pronouns, auxiliaries, and the handful of adverbs that appear in every
+ * sentence. Content words that could plausibly name a fault (`use`, `may`, `out`)
+ * are deliberately **absent** -- removing one of them would make this table a
+ * second place a fault's name could be lost.
+ *
+ * Only entries of three characters or more are listed, because `keywordHit`
+ * already drops shorter tokens; `of`, `in` and `to` cannot survive that filter
+ * and listing them would suggest a second rule that is not running.
+ */
+const FUNCTION_WORDS: ReadonlySet<string> = new Set([
+  'about', 'across', 'after', 'against', 'all', 'along', 'also', 'although', 'and', 'any',
+  'are', 'because', 'been', 'before', 'being', 'between', 'both', 'but', 'can', 'could',
+  'did', 'does', 'during', 'each', 'for', 'from', 'had', 'has', 'have', 'her', 'here',
+  'his', 'how', 'into', 'its', 'may', 'might', 'more', 'most', 'must', 'not', 'only',
+  'our', 'over', 'per', 'she', 'should', 'since', 'some', 'such', 'than', 'that', 'the',
+  'their', 'then', 'there', 'these', 'they', 'this', 'those', 'through', 'under', 'until',
+  'very', 'via', 'was', 'were', 'what', 'when', 'where', 'which', 'while', 'who', 'whom',
+  'whose', 'will', 'with', 'within', 'without', 'would', 'yet', 'you', 'your',
+]);
+
+/**
+ * The words of a description, lower-cased and stripped of punctuation.
+ *
+ * Splitting on every non-alphanumeric run rather than on whitespace alone is the
+ * other half of "what is a keyword": a description that ends its sentence with a
+ * full stop was carrying a final token no reason could ever match, because the
+ * token kept the period and the reason never has one. Stripping it can only turn
+ * a dead token into a live one -- and only a content-word one, since function
+ * words are dropped either way -- so it cannot create credit that the fault did
+ * not put there.
+ */
+function descriptionWords(description: string): string[] {
+  return description
+    .toLowerCase()
+    .split(/[^a-z0-9-]+/)
+    .filter((token) => token !== '');
+}
+
 function keywordHit(reason: string, descriptions: readonly string[]): boolean {
   const head = firstWords(reason, 20).toLowerCase();
   return descriptions.some((description) => {
-    const tokens = description.toLowerCase().split(/\s+/).filter((t) => t.length > 2);
-    return tokens.length > 0 && tokens.some((token) => head.includes(token));
+    const tokens = descriptionWords(description).filter(
+      (token) => token.length > 2 && !FUNCTION_WORDS.has(token),
+    );
+    // A key whose description is nothing but function words has no keyword to
+    // hit, so it scores no hit. Paying here would make the term unfailable.
+    return tokens.some((token) => head.includes(token));
   });
 }
 
@@ -1617,11 +1675,28 @@ function scoreAioPs2025Case(pred: OfficialPrediction, gt: OfficialGroundTruth): 
   const eff = la === 1 ? Math.min(1, Math.exp(-(pred.traceWords - 5) / 5)) : 0;
   const score = 0.4 * la + 0.4 * ta + 0.1 * (exp ?? 0) + 0.1 * eff;
 
+  /**
+   * The facet verdicts, from the same values the score is built from.
+   *
+   * `OfficialMetricSpec.facets` is documented as "the facets this rule scores",
+   * and this target's four are its formula's four terms in order: `component` is
+   * LA, `reason` is TA, `evidence` is Exp. and `traceLength` is Eff. The generic
+   * `facetMatched('reason')` is exact string equality -- the rule OpenRCA's
+   * scorer uses, where the reason *is* the answer -- and applying it here made
+   * the record contradict its own score: a submission that named the fault
+   * inside a sentence was credited 0.4 and reported as a miss in the same object.
+   *
+   * So the one facet whose rule differs per target is answered from the term it
+   * stands for. Everything else keeps the shared predicate: a second copy of a
+   * rule is where a drift starts, and only `reason` actually has two rules.
+   */
+  const verdict = (facet: OfficialFacet): boolean => (facet === 'reason' ? ta === 1 : facetMatched(facet, pred, gt));
+
   return {
     caseId: gt.caseId,
     facets: OFFICIAL_METRICS.aiops2025.facets
       .filter((facet) => facet === 'traceLength' || gtHasFacet(gt, facet))
-      .map((facet) => ({ facet, matched: facetMatched(facet, pred, gt) })),
+      .map((facet) => ({ facet, matched: verdict(facet) })),
     score,
     correct: score === 1,
     // All four terms, so the record explains its own score. The aggregate reads

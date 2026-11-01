@@ -167,7 +167,7 @@ Where the four terms are read, clause by clause:
 | Term | Rule |
 | --- | --- |
 | `LA` | the predicted component equals the key's **exactly** (`emailservice` ≠ `emailservice-0`), **or** equals one of the endpoints the key declares in `source` / `destination` — "for network attacks, LA accepts a hit on either source or destination" |
-| `TA` | a keyword from `fault_description` appears in the first **20 words** of `reason`; **the embedding-similarity fallback the section also describes is not implemented** — it names neither a model nor a threshold, so it is recorded as a gap rather than fitted |
+| `TA` | a **keyword** from `fault_description` appears in the first **20 words** of `reason`. A keyword is a content word: the closed-class words (`the`, `and`, `with`, `for`, …) are not keywords, because the truncation above exists "to suppress keyword stuffing" and a term any sentence satisfies is not a measurement. The same value is what the case record reports as its `reason` verdict — one predicate, not two. **The embedding-similarity fallback the section also describes is not implemented** — it names neither a model nor a threshold, so it is recorded as a gap rather than fitted |
 | `Exp.` | `E_m / E_t`, where `E_t` is the union of `key_metrics` and the three `key_observations` lists, and each cited observation contributes only its first **20 characters** |
 | `Eff.` | `min(1, exp(-(APL-5)/5))`, where APL is the mean trace length over **LA-correct** cases |
 

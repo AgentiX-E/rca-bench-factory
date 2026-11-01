@@ -216,3 +216,47 @@ describe('readCorpusCategory', () => {
     expect(readCorpusCategory('   ')).toBeUndefined();
   });
 });
+
+describe('a fault name is not a fault token', () => {
+  /**
+   * The five code-level names, and the reason they have no consumer.
+   *
+   * v3.35 read them out of the corpus's paper and printed them in the census. The
+   * question the next round asked was whether any score target needs one, and the
+   * answer is no -- but "no" is only useful if it is a property rather than a
+   * coincidence. This block pins the property: the paper's name is a
+   * *description* of a token, and naming a fault by its description is not a
+   * spelling of its token, so a submission that answers `Incorrect Return Values`
+   * where the corpus writes `f4` is not answering in the corpus's vocabulary.
+   *
+   * If this ever became an alias, `readCorpusCategory` would start answering for
+   * an answer key's prose, and the runner would accept a sentence where it
+   * requires a token -- the direction finding 343 removed.
+   */
+  it("does not read the paper's name back as the corpus token", () => {
+    expect(RCAEVAL_FAULT_TAXONOMY_SOURCE.faultNames).toContain('Incorrect Return Values');
+    expect(readCorpusFault('Incorrect Return Values')).toBeUndefined();
+    expect(readCorpusFault('incorrect return values')).toBeUndefined();
+    // The token still reads, and still carries that name.
+    expect(readCorpusFault('f4')).toMatchObject({ token: 'f4', name: 'Incorrect Return Values' });
+  });
+
+  it('gives every token a name, and no two tokens the same one', () => {
+    const names = RCAEVAL_CORPUS_FAULTS.map((f) => f.name);
+    expect(names.every((name) => name.trim() !== '')).toBe(true);
+    // A shared name would make the name ambiguous as a description: two rows
+    // would print the same sentence for two different faults, and a reader
+    // diffing the census against the paper could not tell which moved.
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('keeps every name out of the token vocabulary', () => {
+    // A row whose name *was* a token would make the two spellings
+    // indistinguishable in a printout, which is the one way a description could
+    // be mistaken for an alias.
+    const tokens = new Set(RCAEVAL_CORPUS_FAULTS.map((f) => f.token));
+    for (const fault of RCAEVAL_CORPUS_FAULTS) {
+      expect(tokens.has(fault.name.toLowerCase())).toBe(false);
+    }
+  });
+});

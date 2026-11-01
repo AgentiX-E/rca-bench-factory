@@ -1935,9 +1935,9 @@ changed.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **222 files, 5463 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **226 files, 5650 tests passed** (as of this commit) |
+| `core` test suite | **222 files, 5456 tests passed** (as of `ff0cb10`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `ff0cb10`) |
+| repo test suite | **226 files, 5643 tests passed** (as of `ff0cb10`) |
 | new modules | `fault/corpus-fault-taxonomy.ts` (3 runtime exports, 2 types), `fault/corpus-census.ts` (2 runtime exports, 4 types) |
 | new scripts | `scripts/read-remote-index.mjs`, `scripts/census-corpus.mjs` |
 | new tests | **62** across five files, plus 2 round-trip cases |
@@ -2014,9 +2014,9 @@ pass without it, including the `zzz` case that must stay unstamped.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **222 files, 5463 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **226 files, 5650 tests passed** (as of this commit) |
+| `core` test suite | **222 files, 5463 tests passed** (as of `cd913df`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `cd913df`) |
+| repo test suite | **226 files, 5650 tests passed** (as of `cd913df`) |
 | `socket` / `f1` / `f3_1` through the ingest path | `unknown` → **`resource` / `code` / `code`** |
 | a descriptor's stated category | still wins, including against the table |
 | a label neither reading names (`zzz`) | still `unknown` |
@@ -2037,3 +2037,109 @@ pass without it, including the `zzz` case that must stay unstamped.
 
 The corpus, the answer keys, the checkpoints, the localisation readings, the round trip's three target
 contracts (375 / 270 / 90), the export, the pool's price, and every budget the plan enforces.
+
+## v3.37 — a term any sentence satisfies, and a record that disagreed with its own score
+
+v3.36 closed by naming its own next item: the five code-level **names** reach the census and no target. Going
+to measure that turned up two defects in the one term that does read a fault *description*, and the answer to
+the item itself.
+
+### One: the word `the` scored a perfect Final_A
+
+AIOps2025's TA carries the same weight as localisation (`0.4`). `keywordHit` read "keyword" as "any token
+longer than two characters", and the fixture's description is `CPU saturation on the order service`, whose
+tokens include `the`.
+
+| reason | TA before | Final_A before | Final_A after |
+| --- | --- | --- | --- |
+| the correct sentence | 1 | 100 | 100 |
+| a sentence that names the fault | 1 | 100 | 100 |
+| `the` | 1 | **100** | **60** |
+| `and` | 0 | 60 | 60 |
+
+A keyword is now a **content word**: a closed-class list of function words is filtered out, and the
+description is split on punctuation as well as whitespace -- so a description ending in a full stop no longer
+carries a final token nothing could match. Both directions are pinned by a test each, and the direction of
+each is stated: filtering can only remove credit the fault did not put there, and punctuation-splitting can
+only revive a content word that was dead.
+
+### Two: the record said "miss" where the score said 0.4
+
+The case record's four facets are the formula's four terms in order, so `reason` **is** TA. It was built from
+the generic predicate, whose `reason` case is exact string equality -- right for OpenRCA, where the reason is
+the answer, wrong here. One case, two verdicts:
+
+```
+reason = "a cpu saturation event, per the pod metrics"
+  ta      = 1        (0.4 of the score)
+  facet   = false    (reported as a miss)
+```
+
+The fix answers that one facet from the `ta` value already computed, and leaves every other facet on the
+shared predicate. The mutation harness could not have caught it, because it judges `degraded` from the score.
+
+### Three: the budget table could not see the file, then could not read it
+
+A full run reported `reader-against-backend.test.ts` at `Test timed out in 5000ms`. Measured: **9 620 ms**
+standalone, longest test 2 083 ms, eleven tests that each start a server and wait for it to stop. The file was
+not in `STANDALONE_MS` -- the gate checks the rows it has and cannot discover one it does not -- and when the
+row was added, `statedBudgets` read `{ timeout: SUITE_BUDGET_MS }` as *no budget*, so the gate named the fixed
+file a violator. That is the third false red from that reader and the first where the missing spelling was the
+one a suite-scoped budget should use; the fix is a fourth spelling through one `constantValue`.
+
+### Four: the names have no consumer because the corpus's metric is localisation-only
+
+Measured off `OFFICIAL_METRICS`: four of nine targets score a fault string (`openrca-2.0`, `rca100`,
+`aiops2025` through TA, `cloud-opsbench`), all four against a field their own dataset supplies, and none has a
+field for a name. The three targets that score this corpus -- `rcaeval-re1/-re2/-re3` -- score **`ranks`
+alone**: AC@k over service names, no type term. So the item closes as "no target needs it", and the boundary is
+pinned by three tests rather than argued: the paper's name does not read back as a token, no two tokens share a
+name, no name is a token.
+
+### Five: the record disagreed with itself, and the gate that would have said so refused instead
+
+`measure-doc-counts --write-doc` would not run, and the reason was not this round: v3.35's Readings block
+claimed **5472** core tests while v3.36's claimed **5463**, in a document where every round adds tests. One of
+the two blocks had been rewritten by an earlier `--write-doc` while it still carried the current-state marker.
+Both are now anchored to their own commits with the numbers their commits published (`5456` and `5463`), and
+the arithmetic is monotonic again. The gate behaved correctly -- it refused rather than picking one.
+
+### Readings
+
+> Ledger for `v3.37`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **222 files, 5472 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **226 files, 5659 tests passed** (as of this commit) |
+| `reason = "the"` | TA 1 → **0**, Final_A 100 → **60** |
+| a punctuated description | its last word is now readable, and `the` is still refused |
+| the `reason` facet vs the `ta` term | one predicate; was exact equality against containment |
+| `reader-against-backend.test.ts` | 9 620 ms, now in `STANDALONE_MS` with a 30 000 ms suite budget |
+| the budget reader's spellings | 3 → **4**, the fourth a name inside an options object |
+| new tests | **13** across four files |
+| targets that score a fault string | **4 of 9**, none of them a corpus name |
+| the corpus's own metric | `ranks` only — AC@k, no type term |
+| the published corpus | unchanged — no verdict moves |
+
+### Left open
+
+- **The embedding fallback is still missing**, and the gap is unchanged: a paraphrase sharing no word with the
+  description scores 0 where the protocol would fall back.
+  `[open: needs a model and a threshold the paper does not state]`
+- **A key whose description carries no keyword scores 0.** The protocol is silent; this repository records the
+  choice as raw gap rather than redistributing 0.4 over the other terms.
+  `[open: no published rule says what a key with no keyword is worth]`
+- **One full run reported `battery-summary-survives-ci-output.test.ts` red**, with a message the dot reporter
+  did not keep, and three subsequent full runs of the same bytes were green at 5 658. Recorded rather than
+  explained; the reader this round fixed is a different file.
+  `[open: one red, no message, not reproduced in three runs]`
+- **`provedBy` still records mention rather than drive** — carried since v3.32, and this round moved no site.
+  `[open: check-cli-reference.mjs:51 is driven from a fixture table, which the deriver reads as a literal and not as a call]`
+
+### Unchanged
+
+The corpus, the answer keys, the checkpoints, the localisation readings, the round trip's three target
+contracts (375 / 270 / 90), the export, the pool's price, and every budget the plan enforces -- except the one
+row this round added.

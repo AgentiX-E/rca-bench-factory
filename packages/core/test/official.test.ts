@@ -708,6 +708,86 @@ describe('AIOps2025 Final_A', () => {
     expect(report.breakdown.ta).toBe(0);
   });
 
+  /**
+   * The free point.
+   *
+   * The protocol says TA is "keyword detection against the ground-truth fault
+   * descriptions" and separately says the reason is truncated "to suppress
+   * keyword stuffing". Both clauses only mean something if a keyword is a word
+   * that carries the fault. Measured before the fix: this key's description is
+   * `CPU saturation on the order service`, its token `the` is three characters
+   * long, so a submission whose reason is the single word `the` scored a full
+   * Type Accuracy -- 0.4 of Final_A, exactly what the correct answer gets.
+   */
+  it('pays no Type Accuracy for an English function word', () => {
+    const oracle = oracleFor('aiops2025', files())[0]!;
+    const report = scoreWith('aiops2025', files(), [{ ...oracle, reason: 'the' }]);
+    expect(report.breakdown.ta).toBe(0);
+    // LA, Exp. and Eff. are all still perfect, so 60 is 100 minus the 0.4 the
+    // word used to buy. Stated as a number rather than as `less than 100`
+    // because "less" was already true of a mis-scored 90.
+    expect(report.final).toBe(60);
+  });
+
+  /**
+   * The half the truncation clause cannot see.
+   *
+   * A description that ends its sentence with a full stop used to carry a final
+   * token nothing could match: the token kept the period and a reason never has
+   * one. Measured on the fixture with a period appended -- `service.` never
+   * matched, so the last word of every punctuated key was dead. Both directions
+   * are asserted together, because "strip the punctuation" is only correct if it
+   * still refuses filler.
+   */
+  it('reads a punctuated description as words, not as words with punctuation', () => {
+    const punctuated = files();
+    const line = JSON.parse(punctuated['groundtruth.jsonl']!.trim());
+    punctuated['groundtruth.jsonl'] = `${JSON.stringify({
+      ...line,
+      fault_description: 'CPU saturation on the order service.',
+    })}\n`;
+    const oracle = oracleFor('aiops2025', punctuated)[0]!;
+
+    expect(scoreWith('aiops2025', punctuated, [{ ...oracle, reason: 'order' }]).breakdown.ta).toBe(1);
+    expect(scoreWith('aiops2025', punctuated, [{ ...oracle, reason: 'the' }]).breakdown.ta).toBe(0);
+  });
+
+  /**
+   * A key with nothing to detect.
+   *
+   * `the on and for` is four words and no keyword. The old rule found `the` and
+   * credited the case; a rule that can be satisfied by filler is a rule that
+   * cannot fail, and a term that cannot fail is not a measurement. Scoring no
+   * hit is the direction the truncation clause points at -- the protocol would
+   * rather miss a paraphrase than pay for noise.
+   */
+  it('reads a description of function words as nothing to hit', () => {
+    const noisy = files();
+    const line = JSON.parse(noisy['groundtruth.jsonl']!.trim());
+    noisy['groundtruth.jsonl'] = `${JSON.stringify({ ...line, fault_description: 'the on and for' })}\n`;
+    const oracle = oracleFor('aiops2025', noisy)[0]!;
+    const report = scoreWith('aiops2025', noisy, [{ ...oracle, reason: 'the on and for' }]);
+    expect(report.breakdown.ta).toBe(0);
+  });
+
+  /**
+   * The record must not contradict the score it explains.
+   *
+   * `OfficialMetricSpec.facets` is documented as "the facets this rule scores",
+   * and AIOps2025's four are the formula's four terms in order: `component` is
+   * LA, `reason` is TA, `evidence` is Exp. and `traceLength` is Eff. The record's
+   * `reason` verdict was exact string equality with the key's description while
+   * the `ta` term was containment, so a submission that names the fault inside a
+   * sentence was credited 0.4 and reported as a miss in the same object.
+   */
+  it('gives the reason verdict and the Type Accuracy term one predicate', () => {
+    const oracle = oracleFor('aiops2025', files())[0]!;
+    const prose: OfficialPrediction = { ...oracle, reason: 'a cpu saturation event, per the pod metrics' };
+    const report = scoreWith('aiops2025', files(), [prose]);
+    expect(report.breakdown.ta).toBe(1);
+    expect(report.cases[0]!.facets.find((f) => f.facet === 'reason')?.matched).toBe(true);
+  });
+
   it('penalises a long reasoning trace through the Efficiency term', () => {
     const oracle = oracleFor('aiops2025', files())[0]!;
     const verbose: OfficialPrediction = { ...oracle, traceWords: 500 };

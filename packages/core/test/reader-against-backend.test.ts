@@ -181,7 +181,22 @@ async function portAnswers(port: number): Promise<boolean> {
   });
 }
 
-describe(`scripts/${GATE} · a reader against a server this repository did not write`, () => {
+/**
+ * The suite's budget.
+ *
+ * Measured: **9.6 s** of test time standalone, over eleven tests that each start a
+ * server, drive the reader against it and wait for it to stop. The largest single
+ * test is 2 083 ms -- comfortably inside vitest's 5 000 ms default until the file
+ * shares a four-CPU quota with 225 others, which is where it was reported at
+ * `Test timed out in 5000ms` with every other test in the run passing.
+ *
+ * Stated on the suite rather than on the test that happened to be running, for the
+ * reason `timeout-budget.test.ts` records: a stall does not respect test boundaries,
+ * and the two tests at 1 676 ms are as close to the default as the one that failed.
+ */
+const SUITE_BUDGET_MS = 30_000;
+
+describe(`scripts/${GATE} · a reader against a server this repository did not write`, { timeout: SUITE_BUDGET_MS }, () => {
   it('drives the reader, reads the version off the server, and stops the server afterwards', async () => {
     // The version is the point of the shape below: `1.2.3-from-the-server` cannot appear in the
     // gate's output unless the gate read it, so a version transcribed into the script would fail

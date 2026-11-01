@@ -4490,3 +4490,150 @@ where both of those are silent.
 It also does not close finding 344's remaining item. The five code-level **names** ("Incorrect Return
 Values") still reach the census and no target; this round gave the category a third consumer, not the names
 a first one.
+
+## Finding 347 — Type Accuracy paid for `the`, and a perfect Final_A came with it
+
+AIOps2025's headline is `Final_A = 0.4·LA + 0.4·TA + 0.1·Exp. + 0.1·Eff.`, so TA carries the same weight as
+localisation. The rule, quoted from §4.4 and pinned in `golden-master/aiops2025-evaluator.json`:
+
+> TA scores whether the agent's reason field faithfully reflects the true fault type via two-step matching:
+> keyword detection against the ground-truth fault descriptions (any hit yields full credit), with
+> embedding-similarity fallback for unhit cases.
+
+and, as its own clause:
+
+> The reason field is truncated to its first 20 words to suppress keyword stuffing.
+
+`keywordHit` read "keyword" as **any token longer than two characters**:
+
+```ts
+const tokens = description.toLowerCase().split(/\s+/).filter((t) => t.length > 2);
+return tokens.some((token) => head.includes(token));
+```
+
+The fixture every test in this repository has used since the target was written has the description
+`CPU saturation on the order service`. Its tokens are `cpu`, `saturation`, `on`, `the`, `order`, `service` —
+and `the` is three characters. Measured, before the change:
+
+| reason | TA | Final_A |
+| --- | --- | --- |
+| `CPU saturation on the order service` | 1 | **100** |
+| `The root cause is CPU saturation on the order, per logs` | 1 | **100** |
+| `the` | 1 | **100** |
+| `and` | 0 | 60 |
+| `Completely unrelated sentence about nothing` | 0 | 60 |
+
+The word `the` scored a **perfect** Final_A: LA is the oracle's component, Exp. and Eff. are the oracle's, and
+TA — the term that is supposed to say whether the reason reflects the fault — was satisfied by an article. A
+term that any English sentence satisfies is not a measurement, and the two clauses above say so between them:
+truncating to twenty words only suppresses keyword stuffing if a keyword is a word the fault put there.
+
+### The fix, and why the direction is the safe one
+
+A keyword is a **content** word of the description. `FUNCTION_WORDS` is a closed-class list — articles,
+prepositions, conjunctions, pronouns, auxiliaries and the adverbs that appear in every sentence — and the
+token filter is `token.length > 2 && !FUNCTION_WORDS.has(token)`. Content words that could plausibly name a
+fault (`use`, `may`, `out`) are deliberately absent from the list: removing one of those would make the
+function-word table a second place a fault's name could be lost.
+
+The same expression carried a second defect in the opposite direction. `descriptionWords` splits on every
+non-alphanumeric run rather than on whitespace, so a description that ends its sentence with a full stop no
+longer carries a final token nothing can match — `service.` kept its period, and a reason never has one.
+Splitting on punctuation can only turn a dead token into a live one, and only a content-word one, so it
+cannot manufacture credit the fault did not put there. Both halves are pinned by one test each.
+
+### What this does not establish
+
+The embedding fallback is still not implemented (gap `ta-embedding-fallback`, unchanged): a paraphrase that
+shares no word with the description still scores 0 where the protocol would fall back.
+
+And a key whose description is *only* function words now scores no hit. The protocol does not say what to do
+there; scoring 0 is this repository's choice and it is recorded as a gap (`ta-empty-description`) rather than
+left as a silent behaviour.
+
+## Finding 348 — the record said "miss" where the score said 0.4
+
+`OfficialMetricSpec.facets` is documented as "the facets this rule scores; anything absent is not part of the
+score". AIOps2025's four are its formula's four terms in order — `component` is LA, `reason` is TA, `evidence`
+is Exp., `traceLength` is Eff. — but the case record built them from the generic `facetMatched`, whose
+`reason` case is **exact string equality** with the key's description. That is the right rule for OpenRCA,
+where the reason *is* the answer; it is the wrong rule here. Measured on one case:
+
+| reason | TA (in the score) | `reason` facet (in the record) |
+| --- | --- | --- |
+| `CPU saturation on the order service` | 1 | true |
+| `a cpu saturation event, per the pod metrics` | 1 | **false** |
+
+So a submission that named the fault inside a sentence was credited 0.4 and reported as a miss in the same
+object — the record contradicting its own score, which is the class findings 183 and 184 were written about
+(a quantity computed twice and disagreeing once).
+
+The fix is not a new predicate in `facetMatched`: only this target's `reason` means something different, so
+`scoreAioPs2025Case` answers that one facet from the `ta` value it already computed, and every other facet
+keeps the shared predicate. One copy of the rule that differs, and no copy of the ones that do not.
+
+The mutation harness could not have caught this: it judges `degraded` from the **score**, so a facet verdict
+that disagrees with the term it stands for is invisible to it. That is why the regression is pinned by a
+direct assertion on the pair rather than by a mutation.
+
+## Finding 349 — the budget table could not see the file, and then could not read it
+
+A full-suite run of 226 files on a four-CPU quota reported one test of `reader-against-backend.test.ts` at
+`Test timed out in 5000ms`, with every other test in the run passing. Measured standalone, worst of three
+passes: **9 620 ms** of test time, longest single test 2 083 ms, two others at 1 676 ms. Eleven tests, each
+starting a server, driving a reader against it and waiting for it to stop.
+
+Two defects, in that order of discovery.
+
+**The table.** `timeout-budget.test.ts` holds `STANDALONE_MS`, documented as "the measured standalone cost of
+every test file that is close to the line". This file is 1.9x the default and was not in it. The rule that
+consumes the table iterates the table, so a file that is absent is not checked — the gate can verify every row
+it has and cannot discover a row it does not. The row is added with its measurement; the limitation is stated
+here rather than papered over, because the alternative (a shape rule: "every file that starts a server states
+a budget") is the rule this file already rejected for naming 26 offenders, most of them harmless.
+
+**The reader.** With the row added, the gate reported the file as a violator — a **false red on the fix**. The
+file states its budget the way a suite-scoped budget should be stated:
+
+```ts
+const SUITE_BUDGET_MS = 30_000;
+describe(`…`, { timeout: SUITE_BUDGET_MS }, () => {
+```
+
+and `statedBudgets` resolved an options object only when the number was a literal, plus a named constant only
+when the name ended in `TIMEOUT_MS`. `{ timeout: SUITE_BUDGET_MS }` was therefore read as *no budget at all*.
+This is the third false red this reader has produced — the first was a constant read out of a comment, the
+second was `fetch-official.test.ts`'s positional form — and all three have one cause: the reader knew fewer
+spellings than vitest honours. The fix is a fourth spelling resolved through a single `constantValue`, with a
+fixture for the named form and one for a name that resolves to nothing (which must stay 0, or the reader's
+silence becomes indistinguishable from a pass).
+
+## Finding 350 — no target reads a fault name, and the corpus's own metric is why
+
+v3.35 read the corpus's eleven fault types out of its paper and printed their names in the census. v3.36 found
+that even the *category* reached only two call sites. What neither round had measured is the thing the item
+actually asked: **does any score target need the name?**
+
+Measured off `OFFICIAL_METRICS` at this commit, not off the prose:
+
+| target | facets | scores a fault string | read from |
+| --- | --- | --- | --- |
+| `openrca-1.0` | component, reason, occurredAt | no | — |
+| `openrca-2.0` | component, faultType | yes | its `groundtruth.json` field `root_cause_types[0]` |
+| `rcaeval-re1` / `-re2` / `-re3` | ranks | **no** | — |
+| `rca100` | component, faultType, chain, evidence | yes | `result.root_cause` |
+| `aiops2025` | component, reason, evidence, traceLength | indirectly, through TA | the dataset's own `fault_description` sentence |
+| `cloud-opsbench` | component, faultType | yes | `result.root_cause` |
+| `itbench` | component, chain, evidence | no | — |
+
+Four of nine score a fault string, and all four compare it to a field their own dataset supplies — a token
+(`cpu`, `f4`) or a sentence. None has a field for a name, so none can score one. And the three targets that
+actually score this corpus's 735 cases score **`ranks` alone**: RCAEval's published metric is AC@k over
+service names, with no type term at all. That is the whole reason the names have no consumer, and it is a
+property of the published rules rather than an omission here.
+
+The boundary is pinned rather than argued. Three tests in `corpus-fault-taxonomy.test.ts` assert that the
+paper's name does not read back as a token (`readCorpusFault('Incorrect Return Values')` is `undefined`), that
+no two tokens share a name, and that no name is itself a token. Without the first, `readCorpusCategory` would
+start answering for an answer key's prose, and the runner would accept a sentence where it requires a token —
+the direction finding 343 removed.

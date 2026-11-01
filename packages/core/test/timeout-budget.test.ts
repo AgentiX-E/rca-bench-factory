@@ -142,6 +142,13 @@ const STANDALONE_MS: Readonly<Record<string, number>> = {
   // that was observed exceeding a 30 000 ms budget twice in six full-suite runs.
   'ingest-report.test.ts': 14_920,
   'typecheck-entrypoint.test.ts': 11_328,
+  // Found by a red run rather than by this table, which is the honest description
+  // of how the table is maintained: it can check every row it has and cannot
+  // discover a row it does not. A full-suite run of 226 files on a four-CPU quota
+  // reported one of this file's eleven tests at `Test timed out in 5000ms`, with
+  // every other test in the run passing. Measured: **9.62 s** of test time
+  // standalone, worst of three passes, largest single test 2 083 ms.
+  'reader-against-backend.test.ts': 9_620,
 };
 
 /**
@@ -225,7 +232,7 @@ function spawnsAChild(source: string): boolean {
 /**
  * Every budget the file states, and how much it is, whichever spelling it uses.
  *
- * There are **three** spellings, and the reader has to know all three. This is
+ * There are **four** spellings, and the reader has to know all four. This is
  * not a stylistic nicety: the second version of this function knew two, and it
  * consequently reported `fetch-official.test.ts` -- which states `300_000` on its
  * 2 GiB digest test -- as a file with no budget at all. A reader that misses a
@@ -236,12 +243,30 @@ function spawnsAChild(source: string): boolean {
  *      files this repository fixed by hand use, because the name is the thing a
  *      comment can justify.
  *   2. `it('...', { timeout: 30_000 }, () => {` -- the options object.
- *   3. `it('...', async () => { ... }, 300_000)` -- vitest's positional third
+ *   3. `it('...', { timeout: SUITE_BUDGET_MS }, () => {` -- the options object with
+ *      the number behind a name, which is how a budget that is stated once for a
+ *      whole suite is written.
+ *   4. `it('...', async () => { ... }, 300_000)` -- vitest's positional third
  *      argument, which is what most of `fetch-official.test.ts` uses.
  *
  * The values are returned rather than a boolean, because the caller's real
  * question is not "is there a budget" but "is the budget larger than the default".
  */
+/**
+ * The number a named constant was declared with, or `undefined`.
+ *
+ * Shared by the two readers that have to resolve a name, so the resolver has one
+ * home. The pattern takes any identifier, not only one that ends in `TIMEOUT_MS`:
+ * a budget named `SUITE_BUDGET_MS` is the same quantity as one named
+ * `RULE_TIMEOUT_MS`, and a reader that insists on the second spelling reports the
+ * first as no budget at all.
+ */
+function constantValue(code: string, name: string): number | undefined {
+  const declared = new RegExp(`(?:const|let)\\s+${name}\\s*=\\s*([0-9][0-9_]*)`).exec(code);
+  if (declared === null) return undefined;
+  return Number(declared[1]!.replace(/_/g, ''));
+}
+
 function statedBudgets(source: string): number[] {
   const values: number[] = [];
   // Both patterns run against the stripped source.
@@ -256,8 +281,23 @@ function statedBudgets(source: string): number[] {
   for (const m of code.matchAll(/(?:const|let)\s+[A-Z_]*TIMEOUT_MS\s*=\s*([0-9_]+)/g)) {
     values.push(Number(m[1]!.replace(/_/g, '')));
   }
-  for (const m of code.matchAll(/\{\s*timeout:\s*([0-9_]+)\s*\}/g)) {
-    values.push(Number(m[1]!.replace(/_/g, '')));
+  // The options object, in both spellings: a literal, and a name.
+  //
+  // The named spelling was missing, and the cost of the omission is recorded
+  // above -- `reader-against-backend.test.ts` states `{ timeout: SUITE_BUDGET_MS }`
+  // on its suite, the reader therefore found no budget, and the gate reported a
+  // file that had done exactly what the rule asks as a violator. That is the
+  // third false red this reader has produced (the second was `fetch-official`'s
+  // positional form), and all three had the same cause: the reader knew fewer
+  // spellings than vitest honours.
+  for (const m of code.matchAll(/\{\s*timeout:\s*([A-Za-z_$][\w$]*|[0-9][0-9_]*)\s*\}/g)) {
+    const raw = m[1]!;
+    if (/^[0-9]/.test(raw)) {
+      values.push(Number(raw.replace(/_/g, '')));
+      continue;
+    }
+    const resolved = constantValue(code, raw);
+    if (resolved !== undefined) values.push(resolved);
   }
   // The positional form. Only a *trailing* number in a call-argument position is
   // a timeout, so this requires a closing paren and a statement end after it --
@@ -309,16 +349,23 @@ function suiteBudget(source: string): number {
   )) {
     const raw = m[1]!;
     if (/^[0-9]/.test(raw)) return Number(raw.replace(/_/g, ''));
-    const named = new RegExp(`(?:const|let)\\s+${raw}\\s*=\\s*([0-9][0-9_]*)`).exec(code);
-    if (named === null) continue;
-    return Number(named[1]!.replace(/_/g, ''));
+    const named = constantValue(code, raw);
+    if (named === undefined) continue;
+    return named;
   }
   return 0;
 }
 
 /**
- * Files whose tests walk the whole shipped inventory, and which therefore must
- * carry their budget on the suite rather than on individual tests.
+ * Files whose cost is a **sum of many waits**, and which therefore must carry
+ * their budget on the suite rather than on individual tests.
+ *
+ * Two shapes reach this table and they are the same fact about budgets. One walks
+ * the whole shipped inventory: thirty-three checks over 89 sites, each cheap, none
+ * of them the thing that ran out of time. The other starts a server, drives a
+ * reader against it and waits for it to stop, eleven times. In both, the number
+ * that blew was not any test's cost but the process's, and a budget applied to one
+ * test protects that test and leaves the next one written on the default.
  *
  * ## The failure this table answers
  *
@@ -361,6 +408,13 @@ const SUITE_BUDGET_MS: Readonly<Record<string, { measured: string }>> = {
     measured:
       '4 / 50 / 44 ms per test and 476 ms per file standalone under v8 coverage; ' +
       'all three reported over 5000 ms on CI 40796343743, green on 29b4987d9',
+  },
+  'reader-against-backend.test.ts': {
+    measured:
+      '9 620 ms for the file standalone (worst of three passes), longest test 2 083 ms and ' +
+      'two others at 1 676 ms; one test reported at 5000 ms in a full-suite run of 226 files ' +
+      'on a four-CPU quota. Eleven tests, each starting a server and waiting for it to stop, ' +
+      'so the file is a sum of waits rather than one slow call',
   },
 };
 
@@ -526,9 +580,22 @@ describe('the reader · it finds every spelling of a budget and only those', () 
     // The third spelling, and the one whose absence made this gate report a
     // guarded file as unguarded: `fetch-official.test.ts` states `300_000` this
     // way on its 2 GiB digest test. A reader that misses a spelling produces a
-    // false red, so each of the three is pinned by name.
+    // false red, so each of the four is pinned by name.
     expect(largestBudget("it('x', async () => {\n  await go();\n}, 300_000);")).toBe(300_000);
     expect(largestBudget("it('x', async () => {}, 60_000)")).toBe(60_000);
+  });
+
+  it('resolves an options object whose number is behind a name', () => {
+    // The fourth spelling, and the second false red this reader produced:
+    // `reader-against-backend.test.ts` states `{ timeout: SUITE_BUDGET_MS }` on its
+    // suite, and a reader that knew only literals reported it as a file with no
+    // budget -- then named it a violator for doing exactly what the rule asks.
+    expect(
+      largestBudget("const SUITE_BUDGET_MS = 30_000;\ndescribe('x', { timeout: SUITE_BUDGET_MS }, () => {});"),
+    ).toBe(30_000);
+    // A name that resolves to nothing is not a budget. Guessing `5 000` or the
+    // default here would make the reader's silence indistinguishable from a pass.
+    expect(largestBudget("describe('x', { timeout: FROM_ANOTHER_FILE }, () => {});")).toBe(0);
   });
 
   it('does not mistake an ordinary numeric argument for a budget', () => {

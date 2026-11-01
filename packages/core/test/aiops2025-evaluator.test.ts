@@ -176,15 +176,36 @@ describe('the corpus is the thing it claims to be', () => {
     expect(clause('ta-two-step').implemented).toBe(false);
   });
 
-  it('states the gap the first step of TA leaves open, with its direction', () => {
-    expect(CORPUS.gaps).toHaveLength(1);
-    const gap = CORPUS.gaps[0]!;
-    expect(gap.clause).toBe('ta-two-step');
-    expect(gap.costs.length).toBeGreaterThan(60);
-    expect(gap.next.length).toBeGreaterThan(120);
+  it('states the two gaps TA leaves open, with their directions', () => {
+    // Two, and both named. The first is the missing embedding fallback; the second
+    // is a key whose description carries no keyword at all, where the protocol is
+    // silent and this repository scores no hit. A count is not enough -- the rows
+    // are asserted by id, so a third gap has to be argued for rather than counted.
+    expect(CORPUS.gaps).toHaveLength(2);
+    const fallback = CORPUS.gaps.find((g) => g.id === 'ta-embedding-fallback')!;
+    expect(fallback.clause).toBe('ta-two-step');
+    expect(fallback.costs.length).toBeGreaterThan(60);
+    expect(fallback.next.length).toBeGreaterThan(120);
     // The gap is about a *missing* fallback, so the clause it points at must be the
     // one whose quote contains it.
-    expect(clause(gap.clause).quote).toContain('embedding-similarity fallback');
+    expect(clause(fallback.clause).quote).toContain('embedding-similarity fallback');
+
+    const empty = CORPUS.gaps.find((g) => g.id === 'ta-empty-description')!;
+    expect(empty.clause).toBe('ta-keyword-is-content');
+    expect(empty.costs.length).toBeGreaterThan(60);
+    expect(empty.next.length).toBeGreaterThan(120);
+    // And the clause it points at is the one that decides what a keyword is.
+    expect(clause(empty.clause).quote).toContain('keyword stuffing');
+  });
+
+  it('records that the keyword rule changed, rather than presenting it as always right', () => {
+    // `was: false` is the corpus's own admission that the shipped rule did not
+    // implement this clause. Without it a reader of the golden file would take
+    // `implemented: true` for "this was always here", and the measurement that
+    // forced the change -- `reason = "the"` scoring 100 -- would have no record.
+    expect(clause('ta-keyword-is-content').was).toBe(false);
+    expect(clause('ta-keyword-is-content').implemented).toBe(true);
+    expect(clause('ta-keyword-is-content').why).toContain('FUNCTION_WORDS');
   });
 });
 

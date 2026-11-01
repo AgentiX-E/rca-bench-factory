@@ -81,6 +81,14 @@
       "why": "`firstWords(reason, 20)` before the keyword comparison, so a keyword at word 21 does not count."
     },
     {
+      "id": "ta-keyword-is-content",
+      "term": "ta",
+      "quote": "The reason field is truncated to its first 20 words to suppress keyword stuffing.",
+      "implemented": true,
+      "was": false,
+      "why": "Read with the clause above, 'keyword' cannot mean any word: truncation suppresses stuffing only if a hit is a word the fault put there. The implementation filtered tokens by length alone, and the fixture's description `CPU saturation on the order service` therefore made `the` a keyword -- so `reason = \"the\"` earned a full Type Accuracy and a perfect Final_A, measured. A keyword is now a content word of the description: `FUNCTION_WORDS` is a closed-class list, and content words that could name a fault (`use`, `may`, `out`) are deliberately absent from it. The same expression splits on punctuation, because a description ending in a full stop was carrying a final token no reason could match."
+    },
+    {
       "id": "exp-definition",
       "term": "explainability",
       "quote": "The core metric is Explainability (0.10), measuring evidence-point coverage: E_m / E_t, where E_t is the total expected evidence points (the union of the GT’s key metrics and key observations) and E_m the count hit in any of the agent’s trace observations",
@@ -120,6 +128,12 @@
       "clause": "ta-two-step",
       "costs": "an answer that paraphrases the fault type without using any of its description's words is scored 0 where the protocol would fall back to an embedding comparison and may credit it",
       "next": "needs an embedding model and a similarity threshold the paper does not state. The paper says 'embedding-similarity fallback' without naming the model or the cut-off, so reproducing it means choosing both -- which is a decision, not a transcription. Every option costs something: a different model changes the number, and a threshold chosen to match the paper's reported TA is fitting the metric to its own result."
+    },
+    {
+      "id": "ta-empty-description",
+      "clause": "ta-keyword-is-content",
+      "costs": "a key whose fault_description is empty, or is made only of function words, has no keyword to hit; scoring 0 charges the submission 0.4 for a term the answer key cannot define",
+      "next": "the protocol states the weights and the matching rule, and says nothing about a description that carries no keyword. Scoring 0 is this repository's choice and it is the conservative one -- the alternative, dropping TA from the weighted sum, would redistribute 0.4 over the other terms and invent a formula the paper does not print. Recorded rather than fixed; an exporter that writes no `fault_description` is where this would first be visible."
     }
   ]
 }
