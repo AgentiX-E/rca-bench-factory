@@ -895,6 +895,7 @@ export {
   describeCorpusFault,
   RCAEVAL_CORPUS_FAULTS,
   RCAEVAL_FAULT_TAXONOMY_SOURCE,
+  readCorpusCategory,
   readCorpusFault,
 } from './fault/corpus-fault-taxonomy.js';
 export type { CorpusFault, CorpusFaultDescription } from './fault/corpus-fault-taxonomy.js';

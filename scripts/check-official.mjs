@@ -70,7 +70,6 @@ import {
   describeCorpusFault,
   describeModalityComparison,
   exportForScoreTarget,
-  inferFaultCategory,
   ingestPrimeDataset,
   isVocabularyMember,
   MISSING_VALUE_TOKENS,
@@ -1134,29 +1133,23 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
         caseId: entry.caseId,
         component: entry.component,
         faultType: entry.faultType,
-        // Only when the label itself states no category, and only with a category the
-        // corpus's own taxonomy states. Two written rules, both narrower than the one
-        // they replace:
+        // No `faultCategory` here any more. Some label states carry no category -- `f1`…`f5`
+        // are five distinct code-level faults spelled as indices, `f3_1` spells one of them
+        // with an instance suffix, and `socket` is a resource fault whose word this
+        // repository's keyword table does not carry -- and until v3.36 this call site
+        // restated the rule that resolves them:
         //
         //   - the **label** wins when it carries a category. `RE3-TT/ts-order-service_cpu/1`
-        //     says `cpu`, and stamping it `code` round-tripped it `oracle=1.00` inside the
-        //     one slice whose published rule admits code-level faults only -- the target's
-        //     own contract, waived by its caller, with nothing printed (finding 343).
-        //   - the **taxonomy** decides what an otherwise unreadable label means. Until this
-        //     round the fallback was the suite: every RE3 case with an unreadable label got
-        //     `code`, which was right for `f1`…`f5` by coincidence of the corpus and wrong
-        //     in principle. `f1`…`f5` are five *distinct* code-level faults the corpus names
-        //     in its own paper, and `RE3-TT/ts-route-service_f3_1/1` spells one of them with
-        //     an instance suffix; both are read by `corpus-fault-taxonomy.ts`, which cites
-        //     the sentence it reads them from.
+        //     says `cpu`, and stamping it `code` round-tripped it `oracle=1.00` inside the one
+        //     slice whose published rule admits code-level faults only (finding 343).
+        //   - the **taxonomy** decides what an otherwise unreadable label means, and a label
+        //     no reading names stays unstamped, so the export refuses it and the refusal
+        //     travels as a skip the ledger can see.
         //
-        // What is left over is a label no reading names, and that case is now *not* stamped:
-        // the export refuses it and the refusal travels as a skip the ledger can see, which
-        // is a statement about the corpus. Stamping it `code` was a statement about the
-        // suite, made on behalf of a case nobody had read.
-        ...(inferFaultCategory(entry.faultType) === 'unknown' && corpusFault.category !== 'unknown'
-          ? { faultCategory: corpusFault.category }
-          : {}),
+        // That rule now lives in `ingest/prime.ts`, because every caller needed it and only
+        // this one had it: the ingest path read the descriptor's category and handed an
+        // unstated one to the classifier, so an RE3 index label ingested through the library
+        // arrived as `unknown`. One home, and this call site is a caller like any other.
         injectTime: entry.injectTime,
         pathPrefixes: [entry.pathPrefix],
         // The declared mapping for every table the case ships. Detection is for

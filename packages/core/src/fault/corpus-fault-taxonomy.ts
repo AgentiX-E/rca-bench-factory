@@ -181,3 +181,21 @@ export function describeCorpusFault(type: string): CorpusFaultDescription {
   }
   return { type, category: 'unknown', name: null, readAs: 'unknown' };
 }
+
+/**
+ * The category this table claims for a label, and only where the classifier is silent.
+ *
+ * `undefined` means "this table does not decide" -- not "no category": either the
+ * classifier spoke (`cpu`) or nothing named the label (`zzz`). The distinction matters to
+ * a caller that wants a value to hand to a schema, because `describeCorpusFault` returns a
+ * category in every case and a caller using it directly has to restate the direction rule
+ * to know whether it may use it. This function makes that restatement impossible.
+ *
+ * The `f3_1` spelling is an instance suffix on a stem, so it is matched before the type is
+ * normalised anywhere: normalising turns the underscore into a hyphen and the stem rule --
+ * which requires a number after the underscore -- would then never fire.
+ */
+export function readCorpusCategory(type: string): FaultCategory | undefined {
+  const described = describeCorpusFault(type);
+  return described.readAs === 'taxonomy' ? described.category : undefined;
+}

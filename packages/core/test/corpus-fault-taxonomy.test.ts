@@ -3,6 +3,7 @@ import {
   describeCorpusFault,
   RCAEVAL_CORPUS_FAULTS,
   RCAEVAL_FAULT_TAXONOMY_SOURCE,
+  readCorpusCategory,
   readCorpusFault,
 } from '../src/fault/corpus-fault-taxonomy.js';
 import { FAULT_CATEGORIES, inferFaultCategory } from '../src/index.js';
@@ -181,5 +182,37 @@ describe('describeCorpusFault', () => {
     // The rule finding 343 was about: a category the label states wins.
     expect(describeCorpusFault('cpu').readAs).toBe('classifier');
     expect(describeCorpusFault('loss').category).toBe(inferFaultCategory('loss'));
+  });
+});
+
+describe('readCorpusCategory', () => {
+  /**
+   * The helper exists so a caller can hand a category to a schema without restating the
+   * direction rule. `undefined` is the whole contract: it means "this table does not
+   * decide", and a caller must fall through to whatever it would have done otherwise.
+   */
+  it('answers for a label only the corpus names', () => {
+    // Measured: `inferFaultCategory('socket')` is `unknown` -- `socket` is a word this
+    // repository's keyword table does not carry -- and the corpus injects it as the
+    // fourth resource fault with stress-ng.
+    expect(readCorpusCategory('socket')).toBe('resource');
+    expect(readCorpusCategory('f1')).toBe('code');
+  });
+
+  it('reads a stem-plus-instance label the same way the full description does', () => {
+    expect(readCorpusCategory('f3_1')).toBe('code');
+    expect(describeCorpusFault('f3_1').readAs).toBe('taxonomy');
+  });
+
+  it('says nothing where the classifier spoke', () => {
+    // `cpu` carries a category word, so the table does not get a vote -- and a helper
+    // that answered here would be a second classifier wearing a reader's name.
+    expect(readCorpusCategory('cpu')).toBeUndefined();
+    expect(readCorpusCategory('net_cpu_node')).toBeUndefined();
+  });
+
+  it('says nothing where neither reading names the label', () => {
+    expect(readCorpusCategory('zzz')).toBeUndefined();
+    expect(readCorpusCategory('   ')).toBeUndefined();
   });
 });

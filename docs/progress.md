@@ -1222,6 +1222,18 @@ settle.
   344 and 345.
   ~~`[open: nothing here groups the shipped corpus by fault category, so the refusal is correct
   and the population it acts on is unknown]`~~ — Closed by finding 344.
+- **The corpus's label table reached two call sites, and the product's front door was not one of
+  them.** v3.35 named the corpus's eleven fault types; v3.36 measured how far that reading travelled,
+  and the answer was two places -- the census and `scripts/check-official.mjs`. Every other way into the
+  product reads a fault type through `ingestPrimeDataset`, which asked the descriptor for a category and
+  otherwise handed an unstated one to `inferFaultCategory`, so `socket`, `f1` and `f3_1` all arrived as
+  `unknown` and the target that admits code-level faults only refused the slice that exists to exercise
+  it. `readCorpusCategory` answers only where the classifier is silent and `undefined` everywhere else,
+  and `prime` now falls through to it; a descriptor that states a category still wins, including against
+  the table, because a descriptor may describe a corpus this table has never read. The runner's own copy
+  of the rule was deleted, and the deletion is the measurement: all 84 assertions across the round-trip
+  and census files pass without it, including the `zzz` case that must stay unstamped. See finding 346.
+  `[open: the five code-level names read out of the paper still reach no target -- nothing exports a fault's name]`
 - **The export enumeration covers the whole package.** `cli/`, `ingest/`,
   `transform/`, `pack/`, `util/`, `llm/`, `fault/`, `evolution/`, `report/` and
   `entity/` were exempted in `UNENUMERATED` module by module, each with a reason
@@ -1297,7 +1309,7 @@ and this table.
 | [volume-06.md](progress/volume-06.md) | 30 | v2.56 | v2.85 |
 | [volume-07.md](progress/volume-07.md) | 21 | v2.86 | v3.06 |
 | [volume-08.md](progress/volume-08.md) | 14 | v3.07 | v3.20 |
-| [volume-09.md](progress/volume-09.md) | 15 | v3.21 | v3.35 |
+| [volume-09.md](progress/volume-09.md) | 16 | v3.21 | v3.36 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

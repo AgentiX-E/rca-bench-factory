@@ -517,6 +517,48 @@ describe('ingestPrimeDataset · descriptor validation', () => {
     expect(result.bundle.cases[0]?.fault.category).toBe('resource');
   });
 
+  /**
+   * The category the corpus states and the descriptor does not.
+   *
+   * Until this round the fallback lived only in the caller's head: `prime` took the
+   * category from the descriptor and otherwise left `parseFaultSpec` to infer it, so an
+   * RE3 index label (`f3_1`) or `socket` arrived as `unknown` and a target admitting only
+   * code-level faults refused the slice that exists to exercise it. That is the same hole
+   * finding 343 removed from `scripts/check-official.mjs`, one layer down: the taxonomy
+   * existed, and the ingest path did not read it.
+   */
+  it('reads a corpus label the classifier cannot name, without the descriptor saying so', () => {
+    const indexed = ingestPrimeDataset(METRIC_FILE, options({ cases: [{ ...BASE_CASE, faultType: 'f3_1' }] }));
+    expect(indexed.ok).toBe(true);
+    if (!indexed.ok) throw new Error('unreachable');
+    expect(indexed.bundle.cases[0]?.fault).toMatchObject({ type: 'f3-1', category: 'code' });
+
+    // `socket` is the fourth resource fault upstream and a word this repository's keyword
+    // table does not carry, which is why 45 of the corpus's cases read as `unknown`.
+    const socket = ingestPrimeDataset(METRIC_FILE, options({ cases: [{ ...BASE_CASE, faultType: 'socket' }] }));
+    expect(socket.ok).toBe(true);
+    if (!socket.ok) throw new Error('unreachable');
+    expect(socket.bundle.cases[0]?.fault).toMatchObject({ type: 'socket', category: 'resource' });
+  });
+
+  it("keeps the descriptor's category ahead of the corpus's table", () => {
+    // A caller that states a category knows something the table does not -- the table
+    // reads one corpus's tokens, and a descriptor may be describing another. The table
+    // may only fill a silence.
+    const overruled = { ...BASE_CASE, faultType: 'socket', faultCategory: 'network' as const };
+    const result = ingestPrimeDataset(METRIC_FILE, options({ cases: [overruled] }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.bundle.cases[0]?.fault.category).toBe('network');
+  });
+
+  it('leaves a label neither reading names as unknown', () => {
+    const result = ingestPrimeDataset(METRIC_FILE, options({ cases: [{ ...BASE_CASE, faultType: 'zzz' }] }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.bundle.cases[0]?.fault).toMatchObject({ type: 'zzz', category: 'unknown' });
+  });
+
   it('rejects a category outside the vocabulary, and says which', () => {
     // `parseFaultSpec`'s own message, not "missing the fault type": the previous
     // constant would have described a misspelled category as an absent type.

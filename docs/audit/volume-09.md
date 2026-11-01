@@ -4413,3 +4413,80 @@ down.** A reader that had keyed on anything else would have scored the bundle as
 
 The census now prints it by path (`CENSUS not a case: RE2-OB/checkoutservice_cpu/multi-source-data`) and the
 committed census records it, so the rule is a measurement rather than an accident.
+
+## Finding 346 — the ingest path said `unknown` for every label the corpus had to teach it
+
+Finding 344 gave this repository a table of the corpus's eleven fault types and pinned the one direction it
+may act in. It then measured the table's reach, and the reach was two call sites: the census and
+`scripts/check-official.mjs`. Every other way into the product reads a fault type through
+`ingestPrimeDataset`, and that path never asked the table anything.
+
+### Measured, on the library's own surface
+
+```
+parseFaultSpec({ type: 'socket' }, 'historical').spec.category   ->  unknown
+parseFaultSpec({ type: 'f1'     }, 'historical').spec.category   ->  unknown
+parseFaultSpec({ type: 'f3_1'   }, 'historical').spec.category   ->  unknown
+```
+
+`parseFaultSpec` answers with `inferFaultCategory` when the input states no category, and that is the correct
+general reading: `socket` is a word this repository's keyword table does not carry, and `f1` carries no
+category word at all. The problem is not the classifier's answer, it is that nothing else was asked.
+
+The consequence is the same one finding 343 was written about, one layer down. An RE3 slice pointed at
+`prime` — `{ service: 'emailservice', faultType: 'f1' }`, no category, which is exactly what the directory
+says — arrives as `unknown`, and a target admitting only code-level faults then refuses the whole slice. The
+caller's only way through was to restate the corpus's own table by hand in a descriptor field, which is the
+hard-coded `code` fallback that finding 343 removed from the runner, wearing a public API.
+
+### The fix is one helper, not one line at the call site
+
+`readCorpusCategory(type) -> FaultCategory | undefined`:
+
+```ts
+export function readCorpusCategory(type: string): FaultCategory | undefined {
+  const described = describeCorpusFault(type);
+  return described.readAs === 'taxonomy' ? described.category : undefined;
+}
+```
+
+`undefined` means "this table does not decide", and that is the whole contract. `describeCorpusFault`
+answers in every case, so a caller that wants a value to hand to a schema has to restate the direction rule
+to know whether it may — and a restated rule is where the second reading begins. This function makes the
+restatement impossible: it can only ever return what the table claims where the classifier was silent.
+
+The rewrite in `ingest/prime.ts` is three lines:
+
+```ts
+const stated = c.faultCategory ?? readCorpusCategory(c.faultType);
+const fault = parseFaultSpec(stated === undefined ? { type: c.faultType } : { type: c.faultType, category: stated }, 'historical');
+```
+
+A descriptor that states a category still wins, including one that contradicts the table, because a
+descriptor may be describing a corpus this table has never read. The table fills a silence and nothing else.
+
+### The spelling trap the tests found
+
+`readCorpusFault('f3_1')` works because its stem rule requires a number after the underscore. But
+`normalizeFaultType('f3_1')` is `f3-1`, and the stem rule cannot match a hyphen, so a caller that normalised
+before asking would get `undefined` for the one label in the corpus that needs the rule most. `prime` asks
+about the raw label, and the test asserts both halves at once — `{ type: 'f3-1', category: 'code' }`: the type
+is normalised in the IR, the category came from a spelling that no longer exists by then.
+
+### The call site that restated it can stop
+
+`scripts/check-official.mjs` carried its own copy of the rule as a conditional spread. With the rule in one
+home the copy is deleted, and the deletion is the measurement: all **84** assertions across
+`check-official-roundtrip.test.ts`, `census-corpus-golden.test.ts` and `census-corpus-script.test.ts` pass
+without it, including the `zzz` case that must stay unstamped. Two expressions of a rule that agree on every
+input are one rule with a second place to drift.
+
+### What this does not establish
+
+It does not give the ingest path an opinion about labels nobody named. `zzz` is still `unknown` after the
+change, and a corpus this table has never read still gets the classifier's answer — the fallback fires only
+where both of those are silent.
+
+It also does not close finding 344's remaining item. The five code-level **names** ("Incorrect Return
+Values") still reach the census and no target; this round gave the category a third consumer, not the names
+a first one.

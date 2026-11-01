@@ -1935,9 +1935,9 @@ changed.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **222 files, 5456 tests passed** (as of this commit) |
+| `core` test suite | **222 files, 5463 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **226 files, 5643 tests passed** (as of this commit) |
+| repo test suite | **226 files, 5650 tests passed** (as of this commit) |
 | new modules | `fault/corpus-fault-taxonomy.ts` (3 runtime exports, 2 types), `fault/corpus-census.ts` (2 runtime exports, 4 types) |
 | new scripts | `scripts/read-remote-index.mjs`, `scripts/census-corpus.mjs` |
 | new tests | **62** across five files, plus 2 round-trip cases |
@@ -1965,3 +1965,75 @@ changed.
 The corpus, the answer keys, the checkpoints, the localisation readings (rank 1: 48 of 60), the round trip's
 three target contracts (375 / 270 / 90), the export, the pool's price, and every budget the plan enforces.
 This round moved one refusal on one synthetic corpus, added a reading, and added four failure sites.
+
+## v3.36 — the table reached two call sites, and the product's front door was not one of them
+
+v3.35 ended by naming its own next item: the five code-level names reach the census and no target. Measuring
+that claim turned up something better than a missing name — **the category itself reached two call sites**,
+and every other way into the product never asked the table at all.
+
+### One: three measurements on the library's own surface
+
+```
+parseFaultSpec({ type: 'socket' }, 'historical').spec.category   ->  unknown
+parseFaultSpec({ type: 'f1'     }, 'historical').spec.category   ->  unknown
+parseFaultSpec({ type: 'f3_1'   }, 'historical').spec.category   ->  unknown
+```
+
+The classifier's answers are right — these tokens carry no category word — and that is exactly why the hole
+was invisible: every reading this tree takes agreed with every other reading, and the answer was `unknown`
+each time. An RE3 slice pointed at `ingestPrimeDataset` arrives as `unknown`, the code-level target refuses
+the whole slice (finding 268's shape), and the caller's way through is to restate the corpus's table by hand.
+
+### Two: `undefined` is the contract
+
+`readCorpusCategory(type) -> FaultCategory | undefined` returns the table's claim **only** where the
+classifier was silent. `describeCorpusFault` answers in every case, so a caller that wants a value for a
+schema has to restate the direction rule to know whether it may use it — and a restated rule is where the
+second reading starts. The helper makes the restatement impossible.
+
+`ingest/prime.ts` is now `c.faultCategory ?? readCorpusCategory(c.faultType)` and hands the result to
+`parseFaultSpec`. A descriptor that states a category still wins, even against the table, because a
+descriptor may describe a corpus this table has never read.
+
+### Three: the spelling the normaliser eats
+
+`normalizeFaultType('f3_1')` is `f3-1`, and the stem rule requires a number after an **underscore** — so a
+caller that normalised first would lose the one label that needs the rule most. `prime` asks about the raw
+label; the test asserts `{ type: 'f3-1', category: 'code' }`, both halves at once.
+
+### Four: the call site that restated the rule stops
+
+`scripts/check-official.mjs` carried its own copy as a conditional spread. With the rule in one home the copy
+is deleted — and the deletion is the measurement: **84** assertions across the round-trip and census files
+pass without it, including the `zzz` case that must stay unstamped.
+
+### Readings
+
+> Ledger for `v3.36`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **222 files, 5463 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **226 files, 5650 tests passed** (as of this commit) |
+| `socket` / `f1` / `f3_1` through the ingest path | `unknown` → **`resource` / `code` / `code`** |
+| a descriptor's stated category | still wins, including against the table |
+| a label neither reading names (`zzz`) | still `unknown` |
+| the runner's own copy of the rule | **deleted**; 84 assertions unchanged |
+| new tests | **7** (4 on `readCorpusCategory`, 3 on the ingest fallback) |
+| the published corpus | unchanged — no verdict moves |
+
+### Left open
+
+- **The five names still have no consumer.** "Incorrect Return Values" is read out of the paper and printed by
+  the census; no target receives it. This round gave the *category* a third consumer.
+  `[open: nothing exports a fault's name, so a target that wanted one has nothing to read]`
+- **`provedBy` still records mention rather than drive** — carried since v3.32, and now one site narrower
+  because deleting the spread retired the line it pointed at.
+  `[open: the deriver cannot see a call made from a fixture table]`
+
+### Unchanged
+
+The corpus, the answer keys, the checkpoints, the localisation readings, the round trip's three target
+contracts (375 / 270 / 90), the export, the pool's price, and every budget the plan enforces.

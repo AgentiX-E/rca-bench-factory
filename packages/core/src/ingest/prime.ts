@@ -10,6 +10,7 @@ import {
 import { detectFileLayout, ingestFile, type FileFormat, type FileLayout, type FileSignalKind } from './file.js';
 import { irBundleSchema } from '../ir/schema.js';
 import { parseFaultSpec, type FaultSpec } from '../fault/collector.js';
+import { readCorpusCategory } from '../fault/corpus-fault-taxonomy.js';
 import { IR_VERSION } from '../ir/types.js';
 import type { TimeLayout } from '../util/time.js';
 import type {
@@ -513,8 +514,15 @@ function validateDescriptor(
     // The parse *is* the fault-type validation: a blank or non-string type is
     // the one thing it refuses, and its message names the problem better than a
     // separate emptiness check would.
+    //
+    // The category comes from the descriptor when the descriptor states one, and otherwise
+    // from the corpus's own table -- `readCorpusCategory` answers only where
+    // `inferFaultCategory` cannot, so the general reader keeps its precedence. Without that
+    // second source an RE3 index label (`f3_1`) and `socket` arrive as `unknown`, which is
+    // the same hole finding 343 removed from `scripts/check-official.mjs`, one layer down.
+    const stated = c.faultCategory ?? readCorpusCategory(c.faultType);
     const fault = parseFaultSpec(
-      c.faultCategory === undefined ? { type: c.faultType } : { type: c.faultType, category: c.faultCategory },
+      stated === undefined ? { type: c.faultType } : { type: c.faultType, category: stated },
       'historical',
     );
     // `parseFaultSpec`'s own message, because it now refuses two different things:

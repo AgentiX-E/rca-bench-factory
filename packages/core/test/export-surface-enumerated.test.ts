@@ -1126,6 +1126,9 @@ const TESTED = [
   'describeCorpusFault',
   'RCAEVAL_CORPUS_FAULTS',
   'RCAEVAL_FAULT_TAXONOMY_SOURCE',
+  // The table's answer as a value rather than as a description: `undefined` is the
+  // contract, and it is what stops a caller from restating the direction rule.
+  'readCorpusCategory',
   'readCorpusFault',
   // fault/corpus-census.ts -- the grouped reading finding 343 turned on and no document had taken.
   'censusCorpus',
