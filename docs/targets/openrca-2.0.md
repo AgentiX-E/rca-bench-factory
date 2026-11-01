@@ -54,6 +54,7 @@ The telemetry tree of OpenRCA 1.0 is reused unchanged; `causal_path.json` is the
 | `causal_path[].from_entity.name` | string \| null | yes | `index.byId(fromEntityId).name` | null when the endpoint is dangling (which fails the structural gate). |
 | `causal_path[].to_entity.entity_id` | string | yes | `CausalStep.toEntityId` |  |
 | `causal_path[].to_entity.name` | string \| null | yes | `index.byId(toEntityId).name` |  |
+| `parameters` | object | yes | `FaultCase.fault.parameters ?? {}` | The injection declaration a `configuration` checkpoint's reference names: `signal_ref` is `&lt;entity&gt;\|&lt;key&gt;` and this object is where the key lives. Empty for a case that declares none. |
 | `causal_path[].mechanism` | string | yes | `CausalStep.mechanism` | Human-readable propagation mechanism. |
 | `causal_path[].verification.structural` | boolean | yes | `both endpoints resolve into topology` | Gate 1: the edge conforms to the dependency topology. |
 | `causal_path[].verification.statistical` | boolean | yes | `evidence.length &gt; 0` | Gate 2: at least one evidence checkpoint supports the edge. |
@@ -75,6 +76,9 @@ The telemetry tree of OpenRCA 1.0 is reused unchanged; `causal_path.json` is the
     "entity_id": "service:default/order",
     "component": "order",
     "fault_type": "cpu"
+  },
+  "parameters": {
+    "intensity": 90
   },
   "causal_path": [
     {

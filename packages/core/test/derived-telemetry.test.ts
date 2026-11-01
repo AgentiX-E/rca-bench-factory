@@ -358,6 +358,20 @@ describe('expandLog · three lines after the onset', () => {
   it('omits the severity when the declaration does', () => {
     expect(expandLog({ service: 's', body: 'a line' }, WHEN)[0]?.payload).not.toHaveProperty('severityText');
   });
+
+  it('carries the id a checkpoint cites the line by', () => {
+    // The id was declared in the signals file and read by nothing: `LogDeclaration` had no field for
+    // it, so it could not reach the payload, so `logs.json` had no column to receive it, so a
+    // checkpoint's `<entity>|typeerror-line` named a line the export could not identify (finding 337).
+    const lines = expandLog({ ...declaration, id: 'typeerror-line' }, WHEN);
+    expect(lines[0]?.payload).toMatchObject({ templateId: 'typeerror-line' });
+    expect(lines).toHaveLength(LOG_OFFSETS_MS.length);
+    expect(new Set(lines.map((one) => (one.payload as { templateId?: string }).templateId)).size).toBe(1);
+  });
+
+  it('omits the id when the declaration names none, rather than inventing one', () => {
+    expect(expandLog(declaration, WHEN)[0]?.payload).not.toHaveProperty('templateId');
+  });
 });
 
 describe('expandTraces · ids that are identities', () => {

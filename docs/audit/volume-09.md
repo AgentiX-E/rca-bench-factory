@@ -3647,3 +3647,85 @@ does not check that the named entity is the *right* one for the reading either �
 could name `search-node-1` and the qualifier would be well-formed, because which side a reading was
 taken on is a judgement about the annotation, on the same division of labour the four-layer rule and
 `sli.none` already use.
+
+## Finding 337 — the pair was completed, and the thing it names was never required to exist
+
+Finding 336 completed the reference: `signal_ref` is `<entity>|<reading>` in all three graded
+targets, and 109 of the corpus's 120 checkpoints publish one. The question that completes it in the
+other direction was never asked, by any rule, in any round: **does the artefact carry the reading the
+reference names?**
+
+The answer key and the case directory are written by the same exporter into the same tree, and a
+reader who wants to check a checkpoint against the claim it makes has to join them. Measured on the
+export the corpus produces, with a join that reads the files rather than the IR:
+
+| how the reference landed | before |
+| --- | --- |
+| on the entity the checkpoint states, in `metrics.json` | **63** |
+| through the entity that contains it -- a container's figure filed under its service | **12** |
+| on a log line, by the id the checkpoint cites | **0** |
+| on a declared parameter, by the key the checkpoint cites | **0** |
+| **named a key no table carried** | **34** |
+
+So 34 of 109 references pointed at nothing, and the repository could not tell them from the 75 that
+were checkable. Each of the three causes is a different defect wearing the same word.
+
+### The log line: the id was discarded twice
+
+A log checkpoint cites its line by an id -- `signalRef: 'typeerror-line'` beside
+`value: 'unhandled TypeError'` and `signalKind: 'log'`. The signals file declares that id on the log
+declaration, `checkLogAttribution` joins on it, and `logs.json` had no column for it, because the id
+had no field anywhere between the two:
+
+- `LogDeclaration` declared `service`, `body` and `severity` — no `id`, so the reader dropped it;
+- `expandLog` therefore never put it on the payload, so `LogPayload.templateId` — a field the schema
+  has carried since the IR was written — was never set by anything.
+
+Ten published references named a line the export could not identify. The repair is three lines, and
+the interesting part is that they were *missing* rather than wrong: the capability existed at both
+ends and the wire between them had no pin.
+
+### The parameter: the value travelled and the key did not
+
+A `configuration` checkpoint cites a parameter of the injection: `cpuLimit == 500 mcore` on
+`container:…/checkout-api-app`, published as `checkout-api-app|cpuLimit`. The comparison was checked
+(the guard compares the checkpoint against `fault.parameters`), the value was published in the
+entry's own `value` field — and the *key* was in no file of the export, because no builder emitted
+`fault.parameters`. Twenty-four references named a declaration the artefact did not ship.
+
+They are now published where they belong: `parameters` inside `raw_ground_truth` for `rca100`, at the
+top of `causal_path.json` for OpenRCA 2.0, and beside `diagnosis` for ITBench. Not in `task.json`,
+which is what a solver sees: an injection's parameters are part of the answer.
+
+### The twelve: a resolution, not a miss, and now a printed one
+
+Twelve series references name a container whose reading is filed under its service. That is the
+corpus's deliberate choice -- the ranking a solver sees is per service -- and the containment rule
+`resolveReading` already applies. It is not a defect, and folding it into one "109 of 109" would hide
+that 17 of the references (12 series, 5 log) need a rule the reader has to know before the join can
+succeed. So the join reports the four landings separately:
+
+```
+published refs 109 of 109 resolve inside the export (68 by the entity they name,
+17 through the entity that contains it, 24 by a declared parameter); 0 dangle
+```
+
+### Where the check lives, and why not in an exporter
+
+`export/reference-carrier.ts`. The join is a statement about two artefacts, and no exporter sees both
+the way a reader does. It is also the check that keeps the carriers honest: a later round that drops
+the `id` column again, or stops emitting `parameters`, fails here instead of shipping a reference to a
+row nobody writes. A boolean would have made 17 resolutions look like 68, which is the same mistake as
+publishing half a pair one field over.
+
+The tally counts `derived` checkpoints out of its denominator rather than as successes: they publish
+nothing, and a case that names no reading must not be able to raise the share of references that
+resolve.
+
+### What this does not do
+
+It does not say the reading is *true*. The join establishes that the file carries a row with that key;
+whether the numbers in it support the assertion is `check-fault-cases`'s comparison, and whether the
+annotation is a good one is the reader's judgement. It also does not decide what a checker should do
+with a reference that names nothing: the corpus guard refuses the case, and that is a policy this
+module deliberately does not own.

@@ -247,6 +247,7 @@ const openrca2 = {
         { name: 'causal_path[].from_entity.name', type: 'string | null', required: true, source: 'index.byId(fromEntityId).name', notes: 'null when the endpoint is dangling (which fails the structural gate).' },
         { name: 'causal_path[].to_entity.entity_id', type: T.str, required: true, source: 'CausalStep.toEntityId', notes: '' },
         { name: 'causal_path[].to_entity.name', type: 'string | null', required: true, source: 'index.byId(toEntityId).name', notes: '' },
+        { name: 'parameters', type: T.obj, required: true, source: 'FaultCase.fault.parameters ?? {}', notes: 'The injection declaration a `configuration` checkpoint\'s reference names: `signal_ref` is `<entity>|<key>` and this object is where the key lives. Empty for a case that declares none.' },
         { name: 'causal_path[].mechanism', type: T.str, required: true, source: 'CausalStep.mechanism', notes: 'Human-readable propagation mechanism.' },
         { name: 'causal_path[].verification.structural', type: T.bool, required: true, source: 'both endpoints resolve into topology', notes: 'Gate 1: the edge conforms to the dependency topology.' },
         { name: 'causal_path[].verification.statistical', type: T.bool, required: true, source: 'evidence.length > 0', notes: 'Gate 2: at least one evidence checkpoint supports the edge.' },
@@ -394,6 +395,7 @@ const rca100 = {
         { name: 'level', type: T.str, required: true, source: 'LogPayload.severityText ?? ""', notes: '' },
         { name: 'message', type: T.str, required: true, source: 'LogPayload.body', notes: '' },
         { name: 'pod_name', type: T.str, required: false, source: "resource['k8s.pod.name']", notes: 'Present only when the source signal carries it.' },
+        { name: 'id', type: T.str, required: false, source: 'LogPayload.templateId', notes: 'The line id a log checkpoint cites: `signal_ref` is `<entity>|<id>`, so the id has to be a column or the reference names nothing a reader can find. Absent on a line no signals file declared one for.' },
       ],
     },
     {
@@ -640,6 +642,7 @@ const itbench = {
         { name: 'scenario_domain', type: T.str, required: true, source: 'constant "SRE"', notes: 'Only the SRE persona is targeted; CISO and FinOps are real ITBench personas this converter does not emit. Declared as ITBENCH_SCENARIO_DOMAINS.' },
         { name: 'scenario_class', type: T.str, required: true, source: 'CLASS_BY_CATEGORY[fault.category]', notes: 'HighCPU | NetworkPartition | CrashLoopBackOff | ServiceDegradation | CorruptImage | Misconfiguration | DependencyFailure | Unknown. Declared as ITBENCH_SCENARIO_CLASSES, the projection table\'s deduplicated image.' },
         { name: 'scenario_complexity', type: T.str, required: true, source: 'difficultyFor(FaultCase.difficulty)', notes: 'easy | medium | hard. Declared as DIFFICULTIES, shared with cloud-opsbench\'s difficulty -- one rule, two field names.' },
+        { name: 'scenario_groundtruth.parameters', type: T.obj, required: true, source: 'FaultCase.fault.parameters ?? {}', notes: 'The injection declaration a `configuration` condition\'s reference names. Beside `diagnosis` rather than inside it: the diagnosis block is the three facets the SRE evaluator reads.' },
         { name: 'scenario_groundtruth.diagnosis.entities[]', type: 'string[]', required: true, source: 'rootCauseEntityId + chain endpoints', notes: 'Deduplicated, root cause first.' },
         { name: 'scenario_groundtruth.diagnosis.fault_propagation_chain[]', type: T.arr, required: true, source: 'GroundTruth.causalChain', notes: '' },
         { name: '...chain[].step', type: T.num, required: true, source: 'CausalStep.step', notes: '' },

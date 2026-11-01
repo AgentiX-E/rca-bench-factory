@@ -33,6 +33,7 @@
 | `scenario_domain` | string | yes | `constant "SRE"` | Only the SRE persona is targeted; CISO and FinOps are real ITBench personas this converter does not emit. Declared as ITBENCH_SCENARIO_DOMAINS. |
 | `scenario_class` | string | yes | `CLASS_BY_CATEGORY[fault.category]` | HighCPU \| NetworkPartition \| CrashLoopBackOff \| ServiceDegradation \| CorruptImage \| Misconfiguration \| DependencyFailure \| Unknown. Declared as ITBENCH_SCENARIO_CLASSES, the projection table's deduplicated image. |
 | `scenario_complexity` | string | yes | `difficultyFor(FaultCase.difficulty)` | easy \| medium \| hard. Declared as DIFFICULTIES, shared with cloud-opsbench's difficulty -- one rule, two field names. |
+| `scenario_groundtruth.parameters` | object | yes | `FaultCase.fault.parameters ?? {}` | The injection declaration a `configuration` condition's reference names. Beside `diagnosis` rather than inside it: the diagnosis block is the three facets the SRE evaluator reads. |
 | `scenario_groundtruth.diagnosis.entities[]` | string[] | yes | `rootCauseEntityId + chain endpoints` | Deduplicated, root cause first. |
 | `scenario_groundtruth.diagnosis.fault_propagation_chain[]` | array | yes | `GroundTruth.causalChain` |  |
 | `...chain[].step` | number | yes | `CausalStep.step` |  |
@@ -82,6 +83,9 @@
           "description": "CPU usage exceeds 90 percent"
         }
       ]
+    },
+    "parameters": {
+      "intensity": 90
     }
   }
 }

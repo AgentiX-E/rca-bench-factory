@@ -75,6 +75,10 @@ export function buildCausalPathJson(fc: FaultCase, index: EntityIndex): string {
       component: fc.groundTruth.rootCauseComponent,
       fault_type: fc.fault.type,
     },
+    // The declaration a `configuration` checkpoint's reference names. Published beside the evidence
+    // that cites it so `<container>|cpuLimit` is a key in this file rather than a name from nowhere
+    // (finding 337).
+    parameters: fc.fault.parameters ?? {},
     causal_path: steps,
   });
 }

@@ -794,6 +794,13 @@ window.RBF_DATA = {
               "notes": ""
             },
             {
+              "name": "parameters",
+              "type": "object",
+              "required": true,
+              "source": "FaultCase.fault.parameters ?? {}",
+              "notes": "The injection declaration a `configuration` checkpoint's reference names: `signal_ref` is `<entity>|<key>` and this object is where the key lives. Empty for a case that declares none."
+            },
+            {
               "name": "causal_path[].mechanism",
               "type": "string",
               "required": true,
@@ -1221,6 +1228,13 @@ window.RBF_DATA = {
               "required": false,
               "source": "resource['k8s.pod.name']",
               "notes": "Present only when the source signal carries it."
+            },
+            {
+              "name": "id",
+              "type": "string",
+              "required": false,
+              "source": "LogPayload.templateId",
+              "notes": "The line id a log checkpoint cites: `signal_ref` is `<entity>|<id>`, so the id has to be a column or the reference names nothing a reader can find. Absent on a line no signals file declared one for."
             }
           ]
         },
@@ -2004,6 +2018,13 @@ window.RBF_DATA = {
               "notes": "easy | medium | hard. Declared as DIFFICULTIES, shared with cloud-opsbench's difficulty -- one rule, two field names."
             },
             {
+              "name": "scenario_groundtruth.parameters",
+              "type": "object",
+              "required": true,
+              "source": "FaultCase.fault.parameters ?? {}",
+              "notes": "The injection declaration a `configuration` condition's reference names. Beside `diagnosis` rather than inside it: the diagnosis block is the three facets the SRE evaluator reads."
+            },
+            {
               "name": "scenario_groundtruth.diagnosis.entities[]",
               "type": "string[]",
               "required": true,
@@ -2203,7 +2224,7 @@ window.RBF_DATA = {
     "openrca-2.0": {
       "id": "openrca-2.0",
       "files": {
-        "cases/case-001/causal_path.json": "{\n  \"case_id\": \"case-001\",\n  \"system\": \"order-prod\",\n  \"root_cause\": {\n    \"entity_id\": \"service:default/order\",\n    \"component\": \"order\",\n    \"fault_type\": \"cpu\"\n  },\n  \"causal_path\": [\n    {\n      \"step\": 1,\n      \"from_entity\": {\n        \"entity_id\": \"service:default/order\",\n        \"name\": \"order\"\n      },\n      \"to_entity\": {\n        \"entity_id\": \"service:default/cart\",\n        \"name\": \"cart\"\n      },\n      \"mechanism\": \"thread pool exhaustion propagated to the downstream cart service\",\n      \"verification\": {\n        \"structural\": true,\n        \"statistical\": true,\n        \"temporal\": true\n      },\n      \"evidence\": [\n        {\n          \"signal_ref\": \"order|cpu_usage\",\n          \"comparator\": \">\",\n          \"value\": 90,\n          \"unit\": \"%\",\n          \"description\": \"CPU usage exceeds 90 percent\"\n        }\n      ]\n    }\n  ]\n}\n"
+        "cases/case-001/causal_path.json": "{\n  \"case_id\": \"case-001\",\n  \"system\": \"order-prod\",\n  \"root_cause\": {\n    \"entity_id\": \"service:default/order\",\n    \"component\": \"order\",\n    \"fault_type\": \"cpu\"\n  },\n  \"parameters\": {\n    \"intensity\": 90\n  },\n  \"causal_path\": [\n    {\n      \"step\": 1,\n      \"from_entity\": {\n        \"entity_id\": \"service:default/order\",\n        \"name\": \"order\"\n      },\n      \"to_entity\": {\n        \"entity_id\": \"service:default/cart\",\n        \"name\": \"cart\"\n      },\n      \"mechanism\": \"thread pool exhaustion propagated to the downstream cart service\",\n      \"verification\": {\n        \"structural\": true,\n        \"statistical\": true,\n        \"temporal\": true\n      },\n      \"evidence\": [\n        {\n          \"signal_ref\": \"order|cpu_usage\",\n          \"comparator\": \">\",\n          \"value\": 90,\n          \"unit\": \"%\",\n          \"description\": \"CPU usage exceeds 90 percent\"\n        }\n      ]\n    }\n  ]\n}\n"
       },
       "skipped": [],
       "report": {
@@ -2419,7 +2440,7 @@ window.RBF_DATA = {
         "cases/case-001/alerts.json": "[\n  {\n    \"entity_id\": \"service:default/order\",\n    \"alert_name\": \"HighCpuUsage\",\n    \"timestamp\": \"2026-09-06T00:10:05.000Z\",\n    \"severity\": \"critical\",\n    \"state\": \"firing\"\n  }\n]\n",
         "cases/case-001/task.json": "{\n  \"task_id\": \"case-001\",\n  \"alert_title\": \"A failure was detected between 08:00 and 08:30 UTC+8. Identify the affected component, when it occurred within that window, and the reason.\",\n  \"alert_window\": {\n    \"start\": \"2026-09-06T00:00:00.000Z\",\n    \"end\": \"2026-09-06T00:20:00.000Z\"\n  },\n  \"alert_entity\": {\n    \"entity_id\": \"service:default/order\",\n    \"entity_name\": \"order\"\n  }\n}\n",
         "cases/case-001/topology.json": "{\n  \"entities\": [\n    {\n      \"id\": \"service:default/order\",\n      \"type\": \"apm.service\",\n      \"name\": \"order\",\n      \"first_observed\": null,\n      \"last_observed\": null,\n      \"props\": {\n        \"namespace\": \"default\",\n        \"aliases\": [\n          \"svc-order-prod-01\"\n        ],\n        \"original_kind\": \"service\"\n      }\n    },\n    {\n      \"id\": \"service:default/cart\",\n      \"type\": \"apm.service\",\n      \"name\": \"cart\",\n      \"first_observed\": null,\n      \"last_observed\": null,\n      \"props\": {\n        \"namespace\": \"default\",\n        \"aliases\": [\n          \"cartservice\"\n        ],\n        \"original_kind\": \"service\"\n      }\n    }\n  ],\n  \"edges\": [\n    {\n      \"src\": \"service:default/order\",\n      \"src_type\": \"apm.service\",\n      \"dst\": \"service:default/cart\",\n      \"dst_type\": \"apm.service\",\n      \"relation\": \"calls\"\n    }\n  ],\n  \"stats\": {\n    \"entities_total\": 2,\n    \"edges_total\": 1\n  }\n}\n",
-        "answer_key/case-001.gt.json": "{\n  \"task_id\": \"case-001\",\n  \"case_id\": \"case-001\",\n  \"root_cause_entities\": [\n    \"order\"\n  ],\n  \"root_cause_types\": [\n    \"cpu\"\n  ],\n  \"raw_ground_truth\": \"{\\\"outcome\\\":{\\\"target_entities\\\":[\\\"order\\\"]},\\\"reasoning\\\":{\\\"steps\\\":[{\\\"role\\\":\\\"cause\\\",\\\"from_entity\\\":\\\"order\\\",\\\"to_entity\\\":\\\"cart\\\",\\\"mechanism\\\":\\\"thread pool exhaustion propagated to the downstream cart service\\\",\\\"checkpoints\\\":[{\\\"signal_ref\\\":\\\"order|cpu_usage\\\",\\\"comparator\\\":\\\">\\\",\\\"value\\\":90,\\\"unit\\\":\\\"%\\\",\\\"description\\\":\\\"CPU usage exceeds 90 percent\\\"}]}]}}\"\n}\n"
+        "answer_key/case-001.gt.json": "{\n  \"task_id\": \"case-001\",\n  \"case_id\": \"case-001\",\n  \"root_cause_entities\": [\n    \"order\"\n  ],\n  \"root_cause_types\": [\n    \"cpu\"\n  ],\n  \"raw_ground_truth\": \"{\\\"outcome\\\":{\\\"target_entities\\\":[\\\"order\\\"]},\\\"reasoning\\\":{\\\"steps\\\":[{\\\"role\\\":\\\"cause\\\",\\\"from_entity\\\":\\\"order\\\",\\\"to_entity\\\":\\\"cart\\\",\\\"mechanism\\\":\\\"thread pool exhaustion propagated to the downstream cart service\\\",\\\"checkpoints\\\":[{\\\"signal_ref\\\":\\\"order|cpu_usage\\\",\\\"comparator\\\":\\\">\\\",\\\"value\\\":90,\\\"unit\\\":\\\"%\\\",\\\"description\\\":\\\"CPU usage exceeds 90 percent\\\"}]}]},\\\"parameters\\\":{\\\"intensity\\\":90}}\"\n}\n"
       },
       "skipped": [],
       "report": {
@@ -2564,7 +2585,7 @@ window.RBF_DATA = {
     "itbench": {
       "id": "itbench",
       "files": {
-        "scenarios/case-001/scenario.json": "{\n  \"scenario_name\": \"case-001\",\n  \"scenario_description\": \"A failure was detected between 08:00 and 08:30 UTC+8. Identify the affected component, when it occurred within that window, and the reason.\",\n  \"scenario_domain\": \"SRE\",\n  \"scenario_class\": \"HighCPU\",\n  \"scenario_complexity\": \"medium\",\n  \"scenario_groundtruth\": {\n    \"diagnosis\": {\n      \"entities\": [\n        \"service:default/order\",\n        \"service:default/cart\"\n      ],\n      \"fault_propagation_chain\": [\n        {\n          \"step\": 1,\n          \"from_entity\": \"service:default/order\",\n          \"to_entity\": \"service:default/cart\",\n          \"mechanism\": \"thread pool exhaustion propagated to the downstream cart service\"\n        }\n      ],\n      \"fault_conditions\": [\n        {\n          \"checkpoint_id\": \"cp-1\",\n          \"entity\": \"service:default/order\",\n          \"signal_ref\": \"order|cpu_usage\",\n          \"comparator\": \">\",\n          \"value\": 90,\n          \"unit\": \"%\",\n          \"description\": \"CPU usage exceeds 90 percent\"\n        }\n      ]\n    }\n  }\n}\n"
+        "scenarios/case-001/scenario.json": "{\n  \"scenario_name\": \"case-001\",\n  \"scenario_description\": \"A failure was detected between 08:00 and 08:30 UTC+8. Identify the affected component, when it occurred within that window, and the reason.\",\n  \"scenario_domain\": \"SRE\",\n  \"scenario_class\": \"HighCPU\",\n  \"scenario_complexity\": \"medium\",\n  \"scenario_groundtruth\": {\n    \"diagnosis\": {\n      \"entities\": [\n        \"service:default/order\",\n        \"service:default/cart\"\n      ],\n      \"fault_propagation_chain\": [\n        {\n          \"step\": 1,\n          \"from_entity\": \"service:default/order\",\n          \"to_entity\": \"service:default/cart\",\n          \"mechanism\": \"thread pool exhaustion propagated to the downstream cart service\"\n        }\n      ],\n      \"fault_conditions\": [\n        {\n          \"checkpoint_id\": \"cp-1\",\n          \"entity\": \"service:default/order\",\n          \"signal_ref\": \"order|cpu_usage\",\n          \"comparator\": \">\",\n          \"value\": 90,\n          \"unit\": \"%\",\n          \"description\": \"CPU usage exceeds 90 percent\"\n        }\n      ]\n    },\n    \"parameters\": {\n      \"intensity\": 90\n    }\n  }\n}\n"
       },
       "skipped": [],
       "report": {

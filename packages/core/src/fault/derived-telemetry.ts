@@ -152,6 +152,16 @@ export interface LogDeclaration {
   service: string;
   body: string;
   severity?: LogSeverity;
+  /**
+   * The id a log checkpoint cites this line by.
+   *
+   * It was declared in every signals file that needed one and read by nothing: the interface had no
+   * field for it, so `expandLog` could not put it on the payload, so `logs.json` could not carry it,
+   * and a checkpoint's `<entity>|typeerror-line` named a line the export had no way to identify. The
+   * id is per *declaration* rather than per emitted row, because the rows differ only in time: a line
+   * that recurs is one fact observed repeatedly, which is what a citation of it means.
+   */
+  id?: string;
 }
 
 export interface TraceDeclaration {
@@ -275,6 +285,7 @@ export function expandLog(declaration: LogDeclaration, when: ExpansionTime): Tel
       kind: 'log',
       body: declaration.body,
       ...(declaration.severity === undefined ? {} : { severityText: declaration.severity }),
+      ...(declaration.id === undefined ? {} : { templateId: declaration.id }),
     }),
   );
 }

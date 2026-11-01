@@ -1540,6 +1540,8 @@ function logSignalRefUse() {
 /** Where the two numbers below are kept, so they can be printed on both exits. */
 let coverageLine = null;
 const exportLines = [];
+/** How many published references the rca100 artefact carries, by the way each one landed. */
+const referenceJoin = { published: 0, joined: 0, byEntity: 0, byContainer: 0, byKey: 0, dangling: 0, casesSkipped: 0 };
 const SUITE_TARGETS = [['RE1', 'rcaeval-re1'], ['RE2', 'rcaeval-re2'], ['RE3', 'rcaeval-re3']];
 
 // The corpus through the two modules that decide whether it can be evaluated at all. Neither number
@@ -1607,6 +1609,47 @@ if (telemetryCases.length > 0 && firstGraph !== null) {
         (outcome.skipped.length === 0 ? '' : `, ${String(outcome.skipped.length)} skipped`),
     );
   }
+
+  // The other end of every reference. `signal_ref` is `<entity>|<reading>` since v3.29, and no rule
+  // asked the question a reader asks next: does the file beside the answer key carry that reading?
+  // It does not, uniformly -- a container's figure is filed under its service, a log line's id was
+  // discarded by the expansion, and a configuration key was never in the export at all. Measured
+  // before this round: 63 of 109 joined on the stated entity, 12 joined through containment, and 34
+  // named a key no table held (finding 337).
+  //
+  // Read off the rca100 export rather than off the IR, because the claim is about the artefact: a
+  // second check on the annotations would pass while the files disagreed, which is the shape v3.29
+  // removed one field over.
+  const rca100 = core.exportRca100(bundle);
+  for (const fc of telemetryCases) {
+    const base = `cases/${fc.caseId}`;
+    const answerKey = rca100.files[`answer_key/${fc.caseId}.gt.json`];
+    if (answerKey === undefined) {
+      referenceJoin.casesSkipped += 1;
+      continue;
+    }
+    const raw = JSON.parse(JSON.parse(answerKey).raw_ground_truth);
+    const parameters = raw.parameters !== null && typeof raw.parameters === 'object' ? raw.parameters : {};
+    const tally = core.assessCaseReferences({
+      caseId: fc.caseId,
+      checkpoints: fc.groundTruth.evidenceCheckpoints ?? [],
+      graph: bundle.graph,
+      tables: {
+        metrics: JSON.parse(rca100.files[`${base}/metrics.json`] ?? '[]'),
+        logs: JSON.parse(rca100.files[`${base}/logs.json`] ?? '[]'),
+        parameters,
+      },
+    });
+    referenceJoin.published += tally.published;
+    referenceJoin.joined += tally.joined;
+    referenceJoin.byEntity += tally.byEntity;
+    referenceJoin.byContainer += tally.byContainer;
+    referenceJoin.byKey += tally.byKey;
+    referenceJoin.dangling += tally.dangling.length;
+    for (const one of tally.dangling) {
+      problems.push(`${fc.caseId}: ${core.describeDanglingReference(one.join, one.checkpointId)}`);
+    }
+  }
 }
 
 if (problems.length > 0) {
@@ -1616,6 +1659,7 @@ if (problems.length > 0) {
   logSliUse();
   logModalityUse();
   logSignalRefUse();
+  logReferenceJoin();
   logExportReading();
   logLocalisationReading();
   logCheckpointCounts();
@@ -1653,6 +1697,27 @@ function logExportReading() {
   console.log(`check-fault-cases: export ${exportLines.join(' · ')}`);
 }
 
+/**
+ * Where each published reference landed in the artefact that publishes it.
+ *
+ * Four numbers rather than one, because they are four different statements: a match on the stated
+ * entity, a match through the entity that contains it (the corpus files a container's figure under
+ * its service on purpose), a log line met by id, and a parameter met by key. A single "109 of 109"
+ * would hide that 46 of them need a rule the reader has to know.
+ */
+function logReferenceJoin() {
+  if (referenceJoin.published === 0) return;
+  const skipped =
+    referenceJoin.casesSkipped === 0 ? '' : `, ${String(referenceJoin.casesSkipped)} case(s) the exporter skipped`;
+  console.log(
+    `check-fault-cases: published refs ${String(referenceJoin.joined)} of ${String(referenceJoin.published)} ` +
+      `resolve inside the export (${String(referenceJoin.byEntity)} by the entity they name, ` +
+      `${String(referenceJoin.byContainer)} through the entity that contains it, ` +
+      `${String(referenceJoin.byKey)} by a declared parameter); ` +
+      `${String(referenceJoin.dangling)} dangle${skipped}`,
+  );
+}
+
 // Outside the export block on purpose: a corpus with no derived telemetry still states levels, and
 // the coverage line vanished from exactly those runs while it lived inside it.
 logDifficultyCoverage();
@@ -1660,6 +1725,7 @@ logParameterUse();
 logSliUse();
 logModalityUse();
 logSignalRefUse();
+logReferenceJoin();
 logExportReading();
 logLocalisationReading();
 logCheckpointCounts();

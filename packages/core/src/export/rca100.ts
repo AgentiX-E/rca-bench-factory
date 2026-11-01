@@ -222,6 +222,10 @@ export function buildRca100Logs(signals: TelemetrySignal[], index: EntityIndex):
       message: p.body,
     };
     if (s.resource['k8s.pod.name'] !== undefined) row.pod_name = s.resource['k8s.pod.name'];
+    // The id a log checkpoint's reference names. Absent on a line that was not declared with one,
+    // which is every line this repository did not write: the column is conditional because a made-up
+    // id would be a key no checkpoint could have cited.
+    if (p.templateId !== undefined) row.id = p.templateId;
     rows.push(row);
   }
   return { rows, dangling };
@@ -344,6 +348,14 @@ export function buildGroundTruthJson(fc: FaultCase, index: EntityIndex): string 
   const rawGroundTruth = JSON.stringify({
     outcome: { target_entities: rootCauseEntities },
     reasoning: { steps },
+    // The keys the answer key's configuration references name. A checkpoint of kind `configuration`
+    // states a parameter of the injection -- `cpuLimit == 500 mcore` -- and the pair it publishes is
+    // `<container>|cpuLimit`. Until this field existed, the *value* travelled and the *key* did not:
+    // 24 of the corpus's 109 published references named a key that no file in the export carried, so
+    // a reader could not tell a fact they could check from one they could not (finding 337). The
+    // parameters are the injection's declaration, which is why they belong in the answer key and not
+    // in `task.json`: the case directory is what a solver sees.
+    parameters: fc.fault.parameters ?? {},
   });
 
   return renderJson({

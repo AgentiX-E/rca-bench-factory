@@ -135,6 +135,10 @@ export function buildItBenchScenarioSpec(fc: FaultCase, index: EntityIndex): Rec
         fault_propagation_chain: propagationChain(gt),
         fault_conditions: faultConditions(gt, index, fc.caseId),
       },
+      // The declaration a `configuration` condition's reference names, published here for the same
+      // reason the two graded targets publish it: a reference is a fact only if the file proves it
+      // names something the file carries (finding 337).
+      parameters: fc.fault.parameters ?? {},
     },
   };
 }

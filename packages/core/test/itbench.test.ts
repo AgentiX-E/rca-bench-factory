@@ -51,6 +51,18 @@ describe('buildItBenchScenarioSpec', () => {
     expect(s.scenario_description).toBe('CPU saturation on the order service');
   });
 
+  it('carries the parameters a configuration condition names', () => {
+    // Beside `diagnosis` rather than inside it: the parameters are the injection's declaration, and
+    // the diagnosis block is the three facets the SRE evaluator reads (finding 337).
+    const s = spec(validCase({ fault: { ...validCase().fault, parameters: { cpuLimit: 500 } } }));
+    expect((s.scenario_groundtruth as Record<string, unknown>).parameters).toEqual({ cpuLimit: 500 });
+  });
+
+  it('carries an empty parameter block for a case that declares none', () => {
+    const s = spec(validCase({ fault: { ...validCase().fault, parameters: undefined } }));
+    expect((s.scenario_groundtruth as Record<string, unknown>).parameters).toEqual({});
+  });
+
   it('maps each fault category to an SRE scenario class', () => {
     const cases: Array<[FaultCase['fault']['category'], string]> = [
       ['resource', 'HighCPU'],
@@ -167,6 +179,15 @@ describe('exportItBench', () => {
     const parsed = JSON.parse(files['scenarios/case-001/scenario.json']!);
     expect(parsed.scenario_name).toBe('case-001');
     expect(parsed.scenario_domain).toBe('SRE');
+  });
+
+  it('exports a case that states no checkpoints at all', () => {
+    const base = validCase();
+    const { files, skipped } = exportItBench(
+      validBundle({ cases: [validCase({ groundTruth: { ...base.groundTruth, evidenceCheckpoints: undefined } })] }),
+    );
+    expect(skipped).toEqual([]);
+    expect(JSON.parse(files['scenarios/case-001/scenario.json']!).scenario_name).toBe('case-001');
   });
 
   it('skips a case with no root-cause component', () => {

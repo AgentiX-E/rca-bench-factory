@@ -253,6 +253,24 @@ export {
 } from './export/signal-ref.js';
 export type { EvidenceEntry, SignalRefFault, SignalRefRead, SignalRefSource } from './export/signal-ref.js';
 
+// The other end of the same reference: whether the file beside the answer key carries what the second
+// half names. `joinPublishedReference` is the join, `assessCaseReferences` is the tally the corpus
+// guard prints, and `describeDanglingReference` is the sentence for a reference that names nothing
+// (finding 337).
+export {
+  assessCaseReferences,
+  describeDanglingReference,
+  joinPublishedReference,
+  referenceCarrier,
+} from './export/reference-carrier.js';
+export type {
+  ExportedTables,
+  ReferenceCarrier,
+  ReferenceJoin,
+  ReferenceJoinTally,
+  ReferenceMatch,
+} from './export/reference-carrier.js';
+
 export { LOGTS_BUCKET_SECONDS, buildLogtsCsv } from './export/rcaeval-logts.js';
 export type { LogCluster, LogRow, LogtsTable } from './export/rcaeval-logts.js';
 

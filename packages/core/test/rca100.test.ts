@@ -338,6 +338,22 @@ describe('buildGroundTruthJson', () => {
     const parsed = JSON.parse(buildGroundTruthJson(fc, index));
     expect(parsed.root_cause_entities).toEqual([]);
   });
+
+  it('publishes the parameter a configuration checkpoint\'s reference names', () => {
+    // The reference is `<container>|cpuLimit`, so the answer key has to carry `cpuLimit` or the pair
+    // names a key no file declares. 24 of the corpus's 109 published references were in that state
+    // (finding 337).
+    const fc = rca100Case({ fault: { ...rca100Case().fault, parameters: { cpuLimit: 500 } } });
+    const chain = JSON.parse(JSON.parse(buildGroundTruthJson(fc, index)).raw_ground_truth);
+    expect(chain.parameters).toEqual({ cpuLimit: 500 });
+  });
+
+  it('publishes an empty parameter block for a case that declares none', () => {
+    const base = rca100Case();
+    const fc = rca100Case({ fault: { ...base.fault, parameters: undefined } });
+    const chain = JSON.parse(JSON.parse(buildGroundTruthJson(fc, index)).raw_ground_truth);
+    expect(chain.parameters).toEqual({});
+  });
 });
 
 describe('exportRca100', () => {
@@ -437,6 +453,18 @@ describe('defensive branches (null/undefined handling)', () => {
     const row = buildRca100Logs([s], index).rows[0]!;
     expect(row.level).toBe('');
     expect(row.pod_name).toBeUndefined();
+  });
+
+  it('publishes the id a log checkpoint cites the line by', () => {
+    // The other half of the reference: `signal_ref` is `<entity>|<id>` for a log checkpoint, and the
+    // id has to be a column of the table beside it or the pair names nothing a reader can find.
+    const s = signal('log', { 'service.name': 'order' }, { kind: 'log', body: 'x', templateId: 'typeerror-line' });
+    expect(buildRca100Logs([s], index).rows[0]!.id).toBe('typeerror-line');
+  });
+
+  it('omits the id for a line that was not declared with one', () => {
+    const s = signal('log', { 'service.name': 'order' }, { kind: 'log', body: 'x' });
+    expect(buildRca100Logs([s], index).rows[0]).not.toHaveProperty('id');
   });
 
   it('emits empty parent and default status for a minimal trace', () => {

@@ -393,6 +393,35 @@ about one line, and the rule is that they agree; nothing here can tell which of 
 right when they do not.
 
 
+#### What the second half names has to be a row the file carries
+
+Completing the pair (finding 336) answers *what the checkpoint is about*. It does not answer the
+question a reader asks next, and until finding 337 no rule did: **does the export carry the reading
+the reference names?** The answer key and the case directory are written into the same tree, and
+checking a checkpoint means joining them.
+
+The join has four possible landings, and only the first is a match on the id the checkpoint states:
+
+| landing | how many | where the row is |
+| --- | --- | --- |
+| `entity` | 68 | a `metrics.json` row, or a `logs.json` row, with the stated `entity_id` |
+| `container` | 17 | a row filed under the entity that contains it -- a container's figure under its service |
+| `key` | 24 | a `configuration` reference, met by a key in the case's `parameters` block |
+| *dangling* | **0** (was 34) | nowhere: the reference named a key no table carried |
+
+The 34 were three defects with one symptom. A **log** reference names a line by id, and the id was
+discarded twice on the way out -- `LogDeclaration` had no `id` field, so `expandLog` never set
+`LogPayload.templateId`, so `logs.json` had no column for it. A **configuration** reference names a
+parameter, and the parameter block was in no file at all: the value travelled in the checkpoint's own
+`value`, the key did not. The **twelve** are not a defect: they resolve through containment, which is
+the same rule `resolveReading` applies, and they are reported as their own landing rather than folded
+into the match count because a reader has to know the rule to reproduce the join.
+
+`export/reference-carrier.ts` is the join and `assessCaseReferences` is its tally. It reads the
+exported files rather than the IR on purpose: a second check of the annotations would pass while the
+files disagreed, which is the shape finding 336 removed one field over.
+
+
 ### `fault.parameters` — the facts a checkpoint can cite
 
 `fault.parameters` is the injector's record, open by design: a `container`, a

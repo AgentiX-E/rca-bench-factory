@@ -8,7 +8,7 @@ import {
 import { buildEntityIndex } from '../src/export/rca100.js';
 import { SignalRefRefusedError } from '../src/export/signal-ref.js';
 import type { FaultCase, IrBundle } from '../src/ir/types.js';
-import { validBundle } from './fixtures.js';
+import { validBundle, validCase } from './fixtures.js';
 
 /**
  * OpenRCA 2.0 (PAVE) exporter tests.
@@ -50,6 +50,23 @@ describe('buildCausalPathJson', () => {
     const index = buildEntityIndex(bundle.graph);
     const out = parse(buildCausalPathJson(bundle.cases[0]!, index));
     expect(out.causal_path).toEqual([]);
+  });
+
+  it('carries the parameters a configuration reference names', () => {
+    // `evidence[].signal_ref` is `<entity>|cpuLimit` for a configuration checkpoint, and the only
+    // thing that makes it a reference rather than a word is this block beside it (finding 337).
+    const base = validBundle().cases[0]!;
+    const bundle = caseWith({ fault: { ...base.fault, parameters: { cpuLimit: 500 } } });
+    const index = buildEntityIndex(bundle.graph);
+    const out = parse(buildCausalPathJson(bundle.cases[0]!, index));
+    expect(out.parameters).toEqual({ cpuLimit: 500 });
+  });
+
+  it('carries an empty parameter block for a case that declares none', () => {
+    const base = validBundle().cases[0]!;
+    const bundle = caseWith({ fault: { ...base.fault, parameters: undefined } });
+    const index = buildEntityIndex(bundle.graph);
+    expect(parse(buildCausalPathJson(bundle.cases[0]!, index)).parameters).toEqual({});
   });
 
   it('marks structural false when a step endpoint does not resolve', () => {
@@ -199,6 +216,18 @@ describe('exportOpenRca2', () => {
     expect(skipped).toEqual([]);
     const out = parse(files['cases/case-001/causal_path.json']!);
     expect(out.case_id).toBe('case-001');
+  });
+
+  it('exports a case that states no checkpoints at all', () => {
+    // `evidenceCheckpoints` is optional, so the screen runs over an empty list rather than over
+    // `undefined`: a case with no evidence is a case with nothing to refuse.
+    const base = validBundle().cases[0]!;
+    const bundle = validBundle({
+      cases: [validCase({ groundTruth: { ...base.groundTruth, evidenceCheckpoints: undefined } })],
+    });
+    const { files, skipped } = exportOpenRca2(bundle);
+    expect(skipped).toEqual([]);
+    expect(parse(files['cases/case-001/causal_path.json']!).case_id).toBe('case-001');
   });
 
   it('skips a case with no telemetry', () => {

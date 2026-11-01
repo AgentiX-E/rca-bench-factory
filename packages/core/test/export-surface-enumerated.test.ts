@@ -127,6 +127,7 @@ const ENUMERATED_MODULES = [
   'export/rcaeval-logts.ts',
   'export/rcaeval.ts',
   'export/signal-ref.ts',
+  'export/reference-carrier.ts',
   'export/sli.ts',
   'export/tokens.ts',
   'gates/gates.ts',
@@ -285,6 +286,11 @@ const EXEMPT_EXPORTS: Record<string, string> = {
   'export/signal-ref.ts::SignalRefFault': 'type-only declaration; erases at runtime, so no consumer can name it',
   'export/signal-ref.ts::SignalRefRead': 'type-only declaration; erases at runtime, so no consumer can name it',
   'export/signal-ref.ts::SignalRefSource': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'export/reference-carrier.ts::ReferenceCarrier': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'export/reference-carrier.ts::ReferenceMatch': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'export/reference-carrier.ts::ReferenceJoin': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'export/reference-carrier.ts::ReferenceJoinTally': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'export/reference-carrier.ts::ExportedTables': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/reading-reference.ts::ReadingMatch': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/reading-reference.ts::ReadingRefusal': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/expression.ts::ExpressionValue': 'type-only declaration; erases at runtime, so no consumer can name it',
@@ -731,6 +737,13 @@ const TESTED = [
   'evidenceFromCheckpoint',
   'readSignalRef',
   'screenSignalRefs',
+  // export/reference-carrier.ts -- the other end of the same pair: whether the file beside the answer
+  // key carries what the second half names, and the four ways a reference can land (on the stated
+  // entity, through the entity that contains it, on a log line's id, on a declared parameter).
+  'assessCaseReferences',
+  'describeDanglingReference',
+  'joinPublishedReference',
+  'referenceCarrier',
   // export/sli.ts -- which reading ranks a case, and the one column name upstream will look for.
   // The declaration is the corpus's answer and the resolution is the exporter's; the two refusals are
   // separate because a reading on another service is wrong whether or not the series exists
