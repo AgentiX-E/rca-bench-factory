@@ -102,7 +102,40 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   puts every `process.exit(...)` call in exactly one of `sites`, `zero`,
   `indirect`, and `derive-gate-sites-tally.test.ts` holds that against an
   independent traversal of every script in `scripts/`. `multiline` is gone: a
-  basket a tree reader cannot reach, which read 0 in every round it existed.
+  basket a tree reader cannot reach, which read 0 in every round it existed. (The
+  `indirect` basket named in that sentence is gone too, in v3.44 -- see the next
+  entry -- so the partition it describes now has two halves.)
+- **A failure exit is counted by what the process exits with, not by the shape of
+  the sentence** (v3.44). Three readings, one subject. (1) `process.exit()` with no
+  argument exits 0 and was published as a failure site, because the rule asked
+  whether the argument is *the literal zero* and absence is not the literal zero; a
+  site with nothing to hollow would have been reported by the sensitivity pass as a
+  witness that does not depend on it, which is an accusation against a test for a
+  defect in the rule. (2) The `indirect` basket held exactly two calls, and both
+  were `main().then((code) => process.exit(code))` -- `code` is `main()`'s return
+  value, so that one sentence decides the script's status; the inventory published
+  each script's `.catch` arm, which only fires on a crash, as its failure exit, and
+  filed the verdict-carrying call as "not a site". A call that runs ends the process
+  wherever it stands, which is what `condition` is for, so the basket is deleted:
+  **112 sites -> 114**, `{16 zero}` beside them, 130 calls partitioned by
+  `derive-gate-sites-tally.test.ts` against an independent traversal. Both new sites
+  are proved by measurement: `fault-extraction-scripts.test.ts` drives `main()` to
+  1, 2 and 3, and `verify-site-proofs.mjs` observes the exits at those two lines.
+  (3) A reference the reading cannot resolve is **refused**, not skipped:
+  `process.exitCode = 1` (a status no hook here can see), an alias, a destructured
+  binding (the reference exits nothing, the call does, and the trace would report a
+  line the inventory never published). Measured: 0 in `scripts/`. Clearance:
+  `derive-gate-sites-refusals.test.ts` drives every refused spelling and every
+  accepted one, so the published set is a subset of what the sensitivity pass can
+  hollow by construction rather than by hope.
+- **The diagnostic column stops at the function, not at a distance** (v3.44). The
+  scan for a site's message had a floor of 60 lines, which crossed the boundary that
+  matters: for `score-fault-extraction.mjs:153` it reached `M1 exit condition met.`,
+  the sentence printed on the *success* path, five lines above the exit that fires
+  when the condition is not met. Measured over all 130 calls, moving the floor to the
+  enclosing function changes **4** rows and **no published site's diagnostic**. Where
+  no message exists in scope the site publishes `verdict` -- the expression whose
+  value becomes the status -- so no row is a bare coordinate.
 - **A comment is found by the token boundaries, not by a lexer** (v3.43). Both
   hand-written strippers desynced on a quote or a backtick inside a regex literal
   -- 12 of 75 scripts, 28 of 219 test files -- and the second one credited two

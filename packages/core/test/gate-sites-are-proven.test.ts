@@ -191,6 +191,7 @@ interface Site {
   line: number;
   condition?: string;
   diagnostic?: string;
+  verdict?: string;
   status?: string;
   provedBy?: string;
   reason?: string;
@@ -542,10 +543,18 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
 
     it('records the derivation rule it was produced under', () => {
       expect(committed.rule).toContain('process.exit');
-      expect(committed.rule).toContain('not the literal zero');
+      // v3.44 replaced "not the literal zero" with "not a known zero": the rule
+      // stopped asking how the argument is spelled and started asking what the
+      // process exits with, which is also why a call with no argument at all is a
+      // success exit rather than a site.
+      expect(committed.rule).toContain('not a known zero');
+      expect(committed.rule).toContain('no argument at all is zero');
       // The partition is part of the rule, not a detail of the implementation: a
       // reader who subtracts the tallies from the tree is relying on it.
       expect(committed.rule).toContain('partition');
+      // And so is the refusal: a reader who sees no `exitCode` row is entitled to
+      // know that the deriver would have stopped rather than skipped it.
+      expect(committed.rule).toContain('refused');
       expect(committed.rule).toContain('derive-gate-sites.mjs');
     });
   });
@@ -645,16 +654,35 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
       // cannot even express: a spanning call is an ordinary site. It read 0 for
       // every round it existed, and a tally that is structurally always zero is a
       // measurement only of the reader's own limitation.
-      expect(Object.keys(committed.excluded).sort()).toEqual(['indirect', 'zero']);
+      expect(Object.keys(committed.excluded)).toEqual(['zero']);
       for (const count of Object.values(committed.excluded)) {
         expect(typeof count).toBe('number');
       }
       expect(committed.scanned).toBeGreaterThan(0);
     });
 
-    it('gives every site a diagnostic, so a failure is readable', () => {
-      const silent = committed.sites.filter((s) => s.diagnostic === undefined);
-      expect(silent).toEqual([]);
+    it('gives every site a diagnostic or the expression that decides its status', () => {
+      // A bare coordinate is unreadable, which is why this rule exists. The two
+      // sites added in v3.44 have no message of their own -- `main()` printed it,
+      // in the function that returned the code -- so they carry `verdict` instead:
+      // the expression whose value becomes the status.
+      const unreadable = committed.sites.filter(
+        (s) => s.diagnostic === undefined && s.verdict === undefined,
+      );
+      expect(unreadable).toEqual([]);
+    });
+
+    it('publishes a verdict only where a diagnostic is missing, and both are stable text', () => {
+      const both = committed.sites.filter(
+        (s) => s.diagnostic !== undefined && s.verdict !== undefined,
+      );
+      expect(both).toEqual([]);
+      const verdicts = committed.sites.filter((s) => s.verdict !== undefined);
+      expect(verdicts.length).toBeGreaterThan(0);
+      for (const site of verdicts) {
+        expect(site.verdict).not.toBe('');
+        expect(site.verdict).not.toMatch(/\s{2,}/);
+      }
     });
   });
 

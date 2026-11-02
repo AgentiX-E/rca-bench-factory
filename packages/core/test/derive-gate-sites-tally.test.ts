@@ -34,9 +34,21 @@ import { describe, expect, it } from 'vitest';
  * ## What this file asserts instead
  *
  * One pass over the syntax tree puts every `process.exit(...)` call in exactly one
- * basket. So `sites.length + zero + indirect` **is** the number of calls, by
- * construction, and the two cases at the bottom hold that against the real tree
- * with an independent traversal.
+ * basket. So `sites.length + zero` **is** the number of calls, by construction, and
+ * the cases at the bottom hold that against the real tree with an independent
+ * traversal.
+ *
+ * ## The third basket, and why there are now two
+ *
+ * `indirect` held calls that were not in statement position, and it was the last
+ * remainder in this table: the rule it qualified -- "a call outside a statement may
+ * not run" -- is equally true of the calls the rule *includes*, and `condition`
+ * is the column that says so. Measured, the basket held exactly two calls, and both
+ * were `main().then((code) => process.exit(code))`: the sentence that decides the
+ * script's status. `code` is `main()`'s return value, so the inventory published
+ * each of those scripts as having one failure exit -- the `.catch` arm -- while the
+ * one carrying every refusal `main()` reports was filed as "not a site". v3.44
+ * deletes the basket and counts them.
  */
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -57,19 +69,18 @@ function classify(source: string): Read {
   return exitsIn('fixture.mjs', source);
 }
 
-/** The three counts a partition can report, in a fixed order. */
-function counts(source: string): { sites: number; zero: number; indirect: number } {
+/** The two counts a partition can report, in a fixed order. */
+function counts(source: string): { sites: number; zero: number } {
   const read = classify(source);
   return {
     sites: read.sites.length,
     zero: read.excluded.zero ?? 0,
-    indirect: read.excluded.indirect ?? 0,
   };
 }
 
-describe('a statement-position exit is a site unless its argument is zero', () => {
+describe('an exit is a site unless its argument is a known zero', () => {
   it('counts `process.exit(1)`', () => {
-    expect(counts('process.exit(1);')).toEqual({ sites: 1, zero: 0, indirect: 0 });
+    expect(counts('process.exit(1);')).toEqual({ sites: 1, zero: 0 });
   });
 
   it('counts any non-zero status, which is a spelling of the same property', () => {
@@ -78,23 +89,22 @@ describe('a statement-position exit is a site unless its argument is zero', () =
     expect(counts('process.exit(main());').sites).toBe(1);
   });
 
-  it('counts an exit that carries no argument at all', () => {
-    // `process.exit()` exits 0, which by the letter of the rule is not the literal
-    // zero -- and by the property it is a success exit. It is a site here because
-    // the rule is about the *spelling* of the argument, and this tree has none;
-    // the case exists so that a future one is visible rather than silently either
-    // way. See "Left open" in the progress log.
-    expect(counts('process.exit();')).toEqual({ sites: 1, zero: 0, indirect: 0 });
+  it('counts an exit that carries no argument as zero, because that is what it exits with', () => {
+    // Until v3.44 this was a site. The rule asked "is the argument the literal
+    // zero?", and an absent argument is not the literal zero -- which is a reading
+    // of the sentence rather than of the statement. `process.exit()` exits 0, so
+    // by the property the rule exists to publish it is a success exit.
+    expect(counts('process.exit();')).toEqual({ sites: 0, zero: 1 });
   });
 
   it('counts the inline `if (!ok) process.exit(1);`', () => {
-    expect(counts('if (!ok) process.exit(1);')).toEqual({ sites: 1, zero: 0, indirect: 0 });
+    expect(counts('if (!ok) process.exit(1);')).toEqual({ sites: 1, zero: 0 });
   });
 });
 
 describe('a success exit is counted as zero rather than dropped', () => {
   it('counts `process.exit(0)`', () => {
-    expect(counts('process.exit(0);')).toEqual({ sites: 0, zero: 1, indirect: 0 });
+    expect(counts('process.exit(0);')).toEqual({ sites: 0, zero: 1 });
   });
 
   it('reads the literal zero as a number, so `0x0` and `0.0` are the same claim', () => {
@@ -110,7 +120,6 @@ describe('a success exit is counted as zero rather than dropped', () => {
     expect(counts('if (officialDirArg === undefined) process.exit(0);')).toEqual({
       sites: 0,
       zero: 1,
-      indirect: 0,
     });
   });
 
@@ -119,21 +128,29 @@ describe('a success exit is counted as zero rather than dropped', () => {
   });
 });
 
-describe('a call that is not a statement is reported as indirect', () => {
+describe('an exit is a site wherever the call sits', () => {
+  // `indirect` used to hold these, on the argument that a call outside statement
+  // position may not run. That is true of `if (x) process.exit(1)` too, and the
+  // published `condition` column is what says so -- position in an expression does
+  // not weaken an exit, because a call that runs ends the process wherever it is.
   it('counts an exit inside another call', () => {
-    expect(counts('assert(process.exit(1));')).toEqual({ sites: 0, zero: 0, indirect: 1 });
+    expect(counts('assert(process.exit(1));')).toEqual({ sites: 1, zero: 0 });
   });
 
   it('counts an exit as an arrow body', () => {
-    expect(counts('const codes = list.map((x) => process.exit(x));')).toEqual({
-      sites: 0,
-      zero: 0,
-      indirect: 1,
-    });
+    expect(counts('const codes = list.map((x) => process.exit(x));')).toEqual({ sites: 1, zero: 0 });
+  });
+
+  it('counts the continuation that carries a gate verdict', () => {
+    // The shape the deleted basket was hiding: `code` is `main()`'s return value,
+    // so this call is where the script's status is decided. Both instances in
+    // `scripts/` are this line.
+    const read = classify('main()\n  .then((code) => process.exit(code))\n  .catch(() => process.exit(1));');
+    expect(read.sites.map((site) => site.line)).toEqual([2, 3]);
   });
 
   it('counts an exit inside a template substitution', () => {
-    expect(counts('const text = `${process.exit(1)}`;')).toEqual({ sites: 0, zero: 0, indirect: 1 });
+    expect(counts('const text = `${process.exit(1)}`;')).toEqual({ sites: 1, zero: 0 });
   });
 });
 
@@ -142,7 +159,6 @@ describe('prose about an exit is not an exit', () => {
     expect(counts('// `assert(process.exit(1))`, `.map((x) => process.exit(1))`')).toEqual({
       sites: 0,
       zero: 0,
-      indirect: 0,
     });
   });
 
@@ -155,7 +171,7 @@ describe('prose about an exit is not an exit', () => {
  * Not counted: \`assert(process.exit(1))\`, \`.map((x) => process.exit(1))\`.
  */
 const x = 1;`),
-    ).toEqual({ sites: 0, zero: 0, indirect: 0 });
+    ).toEqual({ sites: 0, zero: 0 });
   });
 
   it('ignores the text inside a string and inside a template', () => {
@@ -175,8 +191,8 @@ process.exit(
   });
 });
 
-describe('the three baskets are a partition of the calls, not a remainder', () => {
-  it('adds up on a fixture that exercises all three', () => {
+describe('the two baskets are a partition of the calls, not a remainder', () => {
+  it('adds up on a fixture that exercises both', () => {
     const source = [
       'process.exit(1);',
       'process.exit(0);',
@@ -185,18 +201,18 @@ describe('the three baskets are a partition of the calls, not a remainder', () =
       '// process.exit(1) in prose is not a call',
     ].join('\n');
     const read = counts(source);
-    expect(read).toEqual({ sites: 1, zero: 2, indirect: 1 });
+    expect(read).toEqual({ sites: 2, zero: 2 });
   });
 
-  it('publishes exactly two tallies, so a third cannot describe a situation that cannot occur', () => {
+  it('publishes exactly one tally, so a second cannot describe a situation that cannot occur', () => {
     // `multiline` used to sit here, always 0, for "an exit whose argument spans
-    // lines". Under a tree reading a spanning call is an ordinary site, so the
-    // label described a state the reading can no longer reach -- and a tally that
-    // is structurally always zero reads as a measurement.
-    expect(Object.keys(classify('process.exit(1);').excluded).sort()).toEqual(['indirect', 'zero']);
+    // lines"; under a tree reading a spanning call is an ordinary site. `indirect`
+    // followed it in v3.44 for the same reason: a basket whose members turn out to
+    // be sites is a basket that describes the reading rather than the tree.
+    expect(Object.keys(classify('process.exit(1);').excluded)).toEqual(['zero']);
   });
 
-  it('accounts for every call in every script, and names the two indirect ones', () => {
+  it('accounts for every call in every script, and names the two continuations', () => {
     // The independent reading: `getChildren()` rather than `forEachChild`, walked
     // recursively. Same tree, different traversal -- so a visitor that skipped a
     // corner of the grammar (a class field, a decorator, a default parameter) would
@@ -205,22 +221,31 @@ describe('the three baskets are a partition of the calls, not a remainder', () =
       .filter((f) => f.endsWith('.mjs') && !f.startsWith('.'))
       .sort();
     const shortfalls: string[] = [];
-    const indirectFiles: string[] = [];
     let calls = 0;
+    let sites = 0;
+    const continuationSites: string[] = [];
     for (const file of files) {
       const source = readFileSync(join(SCRIPTS, file), 'utf8');
       const read = exitsIn(file, source);
-      const total = read.sites.length + (read.excluded.zero ?? 0) + (read.excluded.indirect ?? 0);
-      if ((read.excluded.indirect ?? 0) > 0) indirectFiles.push(file);
+      sites += read.sites.length;
+      const total = read.sites.length + (read.excluded.zero ?? 0);
+      for (const line of read.sites.map((site) => site.line)) {
+        const text = source.split('\n')[line - 1] ?? '';
+        if (text.includes('.then((code) => process.exit(code))')) continuationSites.push(`${file}:${String(line)}`);
+      }
       const counted = countExitsByChildren(source, file);
       calls += counted;
       if (total !== counted) shortfalls.push(`${file}: classified ${String(total)}, holds ${String(counted)}`);
     }
     expect(shortfalls).toEqual([]);
     expect(calls).toBe(130);
-    // Both are `.then((code) => process.exit(code))`: a real exit whose statement
-    // it is not. The third used to be a docstring in the deriver itself.
-    expect(indirectFiles).toEqual(['derive-fault-golden.mjs', 'score-fault-extraction.mjs']);
+    expect(sites).toBe(114);
+    // Both were filed as `indirect` before v3.44: a real exit whose statement it is
+    // not, and the one that carries `main()`'s verdict.
+    expect(continuationSites).toEqual([
+      'derive-fault-golden.mjs:252',
+      'score-fault-extraction.mjs:153',
+    ]);
   });
 });
 

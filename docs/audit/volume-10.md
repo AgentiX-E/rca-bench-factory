@@ -852,3 +852,122 @@ gap holds only whitespace and comments. A `//` inside a regex literal is inside 
 Verified by the invariant rather than by inspection: blanking comments changes no token, so the token
 sequence of all 295 files in `scripts/` and `packages/core/test/` is identical before and after the strip
 -- 0 mismatches. A token gained would mean a comment survived; a token lost would mean code was blanked.
+
+## Finding 371 — `process.exit()` with no argument was published as a failure exit
+
+The rule reads:
+
+> a statement-position call to `process.exit(...)` whose argument is not the literal zero.
+
+An absent argument is not the literal zero, so a call written `process.exit()` fell into `sites`. It exits
+**0**. The inventory was publishing a success exit as a failure exit, and the consequence is not cosmetic:
+every published site is a claim that a test reaches it *and* that a mutant replacing its argument with `0`
+makes some test go red. For this one there is nothing to hollow -- `process.exit()` and
+`process.exit(0)` are the same instruction -- so the sensitivity pass would have reported a **survivor**,
+which is printed as *the witness reaches the exit and does not depend on it*. The accusation would have
+landed on the test for an exit that has no failure to depend on.
+
+Measured: **0 instances** in `scripts/`, so no published number moves today. The rule now reads the value
+rather than the spelling -- the numeric literal zero (so `0x0` and `0.0` are the same claim) and absence,
+which is the same number. `derive-gate-sites-tally.test.ts` drives both.
+
+## Finding 372 — the basket that held the sentence deciding the status
+
+`excluded` carried a second tally, `indirect`: *a call that is not in statement position -- inside an
+argument, a predicate, an arrow body, a template substitution.* Measured, it held exactly two calls:
+
+```
+derive-fault-golden.mjs:252     main().then((code) => process.exit(code))
+score-fault-extraction.mjs:153  main().then((code) => process.exit(code))
+```
+
+`code` is `main()`'s **return value**. `main()` returns 2 when its condition is not met and 1 on a usage
+error, printing the diagnostic before it does; the arrow hands that number to `process.exit`. So this one
+sentence is where the whole script's status is decided, and the inventory filed it as *not a site* --
+while publishing the `.catch` arm below it, which only fires on a crash, as each script's failure exit.
+
+The campaign takes its subjects from this table: `verify-gate-proofs` asks whether a named test reaches
+each site, `verify-sites-are-sensitive` whether it would notice the site's absence, and
+`verify-gates-are-testable` takes the scripts to hollow from the same list. Both scripts had their
+refusals outside all three questions.
+
+The exclusion's own justification is what defeated it. *A call that is not in statement position may not
+run* is equally true of the sites the rule **includes** -- `if (!ok) process.exit(1)` may not run either --
+and that is exactly what the published `condition` column records. Position in an expression does not
+weaken an exit: a call that runs ends the process wherever it stands. So the basket is **deleted** rather
+than narrowed. `sites` 112 → **114**, `excluded` `{16 zero, 2 indirect}` → `{16 zero}`, and the 130 calls
+still partition: `derive-gate-sites-tally.test.ts` recounts them with an independent traversal and names
+the two continuations by line.
+
+Both new sites were then proved by measurement rather than by reading:
+`fault-extraction-scripts.test.ts` drives `main()` to 1, 2 and 3 and asserts the process status, so
+`verify-site-proofs.mjs` observes the exits at those two lines and no other claim moves.
+
+## Finding 373 — a reference the reading could not resolve was counted nowhere
+
+The tally is a partition of **calls**, and the rule says so. That leaves a shape outside its subject
+altogether: a reference to the exit family that is not a call.
+
+```
+process.exitCode = 1;                 // sets the status without calling anything
+const die = process.exit; die(1);     // the reference exits nothing; the call does
+const { exit } = process;             // same, one binding further out
+```
+
+None of these was a site, a `zero`, or an `indirect`; they were invisible. Measured: **0** in `scripts/`
+-- 130 calls, all spelled `process.exit(...)` -- which is precisely why the reading has to refuse them
+rather than trust the measurement: an absent spelling is indistinguishable from a spelling nobody looked
+for. The two hooks here are installed on `process.exit`, so `process.exitCode = 1` is invisible to both; an
+alias and a destructured binding put the exit on one line and the call on another, so the trace would
+report a line the inventory never published.
+
+The reading now **throws**, naming the file, the line, the spelling and the statement to change:
+
+```
+scripts/x.mjs: 1 reference(s) to the exit family that this inventory cannot classify:
+  scripts/x.mjs:41 is a status set by assignment: if (skip === true) process.exitCode = 1
+```
+
+`derive-gate-sites-refusals.test.ts` drives each refused spelling, and the boundary it draws is exact
+rather than stylistic: `process['exit'](1)` is **classified**, because the member resolves at run time, the
+hook sees it, the mutant can hollow it, and the call is on the line the trace reports. The question is not
+"does this look unusual" but "can this be resolved to the line the instrument will report".
+
+A fourth basket, `uncounted`, was written and rejected. A basket is published beside `sites` and reads as a
+measurement of the tree; that one would have measured the instrument's reach, and the next round would have
+had to ask which of the two it was reading.
+
+## Finding 374 — the diagnostic column stopped at 60 lines, and a distance is not a scope
+
+`diagnostic` is the message a site prints about itself, taken from the nearest preceding
+`console.error`/`console.log`/`process.stderr.write`/`verdict(...)`. The scan had a floor of 60 lines,
+which is a distance, and a distance can cross the boundary that matters. With the two continuations now
+published, the column would have read:
+
+| site | value under a 60-line floor |
+| --- | --- |
+| `derive-fault-golden.mjs:252` | `\n${unusable} of ${predictions.length} sample(s) did not produce a usable extraction.` |
+| `score-fault-extraction.mjs:153` | `\nM1 exit condition met.` |
+
+The second is the message printed on the **success** path, five lines above the exit that fires when the
+condition is not met. That is not a missing fingerprint; it is a wrong one, and wrong-but-plausible is the
+only kind that survives review.
+
+The floor is now the **enclosing function**, which is a boundary in the language rather than a guess about
+layout: a message outside the function that contains the exit is a message some caller printed about
+something else. Measured over all 130 calls, the change moves **4** rows and **no published site's
+diagnostic**: the two continuations lose a message that is not theirs, and two `process.exit(0)` calls gain
+one that sat further than 60 lines away (both are in the `zero` basket and publish nothing).
+
+The block-scoped alternative stays declined for the reason v3.42 measured: ``check-doc-counts.mjs`` prints
+its summary, then loops over the detail, then exits, so scoping to the enclosing block lost 14 of 112
+sites outright.
+
+Two rows now have no message at all, and a bare coordinate is what rule 5 forbids. They publish `verdict`
+instead -- the expression whose value becomes the status, here `code` -- so the row still says what the
+site is about:
+
+```
+{ "script": "scripts/score-fault-extraction.mjs", "line": 153, "verdict": "code",
+  "status": "proved", "provedBy": "packages/core/test/fault-extraction-scripts.test.ts" }
+```

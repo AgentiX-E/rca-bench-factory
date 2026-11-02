@@ -1,9 +1,8 @@
 {
-  "rule": "a statement-position process.exit(...) whose argument is not the literal zero; sites, zero and indirect partition every process.exit call; see scripts/derive-gate-sites.mjs",
+  "rule": "a process.exit(...) call whose argument is not a known zero -- no argument at all is zero; sites and zero partition every process.exit call, whatever position the call sits in; a reference to the exit family that is not a call is refused rather than counted; see scripts/derive-gate-sites.mjs",
   "scanned": 75,
   "excluded": {
-    "zero": 16,
-    "indirect": 2
+    "zero": 16
   },
   "sites": [
     {
@@ -388,6 +387,13 @@
     },
     {
       "script": "scripts/derive-fault-golden.mjs",
+      "line": 252,
+      "verdict": "code",
+      "status": "proved",
+      "provedBy": "packages/core/test/fault-extraction-scripts.test.ts"
+    },
+    {
+      "script": "scripts/derive-fault-golden.mjs",
       "line": 255,
       "diagnostic": "fatal: ${error instanceof Error ? error.message : String(error)}",
       "status": "proved",
@@ -395,7 +401,7 @@
     },
     {
       "script": "scripts/derive-gate-sites.mjs",
-      "line": 150,
+      "line": 197,
       "diagnostic": "derive-gate-sites: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/gate-sites-are-proven.test.ts"
@@ -637,6 +643,13 @@
       "diagnostic": "record-reading: ${derived.reason}",
       "status": "proved",
       "provedBy": "packages/core/test/record-reading.test.ts"
+    },
+    {
+      "script": "scripts/score-fault-extraction.mjs",
+      "line": 153,
+      "verdict": "code",
+      "status": "proved",
+      "provedBy": "packages/core/test/fault-extraction-scripts.test.ts"
     },
     {
       "script": "scripts/score-fault-extraction.mjs",

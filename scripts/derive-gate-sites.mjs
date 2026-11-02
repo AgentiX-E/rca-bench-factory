@@ -23,11 +23,13 @@
  * The rule is deliberately narrow, and it is written here rather than left to
  * the reader because the count is the point:
  *
- *   - a statement-position call to `process.exit(...)` whose argument is not the
- *     literal zero. In practice that covers `process.exit(1)`, `process.exit(2)`,
- *     `process.exit(cond ? 0 : 1)`, `process.exit(main())`, and the one-line
- *     `if (!ok) process.exit(1);` -- because a gate is a **property** ("exits
- *     non-zero when unhappy") and each of those is a spelling of it.
+ *   - a call to `process.exit(...)` whose argument is not a known zero. In
+ *     practice that covers `process.exit(1)`, `process.exit(2)`,
+ *     `process.exit(cond ? 0 : 1)`, `process.exit(main())`, the one-line
+ *     `if (!ok) process.exit(1);`, and the continuation
+ *     `main().then((code) => process.exit(code))` -- because a gate is a
+ *     **property** ("exits non-zero when unhappy") and each of those is a
+ *     spelling of it.
  *
  * The rule used to be `argument === '1'`, which is a spelling rather than the
  * property and which dropped eight scripts out of the table. This file's own
@@ -38,13 +40,41 @@
  *
  * Deliberately **not** counted as sites:
  *
- *   - a call whose argument is the literal zero. A success exit is not a failure
+ *   - a call whose argument is a known zero: the numeric literal `0` -- `0x0` and
+ *     `0.0` read as numbers, so they are the same claim -- and **no argument at
+ *     all**, because `process.exit()` exits 0. A success exit is not a failure
  *     site; `probe-category-derivation.mjs` ends with one because reaching the end
  *     is what success means there.
- *   - a call that is not in statement position -- inside an argument, a predicate,
- *     an arrow body, a template substitution.
+ *   - a reference to the exit family that is not a call. Those are **refused**
+ *     rather than ignored; see "What the inventory refuses to publish" below.
  *
- * ## The tally, and why it is three buckets rather than two tallies
+ * ## Why an exit is no longer required to be a statement
+ *
+ * Until v3.44 the rule also required the call to sit in statement position, and
+ * everything else went into a basket named `indirect`. Measured, that basket held
+ * exactly two calls -- and both are the sentence that decides the status of the
+ * whole script:
+ *
+ * ```
+ * derive-fault-golden.mjs:252     main().then((code) => process.exit(code))
+ * score-fault-extraction.mjs:153  main().then((code) => process.exit(code))
+ * ```
+ *
+ * `code` is `main()`'s return value, which is the verdict. The inventory published
+ * each of those two scripts as having one failure exit (the `.catch` arm) and
+ * excluded the one that carries every refusal `main()` was written to report:
+ * `main()` prints "M1 exit condition NOT met", returns 2, and the arrow hands 2 to
+ * `process.exit`. The campaign that proves every site is reached by a test had
+ * never been asked about them.
+ *
+ * The exclusion was justified by "a call that is not in statement position may not
+ * run", which is equally true of the sites the rule *includes*: `if (x)
+ * process.exit(1)` may not run either, and that is what the published `condition`
+ * column is for. **Position in an expression does not weaken an exit** -- a call
+ * that runs ends the process wherever it stands -- so the basket is deleted rather
+ * than narrowed, and the two calls are sites.
+ *
+ * ## The tally, and why it is two buckets rather than three
  *
  * The rule reports what it dropped, because "38 sites" is meaningful only next to
  * "and these others went elsewhere". It used to compute that second half with a
@@ -64,9 +94,26 @@
  * `/` that is not a division.
  *
  * So the classification is now one pass over the tree, and it is **total by
- * construction**: every `process.exit(...)` call is a site, a `zero`, or an
- * `indirect`, and the three add up to the number of calls. A tally that is the
- * remainder of a subtraction cannot be checked; one that is a partition can.
+ * construction**: every `process.exit(...)` call is a site or a `zero`, and the
+ * two add up to the number of calls. A tally that is the remainder of a
+ * subtraction cannot be checked; one that is a partition can.
+ *
+ * ## What the inventory refuses to publish
+ *
+ * A site is proved by two instruments: a test that reaches its line, and a mutant
+ * that replaces its argument with `0` from that frame. Both are written against a
+ * call to `process.exit`, resolved at the line it happens on -- so a computed
+ * `process['exit'](1)` is a site, and `process.exitCode = 1` is not: no hook here
+ * can see a status set without a call. An alias (`const die = process.exit; die(1)`) and a
+ * destructured binding are refused for a different reason: the reference exits
+ * nothing, the call does, and a static reader cannot follow the value from one line
+ * to the other -- it would publish a line the trace never reports.
+ *
+ * So the reading **throws** when it meets one, naming the line and the spelling.
+ * Measured today: **zero** such references in `scripts/`. The alternative -- a
+ * fourth basket called `uncounted` -- was written and rejected, because a
+ * published basket reads as a measurement of the tree, and that one would measure
+ * the instrument's reach instead.
  *
  * ## Why the snippet, and not just the line number
  *
@@ -309,27 +356,83 @@ function flat(node, file) {
 /**
  * Whether a node is a call to `process.exit`.
  *
- * `process` and `exit` are read as *names*, not as text: `node.expression` is the
- * property access, and the two sides of it are identifiers. A call to
- * `other.exit(...)` is not this, and neither is a local function named `exit`.
+ * `process` and `exit` are read as *names*, not as text: the callee is a property
+ * access on an identifier called `process`, or an element access with a string
+ * literal that names a status member. A call to `other.exit(...)` is not this, and
+ * neither is a local function named `exit`.
  */
 function isExitCall(node, file) {
-  return (
-    ts.isCallExpression(node) &&
-    ts.isPropertyAccessExpression(node.expression) &&
-    node.expression.expression.getText(file) === 'process' &&
-    node.expression.name.getText(file) === 'exit'
-  );
+  return ts.isCallExpression(node) && statusMemberOf(node.expression, file) === 'exit';
 }
 
 /**
- * Every `process.exit` call in one file, partitioned three ways.
+ * The members of `process` that report a status, and the spelling a node uses to
+ * reach one.
+ *
+ * `exit` is the one this tree writes; `exitCode` is the one it could write instead,
+ * and the one no instrument here can hollow. Both are in the family so that the
+ * second cannot enter the tree as an absence -- which is what it was until v3.44.
+ */
+const STATUS_MEMBERS = new Set(['exit', 'exitCode']);
+
+/** `process.exit`, `process.exitCode`, `process['exit']` -- as a name, not as text. */
+function statusMemberOf(node, file) {
+  if (
+    ts.isPropertyAccessExpression(node) &&
+    node.expression.getText(file) === 'process' &&
+    STATUS_MEMBERS.has(node.name.getText(file))
+  ) {
+    return node.name.getText(file);
+  }
+  if (
+    ts.isElementAccessExpression(node) &&
+    node.expression.getText(file) === 'process' &&
+    node.argumentExpression !== undefined
+  ) {
+    const quoted = /^['"`]([A-Za-z]+)['"`]$/.exec(node.argumentExpression.getText(file));
+    if (quoted !== null && STATUS_MEMBERS.has(quoted[1])) return quoted[1];
+  }
+  return undefined;
+}
+
+/**
+ * The statement a node sits in, for a message a reader has to act on.
+ *
+ * `process.exit` on its own says where the reader should look; `const die =
+ * process.exit;` says what to change. The walk stops at the child of a block, a
+ * case clause or the file -- so an exit inside `if (!ok) ...` reports the whole
+ * one-line `if`, which is the sentence the author wrote.
+ */
+function statementAround(node) {
+  let current = node;
+  while (current.parent !== undefined) {
+    const parent = current.parent;
+    if (ts.isBlock(parent) || ts.isSourceFile(parent) || ts.isCaseClause(parent) || ts.isModuleBlock(parent)) {
+      return current;
+    }
+    current = parent;
+  }
+  return current;
+}
+
+/**
+ * Every `process.exit` call in one file, partitioned two ways, and every other
+ * reference to the exit family refused.
  *
  * The partition is the point. `sites` are the failure exits the inventory
- * publishes; `zero` and `indirect` are the two ways a call is not one, and every
- * call lands in exactly one of the three -- so `sites.length + zero + indirect`
- * is the number of calls in the file, and a call that is silently absent from all
- * three is impossible rather than merely unnoticed.
+ * publishes; `zero` is the one way a call is not one, and every call lands in
+ * exactly one of the two -- so `sites.length + zero` is the number of calls in the
+ * file, and a call that is silently absent from both is impossible rather than
+ * merely unnoticed. Until v3.44 a third basket, `indirect`, held calls that were
+ * not in statement position; it is gone, because a call that runs ends the process
+ * wherever it stands, and both of its members were the `.then` continuation that
+ * carries a gate's verdict. See the header.
+ *
+ * A reference that is not a call is not classified but **refused**: `process.exit`
+ * read as a value, `process.exitCode` assigned, `process['exit']` computed,
+ * `const { exit } = process` destructured. Each is an exit this inventory could
+ * not prove, and a published site nothing can hollow is worse than a build that
+ * stops.
  *
  * That was not true of the line-shaped reading this replaces. It classified by
  * matching a line, so `if (officialDirArg === undefined) process.exit(0);` --
@@ -354,24 +457,60 @@ export function exitsIn(name, source) {
   }
   const rawLines = source.split('\n');
   const sites = [];
-  const excluded = { zero: 0, indirect: 0 };
+  const excluded = { zero: 0 };
+  const refusals = [];
+  const refuse = (node, what) => {
+    const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
+    refusals.push(`${name}:${line} ${what}: ${flat(statementAround(node), file).slice(0, 90)}`);
+  };
   const visit = (node) => {
     if (isExitCall(node, file)) {
       const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
       const argument = node.arguments.length === 0 ? undefined : node.arguments[0];
-      if (!ts.isExpressionStatement(node.parent)) {
-        excluded.indirect += 1;
-      } else if (argument !== undefined && ts.isNumericLiteral(argument) && Number(argument.text) === 0) {
-        // The literal zero, read as a numeric literal rather than as the text `0`:
-        // `0x0` and `0.0` are the same number and the same claim, and a string
-        // comparison would call them failure exits.
+      // A call with no argument exits 0, so it is a success exit by meaning and
+      // not only by spelling. Until v3.44 it was published as a site, because the
+      // rule asked whether the argument was the literal zero and absence is not
+      // the literal zero.
+      if (argument === undefined || (ts.isNumericLiteral(argument) && Number(argument.text) === 0)) {
         excluded.zero += 1;
       } else {
-        sites.push({
-          line,
-          condition: guardOf(node, file),
-          diagnostic: diagnosticOf(rawLines, line - 1),
-        });
+        const diagnostic = diagnosticOf(rawLines, node, file);
+        const site = { line, condition: guardOf(node, file), diagnostic };
+        // A site whose status is computed elsewhere has no message of its own: the
+        // gate printed it inside the function that *returned* the code. Publishing
+        // a bare coordinate would leave the row unreadable, so the expression whose
+        // value becomes the status is published instead -- `process.exit(code)`
+        // reads as `verdict: "code"`, which is exactly the thing a reader needs to
+        // know about the two continuations that carry a gate's answer.
+        if (diagnostic === undefined && !ts.isNumericLiteral(argument)) {
+          site.verdict = flat(argument, file).slice(0, 90);
+        }
+        sites.push(site);
+      }
+    } else {
+      const member = statusMemberOf(node, file);
+      // A member reached through the object is a reference, not a site: the exit
+      // happens at the line that calls whatever the reference holds, and a static
+      // reader cannot follow it there. `exitCode` is refused even when it is
+      // called, because no instrument here can see a status set without a call.
+      const isCallee =
+        node.parent !== undefined &&
+        ts.isCallExpression(node.parent) &&
+        node.parent.expression === node;
+      if (member === 'exitCode') {
+        refuse(node, 'is a status set by assignment');
+      } else if (member === 'exit' && !isCallee) {
+        refuse(node, 'is read without being called');
+      }
+      if (
+        ts.isVariableDeclaration(node) &&
+        ts.isObjectBindingPattern(node.name) &&
+        node.initializer?.getText(file) === 'process'
+      ) {
+        for (const element of node.name.elements) {
+          const key = (element.propertyName ?? element.name).getText(file);
+          if (STATUS_MEMBERS.has(key)) refuse(node, `binds process.${key} to a local name`);
+        }
       }
     }
     ts.forEachChild(node, visit);
@@ -379,12 +518,23 @@ export function exitsIn(name, source) {
   // `forEachChild` visits in source order, so `sites` comes out in line order
   // without a sort -- and a sort would silently reorder two exits on one line.
   visit(file);
+  if (refusals.length > 0) {
+    throw new Error(
+      `${name}: ${String(refusals.length)} reference(s) to the exit family that this inventory cannot ` +
+        'classify:\n' +
+        refusals.map((r) => `  ${r}`).join('\n') +
+        '\nA site is proved by a test that reaches it and by a mutant that replaces its argument, so the ' +
+        'inventory publishes only a `process.exit(...)` call. Write the refusal that way, or teach ' +
+        '`derive-gate-sites.mjs` and `verify-sites-are-sensitive.mjs` the new spelling together -- a site no ' +
+        'instrument can hollow would be published as proved and never be measured.',
+    );
+  }
   return { sites, excluded };
 }
 
 /**
  * The diagnostic a site prints about itself: the longest string literal in the
- * first argument of the nearest preceding diagnostic call.
+ * first argument of the nearest preceding diagnostic call **in the same function**.
  *
  * Read from the raw lines rather than the stripped ones, because the answer *is*
  * a string literal. Note what this does **not** claim: proximity is not
@@ -396,10 +546,35 @@ export function exitsIn(name, source) {
  * enclosing block lost 14 of 112 sites outright. A column that is right about
  * proximity and silent about which block it came from is worth more than one
  * that is absent for a seventh of the tree.
+ *
+ * ## Why the floor is a function rather than a distance
+ *
+ * The scan used to stop after 60 lines, and a distance can cross the boundary that
+ * matters. `score-fault-extraction.mjs:153` is `process.exit(code)` in the `.then`
+ * continuation; a few lines above it sits `console.log('\nM1 exit condition met.')`
+ * -- the sentence printed on the *success* path -- so the exit that fires when M1
+ * is **not** met would have been published with success's message as its
+ * fingerprint. Measured over every call in `scripts/` (130 of them), moving the
+ * floor to the enclosing function changes **4** rows: the two continuations lose a
+ * diagnostic that belongs to another function, and two `process.exit(0)` calls
+ * gain one that sat further than 60 lines away. No published site's diagnostic
+ * changes.
+ *
+ * A function is a boundary in the language rather than a guess about layout: a
+ * message outside the function that contains the exit is a message some caller
+ * printed about something else.
  */
-function diagnosticOf(rawLines, index) {
+function diagnosticOf(rawLines, node, file) {
+  const index = file.getLineAndCharacterOfPosition(node.getStart(file)).line;
+  let floor = 0;
+  for (let parent = node.parent; parent !== undefined; parent = parent.parent) {
+    if (ts.isFunctionLike(parent)) {
+      floor = file.getLineAndCharacterOfPosition(parent.getStart(file)).line;
+      break;
+    }
+  }
   let diagnostic;
-  for (let j = index - 1; j >= 0 && j > index - 60; j -= 1) {
+  for (let j = index - 1; j >= floor; j -= 1) {
     // `console.log` is included alongside the two error channels because one
     // gate in this tree reports through it: `verify-scorer-stability.mjs` prints
     // its FAILED summary with `console.log` because the whole script is a
@@ -533,8 +708,9 @@ function derive() {
 function serialise({ sites, excluded, scanned }) {
   const payload = {
     rule:
-      'a statement-position process.exit(...) whose argument is not the literal zero; ' +
-      'sites, zero and indirect partition every process.exit call; ' +
+      'a process.exit(...) call whose argument is not a known zero -- no argument at all is zero; ' +
+      'sites and zero partition every process.exit call, whatever position the call sits in; ' +
+      'a reference to the exit family that is not a call is refused rather than counted; ' +
       'see scripts/derive-gate-sites.mjs',
     scanned,
     excluded,
@@ -542,6 +718,7 @@ function serialise({ sites, excluded, scanned }) {
       const entry = { script: s.script, line: s.line };
       if (s.condition) entry.condition = s.condition;
       if (s.diagnostic) entry.diagnostic = s.diagnostic;
+      if (s.verdict) entry.verdict = s.verdict;
       if (s.status) entry.status = s.status;
       if (s.provedBy) entry.provedBy = s.provedBy;
       if (s.reason) entry.reason = s.reason;
@@ -585,7 +762,8 @@ function serialise({ sites, excluded, scanned }) {
  * accident this fixes.
  */
 export function carryAnnotations(sites, priorSites) {
-  const fingerprint = (site) => [site.script, site.condition ?? '', site.diagnostic ?? ''].join('\u0000');
+  const fingerprint = (site) =>
+    [site.script, site.condition ?? '', site.diagnostic ?? '', site.verdict ?? ''].join('\u0000');
 
   const pending = new Map();
   for (const site of priorSites) {
@@ -657,6 +835,7 @@ function main() {
       const entry = { script: site.script, line: site.line };
       if (site.condition !== undefined) entry.condition = site.condition;
       if (site.diagnostic !== undefined) entry.diagnostic = site.diagnostic;
+      if (site.verdict !== undefined) entry.verdict = site.verdict;
       return entry;
     };
     const same =
