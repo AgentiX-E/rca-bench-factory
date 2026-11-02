@@ -204,9 +204,12 @@ jobs:
   sensitivity:
     name: every proved exit can disappear without a word
     runs-on: ubuntu-latest
-    # Measured: 3 min 20 s for 150 runs at four at a time on the machine this was
-    # written on, plus an install and a build. Twice that is the budget, and it is
-    # bounded so that a hang is reported as a budget being spent.
+    # Measured twice, because the first number was this machine's and the second is a
+    # runner's: 3 min 20 s for 150 runs at four at a time while writing it, and **7.0
+    # minutes** end to end on `ubuntu-latest` in run 41416005911 -- install, shells,
+    # build and pass together, which is 2.1 times the local figure. The budget is a
+    # little over twice the runner's measurement, and it is bounded so that a hang is
+    # reported as a budget being spent rather than six hours later.
     timeout-minutes: 15
     steps:
       - name: Check out
