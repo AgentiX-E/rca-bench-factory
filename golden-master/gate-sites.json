@@ -25,7 +25,7 @@
     {
       "script": "scripts/build-example-bundle.mjs",
       "line": 103,
-      "condition": "!current.equals(expected)",
+      "condition": "!ok",
       "diagnostic": "${path} is stale - run \\",
       "status": "proved",
       "provedBy": "packages/core/test/build-example-bundle.test.ts"
@@ -94,7 +94,7 @@
     {
       "script": "scripts/check-battery-budget.mjs",
       "line": 41,
-      "condition": "workflow.errors.length > 0",
+      "condition": "catch",
       "diagnostic": "check-battery-budget: no recording at ${BASELINE} -- ${String(error)}\\n",
       "status": "proved",
       "provedBy": "packages/core/test/battery-budget.test.ts"
@@ -148,6 +148,7 @@
     {
       "script": "scripts/check-fault-cases.mjs",
       "line": 61,
+      "condition": "!(arg === '--cases') && !(arg === '--samples') && !(arg === '--help' || arg === '-h')",
       "diagnostic": "usage: node scripts/check-fault-cases.mjs [--cases <dir>] [--samples <file>]",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
@@ -155,6 +156,7 @@
     {
       "script": "scripts/check-fault-cases.mjs",
       "line": 76,
+      "condition": "catch",
       "diagnostic": "check-fault-cases: could not read the ${what} at ${path}: ${String(error instanceof Error ? error.message : error)}",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
@@ -366,7 +368,7 @@
     {
       "script": "scripts/check-staged-mutation.mjs",
       "line": 143,
-      "condition": "verdict.differing.length > 0",
+      "condition": "problems.length > 0",
       "diagnostic": "check-staged-mutation: FAILED (${String(problems.length)} problem(s))",
       "status": "proved",
       "provedBy": "packages/core/test/staged-mutation.test.ts"
@@ -388,14 +390,13 @@
     {
       "script": "scripts/derive-fault-golden.mjs",
       "line": 255,
-      "condition": "unusable > 0",
       "diagnostic": "fatal: ${error instanceof Error ? error.message : String(error)}",
       "status": "proved",
       "provedBy": "packages/core/test/fault-extraction-scripts.test.ts"
     },
     {
       "script": "scripts/derive-gate-sites.mjs",
-      "line": 132,
+      "line": 133,
       "diagnostic": "derive-gate-sites: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/gate-sites-are-proven.test.ts"
@@ -458,7 +459,7 @@
     {
       "script": "scripts/gen-examples.mjs",
       "line": 205,
-      "condition": "checkOnly",
+      "condition": "catch",
       "diagnostic": "${DATA_PATH} is missing - run \\",
       "status": "proved",
       "provedBy": "packages/core/test/gen-examples.test.ts"
@@ -567,7 +568,6 @@
     {
       "script": "scripts/probe-denial-inventory.mjs",
       "line": 229,
-      "condition": "unresolved.length > 0",
       "diagnostic": "no sample text was modified.",
       "status": "exempt",
       "reason": "A probe rather than a gate: `main()` exits non-zero when the built modules deny fewer paths than the inventory expects. `probe-built-module-guards.test.ts` runs it and asserts on the inventory it prints, which is the stronger statement -- the exit is computed from the very numbers that test then reads."
@@ -575,7 +575,6 @@
     {
       "script": "scripts/probe-m1-ceiling.mjs",
       "line": 202,
-      "condition": "args.json",
       "diagnostic": "the decision costs ${total - strictCeiling} sample(s) of headroom:",
       "status": "exempt",
       "reason": "`process.exit(main())`, where `main()` decides from the ceiling it measured. `m1-ceiling-probe.test.ts` drives the probe and asserts on the number it publishes; asserting on this line instead would restate the condition the probe has already evaluated."
@@ -643,7 +642,6 @@
     {
       "script": "scripts/score-fault-extraction.mjs",
       "line": 156,
-      "condition": "!core.meetsM1ExitCondition(report)",
       "diagnostic": "fatal: ${error instanceof Error ? error.message : String(error)}",
       "status": "proved",
       "provedBy": "packages/core/test/fault-extraction-scripts.test.ts"
@@ -723,7 +721,6 @@
     {
       "script": "scripts/verify-gates-are-testable.mjs",
       "line": 657,
-      "condition": "mine !== undefined",
       "diagnostic": "verify-gates-are-testable: FAILED -- interrupted by ${signal};",
       "status": "proved",
       "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
@@ -818,7 +815,7 @@
     {
       "script": "scripts/verify-site-proofs.mjs",
       "line": 109,
-      "condition": "unknown.length > 0",
+      "condition": "catch",
       "diagnostic": "verify-site-proofs: cannot read ${relative(ROOT, INVENTORY) || INVENTORY} -- ${String(error)}\\n",
       "status": "proved",
       "provedBy": "packages/core/test/site-proofs.test.ts"
@@ -834,7 +831,7 @@
     {
       "script": "scripts/verify-site-proofs.mjs",
       "line": 242,
-      "condition": "problems.length > 0",
+      "condition": "failures > 0",
       "diagnostic": "verify-site-proofs: FAILED -- ${String(failures)} problem(s)\\n",
       "status": "proved",
       "provedBy": "packages/core/test/site-proofs.test.ts"
@@ -858,7 +855,7 @@
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
       "line": 132,
-      "condition": "!Number.isInteger(CONCURRENCY) || CONCURRENCY < 1",
+      "condition": "catch",
       "diagnostic": "verify-sites-are-sensitive: cannot read ${relative(ROOT, INVENTORY) || INVENTORY} -- ${String(error)}\\n",
       "status": "proved",
       "provedBy": "packages/core/test/verify-sites-are-sensitive.test.ts"
@@ -874,7 +871,7 @@
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
       "line": 332,
-      "condition": "unmeasured.length > 0",
+      "condition": "failures > 0",
       "diagnostic": "verify-sites-are-sensitive: FAILED -- ${String(failures)} problem(s)\\n",
       "status": "proved",
       "provedBy": "packages/core/test/verify-sites-are-sensitive.test.ts"

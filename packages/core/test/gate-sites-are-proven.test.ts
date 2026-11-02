@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -943,6 +943,12 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
       const tree = mkdtempSync(join(tmpdir(), 'gate-sites-harness-'));
       try {
         cpSync(resolve(ROOT, 'scripts'), join(tree, 'scripts'), { recursive: true });
+        // The deriver reads the syntax tree, so the copy has to be able to reach
+        // the compiler. A copy of `scripts/` with no `node_modules` above it is
+        // not a tree that script can run -- the first version of this round's
+        // change failed here with `Cannot find package 'typescript'`, which is a
+        // fact about the copy rather than about the dotfile being measured.
+        symlinkSync(resolve(ROOT, 'node_modules'), join(tree, 'node_modules'), 'dir');
         const harness = join(tree, 'scripts', '.probe-figures-harness-gate-sites.mjs');
         expect(existsSync(harness), 'the harness must not exist before this test').toBe(false);
         writeFileSync(harness, '// scratch\n');

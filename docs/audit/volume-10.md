@@ -602,3 +602,117 @@ the tree of the tool's own fault.
 
 The marker is written **before** the code is replaced rather than after, because a run that dies between
 the two would otherwise record a mutant it did not apply.
+
+## Finding 363 — the `condition` column names the nearest `if` above, not the block the exit is in
+
+`golden-master/gate-sites.json` publishes, for every failure site, the guard that decides whether the exit
+runs. The deriver read it by scanning **backwards for an `if` line**:
+
+```
+for (let j = index - 1; j >= 0 && j > index - 60; j -= 1) {
+  const match = /^\s*\}?\s*if\s*\((.*)\)\s*\{\s*$/.exec(rawLines[j]);
+```
+
+That answers *which `if` is the closest one above this line*, which is a different question from *which
+block this exit is in*. The two agree on most of the tree, and on the rest the column said something a
+reader would act on and that is not true:
+
+| site | published | what actually guards it |
+| --- | --- | --- |
+| `verify-site-proofs.mjs:109` | `unknown.length > 0` | `catch` — the refusal fires when the inventory cannot be *read* |
+| `verify-sites-are-sensitive.mjs:132` | `!Number.isInteger(CONCURRENCY) \|\| CONCURRENCY < 1` | `catch` |
+| `check-battery-budget.mjs:41` | `workflow.errors.length > 0` | `catch` |
+| `verify-site-proofs.mjs:242` | `problems.length > 0` | `failures > 0` |
+| `verify-sites-are-sensitive.mjs:332` | `unmeasured.length > 0` | `failures > 0` |
+| `build-example-bundle.mjs:103` | `!current.equals(expected)` | `!ok` — the `if` opens no block, so it was never seen |
+| `check-staged-mutation.mjs:143` | `verdict.differing.length > 0` | `problems.length > 0` |
+| `probe-m1-ceiling.mjs:202` | `args.json` | nothing — `process.exit(main())` at module level |
+
+The first three are the worst class: they name the *other* branch. A reader asking "when does this gate
+refuse to read its inventory" is told "when the arguments are unrecognised".
+
+Measured against a parser, which reads the same tree independently: **13 of 112** entries published a
+condition that does not hold at the exit -- four named a guard that had already closed, four named an `if`
+where the exit is inside a `catch`, five named an `if` where there is none -- and **two more** published
+nothing where the guard could be named (a `catch` and an `else` chain). Fifteen rows in total changed.
+
+The repair is not a better scan. `condition` is a question about a syntax tree -- an `if` **is** an
+`IfStatement`, an `else` body **is** that statement's `elseStatement`, a `catch` **is** a `CatchClause` --
+and it is now answered by asking the tree. The vocabulary is unchanged for the 97 entries that were
+right: an `if` publishes its predicate, an `else` body publishes the chain negated, a loop publishes its
+header, and `catch` and `switch` publish the word. Two rules were added that the old scan could not
+express: an `else if` chain publishes **every** link negated (`check-fault-cases.mjs` would otherwise
+publish the innermost one, which is true and reads as complete), and a **declaration** is a barrier while
+an **inline closure** is not -- `verify-local.mjs`'s exit sits in `main().catch((error) => ...)` inside the
+guard that decides whether `main()` is ever called, so the guard is published.
+
+## Finding 364 — two hand-written scanners, beaten by the same character
+
+The first two attempts at finding the enclosing block by hand are worth recording, because the file they
+live in had already recorded the same lesson three times and neither attempt applied it.
+
+**Attempt one, counting characters and skipping strings.** `check-no-absolute-paths.mjs` holds
+
+```
+const ABSOLUTE_PATH = /(['"`])(\/(?:Users|home|root|private)\/[^'"`\n]*)\1/g;
+```
+
+The quote characters *inside the regex* opened a string that never closed. The walk swallowed the rest of
+the file, so the `if` around the site was never pushed and the site published no condition at all. In
+`check-open-list.mjs` the same desync left a `for` on the stack twenty lines after it had closed, and that
+loop became the guard of a module-level exit.
+
+**Attempt two, tokenising.** TypeScript's raw scanner is not a standalone lexer: the `${...}` of a template
+literal has to be rescanned by the parser, and without one the scanner reads the prose after the first
+substitution as code and stops matching the file. Measured: **80 of 112** sites lost their guard, every one
+of them in a file with a template literal.
+
+Both failures have the same shape as the ones already in this file's comments -- `stripComments` documents
+the URL case, the site rule documents its own line 109 -- and the conclusion is the one those comments
+keep reaching for and then stepping back from: *a claim about structure should be read from the structure*.
+The third attempt asks the parser, and the same parser is what measured the defect in the first place.
+
+The dependency is a real cost, paid deliberately: `derive-gate-sites.mjs` now imports the compiler the
+build already uses. The alternative was a third heuristic. A gate that runs on every push and publishes a
+number should not have to be re-audited every time the tree contains a regex.
+
+## Finding 365 — the column next door was measured against the same idea and declined
+
+The obvious next move is to apply the same reasoning to `diagnostic`: a message printed three lines above
+the exit in a block that closed is not this exit's message either.
+
+It was implemented and measured, and it lost. A block-scoped scan -- the nearest preceding statement in the
+same block, walking outward one block at a time -- changes 20 of 112 entries, and 14 of those become
+**absent**, because the message frequently sits inside the `for` loop just above: `check-doc-counts.mjs`
+prints its summary, then loops over the detail, then exits, and the loop is the last statement before the
+exit. Scoping to the enclosing block throws the message away.
+
+So the column keeps its rule and gains a sentence about what the rule does not claim. Proximity is not
+enclosure, and an absent column for a seventh of the tree is not an improvement over one that is right
+about proximity and silent about which block it came from.
+
+This is a measurement that decided *against* a change, which is the only kind that can be trusted to have
+been made for the right reason.
+
+## Finding 366 — the dropped tally counts a line the parser says is a comment
+
+With a parser available, the enumeration was measured rather than assumed: `scripts/` holds **112**
+statement-position `process.exit(...)` calls whose argument is not the literal `0`, and the inventory lists
+**112**. Complete, for the fourth round in a row.
+
+The tallies beside it are not. The committed `excluded` says `15 zero, 3 indirect`; the parser says
+`16 zero, 2 non-statement`. The totals agree -- 130 either way -- and the split does not. The third
+`indirect` is a **docstring line** in `derive-gate-sites.mjs` itself:
+
+```
+// `assert(process.exit(1))`, `.map((x) => process.exit(1))`. The statement
+```
+
+It is counted because `stripComments` desyncs in that file: nine comment lines survive the strip. The
+desync is old -- it predates this round -- and it is currently harmless for the *sites*, which the line
+rule rejects a second time on statement position. It is not harmless for the tallies, whose whole purpose
+is to be the accounting a reader can subtract from the total.
+
+Recorded rather than fixed: replacing the tallies with the parser's own classification changes what the
+inventory's `excluded` object means, and that is a round of its own rather than an edit at the end of this
+one. The number is published, so it is now also named.

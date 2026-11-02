@@ -81,6 +81,17 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   replaced by success, and a baseline run per file so a red claimant cannot be
   credited with catching anything. Measured at 105 of 105 in both halves, and both
   are mutation rather than reading, which is the only form this claim can take.
+- **Every failure site publishes the guard that actually holds at it** (v3.42). Each
+  entry carries a `condition`, and until v3.42 that column was read by scanning
+  backwards for an `if` line -- which names the nearest `if` above the exit rather
+  than the block the exit is in. Measured against a TypeScript parse of the same
+  tree, 15 of 112 entries were wrong, three of them naming the opposite branch (a
+  `catch` published as the argument check above it). The column now comes from the
+  syntax tree, and `packages/core/test/derive-gate-sites-conditions.test.ts` holds
+  one case per shape: a sibling `if` that already closed, a `catch`, an `else`, an
+  `else if` chain, an `if` with no braces, a declaration, an inline closure, a loop,
+  a `switch`, a brace inside a string, a regex literal holding quotes, and a
+  template literal holding a substitution.
 
 ## L4 — Official reproduction (Golden Master, official metrics and round trip)
 

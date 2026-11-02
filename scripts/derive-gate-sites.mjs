@@ -113,6 +113,7 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import ts from 'typescript';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -149,7 +150,7 @@ function argValue(flag) {
  * Spaces rather than deletion so every byte keeps its offset, which is what
  * makes line numbers from the stripped text valid against the original.
  */
-function stripComments(source) {
+export function stripComments(source) {
   const out = source.split('');
   const blank = (i) => {
     if (out[i] !== '\n') out[i] = ' ';
@@ -239,32 +240,177 @@ function joined(lines, start, limit = 12) {
 }
 
 /**
- * A printable fingerprint for a site, read from the raw source.
+ * The guard that encloses a site: the innermost construct that decides whether
+ * the exit runs at all.
  *
- * Two halves, either of which may be absent:
+ * ## What the column used to say
  *
- *   - `condition`: the predicate of the nearest enclosing `if`, scanning
- *     backwards. A gate that exits from inside `fail(...)` has none, and that
- *     absence is itself informative -- it means the condition lives at the call
- *     site rather than next to the exit.
- *   - `diagnostic`: the longest string literal in the nearest preceding
- *     diagnostic call's first argument.
+ * It scanned *backwards for an `if` line* -- "the nearest `if` above this exit",
+ * which is not the same question as "the block this exit is in". The two differ
+ * whenever a block ends between the guard and the exit: the sibling `if` three
+ * lines up, or the `if` whose block closed before the summary exit. And they
+ * differ completely for a `catch`, where there is no predicate to find and the
+ * scan walks *past* the `catch` to whatever `if` came before it.
+ *
+ * Measured against a parser, which is an independent reading of the same tree:
+ * **13 of 112** sites published a condition that does not hold at the exit --
+ * four named a guard that had already closed, four named an `if` where the exit
+ * is inside a `catch`, five named an `if` where there is none -- and **two more**
+ * published nothing where the guard could be named. Three of the thirteen said
+ * `unknown.length > 0` or `workflow.errors.length > 0` about a refusal that
+ * fires when something cannot be *read*, which is as wrong as a condition gets:
+ * it names the opposite branch.
+ *
+ * ## Why the answer comes from the syntax tree
+ *
+ * Two hand-written attempts came first, and each was defeated by the same thing:
+ * a `/` is not always a division, and a `{` is not always a block.
+ *
+ *   1. **Counting characters, skipping strings.** `check-no-absolute-paths.mjs`
+ *      holds `/(['"`])(\/(?:Users|home)\/...)\1/g` -- the quote characters
+ *      *inside the regex* opened a string that never closed, so the walk
+ *      swallowed the rest of the file and the enclosing `if` was never pushed.
+ *   2. **Tokenising.** TypeScript's raw scanner is not a standalone lexer: a
+ *      template literal's `${...}` has to be rescanned by the parser, so after
+ *      the first substitution the scanner reads prose as code and stops matching
+ *      the file. Measured: every site in a file with a template lost its guard.
+ *
+ * The two failures are the same lesson this file has now recorded three times
+ * (`stripComments` on URLs, the site rule on its own line 109). "What encloses
+ * this exit" is a question about a syntax tree, and the tree answers it exactly:
+ * an `if` is an `IfStatement`, an `else` body is that statement's `elseStatement`,
+ * a `catch` is a `CatchClause`, and nothing else can pretend to be one.
+ *
+ * ## The vocabulary, and the two decisions in it
+ *
+ * The column is read by people, so it is small: an `if` publishes its predicate,
+ * an `else` body publishes the negation of the `if` it closes, a loop publishes
+ * its header, a `catch` and a `switch` publish the word.
+ *
+ * A **declaration is a barrier** and an inline closure is not; the walk below
+ * says which and why. `undefined` is a real value, not a missing one.
  */
-function fingerprint(rawLines, index) {
-  let condition;
-  for (let j = index - 1; j >= 0 && j > index - 60; j -= 1) {
-    const match = /^\s*\}?\s*if\s*\((.*)\)\s*\{\s*$/.exec(rawLines[j]);
-    if (match) {
-      condition = match[1].trim();
-      break;
+function guardOf(node, file) {
+  let child = node;
+  for (let parent = node.parent; parent !== undefined; child = parent, parent = parent.parent) {
+    if (ts.isSourceFile(parent)) return undefined;
+    // A **declaration** is a barrier, not a guard: it is hoisted and reachable by
+    // name from anywhere, so an `if` around where it was written says nothing
+    // about where it runs. `fail(...)` is the shape this is for -- its exits carry
+    // no condition, and that absence is the informative answer: the condition
+    // lives at the call site.
+    //
+    // An inline arrow or function *expression* is the opposite case and is walked
+    // through. It is created where it appears, so everything enclosing its
+    // creation is a precondition for reaching the exit inside it: the exit in
+    // `verify-local.mjs` sits in `main().catch((error) => ...)`, inside the guard
+    // that decides whether `main()` is called at all.
+    if (
+      ts.isFunctionDeclaration(parent) ||
+      ts.isMethodDeclaration(parent) ||
+      ts.isConstructorDeclaration(parent) ||
+      ts.isGetAccessor(parent) ||
+      ts.isSetAccessor(parent)
+    ) {
+      return undefined;
     }
-    // A `throw` or a bare statement at column 0 ends the enclosing block; the
-    // exit is not inside an `if` at all, which is the case for `fail(...)`.
-    if (/^[^\s}].*;\s*$/.test(rawLines[j]) && !/^\s*(const|let|var|return|await)\b/.test(rawLines[j])) {
-      break;
+    if (ts.isIfStatement(parent)) {
+      // An `else` body runs exactly when the predicate did not hold, and an
+      // `else if` chain means it runs when *none* of them held -- so the answer
+      // is the whole chain negated, not the innermost link. `check-fault-cases.mjs`
+      // is that shape: an exit in the final `else` of three tests. Publishing
+      // `!(arg === '--help' || arg === '-h')` alone would be true and would read
+      // as the complete condition, which is the defect this round is repairing.
+      const chain = [];
+      let link = parent;
+      let branch = child;
+      for (;;) {
+        if (branch !== link.elseStatement) {
+          chain.push(flat(link.expression, file));
+          break;
+        }
+        chain.push(`!(${flat(link.expression, file)})`);
+        const outer = link.parent;
+        if (outer === undefined || !ts.isIfStatement(outer) || link !== outer.elseStatement) break;
+        branch = link;
+        link = outer;
+      }
+      return chain.reverse().join(' && ');
     }
+    if (ts.isCatchClause(parent)) return 'catch';
+    if (ts.isSwitchStatement(parent)) return 'switch';
+    if (ts.isForStatement(parent)) {
+      const init = parent.initializer === undefined ? '' : flat(parent.initializer, file);
+      const test = parent.condition === undefined ? '' : flat(parent.condition, file);
+      const step = parent.incrementor === undefined ? '' : flat(parent.incrementor, file);
+      return `for (${init}; ${test}; ${step})`;
+    }
+    if (ts.isForOfStatement(parent) || ts.isForInStatement(parent)) {
+      const of = ts.isForOfStatement(parent) ? 'of' : 'in';
+      return `for (${flat(parent.initializer, file)} ${of} ${flat(parent.expression, file)})`;
+    }
+    if (ts.isWhileStatement(parent)) return `while (${flat(parent.expression, file)})`;
+    if (ts.isDoStatement(parent)) return 'do';
+    if (parent.parent === undefined) break;
   }
+  return undefined;
+}
 
+/** One predicate or header, on one line, as published. */
+function flat(node, file) {
+  return node.getText(file).replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Every guard in one file, by the line its exit starts on.
+ *
+ * Keyed by line because that is what the inventory publishes and what the line
+ * rule above produces; the two readings meet there and nowhere else.
+ */
+function guardsOf(source, name) {
+  const file = ts.createSourceFile(name, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  // A file the parser cannot read is a file whose guards cannot be read. Without
+  // this the derivation would answer from a partial tree and publish an empty
+  // condition, which is indistinguishable from "this exit has no guard".
+  if (file.parseDiagnostics.length > 0) {
+    throw new Error(
+      `${name}: the parser rejected this file (${String(file.parseDiagnostics.length)} error(s)), ` +
+        'so no enclosing guard can be read from it',
+    );
+  }
+  const out = new Map();
+  const visit = (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.expression.getText(file) === 'process' &&
+      node.expression.name.getText(file) === 'exit'
+    ) {
+      const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
+      if (!out.has(line)) out.set(line, guardOf(node, file));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return out;
+}
+
+/**
+ * The diagnostic a site prints about itself: the longest string literal in the
+ * first argument of the nearest preceding diagnostic call.
+ *
+ * Read from the raw lines rather than the stripped ones, because the answer *is*
+ * a string literal. Note what this does **not** claim: proximity is not
+ * enclosure. A message three lines above the exit in a block that already closed
+ * is still what this returns, and the round that fixed `condition` measured the
+ * alternative -- a block-scoped scan -- and declined it: the message frequently
+ * sits inside the `for` loop just above (`check-doc-counts.mjs` prints its
+ * summary, then loops over the detail, then exits), so scoping the scan to the
+ * enclosing block lost 14 of 112 sites outright. A column that is right about
+ * proximity and silent about which block it came from is worth more than one
+ * that is absent for a seventh of the tree.
+ */
+function diagnosticOf(rawLines, index) {
   let diagnostic;
   for (let j = index - 1; j >= 0 && j > index - 60; j -= 1) {
     // `console.log` is included alongside the two error channels because one
@@ -306,7 +452,7 @@ function fingerprint(rawLines, index) {
     break;
   }
 
-  return { condition, diagnostic };
+  return diagnostic;
 }
 
 /**
@@ -369,17 +515,33 @@ function isFailureExitStatement(line) {
   return arg !== '0';
 }
 
-function sitesIn(name, source) {
+export function sitesIn(name, source) {
   void name;
   const rawLines = source.split('\n');
-  const stripped = stripComments(source).split('\n');
-  const sites = [];
-  stripped.forEach((line, i) => {
-    if (!isFailureExitStatement(line)) return;
-    const { condition, diagnostic } = fingerprint(rawLines, i);
-    sites.push({ line: i + 1, condition, diagnostic });
+  const strippedLines = stripComments(source).split('\n');
+  const wanted = new Set();
+  strippedLines.forEach((line, i) => {
+    if (isFailureExitStatement(line)) wanted.add(i);
   });
-  return sites;
+  // Two readings, and they have to agree. The line rule decides *which* lines are
+  // sites -- it is a statement about a line, it publishes line numbers, and it is
+  // measured complete against the parser at 112 of 112. The tree answers what a
+  // line cannot: what surrounds it. A line one reading sees and the other does
+  // not is a disagreement about the tree, and it is reported instead of being
+  // resolved by whichever reading ran last.
+  const guards = guardsOf(source, name);
+  const missing = [...wanted].filter((i) => !guards.has(i + 1));
+  if (missing.length > 0) {
+    throw new Error(
+      `${name}: the line rule and the parser disagree about ` +
+        `${missing.map((i) => `line ${String(i + 1)}`).join(', ')}`,
+    );
+  }
+  return [...wanted].map((i) => ({
+    line: i + 1,
+    condition: guards.get(i + 1),
+    diagnostic: diagnosticOf(rawLines, i),
+  }));
 }
 
 /**

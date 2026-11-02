@@ -2578,9 +2578,9 @@ spell the type, and the compiler cannot see into a `.mjs`.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **224 files, 5528 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **228 files, 5715 tests passed** (as of this commit) |
+| `core` test suite | **224 files, 5528 tests passed** (at v3.41) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.41) |
+| repo test suite | **228 files, 5715 tests passed** (at v3.41) |
 | coverage, four dimensions | **99.96 / 99.75 / 100 / 99.96** -- unchanged; nothing under `packages/*/src/` moved |
 | new tests | **17**: 12 in `verify-sites-are-sensitive.test.ts`, 5 in `site-proofs.test.ts` (30 -> 35) |
 | claims reached | **105 of 105**, 45 files, 1 min 58 s |
@@ -2617,3 +2617,142 @@ spell the type, and the compiler cannot see into a `.mjs`.
 The corpus, the answer keys, the checkpoints, the score targets, the export, the pool's price, and every
 budget the plan enforces. Nothing under `packages/*/src/` moved. This round's subject is the sentence that
 a test proves a failure site, and the instrument that reads it.
+
+## v3.42 — the guard column named the nearest `if` above, not the block the exit is in
+
+v3.41 closed with a ruler rather than a result: *every "proved" claim should be asked not only whether it
+ran, but under what conditions it would go red.* The inventory answers that question in a column. For each
+of the 112 failure sites `golden-master/gate-sites.json` publishes a `condition` -- the guard that decides
+whether the exit runs at all -- and until this round that column was a guess about the file's shape.
+
+**13 of 112 entries named a guard that does not hold at the exit, and two more published nothing where
+the guard could be named.** Three of the thirteen named the opposite branch.
+
+### One: `condition` answered "which `if` is nearest above this line"
+
+The deriver scanned *backwards for an `if` line*. That is not the same question as *which block this exit
+is in*, and the two part company exactly where a block ends between the guard and the exit:
+
+| site | published | the guard that holds |
+| --- | --- | --- |
+| `verify-site-proofs.mjs:109` | `unknown.length > 0` | `catch` -- the refusal fires when the inventory cannot be *read* |
+| `verify-sites-are-sensitive.mjs:132` | `!Number.isInteger(CONCURRENCY) \|\| CONCURRENCY < 1` | `catch` |
+| `check-battery-budget.mjs:41` | `workflow.errors.length > 0` | `catch` |
+| `verify-site-proofs.mjs:242` | `problems.length > 0` | `failures > 0` |
+| `verify-sites-are-sensitive.mjs:332` | `unmeasured.length > 0` | `failures > 0` |
+| `build-example-bundle.mjs:103` | `!current.equals(expected)` | `!ok` -- the `if` opens no block, so the scan never saw it |
+| `check-staged-mutation.mjs:143` | `verdict.differing.length > 0` | `problems.length > 0` |
+| `probe-m1-ceiling.mjs:202` | `args.json` | nothing -- `process.exit(main())` at module level |
+
+The first three are the worst class: they name the *other* branch. A reader asking "when does this gate
+refuse to read its inventory" was told "when the arguments are unrecognised". A condition that reads as an
+answer and is not one is the same defect as a proof that reads as a proof and is not one, one column over.
+
+### Two: two scanners died on the same character before the third asked the tree
+
+**Characters.** The first repair counted braces with a hand-written walk that skipped strings.
+`check-no-absolute-paths.mjs` holds `/(['"`])(\/(?:Users|...)\/[^'"`\n]*)\1/g`; the quote characters
+*inside the regex* opened a string that never closed, so the walk swallowed the rest of the file and the
+enclosing `if` was never pushed. In `check-open-list.mjs` the same desync left a `for` on the stack twenty
+lines after it had closed, and that loop was published as the guard of a module-level exit.
+
+**Tokens.** The second attempt used TypeScript's raw scanner. It is not a standalone lexer: a template's
+`${...}` has to be rescanned by the parser, so after the first substitution the scanner reads prose as
+code. Measured: **80 of 112** sites lost their guard, every one of them in a file with a template literal.
+
+Both are the lesson this file has now recorded five times -- `stripComments` on URLs, the site rule on its
+own line 109, and these two. *What encloses this exit* is a question about a syntax tree, and the third
+attempt asks the tree. The cost is real and paid deliberately: the deriver imports the compiler the build
+already uses. The alternative was a third heuristic in a gate that runs on every push.
+
+### Three: the vocabulary, and the two decisions in it
+
+The 97 entries that were right do not move: an `if` publishes its predicate, a loop its header, `catch` and
+`switch` the word. Two rules are new because the old scan could not express them at all:
+
+- **an `else if` chain publishes every link negated.** `check-fault-cases.mjs` exits from the final `else`
+  of three tests; publishing only `!(arg === '--help' || arg === '-h')` would be true and would read as
+  the complete condition.
+- **a declaration is a barrier, an inline closure is not.** `fail(...)`'s exits carry no condition -- the
+  condition lives at the call site -- but `verify-local.mjs`'s exit sits in `main().catch((error) => ...)`
+  *inside* the guard that decides whether `main()` is ever called, so the guard is published. The old
+  oracle could not make that distinction; the tree makes it for free.
+
+Absence stays an answer. It is how a reader learns that a `fail(...)` exit is guarded by whoever called it.
+
+### Four: what the change cost, and the three places it showed
+
+- **15 annotations dropped.** Carrying is by fingerprint (`script` + `condition` + `diagnostic`), and the
+  guard text changed for exactly the entries that were wrong. Each was reinstated by hand after checking
+  that its **line and its proving test had not moved** -- 97 of 112 carried automatically.
+- **The deriver's own exit moved** from 132 to 133, because the file gained an import. Its annotation
+  carried, which is what the fingerprint is for.
+- **One test needed the compiler reachable.** `gate-sites-are-proven.test.ts` copies `scripts/` into
+  `tmpdir()` and runs the deriver there; the copy now needs `node_modules` above it, and the test says so
+  rather than discovering it as a flake.
+
+A file the parser cannot read now fails loudly instead of publishing an empty guard -- an empty condition
+and "no guard" are indistinguishable in the output, which is the failure mode this campaign keeps finding.
+
+### Five: the column beside it was measured, and declined
+
+The same reasoning applies to `diagnostic`, and it was implemented: the nearest preceding statement in the
+same block, walking outward. It changes 20 of 112 entries, and **14 of those become absent**, because the
+message usually sits inside the `for` loop just above -- `check-doc-counts.mjs` prints its summary, loops
+over the detail, then exits. Scoping to the block throws the message away.
+
+So the column keeps proximity and gains a sentence about what it does not claim. A measurement that decides
+against a change is the only kind that can be trusted to have been made for the right reason.
+
+### Six: the tally counts a comment, and it is now named
+
+With a parser available the enumeration was re-measured rather than assumed: 112 statement-position
+`process.exit(...)` calls with a non-zero argument, 112 listed. Complete. The tallies beside it are not:
+the committed file says `15 zero, 3 indirect`, the parser says `16 zero, 2 non-statement`, and the third
+`indirect` is a docstring line in the deriver itself, counted because `stripComments` desyncs in that file
+and leaves nine comment lines standing.
+
+Left alone deliberately. Replacing the tallies with the parser's own classification changes what the
+`excluded` object means, which is a round of its own; the number is published, so it is now also named.
+
+### Readings
+
+> Ledger for `v3.42`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **225 files, 5545 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **229 files, 5732 tests passed** (as of this commit) |
+| coverage, four dimensions | unchanged; nothing under `packages/*/src/` moved |
+| new tests | **17** in `derive-gate-sites-conditions.test.ts`, one per shape |
+| conditions corrected | **15 of 112** rows: 13 guards that did not hold, 2 empty where the guard was nameable; 97 carried by fingerprint, 15 reinstated by hand |
+| the two shapes that defeated the scanners | regex-with-quotes: 1 site lost its guard; template: **80 of 112** under a raw token scan |
+| mutation of the new rules | catch arm removed -> 2 red; `else` chain collapsed -> 1 red; declaration barrier removed -> 1 red; file restored byte-identically |
+| failure sites | **112** across 56 scripts -- unchanged, and re-measured complete against the parser |
+| derivation cost | 0.41 s for 75 scripts, of which about 0.2 s is loading the compiler |
+
+### Left open
+
+- **The embedding fallback is still missing**, eighth round. The protocol names no model and no threshold.
+  `[open: the protocol names neither a model nor a cut-off, and an eighth round of waiting is cheaper than a number wearing the protocol's name]`
+- **A key whose description yields no keyword scores 0.** Unchanged, recorded as a gap.
+  `[open: the protocol is silent on a key with no usable description, and a redistribution formula invented here would be unverifiable]`
+- **The sensitivity pass grows with the claim count.** 150 runs today, about 1.3 s per claim; the budget
+  holds to roughly 500.
+  `[open: the cost is linear in a number this round did not change, and the budget came from one measurement]`
+- **The mutant replaces `process.exit(code)` only.** `process.exitCode = 1` would be invisible; measured,
+  `scripts/` uses that spelling zero times.
+  `[open: the instrument covers one spelling of reports failure, and this tree happens to use only that one]`
+- **Blindness is observed one level deep.** A wrapper's child is visible only when the wrapper inherits.
+  `[open: the spawn record covers direct children only, so a wrapper that does not inherit still hides its own child]`
+- **The dropped tallies are still line-shaped.** `excluded` says `15 zero, 3 indirect`; the parser says
+  `16 zero, 2 non-statement`. The extra one is a docstring line, counted because `stripComments` desyncs in
+  the deriver itself and leaves nine comment lines standing.
+  `[open: the enumeration is complete but its tallies are read from lines, so a comment line can enter one of them]`
+
+### Unchanged
+
+The corpus, the answer keys, the checkpoints, the score targets, the export, the pool's price, and every
+budget the plan enforces. Nothing under `packages/*/src/` moved. This round's subject is one published
+column of the site inventory, and the instrument that derives it.
