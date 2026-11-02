@@ -24,7 +24,7 @@
  * the reader because the count is the point:
  *
  *   - a statement-position call to `process.exit(...)` whose argument is not the
- *     literal `0`. In practice that covers `process.exit(1)`, `process.exit(2)`,
+ *     literal zero. In practice that covers `process.exit(1)`, `process.exit(2)`,
  *     `process.exit(cond ? 0 : 1)`, `process.exit(main())`, and the one-line
  *     `if (!ok) process.exit(1);` -- because a gate is a **property** ("exits
  *     non-zero when unhappy") and each of those is a spelling of it.
@@ -36,18 +36,37 @@
  * legible, because `verify-gates-are-testable.mjs` takes its subjects from this
  * table: **21 scripts could have been emptied with nothing watching them.**
  *
- * Deliberately **not** counted:
+ * Deliberately **not** counted as sites:
  *
- *   - `process.exit(0)`, and any exit whose argument is the literal `0`. A success
- *     exit is not a failure site; `probe-category-derivation.mjs` ends with one
- *     because reaching the end is what success means there.
- *   - a call that is not in statement position -- inside a string, a predicate, an
- *     argument. It is not silently dropped: it gets the `indirect` tally below,
- *     because putting it in either column would make both wrong.
+ *   - a call whose argument is the literal zero. A success exit is not a failure
+ *     site; `probe-category-derivation.mjs` ends with one because reaching the end
+ *     is what success means there.
+ *   - a call that is not in statement position -- inside an argument, a predicate,
+ *     an arrow body, a template substitution.
  *
- * Every one of those exclusions is a claim about this tree, so the script prints
- * the tally it excluded alongside the tally it kept. A rule that only reports
- * what it kept cannot be checked against what it dropped.
+ * ## The tally, and why it is three buckets rather than two tallies
+ *
+ * The rule reports what it dropped, because "38 sites" is meaningful only next to
+ * "and these others went elsewhere". It used to compute that second half with a
+ * *separate*, line-shaped scan, and the two halves then disagreed: the committed
+ * file said `{15 zero, 3 indirect}` where the tree holds `{16 zero, 2 indirect}`,
+ * and **the totals matched anyway** -- one count had been lost and one invented,
+ * and the two errors cancelled to 130.
+ *
+ * The lost one was `if (officialDirArg === undefined) process.exit(0);`: a success
+ * exit written on a line that does not *start* with `process.exit`. The site rule
+ * grew a fallback for exactly that shape in a previous round (it was costing the
+ * inventory a site), and the tally never got the same treatment.
+ *
+ * The invented one was a docstring line in this file whose text contains
+ * `.map((x) => process.exit(1))`, counted because the comment stripper desyncs in
+ * this file. That is finding 364's defect a third time: a hand-written lexer, a
+ * `/` that is not a division.
+ *
+ * So the classification is now one pass over the tree, and it is **total by
+ * construction**: every `process.exit(...)` call is a site, a `zero`, or an
+ * `indirect`, and the three add up to the number of calls. A tally that is the
+ * remainder of a subtraction cannot be checked; one that is a partition can.
  *
  * ## Why the snippet, and not just the line number
  *
@@ -73,17 +92,21 @@
  *
  * ## Comments and strings
  *
- * The scan strips comments before looking for exits. `check-readme-sample.mjs`
- * explains its own dead branch in a comment that quotes the code shape, and
- * `gates-are-testable.test.ts` quotes several gates verbatim; a naive grep
- * counts those. Comments are removed with a scanner that tracks string and
- * template state rather than a regex, because a line-comment marker inside a URL
- * and a block-comment terminator inside a string both defeat the regex form --
- * and this repository has both. (Naming either marker literally in this comment
- * would terminate it, which is the same trap in miniature.)
+ * A comment is not a token. The tree never sees one, so a docstring that quotes
+ * `process.exit(1)` -- and this repository is full of them, because the gates
+ * document their own shapes -- cannot become a site. That used to be arranged by
+ * stripping comments first, with a scanner that tracked string and template state
+ * because a line-comment marker inside a URL and a block-comment terminator inside
+ * a string both defeat the regex form. The scanner was itself defeated, in 12 of
+ * the 75 scripts, by the same character as the two before it: a quote or a backtick
+ * spelled inside a **regex literal** -- the one that matches a backtick, in
+ * `check-backend-support.mjs`, is a single character wide and closed a string that
+ * had never been opened -- or a template holding a substitution.
+ * It is gone rather than repaired: nothing in this file needs a lexer now that the
+ * classification is a walk over the tree.
  *
- * Nothing is stripped for the *fingerprint*, which is read from the raw text:
- * the diagnostic is a string literal and stripping would delete it.
+ * Nothing is stripped for the *fingerprint*, which is read from the raw text: the
+ * diagnostic is a string literal and stripping would delete it.
  *
  * ## Usage
  *
@@ -121,12 +144,6 @@ const ROOT = resolve(HERE, '..');
 const SCRIPTS = resolve(ROOT, 'scripts');
 const DEFAULT_OUT = resolve(ROOT, 'golden-master', 'gate-sites.json');
 
-/**
- * The literal that marks a failure exit. Present as a constant so the rule above
- * and the code below cannot drift apart.
- */
-const FAILURE_EXIT = '1';
-
 function fail(lines) {
   console.error('derive-gate-sites: FAILED');
   for (const line of lines) console.error(`  ${line}`);
@@ -136,79 +153,6 @@ function fail(lines) {
 function argValue(flag) {
   const i = process.argv.indexOf(flag);
   return i === -1 ? undefined : process.argv[i + 1];
-}
-
-/**
- * Source with comments replaced by spaces, preserving offsets and line breaks.
- *
- * A character scanner rather than a regex, and the reason is not fastidiousness:
- * the tree contains `'http://...'` (a `//` inside a string) and this very file
- * contains `'/\\*'` (a comment opener inside a string). A regex gets one of them
- * wrong and the failure is silent -- a comment that survives the strip is a
- * phantom site, and a string that gets eaten is a missing one.
- *
- * Spaces rather than deletion so every byte keeps its offset, which is what
- * makes line numbers from the stripped text valid against the original.
- */
-export function stripComments(source) {
-  const out = source.split('');
-  const blank = (i) => {
-    if (out[i] !== '\n') out[i] = ' ';
-  };
-  let state = 'code';
-  let quote = '';
-  for (let i = 0; i < source.length; i += 1) {
-    const c = source[i];
-    const next = source[i + 1];
-    if (state === 'code') {
-      if (c === '/' && next === '/') {
-        state = 'line-comment';
-        blank(i);
-        blank(i + 1);
-        i += 1;
-        continue;
-      }
-      if (c === '/' && next === '*') {
-        state = 'block-comment';
-        blank(i);
-        blank(i + 1);
-        i += 1;
-        continue;
-      }
-      if (c === '"' || c === "'" || c === '`') {
-        state = 'string';
-        quote = c;
-        continue;
-      }
-      continue;
-    }
-    if (state === 'line-comment') {
-      if (c === '\n') {
-        state = 'code';
-        continue;
-      }
-      blank(i);
-      continue;
-    }
-    if (state === 'block-comment') {
-      if (c === '*' && next === '/') {
-        blank(i);
-        blank(i + 1);
-        i += 1;
-        state = 'code';
-        continue;
-      }
-      blank(i);
-      continue;
-    }
-    // state === 'string'
-    if (c === '\\') {
-      i += 1; // Skip the escaped character so `\'` does not close the string.
-      continue;
-    }
-    if (c === quote) state = 'code';
-  }
-  return out.join('');
 }
 
 /**
@@ -275,11 +219,12 @@ function joined(lines, start, limit = 12) {
  *      the first substitution the scanner reads prose as code and stops matching
  *      the file. Measured: every site in a file with a template lost its guard.
  *
- * The two failures are the same lesson this file has now recorded three times
- * (`stripComments` on URLs, the site rule on its own line 109). "What encloses
- * this exit" is a question about a syntax tree, and the tree answers it exactly:
- * an `if` is an `IfStatement`, an `else` body is that statement's `elseStatement`,
- * a `catch` is a `CatchClause`, and nothing else can pretend to be one.
+ * The two failures are the same lesson this file has now recorded four times --
+ * `stripComments` on a URL, the site rule on its own line 109, the tally below,
+ * and these two. "What encloses this exit" is a question about a syntax tree, and
+ * the tree answers it exactly: an `if` is an `IfStatement`, an `else` body is that
+ * statement's `elseStatement`, a `catch` is a `CatchClause`, and nothing else can
+ * pretend to be one.
  *
  * ## The vocabulary, and the two decisions in it
  *
@@ -362,37 +307,79 @@ function flat(node, file) {
 }
 
 /**
- * Every guard in one file, by the line its exit starts on.
+ * Whether a node is a call to `process.exit`.
  *
- * Keyed by line because that is what the inventory publishes and what the line
- * rule above produces; the two readings meet there and nowhere else.
+ * `process` and `exit` are read as *names*, not as text: `node.expression` is the
+ * property access, and the two sides of it are identifiers. A call to
+ * `other.exit(...)` is not this, and neither is a local function named `exit`.
  */
-function guardsOf(source, name) {
+function isExitCall(node, file) {
+  return (
+    ts.isCallExpression(node) &&
+    ts.isPropertyAccessExpression(node.expression) &&
+    node.expression.expression.getText(file) === 'process' &&
+    node.expression.name.getText(file) === 'exit'
+  );
+}
+
+/**
+ * Every `process.exit` call in one file, partitioned three ways.
+ *
+ * The partition is the point. `sites` are the failure exits the inventory
+ * publishes; `zero` and `indirect` are the two ways a call is not one, and every
+ * call lands in exactly one of the three -- so `sites.length + zero + indirect`
+ * is the number of calls in the file, and a call that is silently absent from all
+ * three is impossible rather than merely unnoticed.
+ *
+ * That was not true of the line-shaped reading this replaces. It classified by
+ * matching a line, so `if (officialDirArg === undefined) process.exit(0);` --
+ * where the exit is not the first thing on the line -- fell through every branch
+ * and was counted nowhere: the tally reported one fewer success exit than the tree
+ * holds, and the inventory reported one fewer `indirect` than the tree holds,
+ * because a docstring in this file was counted instead. The two errors cancelled
+ * and the total looked right.
+ *
+ * A file the parser cannot read is a file whose exits cannot be read, so it throws
+ * rather than answering from a partial tree: an empty condition and "no guard"
+ * are indistinguishable in the output, and that is the failure mode this campaign
+ * keeps finding.
+ */
+export function exitsIn(name, source) {
   const file = ts.createSourceFile(name, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-  // A file the parser cannot read is a file whose guards cannot be read. Without
-  // this the derivation would answer from a partial tree and publish an empty
-  // condition, which is indistinguishable from "this exit has no guard".
   if (file.parseDiagnostics.length > 0) {
     throw new Error(
       `${name}: the parser rejected this file (${String(file.parseDiagnostics.length)} error(s)), ` +
-        'so no enclosing guard can be read from it',
+        'so no exit can be classified in it',
     );
   }
-  const out = new Map();
+  const rawLines = source.split('\n');
+  const sites = [];
+  const excluded = { zero: 0, indirect: 0 };
   const visit = (node) => {
-    if (
-      ts.isCallExpression(node) &&
-      ts.isPropertyAccessExpression(node.expression) &&
-      node.expression.expression.getText(file) === 'process' &&
-      node.expression.name.getText(file) === 'exit'
-    ) {
+    if (isExitCall(node, file)) {
       const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
-      if (!out.has(line)) out.set(line, guardOf(node, file));
+      const argument = node.arguments.length === 0 ? undefined : node.arguments[0];
+      if (!ts.isExpressionStatement(node.parent)) {
+        excluded.indirect += 1;
+      } else if (argument !== undefined && ts.isNumericLiteral(argument) && Number(argument.text) === 0) {
+        // The literal zero, read as a numeric literal rather than as the text `0`:
+        // `0x0` and `0.0` are the same number and the same claim, and a string
+        // comparison would call them failure exits.
+        excluded.zero += 1;
+      } else {
+        sites.push({
+          line,
+          condition: guardOf(node, file),
+          diagnostic: diagnosticOf(rawLines, line - 1),
+        });
+      }
     }
     ts.forEachChild(node, visit);
   };
+  // `forEachChild` visits in source order, so `sites` comes out in line order
+  // without a sort -- and a sort would silently reorder two exits on one line.
   visit(file);
-  return out;
+  return { sites, excluded };
 }
 
 /**
@@ -456,172 +443,6 @@ function diagnosticOf(rawLines, index) {
 }
 
 /**
- * Every failure site in one script, in line order.
- *
- * The line is a 1-based index into the *original* text, which the offset-
- * preserving strip preserves.
- */
-/**
- * Whether a stripped line is a *statement* calling `process.exit` with the
- * failure argument.
- *
- * Three shapes must not count, and each was found by this script reporting a
- * site in itself:
- *
- *   1. The call appearing as part of a longer expression --
- *      `process.exit(${FAILURE_EXIT})` inside a template literal used to build a
- *      diagnostic string. That was this script's own line 109.
- *   2. The call inside a *predicate* rather than a statement, e.g.
- *      `if (!line.includes('process.exit(1)'))`. That was its line 282: the
- *      pattern being searched for, not a site.
- *   3. A definition or a comparison rather than a call.
- *
- * The rule that separates them: the match must be a *call statement* -- the
- * first thing on its line (possibly after `}` and/or `else`), so what follows is
- * the rest of a statement. That is stricter than "contains", and it is the
- * difference between counting guards and counting mentions of guards.
- */
-function isFailureExitStatement(line) {
-  if (!/process\.exit\s*\(/.test(line)) return false;
-  // Reject a match that is an argument to, or the subject of, something else --
-  // `assert(process.exit(1))`, `.map((x) => process.exit(1))`. The statement
-  // rule above already excludes the ones in this tree; this is the belt.
-  const head = line.slice(0, line.indexOf('process.exit'));
-  if (/[.(?=&|]\s*$/.test(head) && !/[;{})\s]$/.test(head)) return false;
-  const arg = exitArgument(line);
-  if (arg === undefined) {
-    // The exit is not the first thing on the line: `if (!ok) process.exit(1);`.
-    // `exitArgument` anchors at the start of the line, so it returns `undefined`
-    // here, and the first version of this function matched that shape with its
-    // own literal pattern rather than asking for the argument. Dropping the
-    // fallback took `build-example-bundle.mjs`'s only failure exit out of the
-    // inventory -- `scripts-are-classified.test.ts` caught it on the same run,
-    // which is the whole reason that register exists.
-    return new RegExp(`(?:^|[;{}\\s])process\\.exit\\(\\s*${FAILURE_EXIT}\\s*\\)\\s*;?\\s*$`).test(line);
-  }
-  // **Anything but the literal `0`**, where this used to be `arg === '1'`.
-  //
-  // The narrow rule read a *spelling*, and the property it was reaching for is
-  // "exits non-zero when unhappy". Measured, the narrow version dropped eight
-  // scripts out of the site list -- `process.exit(main())` is how every battery
-  // here reports its verdict, `process.exit(cond ? 0 : 1)` is how two of the
-  // `inject-*` gates do, and `fetch-official.mjs` uses `2` for "the pin does not
-  // match, and retrying cannot help". Three of the eight are batteries the
-  // pipeline runs on every push.
-  //
-  // > A gate is a property, and the enumeration was reading a spelling. That is
-  // > finding 168's defect one level up: there the guard's subject was the
-  // > document where it said "section"; here it was the *file* the rule was about.
-  return arg !== '0';
-}
-
-export function sitesIn(name, source) {
-  void name;
-  const rawLines = source.split('\n');
-  const strippedLines = stripComments(source).split('\n');
-  const wanted = new Set();
-  strippedLines.forEach((line, i) => {
-    if (isFailureExitStatement(line)) wanted.add(i);
-  });
-  // Two readings, and they have to agree. The line rule decides *which* lines are
-  // sites -- it is a statement about a line, it publishes line numbers, and it is
-  // measured complete against the parser at 112 of 112. The tree answers what a
-  // line cannot: what surrounds it. A line one reading sees and the other does
-  // not is a disagreement about the tree, and it is reported instead of being
-  // resolved by whichever reading ran last.
-  const guards = guardsOf(source, name);
-  const missing = [...wanted].filter((i) => !guards.has(i + 1));
-  if (missing.length > 0) {
-    throw new Error(
-      `${name}: the line rule and the parser disagree about ` +
-        `${missing.map((i) => `line ${String(i + 1)}`).join(', ')}`,
-    );
-  }
-  return [...wanted].map((i) => ({
-    line: i + 1,
-    condition: guards.get(i + 1),
-    diagnostic: diagnosticOf(rawLines, i),
-  }));
-}
-
-/**
- * Classify a statement-position `process.exit(...)` by its argument.
- *
- * The argument is extracted by **balanced parentheses**, not by a `[^)]*`
- * character class. That class stops at the first `)` it meets, so
- * `process.exit(main())` and `process.exit(a ? b() : c)` were both read as the
- * argument `main(` and `a ? b(` -- and because the extraction was inside a
- * `matchAll` loop, the remainder of the line was then re-scanned and produced
- * *additional* phantom entries. Measured, the tally came out thirty-seven
- * `numeric_other` against a hand count of one, which is the kind of wrong
- * number that reads as a finding.
- *
- * Returns `undefined` when the line has no statement-position exit at all.
- */
-function exitArgument(line) {
-  const head = /^\s*\}?\s*(?:else\s+)?process\.exit\s*\(/.exec(line);
-  if (!head) return undefined;
-  const open = line.indexOf('(', head.index) + 1;
-  let depth = 1;
-  for (let i = open; i < line.length; i += 1) {
-    if (line[i] === '(') depth += 1;
-    else if (line[i] === ')') {
-      depth -= 1;
-      if (depth === 0) return line.slice(open, i).trim();
-    }
-  }
-  // An unclosed call spans lines. This tree has none, and reporting it as its
-  // own class means a future one is visible rather than silently dropped.
-  return undefined;
-}
-
-/**
- * The exits the rule deliberately drops, so the dropped set is reported.
- *
- * An enumeration gate that only prints what it kept cannot be checked against
- * what it threw away: "38 sites" is only meaningful next to "and these others
- * were excluded for these reasons". Reporting the kept tally alone is how the
- * roadmap's hand-written table came to say 25.
- *
- * The counts are therefore *disjoint* from `sitesIn` and the two add up to every
- * statement-position exit in the tree. The first version of this function did
- * not subtract the failure sites, so it reported `numeric_other: 38` -- which is
- * the number of `process.exit(1)` calls, read back under a label that means
- * "some other numeric status". A tally that double-counts what it exists to
- * complement is worse than no tally, because it looks like corroboration.
- */
-function excludedIn(source) {
-  const stripped = stripComments(source).split('\n');
-  const counts = { zero: 0, indirect: 0, multiline: 0 };
-  for (const line of stripped) {
-    // Only a *statement* exit is a candidate at all. A call that appears inside
-    // a string, a predicate or another expression is neither counted nor
-    // excluded -- it is not an exit, so putting it in either tally would make
-    // both wrong. The first run of this script counted its own pattern-matching
-    // lines as sites for exactly this reason.
-    if (!/process\.exit\s*\(/.test(line)) continue;
-    const arg = exitArgument(line);
-    if (arg === undefined) {
-      if (/^\s*\}?\s*(?:else\s+)?process\.exit\s*\(/.test(line)) counts.multiline += 1;
-      // An exit whose statement it is cannot be read: `.then((code) =>
-      // process.exit(code))`. It is a real exit, it is neither counted nor
-      // excluded, and it used to vanish from both tallies -- two scripts in this
-      // tree report their status that way. It gets a tally of its own rather than
-      // silence, which is the point of reporting the exclusions at all.
-      else if (/=>\s*process\.exit\s*\(/.test(line)) counts.indirect += 1;
-      continue;
-    }
-    // Everything with a readable argument is either the literal `0` or a failure
-    // site. `sitesIn` keeps the latter -- including the computed and non-`1`
-    // spellings it used to drop into `computed` and `numeric_other`, which is why
-    // those two tallies are gone: a number under a label that says "we threw this
-    // away" is a claim that something was thrown away.
-    if (arg === '0') counts.zero += 1;
-  }
-  return counts;
-}
-
-/**
  * Every published script, which is every non-hidden `.mjs` in `scripts/`.
  *
  * ## Why dotfiles are excluded, and why this is a correctness fix rather than tidiness
@@ -664,17 +485,19 @@ function derive() {
   const files = scriptFiles();
 
   const sites = [];
-  // Accumulated by key rather than by naming each tally here. The list of tallies
-  // lives in `excludedIn` alone now, so adding one there cannot leave a zero here
-  // that the report then prints as a measurement -- which is what happened when
+  // Accumulated by key rather than by naming each tally here. The set of tallies
+  // lives in `exitsIn` alone, so adding one there cannot leave a zero here that
+  // the report then prints as a measurement -- which is what happened when
   // `computed` and `numeric_other` stopped being exclusions: this side kept
   // adding `undefined` and the committed file read `"computed": null`.
   const excluded = {};
   for (const file of files) {
     const source = readFileSync(join(SCRIPTS, file), 'utf8');
-    for (const site of sitesIn(file, source)) sites.push({ script: `scripts/${file}`, ...site });
-    const dropped = excludedIn(source);
-    for (const [kind, count] of Object.entries(dropped)) excluded[kind] = (excluded[kind] ?? 0) + count;
+    const read = exitsIn(file, source);
+    for (const site of read.sites) sites.push({ script: `scripts/${file}`, ...site });
+    for (const [kind, count] of Object.entries(read.excluded)) {
+      excluded[kind] = (excluded[kind] ?? 0) + count;
+    }
   }
 
   return { sites, excluded, scanned: files.length };
@@ -710,7 +533,8 @@ function derive() {
 function serialise({ sites, excluded, scanned }) {
   const payload = {
     rule:
-      'a statement-position process.exit(...) whose argument is not the literal 0; ' +
+      'a statement-position process.exit(...) whose argument is not the literal zero; ' +
+      'sites, zero and indirect partition every process.exit call; ' +
       'see scripts/derive-gate-sites.mjs',
     scanned,
     excluded,

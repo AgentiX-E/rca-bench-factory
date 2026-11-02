@@ -2721,9 +2721,9 @@ Left alone deliberately. Replacing the tallies with the parser's own classificat
 
 | item | value |
 | --- | --- |
-| `core` test suite | **225 files, 5545 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **229 files, 5732 tests passed** (as of this commit) |
+| `core` test suite | **225 files, 5545 tests passed** (at v3.42) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.42) |
+| repo test suite | **229 files, 5732 tests passed** (at v3.42) |
 | coverage, four dimensions | unchanged; nothing under `packages/*/src/` moved |
 | new tests | **17** in `derive-gate-sites-conditions.test.ts`, one per shape |
 | conditions corrected | **15 of 112** rows: 13 guards that did not hold, 2 empty where the guard was nameable; 97 carried by fingerprint, 15 reinstated by hand |
@@ -2756,3 +2756,146 @@ Left alone deliberately. Replacing the tallies with the parser's own classificat
 The corpus, the answer keys, the checkpoints, the score targets, the export, the pool's price, and every
 budget the plan enforces. Nothing under `packages/*/src/` moved. This round's subject is one published
 column of the site inventory, and the instrument that derives it.
+
+## v3.43 — the list and the tally added up to the right total for two wrong reasons
+
+v3.42 asked *which thing a claim is about*, and found that `condition` answered "the nearest `if` above".
+This round asked the same question of the column beside it -- `excluded`, the tally that exists so a reader
+can subtract -- and of the instrument that reads comments.
+
+**The tally was wrong in both directions, and the two errors cancelled.**
+
+| tally | committed file | the tree |
+| --- | --- | --- |
+| `zero` | 15 | **16** |
+| `indirect` | 3 | **2** |
+| total | 130 | 130 |
+
+A number that is right for two wrong reasons is harder to notice than a number that is wrong, because the
+check anyone would write -- *do the halves add up?* -- passes.
+
+### One: the count that was lost, and the fallback that never reached it
+
+`check-official.mjs:995` holds `if (officialDirArg === undefined) process.exit(0);`. A success exit whose
+line does not *begin* with `process.exit`, so `exitArgument` -- which anchors at the start of a line --
+returned `undefined`, and the call fell through every branch of `excludedIn`. It was counted nowhere.
+
+The site rule carries a fallback for exactly this shape, with the story attached: *"Dropping the fallback
+took `build-example-bundle.mjs`'s only failure exit out of the inventory -- `scripts-are-classified.test.ts`
+caught it on the same run."* The tally got no such fallback, and no test caught it, because the two readings
+were only ever compared with the tree, and the tree was asked about **sites**.
+
+> A repair made because a test caught it does not generalise on its own. It generalises when the *other*
+> reader of the same shape is named -- and here the other reader was three functions below in the same file.
+
+### Two: the count that was invented, by the third hand-written lexer
+
+`derive-gate-sites.mjs` stripped comments before looking for exits. Measured against the parser, that
+stripper desyncs in **12 of the 75 scripts**, and the desync is one of two characters every time:
+
+```
+check-backend-support.mjs:60    return cell.replace(/`/g, '').trim();
+check-no-absolute-paths.mjs:95  const ABSOLUTE_PATH = /(['"`])(\/...)\1/g;
+check-l4-status.mjs:101         [...targetMatch[1].matchAll(/'([^']+)'/g)].map(...)
+```
+
+A quote or a backtick **inside a regex literal** is a quote to a scanner, and the scanner opens a string it
+will never close. That is the identical character that defeated the two scanners v3.42 recorded, one
+function over, in a file that had already written the lesson down four times. The comment it let through
+this time was the file's own docstring -- `// \`assert(process.exit(1))\`, \`.map((x) => process.exit(1))\`.`
+-- which the indirect tally then counted as a real exit.
+
+It is **deleted**, not repaired: once the classification walks the tree, nothing in the file needs to know
+what a comment is, and a repaired lexer would be a fourth heuristic with no caller.
+
+### Three: one pass, three baskets, and a partition instead of a remainder
+
+A remainder cannot be checked -- it is whatever the subtraction leaves. So the questions the two readings
+answered separately are now one walk that puts every `process.exit(...)` call in exactly one of `sites`,
+`zero`, `indirect`. `sites.length + zero + indirect` **is** the number of calls, and a call silently absent
+from all three is impossible rather than merely unnoticed.
+
+`multiline` was the fourth basket and is gone. It counted "an exit whose argument spans lines", which a
+line reader could not parse and a tree reader cannot express: a spanning call is an ordinary site. It read 0
+for every round it existed, and **a tally that is structurally always zero measures the reader's limitation,
+not the tree.**
+
+The zero test is now a numeric literal rather than the text `0`, so `0x0` and `0.0` are the same claim --
+the rule reads the property and no longer the spelling, which is finding 172's lesson applied one level in.
+
+### Four: the same lexer had a second copy, in the sharper instrument
+
+`scripts/gate-proofs.mjs` carries its own `stripComments`, and it decides the audit's sharpest distinction:
+*a comment is prose about the gate, a string or an identifier is the gate being used.* Measured, it desyncs
+in **28 of the 219 test files**, and the desync credited two gates to `gate-sites-are-proven.test.ts` by
+sentences in a comment:
+
+| gate | files that name it in code, by the stripper | by the compiler |
+| --- | --- | --- |
+| `apply-pins.mjs` | 4 | **3** |
+| `check-no-mock.mjs` | 5 | **4** |
+
+Neither verdict moves today -- each gate has three or four other files that drive it -- which is the whole
+reason the defect survived eight rounds. A defect that changes no answer today changes one later, and is
+invisible until then.
+
+The repair is exact and the mechanism had to be measured, because the obvious tool does not work:
+`getLeadingCommentRanges(text, 12)` returns nothing for `const a = 1; // x` where `getTrailingCommentRanges`
+at the same offset returns the comment. So the file is read for its **token boundaries** and each gap
+between two adjacent boundaries is scanned for trivia. A string is a token, so no string can straddle a
+gap; a `//` inside a regex literal is inside a token, not in a gap.
+
+Verified by the invariant rather than by inspection: blanking comments changes no token, so the token
+sequence of all **295** files in `scripts/` and `packages/core/test/` is identical before and after -- **0
+mismatches**. A token gained would mean a comment survived; a token lost would mean code was blanked.
+
+The memo is measured rather than assumed: the audit asks this of 219 files for each of 56 gates --
+**12,152 calls** -- and parsing each time costs about 65 s against 1.3 s with one parse per file.
+
+### Readings
+
+> Ledger for `v3.43`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **226 files, 5568 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **230 files, 5755 tests passed** (as of this commit) |
+| coverage, four dimensions | unchanged; nothing under `packages/*/src/` moved |
+| new tests | **23**: 18 in `derive-gate-sites-tally.test.ts`, 5 added to `gate-proofs.test.ts` |
+| the tally | `{15 zero, 3 indirect}` -> **`{16 zero, 2 indirect}`**; total 130 either way |
+| `multiline` | removed: a basket a tree reader cannot reach, which read 0 in every round it existed |
+| the deriver's lexer | deleted; it desynced in **12 of 75 scripts** |
+| `gate-proofs`' lexer | replaced; it desynced in **28 of 219 test files** and changed **2** published decisions |
+| the invariant | token sequence identical for **295** files, **0** mismatches |
+| naming cost | 12,152 calls in **1.3 s** with one parse per file, against about 65 s without the memo |
+| derivation cost | **0.40 s** for 75 scripts, of which about 0.2 s is loading the compiler |
+| mutation of the new reading | indirect basket off -> 5 red; zero read as text -> 1 red; position ignored -> 5 red; previous stripper restored -> 4 red; every file byte-identical afterwards |
+| failure sites | **112** across 56 scripts -- unchanged for the fifth round running |
+
+### Left open
+
+- **The embedding fallback is still missing**, ninth round. The protocol names no model and no threshold.
+  `[open: the protocol names neither a model nor a cut-off, and a ninth round of waiting is cheaper than a number wearing the protocol's name]`
+- **A key whose description yields no keyword scores 0.** Unchanged, recorded as a gap.
+  `[open: scoring it anything else needs a rule the protocol does not contain, and this round measured the tally rather than inventing one]`
+- **The sensitivity pass grows with the claim count.** 150 runs today, about 1.3 s per claim; the budget
+  holds to roughly 500.
+  `[open: one measurement set the budget and no run has yet reached the ceiling, so the shard size would be a guess about a curve]`
+- **The mutant replaces `process.exit(code)` only.** `process.exitCode = 1` would be invisible; measured,
+  `scripts/` uses that spelling zero times.
+  `[open: a setter is a different syntax node, so covering it would mean a second hook over a shape that no script here writes]`
+- **An exit with no argument is a site.** `process.exit()` exits 0, so by the property it is a success exit,
+  but the rule reads the argument's spelling and no-argument is not the literal zero. Measured: zero
+  instances in `scripts/`.
+  `[open: the rule is about the argument, so a call that has none is classified by absence rather than by meaning]`
+- **Blindness is observed one level deep.** A wrapper's child is visible only when the wrapper inherits.
+  `[open: the record is built where the spawn happens, so a grandchild is visible only if its parent passed the environment down]`
+- **The new dependency is a compiler at gate time.** `gate-proofs.mjs` now imports `typescript`, so a
+  sandbox carrying `scripts/` must carry it too; two test harnesses had to say so.
+  `[open: the reading is exact because it asks the compiler, and the compiler is a runtime dependency of two gates]`
+
+### Unchanged
+
+The corpus, the answer keys, the checkpoints, the score targets, the export, the pool's price, and every
+budget the plan enforces. This round's subject is one published tally and the two lexers that computed it.

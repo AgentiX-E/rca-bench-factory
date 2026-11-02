@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { existsSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   claimedProofs,
@@ -177,6 +177,84 @@ describe('a comment is prose about the gate, a string is the gate being used', (
     const source = `// a comment about ${gate}\nconst x = 'kept';\n`;
     expect(stripComments(source)).toContain("const x = 'kept';");
     expect(namesInCode(source, gate)).toBe(false);
+  });
+
+  it('does not lose the comments after a quote inside a regex literal', () => {
+    // The shape that defeated the hand-written scanner, and the reason this function
+    // now asks the compiler where the tokens are: the quotes *inside* the regex opened
+    // a string that never closed, so every comment below it survived the strip. A
+    // surviving comment is a mention wearing the word "use", which is the one error
+    // direction that matters here.
+    const source = [
+      "const ABSOLUTE_PATH = /(['\"`])(\\/(?:Users|home)\\/[^'\"`\\n]*)\\1/g;",
+      `// ${gate} is mentioned here and nowhere else`,
+      'export const kept = 1;',
+    ].join('\n');
+    expect(stripComments(source)).toContain('ABSOLUTE_PATH');
+    expect(stripComments(source)).not.toContain('mentioned here');
+    expect(namesInCode(source, gate)).toBe(false);
+  });
+
+  it('does not lose the comments after a backtick inside a regex literal', () => {
+    // `check-backend-support.mjs` writes exactly this, one character of regex: the
+    // backtick is a quote to a scanner, so the scanner opens a string it will never
+    // close, and every comment below survives. This was the first surviving comment
+    // in that file, measured -- the culprit, not a symptom.
+    const source = [
+      "const stripped = cell.replace(/`/g, '').trim();",
+      `// ${gate} is mentioned in prose`,
+      'export const kept = 1;',
+    ].join('\n');
+    expect(stripComments(source)).toContain("cell.replace(/`/g, '')");
+    expect(stripComments(source)).not.toContain('mentioned in prose');
+    expect(namesInCode(source, gate)).toBe(false);
+  });
+
+  it('blanks exactly the comments, so the token sequence is untouched', () => {
+    // The invariant the implementation is built on: comments are trivia, so removing
+    // them changes no token. A token gained means a comment survived; a token lost
+    // means code was blanked. Both are visible here without trusting any comment
+    // enumeration.
+    const source = [
+      '/** a block comment */',
+      "const a = 'it\\'s fine';",
+      'const b = `${a} and ${a}`;',
+      'const re = /([\'"`])/g;',
+      'const c = a.split(\'/\');',
+      '// trailing',
+      '',
+    ].join('\n');
+    const blank = stripComments(source);
+    expect(blank.length).toBe(source.length);
+    expect(blank).not.toContain('a block comment');
+    expect(blank).not.toContain('trailing');
+    expect(blank).toContain("const a = 'it\\'s fine';");
+    expect(blank).toContain('const re = /([\'"`])/g;');
+  });
+});
+
+/**
+ * The two decisions the strip changed on the real tree.
+ *
+ * Measured against the compiler, `apply-pins.mjs` and `check-no-mock.mjs` were each
+ * credited to `gate-sites-are-proven.test.ts` by a sentence in a comment. Neither
+ * verdict moves, because each gate has three or four other files that name it in
+ * code -- which is exactly why the defect survived: it changed no answer, so no run
+ * could notice it.
+ */
+describe('a comment about two gates is not a second file that names them', () => {
+  const proofFile = readFileSync(join(ROOT, 'packages', 'core', 'test', 'gate-sites-are-proven.test.ts'), 'utf8');
+
+  it('does not credit the file that talks about them', () => {
+    expect(namesInCode(proofFile, 'apply-pins.mjs')).toBe(false);
+    expect(namesInCode(proofFile, 'check-no-mock.mjs')).toBe(false);
+  });
+
+  it('still credits the files that drive them', () => {
+    expect(namesInCode(readFileSync(join(ROOT, 'packages', 'core', 'test', 'apply-pins.test.ts'), 'utf8'), 'apply-pins.mjs')).toBe(true);
+    expect(
+      namesInCode(readFileSync(join(ROOT, 'packages', 'core', 'test', 'gates-are-testable.test.ts'), 'utf8'), 'check-no-mock.mjs'),
+    ).toBe(true);
   });
 });
 

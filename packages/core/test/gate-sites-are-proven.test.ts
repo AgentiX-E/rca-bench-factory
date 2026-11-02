@@ -542,7 +542,10 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
 
     it('records the derivation rule it was produced under', () => {
       expect(committed.rule).toContain('process.exit');
-      expect(committed.rule).toContain('not the literal 0');
+      expect(committed.rule).toContain('not the literal zero');
+      // The partition is part of the rule, not a detail of the implementation: a
+      // reader who subtracts the tallies from the tree is relying on it.
+      expect(committed.rule).toContain('partition');
       expect(committed.rule).toContain('derive-gate-sites.mjs');
     });
   });
@@ -630,13 +633,19 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
     });
 
     it('records the sites it excluded, so the predicate is auditable', () => {
-      // The three shapes that are deliberately **not** failure sites: a success
-      // exit, one an indirect call makes, and one split across lines. A computed
-      // argument and a non-`1` numeric status used to be here as well; they are
-      // sites now, which is why this list is asserted **by name** rather than by
-      // total -- a shape moving out of `excluded` and into `sites` is exactly the
-      // change worth seeing, and a count would have hidden it.
-      expect(Object.keys(committed.excluded).sort()).toEqual(['indirect', 'multiline', 'zero']);
+      // The two shapes that are deliberately **not** failure sites: a success
+      // exit, and one an indirect call makes. A computed argument and a non-`1`
+      // numeric status used to be here as well; they are sites now, which is why
+      // this list is asserted **by name** rather than by total -- a shape moving
+      // out of `excluded` and into `sites` is exactly the change worth seeing, and
+      // a count would have hidden it.
+      //
+      // `multiline` was the third and is gone. It counted "an exit whose argument
+      // spans lines", which a line-shaped reader could not parse and a tree reader
+      // cannot even express: a spanning call is an ordinary site. It read 0 for
+      // every round it existed, and a tally that is structurally always zero is a
+      // measurement only of the reader's own limitation.
+      expect(Object.keys(committed.excluded).sort()).toEqual(['indirect', 'zero']);
       for (const count of Object.values(committed.excluded)) {
         expect(typeof count).toBe('number');
       }

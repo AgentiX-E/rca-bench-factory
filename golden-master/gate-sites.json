@@ -1,10 +1,9 @@
 {
-  "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
+  "rule": "a statement-position process.exit(...) whose argument is not the literal zero; sites, zero and indirect partition every process.exit call; see scripts/derive-gate-sites.mjs",
   "scanned": 75,
   "excluded": {
-    "zero": 15,
-    "indirect": 3,
-    "multiline": 0
+    "zero": 16,
+    "indirect": 2
   },
   "sites": [
     {
@@ -396,7 +395,7 @@
     },
     {
       "script": "scripts/derive-gate-sites.mjs",
-      "line": 133,
+      "line": 150,
       "diagnostic": "derive-gate-sites: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/gate-sites-are-proven.test.ts"

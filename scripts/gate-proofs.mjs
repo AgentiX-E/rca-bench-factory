@@ -19,6 +19,103 @@
  * decides what to do with them.
  */
 
+import ts from 'typescript';
+
+
+/**
+ * The comment ranges in a text, as the compiler reports them.
+ *
+ * ## Why the parser and not a scanner
+ *
+ * This file carried a hand-written scanner -- quotes, escapes, `//` and block
+ * markers, three states -- and documented its own limit ("a template literal with
+ * an embedded `${}` containing a comment would be misread"). Measured, the limit is
+ * wider than that: the scanner desyncs in **28 of the 219 test files**, and it
+ * desyncs on the same character as the two scanners in `derive-gate-sites.mjs`: a
+ * quote or a backtick spelled inside a **regex literal**, or a template holding a
+ * substitution. Once the scanner thinks it is inside a string, every comment after
+ * that point survives the strip.
+ *
+ * Where it survives, a sentence about a gate reads as a use of the gate -- which is
+ * precisely the distinction `namesInCode` exists to draw. Measured against the
+ * compiler, two published decisions changed: `apply-pins.mjs` and
+ * `check-no-mock.mjs` were each credited to `gate-sites-are-proven.test.ts` by a
+ * comment. Neither verdict moves today, because each gate has three or four other
+ * files that name it in code; a defect that changes no answer today is the only
+ * kind that survives long enough to change one later.
+ *
+ * ## Why the tokens, and then the gaps between them
+ *
+ * The compiler's own `getLeadingCommentRanges` is the obvious tool and it is not
+ * usable here: asked at a token's full start it returns nothing for
+ * `const a = 1; // x`, while `getTrailingCommentRanges` at the same offset returns
+ * the comment. Whatever the intent of the pair, a reader built on it would silently
+ * keep the comments it failed to see -- the same failure the scanner had.
+ *
+ * So the file is read for its **token boundaries**, and each gap between two
+ * adjacent boundaries is scanned for trivia. That is exact rather than heuristic:
+ * a string is a token, so no string can straddle a gap, and a gap holds only
+ * whitespace and comments. A `//` inside a regex literal is inside a token, not in
+ * a gap. Anything in a gap that is neither whitespace nor a comment stops the scan
+ * of that gap instead of being guessed at -- blanking code would be a silent,
+ * one-directional error, and this function's whole job is to be wrong in the other
+ * direction if it is wrong at all.
+ */
+function commentRanges(text) {
+  const file = ts.createSourceFile('source.ts', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const bounds = new Set([0, text.length]);
+  const walk = (node) => {
+    const start = node.getStart(file);
+    if (start >= 0) bounds.add(start);
+    if (node.end >= 0) bounds.add(node.end);
+    for (const child of node.getChildren(file)) walk(child);
+  };
+  walk(file);
+
+  // Between two adjacent tokens there is nothing but whitespace and comments: a
+  // string is a token, so no string can straddle a gap. That is why this scan is
+  // exact where a whole-file scan is not -- there is no quote here to misread.
+  const sorted = [...bounds].sort((a, b) => a - b);
+  const found = [];
+  for (let i = 0; i + 1 < sorted.length; i += 1) {
+    let at = sorted[i];
+    const end = sorted[i + 1];
+    for (;;) {
+      while (at < end && /\s/.test(text[at])) at += 1;
+      if (at >= end) break;
+      if (text.startsWith('//', at)) {
+        const stop = text.indexOf('\n', at);
+        const until = stop === -1 || stop > end ? end : stop;
+        found.push({ pos: at, end: until });
+        at = until;
+        continue;
+      }
+      if (text.startsWith('/*', at)) {
+        const stop = text.indexOf('*/', at + 2);
+        if (stop === -1 || stop + 2 > end) break;
+        found.push({ pos: at, end: stop + 2 });
+        at = stop + 2;
+        continue;
+      }
+      // Anything else in a gap is not trivia this function understands. Stop
+      // rather than guess: blanking code is the one error that deletes evidence.
+      break;
+    }
+  }
+  return found;
+}
+
+
+/**
+ * Every source read with its comments replaced by spaces.
+ *
+ * Memoised because the caller asks the same question about the same file once per
+ * gate: `verify-gates-are-testable.mjs` filters 219 test files for each of 75
+ * gates, which is 16,425 calls over 219 distinct texts. Without the memo that is
+ * 16,425 parses; with it, 219.
+ */
+const WITHOUT_COMMENTS = new Map();
+
 
 /**
  * The source with its comments removed, and its strings left alone.
@@ -27,52 +124,25 @@
  *
  * A naive stripper truncates a line at the first `//`, and this tree is full of
  * `https://` inside string literals -- so it would delete the half of the line that
- * matters and keep the half that does not. The scanner below tracks which of the
- * three quoting states it is in, and treats `//` and `/*` as syntax only outside
- * them. Escapes are honoured so that `'it\'s'` does not end a string early.
+ * matters and keep the half that does not.
  *
- * It is not a parser and does not claim to be: a template literal with an embedded
- * `${}` containing a comment would be misread. Nothing in this tree writes one, and
- * the failure mode is a false "names it", which the caller already tolerates.
+ * Spaces rather than deletion, so every byte keeps its offset: the answer is read
+ * with `includes`, and the test asserts that code on the far side of a comment
+ * survives verbatim.
  */
 export function stripComments(source) {
-  let out = '';
-  let i = 0;
-  let quote = null;
-  while (i < source.length) {
-    const ch = source[i];
-    const next = source[i + 1];
-    if (quote !== null) {
-      out += ch;
-      if (ch === '\\') {
-        out += next ?? '';
-        i += 2;
-        continue;
-      }
-      if (ch === quote) quote = null;
-      i += 1;
-      continue;
+  const text = String(source);
+  const memo = WITHOUT_COMMENTS.get(text);
+  if (memo !== undefined) return memo;
+  const out = text.split('');
+  for (const range of commentRanges(text)) {
+    for (let i = range.pos; i < range.end; i += 1) {
+      if (out[i] !== '\n') out[i] = ' ';
     }
-    if (ch === "'" || ch === '"' || ch === '`') {
-      quote = ch;
-      out += ch;
-      i += 1;
-      continue;
-    }
-    if (ch === '/' && next === '/') {
-      while (i < source.length && source[i] !== '\n') i += 1;
-      continue;
-    }
-    if (ch === '/' && next === '*') {
-      i += 2;
-      while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) i += 1;
-      i += 2;
-      continue;
-    }
-    out += ch;
-    i += 1;
   }
-  return out;
+  const stripped = out.join('');
+  WITHOUT_COMMENTS.set(text, stripped);
+  return stripped;
 }
 
 

@@ -14,9 +14,10 @@ import { describe, expect, it } from 'vitest';
  *   > Which `if` is the closest one above this line?
  *
  * The two agree on most of the tree and disagree wherever a block ends between
- * the guard and the exit. Measured against a parser, 15 of 112 entries named a
- * guard that does not hold at the exit -- two of them said `unknown.length > 0`
- * about a refusal that fires when the inventory cannot be *read*, which names the
+ * the guard and the exit. Measured against a parser, 13 of 112 entries named a
+ * guard that does not hold at the exit and two more published nothing where the
+ * guard could be named; three of the thirteen said `unknown.length > 0` about a
+ * refusal that fires when the inventory cannot be *read*, which names the
  * opposite branch.
  *
  * ## Why this file drives sources rather than the tree
@@ -47,13 +48,13 @@ interface Site {
   diagnostic?: string;
 }
 
-const { sitesIn } = (await import(pathToFileURL(SCRIPT).href)) as {
-  sitesIn: (name: string, source: string) => Site[];
+const { exitsIn } = (await import(pathToFileURL(SCRIPT).href)) as {
+  exitsIn: (name: string, source: string) => { sites: Site[] };
 };
 
 /** The single site in a source, as the deriver reads it. */
 function only(source: string): Site {
-  const sites = sitesIn('fixture.mjs', source);
+  const { sites } = exitsIn('fixture.mjs', source);
   expect(sites).toHaveLength(1);
   return sites[0];
 }

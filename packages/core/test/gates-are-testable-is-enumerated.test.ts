@@ -136,6 +136,18 @@ function sandbox(stub: { body: string; status: number }, subject: string | null 
   // and every refusal below reported a stack trace instead of its sentence. A fixture
   // is a tree the script could run in, and a tree missing a dependency is not one.
   copyFileSync(resolve(ROOT, 'scripts', 'gate-proofs.mjs'), join(tree, 'scripts', 'gate-proofs.mjs'));
+  // That module now finds comments by asking the compiler where the tokens are, so the
+  // dependency it needs is no longer only `gate-proofs.mjs` itself. A copy of `scripts/`
+  // with no `node_modules` above it answers `Cannot find package 'typescript'`, which is
+  // a fact about the sandbox rather than about the audit being measured.
+  //
+  // One package rather than the directory: this sandbox is written into by the cases
+  // below (`node_modules/.cache/verify-gates-are-testable.json` is the audit's journal),
+  // and a symlink to the repository's own `node_modules` would have the sandbox recording
+  // its experiments in the tree under test. Measured -- the journal one case writes was
+  // read back by the next, which then refused a gate nobody was holding.
+  mkdirSync(join(tree, 'node_modules'), { recursive: true });
+  symlinkSync(resolve(ROOT, 'node_modules', 'typescript'), join(tree, 'node_modules', 'typescript'), 'dir');
   if (subject !== null) {
     writeFileSync(join(tree, 'scripts', subject), 'process.exit(1);\n');
     writeFileSync(

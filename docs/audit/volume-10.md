@@ -716,3 +716,139 @@ is to be the accounting a reader can subtract from the total.
 Recorded rather than fixed: replacing the tallies with the parser's own classification changes what the
 inventory's `excluded` object means, and that is a round of its own rather than an edit at the end of this
 one. The number is published, so it is now also named.
+
+## Finding 367 — the list and the tally added up to the right total for two wrong reasons
+
+The inventory publishes `excluded` beside `sites` so a reader can subtract: *112 sites, and the other
+exits went elsewhere for these reasons*. The two halves were computed by two different readings of the
+same tree -- the sites by a line pattern, the exclusions by a second line pattern -- and they disagreed:
+
+| tally | committed file | the tree |
+| --- | --- | --- |
+| `zero` | 15 | **16** |
+| `indirect` | 3 | **2** |
+| total | 130 | 130 |
+
+**The total matched.** One count had been lost and one invented, and the two errors cancelled. A number
+that is right for two wrong reasons is harder to notice than a number that is wrong, because the check
+anyone would write -- *do the halves add up?* -- passes.
+
+The lost one is `check-official.mjs:995`:
+
+```
+if (officialDirArg === undefined) process.exit(0);
+```
+
+A success exit written on a line that does not *begin* with `process.exit`. `exitArgument` anchors at the
+start of a line, so it returned `undefined`; the multiline branch did not match; the indirect branch did
+not match; and the call fell through every branch. It is counted nowhere. See finding 368.
+
+The invented one is a line of this repository's own prose, in `scripts/derive-gate-sites.mjs`:
+
+```
+// `assert(process.exit(1))`, `.map((x) => process.exit(1))`. The statement
+```
+
+It was counted as an `indirect` exit because the comment stripper desyncs in that file. See finding 369.
+
+The repair is not two arithmetic fixes. A remainder cannot be checked -- it is whatever the subtraction
+leaves -- so the classification became a **partition**: one pass over the tree puts every
+`process.exit(...)` call in exactly one of `sites`, `zero`, `indirect`, and `sites.length + zero +
+indirect` is the number of calls. `multiline` was the fourth basket and is gone: it counted "an exit whose
+argument spans lines", which a line reader could not parse and a tree reader cannot even express. It read
+0 for every round it existed, and a tally that is structurally always zero measures the reader's
+limitation rather than the tree.
+
+## Finding 368 — the fallback was written into one of the two readings and never the other
+
+`isFailureExitStatement` carries this, with the story attached:
+
+```
+// The exit is not the first thing on the line: `if (!ok) process.exit(1);`.
+// ... Dropping the fallback took `build-example-bundle.mjs`'s only failure exit out of the
+// inventory -- `scripts-are-classified.test.ts` caught it on the same run.
+```
+
+The lesson was learned, written down, and applied to the reading that publishes sites. The reading that
+publishes *tallies* had the same anchored-at-the-start assumption and no fallback, and no test caught it,
+because the two readings were never compared with each other -- only with the tree, and the tree was asked
+about sites.
+
+That is the shape worth recording: **a repair made because a test caught it does not generalise on its
+own.** It generalises when the *other* reader of the same shape is named, and here the other reader was
+three functions below in the same file.
+
+The two shapes are now one classifier, so the question cannot be asked twice: `if (!ok) process.exit(1);`
+and `if (!ok) process.exit(0);` differ in the argument, not in whether they are seen.
+
+## Finding 369 — the third hand-written lexer, in the file that documents the first two
+
+`derive-gate-sites.mjs` stripped comments before looking for exits, with a character scanner that tracked
+quote state and documented its own reason for not being a regex (a `//` inside a URL, a block-comment
+opener inside a string). Measured against the parser, it desyncs in **12 of the 75 scripts**:
+
+| script | comment bytes that survived the strip | first at line |
+| --- | --- | --- |
+| `check-no-unsafe-shell.mjs` | 6,107 | 290 |
+| `derive-gate-sites.mjs` | 5,653 | 440 |
+| `check-data-model-vocabularies.mjs` | 3,917 | 104 |
+| `check-doc-counts.mjs` | 3,399 | 285 |
+| `progress-volumes.mjs` | 2,803 | 121 |
+| `check-official-registry.mjs` | 1,543 | 120 |
+| `check-l4-status.mjs` | 1,162 | 103 |
+| `check-open-list.mjs` | 717 | 303 |
+| `check-backend-support.mjs` | 339 | 63 |
+| `gate-steps.mjs` | 336 | 1,316 |
+| `check-no-absolute-paths.mjs` | 206 | 120 |
+| `measure-ci-baseline.mjs` | 97 | 79 |
+
+Every one is one of two characters. The measured culprits, from the line immediately above the first
+surviving comment:
+
+```
+check-backend-support.mjs:60    return cell.replace(/`/g, '').trim();
+check-no-absolute-paths.mjs:95  const ABSOLUTE_PATH = /(['"`])(\/...)\1/g;
+check-l4-status.mjs:101         const declaredTargets = [...targetMatch[1].matchAll(/'([^']+)'/g)].map(...)
+```
+
+A quote or a backtick **inside a regex literal** is a quote to a scanner, and the scanner opens a string it
+will never close. That is the identical character that defeated the two scanners finding 364 recorded, one
+function over, in the same file -- and the file had already written the lesson down four times.
+
+It is deleted rather than repaired, and that is the honest answer this time: once the classification is a
+walk over the tree, nothing in the file needs to know what a comment is. A repaired lexer would be a
+fourth heuristic with no caller.
+
+## Finding 370 — the same lexer's second copy, in the instrument that decides a gate was named
+
+`scripts/gate-proofs.mjs` carried its own copy of the same idea, and uses it for the sharpest distinction
+in the audit: *a comment is prose about the gate, a string or an identifier is the gate being used.*
+`namesInCode` is what stops "a file that mentions `check-official.mjs`" from counting as a file that drives
+it.
+
+Measured against the compiler, it desyncs in **28 of the 219 test files**, and the desync costs two
+published decisions: `apply-pins.mjs` and `check-no-mock.mjs` were each credited to
+`gate-sites-are-proven.test.ts`, by a sentence in a comment.
+
+Neither verdict moves today. Each gate has three or four other files that name it in code
+(`apply-pins.mjs`: `apply-pins.test.ts`, `official-data-destination.test.ts`, `scripts-are-classified.test.ts`),
+so the extra file inflates a printed list without changing a CAUGHT. That is precisely why it survived:
+**a defect that changes no answer today changes one later, and it is invisible until then.**
+
+The repair is exact, and the mechanism is worth stating because the obvious tool does not work. TypeScript's
+`getLeadingCommentRanges` returns nothing at a token's full start where `getTrailingCommentRanges` at the
+same offset returns the comment:
+
+```
+const text = 'const a = 1; // x\nconst b = 2;\n';
+getLeadingCommentRanges(text, 12)   -> undefined
+getTrailingCommentRanges(text, 12)  -> [{ pos: 13, end: 17 }]
+```
+
+So the file is read for its **token boundaries** and each gap between two adjacent boundaries is scanned
+for trivia. That is exact rather than clever: a string is a token, so no string can straddle a gap, and a
+gap holds only whitespace and comments. A `//` inside a regex literal is inside a token, not in a gap.
+
+Verified by the invariant rather than by inspection: blanking comments changes no token, so the token
+sequence of all 295 files in `scripts/` and `packages/core/test/` is identical before and after the strip
+-- 0 mismatches. A token gained would mean a comment survived; a token lost would mean code was blanked.

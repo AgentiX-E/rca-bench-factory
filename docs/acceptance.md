@@ -92,6 +92,24 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   `else if` chain, an `if` with no braces, a declaration, an inline closure, a loop,
   a `switch`, a brace inside a string, a regex literal holding quotes, and a
   template literal holding a substitution.
+- **The site list and the exclusion tally partition every exit** (v3.43). Until
+  v3.43 the two halves were computed by two different line-shaped readings, and
+  they disagreed: the committed file said `{15 zero, 3 indirect}` where the tree
+  holds `{16 zero, 2 indirect}`. The totals matched anyway, because one count had
+  been lost (`if (officialDirArg === undefined) process.exit(0);`, an exit that
+  does not begin its line) and one invented (a docstring in the deriver, counted
+  because the comment stripper desyncs there). One pass over the syntax tree now
+  puts every `process.exit(...)` call in exactly one of `sites`, `zero`,
+  `indirect`, and `derive-gate-sites-tally.test.ts` holds that against an
+  independent traversal of every script in `scripts/`. `multiline` is gone: a
+  basket a tree reader cannot reach, which read 0 in every round it existed.
+- **A comment is found by the token boundaries, not by a lexer** (v3.43). Both
+  hand-written strippers desynced on a quote or a backtick inside a regex literal
+  -- 12 of 75 scripts, 28 of 219 test files -- and the second one credited two
+  gates to a file that mentions them in prose. Clearance: the token sequence of all
+  295 files in `scripts/` and `packages/core/test/` is identical before and after
+  the strip, so a comment that survived (a token gained) or code that was blanked
+  (a token lost) both fail `gate-proofs.test.ts`.
 
 ## L4 — Official reproduction (Golden Master, official metrics and round trip)
 
