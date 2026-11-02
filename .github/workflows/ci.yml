@@ -89,7 +89,7 @@ jobs:
       # added to any step, so no job had ever executed it. It belongs in this chain
       # rather than a step of its own because the other five answer the same kind of
       # question: is the tree in a state we are willing to measure. See finding 83.
-      - name: Lint (no mock / no secrets / no vendored data / registry / absolute paths / scorer stability)
+      - name: Lint (no mock / no secrets / no vendored data / registry / absolute paths / scorer stability / site proofs)
         run: pnpm lint
 
       - name: Test with coverage (core + cli, ≥95% per dimension, 100% functions)

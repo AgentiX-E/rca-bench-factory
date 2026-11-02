@@ -2256,9 +2256,9 @@ claim rather than the message: the file is compared byte for byte.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **222 files, 5479 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **226 files, 5666 tests passed** (as of this commit) |
+| `core` test suite | **222 files, 5479 tests passed** (as of `f7d0fc2f7`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `f7d0fc2f7`) |
+| repo test suite | **226 files, 5666 tests passed** (as of `f7d0fc2f7`) |
 | coverage, four dimensions | **99.96 / 99.75 / 100 / 99.96** — unchanged |
 | `src/score` | **99.85 / 98.89 / 100 / 99.85**; `official.ts` 99.74 / 98.27 / 100 |
 | `reason = "the"` | still 0 (v3.37's fix, unchanged by this round) |
@@ -2290,3 +2290,106 @@ claim rather than the message: the file is compared byte for byte.
 The corpus, the answer keys, the checkpoints, the localisation readings, the round trip's three target
 contracts (375 / 270 / 90), the export, the pool's price, the six other score targets, and every budget the
 plan enforces. The AIOps2025 path changed in four places; nothing else in `src/` did.
+
+## v3.39 — a proof that was a mention, and an arm that had never run
+
+v3.38 closed with five open items. The one at the top was carried since v3.32 and had been re-stated
+four times without moving: **`provedBy` records that a file mentions a gate, not that it reaches the
+site.** This round stopped arguing about it and measured it, which took two hours of writing and two
+minutes of running, and found two false claims out of ninety-six.
+
+The audit is `docs/audit/volume-10.md`, findings **357–358**, appended to the volume opened last round.
+
+### One: the question is an experiment, so it was run
+
+Every failure site passes through `process.exit`. A `--require` hook replaces it in each descendant,
+records the innermost frame that is a script under `scripts/`, and calls the original; the trace is
+read back per claimant file.
+
+| | before | after |
+| --- | --- | --- |
+| claims | 96 across 43 files | **100 across 44 files** |
+| false | **2** | 0 |
+| cost | — | 110 s, one vitest per claimant |
+
+The two:
+
+| site | published witness | what the hook saw |
+| --- | --- | --- |
+| `check-cli-reference.mjs:51` | `check-cli-reference.test.ts` | `…:301` only |
+| `verify-scorer-stability.mjs:306` | `verify-scorer-stability-script.test.ts` | no line of that script at all |
+
+### Two: both were repaired by producing the evidence, not by moving the label
+
+Re-pointing the first claim would have made the inventory true and that file's own header false: it
+said, from the day it was drafted, that `gates-are-testable.test.ts` "already covers this gate's first
+exit". So the file now has a case that writes a reference with no command table and asserts the
+refusal, and the header says why the duplication is deliberate -- one file proves the gate is *testable*,
+the inventory names a witness for the *exit*. The hook now records line 51 in that file.
+
+### Three: the stability gate's property arm had never executed
+
+Six cases in `verify-scorer-stability-script.test.ts` all say *refuses*, and all six drive the gate
+through a dataset `parseGoldenDataset` rejects. Every refusal was a **parser** refusal; the arm that
+says `FAILED: N propert(y/ies)` -- "the scorer broke a property", a different repair -- had never run.
+One sample reaches it: the mixed fixture answers the first sample correctly, so `samplesWithMisses` is
+0 against a graded count of 1, and the check that requires them to differ has nothing to differ with.
+Proved by mutation: with `failures.push` disabled the case fails on `expected +0 to be 1`.
+
+### Four: the gate, and where it runs
+
+`scripts/verify-site-proofs.mjs` runs the measurement for every claim and fails naming both halves --
+the site that did not fire and the file that claimed it. The reading lives in `scripts/site-proofs.mjs`
+(the hook, the parser, the per-file comparison) so that emptying the gate does not kill the reading,
+which is why `gate-proofs.mjs` was split the same way.
+
+| verdict | how it is produced |
+| --- | --- |
+| an unreadable inventory | `RCA_SITE_PROOFS_INVENTORY` at a path with no file |
+| an inventory with no claim | a fixture whose sites are all exempt |
+| a claim that did not fire | a fixture gate with two exits and a claimant that takes one |
+| a claimant that could not be run | a claim naming a file deleted before the run |
+
+Wired into `pnpm lint`, which the `verify` job runs. Measured cost on that job: 2.9 min of its 15
+before, so the whole gate fits with room; the batteries job -- at 21.6 of 30 minutes -- was left alone
+on purpose.
+
+### Readings
+
+> Ledger for `v3.39`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **223 files, 5499 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **227 files, 5686 tests passed** (as of this commit) |
+| coverage, four dimensions | unchanged -- no file under `src/` was touched |
+| new tests | **20** across three files -- 18 in `site-proofs.test.ts`, 1 in `check-cli-reference.test.ts`, 1 in `verify-scorer-stability-script.test.ts` |
+| claims measured | **100 of 100** honoured, 44 files, 110 s |
+| new failure sites | **4**, from the new gate, each proved by `site-proofs.test.ts` |
+| new scripts | `scripts/site-proofs.mjs` (data), `scripts/verify-site-proofs.mjs` (gate) -- both registered |
+| audit | `volume-10.md`, findings 351–358, 19 108 B |
+
+### Left open
+
+- **The embedding fallback is still missing**, and still for the same reason: the paper names no model
+  and no threshold.
+  `[open: v3.39 re-signed this without naming a model or a threshold -- §4.4 states the fallback and stops there]`
+- **A key whose description carries no keyword scores 0.** Unchanged; recorded as a gap.
+  `[open: no published rule prices a key whose description yields no keyword, so 0 is this tree's choice and not the protocol's]`
+- **A claim is now measured, but only by running the whole claimant file.** A file whose own tests are
+  red is reported as unmeasured rather than as wrong, which is honest and also means a flaky claimant
+  can hide a false pointer for one round.
+  `[open: the gate reports "unmeasured" and a reader has to re-run it]`
+- **The batteries job was not given this gate.** It is at 21.6 of 30 minutes and two more minutes there
+  would narrow a margin already flagged as shrinking; the verify job had 12 minutes spare.
+  `[open: a per-step recording would have to be re-measured before the gate could move]`
+- **Proving a claimant that spawns another gate** still reads as "did not fire" if the nested spawn
+  inherits no trace variable -- the reason the hook is installed through `NODE_OPTIONS` rather than an
+  explicit `env:` at each call site.
+  `[open: an inherited-variable assumption, stated rather than tested]`
+
+### Unchanged
+
+The corpus, the answer keys, the checkpoints, the score targets, the export, the pool's price, and every
+budget the plan enforces except the `verify` job's measured time. Nothing under `packages/*/src/` moved.

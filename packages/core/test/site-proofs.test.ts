@@ -1,0 +1,420 @@
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterAll, describe, expect, it } from 'vitest';
+import { HOOK_SOURCE, claimedSites, hookFile, parseTrace, unprovenClaims } from '../../../scripts/site-proofs.mjs';
+
+/**
+ * A proof claim is a statement that a test makes an exit *fire*, and until this
+ * round nothing asked whether it did.
+ *
+ * `gate-sites-are-proven.test.ts` has three rules that read a `provedBy` claim, and
+ * each of them is satisfied by less than the claim says: rule 3 asks whether the
+ * named file *mentions* the script, rule 7 whether it *executes* it at file level.
+ * Neither is site level, and both are silent about the difference -- which is how
+ * `scripts/check-cli-reference.mjs:51` was published as proved by a file that fires
+ * only line 301, and `scripts/verify-scorer-stability.mjs:306` as proved by a file
+ * that fires no site of that script at all.
+ *
+ * The question "did this file make this exit fire" is an experiment and not a
+ * reading, and it is cheap: install a hook that records `process.exit`'s caller,
+ * run the file once, read the trace. These fixtures hold the two shapes apart --
+ * a claim that fired, and a claim that did not -- because a parser that reported
+ * "no claims violated" for both would look exactly like a finding.
+ */
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const GATE = resolve(ROOT, 'scripts', 'verify-site-proofs.mjs');
+
+/**
+ * The scripts this file executes.
+ *
+ * Rule 7 of `gate-sites-are-proven.test.ts` reconciles this against what the spawn
+ * calls actually reach and reports a disagreement in either direction. The pointer
+ * into the gate is a resolved constant here rather than a literal argument, which is
+ * why the declaration is needed at all -- the scanner reads spawn arguments, and
+ * `[GATE, ...args]` is not one it can resolve.
+ */
+const DRIVES = [
+  'scripts/verify-site-proofs.mjs',
+];
+
+/** A trace as the hook writes it: one `<absolute path>:<line>` per exit taken. */
+const TRACE = [
+  '/repo/scripts/check-cli-reference.mjs:301',
+  '/repo/scripts/check-cli-reference.mjs:301',
+  '/tmp/rca-bench-cliref-Ab12/tree-1/scripts/check-cli-reference.mjs:51',
+  '/repo/packages/core/test/check-cli-reference.test.ts:88',
+].join('\n');
+
+describe('site-proofs · reading an exit trace', () => {
+  it('keeps the site of every frame and drops the test frames', () => {
+    // A test file calls `process.exit` too -- vitest's worker does, and so does a
+    // fixture that gives up early. Those frames are not failure sites of a gate,
+    // and counting them would make every claim look honoured.
+    expect(parseTrace(TRACE)).toEqual([
+      'scripts/check-cli-reference.mjs:301',
+      'scripts/check-cli-reference.mjs:51',
+    ]);
+  });
+
+  it('collapses repeated exits, because a file may drive one site many times', () => {
+    // Eight test cases spawn the same gate and all reach its drift report. A count
+    // would be a number about the fixture; the claim is about reachability.
+    const once = parseTrace('/repo/scripts/a.mjs:7');
+    const thrice = parseTrace(['/repo/scripts/a.mjs:7', '/repo/scripts/a.mjs:7', '/repo/scripts/a.mjs:7'].join('\n'));
+    expect(once).toEqual(['scripts/a.mjs:7']);
+    expect(thrice).toEqual(once);
+  });
+
+  it('ignores a trace that holds nothing it can read', () => {
+    expect(parseTrace('')).toEqual([]);
+    expect(parseTrace('not a path\n/somewhere/else.txt:1')).toEqual([]);
+  });
+
+  it('reads a frame whose path holds the separator the caller used', () => {
+    // The hook is installed into children spawned from a scratch tree as well as
+    // from this one, so the same site appears under more than one absolute prefix.
+    // Both spellings are the site; the claim names the script, not the directory.
+    const trace = parseTrace(
+      ['/a/b/scripts/x.mjs:12', '/tmp/z/tree-3/scripts/x.mjs:12'].join('\n'),
+    );
+    expect(trace).toEqual(['scripts/x.mjs:12']);
+  });
+});
+
+describe('site-proofs · what the inventory claims', () => {
+  const inventory = {
+    sites: [
+      { script: 'scripts/a.mjs', line: 4, status: 'proved', provedBy: 'packages/core/test/a.test.ts' },
+      { script: 'scripts/a.mjs', line: 9, status: 'proved', provedBy: 'packages/core/test/b.test.ts' },
+      { script: 'scripts/b.mjs', line: 2, status: 'exempt', reason: 'a sentence long enough to pass rule 4' },
+    ],
+  };
+
+  it('claims only the sites that name a proof', () => {
+    expect(claimedSites(inventory)).toEqual([
+      { script: 'scripts/a.mjs', line: 4, site: 'scripts/a.mjs:4', file: 'packages/core/test/a.test.ts' },
+      { script: 'scripts/a.mjs', line: 9, site: 'scripts/a.mjs:9', file: 'packages/core/test/b.test.ts' },
+    ]);
+  });
+
+  it('reports a claim the run did not honour, and names both halves', () => {
+    const fired = new Map([['packages/core/test/a.test.ts', new Set(['scripts/a.mjs:4'])]]);
+    const violations = unprovenClaims(claimedSites(inventory), fired);
+    expect(violations).toHaveLength(1);
+    // The message has to name the site *and* the file: the repair is either "the
+    // pointer is wrong" or "the test does not reach it", and a reader cannot tell
+    // which without both.
+    expect(violations[0]).toContain('scripts/a.mjs:9');
+    expect(violations[0]).toContain('packages/core/test/b.test.ts');
+  });
+
+  it('prefers the claim over a site another file happens to fire', () => {
+    // The defect this whole module exists for: `check-cli-reference.mjs:51` fires
+    // in `gates-are-testable.test.ts` and the inventory names
+    // `check-cli-reference.test.ts`. A run that pooled both files would call the
+    // claim honoured and hide the wrong pointer, so the comparison is per file.
+    const fired = new Map([
+      ['packages/core/test/a.test.ts', new Set(['scripts/a.mjs:4', 'scripts/a.mjs:9'])],
+      ['packages/core/test/b.test.ts', new Set(['scripts/a.mjs:4'])],
+    ]);
+    const violations = unprovenClaims(claimedSites(inventory), fired);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain('packages/core/test/b.test.ts');
+  });
+});
+
+describe('site-proofs · the hook records what the parser reads', () => {
+  it('writes the line of the exit that was taken, and nothing else', () => {
+    // The hook and the parser are one contract written in two languages, so it is
+    // exercised rather than described: a child is started with the hook installed,
+    // it exits at a known line, and the trace is parsed back.
+    const dir = mkdtempSync(join(tmpdir(), 'site-proofs-hook-'));
+    try {
+      mkdirSync(join(dir, 'scripts'), { recursive: true });
+      const gate = join(dir, 'scripts', 'gate.mjs');
+      writeFileSync(
+        gate,
+        ['console.error("unhappy");', 'process.exit(1);', ''].join('\n'),
+      );
+      const trace = join(dir, 'trace.log');
+      const result = spawnSync(process.execPath, [gate], {
+        encoding: 'utf8',
+        env: { ...process.env, NODE_OPTIONS: `--require=${hookFile(dir)}`, RCA_SITE_TRACE: trace },
+      });
+      expect(result.status).toBe(1);
+      // The hook must not change the verdict: the child still exits with its code.
+      expect(parseTrace(readFileSync(trace, 'utf8'))).toEqual(['scripts/gate.mjs:2']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('is inert when no trace is asked for', () => {
+    // The hook is installed through `NODE_OPTIONS`, which every descendant process
+    // inherits, including the suite's own workers. A hook that wrote regardless
+    // would add a file write to every `process.exit` in the run.
+    const dir = mkdtempSync(join(tmpdir(), 'site-proofs-inert-'));
+    try {
+      mkdirSync(join(dir, 'scripts'), { recursive: true });
+      const gate = join(dir, 'scripts', 'gate.mjs');
+      writeFileSync(gate, 'process.exit(3);\n');
+      const result = spawnSync(process.execPath, [gate], {
+        encoding: 'utf8',
+        env: { ...process.env, NODE_OPTIONS: `--require=${hookFile(dir)}` },
+      });
+      expect(result.status).toBe(3);
+      expect(result.stderr).toBe('');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('survives an exit whose stack names no script, rather than refusing to exit', () => {
+    // `process.exit` is called by more than the gates: a rejection handler, a
+    // library's bail-out. A hook that threw on a frame it could not place would
+    // convert a normal exit into a crash, and the run it was measuring would be a
+    // measurement of the hook.
+    const dir = mkdtempSync(join(tmpdir(), 'site-proofs-other-'));
+    try {
+      const trace = join(dir, 'trace.log');
+      const result = spawnSync(process.execPath, ['-e', 'process.exit(4)'], {
+        encoding: 'utf8',
+        env: { ...process.env, NODE_OPTIONS: `--require=${hookFile(dir)}`, RCA_SITE_TRACE: trace },
+      });
+      expect(result.status).toBe(4);
+      // Nothing was recorded, and "nothing" may be an absent file: the hook only
+      // opens the trace once it has a site to write, so a run that reaches no gate
+      // leaves no file behind. Reading absence as an empty trace is the honest
+      // reading -- inventing the file would be the hook writing about itself.
+      expect(existsSync(trace) ? parseTrace(readFileSync(trace, 'utf8')) : []).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('is a program the interpreter accepts', () => {
+    // The hook is a string in a module, so a typo in it is invisible until a child
+    // is spawned under it -- and the failure would read as "the gate exited, so the
+    // site fired". Compiling it here is the cheapest place to say it is well formed.
+    const dir = mkdtempSync(join(tmpdir(), 'site-proofs-parse-'));
+    try {
+      const parsed = spawnSync(process.execPath, ['--check', hookFile(dir)], { encoding: 'utf8' });
+      expect(parsed.stderr).toBe('');
+      expect(parsed.status).toBe(0);
+      expect(HOOK_SOURCE).toContain('RCA_SITE_TRACE');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+/** A repository the gate can be pointed at: an inventory, a gate, and a runner. */
+function fixture(claims: { line: number; file: string }[]): string {
+  const tree = mkdtempSync(join(tmpdir(), 'site-proofs-tree-'));
+  mkdirSync(join(tree, 'golden-master'), { recursive: true });
+  mkdirSync(join(tree, 'scripts'), { recursive: true });
+  mkdirSync(join(tree, 'packages', 'core', 'test'), { recursive: true });
+
+  // Two exits, and the runner fires exactly one of them. The lines are read back
+  // from the file rather than written down twice, because a fixture whose line
+  // numbers are copied is a fixture that goes stale the first time it is edited.
+  const gate = [
+    'if (process.env.FIXTURE_PICK === "one") {',
+    '  console.error("one");',
+    '  process.exit(1);',
+    '}',
+    'console.error("two");',
+    'process.exit(2);',
+    '',
+  ].join('\n');
+  writeFileSync(join(tree, 'scripts', 'fake-gate.mjs'), gate);
+  const exits = gate
+    .split('\n')
+    .map((text, i) => (text.includes('process.exit') ? i + 1 : 0))
+    .filter((n) => n > 0);
+
+  writeFileSync(
+    join(tree, 'golden-master', 'gate-sites.json'),
+    JSON.stringify({
+      rule: 'a fixture',
+      scanned: 1,
+      excluded: {},
+      sites: claims.map((claim) => ({
+        script: 'scripts/fake-gate.mjs',
+        line: exits[claim.line === 1 ? 0 : 1],
+        status: 'proved',
+        provedBy: claim.file,
+      })),
+    }),
+  );
+
+  // One "test file" per claimant, whose whole content is the exit it *reaches*.
+  // Where two claims name the same file the first one decides, because a file that
+  // exits twice is a file that exits once -- the second claim is then the claim the
+  // fixture is built to leave unhonoured.
+  const reached = new Map<string, number>();
+  for (const claim of claims) {
+    if (!reached.has(claim.file)) reached.set(claim.file, claim.line);
+  }
+  for (const [file, line] of reached) {
+    writeFileSync(join(tree, file), `FIXTURE_PICK ${line === 1 ? 'one' : 'two'}\n`);
+  }
+
+  const runner = [
+    "import { spawnSync } from 'node:child_process';",
+    "import { readFileSync } from 'node:fs';",
+    "import { dirname, join, resolve } from 'node:path';",
+    "import { fileURLToPath } from 'node:url';",
+    'const here = dirname(fileURLToPath(import.meta.url));',
+    'const file = process.argv.find((one) => one.endsWith(".test.ts"));',
+    'const pick = /FIXTURE_PICK (\\w+)/.exec(readFileSync(file, "utf8"))[1];',
+    "const gate = resolve(here, 'scripts', 'fake-gate.mjs');",
+    'const child = spawnSync(process.execPath, [gate], {',
+    '  encoding: "utf8",',
+    '  env: { ...process.env, FIXTURE_PICK: pick },',
+    '});',
+    'process.stdout.write(`picked ${pick} status ${String(child.status)}\\n`);',
+    'process.exit(0);',
+    '',
+  ].join('\n');
+  writeFileSync(join(tree, 'runner.mjs'), runner);
+  return tree;
+}
+
+function runGate(tree: string, args: string[]): { status: number; stdout: string; stderr: string } {
+  const result = spawnSync(process.execPath, [GATE, ...args], {
+    encoding: 'utf8',
+    cwd: tree,
+    env: {
+      ...process.env,
+      RCA_SITE_PROOFS_INVENTORY: join(tree, 'golden-master', 'gate-sites.json'),
+      RCA_SITE_PROOFS_VITEST: join(tree, 'runner.mjs'),
+      RCA_SITE_PROOFS_TESTS: join(tree, 'packages', 'core'),
+    },
+  });
+  return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+}
+
+describe('scripts/verify-site-proofs.mjs · the experiment, end to end', () => {
+  it('passes when each claimed exit fired in the file that claimed it', () => {
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }]);
+    try {
+      const result = runGate(tree, []);
+      expect(result.stderr).toBe('');
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('1 claim(s)');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('fails when a claim names a file that reaches the script but not the exit', () => {
+    // The shipped defect in miniature: the file runs the gate, the gate exits
+    // somewhere else, and the claim reads as proved.
+    const tree = fixture(
+      [
+        { line: 1, file: 'packages/core/test/one.test.ts' },
+        { line: 2, file: 'packages/core/test/one.test.ts' },
+      ],
+      'one',
+    );
+    try {
+      const result = runGate(tree, []);
+      expect(result.status).toBe(1);
+      const exits = readFileSync(join(tree, 'scripts', 'fake-gate.mjs'), 'utf8')
+        .split('\n')
+        .map((text, i) => (text.includes('process.exit') ? i + 1 : 0))
+        .filter((n) => n > 0);
+      // Names the site that did not fire -- the second exit -- and the file whose
+      // claim it was. A message that named only the file would leave a reader
+      // re-reading every exit of it.
+      expect(result.stderr).toContain(`scripts/fake-gate.mjs:${String(exits[1])}`);
+      expect(result.stderr).toContain('packages/core/test/one.test.ts');
+      expect(result.stderr).not.toContain(`scripts/fake-gate.mjs:${String(exits[0])}`);
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('says which files it will run, without running them', () => {
+    // `--list` is what makes the plan reviewable before a two-minute run, and it is
+    // the only form the suite can afford to drive.
+    const tree = fixture(
+      [
+        { line: 1, file: 'packages/core/test/one.test.ts' },
+        { line: 2, file: 'packages/core/test/two.test.ts' },
+      ],
+      'one',
+    );
+    try {
+      const result = runGate(tree, ['--list']);
+      expect(result.status).toBe(0);
+      expect(result.stdout.split('\n').filter((l) => l.includes('.mjs:'))).toHaveLength(2);
+      expect(result.stdout).toContain('test/two.test.ts');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses an argument it does not understand, rather than measuring anyway', () => {
+    // The gate has one flag, and a typo in a CI step would otherwise be read as
+    // "run everything" -- a green run that answers a question nobody asked. The
+    // usage line is printed with the refusal because the reader is a person editing
+    // a workflow file.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }]);
+    try {
+      const result = runGate(tree, ['--fast']);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("unknown argument '--fast'");
+      expect(result.stderr).toContain('usage:');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses an inventory it cannot read instead of reporting no violations', () => {
+    // The failure that would make the gate green forever: no claims, so nothing to
+    // violate. It is the shape `check-cli-reference.mjs` refuses for an empty table.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }]);
+    try {
+      rmSync(join(tree, 'golden-master', 'gate-sites.json'));
+      const result = runGate(tree, []);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('gate-sites.json');
+      expect(result.stderr).toContain('cannot');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses an inventory with no proved site, which would pass while measuring nothing', () => {
+    const tree = fixture([]);
+    try {
+      const result = runGate(tree, []);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('no proved site');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a file that could not be run rather than counting it as honoured', () => {
+    // A runner that fails to start produces no trace, and "no trace" is exactly
+    // what a claim that did not fire looks like. The two are separated so that a
+    // broken runner is not read as two wrong claims.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/absent.test.ts' }]);
+    try {
+      rmSync(join(tree, 'packages/core/test/absent.test.ts'));
+      const result = runGate(tree, []);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('absent.test.ts');
+      expect(result.stderr).toMatch(/missing|no such file|does not exist/i);
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+});

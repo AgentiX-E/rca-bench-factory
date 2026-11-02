@@ -1,8 +1,8 @@
 {
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
-  "scanned": 72,
+  "scanned": 74,
   "excluded": {
-    "zero": 13,
+    "zero": 14,
     "indirect": 3,
     "multiline": 0
   },
@@ -806,6 +806,38 @@
       "diagnostic": "FAILED: ${failures.length} propert(y/ies)",
       "status": "proved",
       "provedBy": "packages/core/test/verify-scorer-stability-script.test.ts"
+    },
+    {
+      "script": "scripts/verify-site-proofs.mjs",
+      "line": 81,
+      "condition": "unknown.length > 0",
+      "diagnostic": "usage: node scripts/verify-site-proofs.mjs [--list]\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/site-proofs.test.ts"
+    },
+    {
+      "script": "scripts/verify-site-proofs.mjs",
+      "line": 91,
+      "condition": "unknown.length > 0",
+      "diagnostic": "verify-site-proofs: cannot read ${relative(ROOT, INVENTORY) || INVENTORY} -- ${String(error)}\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/site-proofs.test.ts"
+    },
+    {
+      "script": "scripts/verify-site-proofs.mjs",
+      "line": 102,
+      "condition": "claimed.length === 0",
+      "diagnostic": "verify-site-proofs: ${relative(ROOT, INVENTORY) || INVENTORY} holds no proved site,",
+      "status": "proved",
+      "provedBy": "packages/core/test/site-proofs.test.ts"
+    },
+    {
+      "script": "scripts/verify-site-proofs.mjs",
+      "line": 201,
+      "condition": "problems.length > 0",
+      "diagnostic": "verify-site-proofs: FAILED -- ${String(failures)} problem(s)\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/site-proofs.test.ts"
     }
   ]
 }

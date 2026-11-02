@@ -280,3 +280,104 @@ writeFileSync(out, text);
 The message stays word for word, because the message was right and the code was not. The new test
 asserts the claim rather than the message: the document is compared byte for byte against what it was
 before the run, and the snapshot is asserted absent.
+
+## Finding 357 — `provedBy` named a file that never reached the exit
+
+`golden-master/gate-sites.json` records, for each of its failure sites, the test file that proves
+it. Three rules in `gate-sites-are-proven.test.ts` read that column:
+
+- rule 3 asks whether the named file **mentions** the script;
+- rule 7 asks whether the named file **executes** it, at file level;
+- rule 2 asks whether a status was given at all.
+
+None of them is site level, and the inventory's own sentence is site level: *this test makes this
+exit fire*. A file that runs a gate fifteen times for one exit satisfies all three while never
+reaching a sixteenth.
+
+### The measurement
+
+`process.exit` is the one point every failure site passes through, so the question is answerable by
+observation rather than by reading. A `--require` hook replaces `process.exit` in every descendant,
+records the innermost frame that is a script under `scripts/`, and then calls the original:
+
+```
+NODE_OPTIONS=--require=<hook> RCA_SITE_TRACE=<log> node <vitest> run test/<claimant>.test.ts
+```
+
+One child per claimant file, because pooling the files answers "was this exit reached by somebody",
+which is not the claim. Run against the tree that prompted it: **96 claims, 43 files, 119 s**.
+Two were false.
+
+| site | published witness | what the hook saw |
+| --- | --- | --- |
+| `scripts/check-cli-reference.mjs:51` | `check-cli-reference.test.ts` | `…:301` only — the empty-table exit was reached in `gates-are-testable.test.ts` |
+| `scripts/verify-scorer-stability.mjs:306` | `verify-scorer-stability-script.test.ts` | no `scripts/verify-scorer-stability.mjs` line at all |
+
+The first is a pointer one branch off. The second is worse: the file was named, the file drove that
+script, and not one of its fifteen exits was the one claimed.
+
+### The repair, and why it is not an edit to the pointer
+
+Re-pointing the first claim at `gates-are-testable.test.ts` would have made the inventory true and
+the file's own header false -- `check-cli-reference.test.ts` said, in a paragraph written when it was
+first drafted, that *"`gates-are-testable.test.ts` already covers this gate's first exit"*. Both were
+true in different senses: the exit was reached somewhere and nothing in that file reached it. So the
+witness was made real instead: the file now has a case that writes a reference with no command table
+and asserts the refusal, and the header says the duplication is deliberate -- one file proves the gate
+is testable, the inventory names a witness for the exit.
+
+`check-cli-reference.test.ts` now fires line 51. That is the difference between an inventory and a
+claim: it was fixed by producing the evidence rather than by moving the label.
+
+### The gate
+
+`scripts/verify-site-proofs.mjs` runs the measurement above for every claim and fails naming the site
+and the file. It is wired into `pnpm lint`, which the `verify` job runs, so the next false pointer
+fails a build. Its four verdicts -- a missing inventory, an inventory with no claim, a claim that did
+not fire, a claimant that could not be run -- are each driven by `site-proofs.test.ts` through
+`RCA_SITE_PROOFS_*` environment variables, since none of the four can be produced against the shipped
+tree.
+
+The three static rules stay. They are a pre-check that costs milliseconds; this is the experiment that
+costs two minutes. A gate that has to run the suite to answer a question is not a replacement for one
+that reads the file, and the reading was never wrong -- it was answering a smaller question than its
+sentence.
+
+## Finding 358 — the arm that reports a failed property had never executed
+
+`scripts/verify-scorer-stability.mjs` ends with
+
+```js
+if (failures.length > 0) {
+  console.log(`FAILED: ${failures.length} propert(y/ies)`);
+  process.exit(1);
+}
+```
+
+and `verify-scorer-stability-script.test.ts` has six cases whose names all say *refuses*: an
+unparseable dataset, an empty expectation, a duplicate id. Every one of them drives the gate through
+`parseGoldenDataset`, which throws before the first `check()` runs. The gate's refusals were all
+**parser** refusals, and the property-failure arm -- the one that says *the scorer broke a property*,
+which is a different repair -- had never run in any test, any job, or any local invocation.
+
+The two arms are not interchangeable. A parser refusal means the dataset is unusable; a property
+failure means the instrument is broken. Reading the first as evidence for the second is the shape this
+volume opened with.
+
+### The case that reaches it
+
+One sample. The mixed fixture answers the first sample's every expected field correctly, so
+`samplesWithMisses` is 0 while the graded count is 1, and the check that requires the two to differ has
+nothing to differ with:
+
+```
+before:  six "refuses" cases, all of them parser refusals; line 306 unexecuted
+after:   13 cases, one of which reaches the property arm
+```
+
+The gate is right to refuse that dataset: a fixture that cannot exhibit the failure it looks for proves
+nothing, which is the same judgement its own header makes about the saturated fixture. The new case
+asserts the *distinction* rather than the count -- exit 1 with `FAILED: N propert(y/ies)`, at least one
+`PASS` line before it, and no `ALL PROPERTIES HOLD` -- and it was proved by mutation: with
+`failures.push` disabled the case fails on `expected +0 to be 1`, and the gate was restored byte for
+byte.

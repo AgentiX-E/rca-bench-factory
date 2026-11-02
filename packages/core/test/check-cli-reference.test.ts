@@ -24,11 +24,15 @@ const DRIVES = [
 /**
  * `scripts/check-cli-reference.mjs` — the **drift report**, not the empty table.
  *
- * `gates-are-testable.test.ts` already covers this gate's first exit: a
- * reference whose command table has been deleted or renamed. What it does not
- * cover is the exit that fires when the reference and the binary *disagree* --
- * the one the gate exists for, and the one whose diagnostic an operator
- * actually reads.
+ * `gates-are-testable.test.ts` covers this gate's first exit -- a reference whose
+ * command table has been deleted or renamed -- and so does the first case below.
+ * The duplication is deliberate: that file proves the *gate* is testable, while
+ * `golden-master/gate-sites.json` names a witness for the *exit*, and until the
+ * case below existed the witness it named reached line 301 and not line 51.
+ *
+ * What those cases do not cover is the exit that fires when the reference and the
+ * binary *disagree* -- the one the gate exists for, and the one whose diagnostic an
+ * operator actually reads.
  *
  * ## The half that is easy to get wrong
  *
@@ -149,6 +153,26 @@ describe('scripts/check-cli-reference.mjs · the drift report', () => {
     // zero commands would satisfy every assertion above and mean nothing.
     expect((await advertisedTopics()).length).toBeGreaterThan(1);
     expect(readFileSync(REFERENCE, 'utf8')).toContain('## Implemented commands');
+  });
+
+  it('refuses a reference with no command table, rather than reporting zero drift', { timeout: 30_000 }, async () => {
+    // This file's own header used to say that `gates-are-testable.test.ts` covered
+    // this exit, and the inventory published *this* file as its witness anyway. Both
+    // were true in different senses: the exit was reached somewhere, and nothing here
+    // reached it. `scripts/verify-site-proofs.mjs` is what made the difference
+    // visible -- the hook recorded that this file fires line 301 and never line 51.
+    //
+    // The exit matters because it is the one that stops the gate from reporting a
+    // clean run over an empty set. A reference whose heading was renamed -- which is
+    // what a documentation rewrite does -- would otherwise pass with
+    // `PASSED (0 commands, 0 documented)`.
+    const result = await run(treeWith('# CLI reference\n\nThe table moved somewhere else.\n'));
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('no command table found');
+    expect(result.stderr).toContain('docs/cli-reference.md');
+    // And it does not go on to report drift it cannot have measured.
+    expect(result.stderr).not.toContain('PASSED');
   });
 
   it('refuses a command the binary implements but the reference omits', { timeout: 30_000 }, async () => {

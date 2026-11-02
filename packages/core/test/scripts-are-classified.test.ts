@@ -236,6 +236,15 @@ const REGISTER: Record<string, Entry> = {
       'the file\'s. No main and no exit -- check-progress-volumes.mjs holds the verdict and is spawned, ' +
       'because a gate that a test imports cannot be proved by emptying it.',
   },
+  'site-proofs.mjs': {
+    class: 'data',
+    why:
+      'The hook, the trace parser and the per-file comparison, split out so the gate can be ' +
+      'emptied without the reading dying with it -- the same reason `gate-proofs.mjs` is here. ' +
+      'Every one of its three questions is a thing that was wrong in the safe direction once: a ' +
+      'parser that kept the test frames would make every claim look honoured, and a comparison ' +
+      'pooled across files would hide a pointer to the wrong file.',
+  },
   'gate-proofs.mjs': {
     class: 'data',
     why:
@@ -370,6 +379,12 @@ const REGISTER: Record<string, Entry> = {
   'score-fault-extraction.mjs': { class: 'gate' },
   'verify-example-pack.mjs': { class: 'gate' },
   'verify-scorer-stability.mjs': { class: 'gate' },
+  // The proof inventory's own gate. Its subject is `provedBy`, and the reading it
+  // makes is an experiment rather than a scan: one vitest per claimant file with a
+  // hook on `process.exit`. Measured before it was written, 96 claims went in and two
+  // came out false -- one a pointer naming a file that reached a different exit, one a
+  // file that never reached the arm at all.
+  'verify-site-proofs.mjs': { class: 'gate' },
   'verify-reader-against-backend.mjs': { class: 'gate' },
   // A gate whose subject is other gates: it empties each `check-*.mjs` and fails
   // if any of them can be emptied with no test noticing. Found by measurement

@@ -257,6 +257,40 @@ describe('scripts/verify-scorer-stability.mjs · it refuses a broken property', 
     expect(result.stdout).not.toContain('ALL PROPERTIES HOLD');
   });
 
+  it('reports a failed property as a property failure, not as a crash', () => {
+    // The arm this drives is the one that says `FAILED: N propert(y/ies)`. Until this
+    // test existed nothing reached it: every refusal above is a *parser* refusal, so
+    // the gate died with a message about the dataset and the property-reporting arm
+    // had never executed -- which `scripts/verify-scorer-stability.mjs:306` was
+    // nevertheless published as proved. The distinction matters because the two arms
+    // say different things to a reader: "the dataset is unusable" and "the scorer
+    // broke a property" are different repairs.
+    //
+    // One sample is what makes a property fail rather than the parser. The mixed
+    // fixture answers the first sample correctly, so with a single sample
+    // `samplesWithMisses` is 0 while the graded count is 1, and the check that says
+    // the two must differ has nothing to differ with. The gate is right to refuse:
+    // a fixture that cannot exhibit the failure it looks for proves nothing.
+    const one = structuredClone(DATASET);
+    one.samples = [
+      {
+        id: 'only-sample',
+        incidentText: 'a single incident, enough to grade and not enough to compare',
+        expected: { type: DATASET.samples[0]!.expected['type'] as string },
+      },
+    ];
+    const result = run(treeWith(one));
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('FAILED: ');
+    expect(result.stdout).toMatch(/FAILED: \d+ propert\(y\/ies\)/);
+    expect(result.stdout).not.toContain('ALL PROPERTIES HOLD');
+    // And it reaches the other checks before refusing, so one failing property does
+    // not hide the rest -- the same thing the healthy-tree test above asserts from
+    // the other side.
+    expect(result.stdout).toMatch(/^PASS /m);
+    expect(result.stdout).toMatch(/^FAIL  /m);
+  });
+
   it('writes no artefact, so running it cannot make a tree look checked', () => {
     const before = readFileSync(resolve(ROOT, 'scripts', SCRIPT), 'utf8');
     run(resolve(ROOT, 'scripts', SCRIPT));

@@ -527,8 +527,9 @@ export const STEP_PLAN = {
   },
   'verify / Build (core then cli; cli resolves core\'s dist)': { local: true },
   'verify / Type-check': { local: true },
-  'verify / Lint (no mock / no secrets / no vendored data / registry / absolute paths / scorer stability)': {
+  'verify / Lint (no mock / no secrets / no vendored data / registry / absolute paths / scorer stability / site proofs)': {
     local: true,
+    note: 'the site-proof gate spawns one vitest per claimant file, measured at ~110 s',
   },
   'verify / Test with coverage (core + cli, ≥95% per dimension, 100% functions)': {
     local: true,
