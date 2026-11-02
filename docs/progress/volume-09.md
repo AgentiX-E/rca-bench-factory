@@ -2465,9 +2465,9 @@ reproduces it. What changes is not the verdict but the number of round trips to 
 
 | item | value |
 | --- | --- |
-| `core` test suite | **223 files, 5511 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **227 files, 5698 tests passed** (as of this commit) |
+| `core` test suite | **223 files, 5511 tests passed** (as of `476fc71`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `476fc71`) |
+| repo test suite | **227 files, 5698 tests passed** (as of `476fc71`) |
 | coverage, four dimensions | **99.96 / 99.75 / 100 / 99.96** -- unchanged; no file under `src/` was touched |
 | new tests | **12**, all in `site-proofs.test.ts` (18 -> 30) |
 | claims measured | **100 of 100** honoured, 44 files, 107 s |
@@ -2481,7 +2481,7 @@ reproduces it. What changes is not the verdict but the number of round trips to 
   and no threshold, so fitting one would be a decision dressed as a transcription.
   `[open: §4.4 states the fallback and stops there, and a threshold invented here would be this tree's number wearing the protocol's name]`
 - **A key whose description carries no keyword scores 0.** Unchanged; recorded as a gap.
-  `[open: no published rule prices a key whose description yields no keyword, so 0 is this tree's choice]`
+  `[open: the protocol is silent about a description that yields no keyword, and this tree's choice to pay nothing is a choice]`
 - **The per-site mutation pass, 6 min 28 s, is still not a CI step.** It is the difference between a
   witness that reaches a site and a witness that is *sensitive* to it, and it is the strongest check
   this repository has that no job runs.
@@ -2489,7 +2489,7 @@ reproduces it. What changes is not the verdict but the number of round trips to 
 - **Blindness is observed one level deep.** The hook sees a child whose *parent* was instrumented. A
   grandchild started by an uninstrumented wrapper -- `pnpm exec node scripts/x.mjs` is the live case --
   is observed only if it inherits, and if it does not, nothing records that it existed.
-  `[open: the spawn record covers direct children, and a wrapper's child is only visible when the wrapper inherits]`
+  `[open: the record covers direct children only, and a wrapper's child appears only when that wrapper inherits]`
 - **`failureSummary` reads one reporter's shape.** It was written against `--reporter=dot` as measured
   on this tree; a reporter change would leave the detail empty while the verdict stayed right.
   `[open: the extraction is pinned by fixtures built from the measured output, not by a contract vitest publishes]`
@@ -2500,3 +2500,120 @@ The corpus, the answer keys, the checkpoints, the score targets, the export, the
 every budget the plan enforces. Nothing under `packages/*/src/` moved. The gate's four verdicts and
 its two-minute cost on the `verify` job are unchanged; only what it says about a run that could not
 measure, and about a run that failed, is new.
+
+## v3.41 — the other half of a proof: a witness can reach an exit and not mind it
+
+P3 was the oldest item on v3.40's list -- open since v3.33, when the per-site pass was 93 sub-runs and
+6 min 28 s, done by hand, with a ledger checked by eye at each revision. It asks a different question from
+v3.39's. That one asked whether a claimant **reaches** the exit it names. This one asks whether it would
+**mind** the exit's absence: a test that drives a gate, watches it fail and asserts nothing about the
+failure reaches every exit the gate has, and would go on passing if the gate stopped failing altogether.
+Every `provedBy` rests on reach, and reach is half a proof.
+
+This round measured the other half: **105 claims, 45 files, 150 runs, 3.3 minutes, 0 survivors.**
+
+### One: the mutant is a value, not an edit
+
+The hand pass in v3.33 edited files -- replace one `process.exit(1)` with `0`, run the claimant, put it
+back. That is also what `verify-gates-are-testable.mjs` does, and it needs a journal, a precondition
+against measuring an already-mutated tree, a process-group kill and a restore check because **an edited
+tree stays edited**: one measured accident left twelve scripts carrying the marker at once.
+
+The hook already computes the frame that decides reach, so the mutant is one branch on top of it:
+`RCA_HOLLOW_SITE` names one site, and from that frame the hook calls `process.exit(0)` instead of the code
+the gate asked for. Not one byte of the tree changes, so the journal, the precondition, the restore and
+the kill are all unnecessary -- what was never edited cannot be left behind.
+
+Three properties are asserted rather than intended: only the named frame is replaced (a hook that
+hollowed anything would turn every failure into success and every witness would look sensitive to
+everything); the mutant run writes a trace too (see the third section); and nothing changes in a process
+that did not load the hook.
+
+### Two: measure first -- 8 min 54 s serial, 3 min 20 s at four
+
+The cost is one baseline per file plus one run per claim. The baseline cannot be dropped: a claimant that
+is red on its own would **catch** every mutant applied to it, so a broken suite would read as 100%
+sensitive. Both figures below are measured, not estimated:
+
+| | claims | files | runs | wall clock |
+| --- | --- | --- | --- | --- |
+| serial probe | 100 | 44 | 144 | **8 min 54 s** |
+| four at a time (32 cores here) | 105 | 45 | 150 | **3 min 20 s** |
+
+Four is the number of cores a GitHub runner has crossed with "one vitest run of a single file does not
+saturate a core". The ratio lives in `RCA_SENSITIVE_CONCURRENCY` so it can be re-measured on a different
+machine rather than believed.
+
+### Three: a green run means three things, and only one is "survived"
+
+A mutant run that passes may mean the witness does not care, or that the mutant **never arrived** -- the
+claimant built its own environment and dropped `NODE_OPTIONS` and `RCA_HOLLOW_SITE` together (finding
+359's fact, one question over). So the hook writes `hollow <site>` before it replaces the code, and the
+gate reads the marker:
+
+| that run | what it means | the repair |
+| --- | --- | --- |
+| went red | the witness depends on this exit | none |
+| green, and the trace holds `hollow` | **survived**: it reached the exit and does not depend on it | add the assertion, or move the pointer |
+| green, and the trace holds nothing | the mutant did not arrive, so nothing was measured | fix the measurement, not the inventory |
+
+Reading the third as the first is using the instrument's blindness to accuse a test -- finding 359's
+mistake, asked again in a new place.
+
+### Four: the two mistakes this round made
+
+Recorded because "the tool is wrong too" is a shape this audit has written down repeatedly:
+
+| mistake | what it did | what caught it |
+| --- | --- | --- |
+| `pool([...byFile.keys()], …)` passed the indices | `paths[1]` received `0`, `TypeError` | the first real run |
+| `parseHollows` returned a `Set`, the caller used `.includes` | three cases failed with `not a function` | the cases written this round |
+
+The second is the old shape of one contract written in two languages: the parser and its caller each
+spell the type, and the compiler cannot see into a `.mjs`.
+
+### Readings
+
+> Ledger for `v3.41`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **224 files, 5528 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **228 files, 5715 tests passed** (as of this commit) |
+| coverage, four dimensions | **99.96 / 99.75 / 100 / 99.96** -- unchanged; nothing under `packages/*/src/` moved |
+| new tests | **17**: 12 in `verify-sites-are-sensitive.test.ts`, 5 in `site-proofs.test.ts` (30 -> 35) |
+| claims reached | **105 of 105**, 45 files, 1 min 58 s |
+| claims sensitive | **105 of 105**, 150 runs, 3 min 20 s at four at a time |
+| failure sites | **112** across 56 scripts (was 107 across 55): the new gate's five exits, each proved by the file written for them |
+| CI | a sixth job, `sensitivity`, 15-minute budget, beside the batteries rather than behind them, so the workflow's wall clock is unchanged |
+
+### Left open
+
+- **The embedding fallback is still missing**, seventh round. The paper names no model and no threshold,
+  and a number chosen here would be this tree's number wearing the protocol's name.
+  `[open: §4.4 names neither a model nor a cut-off, and picking one here would grade the protocol with this tree's number]`
+- **A key whose description carries no keyword scores 0.** Unchanged, recorded as a gap.
+  `[open: no published rule prices a key whose description yields no keyword, so 0 is this tree's choice]`
+- **The pass grows with the claim count.** One baseline per file plus one run per claim: 150 today, and
+  every site added later buys one. At four at a time that is about 1.3 s per claim, so the 15-minute
+  budget holds to roughly 500.
+  `[open: the cost is linear in a number this round made larger, and the budget came from one measurement]`
+- **The mutant replaces `process.exit(code)`.** A gate that reported failure by setting
+  `process.exitCode = 1` and returning would be invisible to it -- measured rather than assumed:
+  `scripts/` uses that spelling zero times today.
+  `[open: the instrument covers one spelling of "reports failure", and this tree happens to use only that one]`
+- **Blindness is observed one level deep.** Unchanged: a wrapper's child is visible only when the wrapper
+  inherits.
+  `[open: the spawn record covers direct children, and a wrapper's child is only visible when the wrapper inherits]`
+- **A `catch` arm's `condition` is the previous `if`'s.** Found while reading the new entries:
+  `verify-site-proofs.mjs:109` and `verify-sites-are-sensitive.mjs:132` both publish
+  `condition: "unknown.length > 0"` for a refusal that lives in a `catch`. The column is the deriver's,
+  and it looks backwards for an `if`.
+  `[open: the deriver has no spelling for a catch arm, so it inherits the last condition it saw]`
+
+### Unchanged
+
+The corpus, the answer keys, the checkpoints, the score targets, the export, the pool's price, and every
+budget the plan enforces. Nothing under `packages/*/src/` moved. This round's subject is the sentence that
+a test proves a failure site, and the instrument that reads it.

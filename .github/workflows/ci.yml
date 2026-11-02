@@ -190,6 +190,55 @@ jobs:
       - name: A reader, against that backend
         run: node scripts/verify-reader-against-backend.mjs
 
+  # The other half of a proof. `verify-site-proofs.mjs` asks whether a witness reaches
+  # the exit it claims; this asks whether it would notice that exit's absence. A test
+  # that drives a gate, watches it fail and asserts nothing about the failure reaches
+  # every exit the gate has and would still pass if the gate stopped failing -- so it
+  # proves that the gate ran, not that the exit it claims exists.
+  #
+  # Why its own job: it is a mutation pass of 150 claimant runs, three minutes at four
+  # at a time. The pass edits nothing -- the exit code is replaced inside the child --
+  # so it would be safe beside the coverage run, but three more minutes inside a
+  # fifteen-minute budget that already spends six is a bound waiting to fire. Parallel,
+  # so the workflow's wall clock is still the batteries.
+  sensitivity:
+    name: every proved exit can disappear without a word
+    runs-on: ubuntu-latest
+    # Measured: 3 min 20 s for 150 runs at four at a time on the machine this was
+    # written on, plus an install and a build. Twice that is the budget, and it is
+    # bounded so that a hang is reported as a budget being spent.
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The claimants are the same files `verify` runs, so this job needs the same
+      # shells: the pass spawns each claimant, not a subset of them. Registered in
+      # `SUITE_JOB_IDS` for that reason -- a job that runs the suite without the
+      # shells the suite cross-checks against is a job whose verdicts depend on which
+      # runner it landed on (finding 130).
+      - name: Install the shells the suite cross-checks against
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
+      - name: Build (core then cli; cli resolves core's dist)
+        run: pnpm build
+
+      - name: Every proved exit can disappear without a word
+        run: node scripts/verify-sites-are-sensitive.mjs
+
   # The injection batteries. This is the long pole -- everything else in the workflow
   # fits in two minutes -- so it gets its own job and its own budget.
   #

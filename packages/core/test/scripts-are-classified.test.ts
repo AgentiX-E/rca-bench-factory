@@ -392,6 +392,13 @@ const REGISTER: Record<string, Entry> = {
   // "3 of 8 gates" while all thirteen were already caught -- the row was counting
   // the mechanism rather than the property.
   'verify-gates-are-testable.mjs': { class: 'gate' },
+  // The second half of a proof, and the reason it is a gate rather than a battery
+  // step: it decides whether each `provedBy` claim is a proof at all. A witness that
+  // reaches an exit and passes whatever the exit does is a witness of the gate having
+  // run, and `verify-site-proofs.mjs` cannot tell the two apart -- it asks about
+  // reach. Measured before it was written: 100 claims, 0 survivors, which is what
+  // makes it worth a job that runs on every push instead of a ledger checked by hand.
+  'verify-sites-are-sensitive.mjs': { class: 'gate' },
 
   // --- Probes: a literal failure exit, enumerated in gate-sites.json ---
   'probe-agreement-baseline.mjs': { class: 'probe' },

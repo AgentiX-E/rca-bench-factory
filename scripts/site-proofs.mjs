@@ -53,12 +53,29 @@
  *
  * The third state is a fact about the *measurement*, and the gate prints it as one.
  *
+ * ## The second question, and why it is the same instrument
+ *
+ * "This file reached the exit" is one half of a proof. The other half is "and it
+ * would notice if the exit stopped failing" -- a witness that reaches a site and
+ * passes anyway is a witness that proves nothing about it, and no amount of
+ * reaching distinguishes the two. The hook already computes the frame that decides
+ * reachability, so the mutant is one line on top of it: `RCA_HOLLOW_SITE` names one
+ * site, and the hook calls `process.exit(0)` from that frame instead of the code the
+ * gate asked for. Nothing is written to the tree, which is the difference between
+ * this and `verify-gates-are-testable.mjs` -- that one hollows a whole gate on disk
+ * and needs a journal, a precondition and a restore path, none of which is necessary
+ * when the edit is a value rather than a file.
+ *
+ * Verified per site, not per file: a file sensitive to one of its exits says nothing
+ * about the other nine. Measured on this tree, per site: **100 claims, 44 files, 0
+ * survivors** -- every claimed exit can disappear and some test goes red.
+ *
  * ## What this module does not decide
  *
- * Nothing. `claimedSites` reads the inventory, `parseTrace` and `parseSpawns` read a
- * run, `failureSummary` reads a failed run's own report, and `unprovenClaims`
- * compares those facts. The gate decides what to print and which code to exit with,
- * for the reason `gate-proofs.mjs` gives: a gate is proved by being emptied, so its
+ * Nothing. `claimedSites` reads the inventory, `parseTrace`, `parseSpawns`,
+ * `parseHollows` and `failureSummary` read a run, and `unprovenClaims` compares
+ * those facts. The gates decide what to print and which code to exit with, for the
+ * reason `gate-proofs.mjs` gives: a gate is proved by being emptied, so its
  * decision cannot live in a file a test imports.
  */
 
@@ -85,26 +102,49 @@ import { writeFileSync } from 'node:fs';
  *   - it never breaks a spawn. The wrappers call the original and return its result;
  *     a spawn that cannot be noted is still a spawn, and a measurement may not
  *     become a failure of the thing it measures.
+ *
+ * And one property of the mutant arm: it records that it applied before it replaces
+ * the code, so a run that stayed green because the mutant never arrived is a
+ * different reading from a run that stayed green after it did.
  */
 export const HOOK_SOURCE = [
   "const fs = require('node:fs');",
   'const out = process.env.RCA_SITE_TRACE;',
+  'const hollow = process.env.RCA_HOLLOW_SITE || "";',
   'const original = process.exit.bind(process);',
   'process.exit = function tracedExit(code) {',
-  '  try {',
-  '    if (out) {',
+  '  let frame = null;',
+  '  // Reading the stack costs something, so it is read only when a question was',
+  '  // asked. Every other process in the tree -- the runner, its workers, the gates',
+  '  // themselves -- is untouched.',
+  '  if (out || hollow !== "") {',
+  '    try {',
   '      const stack = String(new Error().stack);',
-  '      for (const frame of stack.split("\\n").slice(1, 12)) {',
-  '        const hit = /\\(?(\\/.*?\\/scripts\\/[A-Za-z0-9._-]+\\.mjs):(\\d+):\\d+\\)?/.exec(frame);',
+  '      for (const line of stack.split("\\n").slice(1, 12)) {',
+  '        const hit = /\\(?(\\/.*?\\/scripts\\/[A-Za-z0-9._-]+\\.mjs):(\\d+):\\d+\\)?/.exec(line);',
   '        if (hit !== null) {',
-  '          fs.appendFileSync(out, hit[1] + ":" + hit[2] + "\\n");',
+  '          frame = hit[1] + ":" + hit[2];',
   '          break;',
   '        }',
   '      }',
+  '    } catch {',
+  '      // A frame that cannot be read is a measurement that failed, not a gate',
+  '      // that failed. Swallowing it here is what keeps the verdict the child`s.',
+  '    }',
+  '  }',
+  '  try {',
+  '    if (out && frame !== null) fs.appendFileSync(out, frame + "\\n");',
+  '    // The other half of the question: an exit that stops failing. The line is',
+  '    // written before the code is replaced, because "this mutant was applied here"',
+  '    // and "this exit was reached" are different facts and the reading below needs',
+  '    // both -- a green run whose mutant never arrived is not a survivor.',
+  '    if (hollow !== "" && frame !== null && frame.endsWith("/" + hollow)) {',
+  '      if (out) fs.appendFileSync(out, "hollow " + hollow + "\\n");',
+  '      return original(0);',
   '    }',
   '  } catch {',
-  '    // A trace that cannot be written is a measurement that failed, not a gate',
-  '    // that failed. Swallowing it here is what keeps the child`s verdict its own.',
+  '    // Same rule: writing the trace may fail, and a measurement that failed is not',
+  '    // a verdict about the gate.',
   '  }',
   '  return original(code);',
   '};',
@@ -176,11 +216,31 @@ export function hookFile(dir) {
 export function parseTrace(text) {
   const found = new Set();
   for (const line of String(text).split('\n')) {
-    if (line.startsWith('spawn ')) continue;
+    if (line.startsWith('spawn ') || line.startsWith('hollow ')) continue;
     const hit = /\/scripts\/([A-Za-z0-9._-]+\.mjs):(\d+)\s*$/.exec(line);
     if (hit !== null) found.add(`scripts/${hit[1]}:${hit[2]}`);
   }
   return [...found].sort();
+}
+
+/**
+ * The sites one run was asked to hollow, and actually did.
+ *
+ * `RCA_HOLLOW_SITE` names one site; the hook records the moment it replaces that
+ * site's exit code with zero. The record is what separates two answers that look
+ * identical from outside: a witness that did not notice the exit stop failing, and
+ * a mutant that never arrived in the child that reached the exit. The first is a
+ * defect in the test; the second is a defect in the measurement, and crediting it as
+ * the first would accuse the tree of the instrument's blindness -- finding 359's
+ * mistake, one question over.
+ */
+export function parseHollows(text) {
+  const found = [];
+  for (const line of String(text).split('\n')) {
+    const hit = /^hollow (scripts\/[A-Za-z0-9._-]+\.mjs:\d+)\s*$/.exec(line);
+    if (hit !== null && !found.includes(hit[1])) found.push(hit[1]);
+  }
+  return found.sort();
 }
 
 /**
@@ -264,6 +324,24 @@ export function claimedSites(inventory) {
     });
   }
   return claims;
+}
+
+/**
+ * The claims grouped by the file that makes them, in a stable order.
+ *
+ * Both gates ask this question -- one runs the file once and reads its trace, the
+ * other runs it once per claim -- and a grouping written twice is a grouping that
+ * can sort one list and not the other. `--list` output and the run order come from
+ * here, so a reader comparing the two plans is comparing the same sequence.
+ */
+export function claimsByFile(claimed) {
+  const groups = new Map();
+  for (const claim of claimed) {
+    const list = groups.get(claim.file) ?? [];
+    list.push(claim);
+    groups.set(claim.file, list);
+  }
+  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
 
 /**

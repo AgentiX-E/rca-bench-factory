@@ -1,8 +1,8 @@
 {
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
-  "scanned": 74,
+  "scanned": 75,
   "excluded": {
-    "zero": 14,
+    "zero": 15,
     "indirect": 3,
     "multiline": 0
   },
@@ -838,6 +838,46 @@
       "diagnostic": "verify-site-proofs: FAILED -- ${String(failures)} problem(s)\\n",
       "status": "proved",
       "provedBy": "packages/core/test/site-proofs.test.ts"
+    },
+    {
+      "script": "scripts/verify-sites-are-sensitive.mjs",
+      "line": 113,
+      "condition": "unknown.length > 0",
+      "diagnostic": "usage: node scripts/verify-sites-are-sensitive.mjs [--list]\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/verify-sites-are-sensitive.test.ts"
+    },
+    {
+      "script": "scripts/verify-sites-are-sensitive.mjs",
+      "line": 122,
+      "condition": "!Number.isInteger(CONCURRENCY) || CONCURRENCY < 1",
+      "diagnostic": "verify-sites-are-sensitive: RCA_SENSITIVE_CONCURRENCY must be a positive integer,",
+      "status": "proved",
+      "provedBy": "packages/core/test/verify-sites-are-sensitive.test.ts"
+    },
+    {
+      "script": "scripts/verify-sites-are-sensitive.mjs",
+      "line": 132,
+      "condition": "!Number.isInteger(CONCURRENCY) || CONCURRENCY < 1",
+      "diagnostic": "verify-sites-are-sensitive: cannot read ${relative(ROOT, INVENTORY) || INVENTORY} -- ${String(error)}\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/verify-sites-are-sensitive.test.ts"
+    },
+    {
+      "script": "scripts/verify-sites-are-sensitive.mjs",
+      "line": 143,
+      "condition": "claimed.length === 0",
+      "diagnostic": "verify-sites-are-sensitive: ${relative(ROOT, INVENTORY) || INVENTORY} holds no proved site,",
+      "status": "proved",
+      "provedBy": "packages/core/test/verify-sites-are-sensitive.test.ts"
+    },
+    {
+      "script": "scripts/verify-sites-are-sensitive.mjs",
+      "line": 332,
+      "condition": "unmeasured.length > 0",
+      "diagnostic": "verify-sites-are-sensitive: FAILED -- ${String(failures)} problem(s)\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/verify-sites-are-sensitive.test.ts"
     }
   ]
 }

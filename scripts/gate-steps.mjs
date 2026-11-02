@@ -540,6 +540,12 @@ export const STEP_PLAN = {
     note: 'depends on the coverage step having written both reports, which the order guarantees',
   },
   'verify / Mutation suite (gate + export, 100% interception)': { local: true },
+  'sensitivity / Install dependencies': { local: true },
+  'sensitivity / Install the shells the suite cross-checks against': {
+    remoteOnly: 'installs zsh through apt, which needs sudo and a package index',
+  },
+  'sensitivity / Build (core then cli; cli resolves core\'s dist)': { local: true },
+  'sensitivity / Every proved exit can disappear without a word': { local: true },
 
   // ---- backend --------------------------------------------------------------
   //

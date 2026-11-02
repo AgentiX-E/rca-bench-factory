@@ -487,3 +487,118 @@ reproduces it:
 
 The distinction being kept is the same one this volume keeps making: *unmeasured* is a statement about
 the run, and it is only useful if it says what about the run.
+
+## Finding 361 — `provedBy` was a claim about reach, and reach is half a proof
+
+Three rounds have now taken this column apart from three sides. Finding 357 found pointers that named a
+file which *mentioned* the script; v3.39 found pointers that named a file which *executed* it but at file
+level; `verify-site-proofs.mjs` closed both by running each claimant once and reading whether the exit
+arrived. What every one of those measurements still assumed is that arriving is what a proof is.
+
+It is not. Take the smallest witness this repository could write:
+
+```ts
+spawnSync(process.execPath, [gate], { encoding: 'utf8' });
+expect(failures.length).toBeGreaterThan(0);
+```
+
+That file reaches every failure exit the gate has, on every run, and the trace will say so. It would also
+pass if `process.exit(1)` became `process.exit(0)` at every site at once -- because it never reads the
+status. The sentence the inventory publishes is that this test *proves* the site, and the only thing it
+proves is that the gate was executed. A `provedBy` pointer is a claim with two parts, and the instrument
+measured the first.
+
+### The property had been measured once, by hand, in a way that could not be repeated
+
+v3.33 did it: 93 sub-runs, 6 min 28 s, each one an edit of a gate's exit code followed by a run of the
+named test. It found 88 of 93 caught at `process.exit(44)` and 89 of 93 at `process.exit(0)`, added two
+cases for the two that no test drove at all, and left the pass out of CI because a third of the batteries
+budget was not affordable. Since then the ledger has been checked by eye at each revision, which is the
+same sentence as "not checked": the claim count has gone from 93 to 105.
+
+The hand method also carried a cost that has nothing to do with minutes. `verify-gates-are-testable.mjs`
+hollows gates on disk for a living, and it needs a journal, a precondition that refuses to measure an
+already-mutated tree, a process-group kill for the nested suite, and a read-back comparison after every
+restore -- because an edited tree stays edited. One measured accident there left **twelve scripts carrying
+the mutation marker at once**, eight of them carrying two or three.
+
+### The mutant is a value
+
+The hook already computes the innermost `scripts/*.mjs` frame of every `process.exit`, because that is
+what deciding reach requires. Replacing the code is one branch on top of that computation:
+
+```js
+if (hollow !== "" && frame !== null && frame.endsWith("/" + hollow)) {
+  if (out) fs.appendFileSync(out, "hollow " + hollow + "\n");
+  return original(0);
+}
+```
+
+`RCA_HOLLOW_SITE=scripts/check-cli-reference.mjs:51` and every `process.exit` from that line returns
+success instead. Nothing is written to the tree, so the journal, the precondition, the restore and the
+kill are not needed -- what was never edited cannot be left behind. That is the difference between
+mutating a **file** and mutating a **call**.
+
+The one property that had to be checked rather than assumed is aim. A wrapper that hollowed whatever it
+was told would turn every failure in the child into success, and every claimant would look sensitive to
+everything; so the frame is compared before the code is replaced, and the control case (a mutant aimed at
+an exit this run does not take) is a test.
+
+### What the pass costs, measured twice
+
+The unit is one baseline per file plus one run per claim, and the baseline is not optional: a claimant
+that is red on its own **catches** every mutant applied to it, so skipping the baseline would read a
+broken suite as a hundred percent sensitive.
+
+| run | claims | files | runs | wall clock |
+| --- | --- | --- | --- | --- |
+| serial probe, before the gate existed | 100 | 44 | 144 | **8 min 54 s** |
+| four at a time, after | 105 | 45 | 150 | **3 min 20 s** |
+
+Per site and not per file, deliberately. A file sensitive to one of its exits says nothing about the other
+nine, and pooling would answer "somebody noticed something" -- the same substitution `verify-site-proofs`
+refused when it declined to pool the files.
+
+### The reading
+
+**105 claims, 45 files, 150 runs, 0 survivors.** Every exit the inventory calls proved can be replaced by
+success and some test goes red. The number is not the interesting part -- the number existing is, because
+until this run the claim had been checked once, by hand, at a claim count fourteen lower.
+
+The pass is now a CI job of its own, beside the batteries rather than behind them, so the workflow's wall
+clock does not move; the 15-minute budget is twice the measured pass plus an install.
+
+## Finding 362 — a green mutant run means three things, and only one of them is "survived"
+
+The first version of the gate read `status === 0` as SURVIVED and `status !== 0` as CAUGHT, which is the
+shape every mutation harness has. It is wrong here for a reason this volume has already recorded once, in
+a different place: a child that drops the environment drops the **mutant** together with the hook.
+
+Measured with a fixture: the claimant spawns the gate with `env: { PATH: process.env.PATH }`. The mutant
+never arrives, the gate fails as it always did, the claimant (which asserts nothing about the status)
+passes -- and the first version reported that as a survivor. The witness was fine. The measurement was
+blind.
+
+So the hook writes the fact that it applied the mutant, at the moment it applies it:
+
+```
+/repo/scripts/gate.mjs:3        <- the exit was reached
+hollow scripts/gate.mjs:3        <- and this site's code was replaced
+```
+
+and the gate has three verdicts instead of two:
+
+| that run | what it means | the repair |
+| --- | --- | --- |
+| went red | the witness depends on this exit | none |
+| green, and `hollow` is in the trace | survived: reached it, does not depend on it | add the assertion, or move the pointer |
+| green, and `hollow` is absent | the mutant never reached the child that mattered | fix the measurement |
+
+The third is the same lesson as finding 359 -- *a green run is not evidence about a mutant that never
+arrived* -- asked one question over. The first time it was an exit that looked unreached because the hook
+was missing; this time it is a witness that looks insensitive because the mutant was missing. In both
+cases the honest reading names the instrument, and in both cases the dishonest one is a sentence accusing
+the tree of the tool's own fault.
+
+The marker is written **before** the code is replaced rather than after, because a run that dies between
+the two would otherwise record a mutant it did not apply.

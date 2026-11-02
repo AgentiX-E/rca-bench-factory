@@ -73,6 +73,15 @@ export is trusted. `test/mutation.test.ts` asserts the suite results directly; t
 `mutationTestPassed` field on `QualityGateReport` is carried through from `meta`
 when the caller supplies it, and is **absent** from CLI output otherwise.
 
+- **Every proved failure site is proved twice** (v3.41). `golden-master/gate-sites.json`
+  carries a `provedBy` for each exit, and the claim has two halves. `pnpm lint` runs
+  `verify-site-proofs.mjs`, which asks whether the named file **reaches** the exit;
+  the `sensitivity` job runs `verify-sites-are-sensitive.mjs`, which asks whether that
+  file **notices** the exit's absence -- one run per claim with that site's code
+  replaced by success, and a baseline run per file so a red claimant cannot be
+  credited with catching anything. Measured at 105 of 105 in both halves, and both
+  are mutation rather than reading, which is the only form this claim can take.
+
 ## L4 — Official reproduction (Golden Master, official metrics and round trip)
 
 - `golden-master/verify.mjs` re-runs every exporter against the self-contained

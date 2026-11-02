@@ -8,8 +8,10 @@ import {
   HOOK_SOURCE,
   blindScripts,
   claimedSites,
+  claimsByFile,
   failureSummary,
   hookFile,
+  parseHollows,
   parseSpawns,
   parseTrace,
   unprovenClaims,
@@ -392,6 +394,102 @@ function throughHelper(sight: 'traced' | 'blind'): { status: number; text: strin
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+describe('site-proofs · the mutant, which is a value and not an edit', () => {
+  /** A gate with two exits, run once with one of them hollowed. */
+  function withHollow(hollow: string | null, pick: 'one' | 'two'): { status: number; text: string } {
+    const dir = mkdtempSync(join(tmpdir(), 'site-proofs-hollow-'));
+    try {
+      mkdirSync(join(dir, 'scripts'), { recursive: true });
+      const gate = join(dir, 'scripts', 'gate.mjs');
+      writeFileSync(
+        gate,
+        [
+          'if (process.env.PICK === "one") {',
+          '  console.error("one");',
+          '  process.exit(1);',
+          '}',
+          'console.error("two");',
+          'process.exit(2);',
+          '',
+        ].join('\n'),
+      );
+      const trace = join(dir, 'trace.log');
+      const env: Record<string, string> = {
+        ...process.env,
+        NODE_OPTIONS: `--require=${hookFile(dir)}`,
+        RCA_SITE_TRACE: trace,
+        PICK: pick,
+      } as Record<string, string>;
+      if (hollow === null) delete env.RCA_HOLLOW_SITE;
+      else env.RCA_HOLLOW_SITE = hollow;
+      const result = spawnSync(process.execPath, [gate], { encoding: 'utf8', env });
+      return { status: result.status ?? -1, text: existsSync(trace) ? readFileSync(trace, 'utf8') : '' };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('replaces the named exit with success, and records that it did', () => {
+    // The mutant is what turns "the file reached this exit" into "the file noticed
+    // this exit". The line is written before the code is replaced because a green
+    // run whose mutant never arrived is not a survivor, and the reading needs both
+    // facts to tell them apart.
+    const seen = withHollow('scripts/gate.mjs:3', 'one');
+    expect(seen.status).toBe(0);
+    expect(parseTrace(seen.text)).toEqual(['scripts/gate.mjs:3']);
+    expect(parseHollows(seen.text)).toEqual(['scripts/gate.mjs:3']);
+  });
+
+  it('leaves a different exit alone, so the mutant is aimed rather than global', () => {
+    // The control in the other direction. A hook that hollowed whatever it was told
+    // without comparing the frame would turn every failure in the child into success,
+    // and every claimant would look sensitive to everything.
+    const seen = withHollow('scripts/gate.mjs:6', 'one');
+    expect(seen.status).toBe(1);
+    expect(parseTrace(seen.text)).toEqual(['scripts/gate.mjs:3']);
+    expect(parseHollows(seen.text)).toEqual([]);
+  });
+
+  it('records nothing when the site it was aimed at never fires', () => {
+    // The third state, and the reason a green run is not enough: hollowing an exit
+    // that this run does not reach changes nothing, and the absence of the marker is
+    // what says so. Reading that as SURVIVED would accuse the witness of a defect
+    // that belongs to the measurement.
+    const seen = withHollow('scripts/gate.mjs:3', 'two');
+    expect(seen.status).toBe(2);
+    expect(parseTrace(seen.text)).toEqual(['scripts/gate.mjs:6']);
+    expect(parseHollows(seen.text)).toEqual([]);
+  });
+
+  it('reads its own marker as a marker, not as an exit', () => {
+    // The two lines live in one file, so the parser that reads exits has to be able
+    // to ignore the other one -- the same separation `parseSpawns` already needed.
+    const text = [
+      '/repo/scripts/gate.mjs:3',
+      'hollow scripts/gate.mjs:3',
+      'spawn traced scripts/gate.mjs',
+    ].join('\n');
+    expect(parseTrace(text)).toEqual(['scripts/gate.mjs:3']);
+    expect(parseHollows(text)).toEqual(['scripts/gate.mjs:3']);
+    expect(parseHollows('/repo/scripts/gate.mjs:3\nspawn blind scripts/gate.mjs')).toEqual([]);
+  });
+});
+
+describe('site-proofs · the claims grouped by the file that makes them', () => {
+  it('groups, sorts by file, and keeps every claim', () => {
+    // Both gates ask this question, and `--list` prints the answer: a grouping that
+    // sorted one list and not the other would make two plans that cannot be compared.
+    const grouped = claimsByFile([
+      { site: 'scripts/b.mjs:2', script: 'scripts/b.mjs', line: 2, file: 't/z.test.ts' },
+      { site: 'scripts/a.mjs:1', script: 'scripts/a.mjs', line: 1, file: 't/z.test.ts' },
+      { site: 'scripts/c.mjs:3', script: 'scripts/c.mjs', line: 3, file: 't/a.test.ts' },
+    ]);
+    expect(grouped.map(([file]) => file)).toEqual(['t/a.test.ts', 't/z.test.ts']);
+    expect(grouped[1]?.[1].map((claim) => claim.site)).toEqual(['scripts/b.mjs:2', 'scripts/a.mjs:1']);
+    expect(grouped.flatMap(([, claims]) => claims)).toHaveLength(3);
+  });
+});
 
 describe('site-proofs · the hook through a spawn, which was an assumption until now', () => {
   it('records an exit taken by a gate that a helper script started', () => {
