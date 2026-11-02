@@ -4,7 +4,16 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { HOOK_SOURCE, claimedSites, hookFile, parseTrace, unprovenClaims } from '../../../scripts/site-proofs.mjs';
+import {
+  HOOK_SOURCE,
+  blindScripts,
+  claimedSites,
+  failureSummary,
+  hookFile,
+  parseSpawns,
+  parseTrace,
+  unprovenClaims,
+} from '../../../scripts/site-proofs.mjs';
 
 /**
  * A proof claim is a statement that a test makes an exit *fire*, and until this
@@ -23,6 +32,14 @@ import { HOOK_SOURCE, claimedSites, hookFile, parseTrace, unprovenClaims } from 
  * run the file once, read the trace. These fixtures hold the two shapes apart --
  * a claim that fired, and a claim that did not -- because a parser that reported
  * "no claims violated" for both would look exactly like a finding.
+ *
+ * There is a third shape, and it is the one this round was about: a file that starts
+ * the gate in a child that drops `NODE_OPTIONS` runs it *out of sight*, and the exit
+ * is absent for a reason that is not "the branch was not taken". The hook records
+ * each child's environment so the trace can tell the two apart, and the fixtures here
+ * reach that state deliberately -- a nested helper, once inheriting and once
+ * scrubbing -- because an assumption about inheritance that is never exercised is a
+ * sentence with a test's name on it.
  */
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -125,6 +142,122 @@ describe('site-proofs · what the inventory claims', () => {
     expect(violations).toHaveLength(1);
     expect(violations[0]).toContain('packages/core/test/b.test.ts');
   });
+
+  it('says a claim could not be seen rather than that it was not reached', () => {
+    // The distinction the third state exists for. A child that dropped `NODE_OPTIONS`
+    // ran the gate; the run simply could not observe it. Printing "never reaches this
+    // exit" there would accuse a pointer that may be perfectly correct, which is the
+    // same class of error as the two false claims this gate was built to find.
+    const blind = new Map([['packages/core/test/b.test.ts', new Set(['scripts/a.mjs'])]]);
+    const fired = new Map([
+      ['packages/core/test/a.test.ts', new Set(['scripts/a.mjs:4'])],
+      ['packages/core/test/b.test.ts', new Set<string>()],
+    ]);
+    const violations = unprovenClaims(claimedSites(inventory), fired, blind);
+    const sightless = violations.filter((one) => one.includes('scripts/a.mjs:9'));
+    expect(sightless).toHaveLength(1);
+    expect(sightless[0]).toContain('did not carry the hook');
+    expect(sightless[0]).not.toContain('never reaches');
+  });
+
+  it('keeps accusing a claim whose child was in sight and whose exit never came', () => {
+    // The other half: with no blind record the sentence is unchanged, because the
+    // new state must not become a blanket excuse. A run that saw the child and saw no
+    // exit is evidence that the pointer or the test is wrong.
+    const blind = new Map([['packages/core/test/b.test.ts', new Set(['scripts/other.mjs'])]]);
+    const fired = new Map([
+      ['packages/core/test/a.test.ts', new Set(['scripts/a.mjs:4'])],
+      ['packages/core/test/b.test.ts', new Set(['scripts/a.mjs:4'])],
+    ]);
+    const violations = unprovenClaims(claimedSites(inventory), fired, blind);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain('never reaches this exit');
+  });
+});
+
+describe('site-proofs · what a run started, and whether it could be seen', () => {
+  const MIXED = [
+    'spawn traced scripts/a.mjs',
+    'spawn blind scripts/b.mjs',
+    'spawn blind scripts/b.mjs',
+    'spawn traced scripts/c.mjs',
+    'spawn blind scripts/c.mjs',
+    '/repo/scripts/a.mjs:4',
+  ].join('\n');
+
+  it('counts a script started both ways as visible, because one sighted child suffices', () => {
+    const spawns = parseSpawns(MIXED);
+    expect(spawns.get('scripts/b.mjs')).toEqual({ traced: 0, blind: 2 });
+    expect(spawns.get('scripts/c.mjs')).toEqual({ traced: 1, blind: 1 });
+    expect([...blindScripts(MIXED)]).toEqual(['scripts/b.mjs']);
+  });
+
+  it('reads a spawn line and an exit line as different facts', () => {
+    // A spawn record ends with a script name and an exit record with `:<line>`. A
+    // parser that read `spawn blind scripts/b.mjs` as an exit would call every blind
+    // child a reached site -- the original defect, inverted and harder to notice.
+    expect(parseTrace(MIXED)).toEqual(['scripts/a.mjs:4']);
+    expect(parseSpawns(MIXED).size).toBe(3);
+  });
+
+  it('reads a trace with no spawn record as no information, not as blind', () => {
+    // Every trace written before this round looks like this, and so does one written
+    // by a process that could not install the wrappers. Neither says a child was
+    // invisible, so neither may be read as saying it.
+    expect(parseSpawns('').size).toBe(0);
+    expect(blindScripts('/repo/scripts/a.mjs:1').size).toBe(0);
+    expect(blindScripts('spawn sideways scripts/a.mjs').size).toBe(0);
+  });
+});
+
+describe('site-proofs · what a red run says about itself', () => {
+  const REPORT = [
+    '',
+    ' RUN  v3.2.4 /repo/packages/core',
+    '',
+    'x\u00b7',
+    '',
+    '\u2500\u2500 Failed Tests 1 \u2500\u2500',
+    '',
+    ' FAIL  packages/core/test/x.test.ts > adds up',
+    'AssertionError: expected 2 to be 3 // Object.is equality',
+    '',
+    ' \u276f x.test.ts:2:37',
+    '',
+    ' Test Files  1 failed (1)',
+    '      Tests  1 failed | 1 passed (2)',
+  ].join('\n');
+
+  it('quotes the failing test, the error line and the totals', () => {
+    // The gate used to say only "did not pass", which leaves the reader to re-run the
+    // file to learn what it refused to tell them. These three lines are the ones that
+    // decide the repair: which test, assertion or crash, and how much else broke.
+    expect(failureSummary(REPORT)).toEqual([
+      'FAIL  packages/core/test/x.test.ts > adds up',
+      'AssertionError: expected 2 to be 3 // Object.is equality',
+      'Tests  1 failed | 1 passed (2)',
+    ]);
+  });
+
+  it('caps the report at two failing tests, because the first two locate the repair', () => {
+    const many = [
+      ' FAIL  a.test.ts > one',
+      ' FAIL  b.test.ts > two',
+      ' FAIL  c.test.ts > three',
+      'Error: boom',
+      '      Tests  3 failed (3)',
+    ].join('\n');
+    expect(failureSummary(many)).toHaveLength(4);
+    expect(failureSummary(many)).not.toContain('FAIL  c.test.ts > three');
+  });
+
+  it('invents nothing when the report carries none of those lines', () => {
+    // A runner that dies before printing a report produces output with no `FAIL`, no
+    // error line and no totals. Summarising it must yield nothing rather than a
+    // sentence about a failure nobody described.
+    expect(failureSummary('boom')).toEqual([]);
+    expect(failureSummary('')).toEqual([]);
+  });
 });
 
 describe('site-proofs · the hook records what the parser reads', () => {
@@ -212,8 +345,95 @@ describe('site-proofs · the hook records what the parser reads', () => {
   });
 });
 
+/**
+ * A gate one level deeper: `helper.mjs` starts `gate.mjs`, and the helper is what the
+ * test starts.
+ *
+ * The helper decides whether to pass its environment on. That single line is the
+ * whole question -- every claimant in the tree spreads `process.env` when it sets one,
+ * and until this fixture the reason that mattered was a sentence in a header.
+ */
+function nested(dir: string): string {
+  mkdirSync(join(dir, 'scripts'), { recursive: true });
+  writeFileSync(join(dir, 'scripts', 'gate.mjs'), 'process.exit(7);\n');
+  writeFileSync(
+    join(dir, 'scripts', 'helper.mjs'),
+    [
+      "import { spawnSync } from 'node:child_process';",
+      "import { dirname, resolve } from 'node:path';",
+      "import { fileURLToPath } from 'node:url';",
+      'const here = dirname(fileURLToPath(import.meta.url));',
+      "const env = process.env.FIXTURE_SIGHT === 'blind' ? { PATH: process.env.PATH } : { ...process.env };",
+      "const child = spawnSync(process.execPath, [resolve(here, 'gate.mjs')], { encoding: 'utf8', env });",
+      'process.stdout.write(String(child.status));',
+      '',
+    ].join('\n'),
+  );
+  return join(dir, 'scripts', 'helper.mjs');
+}
+
+/** Start the helper with the hook installed, and read back what the run could see. */
+function throughHelper(sight: 'traced' | 'blind'): { status: number; text: string } {
+  const dir = mkdtempSync(join(tmpdir(), `site-proofs-nested-${sight}-`));
+  try {
+    const helper = nested(dir);
+    const trace = join(dir, 'trace.log');
+    const result = spawnSync(process.execPath, [helper], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        NODE_OPTIONS: `--require=${hookFile(dir)}`,
+        RCA_SITE_TRACE: trace,
+        FIXTURE_SIGHT: sight,
+      },
+    });
+    return { status: result.status ?? -1, text: existsSync(trace) ? readFileSync(trace, 'utf8') : '' };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe('site-proofs · the hook through a spawn, which was an assumption until now', () => {
+  it('records an exit taken by a gate that a helper script started', () => {
+    // Two levels, because one level is what every other fixture already does and the
+    // claim under test is about inheritance. If this failed, every claim proved
+    // through a helper would read as a wrong pointer, and the gate would be accusing
+    // the tree of a defect in its own instrument.
+    const seen = throughHelper('traced');
+    expect(seen.status).toBe(0);
+    expect(parseTrace(seen.text)).toEqual(['scripts/gate.mjs:1']);
+    expect(parseSpawns(seen.text).get('scripts/gate.mjs')).toEqual({ traced: 1, blind: 0 });
+  });
+
+  it('records a child that drops the environment as blind, and records no exit for it', () => {
+    // The measurement's one blind spot, which cannot be repaired from inside the
+    // child -- everything the child could report through is the environment that was
+    // dropped. It can be observed from the parent, and this is what that observation
+    // looks like: the child ran (the helper printed its status, 7), and nothing about
+    // its exit is in the trace.
+    const seen = throughHelper('blind');
+    expect(seen.status).toBe(0);
+    expect(parseTrace(seen.text)).toEqual([]);
+    expect([...blindScripts(seen.text)]).toEqual(['scripts/gate.mjs']);
+  });
+});
+
+/**
+ * How a fixture's claimant behaves.
+ *
+ * `pick` is the exit it reaches. `sight` is whether the child it starts inherits the
+ * environment -- `blind` is the state the trace can only describe, not judge. `red`
+ * makes the claimant's own run fail, which is a third thing again: no trace, because
+ * the file never got far enough to produce one.
+ */
+interface FixtureOptions {
+  pick: 1 | 2;
+  sight?: 'traced' | 'blind';
+  red?: boolean;
+}
+
 /** A repository the gate can be pointed at: an inventory, a gate, and a runner. */
-function fixture(claims: { line: number; file: string }[]): string {
+function fixture(claims: { line: number; file: string }[], options: FixtureOptions = { pick: 1 }): string {
   const tree = mkdtempSync(join(tmpdir(), 'site-proofs-tree-'));
   mkdirSync(join(tree, 'golden-master'), { recursive: true });
   mkdirSync(join(tree, 'scripts'), { recursive: true });
@@ -252,31 +472,50 @@ function fixture(claims: { line: number; file: string }[]): string {
     }),
   );
 
-  // One "test file" per claimant, whose whole content is the exit it *reaches*.
+  // One "test file" per claimant, whose whole content is the exit it *reaches* and,
+  // when the fixture is about the other two states, the directive that produces them.
   // Where two claims name the same file the first one decides, because a file that
   // exits twice is a file that exits once -- the second claim is then the claim the
   // fixture is built to leave unhonoured.
+  const directive = [
+    `FIXTURE_PICK ${options.pick === 1 ? 'one' : 'two'}`,
+    options.sight === 'blind' ? 'FIXTURE_BLIND' : '',
+    options.red === true ? 'FIXTURE_RED' : '',
+  ]
+    .filter((one) => one !== '')
+    .join(' ');
   const reached = new Map<string, number>();
   for (const claim of claims) {
     if (!reached.has(claim.file)) reached.set(claim.file, claim.line);
   }
-  for (const [file, line] of reached) {
-    writeFileSync(join(tree, file), `FIXTURE_PICK ${line === 1 ? 'one' : 'two'}\n`);
+  for (const [file] of reached) {
+    writeFileSync(join(tree, file), `${directive}\n`);
   }
 
+  // The runner is the stand-in for vitest: it reads the directive out of the "test
+  // file", then either reports a failure (red), starts the gate with an environment
+  // that drops the hook (blind), or starts it the way every claimant in this tree
+  // does (traced).
   const runner = [
     "import { spawnSync } from 'node:child_process';",
     "import { readFileSync } from 'node:fs';",
-    "import { dirname, join, resolve } from 'node:path';",
+    "import { dirname, resolve } from 'node:path';",
     "import { fileURLToPath } from 'node:url';",
     'const here = dirname(fileURLToPath(import.meta.url));',
     'const file = process.argv.find((one) => one.endsWith(".test.ts"));',
-    'const pick = /FIXTURE_PICK (\\w+)/.exec(readFileSync(file, "utf8"))[1];',
+    'const text = readFileSync(file, "utf8");',
+    'const pick = /FIXTURE_PICK (\\w+)/.exec(text)[1];',
+    'if (text.includes("FIXTURE_RED")) {',
+    '  process.stdout.write(" FAIL  " + file + " > does the thing\\n");',
+    '  process.stdout.write("AssertionError: expected 1 to be 2 // Object.is equality\\n");',
+    '  process.stdout.write("\\n      Tests  1 failed (1)\\n");',
+    '  process.exit(1);',
+    '}',
     "const gate = resolve(here, 'scripts', 'fake-gate.mjs');",
-    'const child = spawnSync(process.execPath, [gate], {',
-    '  encoding: "utf8",',
-    '  env: { ...process.env, FIXTURE_PICK: pick },',
-    '});',
+    'const env = text.includes("FIXTURE_BLIND")',
+    '  ? { PATH: process.env.PATH, FIXTURE_PICK: pick }',
+    '  : { ...process.env, FIXTURE_PICK: pick };',
+    'const child = spawnSync(process.execPath, [gate], { encoding: "utf8", env });',
     'process.stdout.write(`picked ${pick} status ${String(child.status)}\\n`);',
     'process.exit(0);',
     '',
@@ -320,7 +559,7 @@ describe('scripts/verify-site-proofs.mjs · the experiment, end to end', () => {
         { line: 1, file: 'packages/core/test/one.test.ts' },
         { line: 2, file: 'packages/core/test/one.test.ts' },
       ],
-      'one',
+      { pick: 1 },
     );
     try {
       const result = runGate(tree, []);
@@ -348,7 +587,7 @@ describe('scripts/verify-site-proofs.mjs · the experiment, end to end', () => {
         { line: 1, file: 'packages/core/test/one.test.ts' },
         { line: 2, file: 'packages/core/test/two.test.ts' },
       ],
-      'one',
+      { pick: 1 },
     );
     try {
       const result = runGate(tree, ['--list']);
@@ -413,6 +652,46 @@ describe('scripts/verify-site-proofs.mjs · the experiment, end to end', () => {
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('absent.test.ts');
       expect(result.stderr).toMatch(/missing|no such file|does not exist/i);
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('says a claim could not be seen when the claimant starts the gate out of sight', () => {
+    // The third state, end to end. The child ran; the run could not observe it. The
+    // gate must not print the accusation it prints for a wrong pointer, because the
+    // repair is different -- and re-pointing the claim would not make the exit appear.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      pick: 1,
+      sight: 'blind',
+    });
+    try {
+      const result = runGate(tree, []);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('did not carry the hook');
+      expect(result.stderr).not.toContain('never reaches this exit');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('quotes a red claimant instead of only saying its claims are unmeasured', () => {
+    // A file whose own tests fail cannot be evidence about anybody's proof, and
+    // "unmeasured" was all this gate said about it. What it can also say -- because
+    // the run already printed it -- is which test failed and whether it was an
+    // assertion or a crash, plus the command that reproduces it.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      pick: 1,
+      red: true,
+    });
+    try {
+      const result = runGate(tree, []);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('did not pass');
+      expect(result.stderr).toContain('does the thing');
+      expect(result.stderr).toContain('AssertionError: expected 1 to be 2');
+      expect(result.stderr).toContain('Tests  1 failed (1)');
+      expect(result.stderr).toContain('run it alone:');
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }

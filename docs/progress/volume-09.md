@@ -2360,9 +2360,9 @@ on purpose.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **223 files, 5499 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **227 files, 5686 tests passed** (as of this commit) |
+| `core` test suite | **223 files, 5499 tests passed** (as of `de4b06c`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `de4b06c`) |
+| repo test suite | **227 files, 5686 tests passed** (as of `de4b06c`) |
 | coverage, four dimensions | unchanged -- no file under `src/` was touched |
 | new tests | **20** across three files -- 18 in `site-proofs.test.ts`, 1 in `check-cli-reference.test.ts`, 1 in `verify-scorer-stability-script.test.ts` |
 | claims measured | **100 of 100** honoured, 44 files, 110 s |
@@ -2393,3 +2393,110 @@ on purpose.
 
 The corpus, the answer keys, the checkpoints, the score targets, the export, the pool's price, and every
 budget the plan enforces except the `verify` job's measured time. Nothing under `packages/*/src/` moved.
+
+## v3.40 — the state that had no sentence, and the red file that gave no reason
+
+v3.39 closed with five open items, two of them inside the instrument the round before had just built.
+Both were open for the same reason: each is a place where the gate says something true and
+insufficient. `provedBy` recorded mention rather than drive until v3.39 measured it; what survived was
+a sentence in a header -- **descendants inherit `NODE_OPTIONS`** -- and a refusal that named no cause
+-- **"did not pass, so its claims are unmeasured"**. Neither had a run behind it.
+
+This round ran both. The inheritance held; the refusal did not.
+
+The audit is `docs/audit/volume-10.md`, findings **359–360**.
+
+### One: the fixture that contradicts the header took four lines
+
+A helper between the test and the gate, spawning the gate with `env: { PATH: process.env.PATH }`. The
+gate runs, exits 7, the helper prints the status -- and the trace file does not exist. The gate then
+reports `scripts/gate.mjs:1 is claimed by …, which runs scripts/gate.mjs and never reaches this exit`,
+which is false in the direction that matters: the pointer may be perfectly right and the *measurement*
+was blind.
+
+The header said the opposite, and the header was not wrong about what it described. It described the
+case every claimant in this tree happens to be -- `env: { ...process.env }` -- and generalised it.
+
+### Two: the observation moves to the parent, because the child has nothing left to report through
+
+Anything the child could report through is the environment that was dropped. The parent is still
+instrumented at the moment it calls `spawn`, so the hook now wraps `spawn`, `spawnSync`, `fork`,
+`execFile`, `execFileSync` and `exec`, and for every child whose arguments name a script under
+`scripts/` it appends one line: `spawn traced` or `spawn blind`.
+
+The wrappers call the original and return its result. Three properties are asserted rather than
+intended: a noted spawn still returns the child's own object, a spawn it cannot note still happens, and
+the wrappers are only installed when a trace path exists, so the suite's own workers -- which exit and
+spawn constantly -- are untouched.
+
+### Three: three states, three sentences, and the third one is about the measurement
+
+`unprovenClaims` grew a third branch, keyed on whether the run saw the script at all:
+
+| trace of the claimed script | sentence | repair |
+| --- | --- | --- |
+| exit at the claimed line | nothing | -- |
+| `spawn traced`, no such exit | "runs X and never reaches this exit" | the pointer or the test |
+| `spawn blind`, no such exit | "started X in a child that did not carry the hook" | the measurement |
+
+The distinction is load-bearing in both directions. Without the third sentence the gate accuses a
+correct pointer; with it used loosely it would excuse every wrong one, so `blindScripts` counts a
+script blind only when **no** spawn of it was traced -- one sighted child is enough to have seen it.
+
+Measured over the 44 claimant files, same hook, no other change:
+
+| | count |
+| --- | --- |
+| spawns of a `scripts/*.mjs` child | 905 |
+| traced | **901** |
+| blind | **4**, all four in `site-proofs.test.ts`, and all four are the fixtures this round wrote |
+
+### Four: a red claimant now quotes itself
+
+The gate already had the failing run's output in hand and printed only the verdict. `failureSummary`
+keeps at most four lines -- two `FAIL` lines, the first error line, the totals -- and returns nothing
+when a run died before printing a report, because a summary of output that describes no failure would
+be a sentence nobody measured. The gate prints those lines under the refusal, with the command that
+reproduces it. What changes is not the verdict but the number of round trips to the same fact.
+
+### Readings
+
+> Ledger for `v3.40`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **223 files, 5511 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **227 files, 5698 tests passed** (as of this commit) |
+| coverage, four dimensions | **99.96 / 99.75 / 100 / 99.96** -- unchanged; no file under `src/` was touched |
+| new tests | **12**, all in `site-proofs.test.ts` (18 -> 30) |
+| claims measured | **100 of 100** honoured, 44 files, 107 s |
+| spawns measured | **905** recorded, **901** traced, **4** blind |
+| failure sites | **107** across 55 scripts -- unchanged in number, four of them moved (81 -> 99, 91 -> 109, 102 -> 120, 201 -> 242) because the gate gained a helper |
+| mutation | three, each caught: the blind branch removed (2 cases red), the spawn record disabled (3 red), the summary emptied (3 red); the file restored byte for byte each time (`e9d117f38808`) |
+
+### Left open
+
+- **The embedding fallback is still missing**, and still for the same reason: the paper names no model
+  and no threshold, so fitting one would be a decision dressed as a transcription.
+  `[open: §4.4 states the fallback and stops there, and a threshold invented here would be this tree's number wearing the protocol's name]`
+- **A key whose description carries no keyword scores 0.** Unchanged; recorded as a gap.
+  `[open: no published rule prices a key whose description yields no keyword, so 0 is this tree's choice]`
+- **The per-site mutation pass, 6 min 28 s, is still not a CI step.** It is the difference between a
+  witness that reaches a site and a witness that is *sensitive* to it, and it is the strongest check
+  this repository has that no job runs.
+  `[open: the batteries job is 21 of 30 minutes on a 22-step budget, so the pass needs a re-measured baseline before it can move]`
+- **Blindness is observed one level deep.** The hook sees a child whose *parent* was instrumented. A
+  grandchild started by an uninstrumented wrapper -- `pnpm exec node scripts/x.mjs` is the live case --
+  is observed only if it inherits, and if it does not, nothing records that it existed.
+  `[open: the spawn record covers direct children, and a wrapper's child is only visible when the wrapper inherits]`
+- **`failureSummary` reads one reporter's shape.** It was written against `--reporter=dot` as measured
+  on this tree; a reporter change would leave the detail empty while the verdict stayed right.
+  `[open: the extraction is pinned by fixtures built from the measured output, not by a contract vitest publishes]`
+
+### Unchanged
+
+The corpus, the answer keys, the checkpoints, the score targets, the export, the pool's price, and
+every budget the plan enforces. Nothing under `packages/*/src/` moved. The gate's four verdicts and
+its two-minute cost on the `verify` job are unchanged; only what it says about a run that could not
+measure, and about a run that failed, is new.

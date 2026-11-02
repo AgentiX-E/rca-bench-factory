@@ -36,6 +36,17 @@
  * run calls that honoured. The cost of the stronger question is one child per file,
  * and it was measured rather than guessed: 43 files, 119 seconds, serial.
  *
+ * ## Two ways a run can fail to see, and why they are printed differently
+ *
+ * A file started with an environment that drops `NODE_OPTIONS` runs without the hook,
+ * and a file whose own tests are red produces no exit trace either. Both used to
+ * read as "this claim is false", and neither is: the first is a measurement that
+ * could not see, the second is a measurement that could not run. The hook records
+ * each child's environment, so the first is now a state in the trace rather than an
+ * assumption; and a red file's own report is quoted back -- the failing test, the
+ * error line, and the totals -- because the alternative is telling a reader to re-run
+ * a file to find out why.
+ *
  * ## The seams, and why they are environment variables
  *
  * `RCA_SITE_PROOFS_INVENTORY`, `RCA_SITE_PROOFS_VITEST`, `RCA_SITE_PROOFS_TESTS` and
@@ -58,7 +69,14 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { claimedSites, hookFile, parseTrace, unprovenClaims } from './site-proofs.mjs';
+import {
+  blindScripts,
+  claimedSites,
+  failureSummary,
+  hookFile,
+  parseTrace,
+  unprovenClaims,
+} from './site-proofs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(process.env['RCA_SITE_PROOFS_ROOT'] ?? process.cwd());
@@ -131,6 +149,13 @@ function vitestEntry() {
 const scratch = mkdtempSync(join(tmpdir(), 'rca-site-proofs-'));
 let traceCount = 0;
 
+/** How to re-run one claimant alone, which is the first step of every repair below. */
+function rerun(file) {
+  const entry = relative(ROOT, vitestEntry());
+  const runner = entry.startsWith('..') ? vitestEntry() : entry;
+  return `run it alone: node ${runner} run ${file} --reporter=dot`;
+}
+
 /**
  * The trace of one file, and whether the run itself can be trusted.
  *
@@ -138,11 +163,15 @@ let traceCount = 0;
  * what a claim that did not fire looks like. The two are kept apart so that a broken
  * runner is not reported as a set of wrong claims -- the same distinction
  * `verify-gates-are-testable.mjs` makes between SURVIVED and UNATTRIBUTED.
+ *
+ * A file whose own tests fail is now reported with *why*, quoted from the run: the
+ * test that failed, the error line, the totals. "Unmeasured" alone sent a reader back
+ * to the file to work out what the gate had already read.
  */
 function traceOf(file, hook) {
   const absolute = resolve(ROOT, file);
   if (!existsSync(absolute)) {
-    return { problem: `${file} does not exist, so its claims are unmeasured` };
+    return { problem: `${file} does not exist, so its claims are unmeasured`, detail: [] };
   }
   const trace = join(scratch, `${String(traceCount)}.log`);
   traceCount += 1;
@@ -156,32 +185,40 @@ function traceOf(file, hook) {
     },
   });
   if (result.error !== undefined) {
-    return { problem: `${file} could not be run -- ${result.error.message}` };
+    return {
+      problem: `${file} could not be run -- ${result.error.message}`,
+      detail: [rerun(file)],
+    };
   }
   if (result.status !== 0) {
     // A file whose own tests fail is not evidence about anybody's proof, and
     // crediting it would make a red suite look like a measurement.
-    return { problem: `${file} did not pass, so its claims are unmeasured` };
+    return {
+      problem: `${file} did not pass, so its claims are unmeasured`,
+      detail: [...failureSummary(`${result.stdout ?? ''}\n${result.stderr ?? ''}`), rerun(file)],
+    };
   }
   const text = existsSync(trace) ? readFileSync(trace, 'utf8') : '';
-  return { fired: new Set(parseTrace(text)) };
+  return { fired: new Set(parseTrace(text)), blind: blindScripts(text) };
 }
 
 const hook = hookFile(scratch);
 
 const firedByFile = new Map();
+const blindByFile = new Map();
 const problems = [];
 for (const [file] of byFile()) {
   const outcome = traceOf(file, hook);
   if (outcome.problem !== undefined) {
-    problems.push(outcome.problem);
+    problems.push({ head: outcome.problem, detail: outcome.detail });
     continue;
   }
   firedByFile.set(file, outcome.fired);
+  blindByFile.set(file, outcome.blind);
 }
 rmSync(scratch, { recursive: true, force: true });
 
-const violations = unprovenClaims(claimed, firedByFile);
+const violations = unprovenClaims(claimed, firedByFile, blindByFile);
 const failures = problems.length + violations.length;
 
 if (failures > 0) {
@@ -189,12 +226,16 @@ if (failures > 0) {
   if (violations.length > 0) {
     process.stderr.write('verify-site-proofs: the inventory names proofs this run did not see:\n');
     for (const violation of violations) process.stderr.write(`  ${violation}\n`);
-    process.stderr.write('  Either the pointer names the wrong file, or that file does not reach the exit.\n');
-    process.stderr.write('  Both are the same defect: a proof that exists only in the inventory.\n');
+    process.stderr.write('  Either the pointer names the wrong file, or that file does not reach the exit,\n');
+    process.stderr.write('  or the child that ran it was started out of sight -- three repairs, and the\n');
+    process.stderr.write('  sentence above says which one is called for.\n');
   }
   if (problems.length > 0) {
     process.stderr.write('verify-site-proofs: some claims could not be measured at all:\n');
-    for (const problem of problems) process.stderr.write(`  ${problem}\n`);
+    for (const problem of problems) {
+      process.stderr.write(`  ${problem.head}\n`);
+      for (const line of problem.detail) process.stderr.write(`    ${line}\n`);
+    }
   }
   process.stderr.write('');
   process.stderr.write(`verify-site-proofs: FAILED -- ${String(failures)} problem(s)\n`);

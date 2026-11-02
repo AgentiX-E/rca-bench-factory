@@ -381,3 +381,109 @@ asserts the *distinction* rather than the count -- exit 1 with `FAILED: N proper
 `PASS` line before it, and no `ALL PROPERTIES HOLD` -- and it was proved by mutation: with
 `failures.push` disabled the case fails on `expected +0 to be 1`, and the gate was restored byte for
 byte.
+
+## Finding 359 — a child that drops `NODE_OPTIONS` read as an exit that was never reached
+
+The gate's instrument is installed through `NODE_OPTIONS`, and the module's header said what that
+buys: "descendants inherit it, so nothing in the tree needs to know it is being measured." Every
+claim the gate has ever honoured rests on that sentence, and nothing had ever tested it.
+
+The assumption has two halves, and only one of them is true unconditionally.
+
+| what a claimant does | what the child gets | what the trace holds |
+| --- | --- | --- |
+| `spawnSync(node, [gate])` with no `env` | the parent's environment | the exit, at its line |
+| `env: { ...process.env, X: 1 }` | the parent's environment plus one key | the exit, at its line |
+| `env: { PATH }` -- a curated environment | no `NODE_OPTIONS`, so no hook | **nothing** |
+
+Measured on a scratch tree with a helper between the test and the gate: the helper spawned the gate
+with `env: { PATH: process.env.PATH }`, the gate ran and exited 7 -- the helper printed the status --
+and the trace file did not exist afterwards. The third row is not a gate that failed to reach an exit;
+it is a measurement that could not see one, and the gate printed it as the first.
+
+That is the same defect this volume opened with, inverted. Finding 357 was a pointer that was true in
+the inventory and false in the world; this is a pointer that may be true in the world and is reported
+false by the instrument.
+
+### The repair is in the parent, because the child has nothing left to report through
+
+Everything a child could report through *is* the environment that was dropped, so the observation has
+to happen one level up, where the process is still instrumented at the moment it calls `spawn`. The
+hook now wraps `spawn`, `spawnSync`, `fork`, `execFile`, `execFileSync` and `exec`, and for every child
+whose arguments name a script under `scripts/` it appends one line saying whether that child's
+environment carries the hook:
+
+```
+spawn traced scripts/check-cli-reference.mjs
+spawn blind  scripts/fake-gate.mjs
+```
+
+The wrappers call the original and return its result, so a spawn that cannot be noted is still a
+spawn, and the child's verdict is still the child's. `parseSpawns` counts the two kinds separately and
+`blindScripts` keeps the scripts whose every recorded spawn was blind -- one sighted child is enough to
+have seen a script, so a mixed record is not a blind one.
+
+`unprovenClaims` then has three sentences instead of two, because there are three states and three
+repairs:
+
+| trace of a claimed script | what the gate says | what the repair is |
+| --- | --- | --- |
+| an exit at the claimed line | nothing | -- |
+| started in sight, no such exit | "runs X and never reaches this exit" | the pointer or the test is wrong |
+| started out of sight, no such exit | "started X in a child that did not carry the hook, so this run cannot say" | nothing in the inventory; the measurement is short |
+
+### Was the assumption true where it mattered?
+
+Measured over the 44 claimant files, with the same hook and no other change:
+
+| | count |
+| --- | --- |
+| claimant files run | 44 |
+| spawns of a `scripts/*.mjs` child recorded | 905 |
+| of those, seen through a child that carried the hook | **901** |
+| of those, blind | **4** |
+| files holding a blind spawn | **1**, `site-proofs.test.ts`, and all four are the fixtures this round added |
+
+So the inherited environment held for every claimant in the tree, and the one file that produces
+blindness is the one built to produce it. The assumption was true and untested; it is now true and
+measured, and the state that would have been silent is now a sentence.
+
+## Finding 360 — a claimant that did not pass was reported with no reason
+
+`verify-site-proofs.mjs` treats a red claimant as unmeasured, which is right: a file whose own tests
+fail is not evidence about anybody's proof, and crediting it would make a red suite look like a
+measurement. What it printed was:
+
+```
+packages/core/test/x.test.ts did not pass, so its claims are unmeasured
+```
+
+and that is the whole of it. The reader's next step is to run the file -- which the gate has just
+done, and whose output it has just thrown away. The cost is not the reading; it is that a red claimant
+hides a false pointer for a round, and the round is spent on the redness instead of on the pointer.
+
+Vitest's dot reporter prints three things that decide the repair, and all three were already in the
+captured output:
+
+```
+ FAIL  packages/core/test/x.test.ts > adds up
+AssertionError: expected 2 to be 3 // Object.is equality
+      Tests  1 failed | 1 passed (2)
+```
+
+`failureSummary` reads the first two `FAIL` lines, the first error line and the totals, capped at four
+lines, and invents nothing when the run died before printing a report -- a runner killed by a signal
+leaves output with none of those shapes, and a summary of it has to be empty rather than a sentence
+about a failure nobody described. The gate prints them under the refusal, with the command that
+reproduces it:
+
+```
+  packages/core/test/x.test.ts did not pass, so its claims are unmeasured
+    FAIL  packages/core/test/x.test.ts > adds up
+    AssertionError: expected 2 to be 3 // Object.is equality
+    Tests  1 failed | 1 passed (2)
+    run it alone: node node_modules/.pnpm/vitest@3.2.4/node_modules/vitest/vitest.mjs run packages/core/test/x.test.ts --reporter=dot
+```
+
+The distinction being kept is the same one this volume keeps making: *unmeasured* is a statement about
+the run, and it is only useful if it says what about the run.
