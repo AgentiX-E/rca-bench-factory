@@ -409,9 +409,24 @@ function mean(values: readonly number[]): number {
   return values.length === 0 ? 0 : values.reduce((a, b) => a + b, 0) / values.length;
 }
 
+/**
+ * How many **distinct** predicted items the expected set contains.
+ *
+ * Distinct, because every caller divides this count by a count of expected items
+ * to get a coverage rate, and a rate above one is not a coverage. Measured: a
+ * submission that cited an answer key's only observation five times scored
+ * `Exp. = 5` and a Final_A of **140** -- above the ceiling the formula is bounded
+ * by -- because `E_m` counted citations rather than evidence points. Repeating a
+ * citation is the same manoeuvre the twenty-character cut exists to refuse: it
+ * farms a count without naming anything more.
+ *
+ * Not a clamp. Clamping would report `1` for the same submission and hide that
+ * the numerator and the denominator were counting different things; counting
+ * distinct points makes the numerator the quantity the denominator is a count of.
+ */
 function intersectCount(predicted: readonly string[], expected: readonly string[]): number {
   const expectedSet = new Set(expected);
-  return predicted.filter((p) => expectedSet.has(p)).length;
+  return new Set(predicted.filter((p) => expectedSet.has(p))).size;
 }
 
 function firstWords(text: string, count: number): string {
@@ -1628,16 +1643,32 @@ function descriptionWords(description: string): string[] {
     .filter((token) => token !== '');
 }
 
+/**
+ * The words a reason is read as, for the keyword comparison.
+ *
+ * The comparison is membership, not containment. `String.prototype.includes` was
+ * the first version and it made the lookup a substring test: a key whose
+ * description is `ram pressure ...` has the token `ram`, and a reason that says
+ * `the parameter changed` carries those three letters inside `parameter` -- so
+ * the term paid full credit for a reason that names nothing.
+ *
+ * Both sides are tokenised by `descriptionWords`, so the comparison cannot be a
+ * word on one side and a substring on the other; this function adds the one thing
+ * the reason needs on top of it, the twenty-word cut.
+ */
+function reasonWords(reason: string): ReadonlySet<string> {
+  return new Set(descriptionWords(firstWords(reason, 20)));
+}
+
 function keywordHit(reason: string, descriptions: readonly string[]): boolean {
-  const head = firstWords(reason, 20).toLowerCase();
-  return descriptions.some((description) => {
-    const tokens = descriptionWords(description).filter(
-      (token) => token.length > 2 && !FUNCTION_WORDS.has(token),
-    );
-    // A key whose description is nothing but function words has no keyword to
-    // hit, so it scores no hit. Paying here would make the term unfailable.
-    return tokens.some((token) => head.includes(token));
-  });
+  const head = reasonWords(reason);
+  // A key whose description is nothing but function words has no keyword to hit,
+  // so it scores no hit. Paying here would make the term unfailable.
+  return descriptions.some((description) =>
+    descriptionWords(description).some(
+      (token) => token.length > 2 && !FUNCTION_WORDS.has(token) && head.has(token),
+    ),
+  );
 }
 
 /**
@@ -1655,14 +1686,27 @@ function keywordHit(reason: string, descriptions: readonly string[]): boolean {
  * list cannot manufacture a match.
  */
 function aioPs2025Localised(pred: OfficialPrediction, gt: OfficialGroundTruth): boolean {
+  // An unnamed key has no name to hit. `'' === ''` made a submission that named
+  // nothing match a key that named nothing -- the free-denominator defect one
+  // level over, with a denominator that had no content. The relaxation cannot
+  // admit the empty string either: `alternatives` drops empty endpoints when the
+  // key is read. So the only missing half was this refusal.
+  if (gt.component === '') return false;
   return pred.component === gt.component || gt.alternatives.includes(pred.component);
 }
 
 function scoreAioPs2025Case(pred: OfficialPrediction, gt: OfficialGroundTruth): OfficialCaseScore {
   const la = aioPs2025Localised(pred, gt) ? 1 : 0;
   const ta = keywordHit(pred.reason, gt.faultDescriptions) ? 1 : 0;
-  // The protocol counts each cited observation by its first 20 characters.
+  // The protocol counts each cited observation by its first 20 characters, and
+  // the clause says "both sides": the key's own observation is cut the same way.
+  // Cutting only the citation made an observation longer than twenty characters
+  // unmatchable -- a submission quoting the answer key's own text exactly scored
+  // zero, because twenty characters were compared against twenty-three. The
+  // denominator is still the number of observations; the cut is a comparison
+  // rule, not a count.
   const cited = pred.evidence.map((e) => e.slice(0, 20));
+  const expected = gt.evidence.map((e) => e.slice(0, 20));
   // An answer key that declares no observation leaves this term with no
   // denominator, and the case record drops it rather than crediting it: `1` was
   // the free-denominator defect finding 159 was written about, and it survived
@@ -1670,8 +1714,8 @@ function scoreAioPs2025Case(pred: OfficialPrediction, gt: OfficialGroundTruth): 
   // implementations are still separate for this target -- the report's Exp. is
   // pooled over the dataset while a case's is a rate, which is a real difference
   // in aggregation, not a drift -- so the fix has to be applied in both places.
-  const hits = intersectCount(cited, gt.evidence);
-  const exp = rateOf(cited, gt.evidence);
+  const hits = intersectCount(cited, expected);
+  const exp = rateOf(cited, expected);
   const eff = la === 1 ? Math.min(1, Math.exp(-(pred.traceWords - 5) / 5)) : 0;
   const score = 0.4 * la + 0.4 * ta + 0.1 * (exp ?? 0) + 0.1 * eff;
 

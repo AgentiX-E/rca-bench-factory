@@ -771,6 +771,35 @@ describe('AIOps2025 Final_A', () => {
   });
 
   /**
+   * The other way a keyword stops being a word.
+   *
+   * Filtering function words decided *which* tokens of a description may be
+   * keywords. It left open how a token is looked for in the reason, and the
+   * answer was `String.prototype.includes` -- a substring test. Measured on a key
+   * whose description is `ram pressure on the order service`: the token is `ram`,
+   * the reason `the parameter changed` contains no such word, and `parameter`
+   * carries the three letters. Type Accuracy paid full credit for a reason that
+   * names nothing.
+   *
+   * Both directions are asserted, because "match the word" is only correct if it
+   * still matches the word: a reason that says `ram` must be credited by the same
+   * change that refuses `parameter`.
+   */
+  it('pays no Type Accuracy for letters that sit inside another word', () => {
+    const keyed = files();
+    const line = JSON.parse(keyed['groundtruth.jsonl']!.trim());
+    keyed['groundtruth.jsonl'] = `${JSON.stringify({
+      ...line,
+      fault_description: 'ram pressure on the order service',
+    })}\n`;
+    const oracle = oracleFor('aiops2025', keyed)[0]!;
+
+    expect(scoreWith('aiops2025', keyed, [{ ...oracle, reason: 'the parameter changed' }]).breakdown.ta).toBe(0);
+    // Control: the same key, credited when the reason carries the word itself.
+    expect(scoreWith('aiops2025', keyed, [{ ...oracle, reason: 'ram stayed above 90%' }]).breakdown.ta).toBe(1);
+  });
+
+  /**
    * The record must not contradict the score it explains.
    *
    * `OfficialMetricSpec.facets` is documented as "the facets this rule scores",

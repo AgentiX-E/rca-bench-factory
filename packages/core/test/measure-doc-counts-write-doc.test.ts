@@ -321,4 +321,45 @@ describe('scripts/measure-doc-counts.mjs --write-doc', () => {
     expect(readFileSync(out, 'utf8')).toBe('{"original":true}\n');
     expect(readFileSync(doc, 'utf8')).toBe('# no rows at all\n');
   });
+
+  it('leaves a partially rewritable document untouched when the rewrite is refused', () => {
+    // The test above cannot see this: a document with *no* rows is one the rewriter
+    // does not change, so "nothing was written" is true there for a reason that has
+    // nothing to do with the refusal. The document here **is** rewritable -- three
+    // rows whose digits all move -- and carries one duplicate, so the run has
+    // already built the new text when it decides to refuse.
+    //
+    // Measured on the shipped script: the duplicate was reported, the message said
+    // `nothing was written`, and the document had been rewritten. The check ran
+    // after the write for the file and before it for the snapshot, so a refusal
+    // left exactly the half-state the flag exists to remove.
+    const dir = scratch();
+    const doc = join(dir, 'progress.md');
+    const out = join(dir, 'doc-counts.json');
+    const withDuplicate = `${DOC}| \`core\` test suite | **1 files, 1 tests passed** (as of this commit) |\n`;
+    writeFileSync(doc, withDuplicate);
+    writeFileSync(out, '{"original":true}\n');
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        SCRIPT,
+        '--write-doc',
+        '--doc',
+        doc,
+        '--out',
+        out,
+        '--from',
+        `${report('core', 'eta', 5)},${report('cli', 'theta', 2)}`,
+      ],
+      { cwd: ROOT, encoding: 'utf8' },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('nothing was written');
+    expect(result.stderr).toContain("a second current-state row for 'core'");
+    // The claim, checked rather than asserted: the document is what it was.
+    expect(readFileSync(doc, 'utf8')).toBe(withDuplicate);
+    expect(readFileSync(out, 'utf8')).toBe('{"original":true}\n');
+  });
 });

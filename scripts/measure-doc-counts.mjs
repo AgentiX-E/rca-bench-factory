@@ -303,6 +303,17 @@ function main() {
       : [{ label: relative(ROOT, docPath), path: docPath, text: readFileSync(docPath, 'utf8') }];
     const problems = [];
     const written = [];
+    // Rewritten documents are collected and not yet written.
+    //
+    // They used to be written inside the loop that built them, and the refusal
+    // below comes after that loop -- so a run that reported `nothing was written`
+    // had already rewritten every file it had read. Measured: a document with one
+    // duplicate current-state row, run through `--write-doc`, exited 1 with that
+    // message and left the document's three rows changed. The snapshot was not
+    // written, which made it the exact half-state this flag exists to remove, and
+    // the message denied it. A list is what makes the claim true: nothing touches
+    // the disk until every file has been accepted.
+    const pending = [];
     const seen = new Set();
     for (const file of files) {
       const result = rewritePublishedRows(file.text, measured, { requireAllScopes: false });
@@ -310,7 +321,7 @@ function main() {
       for (const scope of result.seen) seen.add(scope);
       if (result.text !== file.text) {
         written.push(`${file.label} (${String(result.rewritten.length)} row(s) updated)`);
-        if (file.path !== out) writeFileSync(file.path, result.text);
+        if (file.path !== out) pending.push({ path: file.path, text: result.text });
       }
     }
     for (const scope of SCOPES) {
@@ -324,6 +335,7 @@ function main() {
         ...problems.map((line) => `  ${line}`),
       ]);
     }
+    for (const one of pending) writeFileSync(one.path, one.text);
     writeFileSync(out, text);
     for (const scope of SCOPES) console.log(describeCount(scope.name, measured[scope.name]));
     // The single-file sentence is kept word for word: `--doc` names one file, and a

@@ -104,13 +104,23 @@ function extract(source: string, name: string): string {
 }
 
 /** Run the shipped Python helper against a text and return its stdout. */
-function runPython(body: string, driver: string): string {
+function runPython(body: string, driver: string, interpreter = 'python3'): string {
   const dir = mkdtempSync(join(scratch, 'run-'));
   const script = join(dir, 'check.py');
   writeFileSync(script, ['import re, json, sys', '', body, '', driver].join('\n'));
-  const result = spawnSync('python3', [script], { encoding: 'utf8', timeout: 30_000 });
+  const result = spawnSync(interpreter, [script], { encoding: 'utf8', timeout: 30_000 });
+  // A child that never started and a child that was killed both arrive as
+  // `status: null` with empty output, and formatting that as
+  // `python3 exited null: ` prints a failure with no reason in it. This file
+  // produced exactly one such line on CI -- one red among four green runs of the
+  // same bytes, message not preserved by the dot reporter -- and the message was
+  // empty because of this arm, not because the reporter dropped it.
+  if (result.error !== undefined || result.status === null) {
+    const reason = result.error !== undefined ? result.error.message : `killed by ${String(result.signal)}`;
+    throw new Error(`${interpreter} did not run: ${reason}`);
+  }
   if (result.status !== 0) {
-    throw new Error(`python3 exited ${result.status}: ${result.stderr || result.stdout}`);
+    throw new Error(`${interpreter} exited ${result.status}: ${result.stderr || result.stdout}`);
   }
   return result.stdout.trim();
 }
@@ -302,5 +312,29 @@ describe('a battery reports the counts it measured, not its own default', () => 
     expect(stripAnsi(CI_SUMMARY)).toContain('Tests  21 passed');
     expect(stripAnsi(CI_SUMMARY)).not.toContain('\u001b');
     expect(stripAnsi('plain text 1, 2; 3')).toBe('plain text 1, 2; 3');
+  });
+
+  it('a helper that never started names the reason instead of exiting with nothing', () => {
+    // The open item this file carried: one red run among four green ones, message
+    // not preserved. Part of that is the reporter; part of it was this arm. A
+    // child that was killed mid-allocation or never started arrives from
+    // `spawnSync` as `status: null` with `stdout` and `stderr` both null, and the
+    // old arm interrupted that as `python3 exited null: ` followed by the empty
+    // string -- a failure with no reason in it, which is the one thing a failing
+    // assertion must never be.
+    //
+    // The interpreter is a parameter here so this can be shown rather than
+    // argued: an interpreter that does not exist takes the same branch a killed
+    // child takes, and both must say why.
+    let message = '';
+    try {
+      runPython('print(1)', 'print(2)', '/nonexistent/python3');
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toContain('did not run');
+    expect(message).toContain('ENOENT');
+    // And not the shape that hid it.
+    expect(message).not.toContain('exited null');
   });
 });

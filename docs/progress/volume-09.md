@@ -2110,9 +2110,9 @@ the arithmetic is monotonic again. The gate behaved correctly -- it refused rath
 
 | item | value |
 | --- | --- |
-| `core` test suite | **222 files, 5472 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **226 files, 5659 tests passed** (as of this commit) |
+| `core` test suite | **222 files, 5472 tests passed** (as of `40be73f`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `40be73f`) |
+| repo test suite | **226 files, 5659 tests passed** (as of `40be73f`) |
 | `reason = "the"` | TA 1 → **0**, Final_A 100 → **60** |
 | a punctuated description | its last word is now readable, and `the` is still refused |
 | the `reason` facet vs the `ta` term | one predicate; was exact equality against containment |
@@ -2143,3 +2143,150 @@ the arithmetic is monotonic again. The gate behaved correctly -- it refused rath
 The corpus, the answer keys, the checkpoints, the localisation readings, the round trip's three target
 contracts (375 / 270 / 90), the export, the pool's price, and every budget the plan enforces -- except the one
 row this round added.
+
+## v3.38 — a term that could exceed its own ceiling, and a keyword that was a letter
+
+v3.37 closed with four open items, none of them a scoring defect. Going back to the file that produced that
+round's two defects -- the AIOps2025 path in `score/official.ts` -- and asking the same question of the terms
+it had not re-read found **four** more, all in the same four-line formula, and the answer to one of the open
+items. Handling the documentation counts then produced two more: a test arm that formatted a failure as a
+number, and a writer that reported writing nothing after writing.
+
+The audit for this round is its own volume: `docs/audit/volume-10.md` (findings 351–356). Volume nine was at
+267 928 of 280 000 bytes, twelve kilobytes short of the budget, so the split rule applied for the fifth time
+in the log's life.
+
+### One: a keyword was a substring, and `parameter` paid for `ram`
+
+v3.37 decided *which* tokens of a description may be keywords. It did not decide how a token is looked for,
+and the answer in the code was `String.prototype.includes`. Measured on a description `ram pressure on the
+order service`:
+
+| reason | TA before | TA after | Final_A before | Final_A after |
+| --- | --- | --- | --- | --- |
+| `ram stayed above 90%` | 1 | 1 | 100 | 100 |
+| `the parameter changed` | **1** | **0** | **100** | **60** |
+| `a program reconfiguration` | 1 | **0** | **100** | **60** |
+
+`parameter` carries `ram` at positions 3–5. The term paid 0.4 for a reason that names nothing, twice over on
+the same fixture. Both sides are now tokenised by one function and compared as sets; the control in the same
+test asserts that `ram stayed above 90%` is still credited, so the repair is a narrowing and not a refusal.
+
+### Two: the clause said both sides are cut to twenty characters, and one was
+
+`cited` was sliced; `gt.evidence` was compared whole. An observation longer than the cut became unmatchable --
+a submission quoting the answer key's own text scored zero:
+
+| submission, key `order|cpu_usage|1234XYZ` (23 chars) | Exp. before | Exp. after |
+| --- | --- | --- |
+| the key's own string | **0** | **1** |
+| the key's string plus a tail | **0** | **1** |
+| a different tail inside the first twenty | 0 | 0 |
+
+The existing test pinned this clause in both directions and could not see the defect, because its key is
+*exactly* twenty characters -- the one length at which cutting one side and cutting both are the same
+comparison. That is the hazard of a boundary test: the boundary has to be the subject, not the fixture.
+
+### Three: `E_m` counted citations, so the score went past its own ceiling
+
+`E_t` counts evidence points; `E_m` counted the agent's citations. A submission citing the key's only
+observation five times scored `Exp. = 5` and **Final_A = 140** -- above 100, which the formula is bounded by
+and which nothing in the report refused. Three of the four terms are rates in `[0, 1]`; this one was a ratio
+with no upper bound on its numerator.
+
+The numerator now counts distinct points rather than clamping at one: a clamp would print the right number
+while leaving the two halves of the ratio counting different things, which is finding 348's defect one field
+over. The three other callers of `rateOf` divide by a count of expected items in the same way and inherit the
+same guarantee. No published reading moved, because no shipped prediction repeats a citation -- which is the
+reason this was invisible, not a reason to keep it.
+
+### Four: an empty component matched an empty key
+
+`LA` is `pred.component === gt.component`, and `'' === ''` is true. A key line with no `service` (or, on a
+pod-level line, no `instance`) and a submission that names nothing therefore compared equal, and localisation
+paid 0.4 for two absences. The relaxation could not admit the empty string -- `alternatives` drops empty
+endpoints when the key is read -- so the only missing half was the refusal. An unnamed key now names nothing.
+
+### Five: the one red with no message left it in the arm that formats the failure
+
+The open item said: one run red, message not kept by the dot reporter, three green runs of the same bytes.
+Part of that is the reporter, and part of it was `runPython`'s failure arm. `spawnSync` reports a child that
+never started and a child that was killed as `status: null` with both streams `null`, and the arm formatted
+that as `python3 exited null: ` followed by nothing -- a failing assertion that states no reason. The arm now
+separates "did not run" from "exited non-zero" and carries `result.error.message`, and the test drives it with
+an interpreter that does not exist:
+
+```
+before:  /nonexistent/python3 exited null: undefined
+after:   /nonexistent/python3 did not run: spawnSync /nonexistent/python3 ENOENT
+```
+
+The new test was proved by mutation: with the new arm disabled the test failed with the message in the first
+line, and the file was restored byte for byte (sha256 compared). What this does **not** do is name why the
+child failed to run in that one full-suite run -- `packages/core/vitest.config.ts` records the mechanism that
+produces exactly this signature, and the worker cap is headroom against it rather than a proven repair.
+
+### Six: the writer said nothing was written, after writing
+
+Refreshing the published counts is the last step of every round, and this round it refused: a second
+current-state row for `core`, which is true -- v3.38's ledger is current and v3.37's was, until now, also
+marked as such. Fixing that meant anchoring the older block to its own commit, and measuring the writer on
+the way through turned up its own defect.
+
+`measure-doc-counts --write-doc` exists so that the snapshot and the document cannot be moved one at a time.
+The write happened inside the loop that rewrote each document; the refusal came after the loop. So a run
+with one duplicate row exited 1 and printed `nothing was written` **after** rewriting the three good rows --
+the exact half-state the flag was built to remove, denied in the same breath:
+
+```
+before  core 160/3947, cli 4/187, repo 164/4134   + a duplicate core row
+run     --write-doc  →  exit 1, "nothing was written"
+after   core 1/5, cli 1/2, repo 2/7, duplicate kept, snapshot untouched
+```
+
+The rewritten text is now collected in a list and written only after every file has been accepted. The
+message is unchanged, because the message was right and the code was not. The test that should have caught
+this used a document with **no** rows -- where `nothing was written` is true for a reason that has nothing to
+do with the refusal -- so the new case is a document that is rewritable *and* refused, and it asserts the
+claim rather than the message: the file is compared byte for byte.
+
+### Readings
+
+> Ledger for `v3.38`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **222 files, 5479 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **226 files, 5666 tests passed** (as of this commit) |
+| coverage, four dimensions | **99.96 / 99.75 / 100 / 99.96** — unchanged |
+| `src/score` | **99.85 / 98.89 / 100 / 99.85**; `official.ts` 99.74 / 98.27 / 100 |
+| `reason = "the"` | still 0 (v3.37's fix, unchanged by this round) |
+| a keyword inside another word | TA 1 → **0**, Final_A 100 → **60** |
+| an observation longer than twenty characters | Exp. 0 → **1**, quoted verbatim |
+| one observation cited five times | Exp. 5 → **1**, Final_A **140 → 100** |
+| an empty component against an empty key | LA 1 → **0** |
+| new tests | **7** across four files -- 1 in `official.test.ts`, 4 in `aiops2025-evaluator.test.ts`, 1 in `battery-summary-survives-ci-output.test.ts`, 1 in `measure-doc-counts-write-doc.test.ts` |
+| new audit volume | `docs/audit/volume-10.md`, findings **351–356**, 13 710 bytes |
+| the published corpus | unchanged — no verdict moves |
+
+### Left open
+
+- **The embedding fallback is still missing.** Unchanged: a paraphrase sharing no word with the description
+  scores 0 where the protocol would fall back.
+  `[open: §4.4 names a fallback without a model or a cut-off, so fitting one would be a decision dressed as a transcription]`
+- **A key whose description carries no keyword scores 0.** The protocol is silent; recorded as a gap rather
+  than redistributing 0.4 over the other terms.
+  `[open: the protocol prints the weights and the matching rule, and is silent on a description that yields no keyword]`
+- **Why that one full-suite run had a child that did not start is still unexplained.** The message is no
+  longer empty, and the next occurrence will carry its reason; the mechanism is recorded in
+  `vitest.config.ts` as a memory-pressure kill, which the worker cap reduces without proving.
+  `[open: the failure is diagnosable now, and still not diagnosed]`
+- **`provedBy` still records mention rather than drive** — carried since v3.32, and this round moved no site.
+  `[open: gates-are-testable.test.ts reaches that exit through its fixture table, and provedBy can name only one file]`
+
+### Unchanged
+
+The corpus, the answer keys, the checkpoints, the localisation readings, the round trip's three target
+contracts (375 / 270 / 90), the export, the pool's price, the six other score targets, and every budget the
+plan enforces. The AIOps2025 path changed in four places; nothing else in `src/` did.

@@ -67,6 +67,14 @@
       "why": "This clause was missing: the reader discarded the answer key's `source` and `destination`, so an answer naming the other endpoint of an injected network fault scored zero where the protocol pays full credit. One relaxation, applied only to cases whose key declares the fields."
     },
     {
+      "id": "la-unnamed-key",
+      "term": "la",
+      "quote": "LA is the fraction of cases whose predicted component string-matches the ground truth exactly.",
+      "implemented": true,
+      "was": false,
+      "why": "`'' === ''` is true. A key line whose `service` (or, for a pod-level line, whose `instance`) is missing produces an empty component, and an empty prediction then matched it -- so the term paid 0.4 of Final_A for two absences. The relaxation could not admit the empty string either: `alternatives` drops empty endpoints when the key is read. An unnamed key names nothing, and nothing matches it."
+    },
+    {
       "id": "ta-two-step",
       "term": "ta",
       "quote": "TA scores whether the agent’s reason field faithfully reflects the true fault type via two-step matching: keyword detection against the ground-truth fault descriptions (any hit yields full credit), with embedding-similarity fallback for unhit cases.",
@@ -89,6 +97,15 @@
       "why": "Read with the clause above, 'keyword' cannot mean any word: truncation suppresses stuffing only if a hit is a word the fault put there. The implementation filtered tokens by length alone, and the fixture's description `CPU saturation on the order service` therefore made `the` a keyword -- so `reason = \"the\"` earned a full Type Accuracy and a perfect Final_A, measured. A keyword is now a content word of the description: `FUNCTION_WORDS` is a closed-class list, and content words that could name a fault (`use`, `may`, `out`) are deliberately absent from it. The same expression splits on punctuation, because a description ending in a full stop was carrying a final token no reason could match."
     },
     {
+      "id": "ta-keyword-is-word",
+      "term": "ta",
+      "quote": "TA scores whether the agent’s reason field faithfully reflects the true fault type via two-step matching: keyword detection against the ground-truth fault descriptions (any hit yields full credit)",
+      "implemented": true,
+      "was": false,
+      "why": "A keyword is a word of the description, and it is looked for as a word. The first content-word rule kept `String.prototype.includes` for the lookup, which made it a substring test: a key whose description is `ram pressure on the order service` has the keyword `ram`, and a reason reading `the parameter changed` contains those three letters inside `parameter`, so the term paid full credit for a reason that names nothing. Both sides are now tokenised by the same function, so the comparison cannot be a word on one side and a substring on the other."
+    },
+
+    {
       "id": "exp-definition",
       "term": "explainability",
       "quote": "The core metric is Explainability (0.10), measuring evidence-point coverage: E_m / E_t, where E_t is the total expected evidence points (the union of the GT’s key metrics and key observations) and E_m the count hit in any of the agent’s trace observations",
@@ -96,11 +113,20 @@
       "why": "The denominator is the union of `key_metrics` and the three `key_observations` lists; the numerator counts cited observations that hit one of them."
     },
     {
+      "id": "exp-counts-points",
+      "term": "explainability",
+      "quote": "E_m the count hit in any of the agent’s trace observations",
+      "implemented": true,
+      "was": false,
+      "why": "`E_m` is a count of *evidence points*, and it was computed as a count of the agent's citations. The two agree only when each point is cited once. Measured: a key declaring one observation, a submission citing it five times, `Exp. = 5`, Final_A **140** -- above the ceiling the formula is bounded by, because the other three terms are rates in [0, 1]. The numerator now counts distinct points, which is the quantity the denominator is a count of; clamping at 1 would have reported the same number while leaving the two sides counting different things."
+    },
+    {
       "id": "exp-truncation",
       "term": "explainability",
       "quote": "each observation contributes only its first 20 characters, again to suppress keyword stuffing",
       "implemented": true,
-      "why": "Both sides are cut to 20 characters, so two observations that agree on the first 20 and differ afterwards count as the same evidence point. That is the published rule, and it is pinned as a case rather than lamented."
+      "was": false,
+      "why": "Both sides are cut to 20 characters, so two observations that agree on the first 20 and differ afterwards count as the same evidence point. This entry said exactly that while the code cut only the citation: an observation longer than twenty characters was compared against the key's whole text and could never match, so a submission quoting the answer key's own string scored zero. The old fixture could not see it -- its key was exactly twenty characters, where cutting one side and cutting both are the same comparison."
     },
     {
       "id": "eff-formula",

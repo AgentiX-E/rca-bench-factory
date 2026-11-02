@@ -207,6 +207,23 @@ describe('the corpus is the thing it claims to be', () => {
     expect(clause('ta-keyword-is-content').implemented).toBe(true);
     expect(clause('ta-keyword-is-content').why).toContain('FUNCTION_WORDS');
   });
+
+  it('carries the same admission for every rule the next pass corrected', () => {
+    // Four more, each named rather than counted: a fifth correction added without
+    // a `was` would leave the corpus claiming the rule was always right, and the
+    // numbers it cost -- `parameter` for `ram`, a key cut on one side only, an
+    // Exp. of 5 and a Final_A of 140, an empty component matching an empty key --
+    // would be unrecoverable from the file that is supposed to hold the evidence.
+    for (const id of ['la-unnamed-key', 'ta-keyword-is-word', 'exp-counts-points', 'exp-truncation']) {
+      expect(clause(id).was, `${id} claims it was always so`).toBe(false);
+      expect(clause(id).implemented, `${id} is recorded as an open gap`).toBe(true);
+    }
+    // And each `why` names the measurement, not just the verdict.
+    expect(clause('exp-truncation').why).toContain('cut only the citation');
+    expect(clause('exp-counts-points').why).toContain('140');
+    expect(clause('la-unnamed-key').why).toContain("'' === ''");
+    expect(clause('ta-keyword-is-word').why).toContain('substring');
+  });
 });
 
 describe('localisation is strict, with the one relaxation the protocol grants', () => {
@@ -302,6 +319,85 @@ describe('an evidence point is its first twenty characters', () => {
     const keys = [{ service: 'order', observations: ['order|cpu_usage'], metrics: [] }];
     const r = report(keys, [answer({ evidence: ['order|cpu_usageX'] })]);
     expect(r.breakdown.explainability).toBe(0);
+  });
+
+  /**
+   * The clause says *both* sides are cut to twenty. Only one was.
+   *
+   * `cited` was sliced and the key's own observation was compared whole, so an
+   * observation longer than the cut could never match a submission that quoted it
+   * exactly -- the answer key's own text, misspelled by the reader. The clause was
+   * already published with the words "Both sides are cut to 20 characters", which
+   * makes this the same defect class as the `reason` facet one target over: a
+   * statement and the code that is supposed to be it.
+   *
+   * The fixture above could not see it: its key is exactly twenty characters, so
+   * cutting one side and cutting both produce the same comparison. This one is
+   * twenty-three.
+   */
+  it('cuts the key to the same twenty characters it cuts the citation to', () => {
+    const long = 'order|cpu_usage|1234XYZ';
+    expect(long.length).toBeGreaterThan(20);
+    const keys = [{ service: 'order', observations: [long], metrics: [] }];
+    const r = report(keys, [answer({ evidence: [long] })]);
+    expect(r.breakdown.explainability).toBe(1);
+
+    // And the cut is still a cut: the tail is not compared, so a citation that
+    // agrees for twenty characters matches whatever follows.
+    const r2 = report(keys, [answer({ evidence: [`${long}and more`] })]);
+    expect(r2.breakdown.explainability).toBe(1);
+  });
+
+  /**
+   * A score above the metric's ceiling, produced by repeating one citation.
+   *
+   * `E_m` is a count of *evidence points*, and it was computed as a count of the
+   * agent's citations. The two are the same number only when an agent cites each
+   * point once. Measured on a key that declares one observation: a submission
+   * citing it five times scored `Exp. = 5`, and Final_A came out at **140** --
+   * above the 100 the formula is bounded by, because three of the four terms are
+   * rates in [0, 1] and this one was not.
+   *
+   * The cut is at the count, not at the total: the term is still `E_m / E_t`, and
+   * `E_t` is still the number of points the key declares. What changed is that a
+   * point cited five times is one point, which is the same thing the twenty
+   * character cut does for a point cited at length.
+   */
+  it('cannot be pushed past its own ceiling by citing one observation repeatedly', () => {
+    const keys = [{ service: 'order', observations: ['order|cpu_usage'], metrics: [] }];
+    const once = 'order|cpu_usage';
+    const r = report(keys, [answer({ evidence: [once, once, once, once, once] })]);
+    expect(r.breakdown.explainability).toBe(1);
+    expect(r.final).toBe(100);
+    // The case record is the other half: it carried the same count.
+    expect(r.cases[0]!.score).toBe(1);
+  });
+});
+
+describe('a key that names no component has nothing to localise against', () => {
+  /**
+   * `'' === ''` is true, and that is the whole defect.
+   *
+   * A `groundtruth.jsonl` line whose `service` (or, for a pod-level line, whose
+   * `instance`) is missing produces an empty component string. A submission whose
+   * component is also empty -- an export that lost the field, a caller that passed
+   * an empty prediction for a case it did not answer -- then compares equal, and
+   * the localisation term pays full credit for two absences.
+   *
+   * The relaxation does not cover this: `alternatives` drops empty endpoints when
+   * the key is read, so the empty string cannot enter through it either. What was
+   * missing was the refusal, and the direction is the one every empty-denominator
+   * fix in this report took: an unnamed key names nothing, so nothing matches it.
+   */
+  it('pays no localisation for an empty component matching an empty key', () => {
+    const keys = [{ service: '' }];
+    const r = report(keys, [answer({ component: '' })]);
+    expect(r.breakdown.la).toBe(0);
+    // Control: the same empty answer against a key that does name a component.
+    const named = report([{ service: 'order' }], [answer({ component: '' })]);
+    expect(named.breakdown.la).toBe(0);
+    // And the named answer still scores, so the refusal is not "nothing matches".
+    expect(report([{ service: 'order' }], [answer({})]).breakdown.la).toBe(1);
   });
 });
 
