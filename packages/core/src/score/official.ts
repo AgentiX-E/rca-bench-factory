@@ -1626,7 +1626,12 @@ const FUNCTION_WORDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The words of a description, lower-cased and stripped of punctuation.
+ * The words of a description or a reason, lower-cased and stripped of punctuation.
+ *
+ * Named for the description because that is where it started, but it is the one
+ * tokeniser both sides of the keyword comparison use: a comparison that cuts one
+ * operand into words and the other into something else is not a comparison, and
+ * finding 351 was exactly that asymmetry.
  *
  * Splitting on every non-alphanumeric run rather than on whitespace alone is the
  * other half of "what is a keyword": a description that ends its sentence with a
@@ -1636,8 +1641,8 @@ const FUNCTION_WORDS: ReadonlySet<string> = new Set([
  * words are dropped either way -- so it cannot create credit that the fault did
  * not put there.
  */
-function descriptionWords(description: string): string[] {
-  return description
+function descriptionWords(text: string): string[] {
+  return text
     .toLowerCase()
     .split(/[^a-z0-9-]+/)
     .filter((token) => token !== '');
