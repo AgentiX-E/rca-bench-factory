@@ -1343,6 +1343,7 @@ Two rows now have no message in scope, and a bare coordinate is what rule 5 forb
 | derivation cost | **0.41 s** for 75 scripts, unchanged |
 | failure sites | **114** across 56 scripts |
 | CI | run `41503049238` on `950c6e73d`: **6 of 6 jobs success** -- verify 6.4, sensitivity 8.2, batteries **26.8**, artefacts 3.1, backend 1.7, cold-tree 0.6 min |
+| CI, the commit after | run `41509748078` on `ccad510b3`: **6 of 6 jobs success** -- verify 4.4, sensitivity 7.4, batteries **27.3**, artefacts 0.9, backend 1.2, cold-tree 0.3 min |
 
 ### Left open
 
@@ -1365,9 +1366,9 @@ Two rows now have no message in scope, and a bare coordinate is what rule 5 forb
 - **The new dependency is a compiler at gate time.** `gate-proofs.mjs` imports `typescript`, as does
   `derive-gate-sites.mjs`; two test harnesses had to say so.
   `[open: this round added a second reader to the same file rather than a way to read any of it without the parser]`
-- **The batteries job has four minutes of headroom.** Five runs have measured 19.2, 21.9, 26.7, 27.2
-  and 26.8 minutes against a 30-minute budget.
-  `[open: the ceiling is close enough that the next step added to that job would spend it, and the last five readings disagree by eight minutes]`
+- **The batteries job is 2.7 minutes from its ceiling.** Six runs have measured 19.2, 21.9, 26.7, 27.2,
+  26.8 and 27.3 minutes against a 30-minute budget.
+  `[open: the ceiling is close enough that the next step added to that job would spend it, and the readings still disagree by eight minutes at the low end]`
 - **`sites` reads as the population of refusals and is 114 of about 153.** The rule is scoped to
   `process.exit` calls and says so; a reader who takes 114 for "every way a gate says no" is reading the
   column, not the rule.
