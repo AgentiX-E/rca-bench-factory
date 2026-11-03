@@ -1640,11 +1640,26 @@ const FUNCTION_WORDS: ReadonlySet<string> = new Set([
  * a dead token into a live one -- and only a content-word one, since function
  * words are dropped either way -- so it cannot create credit that the fault did
  * not put there.
+ *
+ * **A hyphen is a boundary too** (finding 390). The first version kept `-` inside
+ * tokens, on the reasoning that a fault type is a slug and a slug is one name. The
+ * consequence was an inversion: `replica-apply-thread-saturation` arrived as one
+ * keyword -- the whole string -- so a reason that echoed the slug scored full
+ * Type Accuracy while a reason that wrote the same compound out in prose
+ * (`saturation in the replica apply thread`) scored **zero**, and a reason that
+ * named only the component (`the order service is slow`) scored full. A term that
+ * pays the weaker answer and refuses the stronger one is measuring spelling.
+ *
+ * The parts are what the fault put there: `replica`, `apply`, `thread` and
+ * `saturation` are four words a writer of that description chose, and a reason
+ * that uses any one of them has named work the fault did. Splitting can therefore
+ * only turn a dead token into a live one, which is the same direction -- and the
+ * same argument -- as stripping the full stop.
  */
 function descriptionWords(text: string): string[] {
   return text
     .toLowerCase()
-    .split(/[^a-z0-9-]+/)
+    .split(/[^a-z0-9]+/)
     .filter((token) => token !== '');
 }
 

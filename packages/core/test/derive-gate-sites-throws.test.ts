@@ -218,7 +218,7 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
       }
     }
     expect(shortfalls).toEqual([]);
-    expect(total).toBe(41);
+    expect(total).toBe(38);
   });
 
   it('names the one throw that ends a process without any of its own code running', () => {
@@ -236,7 +236,7 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
       fatal.push(...read.rows.filter((row) => row.disposition === 'fatal').map((row) => `${file}:${String(row.line)}`));
     }
     expect(fatal).toEqual(['measure-ci-baseline.mjs:69']);
-    expect(counts).toEqual({ fatal: 1, unguarded: 36, guarded: 1, rethrow: 3 });
+    expect(counts).toEqual({ fatal: 1, unguarded: 33, guarded: 1, rethrow: 3 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

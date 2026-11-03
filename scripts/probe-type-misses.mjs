@@ -109,6 +109,20 @@ import {
   checkRca100Structure,
 } from '../packages/core/dist/index.js';
 import { ENTITY_KINDS, FAULT_CATEGORIES } from '../packages/core/dist/ir/types.js';
+// The readings, from the module that holds them: `RUNS`, `runBody` and
+// `readSamplesCorpus` live there because a test has to reach their refusals, and a
+// test may not import a probe -- emptying a probe is how the meta-gate proves it,
+// and the import would kill the worker before vitest could name the failure. The
+// move also deleted three duplicate guards; that module's header records which and
+// why none of them could ever fire.
+import {
+  DEFAULT_RUN,
+  RUNS,
+  readSamplesCorpus,
+  recordedCategoryMisses,
+  recordedTypeMisses,
+  runBody,
+} from './type-miss-readings.mjs';
 import { sha256 } from '../packages/core/dist/index.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -496,66 +510,6 @@ function umodelMappingDigestOf(pairs) {
  * count, and this probe reads them.
  */
 /**
- * The `type` misses of a recorded run, read from the recorded annotation.
- *
- * Each fixture is the verbatim annotation body of the run it names, with escapes
- * intact. Reading them through `parseMissDetail` rather than carrying a
- * transcription is the repair for the defect this script caused: it used to hold
- * a copy of run `9932e766c`'s rows inline, exact against that run, and a later
- * reading quoted those rows as the answers of run `567118aea`. Eight of fourteen
- * rows disagreed with the annotation and two rows were attributed a `type` miss
- * that their run assigned to `component`.
- *
- * A figure that cannot be re-derived is worth less than one whose provenance is
- * stated -- so the provenance is stated, by deriving it.
- */
-const RUNS = {
-  /** The current format: rows joined with U+001F. type=5/19. */
-  '567118aea': 'miss-detail-567118aea.txt',
-  /** Before finding 70 changed the separator: rows joined with a space. type=4/19. */
-  '9932e766c': 'miss-detail-9932e766c.txt',
-};
-
-/** The run this script reads by default: the most recent recorded one. */
-const DEFAULT_RUN = '567118aea';
-
-/** Read a recorded run's `type` misses. Throws rather than returning an empty set. */
-function recordedTypeMisses(run) {
-  const file = RUNS[run];
-  if (file === undefined) {
-    throw new Error(
-      `unknown run '${run}'; recorded runs are ${Object.keys(RUNS).join(', ')}`,
-    );
-  }
-  const body = readFileSync(resolve(REPO, 'packages', 'core', 'test', 'fixtures', file), 'utf8');
-  return {
-    run,
-    rows: parseMissDetail(body)
-      .filter((row) => row.field === 'type')
-      .map((row) => [row.sampleId, row.expected, row.actual ?? '(omitted)']),
-  };
-}
-
-/**
- * Read a recorded run's `category` misses.
- *
- * The same fixture as `recordedTypeMisses`, filtered on a different field. Both
- * fields are in one annotation body, so reading them through one parser is what
- * keeps the two blocks agreeing about which run they describe -- finding 92's
- * defect was a block quoting rows from a run it did not name.
- */
-function recordedCategoryMisses(run) {
-  const file = RUNS[run];
-  if (file === undefined) {
-    throw new Error(
-      `unknown run '${run}'; recorded runs are ${Object.keys(RUNS).join(', ')}`,
-    );
-  }
-  const body = readFileSync(resolve(REPO, 'packages', 'core', 'test', 'fixtures', file), 'utf8');
-  return parseMissDetail(body).filter((row) => row.field === 'category');
-}
-
-/**
  * Build the `category` block: the misses, the reading for each, and the figures.
  *
  * A missed sample whose id is not in the golden dataset is reported in
@@ -564,11 +518,7 @@ function recordedCategoryMisses(run) {
  * that turns a partial join into a confident percentage.
  */
 function categoryEvidence(run, rows) {
-  const goldenPath = resolve(REPO, 'golden-master', 'fault-extraction', 'samples.json');
-  const golden = JSON.parse(readFileSync(goldenPath, 'utf8'));
-  if (!Array.isArray(golden.samples)) {
-    throw new Error(`${goldenPath} carries no samples array`);
-  }
+  const golden = readSamplesCorpus(DATASET);
   const textById = new Map(golden.samples.map((sample) => [sample.id, sample.incidentText]));
   const missedIds = new Set(rows.map((row) => row.sampleId));
 
@@ -657,13 +607,15 @@ function categoryEvidence(run, rows) {
  * The control is reported separately. `resource-cpu-saturation-checkout` is the only
  * sample that both carries a denial and was answered correctly, and it reads
  * `also-asserted` -- so the reading does not simply flag every denial it sees.
+ *
+ * The corpus is read through `readSamplesCorpus`, and so is the derivation block's
+ * below -- they had been reading the **same file** through two copies of the same
+ * check, one built inline and one through `DATASET`, and the copy that ran first
+ * always fired. The check lives once, in `type-miss-readings.mjs`, where it takes
+ * the path it reads; this function no longer carries a refusal of its own.
  */
 function denialEvidence(run, rows) {
-  const goldenPath = resolve(REPO, 'golden-master', 'fault-extraction', 'samples.json');
-  const golden = JSON.parse(readFileSync(goldenPath, 'utf8'));
-  if (!Array.isArray(golden.samples)) {
-    throw new Error(`${goldenPath} carries no samples array`);
-  }
+  const golden = readSamplesCorpus(DATASET);
   const byId = new Map(golden.samples.map((sample) => [sample.id, sample]));
   const missedIds = new Set(rows.map((row) => row.sampleId));
   const unresolved = rows.filter((row) => !byId.has(row.sampleId)).map((row) => row.sampleId);
@@ -926,10 +878,7 @@ function baselineEvidence(agreement) {
  * copy of a run's rows.
  */
 function derivationEvidence(rowsByRun) {
-  const golden = JSON.parse(readFileSync(DATASET, 'utf8'));
-  if (!Array.isArray(golden.samples)) {
-    throw new Error(`${DATASET} carries no samples array`);
-  }
+  const golden = readSamplesCorpus(DATASET);
 
   const samples = golden.samples.map((s) => ({
     sampleId: s.id,
@@ -1398,7 +1347,7 @@ function main() {
   // very records this block needs, and every sample would read `not-assessable`, which is a
   // well-formed report that measures nothing.
   const agreementBlock = args.predictions === ''
-    ? agreementEvidence(args.run, parseMissDetail(readFileSync(resolve(REPO, 'packages', 'core', 'test', 'fixtures', RUNS[args.run]), 'utf8')))
+    ? agreementEvidence(args.run, runBody(args.run))
     : null;
 
   // The `baseline` block -- the control the agreement block above did not have.
@@ -1428,7 +1377,7 @@ function main() {
   // to refuse.
   const derivationBlock = args.predictions === ''
     ? derivationEvidence(
-        Object.keys(RUNS).map((run) => ({ run, rows: parseMissDetail(readFileSync(resolve(REPO, 'packages', 'core', 'test', 'fixtures', RUNS[run]), 'utf8')) })),
+        Object.keys(RUNS).map((run) => ({ run, rows: runBody(run) })),
       )
     : null;
 
@@ -1741,7 +1690,10 @@ export {
   RUNS,
   DEFAULT_RUN,
   classify,
+  denialEvidence,
+  derivationEvidence,
   normalizeFaultType,
+  recordedCategoryMisses,
   recordedTypeMisses,
   typeMissesFrom,
   umodelMappingDigestOf,

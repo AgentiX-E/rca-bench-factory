@@ -1346,3 +1346,122 @@ line -- is what "one binding per name" was standing in for.
 
 Two controls hold both directions: a write after a scratch binding that follows a root binding is not
 flagged, and a write after a root binding that follows a scratch one is.
+
+## Finding 390 — the tokeniser kept the hyphen, so the best answer scored zero
+
+Type Accuracy asks whether a keyword of `fault_description` appears in the reason. Both sides are cut into
+words by `descriptionWords`, and the pattern that splits them was `[^a-z0-9-]+` -- which keeps `-` **inside**
+a token. The comment justified splitting on non-alphanumeric runs and never mentioned the hyphen, and no test
+covered it, so the choice survived unexamined.
+
+It matters because the two sides are written differently. A description is often a **slug** -- this
+repository's fault types are slugs, and the ground truth carries them verbatim. A reason is prose. Measured on
+the key `replica-apply-thread-saturation on the order service`:
+
+| reason | Type Accuracy |
+| --- | --- |
+| `saturation in the replica apply thread` | **0** |
+| `saturation` | **0** |
+| `the order service is slow` | **1** |
+
+The order is inverted. The description was one token, `replica-apply-thread-saturation`; a reason that spelled
+the same compound out in prose shared no token with it, while a reason that named nothing but the component
+was paid in full because `order` and `service` had always been their own tokens on both sides. A term that
+pays the weaker answer and refuses the stronger one is measuring spelling rather than content.
+
+The pattern is now `[^a-z0-9]+`. The argument is the one that already justified stripping the full stop:
+splitting can only turn a dead token into a live one, and the parts are words the description's author chose.
+The test asserts the property rather than the implementation -- both spellings of one fault score 1, a single
+part of the compound scores 1, and a reason naming a *different* fault still scores 0, because a split adds
+boundaries rather than credit.
+
+## Finding 391 — the fallback the protocol describes was decided by measurement, not by prose
+
+AIOps2025's Type Accuracy is two steps: *"keyword detection against the ground-truth fault descriptions, with
+embedding-similarity fallback for unhit cases"*. The first step is implemented. The second had been recorded
+as a gap for twelve rounds, on an argument that is correct and was never tested: the paper names neither a
+model nor a threshold, and a threshold chosen to match the paper's reported TA would be fitting the metric to
+its own result.
+
+That argument says *do not fit the number*. It does not say the question is undecidable. What decides it is
+which models this repository is **allowed** to ship, and four existing gates answer that before any similarity
+is computed: no network at gate time, no vendored weights (1 MiB limit, `check-no-vendored-data.mjs`), no
+secrets, and the same number on every machine. A hosted embedding API fails the first and the third; a neural
+embedding fails the second. What survives is a surface model.
+
+`scripts/probe-ta-fallback.mjs` measures the whole surface family -- character 2-, 3-, 4- and 5-gram cosine,
+plus token Dice -- against three classes: **verbatim** (the description against itself, a scale check),
+**paraphrase** (a reason naming the same fault with none of its description's content words), and
+**distractor** (every *other* pair's paraphrase against this pair's description). The positives had to be
+written; the negatives did not, and deriving them as the cross product of ten pairs gives ninety measurements
+none of which was chosen.
+
+The decision rule was fixed before the numbers: a model ships only if one threshold admits every paraphrase,
+refuses every distractor, and leaves a margin of at least 0.05 -- with the threshold at the midpoint, the only
+value that encodes no preference between the two errors.
+
+Measured, no model comes close:
+
+| model | paraphrase (min–max) | distractor (min–max) | gap |
+| --- | --- | --- | --- |
+| `char-2gram-cosine` | 0.180 – 0.460 | 0.164 – 0.539 | **−0.359** |
+| `char-3gram-cosine` | 0.059 – 0.276 | 0.000 – 0.360 | **−0.301** |
+| `char-4gram-cosine` | 0.041 – 0.139 | 0.000 – 0.246 | **−0.205** |
+| `char-5gram-cosine` | 0.021 – 0.106 | 0.000 – 0.148 | **−0.127** |
+| `token-dice` | 0.111 – 0.267 | 0.000 – 0.286 | **−0.175** |
+
+Every gap is negative, which is stronger than "the model did badly": a single threshold would have to sit
+above every distractor and below every paraphrase at once, and for every model the highest distractor is above
+the lowest paraphrase. The best of the five misses the bar by 0.177.
+
+The probe also reports what the least bad threshold *costs*, because overlap proves no threshold is right and
+says nothing about how wrong the best one is. `token-dice` at 0.267 misclassifies 10 of 100 pairs: 8 true
+paraphrases refused, 2 descriptions of other faults credited. Wrong in both directions, on the model whose
+distributions overlap least.
+
+One row is worth its own sentence. `char-2gram-cosine` scores the scorer's own mutation string
+(`unrelated-candidate`) at **0.202**, above the floor of its own paraphrases (0.180). Shipping that model would
+make Type Accuracy unfailable, which `runOfficialRegression` would then report as *mutating `reason` did not
+lower the score*. The mutation grid is what makes the fallback safe to reason about at all: it is the guard
+the earlier rounds did not have, and it is why this round could ask the question.
+
+**Conclusion, recorded rather than implemented.** The fallback is not a piece of work this repository has not
+got round to. It is outside what a model with no weights can do, and the boundary has a number on it. The gap
+row in `docs/targets/aiops2025.md` now carries the measurement and the bar a future candidate must beat: every
+paraphrase above every distractor, margin at least 0.05.
+
+## Finding 392 — three exemptions were one duplicated guard, written three times
+
+v3.46's census published nine throw rows as `exempt`, and three of them carried the same sentence: *the same
+check as a proved line above them, in a block that runs later, so these cannot be the one that reports.*
+
+The sentence was true, and reading it as an excuse hid what it described. A check that another check always
+fires first is a check that was written twice:
+
+- `recordedTypeMisses` and `recordedCategoryMisses` each held their own copy of *this run is not in the table*
+  -- the same map, the same key, the same message;
+- `categoryEvidence`, `denialEvidence` and `derivationEvidence` each held their own copy of *this corpus
+  carries no `samples` array* -- **on the same file**, since all three resolve to
+  `golden-master/fault-extraction/samples.json`, two through paths built inline and one through `DATASET`.
+
+So the honest repair was not a test that reaches the copy behind the first one. It was to delete the copies:
+three duplicate guards became two, and the inventory went from **41 throw statements to 38**.
+
+Two structural facts had to be settled to make the remaining two reachable, and both are the same fact:
+
+| guard | why it could not fire | what it takes now |
+| --- | --- | --- |
+| unknown run | the only caller passed a name it had already validated | `runBody(run)` takes the run name |
+| corpus without `samples` | the path was a constant inside the body, and the shipped file always has the array | `readSamplesCorpus(path)` takes the path |
+
+They live in `scripts/type-miss-readings.mjs`, and where they live is not a matter of taste. A test may not
+import a **probe**: `verify-gates-are-testable.mjs` proves a probe by emptying it, an import is resolved when
+the file is loaded, and the worker dies before vitest can attribute a failure -- the meta-gate then reports
+`UNATTRIBUTED`, which is indistinguishable from a broken test. The rule's own message names the repair, and
+this is its fifth instance: *move the reading into a data module and leave the verdict in the gate.*
+
+The split cost one thing worth recording, because it is the kind of thing a split always costs: the fixture
+tree in `published-refusals.test.ts` copies the probe into a scratch checkout and symlinks `packages/` and
+`node_modules/` beside it. One file became two, the copy took one, and the refusal it drives failed with an
+ESM resolution error rather than the message it asserts. The fixture now copies both, which is the whole price
+of the split and is stated in the test where the next reader will need it.

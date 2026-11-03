@@ -1,6 +1,6 @@
 {
   "rule": "a process.exit(...) call whose argument is not a known zero -- no argument at all is zero; sites and zero partition every process.exit call, whatever position the call sits in; a reference to the exit family that is not a call is refused rather than counted; see scripts/derive-gate-sites.mjs",
-  "scanned": 76,
+  "scanned": 78,
   "excluded": {
     "zero": 16
   },
@@ -586,7 +586,7 @@
     },
     {
       "script": "scripts/probe-type-misses.mjs",
-      "line": 1726,
+      "line": 1675,
       "condition": "process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1].replace(REPO + '/', ''))",
       "diagnostic": "\\n${counts['form-variant']} form variant(s) found -- the scorer rejected an answer it should",
       "status": "exempt",
@@ -893,7 +893,7 @@
     "rule": "every throw statement, partitioned four ways: `fatal` (no enclosing function, no enclosing try) ends the process and is proved like a site; `unguarded` (in a function, no enclosing try) hands control to its caller, which decides; `guarded` (in a try block) is caught here; `rethrow` (in a catch, rethrowing the caught binding) carries a decision made above. A try or a catch stops at a function boundary, because neither is on the stack when the function runs elsewhere. fatal + unguarded + guarded + rethrow is the number of throw statements; see scripts/derive-gate-sites.mjs",
     "counts": {
       "fatal": 1,
-      "unguarded": 36,
+      "unguarded": 33,
       "guarded": 1,
       "rethrow": 3
     },
@@ -1116,7 +1116,7 @@
       },
       {
         "script": "scripts/probe-type-misses.mjs",
-        "line": 255,
+        "line": 269,
         "disposition": "unguarded",
         "message": "checkRca100Structure published no ${id} check",
         "status": "exempt",
@@ -1124,47 +1124,7 @@
       },
       {
         "script": "scripts/probe-type-misses.mjs",
-        "line": 526,
-        "disposition": "unguarded",
-        "message": "unknown run '${run}'; recorded runs are ${Object.keys(RUNS).join(', ')}",
-        "status": "proved",
-        "provedBy": "packages/core/test/published-refusals.test.ts"
-      },
-      {
-        "script": "scripts/probe-type-misses.mjs",
-        "line": 550,
-        "disposition": "unguarded",
-        "message": "unknown run '${run}'; recorded runs are ${Object.keys(RUNS).join(', ')}",
-        "status": "exempt",
-        "reason": "The same guard as `:526`, on the same map with the same key. They are separate functions because the two readings are separate, and either must refuse on its own -- but in one run the type block runs first, so a key the type reading accepted is a key this one accepts too. `:526` is proved by `published-refusals.test.ts`; this one cannot be reached while it stands in front."
-      },
-      {
-        "script": "scripts/probe-type-misses.mjs",
-        "line": 570,
-        "disposition": "unguarded",
-        "message": "${goldenPath} carries no samples array",
-        "status": "proved",
-        "provedBy": "packages/core/test/published-refusals.test.ts"
-      },
-      {
-        "script": "scripts/probe-type-misses.mjs",
-        "line": 665,
-        "disposition": "unguarded",
-        "message": "${goldenPath} carries no samples array",
-        "status": "exempt",
-        "reason": "A second guard on the same committed file as `:570`, in the block that runs next. `:570` is proved by `published-refusals.test.ts`; a file that loses its `samples` array stops the run at the first of the two, so this one cannot be reached while that one stands in front of it."
-      },
-      {
-        "script": "scripts/probe-type-misses.mjs",
-        "line": 931,
-        "disposition": "unguarded",
-        "message": "${DATASET} carries no samples array",
-        "status": "exempt",
-        "reason": "The same check as `:570`, on the same path -- `DATASET` and `goldenPath` name one file -- in the derivation block, which is the last of the three that read it. A file without `samples` is refused by the first block that reads it, so this line cannot be the one that reports the state."
-      },
-      {
-        "script": "scripts/probe-type-misses.mjs",
-        "line": 1228,
+        "line": 1177,
         "disposition": "unguarded",
         "message": "unknown argument '${a}'",
         "status": "proved",
@@ -1172,7 +1132,7 @@
       },
       {
         "script": "scripts/probe-type-misses.mjs",
-        "line": 1247,
+        "line": 1196,
         "disposition": "unguarded",
         "message": "new Error( 'input has no `misses` array; pass a scored report (scripts/score-fault-extraction.mjs), ' + 'not a raw predi",
         "status": "proved",
@@ -1180,7 +1140,7 @@
       },
       {
         "script": "scripts/probe-type-misses.mjs",
-        "line": 1319,
+        "line": 1268,
         "disposition": "unguarded",
         "message": "classification partition does not cover the misses: ${covered} != ${classified.length}",
         "status": "exempt",
@@ -1225,6 +1185,22 @@
         "message": "not a file",
         "status": "proved",
         "provedBy": "packages/core/test/published-refusals.test.ts"
+      },
+      {
+        "script": "scripts/type-miss-readings.mjs",
+        "line": 104,
+        "disposition": "unguarded",
+        "message": "unknown run '${run}'; recorded runs are ${Object.keys(RUNS).join(', ')}",
+        "status": "proved",
+        "provedBy": "packages/core/test/probe-type-misses-refusals.test.ts"
+      },
+      {
+        "script": "scripts/type-miss-readings.mjs",
+        "line": 143,
+        "disposition": "unguarded",
+        "message": "${path} carries no samples array",
+        "status": "proved",
+        "provedBy": "packages/core/test/probe-type-misses-refusals.test.ts"
       }
     ]
   }

@@ -237,10 +237,15 @@ describe('scripts/probe-type-misses.mjs · three refusals at its edges', () => {
   it('refuses a golden file that carries no samples, rather than reporting zeros', () => {
     const treeDir = join(SCRATCH, 'probe-unreadable-golden');
     mkdirSync(join(treeDir, 'scripts'), { recursive: true });
-    writeFileSync(
-      join(treeDir, 'scripts', 'probe-type-misses.mjs'),
-      readFileSync(resolve(ROOT, 'scripts', 'probe-type-misses.mjs'), 'utf8'),
-    );
+    // Both files the probe is made of: the report and the readings it prints. The
+    // probe used to be one file, and the second copy below is the whole cost of the
+    // split -- a fixture tree that holds one half resolves nothing.
+    for (const name of ['probe-type-misses.mjs', 'type-miss-readings.mjs']) {
+      writeFileSync(
+        join(treeDir, 'scripts', name),
+        readFileSync(resolve(ROOT, 'scripts', name), 'utf8'),
+      );
+    }
     // The probe imports the built graph and reads the recorded misses out of the test
     // fixtures, so both are links to the real tree rather than copies: a copy of
     // `packages/` would need a build, and a copy of the fixtures would be a second

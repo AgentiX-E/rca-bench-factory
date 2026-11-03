@@ -532,9 +532,15 @@ number — it is a green run that established nothing.
   the far endpoint of an injected network fault scored zero where the protocol pays full
   credit. The relaxation is one field (`OfficialGroundTruth.alternatives`) and one
   disjunction, scoped by the key's own fields rather than by a fault-type list. The second
-  step of TA — "embedding-similarity fallback for unhit cases" — is **not** implemented and
-  is recorded as a gap: it names no model and no threshold, so choosing them would be
-  inventing the rule rather than reading it.
+  step of TA — "embedding-similarity fallback for unhit cases" — is **not** implemented, and
+  the boundary is now a measurement rather than an argument: five surface models
+  (character 2–5-gram cosine and token Dice) were scored over ten paraphrases and the
+  ninety distractors derived from them, and every one overlaps the two classes (gaps
+  −0.359 to −0.127), so any threshold either refuses a true paraphrase or credits a
+  description of a different fault. The probe that decided it is
+  `scripts/probe-ta-fallback.mjs`, its numbers are `golden-master/ta-fallback.json`, and
+  the bar a future candidate must beat — every paraphrase above every distractor, margin at
+  least 0.05 — is published with them (finding 391).
 - **RCA100 is held to the sentences of its protocol, quoted verbatim.**
   `golden-master/rca100-evaluator.json` pins `arXiv 2606.29193v1` by digest (2,958,887
   bytes, sha256 `b8b8de83…`) and records four clauses from §5.4 with the argument for
@@ -546,6 +552,19 @@ number — it is a green run that established nothing.
   dataset's own fault-type rubric (1.0 / 0.5 / 0.2 for an exact L3, a shared L2 and a
   shared L1) is recorded and **not** applied, with the reason: it is 25 KB of CC BY-NC
   data this project does not redistribute, so the gap is pinned rather than half-closed.
+- **A hyphen is a word boundary in a fault description.** A slug-written key
+  (`replica-apply-thread-saturation on the order service`) is one token under a pattern that
+  keeps `-` inside words, so a reason that spelled the compound out in prose scored **0**
+  Type Accuracy while `the order service is slow` scored **1**. Both spellings now score 1, a
+  single part of the compound scores 1, and a reason naming a different fault still scores 0
+  (finding 390).
+- **A refusal is enumerated once.** Three throw rows were published as `exempt` because "the
+  same check above them fires first" — a description of duplicated guards rather than of an
+  unreachable line. The two unknown-run copies became `runBody(run)` and the three
+  corpus-without-`samples` copies became `readSamplesCorpus(path)`, both in the `data` module
+  `scripts/type-miss-readings.mjs`, which a test may import where a probe may not. The
+  inventory went from 41 throw statements to 38, and no row now rests on a sentence
+  (finding 392).
 - **The case directory name preserves the hyphen.** Upstream publishes
   `dataset/ts-order-service-cpu_1/`; a component slugified to `tsorderservice` names a
   directory that does not exist. One case per system pins the exact name, and a

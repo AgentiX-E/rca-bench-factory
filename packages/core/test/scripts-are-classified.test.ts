@@ -142,8 +142,17 @@ const REGISTER: Record<string, Entry> = {
       'milestone rests on disagreeing with itself.',
   },
 
-  'staged-mutation.mjs': {
+  'type-miss-readings.mjs': {
     class: 'data',
+    why:
+      'The readings `probe-type-misses.mjs` prints, as functions: one recorded run body, the two field ' +
+      'filters over it, and the golden corpus reader. No main, no exit -- the probe holds the report and ' +
+      'is spawned, because a probe a test imports cannot be proved by emptying it. The move also deleted ' +
+      'three duplicate guards that made their own rows unprovable: two copies of "this run is not in the ' +
+      'table", and three copies of "this corpus carries no samples array" -- the last three over the same ' +
+      'file, which is why only the first of them could ever have fired.',
+  },
+  'staged-mutation.mjs': {    class: 'data',
     why:
       'The comparison a commit boundary needs: for every file a mutation battery recorded, is the ' +
       'staged blob the one whose bytes hash to the recorded digest? No main and no exit -- ' +
@@ -440,6 +449,16 @@ const REGISTER: Record<string, Entry> = {
       'Filed as `tool` rather than `probe` because this file checks that the two classes with a failure ' +
       'exit -- gate and probe -- are exactly the scripts the inventory names, and a probe with no exit ' +
       'would break that correspondence rather than describe a gap in it.',
+  },
+  'probe-ta-fallback.mjs': {
+    class: 'tool',
+    why:
+      'The same shape one target over: it computes five similarities over a ten-pair table and rewrites ' +
+      '`golden-master/ta-fallback.json`, and it has no exit because its verdict is data rather than a ' +
+      'status -- "no surface model separates the two classes" is a measurement, and a gate that exited ' +
+      'non-zero on it would report a correct answer as a defect. The reader that decides whether the ' +
+      'data is still true is `ta-fallback.test.ts`, which recomputes every number from the pairs, so the ' +
+      'file cannot drift from the code that produced it.',
   },
 
   // --- Gates that used to be filed as harnesses ---

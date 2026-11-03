@@ -753,6 +753,50 @@ describe('AIOps2025 Final_A', () => {
   });
 
   /**
+   * The third spelling of a word boundary, and the one that inverted the term.
+   *
+   * The tokeniser split on every run of characters that is neither a letter, a
+   * digit nor a **hyphen**, so a description written as a slug -- and the fault
+   * types this repository emits are slugs -- arrived as one token:
+   * `replica-apply-thread-saturation` had exactly one keyword, the whole string.
+   *
+   * Measured on that key, before the fix:
+   *
+   * | reason | Type Accuracy |
+   * | --- | --- |
+   * | `saturation in the replica apply thread` | **0** |
+   * | `the order service is slow` | **1** |
+   *
+   * The order is inverted. The reason that names the mechanism exactly scores
+   * nothing, and the reason that names the component and nothing else is paid in
+   * full -- because `order` and `service` were their own tokens on both sides.
+   *
+   * The claim this asserts is not "hyphens should split". It is that a key is the
+   * same key however its writer spelled it: a reason that echoes the slug and a
+   * reason that writes the compound out in prose describe one fault, and a term
+   * that pays one and not the other is measuring spelling.
+   */
+  it('reads a hyphenated description as words, the same way a reason writes them', () => {
+    const slugged = files();
+    const line = JSON.parse(slugged['groundtruth.jsonl']!.trim());
+    slugged['groundtruth.jsonl'] = `${JSON.stringify({
+      ...line,
+      fault_description: 'replica-apply-thread-saturation on the order service',
+    })}\n`;
+    const oracle = oracleFor('aiops2025', slugged)[0]!;
+    const ta = (reason: string) => scoreWith('aiops2025', slugged, [{ ...oracle, reason }]).breakdown.ta;
+
+    // Both spellings of the same fault, and both must be paid.
+    expect(ta('replica-apply-thread-saturation')).toBe(1);
+    expect(ta('saturation in the replica apply thread')).toBe(1);
+    // A single part of the compound is still a word the fault put there.
+    expect(ta('the apply thread ran out of workers')).toBe(1);
+    // Control: a reason that names a different fault is still refused, so the
+    // split adds boundaries rather than credit.
+    expect(ta('the payment gateway dropped connections')).toBe(0);
+  });
+
+  /**
    * A key with nothing to detect.
    *
    * `the on and for` is four words and no keyword. The old rule found `the` and

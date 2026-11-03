@@ -1,0 +1,231 @@
+{
+  "schema": "rca-bench-factory/ta-fallback@1",
+  "takenAt": "2026-11-03",
+  "question": "Can the AIOps2025 Type Accuracy fallback -- 'embedding-similarity for unhit cases' -- be honoured by a model this repository is allowed to ship?",
+  "clause": "Type Accuracy (TA) is calculated via two-step matching: keyword detection against the ground-truth fault descriptions, with embedding-similarity fallback for unhit cases.",
+  "permitted": "A model this repository may ship is offline, deterministic, carries no vendored weights (check-no-vendored-data.mjs refuses anything over 1 MiB of data) and needs no secret. A hosted embedding API fails the first and the third; a neural embedding fails the second. What survives is a surface model.",
+  "decisionRule": "A model ships only if one threshold both admits every paraphrase (a reason naming the same fault without a single content word of its description) and refuses every distractor (a reason naming a different fault from this table), with a margin of at least 0.05; the threshold would then be the midpoint of that margin, the only value that encodes no preference between a false credit and a false refusal.",
+  "marginWhy": "At three decimal places a cosine whose classes sit 0.05 apart is separated by tokeniser noise -- a stop word, a plural, a hyphen -- rather than by meaning.",
+  "distractorMethod": "The positives are written by hand, because a paraphrase is the thing under test. The negatives are the cross product: for each pair, every other pair's paraphrase against this pair's description, so ten pairs give ninety measurements and none of them was chosen. A reason that describes fault A must not be credited to fault B, which is the rule the fallback would have to honour.",
+  "pairs": [
+    {
+      "id": "cpu-order",
+      "description": "CPU saturation on the order service",
+      "paraphrase": "the processor was pinned at its ceiling on the tier that takes purchases"
+    },
+    {
+      "id": "memory-payment",
+      "description": "memory leak in the payment gateway",
+      "paraphrase": "the charge tier kept holding heap until the kernel killed it"
+    },
+    {
+      "id": "loss-checkout",
+      "description": "network packet loss between checkout and currency",
+      "paraphrase": "frames were dropped on the link joining the basket and pricing tiers"
+    },
+    {
+      "id": "disk-cart",
+      "description": "disk io latency on the cart database",
+      "paraphrase": "the storage volume behind the basket store answered slowly"
+    },
+    {
+      "id": "replica-order",
+      "description": "replica-apply-thread-saturation on the order service",
+      "paraphrase": "the standby copy ran out of workers while replaying writes"
+    },
+    {
+      "id": "pool-search",
+      "description": "thread pool exhaustion in the search service",
+      "paraphrase": "the query tier ran out of workers to hand requests to"
+    },
+    {
+      "id": "dns-currency",
+      "description": "dns resolution failure for the currency service",
+      "paraphrase": "name lookups for the pricing tier stopped answering"
+    },
+    {
+      "id": "pool-inventory",
+      "description": "connection pool exhaustion on the inventory service",
+      "paraphrase": "the stock tier had no free sockets left"
+    },
+    {
+      "id": "gc-recommendation",
+      "description": "gc pause storm in the recommendation service",
+      "paraphrase": "the suggestion tier stalled in repeated collection cycles"
+    },
+    {
+      "id": "skew-shipping",
+      "description": "clock skew on the shipping service",
+      "paraphrase": "the delivery tier reported timestamps that drifted apart"
+    }
+  ],
+  "guard": {
+    "reason": "unrelated-candidate",
+    "note": "The string the scorer's own mutation grid substitutes for a reason. It must stay below any threshold this table would ever justify, or the fallback would make Type Accuracy unfailable and `runOfficialRegression` would report the target as unmutatable."
+  },
+  "models": [
+    {
+      "id": "char-2gram-cosine",
+      "verbatim": {
+        "count": 10,
+        "min": 1,
+        "max": 1,
+        "mean": 1
+      },
+      "paraphrase": {
+        "count": 10,
+        "min": 0.18,
+        "max": 0.46,
+        "mean": 0.324
+      },
+      "distractor": {
+        "count": 90,
+        "min": 0.164,
+        "max": 0.539,
+        "mean": 0.343
+      },
+      "gap": -0.359,
+      "separates": false,
+      "threshold": null,
+      "fitted": {
+        "threshold": 0.539,
+        "errors": 11,
+        "falseRefusals": 10,
+        "falseCredits": 1
+      },
+      "guard": 0.202
+    },
+    {
+      "id": "char-3gram-cosine",
+      "verbatim": {
+        "count": 10,
+        "min": 1,
+        "max": 1,
+        "mean": 1
+      },
+      "paraphrase": {
+        "count": 10,
+        "min": 0.059,
+        "max": 0.276,
+        "mean": 0.134
+      },
+      "distractor": {
+        "count": 90,
+        "min": 0,
+        "max": 0.36,
+        "mean": 0.129
+      },
+      "gap": -0.301,
+      "separates": false,
+      "threshold": null,
+      "fitted": {
+        "threshold": 0.36,
+        "errors": 11,
+        "falseRefusals": 10,
+        "falseCredits": 1
+      },
+      "guard": 0
+    },
+    {
+      "id": "char-4gram-cosine",
+      "verbatim": {
+        "count": 10,
+        "min": 1,
+        "max": 1,
+        "mean": 1
+      },
+      "paraphrase": {
+        "count": 10,
+        "min": 0.041,
+        "max": 0.139,
+        "mean": 0.084
+      },
+      "distractor": {
+        "count": 90,
+        "min": 0,
+        "max": 0.246,
+        "mean": 0.076
+      },
+      "gap": -0.205,
+      "separates": false,
+      "threshold": null,
+      "fitted": {
+        "threshold": 0.246,
+        "errors": 11,
+        "falseRefusals": 10,
+        "falseCredits": 1
+      },
+      "guard": 0
+    },
+    {
+      "id": "char-5gram-cosine",
+      "verbatim": {
+        "count": 10,
+        "min": 1,
+        "max": 1,
+        "mean": 1
+      },
+      "paraphrase": {
+        "count": 10,
+        "min": 0.021,
+        "max": 0.106,
+        "mean": 0.05
+      },
+      "distractor": {
+        "count": 90,
+        "min": 0,
+        "max": 0.148,
+        "mean": 0.041
+      },
+      "gap": -0.127,
+      "separates": false,
+      "threshold": null,
+      "fitted": {
+        "threshold": 0.106,
+        "errors": 10,
+        "falseRefusals": 9,
+        "falseCredits": 1
+      },
+      "guard": 0
+    },
+    {
+      "id": "token-dice",
+      "verbatim": {
+        "count": 10,
+        "min": 1,
+        "max": 1,
+        "mean": 1
+      },
+      "paraphrase": {
+        "count": 10,
+        "min": 0.111,
+        "max": 0.267,
+        "mean": 0.163
+      },
+      "distractor": {
+        "count": 90,
+        "min": 0,
+        "max": 0.286,
+        "mean": 0.127
+      },
+      "gap": -0.175,
+      "separates": false,
+      "threshold": null,
+      "fitted": {
+        "threshold": 0.267,
+        "errors": 10,
+        "falseRefusals": 8,
+        "falseCredits": 2
+      },
+      "guard": 0
+    }
+  ],
+  "verdict": {
+    "shipped": false,
+    "separatingModels": [],
+    "bestModel": "char-5gram-cosine",
+    "bestGap": -0.127,
+    "shortfall": 0.177,
+    "reason": "no surface model separates the classes: the highest-scoring distractor for char-5gram-cosine scores 0.148, above the lowest-scoring paraphrase at 0.021, so every threshold either refuses a paraphrase or credits a description of a different fault"
+  }
+}

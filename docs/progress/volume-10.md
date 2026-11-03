@@ -1695,9 +1695,9 @@ resolves at its own line. Two controls hold both orders.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **230 files, 5652 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **234 files, 5839 tests passed** (as of this commit) |
+| `core` test suite | **230 files, 5652 tests passed** (as of v3.46) |
+| `cli` test suite | **4 files, 187 tests passed** (as of v3.46) |
+| repo test suite | **234 files, 5839 tests passed** (as of v3.46) |
 | throw partition | **41 statements**: 1 `fatal`, 36 `unguarded`, 1 `guarded`, 3 `rethrow`; **32 proved, 9 exempt** |
 | the census | **21 reached, 20 not**; 11 driven by tests written this round, 9 exempt with a sentence about the line |
 | failure sites | **114** across 56 scripts, unchanged; `excluded` `{16 zero}` unchanged |
@@ -1730,3 +1730,178 @@ report **nothing** rather than report something wrong -- bytes not decoded, attr
 loader cannot see, a recorder absent from the worker. So the next ruler is: **when a census finds zero, prove
 the instrument can find one before you believe it** -- and the cheapest proof is a fixture where the answer is
 known.
+
+## v3.47 — a word boundary the tokeniser did not know, and a fallback decided by measuring it
+
+v3.46 closed with a ruler rather than a result: *when a census finds zero, prove the instrument can find one
+before you believe it.* It had just instrumented every `throw` in the tree and asked, of each, whether any test
+had ever run the line. Twenty had not, eleven were driven, and nine were published as `exempt` with a sentence
+apiece.
+
+This round opened on the three oldest open items rather than on the instrument, and the first two turned out to
+be the same defect wearing different clothes: **a rule that was written down where it could not be read** -- a
+tokeniser whose boundary list was missing a character, and a fallback whose parameters were missing from the
+paper.
+
+### One — the hyphen, and an inversion that made the best answer score zero
+
+Type Accuracy asks whether a keyword of the fault description appears in the reason. Both sides are cut into
+words by one function, and its pattern kept `-` inside a token. Nothing tested it, and the comment above it
+explained the split without mentioning the hyphen, so the choice had never been argued.
+
+It matters because the two sides are written differently: a description is often a **slug**, a reason is prose.
+Measured on `replica-apply-thread-saturation on the order service`:
+
+| reason | Type Accuracy |
+| --- | --- |
+| `saturation in the replica apply thread` | **0** |
+| `saturation` | **0** |
+| `the order service is slow` | **1** |
+
+The description was one token. A reason that spelled the compound out shared nothing with it, while a reason
+that named only the component was paid in full, because `order` and `service` had always been separate tokens on
+both sides. The term was measuring spelling, and it preferred the worse answer.
+
+The pattern is `[^a-z0-9]+` now, on the argument that already justified stripping the full stop: splitting can
+only turn a dead token into a live one, and the parts are words the description's author chose. The test states
+the property rather than the implementation -- both spellings score 1, a single part scores 1, a different fault
+still scores 0.
+
+### Two — the fallback the protocol describes, decided by measuring five models instead of arguing
+
+AIOps2025's Type Accuracy is two steps, and only the first is implemented:
+
+> keyword detection against the ground-truth fault descriptions, with embedding-similarity fallback for unhit
+> cases.
+
+Twelve rounds recorded that as a gap, on a correct argument: the paper names neither a model nor a threshold, and
+choosing one to match the paper's reported TA would be fitting the metric to its own result. That argument says
+*do not fit the number*. It does not say the question is undecidable.
+
+What decides it is which models this repository is **allowed** to ship, and four existing gates already answer
+that: no network at gate time, no vendored weights, no secrets, and the same number on every machine. A hosted
+embedding API fails the first and the third; a neural embedding fails the second. What is left is a surface
+model -- a deterministic function of two strings with nothing to download.
+
+So the question became measurable: *is a surface model enough?* `scripts/probe-ta-fallback.mjs` scores the whole
+family -- character 2-, 3-, 4- and 5-gram cosine, and token Dice -- over three classes. **Verbatim** is the
+description against itself, a scale check. **Paraphrase** is a reason naming the same fault with none of its
+description's content words; ten of those had to be written. **Distractor** is every *other* pair's paraphrase
+against this pair's description -- ninety measurements, none of them chosen, because the negatives are the cross
+product rather than a list.
+
+The decision rule was fixed before the numbers were taken: a model ships only if one threshold admits every
+paraphrase, refuses every distractor, and leaves a margin of at least 0.05, with the threshold at the midpoint --
+the only value that encodes no preference between a false credit and a false refusal.
+
+| model | paraphrase (min–max) | distractor (min–max) | gap |
+| --- | --- | --- | --- |
+| `char-2gram-cosine` | 0.180 – 0.460 | 0.164 – 0.539 | **−0.359** |
+| `char-3gram-cosine` | 0.059 – 0.276 | 0.000 – 0.360 | **−0.301** |
+| `char-4gram-cosine` | 0.041 – 0.139 | 0.000 – 0.246 | **−0.205** |
+| `char-5gram-cosine` | 0.021 – 0.106 | 0.000 – 0.148 | **−0.127** |
+| `token-dice` | 0.111 – 0.267 | 0.000 – 0.286 | **−0.175** |
+
+Every gap is negative, which says more than "the model did badly": one threshold would have to sit above every
+distractor and below every paraphrase at once, and for every model the highest distractor is above the lowest
+paraphrase. The best of the five misses the bar by **0.177**.
+
+The probe also reports what the least bad threshold costs, because overlap proves no threshold is right and does
+not say how wrong the best one is: `token-dice` at 0.267 misclassifies **10 of 100** pairs -- 8 true paraphrases
+refused, 2 descriptions of other faults credited. Wrong in both directions, on the model that overlaps least.
+
+One row is its own finding. `char-2gram-cosine` scores the scorer's own mutation string at **0.202**, above the
+floor of its own paraphrases at 0.180: shipping that model would make Type Accuracy unfailable, and
+`runOfficialRegression` would report it as *mutating `reason` did not lower the score*. The mutation grid is the
+guard earlier rounds did not have, and it is why this question could be asked at all -- a fallback is now a
+change the existing regression can refuse.
+
+**So the gap closes as a decision rather than as code.** It is not work not yet done; it is outside what a model
+with no weights can do, and the boundary has a number on it. `golden-master/ta-fallback.json` publishes the
+classes, the measurements and the bar a future candidate must beat, and `ta-fallback.test.ts` recomputes every
+number from the pairs, so the file cannot drift from the code that produced it.
+
+### Three — three exemptions were one duplicated guard, written three times
+
+v3.46's nine exemptions included three whose reasons were the same sentence: *the same check as a proved line
+above them, in a block that runs later, so these cannot be the one that reports.*
+
+True, and the sentence was doing more work than it looked. A check that another check always fires first is a
+check that was written **twice**. Measured:
+
+- `recordedTypeMisses` and `recordedCategoryMisses` each held their own copy of *this run is not in the table* --
+  same map, same key, same message;
+- `categoryEvidence`, `denialEvidence` and `derivationEvidence` each held their own copy of *this corpus carries
+  no `samples` array* -- **on the same file**, since all three resolve to
+  `golden-master/fault-extraction/samples.json`, two through inline paths and one through `DATASET`.
+
+The repair was therefore not a test that reaches the copy behind the first one. It was deleting the copies: three
+duplicate guards became two, and the inventory went from **41 throw statements to 38**.
+
+Both survivors are reachable now because both **take what they read** -- `runBody(run)` takes the run name,
+`readSamplesCorpus(path)` takes the path -- and both live in `scripts/type-miss-readings.mjs`. Where they live is
+not taste: a test may not import a probe, because `verify-gates-are-testable.mjs` proves a probe by emptying it
+and the import kills the worker before vitest can name a failure. The rule's own message names the repair --
+*move the reading into a data module and leave the verdict in the gate* -- and this is its fifth instance.
+
+The split cost one thing, recorded because a split always costs it: the fixture tree in `published-refusals.test.ts`
+copies the probe into a scratch checkout. One file became two, the copy took one, and the refusal it drives failed
+with an ESM resolution error instead of the message it asserts. The fixture copies both now.
+
+### Four — the census, after the dedupe
+
+| | v3.46 | now |
+| --- | --- | --- |
+| throw statements | 41 | **38** |
+| proved | 32 | **32** |
+| exempt | 9 | **6** |
+| rows resting on a sentence | 9 | **6** |
+
+Two rows were removed as duplicate statements and two were added in the module that took their place, so the
+proved count is unchanged while the inventory is smaller. The six sentences left are not of the kind this round
+deleted: three assert something about a table the same function just produced (`probe-m1-ceiling.mjs:118`,
+`probe-type-misses.mjs:269` and `:1268`), two guard the **pack contract** rather than an input
+(`build-example-bundle.mjs:57`, `:60` -- `normalizePackEntries` refuses a duplicate path first, and example files
+carry an `examples/order-prod/` prefix, so the two rows cannot collide), and one was reachable only through a
+**defect** that has since become a diagnosis (`measure-doc-counts.mjs:267`, a missing `pnpm-workspace.yaml`). None
+of them is a copy of a guard standing in front of another.
+
+### Readings
+
+> Ledger for `v3.47`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **232 files, 5666 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **236 files, 5853 tests passed** (as of this commit) |
+| throw partition | **38 statements**: 1 `fatal`, 33 `unguarded`, 1 `guarded`, 3 `rethrow`; **32 proved, 6 exempt** |
+| the dedupe | 41 statements to 38: two unknown-run copies became `runBody`, three corpus-guard copies became `readSamplesCorpus` |
+| failure sites | **114** across 56 of 78 scripts, unchanged; `excluded` `{16 zero}` unchanged |
+| the fallback probe | five surface models, ten pairs, **90 derived distractors**; every gap negative, best **−0.127**; least-bad threshold wrong on 10 of 100 pairs |
+| new tests | **13**: 10 in `ta-fallback.test.ts` and 3 in `probe-type-misses-refusals.test.ts` |
+| new modules | `scripts/probe-ta-fallback.mjs` (a `tool`: writes the corpus, has no verdict) and `scripts/type-miss-readings.mjs` (a `data` module: the readings, so a test may reach them) |
+| proof plan | `verify-site-proofs`: **139 claim(s)** across **52** files, including all 32 throw claims -- PASSED |
+| sensitivity | `verify-sites-are-sensitive`: **139 claim(s)**, 191 runs, **0 survivors**, 4.2 min; 107 exits hollowed, 32 throws removed, and no claim left unmutated |
+| `docs:check` | green: 389 findings / 1–392, 10 volumes / 195 rounds, 1624 citations naming 389 numbers, 568 open entries with 529 carrying a reason, and the counts re-derived from three measured suites |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P1** | ~~TA's embedding fallback~~ | **closed as a measured decision**: five surface models overlap the classes, so no threshold exists; a model this repository may ship cannot stand in for the step | the bar for any future candidate is published in `golden-master/ta-fallback.json` |
+| **P2** | a key whose description carries no keyword scores 0 | the protocol is silent; this repository takes 0 | record it as a gap; do not invent a redistribution |
+| **P3** | the sensitivity gate's cost grows linearly with claims | 139 claims, 191 runs, 4.2 min locally (9.4 on the runner at the same claim count) | the 15-minute budget holds about 300 runs at this rate; shard by file before then |
+| **P4** | six throw rows rest on a sentence rather than a measurement | three assert something about a table the same function produced, two guard the pack contract rather than an input, one was reachable only through a defect | the duplicated three were deleted this round; what is left needs the function to disagree with itself, which is a property rather than a test |
+| **P5** | the witness is invisible to a child that drops the environment | a script loaded without `NODE_OPTIONS` is not rewritten, exactly as its exits are not recorded | unchanged; the same one-level blind spot as P7 |
+| **P7** | the blind spot still sees only one level | a wrapper that does not inherit hides its own child | unchanged this round |
+| **P8** | the compiler is a runtime dependency of four readers | `derive-gate-sites.mjs`, `gate-proofs.mjs`, the witness and the Vite plugin all use `typescript` | "a gate with no dependencies" still needs a third correct reading |
+| **P9** | the batteries job sits 3 to 11 minutes from its ceiling | eight readings against a 30-minute budget span **19.2 to 27.3** | take a fresh baseline before adding a step |
+
+**The lesson, for the round after this one.** Both defects this round were found by asking what the *other*
+spelling is. The tokeniser knew a full stop as a boundary and did not know a hyphen; the exemptions knew a check
+as a thing that runs and did not know it as a thing that was written twice. Neither was visible from the
+behaviour anyone was measuring -- Type Accuracy looked correct on every fixture, and every exemption had a true
+sentence beside it. So the next ruler is: **when a rule has a list in it, count the list against the language
+rather than against the fixtures** -- a boundary set, a closed class, a table of kinds all fail the same way, by
+being one member short and by looking right on everything that was tried.
