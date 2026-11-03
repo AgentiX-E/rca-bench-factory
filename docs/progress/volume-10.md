@@ -1512,6 +1512,7 @@ The seams follow `RCA_CI_WORKFLOW` and `RCA_CI_BASELINE`: an unset variable is t
 | deriver cost | 75 scripts in **0.42 s** (was 0.41), because the throw walk is a second pass over the same trees |
 | `docs:check` | green: 376 findings / 1–379, 10 volumes / 193 rounds, 1601 citations naming 376 numbers, 568 open entries with 529 carrying a reason |
 | CI | run `41558345549` on `3593d92e9`: **6 of 6 jobs success** -- build 6.3, sensitivity 5.7, batteries **25.2**, backend 0.8, golden master 1.0, cold-tree 0.3 min |
+| CI, the commit after | run `41562828735` on `f6d8ee6a0`: **6 of 6 jobs success** -- build 6.6, sensitivity 7.9, batteries **26.8**, backend 0.8, golden master 0.7, cold-tree 0.4 min |
 
 ### Left open, in the order the goal is reached
 
@@ -1525,7 +1526,7 @@ The seams follow `RCA_CI_WORKFLOW` and `RCA_CI_BASELINE`: an unset variable is t
 | **P6** | four scripts hold throws and no published site | `doc-counts-rows`, `format-spec`, `gate-receipt`, `serve-site` | all four are libraries or a server rather than gates, so "reach the line" is the question that applies; see whether a test drives each throw's line |
 | **P7** | the blind spot still sees only one level | a wrapper that does not inherit hides its own child | unchanged this round |
 | **P8** | the compiler is a runtime dependency of three gates | `derive-gate-sites.mjs`, `gate-proofs.mjs`, and the new reading all `import typescript` | "a gate with no dependencies" needs a third correct reading |
-| **P9** | the batteries job is 4.8 minutes from its ceiling | seven readings: 19.2, 21.9, 26.7, 27.2, 26.8, 27.3, **25.2** against 30 | take a fresh baseline before adding a step to that job; the eight-minute spread between readings is its own question |
+| **P9** | the batteries job sits 3 to 11 minutes from its ceiling | eight readings against a 30-minute budget span **19.2 to 27.3**, and the spread is the fact rather than any one value | take a fresh baseline before adding a step; a range is written here rather than a list because every commit produces one more reading, and the spread is the question worth asking |
 
 **The lesson, for the round after this one.** The last five rounds each asked a version of "is this claim
 true?" -- is there a run, can the run disagree, which thing does the sentence name, does the sentence end the
