@@ -366,7 +366,7 @@ jobs:
       # gate that can be emptied without a test noticing, or that no test names at
       # all, fails the build.
       - name: Every gate can be shown to fail
-        timeout-minutes: 8
+        timeout-minutes: 9
         run: node scripts/verify-gates-are-testable.mjs
 
       # The three batteries below were written, repaired, and never invoked. Each
@@ -795,7 +795,7 @@ jobs:
       # not been exercised. It is checked for data-only injections, where "the
       # partition must move" is the whole point of the edit.
       - name: Type-miss probe battery (no survivors, no inert, no blind mutations)
-        timeout-minutes: 16
+        timeout-minutes: 17
         run: python3 scripts/injection/type-miss-probe.py
 
       # P1-5 asks for T2's six backends to be measured and the unsupported ones

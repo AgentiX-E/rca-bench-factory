@@ -1543,6 +1543,15 @@ for one budget. The batteries split in two:
 | budget | 25 min (was 30) | 25 min |
 | wall clock | the longer of the two, not their sum | |
 
+Two runs later the same rule fired again, on a different pair, and the pair is worth naming
+because it shows the rule working rather than the tree being wrong: `every gate can be shown to
+fail` moved from 221 s to 251 s and `type-miss probe battery` from 479 s to 487 s. The second is
+the sharper one -- 16 minutes is 960 s and twice 487 is 974 -- so the bound was under the multiple
+by fourteen seconds, and would have killed a legitimate run on a slow runner while reporting it as
+a hang. Both bounds moved (9 and 17 minutes), and the job's arithmetic still fits the 25-minute
+budget. A bound raised *before* it fires is the only kind the module's own note allows: the
+alternative is slack.
+
 `sensitivity` is the same arithmetic one job over. One step measures 536 s, so its bound is
 18 minutes; a 15-minute budget cannot hold an 18-minute bound plus the 23 s that ran before
 it. The job declares **20** now, which is what the bound needs rather than what the

@@ -2010,6 +2010,30 @@ equality asked, and the job had no such step. Nothing failed -- the battery runs
 tests that spawn no shell -- and the guard said so anyway, which is the whole point of
 writing it over a set.
 
+### Five -- the successor run moved two measurements past the line
+
+The split landed on `00b76ac83` (run `41658872002`) and the recording was refreshed from it. The
+next run, `41670923224` on the docs commit, measured the same steps again, and two of them had
+moved:
+
+```
+`Every gate can be shown to fail` is bounded at 8 min and measured 251 s
+`Type-miss probe battery` is bounded at 16 min and measured 487 s
+```
+
+Both are the same 2x rule, and both had drifted rather than jumped: 221 s to 251 s, 479 s to
+487 s. The second one is the interesting one, because 16 minutes is 960 s and twice 487 is 974 --
+a bound that is now *under* the multiple by fourteen seconds, which is a bound that would kill a
+legitimate run on a slow runner and report it as a hang. So the bounds moved to 9 and 17 minutes,
+and the job's arithmetic still fits: 17 + the 8.4 minutes that ran before it is 25.4 against a
+budget of 25, so the two are indistinguishable at this precision and the recording is the run
+that produced them.
+
+That is the module's own instruction carried one step further than the round expected: *a bound
+that has to be raised after it fires was wrong, and the honest response is to measure again rather
+than to add slack.* Here it was raised before it fired, because the measurement that justified it
+had moved -- which is only possible because the recording is a run and the run is recent.
+
 ### Readings
 
 > Ledger for `v3.48`.
@@ -2019,7 +2043,7 @@ writing it over a set.
 | `core` test suite | **232 files, 5675 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
 | repo test suite | **236 files, 5862 tests passed** (as of this commit) |
-| jobs recorded | **7** of 7, **74** steps, **46** of them bounded; 40 min measured, and the reading is the run the split landed on rather than the one it borrowed from |
+| jobs recorded | **7** of 7, **74** steps, **46** of them bounded; 45 min measured, and the recording is the newest green run rather than the one a job borrowed from |
 | the two budget jobs | `batteries` 674 s against 25 min; `batteries-heavy` 914 s against 25; the run waits for the longer |
 | the bounds that refused | five, on a recording three days newer: 12/479, 5/221, 5/185, 13/416, and one expiring at 31 min in a 30-minute job |
 | throw partition | **41 statements**: 4 `fatal`, 33 `unguarded`, 1 `guarded`, 3 `rethrow`; **35 proved, 6 exempt** |
@@ -2029,13 +2053,13 @@ writing it over a set.
 | sensitivity | `verify-sites-are-sensitive`: **142 claim(s)**, 194 runs, **0 survivors**, 4.0 min; 107 exits hollowed, 35 throws removed |
 | new tests | **9**: 8 in `ci-budget.test.ts` (rewritten for the job), 1 in `gate-steps.test.ts` |
 | `docs:check` | green: 392 findings / 1–395, 10 volumes / 196 rounds, 1631 citations naming 392 numbers, 568 open entries with 529 carrying a reason, and the counts re-derived from three measured suites |
-| CI | the split landed on `00b76ac83`, run `41658872002`: **7 of 7 jobs success** -- batteries-heavy **12.9**, build 8.9, batteries **8.4**, sensitivity 7.9, golden master 1.3, backend 1.0, cold-tree 0.5 min; **13.3 min of wall clock** where the one job took 26.3. The recording refresh on `8afd38940`, run `41664998423`: **7 of 7 again** -- batteries-heavy 13.5, batteries 10.1, sensitivity 9.1, build 8.7, golden master 1.1, backend 1.1, cold-tree 0.4; **13.6 min** |
+| CI | the split landed on `00b76ac83`, run `41658872002`: **7 of 7 jobs success** -- batteries-heavy **12.9**, build 8.9, batteries **8.4**, sensitivity 7.9, golden master 1.3, backend 1.0, cold-tree 0.5 min; **13.3 min of wall clock** where the one job took 26.3. The recording refresh on `8afd38940`, run `41664998423`: **7 of 7**, batteries-heavy 13.5, wall 13.6. The bounds moved on `61dff700c`, run `41670923224`: **7 of 7**, batteries-heavy 15.6, batteries 12.8, sensitivity 8.2, build 7.2, golden master 1.0, backend 0.7, cold-tree 0.6, **wall 15.8 min** |
 
 ### Left open, in the order the goal is reached
 
 | priority | item | state | next step |
 | --- | --- | --- | --- |
-| **P0** | ~~the recording carried a borrowed job~~ | **closed**: the first green run of the split workflow (`41658872002`) is the recording, and `derived` and `note` are gone | -- |
+| **P0** | ~~the recording carried a borrowed job~~ | **closed**: the recording is the newest green run (`41670923224`), `derived` and `note` are gone, and the two bounds that run moved are at 9 and 17 minutes | -- |
 | **P2** | a key whose description carries no keyword scores 0 | the protocol is silent; this repository takes 0 | record it as a gap; do not invent a redistribution |
 | **P3** | the sensitivity gate's cost grows linearly with claims | 142 claims, 194 runs, 4.0 min locally and 9.4 on the runner at 139 claims | the 15-minute budget holds about 300 runs at this rate; shard by file before then |
 | **P4** | six throw rows rest on a sentence rather than a measurement | three assert something about a table the same function produced, two guard the pack contract, one was reachable only through a defect | the duplicated three were deleted in v3.47; what is left needs the function to disagree with itself, which is a property rather than a test |

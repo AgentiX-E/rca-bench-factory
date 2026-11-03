@@ -1906,9 +1906,9 @@ describe('scripts/verify-local.mjs as a command', () => {
     expect(result.stdout).toContain('sensitivity bounds all 3 of its step(s) on its own');
     expect(result.stdout).toContain("largest 18m of the job's 20m");
     expect(result.stdout).toContain('batteries bounds all 14 of its step(s) on its own');
-    expect(result.stdout).toContain("largest 8m of the job's 25m");
+    expect(result.stdout).toContain("largest 9m of the job's 25m");
     expect(result.stdout).toContain('batteries-heavy bounds all 4 of its step(s) on its own');
-    expect(result.stdout).toContain("largest 16m of the job's 25m");
+    expect(result.stdout).toContain("largest 17m of the job's 25m");
     expect(result.stdout).toContain('a hang there names the step rather than the job');
     // And the condition, which is the last default this runner had to state: a step
     // runs only after the ones before it have passed, which is GitHub's default and
