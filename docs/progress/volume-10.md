@@ -2029,7 +2029,7 @@ writing it over a set.
 | sensitivity | `verify-sites-are-sensitive`: **142 claim(s)**, 194 runs, **0 survivors**, 4.0 min; 107 exits hollowed, 35 throws removed |
 | new tests | **9**: 8 in `ci-budget.test.ts` (rewritten for the job), 1 in `gate-steps.test.ts` |
 | `docs:check` | green: 392 findings / 1–395, 10 volumes / 196 rounds, 1631 citations naming 392 numbers, 568 open entries with 529 carrying a reason, and the counts re-derived from three measured suites |
-| CI | run `41658872002` on `00b76ac83`: **7 of 7 jobs success** -- batteries-heavy **12.9**, build 8.9, batteries **8.4**, sensitivity 7.9, golden master 1.3, backend 1.0, cold-tree 0.5 min; **13.3 min of wall clock** where the one job took 26.3 |
+| CI | the split landed on `00b76ac83`, run `41658872002`: **7 of 7 jobs success** -- batteries-heavy **12.9**, build 8.9, batteries **8.4**, sensitivity 7.9, golden master 1.3, backend 1.0, cold-tree 0.5 min; **13.3 min of wall clock** where the one job took 26.3. The recording refresh on `8afd38940`, run `41664998423`: **7 of 7 again** -- batteries-heavy 13.5, batteries 10.1, sensitivity 9.1, build 8.7, golden master 1.1, backend 1.1, cold-tree 0.4; **13.6 min** |
 
 ### Left open, in the order the goal is reached
 
