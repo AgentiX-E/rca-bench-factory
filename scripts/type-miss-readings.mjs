@@ -13,7 +13,7 @@
  * emptied at the import, so the worker dies before vitest can attribute a failure
  * and the meta-gate reports `UNATTRIBUTED`. The repair named in that test's own
  * message is the one taken here -- *move the reading into a data module and leave
- * the verdict in the gate* -- and `battery-budget.mjs`, `format-spec.mjs`,
+ * the verdict in the gate* -- and `ci-budget.mjs`, `format-spec.mjs`,
  * `staged-mutation.mjs` and `git-hooks.mjs` are the four earlier times it was taken.
  *
  * The second rule is the one that made the move worth doing rather than merely

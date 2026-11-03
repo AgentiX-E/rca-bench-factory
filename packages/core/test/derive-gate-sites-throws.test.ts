@@ -14,7 +14,7 @@
  * usage is wrong, and a **top-level** `throw` when the run holds no job named
  * `batteries`. The first is published and proved; the second was invisible to all
  * three questions the campaign asks -- is it reached, is it depended on, can the gate
- * be hollowed -- and `battery-budget.test.ts` drives only the usage arm. A refusal
+ * be hollowed -- and `ci-budget.test.ts` drives only the usage arm. A refusal
  * nobody reaches and nobody counts is a refusal nobody would notice breaking.
  *
  * ## Four baskets, and why the boundary between them is not stylistic
@@ -218,13 +218,19 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
       }
     }
     expect(shortfalls).toEqual([]);
-    expect(total).toBe(38);
+    expect(total).toBe(41);
   });
 
-  it('names the one throw that ends a process without any of its own code running', () => {
+  it('names every throw that ends a process without any of its own code running', () => {
     // The shape that made this round necessary: `measure-ci-baseline.mjs` refuses a
     // run whose jobs carry no `batteries`, on a line no test had ever executed. The
     // inventory published the script's `process.exit(2)` beside it and nothing else.
+    //
+    // v3.48 widened the reading of that script from one job to the workflow, and three
+    // more of the same shape appeared with it: a workflow that does not parse, a
+    // `--borrow` naming no job, and a step the job it borrowed from never ran. All four
+    // are top-level in a script with no `main`, so all four end the process -- which is
+    // the definition of the basket rather than a fact about this file.
     const files = readdirSync(SCRIPTS)
       .filter((f) => f.endsWith('.mjs') && !f.startsWith('.'))
       .sort();
@@ -235,8 +241,13 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
       for (const key of DISPOSITIONS) counts[key] += read.counts[key] ?? 0;
       fatal.push(...read.rows.filter((row) => row.disposition === 'fatal').map((row) => `${file}:${String(row.line)}`));
     }
-    expect(fatal).toEqual(['measure-ci-baseline.mjs:69']);
-    expect(counts).toEqual({ fatal: 1, unguarded: 33, guarded: 1, rethrow: 3 });
+    expect(fatal).toEqual([
+      'measure-ci-baseline.mjs:132',
+      'measure-ci-baseline.mjs:154',
+      'measure-ci-baseline.mjs:157',
+      'measure-ci-baseline.mjs:164',
+    ]);
+    expect(counts).toEqual({ fatal: 4, unguarded: 33, guarded: 1, rethrow: 3 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

@@ -14,7 +14,7 @@
  * This script asks the only form of the question that cannot be answered by reading:
  * run the named file once with a hook on `process.exit`, and check that the exit
  * arrived. The hook and the comparison live in `site-proofs.mjs`; this file is the
- * runner and the exit code, for the reason `check-battery-budget.mjs` gives -- a gate
+ * runner and the exit code, for the reason `check-ci-budget.mjs` gives -- a gate
  * is proved by being emptied, and a test that imported it would die before it could
  * name a failing test.
  *

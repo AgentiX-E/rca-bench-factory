@@ -598,7 +598,7 @@ describe('ci · the shells the suite cross-checks against are installed', () => 
    * first version of this test came to match prose. The id is the key in the
    * `jobs:` map and is unique by construction.
    */
-  const SUITE_JOB_IDS = ['verify', 'batteries', 'cold-tree', 'sensitivity'];
+  const SUITE_JOB_IDS = ['verify', 'batteries', 'batteries-heavy', 'cold-tree', 'sensitivity'];
 
   /** The binaries `check-no-unsafe-shell.test.ts` spawns by name. */
   const SHELLS = ['zsh', 'bash'];

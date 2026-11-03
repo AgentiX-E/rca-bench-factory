@@ -1465,3 +1465,109 @@ tree in `published-refusals.test.ts` copies the probe into a scratch checkout an
 `node_modules/` beside it. One file became two, the copy took one, and the refusal it drives failed with an
 ESM resolution error rather than the message it asserts. The fixture now copies both, which is the whole price
 of the split and is stated in the test where the next reader will need it.
+
+## Finding 393 — the budget rules were written for the job that failed, and no other job was asked
+
+`ci-budget.mjs` was built after the batteries job timed out, and every rule in it is about
+one job: `R1` reads `baseline.job`, `R2` compares that job's steps against the recording's
+`steps` map, and `R3` says *a step that inherits the job budget declares no bound of its
+own*. The gate was green, and the rules were answering a question about the only job the
+recording described.
+
+The question the module exists to pose is *will a hang here name the step it hung in*, and
+it is a question about a **job**. Measured on the tree as it stood:
+
+| job | measured | steps | steps declaring a bound |
+| --- | --- | --- | --- |
+| `verify` | 532 s (8.9 min) | 11 | **0** |
+| `sensitivity` | 564 s (9.4 min) | 7 | **0** |
+| `batteries` | 1575 s (26.2 min) | 22 | 20 |
+| `backend` | 39 s | 7 | 0 |
+| `artefacts` | 57 s | 13 | 0 |
+| `cold-tree` | 19 s | 8 | 0 |
+
+`verify` spends nine minutes -- six of them in `lint` -- and a hang in it was still reported
+as *the job timed out*, which is the exact sentence the step bounds were introduced to
+replace. The budget was not too small; it was **aimed at one bucket**. Three days of
+`verify` hangs would have produced three verdicts naming eleven steps and no culprit, in a
+tree whose gate said the budgets were fine.
+
+The repair is structural rather than a number. `readWorkflow` now returns the jobs it read
+-- id, label and budget -- because a walk over steps cannot answer *does this job bound
+anything*: a job whose steps were all renamed still exists, and a job with no
+`timeout-minutes` has no budget to inherit. The recording holds `jobs`, keyed by the
+workflow's own id, and the label is kept beside it because a run reports its jobs under the
+label, so a file keyed by id has to know which name to look for. `R3` asks every job whose
+steps cost more than the floor across more than one step. Two exceptions are stated rather
+than assumed: one step is excused, because the job's budget already names exactly that
+step -- which is the whole thing a step bound buys -- and a job under the floor is excused
+because there is nothing to spend. `budgetSummary` prints the excused jobs so a reader sees
+the exception being taken instead of an omission.
+
+## Finding 394 — the bounds could not survive a fresh reading, and the arithmetic asked for a second job
+
+The baseline was run `41180476384`, measured on 2026-10-31 with the tree at `85f7b1e`:
+twenty-two steps, 1230 s, bounds sized at exactly twice each measurement. Re-recording the
+green run `41637098008` three days later refused the shipped numbers **five times**:
+
+```
+`Type-miss probe battery` is bounded at 12 min and measured 479 s
+`Every gate can be shown to fail` is bounded at 5 min and measured 221 s
+`Gate-test battery` is bounded at 5 min and measured 185 s
+`Backend-support battery` is bounded at 13 min and measured 416 s
+`Backend-support battery` is bounded at 13 min and the steps before it measured 18 min,
+  so its bound expires at 31 min -- past the job's 30
+```
+
+Nothing was wrong with the gate. The recording was old, the suite had grown, and the same
+steps now cost 1575 s where they had cost 1230 -- the bounds were sized against a run in
+which the batteries were a third faster. That gap is structural: a gate that runs in CI
+cannot fetch a workflow run, so nothing in the tree can tell that a recording is stale, and
+a *recency* rule would fail the first tree that had no run at all. What the gate does have
+is the arithmetic, and the arithmetic is what makes the staleness visible the moment
+somebody measures again: a bound under twice the measurement is refused, and a bound that
+expires after the job is refused.
+
+The second refusal is the interesting one, because it cannot be repaired by a number. The
+job has 30 minutes; its two longest steps measure 479 s and 416 s, so their bounds alone are
+16 + 14 = 30 minutes before any other step is counted. Raising the job's budget is the
+response the module's own note calls dishonest -- *a bound that cannot expire before the job
+does is a number with no effect* -- so the honest reading is that one job is doing too much
+for one budget. The batteries split in two:
+
+| | `batteries` | `batteries-heavy` |
+| --- | --- | --- |
+| steps | 14 that measure ≤ 221 s | the type-miss and backend-support batteries |
+| measured | 674 s (11.2 min) | 914 s (15.2 min) |
+| bounds | largest 8 min | 16 min and 14 min |
+| budget | 25 min (was 30) | 25 min |
+| wall clock | the longer of the two, not their sum | |
+
+`sensitivity` is the same arithmetic one job over. One step measures 536 s, so its bound is
+18 minutes; a 15-minute budget cannot hold an 18-minute bound plus the 23 s that ran before
+it. The job declares **20** now, which is what the bound needs rather than what the
+measurement needs -- 9.4 minutes of work in a 20-minute bucket, and a bound that names the
+step two minutes before the job would.
+
+## Finding 395 — a job that runs the suite did not install the shells it spawns
+
+`cold-tree-job.test.ts` requires every job that runs the suite to install the shells the
+suite's fixtures spawn, and the requirement is an **equality over jobs** rather than a list
+of the jobs that existed when it was written: it reads each job's body, follows the
+`node`/`python3` scripts its steps name one level deep, and requires any job whose body or
+scripts mention `vitest` to install `zsh`.
+
+The new job runs `python3 scripts/injection/backend-support.py`, which invokes
+`pnpm exec vitest run --root packages/core`. So the equality asked the job for `zsh`, and
+the job had no such step. Nothing failed -- the batteries run targeted tests that do not
+spawn a shell -- and the guard is what said so before a fixture grew a shell and made the
+question load-bearing. The step is in the new job now, and the register beside the equality
+names the job, so the next one cannot be added without a shell either.
+
+## The shape the three share
+
+Each was a rule that answered a question about **the member that failed** rather than about
+the set it belongs to: a budget for the job that timed out, a recording of the job the
+budget described, a shell check that listed jobs instead of asking them. The set was in the
+workflow the whole time, and the reader that could have walked it -- `gate-steps.mjs` -- was
+already parsing every job, using the job ids to key its plan, and returning only the steps.

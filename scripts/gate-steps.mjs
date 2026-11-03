@@ -573,7 +573,6 @@ export const STEP_PLAN = {
   'batteries / Component rule battery (no survivors, no inert mutations)': { local: true },
   'batteries / M1-ceiling probe battery (no survivors, no inert mutations)': { local: true },
   'batteries / M1-ceiling probe test battery (no survivors, no inert mutations)': { local: true },
-  'batteries / Type-miss probe battery (no survivors, no inert, no blind mutations)': { local: true },
   'batteries / Every gate can be shown to fail': { local: true },
   'batteries / Fault-extraction scoring battery (no survivors)': { local: true },
   'batteries / Fault-extraction workflow battery (no survivors, negative control)': { local: true },
@@ -582,12 +581,31 @@ export const STEP_PLAN = {
     local: true,
   },
   'batteries / Doc-count shape battery (no survivors, no inert, no misattributed mutations)': { local: true },
-  'batteries / Backend-support battery (no survivors, no inert, no misattributed mutations)': { local: true },
   'batteries / Round-trip record battery (no survivors, no inert, no misattributed mutations)': { local: true },
   'batteries / Publish the gate-test battery report': {
     remoteOnly: 'writes to a GitHub artefact/annotation, which needs the run token',
   },
   'batteries / Scorer-stability probe battery (the stability gate refuses a broken scorer)': {
+    local: true,
+  },
+
+  // ---- batteries-heavy ------------------------------------------------------
+  //
+  // The two batteries that rewrite a probe a hundred times, split out of `batteries` in
+  // v3.48 because a bound is twice the measurement and the job could not hold its own:
+  // 479 s and 416 s measure 16 and 14 minutes of bound in a job that had 30 for
+  // everything. The plan holds them by their new key rather than by a wildcard, because
+  // a wildcard would let the next battery run nowhere in particular and pass.
+  'batteries-heavy / Install dependencies': { local: true },
+  'batteries-heavy / Install the shells the suite cross-checks against': {
+    remoteOnly: 'installs zsh through apt, which needs sudo and a package index',
+  },
+  'batteries-heavy / Build (core then cli; cli resolves core\'s dist)': { local: true },
+  'batteries-heavy / Type-miss probe battery (no survivors, no inert, no blind mutations)': {
+    local: true,
+    note: 'the first battery here whose injections are paired; it also runs the probe twice per case',
+  },
+  'batteries-heavy / Backend-support battery (no survivors, no inert, no misattributed mutations)': {
     local: true,
   },
 
@@ -629,12 +647,14 @@ export const STEP_PLAN = {
 export function readWorkflow(text) {
   const lines = text.split('\n');
   const jobsIndex = lines.findIndex((line) => line === 'jobs:');
-  if (jobsIndex < 0) return { steps: [], errors: ['ci.yml has no top-level `jobs:`'] };
+  if (jobsIndex < 0) return { steps: [], errors: ['ci.yml has no top-level `jobs:`'], jobs: [] };
 
   const steps = [];
   const errors = [];
   /** Job-level values, keyed by job and key, read before the steps are classified. */
   const jobValues = new Map();
+  /** The jobs in the order they are written, so a reader can name one that holds no step. */
+  const jobOrder = [];
   let job = null;
 
   for (let i = jobsIndex + 1; i < lines.length; i += 1) {
@@ -646,6 +666,7 @@ export function readWorkflow(text) {
     const jobMatch = /^ {2}([A-Za-z][\w-]*):\s*$/.exec(line);
     if (jobMatch !== null) {
       job = jobMatch[1];
+      jobOrder.push(job);
       continue;
     }
 
@@ -682,6 +703,14 @@ export function readWorkflow(text) {
       }
       if (key === 'timeout-minutes') {
         jobValues.set(`${job}\u0000timeout-minutes`, value);
+      }
+      // The label, kept for one reader only: a run's jobs are reported under the
+      // name, and a recording that had ids where the API has names would have to
+      // guess which job a measurement belongs to. Tolerated here since the file
+      // was written; *read* from v3.48, because a measurement now has to name its
+      // job and CI names jobs by this string.
+      if (key === 'name') {
+        jobValues.set(`${job}\u0000name`, scalar(value));
       }
       continue;
     }
@@ -807,7 +836,16 @@ export function readWorkflow(text) {
   for (const step of steps) {
     step.jobTimeout = jobValues.get(`${step.job}\u0000timeout-minutes`) ?? '';
   }
-  return { steps, errors };
+  // The jobs themselves, which the steps cannot answer for: a job whose steps were
+  // all renamed still exists, and a job that declares no `timeout-minutes` has no
+  // budget to inherit. Both matter to the budget gate, which asks a question about
+  // **jobs** -- *is this one bounded at all* -- that a walk over steps cannot pose.
+  const jobs = jobOrder.map((id) => ({
+    id,
+    name: jobValues.get(`${id}\u0000name`) ?? '',
+    timeoutMinutes: timeoutOf(undefined, jobValues.get(`${id}\u0000timeout-minutes`) ?? '').minutes,
+  }));
+  return { steps, errors, jobs };
 }
 
 /**

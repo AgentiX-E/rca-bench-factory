@@ -82,28 +82,28 @@
       "provedBy": "packages/core/test/check-backend-support.test.ts"
     },
     {
-      "script": "scripts/check-battery-budget.mjs",
-      "line": 33,
+      "script": "scripts/check-ci-budget.mjs",
+      "line": 38,
       "condition": "workflow.errors.length > 0",
-      "diagnostic": "check-battery-budget: ci.yml does not parse:\\n ${workflow.errors.join('\\n ')}\\n",
+      "diagnostic": "check-ci-budget: ci.yml does not parse:\\n ${workflow.errors.join('\\n ')}\\n",
       "status": "proved",
-      "provedBy": "packages/core/test/battery-budget.test.ts"
+      "provedBy": "packages/core/test/ci-budget.test.ts"
     },
     {
-      "script": "scripts/check-battery-budget.mjs",
-      "line": 41,
+      "script": "scripts/check-ci-budget.mjs",
+      "line": 46,
       "condition": "catch",
-      "diagnostic": "check-battery-budget: no recording at ${BASELINE} -- ${String(error)}\\n",
+      "diagnostic": "check-ci-budget: no recording at ${BASELINE} -- ${String(error)}\\n",
       "status": "proved",
-      "provedBy": "packages/core/test/battery-budget.test.ts"
+      "provedBy": "packages/core/test/ci-budget.test.ts"
     },
     {
-      "script": "scripts/check-battery-budget.mjs",
-      "line": 48,
+      "script": "scripts/check-ci-budget.mjs",
+      "line": 53,
       "condition": "errors.length > 0",
-      "diagnostic": "check-battery-budget: ${error}\\n",
+      "diagnostic": "check-ci-budget: ${error}\\n",
       "status": "proved",
-      "provedBy": "packages/core/test/battery-budget.test.ts"
+      "provedBy": "packages/core/test/ci-budget.test.ts"
     },
     {
       "script": "scripts/check-citations.mjs",
@@ -525,11 +525,11 @@
     },
     {
       "script": "scripts/measure-ci-baseline.mjs",
-      "line": 55,
+      "line": 96,
       "condition": "TOKEN === '' || !/^\\d+$/.test(RUN)",
-      "diagnostic": "usage: GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs <run-id>\\n",
+      "diagnostic": "usage: GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>]\\n",
       "status": "proved",
-      "provedBy": "packages/core/test/battery-budget.test.ts"
+      "provedBy": "packages/core/test/ci-budget.test.ts"
     },
     {
       "script": "scripts/measure-doc-counts.mjs",
@@ -892,7 +892,7 @@
   "throws": {
     "rule": "every throw statement, partitioned four ways: `fatal` (no enclosing function, no enclosing try) ends the process and is proved like a site; `unguarded` (in a function, no enclosing try) hands control to its caller, which decides; `guarded` (in a try block) is caught here; `rethrow` (in a catch, rethrowing the caught binding) carries a decision made above. A try or a catch stops at a function boundary, because neither is on the stack when the function runs elsewhere. fatal + unguarded + guarded + rethrow is the number of throw statements; see scripts/derive-gate-sites.mjs",
     "counts": {
-      "fatal": 1,
+      "fatal": 4,
       "unguarded": 33,
       "guarded": 1,
       "rethrow": 3
@@ -1068,19 +1068,43 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 62,
+        "line": 103,
         "disposition": "unguarded",
         "message": "${path}: HTTP ${String(response.status)}",
         "status": "proved",
-        "provedBy": "packages/core/test/battery-budget.test.ts"
+        "provedBy": "packages/core/test/ci-budget.test.ts"
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 69,
+        "line": 132,
         "disposition": "fatal",
-        "message": "run ${RUN} holds no job matching \"${JOB}\"",
+        "message": "the workflow does not parse, so there is nothing to measure:\\n${workflow.errors.join('\\n')}",
         "status": "proved",
-        "provedBy": "packages/core/test/battery-budget.test.ts"
+        "provedBy": "packages/core/test/ci-budget.test.ts"
+      },
+      {
+        "script": "scripts/measure-ci-baseline.mjs",
+        "line": 154,
+        "disposition": "fatal",
+        "message": "--borrow names \\`${borrowedFrom}\\`, which is not a job of this workflow",
+        "status": "proved",
+        "provedBy": "packages/core/test/ci-budget.test.ts"
+      },
+      {
+        "script": "scripts/measure-ci-baseline.mjs",
+        "line": 157,
+        "disposition": "fatal",
+        "message": "run ${RUN} holds no job named \"${apiNameOf(job)}\", so \\`${job.id}\\` has no reading",
+        "status": "proved",
+        "provedBy": "packages/core/test/ci-budget.test.ts"
+      },
+      {
+        "script": "scripts/measure-ci-baseline.mjs",
+        "line": 164,
+        "disposition": "fatal",
+        "message": "new Error( `\\`${job.id} / ${step.name}\\` is not a step of \"${source.name}\" in run ${RUN}: a bound cannot be ` + 'sized f",
+        "status": "proved",
+        "provedBy": "packages/core/test/ci-budget.test.ts"
       },
       {
         "script": "scripts/measure-doc-counts.mjs",

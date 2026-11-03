@@ -973,7 +973,7 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
       // pair, and the same guard has to cover both partitions.
       const rows = (committed.throws?.rows ?? []).map((row) =>
         row.status === 'exempt'
-          ? { ...row, provedBy: 'packages/core/test/battery-budget.test.ts' }
+          ? { ...row, provedBy: 'packages/core/test/ci-budget.test.ts' }
           : row,
       );
       const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-exempt-proved');

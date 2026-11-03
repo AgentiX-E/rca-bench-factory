@@ -41,22 +41,27 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out
+        timeout-minutes: 3
         uses: actions/checkout@v4
 
       - name: Set up Node.js
+        timeout-minutes: 3
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Set up pnpm
+        timeout-minutes: 3
         uses: pnpm/action-setup@v4
         with:
           version: 10
 
       - name: Install dependencies
+        timeout-minutes: 3
         run: pnpm install --frozen-lockfile
 
       - name: Install the shells the suite cross-checks against
+        timeout-minutes: 3
         # `check-no-unsafe-shell.test.ts` compares the gate's rule against what
         # `zsh` and `bash` actually do with the same string, which is the
         # strongest acceptance criterion in the tree: the thing being modelled is
@@ -72,9 +77,11 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
+        timeout-minutes: 3
         run: pnpm build
 
       - name: Type-check
+        timeout-minutes: 3
         run: pnpm typecheck
 
       # Six static checks, all of them earned by a failure rather than chosen in
@@ -90,9 +97,11 @@ jobs:
       # rather than a step of its own because the other five answer the same kind of
       # question: is the tree in a state we are willing to measure. See finding 83.
       - name: Lint (no mock / no secrets / no vendored data / registry / absolute paths / scorer stability / site proofs)
+        timeout-minutes: 12
         run: pnpm lint
 
       - name: Test with coverage (core + cli, ≥95% per dimension, 100% functions)
+        timeout-minutes: 6
         run: pnpm test:coverage
 
       # The published counts, against the run that just happened.
@@ -114,9 +123,11 @@ jobs:
       # Measured: 80.09 s for the spawn path against 0.12 s for this one, on the
       # same trees and the same numbers.
       - name: Published suite counts, read from that run rather than taken again
+        timeout-minutes: 3
         run: node scripts/measure-doc-counts.mjs --check --from packages/core/node_modules/.cache/vitest-report.json,packages/cli/node_modules/.cache/vitest-report.json
 
       - name: Mutation suite (gate + export, 100% interception)
+        timeout-minutes: 3
         run: pnpm exec vitest run --root packages/core mutation.test.ts
 
       # One reader, against a server this repository did not write.
@@ -210,22 +221,26 @@ jobs:
     # build and pass together, which is 2.1 times the local figure. The budget is a
     # little over twice the runner's measurement, and it is bounded so that a hang is
     # reported as a budget being spent rather than six hours later.
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Check out
+        timeout-minutes: 3
         uses: actions/checkout@v4
 
       - name: Set up Node.js
+        timeout-minutes: 3
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Set up pnpm
+        timeout-minutes: 3
         uses: pnpm/action-setup@v4
         with:
           version: 10
 
       - name: Install dependencies
+        timeout-minutes: 3
         run: pnpm install --frozen-lockfile
 
       # The claimants are the same files `verify` runs, so this job needs the same
@@ -234,12 +249,15 @@ jobs:
       # shells the suite cross-checks against is a job whose verdicts depend on which
       # runner it landed on (finding 130).
       - name: Install the shells the suite cross-checks against
+        timeout-minutes: 3
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
+        timeout-minutes: 3
         run: pnpm build
 
       - name: Every proved exit can disappear without a word
+        timeout-minutes: 18
         run: node scripts/verify-sites-are-sensitive.mjs
 
   # The injection batteries. This is the long pole -- everything else in the workflow
@@ -252,7 +270,12 @@ jobs:
   batteries:
     name: injection batteries, one step each (no survivors, no inert)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 25 rather than 30, and the reduction is the arithmetic rather than a saving: a
+    # job's budget has to hold the bounds of its own steps, and a bound is twice the
+    # measurement. What is left here measures 674 s (11 min) and its longest bound
+    # expires at 14 min, so 25 is 11 minutes of room that CI can actually spend --
+    # where 30 held a bound that could not fire before the job did.
+    timeout-minutes: 25
     steps:
       - name: Check out
         timeout-minutes: 3
@@ -330,26 +353,6 @@ jobs:
         timeout-minutes: 3
         run: node scripts/inject-m1-ceiling-tests.mjs
 
-      # The `type`-miss classifier reports the partition that decides whether the
-      # `type` shortfall is a scoring defect or a capability limit, so it is the
-      # figure the milestone's next round is planned against. Its battery is the
-      # first here whose injections are *paired*: four of them are only decidable
-      # as a definition edit plus the data edit that makes the definition
-      # observable, and the pair is expressed as an `also` slot rather than as a
-      # comment describing one. A battery that asserts half a pair and describes
-      # the other half reports SURVIVED, correctly, and says nothing.
-      #
-      # Three ways an injection can fail to test anything, all three fatal. A
-      # SURVIVED mutation left the requirement true. An INERT one never applied.
-      # BLIND is the one this battery learned the hard way: the edit applied to
-      # the recorded answers but the published partition did not move at all, so
-      # the anchor was on a row the edit could not reclassify -- the requirement
-      # went False and the run looked caught while the probe's actual decision had
-      # not been exercised. It is checked for data-only injections, where "the
-      # partition must move" is the whole point of the edit.
-      - name: Type-miss probe battery (no survivors, no inert, no blind mutations)
-        timeout-minutes: 12
-        run: python3 scripts/injection/type-miss-probe.py
 
       # Every gate, emptied and watched.
       #
@@ -363,7 +366,7 @@ jobs:
       # gate that can be emptied without a test noticing, or that no test names at
       # all, fails the build.
       - name: Every gate can be shown to fail
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: node scripts/verify-gates-are-testable.mjs
 
       # The three batteries below were written, repaired, and never invoked. Each
@@ -409,7 +412,7 @@ jobs:
       # in the battery's `EXPECTED_SURVIVORS` with its reason, and the run fails
       # if it ever turns into a genuine survivor.
       - name: Gate-test battery (each gate's test provably fails when its guard is removed)
-        timeout-minutes: 5
+        timeout-minutes: 7
         run: python3 scripts/injection/gate-tests-battery.py
 
       # `check-doc-counts.mjs` read three shapes of a published count while the
@@ -428,19 +431,6 @@ jobs:
         timeout-minutes: 3
         run: python3 scripts/injection/doc-counts-shapes.py
 
-      # P1-5 asks for T2's six backends to be measured and the unsupported ones
-      # declared. That declaration has three links -- the document matrix, the
-      # derived snapshot, and the registry that says which backend has a pull
-      # path -- and this battery removes one link at a time: seven refusals from
-      # the document guard, the stale-snapshot branch of the derive script, six
-      # branches of the wire reader, and the registry's agreement with its own
-      # snapshot. Its first run reported one INERT, which is the outcome the
-      # vocabulary exists for: the anchor had the wrong indentation, so nothing
-      # was mutated, and a mutation that never applied is not evidence about
-      # anything.
-      - name: Backend-support battery (no survivors, no inert, no misattributed mutations)
-        timeout-minutes: 13
-        run: python3 scripts/injection/backend-support.py
 
       # The fourth anchor's path now runs on the real corpus: run 38250480271
       # round-tripped 375 of 375 RE1 cases at oracle=1.00. This battery keeps the
@@ -734,3 +724,90 @@ jobs:
         # `--config.enable-pre-post-scripts=false` so a future `pretest` cannot
         # build the tree out from under the step that exists to run without one.
         run: pnpm --config.enable-pre-post-scripts=false exec vitest run --root packages/core cold-tree-preconditions.test.ts cold-tree-job.test.ts
+
+  # The two batteries that rewrite a probe a hundred times, split out of `batteries`.
+  #
+  # The split is arithmetic, not taste. A step bound is twice the step's measurement,
+  # and a job's budget has to hold its own bounds. Measured on 41637098008 from the API,
+  # the batteries job's steps summed to 1575 s: the type-miss battery 479 s and the
+  # backend-support battery 416 s, so their bounds alone are 16 + 14 = 30 minutes in a
+  # job that has 30, before any other step is counted. `check-ci-budget.mjs` refuses
+  # exactly that -- "its bound expires at 31 min -- past the job's 30" -- and the honest
+  # answer to a bound that cannot fire is another bucket rather than a bigger one. The
+  # same reading is in finding 166 and finding 206 twice over: a budget shared by steps
+  # whose costs differ by an order of magnitude is a budget blamed on the wrong one.
+  #
+  # What is left behind measures 674 s and what is here measures 914 s, so the wall clock
+  # the run waits for is the longer of the two rather than their sum.
+  batteries-heavy:
+    name: injection batteries, the two that rewrite a probe a hundred times
+    runs-on: ubuntu-latest
+    # 914 s measured, 22 min for the bound chain, 25 declared.
+    timeout-minutes: 25
+    steps:
+      - name: Check out
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        timeout-minutes: 3
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        timeout-minutes: 3
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        timeout-minutes: 3
+        run: pnpm install --frozen-lockfile
+
+      # `backend-support.py` runs targeted vitest invocations, and every job that runs
+      # vitest installs the shells its fixtures spawn -- the equality in
+      # `cold-tree-job.test.ts` asks for that of a job rather than of the job the rule was
+      # written about, which is how this step was found missing here.
+      - name: Install the shells the suite cross-checks against
+        timeout-minutes: 3
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
+      - name: Build (core then cli; cli resolves core's dist)
+        timeout-minutes: 3
+        run: pnpm build
+
+      # The `type`-miss classifier reports the partition that decides whether the
+      # `type` shortfall is a scoring defect or a capability limit, so it is the
+      # figure the milestone's next round is planned against. Its battery is the
+      # first here whose injections are *paired*: four of them are only decidable
+      # as a definition edit plus the data edit that makes the definition
+      # observable, and the pair is expressed as an `also` slot rather than as a
+      # comment describing one. A battery that asserts half a pair and describes
+      # the other half reports SURVIVED, correctly, and says nothing.
+      #
+      # Three ways an injection can fail to test anything, all three fatal. A
+      # SURVIVED mutation left the requirement true. An INERT one never applied.
+      # BLIND is the one this battery learned the hard way: the edit applied to
+      # the recorded answers but the published partition did not move at all, so
+      # the anchor was on a row the edit could not reclassify -- the requirement
+      # went False and the run looked caught while the probe's actual decision had
+      # not been exercised. It is checked for data-only injections, where "the
+      # partition must move" is the whole point of the edit.
+      - name: Type-miss probe battery (no survivors, no inert, no blind mutations)
+        timeout-minutes: 16
+        run: python3 scripts/injection/type-miss-probe.py
+
+      # P1-5 asks for T2's six backends to be measured and the unsupported ones
+      # declared. That declaration has three links -- the document matrix, the
+      # derived snapshot, and the registry that says which backend has a pull
+      # path -- and this battery removes one link at a time: seven refusals from
+      # the document guard, the stale-snapshot branch of the derive script, six
+      # branches of the wire reader, and the registry's agreement with its own
+      # snapshot. Its first run reported one INERT, which is the outcome the
+      # vocabulary exists for: the anchor had the wrong indentation, so nothing
+      # was mutated, and a mutation that never applied is not evidence about
+      # anything.
+      - name: Backend-support battery (no survivors, no inert, no misattributed mutations)
+        timeout-minutes: 14
+        run: python3 scripts/injection/backend-support.py

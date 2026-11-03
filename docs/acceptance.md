@@ -201,6 +201,31 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   295 files in `scripts/` and `packages/core/test/` is identical before and after
   the strip, so a comment that survived (a token gained) or code that was blanked
   (a token lost) both fail `gate-proofs.test.ts`.
+- **A job either bounds its steps or it does not, and every job is asked** (v3.48). The
+  step budgets were written for the one job that had timed out and the recording named that
+  job, so no other job could be asked whether it bounded anything: `verify` spent **532 s
+  across 11 steps** -- 341 of them in `lint` -- and named none of them, in the job next door
+  to the one the rule came from. The recording now holds every job keyed by the workflow's
+  own id, `readWorkflow` returns the jobs themselves (id, label, budget), and a job that
+  costs more than the 3-minute floor across more than one step must bound every step. A job
+  with exactly one step is excused -- the job's budget already names it -- and the exception
+  is printed rather than assumed. Clearance: a fixture per road (a job with no bounds, a job
+  with half its bounds, a job under the floor, a one-step job, a job the recording has never
+  measured, a recording that outlives its job).
+- **A bound is arithmetic, so the job budget has to hold the bounds it declares** (v3.48).
+  Re-recording a green run three days newer than the baseline refused the shipped numbers
+  five ways -- 12 min against 479 s, 5 against 221, 5 against 185, 13 against 416, and one
+  bound expiring at **31 min inside a 30-minute job**. The arithmetic then said the job
+  could not hold its own bounds at all (16 + 14 minutes for two steps that measure 479 s and
+  416 s), so the batteries split into two jobs, 674 s beside 914 s; and `sensitivity`'s
+  18-minute bound could not live in a 15-minute budget, so that job declares 20. Clearance:
+  `check-ci-budget.mjs` is part of `pnpm docs:check`, and the deadline rule refuses a bound
+  that the job would outlive.
+- **A rule about jobs is an equality over jobs, not a list of the jobs that existed** (v3.48).
+  The new battery job runs vitest through `backend-support.py`, so
+  `cold-tree-job.test.ts` -- every job that runs the suite installs the shells its fixtures
+  spawn -- asked it for `zsh` and got nothing back. The step is there now; the equality is
+  what found it, one round after the job was written.
 
 ## L4 — Official reproduction (Golden Master, official metrics and round trip)
 

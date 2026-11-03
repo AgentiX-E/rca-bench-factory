@@ -1872,9 +1872,9 @@ of them is a copy of a guard standing in front of another.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **232 files, 5666 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **236 files, 5853 tests passed** (as of this commit) |
+| `core` test suite | **232 files, 5666 tests passed** (as of v3.47) |
+| `cli` test suite | **4 files, 187 tests passed** (as of v3.47) |
+| repo test suite | **236 files, 5853 tests passed** (as of v3.47) |
 | throw partition | **38 statements**: 1 `fatal`, 33 `unguarded`, 1 `guarded`, 3 `rethrow`; **32 proved, 6 exempt** |
 | the dedupe | 41 statements to 38: two unknown-run copies became `runBody`, three corpus-guard copies became `readSamplesCorpus` |
 | failure sites | **114** across 56 of 78 scripts, unchanged; `excluded` `{16 zero}` unchanged |
@@ -1905,3 +1905,148 @@ behaviour anyone was measuring -- Type Accuracy looked correct on every fixture,
 sentence beside it. So the next ruler is: **when a rule has a list in it, count the list against the language
 rather than against the fixtures** -- a boundary set, a closed class, a table of kinds all fail the same way, by
 being one member short and by looking right on everything that was tried.
+
+## v3.48 — a budget aimed at the job that failed, and arithmetic that asked for a second job
+
+v3.47 closed with a ruler instead of a result: *when a rule has a list in it, count the list
+against the language rather than against the fixtures.* It had just found a tokeniser that
+kept the hyphen and an exemption clause that described a duplicated guard.
+
+The budget gate was written four rounds earlier for the job that had timed out, and read as
+finished ever since -- it was green, it printed a reading, and its own note explained the
+arithmetic of a bound. What it had never been asked is whether the question it poses applies
+to a set. It does, the set is the workflow, and asking it of the set refused the shipped tree
+three times over.
+
+### One — the rules were about the job that failed (finding 393)
+
+`ci-budget.mjs` reads `baseline.job`, a single string. `R3` says *a step that inherits the
+job's budget declares no bound of its own*, which can only be evaluated for a job the
+recording describes. So the gate could answer its question about `batteries` and about
+nothing else. Measured on the tree:
+
+| job | measured | steps | steps declaring a bound |
+| --- | --- | --- | --- |
+| `verify` | 532 s | 11 | **0** |
+| `sensitivity` | 564 s | 7 | **0** |
+| `batteries` | 1575 s | 22 | 20 |
+| `backend` | 39 s | 7 | 0 |
+| `artefacts` | 57 s | 13 | 0 |
+| `cold-tree` | 19 s | 8 | 0 |
+
+`verify` spends nine of its fifteen minutes -- six of them in `lint` -- and a hang there was
+reported as *the job timed out*, which is the sentence the step bounds were introduced to
+replace. The budget was not too small. It was aimed at one bucket.
+
+The repair is not another number. `readWorkflow` now returns the jobs it read, because a
+walk over steps cannot answer *does this job bound anything*: a job whose steps were all
+renamed still exists, and a job with no `timeout-minutes` has no budget to inherit. The
+recording holds `jobs`, keyed by the workflow's id and carrying the label, because a run
+reports its jobs under the label and a recording keyed by id has to know which name to look
+for. `R3` asks every job over the floor with more than one step. Two exceptions are stated
+rather than assumed -- one step (the job's budget already names it) and under the floor
+(there is nothing to spend) -- and `budgetSummary` prints them, because an exception nobody
+wrote down is indistinguishable from an oversight.
+
+### Two — the recording was three days old, and the bounds could not survive it (finding 394)
+
+`golden-master/ci-baseline.json` was run `41180476384`, dated 2026-10-31, and sized every
+bound at exactly twice its measurement. Re-recording the green run `41637098008` refused the
+shipped numbers five times:
+
+```
+`Type-miss probe battery` is bounded at 12 min and measured 479 s
+`Every gate can be shown to fail` is bounded at 5 min and measured 221 s
+`Gate-test battery` is bounded at 5 min and measured 185 s
+`Backend-support battery` is bounded at 13 min and measured 416 s
+`Backend-support battery` is bounded at 13 min and the steps before it measured 18 min,
+  so its bound expires at 31 min -- past the job's 30
+```
+
+The gate was right and the recording was old: the same steps measured 1230 s three days ago
+and 1575 s now. Nothing in the tree can tell that a recording has aged -- a gate in CI
+cannot fetch a run -- and a rule about recency would fail the first tree with no run at all.
+What the gate has is the arithmetic, and the arithmetic is what makes the ageing visible the
+moment somebody measures again: a bound under twice the measurement is refused, and a bound
+that outlives the job is refused. Both fired.
+
+### Three — which the arithmetic answered with a second job (finding 394, continued)
+
+The second refusal cannot be repaired by a number. The job has 30 minutes; its two longest
+steps measure 479 s and 416 s, so their bounds alone are 16 + 14 = 30 minutes before any of
+the other twelve steps is counted. A bigger bucket is the response the module's own note
+calls dishonest -- *a bound that cannot expire before the job does is a number with no
+effect* -- so the reading is that one job is doing too much for one budget.
+
+| | `batteries` | `batteries-heavy` |
+| --- | --- | --- |
+| holds | the 14 steps that measure ≤ 221 s, and the report | the type-miss and backend-support batteries |
+| measured | 674 s (11.2 min) | 914 s (15.2 min) |
+| bounds | largest 8 min | 16 min and 14 min |
+| budget | **25** (was 30) | 25 |
+| wall clock | the longer of the two, not their sum | |
+
+`sensitivity` is the same arithmetic one job over: one step measures 536 s, so its bound is
+18 minutes, and a budget of 15 cannot hold 18 plus the 23 s that ran before it. The job
+declares **20** -- what the bound needs rather than what the measurement needs, which is
+9.4 minutes of work in a 20-minute bucket and a bound that names the step two minutes before
+the job would.
+
+The split is the one moment the arithmetic cannot wait for a measurement: the two jobs exist
+only after the change, and the recording has to exist before CI will accept the change. So
+the recorder can record a job that has never run **from the job that ran its steps** --
+`--borrow <new>=<ran>` -- and the file says which job the seconds came from, with a note that
+the run behind them predates the job. The next green run replaces both, and that replacement
+is the first thing the round after this one does.
+
+### Four — the equality asked the new job for shells (finding 395)
+
+`cold-tree-job.test.ts` requires every job that runs the suite to install the shells its
+fixtures spawn, and it is an equality over jobs rather than a list of the jobs that existed
+when it was written: it follows the `node`/`python3` scripts a step names one level deep and
+requires any job whose body or scripts mention `vitest` to install `zsh`. The new job runs
+`backend-support.py`, which invokes `pnpm exec vitest run --root packages/core`. So the
+equality asked, and the job had no such step. Nothing failed -- the battery runs targeted
+tests that spawn no shell -- and the guard said so anyway, which is the whole point of
+writing it over a set.
+
+### Readings
+
+> Ledger for `v3.48`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **232 files, 5675 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **236 files, 5862 tests passed** (as of this commit) |
+| jobs recorded | **7** of 7, **74** steps, **46** of them bounded, 46 min measured |
+| the two budget jobs | `batteries` 674 s against 25 min; `batteries-heavy` 914 s against 25; the run waits for the longer |
+| the bounds that refused | five, on a recording three days newer: 12/479, 5/221, 5/185, 13/416, and one expiring at 31 min in a 30-minute job |
+| throw partition | **41 statements**: 4 `fatal`, 33 `unguarded`, 1 `guarded`, 3 `rethrow`; **35 proved, 6 exempt** |
+| the recorder's refusals | four, all `fatal`: a workflow that does not parse, a `--borrow` naming no job, a run holding no job of that name, a step the borrowed job never ran -- each reached by a test |
+| failure sites | **114** across 56 of 78 scripts, unchanged; `excluded` `{16 zero}` unchanged |
+| proof plan | `verify-site-proofs`: **142 claim(s)** across 52 files -- PASSED |
+| sensitivity | `verify-sites-are-sensitive`: **142 claim(s)**, 194 runs, **0 survivors**, 4.0 min; 107 exits hollowed, 35 throws removed |
+| new tests | **9**: 8 in `ci-budget.test.ts` (rewritten for the job), 1 in `gate-steps.test.ts` |
+| `docs:check` | green: 392 findings / 1–395, 10 volumes / 196 rounds, 1631 citations naming 392 numbers, 568 open entries with 529 carrying a reason, and the counts re-derived from three measured suites |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P0** | the recording carried a borrowed job | `batteries-heavy`'s seconds are `batteries`' measurement of the same commands, and `note` says so | record the first green run of the split workflow and drop both fields |
+| **P2** | a key whose description carries no keyword scores 0 | the protocol is silent; this repository takes 0 | record it as a gap; do not invent a redistribution |
+| **P3** | the sensitivity gate's cost grows linearly with claims | 142 claims, 194 runs, 4.0 min locally and 9.4 on the runner at 139 claims | the 15-minute budget holds about 300 runs at this rate; shard by file before then |
+| **P4** | six throw rows rest on a sentence rather than a measurement | three assert something about a table the same function produced, two guard the pack contract, one was reachable only through a defect | the duplicated three were deleted in v3.47; what is left needs the function to disagree with itself, which is a property rather than a test |
+| **P5/P7** | the witness sees one level | a script loaded without `NODE_OPTIONS` is not rewritten, and a wrapper that does not inherit hides its child | unchanged; needs a second observation channel |
+| **P8** | the compiler is a runtime dependency of four readers | `derive-gate-sites.mjs`, `gate-proofs.mjs`, the witness and the Vite plugin all use `typescript` | "a gate with no dependencies" still needs a third correct reading |
+| **P9** | the batteries job sat 4 minutes from its ceiling | 26.2 of 30 measured; now 11.2 and 15.2 against 25 each | a fresh baseline before adding another battery, which is a step the arithmetic now makes cheap |
+
+**The lesson, for the round after this one.** All three defects were the same shape: a rule
+that answered a question about **the member that failed** rather than about the set it
+belongs to. The budget was written after one job timed out and ruled on that job; the
+recording described the job the budget described; and the shell rule, once written as an
+equality, immediately found a job that a list would have missed. So the next ruler is: **when
+a rule is written because something failed, ask which set that thing is a member of, and
+write the rule over the set** -- because a rule shaped by one member is a rule that will be
+satisfied by the next member being different, and the difference is invisible from inside.

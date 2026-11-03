@@ -257,6 +257,35 @@ describe('the workflow reader', () => {
     expect(steps[0].jobTimeout).toBe('15');
   });
 
+  it('reports each job by its id, its label and its budget, in the order they are written', () => {
+    // v3.48. The steps could not answer this: a job whose steps were all renamed still
+    // exists, and a job that declares no `timeout-minutes` has no budget to inherit. The
+    // budget gate asks a question about **jobs** -- is this one bounded at all -- and it
+    // needs the label too, because a CI run reports its jobs under the label rather than
+    // under the id, so a recording keyed by id has to know which name to look for.
+    const flow = [
+      'jobs:',
+      '  first:',
+      '    name: the label a run page shows',
+      '    runs-on: ubuntu-latest',
+      '    timeout-minutes: 25',
+      '    steps:',
+      '      - name: Gate',
+      '        run: pnpm gate',
+      '  second:',
+      '    steps:',
+      '      - name: Gate',
+      '        run: pnpm gate',
+    ].join('\n');
+    const read = readWorkflow(flow);
+    expect(read.errors).toEqual([]);
+    expect(read.jobs).toEqual([
+      { id: 'first', name: 'the label a run page shows', timeoutMinutes: 25 },
+      // No label and no budget: the empty string and null, rather than a guess at either.
+      { id: 'second', name: '', timeoutMinutes: null },
+    ]);
+  });
+
   it('reads a job key written below `steps:`, because keys may be in any order', () => {
     // The reason the value is stored per job and attached after the walk: a job may
     // declare its budget above the block or below it, and only one of the two reads
@@ -1863,20 +1892,30 @@ describe('scripts/verify-local.mjs as a command', () => {
     // every step of `verify` would be read as fifteen minutes each, which is the
     // number CI does not enforce.
     expect(result.stdout).toContain('`timeout-minutes:` on a job is a budget for the whole job, not for each step');
-    expect(result.stdout).toContain('verify 15m across 7 step(s)');
-    // `batteries` is the exception, and the line says so instead of listing it as a pool:
-    // v3.25 gave every one of its steps a `timeout-minutes` of its own, so a hang there is
-    // reported against the step that hung rather than against the job.
-    expect(result.stdout).not.toContain('batteries 30m across');
-    expect(result.stdout).toContain('batteries bounds all 16 of its step(s) on its own');
-    expect(result.stdout).toContain("largest 13m of the job's 30m");
+    // Which jobs are pools and which bound their own steps is now a split rather than an
+    // exception: v3.25 gave `batteries` a bound per step, and v3.48 gave them to `verify`
+    // and `sensitivity` too -- because a job that names no step when it hangs reports the
+    // same sentence the budget was written to replace. What is left as a pool is the three
+    // jobs whose steps are seconds long, where the floor would be the whole bound.
+    expect(result.stdout).toContain('backend 20m across 2 step(s)');
+    expect(result.stdout).toContain('artefacts 15m across 9 step(s)');
+    expect(result.stdout).toContain('cold-tree 20m across 4 step(s)');
+    expect(result.stdout).not.toContain('verify 15m across');
+    expect(result.stdout).toContain('verify bounds all 7 of its step(s) on its own');
+    expect(result.stdout).toContain("largest 12m of the job's 15m");
+    expect(result.stdout).toContain('sensitivity bounds all 3 of its step(s) on its own');
+    expect(result.stdout).toContain("largest 18m of the job's 20m");
+    expect(result.stdout).toContain('batteries bounds all 14 of its step(s) on its own');
+    expect(result.stdout).toContain("largest 8m of the job's 25m");
+    expect(result.stdout).toContain('batteries-heavy bounds all 4 of its step(s) on its own');
+    expect(result.stdout).toContain("largest 16m of the job's 25m");
     expect(result.stdout).toContain('a hang there names the step rather than the job');
     // And the condition, which is the last default this runner had to state: a step
     // runs only after the ones before it have passed, which is GitHub's default and
     // is what makes a failure meaningful.
     expect(result.stdout).toContain('a step runs only after the ones before it have passed');
     expect(result.stdout).toMatch(/none of the \d+ declares a condition/);
-    expect(result.stdout).toContain('verify / Type-check — 15m');
+    expect(result.stdout).toContain('verify / Type-check — 3m');
   });
 
   it('refuses a filter that selects nothing, rather than reporting success', () => {
@@ -1974,7 +2013,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     // One step declares a condition, and the line says which -- a default that is
     // only stated in a header would leave a reader unable to find the exception.
     expect(listed.stdout).toMatch(/1 of \d+ declare a condition that changes it/);
-    expect(listed.stdout).toContain('verify / Type-check — 15m, if (always())');
+    expect(listed.stdout).toContain('verify / Type-check — 3m, if (always())');
 
     const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
       cwd: ROOT,
