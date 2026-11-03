@@ -74,9 +74,11 @@ import {
   claimedSites,
   failureSummary,
   hookFile,
+  parseReached,
   parseThrows,
   parseTrace,
   unprovenClaims,
+  witnessArmed,
 } from './site-proofs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -186,6 +188,7 @@ function traceOf(file, hook) {
       ...process.env,
       NODE_OPTIONS: `${process.env['NODE_OPTIONS'] ?? ''} --require=${hook}`.trim(),
       RCA_SITE_TRACE: trace,
+      ...(witness === '' ? {} : { RCA_THROW_WITNESS: witness }),
     },
   });
   if (result.error !== undefined) {
@@ -207,14 +210,22 @@ function traceOf(file, hook) {
     fired: new Set(parseTrace(text)),
     blind: blindScripts(text),
     thrown: new Set(parseThrows(text)),
+    reached: new Set(parseReached(text)),
+    armed: witnessArmed(text),
   };
 }
 
 const hook = hookFile(scratch);
+// The witness costs a parser load per child that reads a script, so it is asked for
+// only by a run that has a throw claim to settle. A tree with no throw claim pays
+// nothing for an instrument it would not read.
+const witness = claimed.some((claim) => claim.kind === 'throw') ? join(HERE, 'throw-witness.mjs') : '';
 
 const firedByFile = new Map();
 const blindByFile = new Map();
 const thrownByFile = new Map();
+const reachedByFile = new Map();
+const armedByFile = new Set();
 const problems = [];
 for (const [file] of byFile()) {
   const outcome = traceOf(file, hook);
@@ -225,10 +236,12 @@ for (const [file] of byFile()) {
   firedByFile.set(file, outcome.fired);
   blindByFile.set(file, outcome.blind);
   thrownByFile.set(file, outcome.thrown);
+  reachedByFile.set(file, outcome.reached);
+  if (outcome.armed) armedByFile.add(file);
 }
 rmSync(scratch, { recursive: true, force: true });
 
-const violations = unprovenClaims(claimed, firedByFile, blindByFile, thrownByFile);
+const violations = unprovenClaims(claimed, firedByFile, blindByFile, thrownByFile, reachedByFile, armedByFile);
 const failures = problems.length + violations.length;
 
 if (failures > 0) {

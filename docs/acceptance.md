@@ -151,13 +151,49 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   control to its caller), `guarded` (caught in this frame), `rethrow` (forwards a
   decision made above). Clearance, each a distinct check: the partition is recounted
   by an independent traversal of all 75 scripts; `gate-sites-are-proven.test.ts` rule
-  8 refuses a `fatal` with no proof, a proof on any other disposition, a partition
-  whose counts disagree with its rows, and an empty partition; `site-proofs.mjs`
+  8 refuses a `fatal` with no proof, a row that says neither proved nor exempt, a
+  partition whose counts disagree with its rows, and an empty partition (the clause
+  "a proof on any other disposition" was this round's and is corrected in v3.46
+  below); `site-proofs.mjs`
   observes a fatal throw from the gate's own `uncaughtException` listener, kept in a
   separate trace from the exit hook so a crash cannot satisfy a claim about a refusal
   the gate chose. `verify-sites-are-sensitive.mjs` names the claims it does **not**
   mutate -- a throw has no seam a value-mutant can replace -- rather than leaving them
-  out of a total that reads as complete.
+  out of a total that reads as complete. (v3.46 emptied that list: a throw's seam is
+  its source, and all 32 are removed by the loader that records them.)
+- **A throw row says whether a test reaches it, and the instrument can prove it** (v3.46).
+  v3.45 published 41 dispositions and proved one, which left forty rows saying *what a
+  throw is* and nothing about whether any test had ever executed the line. The census
+  that answered it needed an instrument that did not exist: V8 coverage cannot answer,
+  because a block ending in `throw` never increments its counter (measured on a
+  three-function probe: caught throw, escaping throw, no throw -- all `count: 0`), so
+  `scripts/throw-witness.mjs` rewrites `throw X;` into
+  `{ record(line, file); throw X; }` at load time, in both roads into a process (the
+  ESM loader for a spawned gate, a Vite plugin plus a worker setup file for an imported
+  module). Measured: **21 of the 41 rows reached, 20 not**. Of the twenty, eleven are
+  now driven -- ten by `published-refusals.test.ts`, one by
+  `derive-gate-sites-refusals.test.ts`, and two by tests that named the file rather
+  than the line -- and nine carry a sentence about the line they guard instead of the
+  word "unreachable". Clearance, each a distinct check: `gate-sites-are-proven.test.ts`
+  refuses a row that is neither proved nor exempt, a `proved` row with a reason, an
+  `exempt` row with a `provedBy`, a short or repeated reason, and a `fatal` row with no
+  proof; `verify-site-proofs.mjs` claims **all 32 proved throws** and honours each by
+  the line having been **reached**, which is what the witness records and what a test
+  that catches the throw still satisfies; `verify-sites-are-sensitive.mjs` removes each
+  of the 32 statements and requires some test to go red -- **0 survivors in 190 runs**;
+  and `throw-witness.test.ts` holds the rewrite over fourteen positions a `throw` can
+  occupy, asserts the interpreter still accepts the result, asserts the line numbers
+  are unchanged, and drives the two roads (a child that carries the preload, and an
+  import through the plugin) so that "found zero" cannot mean "instrumented nothing".
+- **A reader follows the binding nearest the write, not the first one in the file** (v3.46).
+  `tests-do-not-write-inside-the-package.test.ts` follows a write's target through its `const`
+  bindings and kept the first binding per name. `published-refusals.test.ts` binds `path` twice
+  -- to a repository path and to one under a scratch directory -- so a test writing into `/tmp`
+  was reported as racing every other worker. A false positive is the direction that gets a
+  guard switched off, so the resolver is name-scoped: the nearest binding at or before the
+  write, and a binding's expression resolved at its own line. Clearance: two controls, one per
+  order (a scratch binding declared after a root binding is not flagged; a root binding
+  declared after a scratch one is).
 - **A comment is found by the token boundaries, not by a lexer** (v3.43). Both
   hand-written strippers desynced on a quote or a backtick inside a regex literal
   -- 12 of 75 scripts, 28 of 219 test files -- and the second one credited two

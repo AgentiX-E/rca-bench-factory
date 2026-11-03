@@ -1,6 +1,6 @@
 {
   "rule": "a process.exit(...) call whose argument is not a known zero -- no argument at all is zero; sites and zero partition every process.exit call, whatever position the call sits in; a reference to the exit family that is not a call is refused rather than counted; see scripts/derive-gate-sites.mjs",
-  "scanned": 75,
+  "scanned": 76,
   "excluded": {
     "zero": 16
   },
@@ -818,7 +818,7 @@
     },
     {
       "script": "scripts/verify-site-proofs.mjs",
-      "line": 100,
+      "line": 102,
       "condition": "unknown.length > 0",
       "diagnostic": "usage: node scripts/verify-site-proofs.mjs [--list]\\n",
       "status": "proved",
@@ -826,7 +826,7 @@
     },
     {
       "script": "scripts/verify-site-proofs.mjs",
-      "line": 110,
+      "line": 112,
       "condition": "catch",
       "diagnostic": "verify-site-proofs: cannot read ${relative(ROOT, INVENTORY) || INVENTORY} -- ${String(error)}\\n",
       "status": "proved",
@@ -834,7 +834,7 @@
     },
     {
       "script": "scripts/verify-site-proofs.mjs",
-      "line": 121,
+      "line": 123,
       "condition": "claimed.length === 0",
       "diagnostic": "verify-site-proofs: ${relative(ROOT, INVENTORY) || INVENTORY} holds no proved site,",
       "status": "proved",
@@ -842,7 +842,7 @@
     },
     {
       "script": "scripts/verify-site-proofs.mjs",
-      "line": 252,
+      "line": 265,
       "condition": "failures > 0",
       "diagnostic": "verify-site-proofs: FAILED -- ${String(failures)} problem(s)\\n",
       "status": "proved",
@@ -874,7 +874,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 159,
+      "line": 157,
       "condition": "everything.length === 0",
       "diagnostic": "verify-sites-are-sensitive: ${relative(ROOT, INVENTORY) || INVENTORY} holds no proved site,",
       "status": "proved",
@@ -882,7 +882,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 349,
+      "line": 361,
       "condition": "failures > 0",
       "diagnostic": "verify-sites-are-sensitive: FAILED -- ${String(failures)} problem(s)\\n",
       "status": "proved",
@@ -902,133 +902,177 @@
         "script": "scripts/build-example-bundle.mjs",
         "line": 40,
         "disposition": "unguarded",
-        "message": "no example files found under ${EXAMPLE_DIR}"
+        "message": "no example files found under ${EXAMPLE_DIR}",
+        "status": "proved",
+        "provedBy": "packages/core/test/build-example-bundle.test.ts"
       },
       {
         "script": "scripts/build-example-bundle.mjs",
         "line": 57,
         "disposition": "unguarded",
-        "message": "the example pack contains duplicate paths"
+        "message": "the example pack contains duplicate paths",
+        "status": "exempt",
+        "reason": "A duplicate path in the pack cannot reach this line. The pack ends by normalising its own output through `normalizePackEntries`, which refuses a repeated path first -- and that refusal is held by `pack-archive.test.ts`. The case a reader would try, an example directory holding its own `MANIFEST.json`, does not collide either: example files are prefixed with `examples/order-prod/`, so the two rows differ. `build-example-bundle.test.ts` measures that, and this line stays as a guard on the pack contract rather than on an input."
       },
       {
         "script": "scripts/build-example-bundle.mjs",
         "line": 60,
         "disposition": "unguarded",
-        "message": "the example pack must ship a MANIFEST.json to be verifiable"
+        "message": "the example pack must ship a MANIFEST.json to be verifiable",
+        "status": "exempt",
+        "reason": "The pack always appends `MANIFEST.json` (`buildExamplePack` ends with it), so a tree in which the manifest is absent from the archive is a tree whose pack has been changed -- and the pack is tested where it lives. The guard states the contract the download page depends on: the archive the page advertises is one a reader can verify."
       },
       {
         "script": "scripts/check-citations.mjs",
         "line": 50,
         "disposition": "rethrow",
-        "message": "error"
+        "message": "error",
+        "status": "proved",
+        "provedBy": "packages/core/test/published-refusals.test.ts"
       },
       {
         "script": "scripts/check-citations.mjs",
         "line": 60,
         "disposition": "rethrow",
-        "message": "error"
+        "message": "error",
+        "status": "proved",
+        "provedBy": "packages/core/test/published-refusals.test.ts"
       },
       {
         "script": "scripts/derive-fault-golden.mjs",
         "line": 77,
         "disposition": "unguarded",
-        "message": "unknown argument '${a}'"
+        "message": "unknown argument '${a}'",
+        "status": "proved",
+        "provedBy": "packages/core/test/fault-extraction-scripts.test.ts"
       },
       {
         "script": "scripts/derive-gate-sites.mjs",
         "line": 475,
         "disposition": "unguarded",
-        "message": "new Error( `${name}: the parser rejected this file (${String(file.parseDiagnostics.length)} error(s)), ` + 'so no exit c"
+        "message": "new Error( `${name}: the parser rejected this file (${String(file.parseDiagnostics.length)} error(s)), ` + 'so no exit c",
+        "status": "proved",
+        "provedBy": "packages/core/test/derive-gate-sites-refusals.test.ts"
       },
       {
         "script": "scripts/derive-gate-sites.mjs",
         "line": 544,
         "disposition": "unguarded",
-        "message": "new Error( `${name}: ${String(refusals.length)} reference(s) to the exit family that this inventory cannot ` + 'classify"
+        "message": "new Error( `${name}: ${String(refusals.length)} reference(s) to the exit family that this inventory cannot ` + 'classify",
+        "status": "proved",
+        "provedBy": "packages/core/test/derive-gate-sites-refusals.test.ts"
       },
       {
         "script": "scripts/derive-gate-sites.mjs",
         "line": 631,
         "disposition": "unguarded",
-        "message": "new Error( `${name}: the parser rejected this file (${String(file.parseDiagnostics.length)} error(s)), ` + 'so no throw "
+        "message": "new Error( `${name}: the parser rejected this file (${String(file.parseDiagnostics.length)} error(s)), ` + 'so no throw ",
+        "status": "proved",
+        "provedBy": "packages/core/test/derive-gate-sites-throws.test.ts"
       },
       {
         "script": "scripts/derive-openrca-archive.mjs",
         "line": 203,
         "disposition": "unguarded",
-        "message": "missing ${path}; fetch the four archives from ${REPO} at ${COMMIT}"
+        "message": "missing ${path}; fetch the four archives from ${REPO} at ${COMMIT}",
+        "status": "proved",
+        "provedBy": "packages/core/test/derive-openrca-archive.test.ts"
       },
       {
         "script": "scripts/doc-counts-rows.mjs",
         "line": 256,
         "disposition": "unguarded",
-        "message": "the ${scope} summary cannot be read"
+        "message": "the ${scope} summary cannot be read",
+        "status": "proved",
+        "provedBy": "packages/core/test/measure-doc-counts-readings.test.ts"
       },
       {
         "script": "scripts/doc-counts-rows.mjs",
         "line": 271,
         "disposition": "unguarded",
-        "message": "new TranscriptRecordsFailures(scope, [ `the ${scope} transcript records a failing run, so it is not a measurement:`, ` $"
+        "message": "new TranscriptRecordsFailures(scope, [ `the ${scope} transcript records a failing run, so it is not a measurement:`, ` $",
+        "status": "proved",
+        "provedBy": "packages/core/test/measure-doc-counts-readings.test.ts"
       },
       {
         "script": "scripts/doc-counts-rows.mjs",
         "line": 282,
         "disposition": "unguarded",
-        "message": "measuredNothing(scope, skipped)"
+        "message": "measuredNothing(scope, skipped)",
+        "status": "proved",
+        "provedBy": "packages/core/test/measure-doc-counts-readings.test.ts"
       },
       {
         "script": "scripts/doc-counts-rows.mjs",
-        "line": 487,
+        "line": 501,
         "disposition": "unguarded",
-        "message": "new ReportRecordsFailures(path, [ `the report at ${path} records a failure, so it is not a measurement:`, ...shown.map(("
+        "message": "new ReportRecordsFailures(path, [ `the report at ${path} records a failure, so it is not a measurement:`, ...shown.map((",
+        "status": "proved",
+        "provedBy": "packages/core/test/measure-doc-counts-readings.test.ts"
       },
       {
         "script": "scripts/doc-counts-rows.mjs",
-        "line": 508,
+        "line": 522,
         "disposition": "unguarded",
-        "message": "new ReportMeasuredNothing(scope.name, measuredNothingLines(scope.name, measured.skipped, 'record'))"
+        "message": "new ReportMeasuredNothing(scope.name, measuredNothingLines(scope.name, measured.skipped, 'record'))",
+        "status": "proved",
+        "provedBy": "packages/core/test/measure-doc-counts-readings.test.ts"
       },
       {
         "script": "scripts/doc-counts-rows.mjs",
-        "line": 534,
+        "line": 548,
         "disposition": "unguarded",
-        "message": "new MeasurementUnavailable(lines[0] ?? 'the measurement is unavailable', lines)"
+        "message": "new MeasurementUnavailable(lines[0] ?? 'the measurement is unavailable', lines)",
+        "status": "proved",
+        "provedBy": "packages/core/test/measure-doc-counts-readings.test.ts"
       },
       {
         "script": "scripts/format-spec.mjs",
         "line": 669,
         "disposition": "unguarded",
-        "message": "unknown format id '${id}'"
+        "message": "unknown format id '${id}'",
+        "status": "proved",
+        "provedBy": "packages/core/test/published-refusals.test.ts"
       },
       {
         "script": "scripts/gate-receipt.mjs",
         "line": 81,
         "disposition": "unguarded",
-        "message": "new TypeError( `a receipt is filed under a tree SHA-1, and '${String(tree)}' is not one; ` + 'resolve HEAD^{tree} first "
+        "message": "new TypeError( `a receipt is filed under a tree SHA-1, and '${String(tree)}' is not one; ` + 'resolve HEAD^{tree} first ",
+        "status": "proved",
+        "provedBy": "packages/core/test/gate-receipt.test.ts"
       },
       {
         "script": "scripts/gen-examples.mjs",
         "line": 121,
         "disposition": "unguarded",
-        "message": "unknown example target '${targetKey}' in ${spec.id}.md"
+        "message": "unknown example target '${targetKey}' in ${spec.id}.md",
+        "status": "proved",
+        "provedBy": "packages/core/test/gen-examples.test.ts"
       },
       {
         "script": "scripts/gen-examples.mjs",
         "line": 123,
         "disposition": "unguarded",
-        "message": "example path '${relativePath}' not exported by ${targetKey}"
+        "message": "example path '${relativePath}' not exported by ${targetKey}",
+        "status": "proved",
+        "provedBy": "packages/core/test/gen-examples.test.ts"
       },
       {
         "script": "scripts/gen-examples.mjs",
         "line": 182,
         "disposition": "unguarded",
-        "message": "fields marker '${ref}' does not match any documented file in ${spec.id}.md"
+        "message": "fields marker '${ref}' does not match any documented file in ${spec.id}.md",
+        "status": "proved",
+        "provedBy": "packages/core/test/gen-examples.test.ts"
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
         "line": 62,
         "disposition": "unguarded",
-        "message": "${path}: HTTP ${String(response.status)}"
+        "message": "${path}: HTTP ${String(response.status)}",
+        "status": "proved",
+        "provedBy": "packages/core/test/battery-budget.test.ts"
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
@@ -1042,109 +1086,145 @@
         "script": "scripts/measure-doc-counts.mjs",
         "line": 182,
         "disposition": "unguarded",
-        "message": "new SuiteFailed(scope.name, diagnoseRedRun(scope.name, error))"
+        "message": "new SuiteFailed(scope.name, diagnoseRedRun(scope.name, error))",
+        "status": "proved",
+        "provedBy": "packages/core/test/measure-doc-counts-red-run.test.ts"
       },
       {
         "script": "scripts/measure-doc-counts.mjs",
         "line": 267,
         "disposition": "rethrow",
-        "message": "error"
+        "message": "error",
+        "status": "exempt",
+        "reason": "This is the line that re-throws whatever the two reading paths raised that is *not* a diagnosis. Every state of the tree is diagnosed: `refuse` raises `MeasurementUnavailable`, and the red-run and unreadable-summary paths raise subclasses of it. So the only thing that can arrive here is a defect in the reader itself. It was reachable once, through `workspacePackages` reading a missing `pnpm-workspace.yaml`, and that is fixed rather than proved: a missing workspace list is now a diagnosis, and `published-refusals.test.ts` drives it. A test that reached this line would be a test that broke the measurement."
       },
       {
         "script": "scripts/probe-m1-ceiling.mjs",
         "line": 72,
         "disposition": "unguarded",
-        "message": "unknown argument '${a}'"
+        "message": "unknown argument '${a}'",
+        "status": "proved",
+        "provedBy": "packages/core/test/published-refusals.test.ts"
       },
       {
         "script": "scripts/probe-m1-ceiling.mjs",
         "line": 118,
         "disposition": "unguarded",
-        "message": "recoverability partition does not cover the dataset: ${recoverable.length} + ${unrecoverable.length} != ${total}"
+        "message": "recoverability partition does not cover the dataset: ${recoverable.length} + ${unrecoverable.length} != ${total}",
+        "status": "exempt",
+        "reason": "The probe says so itself: `includes` over the same objects is exact, so the partition cannot fail to cover the dataset. The guard exists because the two halves are quoted as a partition in `docs/`, and a number quoted as a partition should be checked as one. Firing it would require `includes` to disagree with itself."
       },
       {
         "script": "scripts/probe-type-misses.mjs",
         "line": 255,
         "disposition": "unguarded",
-        "message": "checkRca100Structure published no ${id} check"
+        "message": "checkRca100Structure published no ${id} check",
+        "status": "exempt",
+        "reason": "A guard on `checkRca100Structure` publishing each of four named checks. The four ids come from the function that publishes them, so the guard fires only if that function loses a check -- which its own tests would report first, and which would be a defect rather than a state of an input."
       },
       {
         "script": "scripts/probe-type-misses.mjs",
         "line": 526,
         "disposition": "unguarded",
-        "message": "unknown run '${run}'; recorded runs are ${Object.keys(RUNS).join(', ')}"
+        "message": "unknown run '${run}'; recorded runs are ${Object.keys(RUNS).join(', ')}",
+        "status": "proved",
+        "provedBy": "packages/core/test/published-refusals.test.ts"
       },
       {
         "script": "scripts/probe-type-misses.mjs",
         "line": 550,
         "disposition": "unguarded",
-        "message": "unknown run '${run}'; recorded runs are ${Object.keys(RUNS).join(', ')}"
+        "message": "unknown run '${run}'; recorded runs are ${Object.keys(RUNS).join(', ')}",
+        "status": "exempt",
+        "reason": "The same guard as `:526`, on the same map with the same key. They are separate functions because the two readings are separate, and either must refuse on its own -- but in one run the type block runs first, so a key the type reading accepted is a key this one accepts too. `:526` is proved by `published-refusals.test.ts`; this one cannot be reached while it stands in front."
       },
       {
         "script": "scripts/probe-type-misses.mjs",
         "line": 570,
         "disposition": "unguarded",
-        "message": "${goldenPath} carries no samples array"
+        "message": "${goldenPath} carries no samples array",
+        "status": "proved",
+        "provedBy": "packages/core/test/published-refusals.test.ts"
       },
       {
         "script": "scripts/probe-type-misses.mjs",
         "line": 665,
         "disposition": "unguarded",
-        "message": "${goldenPath} carries no samples array"
+        "message": "${goldenPath} carries no samples array",
+        "status": "exempt",
+        "reason": "A second guard on the same committed file as `:570`, in the block that runs next. `:570` is proved by `published-refusals.test.ts`; a file that loses its `samples` array stops the run at the first of the two, so this one cannot be reached while that one stands in front of it."
       },
       {
         "script": "scripts/probe-type-misses.mjs",
         "line": 931,
         "disposition": "unguarded",
-        "message": "${DATASET} carries no samples array"
+        "message": "${DATASET} carries no samples array",
+        "status": "exempt",
+        "reason": "The same check as `:570`, on the same path -- `DATASET` and `goldenPath` name one file -- in the derivation block, which is the last of the three that read it. A file without `samples` is refused by the first block that reads it, so this line cannot be the one that reports the state."
       },
       {
         "script": "scripts/probe-type-misses.mjs",
         "line": 1228,
         "disposition": "unguarded",
-        "message": "unknown argument '${a}'"
+        "message": "unknown argument '${a}'",
+        "status": "proved",
+        "provedBy": "packages/core/test/published-refusals.test.ts"
       },
       {
         "script": "scripts/probe-type-misses.mjs",
         "line": 1247,
         "disposition": "unguarded",
-        "message": "new Error( 'input has no `misses` array; pass a scored report (scripts/score-fault-extraction.mjs), ' + 'not a raw predi"
+        "message": "new Error( 'input has no `misses` array; pass a scored report (scripts/score-fault-extraction.mjs), ' + 'not a raw predi",
+        "status": "proved",
+        "provedBy": "packages/core/test/published-refusals.test.ts"
       },
       {
         "script": "scripts/probe-type-misses.mjs",
         "line": 1319,
         "disposition": "unguarded",
-        "message": "classification partition does not cover the misses: ${covered} != ${classified.length}"
+        "message": "classification partition does not cover the misses: ${covered} != ${classified.length}",
+        "status": "exempt",
+        "reason": "The classification partition: `classify` returns one of three kinds for every row it is given, and the guard asserts that the three counts add up to the number of rows. Firing it would require the classifier to return nothing for a row it was handed."
       },
       {
         "script": "scripts/score-fault-extraction.mjs",
         "line": 53,
         "disposition": "unguarded",
-        "message": "unknown argument '${a}'"
+        "message": "unknown argument '${a}'",
+        "status": "proved",
+        "provedBy": "packages/core/test/fault-extraction-scripts.test.ts"
       },
       {
         "script": "scripts/score-fault-extraction.mjs",
         "line": 84,
         "disposition": "unguarded",
-        "message": "${path} is not an object; expected the artefact derive-fault-golden.mjs writes"
+        "message": "${path} is not an object; expected the artefact derive-fault-golden.mjs writes",
+        "status": "proved",
+        "provedBy": "packages/core/test/fault-extraction-scripts.test.ts"
       },
       {
         "script": "scripts/score-fault-extraction.mjs",
         "line": 87,
         "disposition": "unguarded",
-        "message": "${path} has schema '${String(raw.schema)}', not 'rca-bench-fault-extraction-predictions/1'"
+        "message": "${path} has schema '${String(raw.schema)}', not 'rca-bench-fault-extraction-predictions/1'",
+        "status": "proved",
+        "provedBy": "packages/core/test/fault-extraction-scripts.test.ts"
       },
       {
         "script": "scripts/score-fault-extraction.mjs",
         "line": 92,
         "disposition": "unguarded",
-        "message": "${path} has no 'predictions' array"
+        "message": "${path} has no 'predictions' array",
+        "status": "proved",
+        "provedBy": "packages/core/test/published-refusals.test.ts"
       },
       {
         "script": "scripts/serve-site.mjs",
         "line": 38,
         "disposition": "guarded",
-        "message": "not a file"
+        "message": "not a file",
+        "status": "proved",
+        "provedBy": "packages/core/test/published-refusals.test.ts"
       }
     ]
   }

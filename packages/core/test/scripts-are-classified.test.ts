@@ -245,6 +245,15 @@ const REGISTER: Record<string, Entry> = {
       'parser that kept the test frames would make every claim look honoured, and a comparison ' +
       'pooled across files would hide a pointer to the wrong file.',
   },
+  'throw-witness.mjs': {
+    class: 'data',
+    why:
+      'A module loader that rewrites each `throw` statement in `scripts/` to announce the line it ' +
+      'is about to throw from, so that a throw a caller catches can be observed at all. It is a ' +
+      'reading, not a verdict: it exits nothing, prints nothing, and changes no status. Registered ' +
+      'as a loader by `site-proofs.mjs`\'s preload only when `RCA_THROW_WITNESS` is set, and ' +
+      'imported by its own test to exercise the rewrite as a function rather than through a child.',
+  },
   'gate-proofs.mjs': {
     class: 'data',
     why:

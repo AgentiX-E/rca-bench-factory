@@ -1,15 +1,42 @@
 import { readFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { defineConfig } from 'vitest/config';
+import { instrumentThrows } from '../../scripts/throw-witness.mjs';
 
 export default defineConfig({
+  // The suite reaches `scripts/*.mjs` two ways, and until this plugin existed the
+  // throw witness saw only one of them.
+  //
+  // A gate that a test **spawns** is loaded by a node process, so the loader in
+  // `scripts/throw-witness.mjs` rewrites it and every throw it reaches is reported.
+  // A module that a test **imports** is loaded by Vite, inside the worker, and never
+  // touches node's ESM loader -- so a refusal that a test drives directly, the way
+  // `gate-receipt.test.ts` drives `writeReceipt`, was invisible. Measured before the
+  // plugin: `derive-gate-sites.mjs:631` is asserted by
+  // `derive-gate-sites-throws.test.ts` ("refuses a file it cannot parse") and the
+  // trace reported nothing, which reads exactly like a row no test reaches.
+  //
+  // The rewrite is the same function the loader calls, not a second copy of it: one
+  // implementation, two ways into the process. With `RCA_THROW_WITNESS` unset -- every
+  // run that is not a census -- the hook is a no-op and the suite pays one property
+  // read per module.
+  plugins: [
+    {
+      name: 'rca-throw-witness',
+      transform(code: string, id: string) {
+        if ((process.env['RCA_THROW_WITNESS'] ?? '') === '') return null;
+        if (!/\/scripts\/[A-Za-z0-9._-]+\.mjs$/.test(id)) return null;
+        return { code: instrumentThrows(id, code, process.env['RCA_HOLLOW_THROW'] ?? '').source, map: null };
+      },
+    },
+  ],
   test: {
     include: ['test/**/*.test.ts'],
     // The suite's stopwatch. A file that blocks the event loop past the worker's
     // RPC deadline makes vitest exit non-zero while every test passes, and until
     // v3.12 nothing measured it -- see `test/support/event-loop-stall.ts` and
     // finding 290 for the controlled pair that established the mechanism.
-    setupFiles: ['./test/setup/stall-watch.ts'],
+    setupFiles: ['./test/setup/stall-watch.ts', './test/setup/throw-witness.ts'],
     // The number of files run at once, capped rather than left to the CPU count.
     //
     // ## The measurement

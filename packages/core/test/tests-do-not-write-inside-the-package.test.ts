@@ -135,16 +135,33 @@ interface Flag {
 /**
  * Every write in `source` whose target reaches a repository root.
  *
- * `bindings` is deliberately shallow: the first `const NAME = …` per name, one line each, so
- * a destructured or reassigned variable falls through to "not flagged". That is a false
- * negative rather than a false positive, which is the right direction for a guard whose
- * alternative is to send the next author looking for a differently named variable.
+ * `bindings` is deliberately shallow: one `const NAME = …` per line, and a name resolves to
+ * the **nearest** binding at or before the write. That is a false negative for a destructured
+ * or reassigned variable, which is the right direction for a guard whose alternative is to
+ * send the next author looking for a differently named variable.
+ *
+ * It used to keep the *first* binding per name, and the difference is not academic: the first
+ * version of `published-refusals.test.ts` binds `path` twice -- once in `run()` to
+ * `resolve(ROOT, 'scripts', target)`, once in `fixture()` to `join(SCRATCH, name)` -- and the
+ * scan read every write in `fixture()` against `run()`'s binding. It reported a test that
+ * writes into `/tmp` as a test that writes into the package, which is the direction of error
+ * that gets a guard switched off. Nearest-binding is what scoping already means.
  */
 function writesIntoThePackage(source: string): Flag[] {
-  const bindings = new Map<string, string>();
-  for (const match of source.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*([^;\n]+);/g)) {
-    if (!bindings.has(match[1] as string)) bindings.set(match[1] as string, match[2] as string);
-  }
+  const bindings: { line: number; name: string; expression: string }[] = [];
+  source.split('\n').forEach((line, index) => {
+    const match = /const\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*([^;\n]+);/.exec(line);
+    if (match !== null) bindings.push({ line: index + 1, name: match[1] as string, expression: match[2] as string });
+  });
+  /** The binding a name has at `atLine`: the last one declared at or before it. */
+  const bindingAt = (name: string, atLine: number): { line: number; expression: string } | undefined => {
+    for (let i = bindings.length - 1; i >= 0; i -= 1) {
+      const one = bindings[i]!;
+      if (one.line > atLine) continue;
+      if (one.name === name) return one;
+    }
+    return undefined;
+  };
 
   /**
    * The expression with string literals blanked out.
@@ -167,7 +184,7 @@ function writesIntoThePackage(source: string): Flag[] {
    */
   const LOCATION = /import\.meta\.(url|dirname|filename)|process\.cwd\(\)/;
 
-  const reachesRoot = (rawExpression: string, seen = new Set<string>(), depth = 0): boolean => {
+  const reachesRoot = (rawExpression: string, atLine: number, seen = new Set<string>(), depth = 0): boolean => {
     if (depth > 4) return false;
     const expression = withoutStrings(rawExpression);
     if (LOCATION.test(expression)) return true;
@@ -175,10 +192,10 @@ function writesIntoThePackage(source: string): Flag[] {
       const name = token[1] as string;
       if (ROOTS.has(name)) return true;
       if (seen.has(name)) continue;
-      const bound = bindings.get(name);
+      const bound = bindingAt(name, atLine);
       if (bound !== undefined) {
         seen.add(name);
-        if (reachesRoot(bound, seen, depth + 1)) return true;
+        if (reachesRoot(bound.expression, bound.line, seen, depth + 1)) return true;
       }
     }
     return false;
@@ -224,7 +241,7 @@ function writesIntoThePackage(source: string): Flag[] {
         argument = firstArgument(rest);
         rest = rest.slice(argument.length + 1);
       }
-      if (reachesRoot(argument)) {
+      if (reachesRoot(argument, index + 1)) {
         flags.push({ line: index + 1, text: line.trim() });
         return;
       }
@@ -351,6 +368,30 @@ describe('no test writes inside the package it tests', () => {
       "writeFileSync(target, 'original\\n');",
     ].join('\n');
     expect(writesIntoThePackage(source)).toEqual([]);
+  });
+
+  it('resolves a name to the binding nearest the write, not to the first one in the file', () => {
+    // The false red that produced this test. `published-refusals.test.ts` binds `path` twice:
+    // once to a repository path, once to one under a scratch directory. Keeping the first
+    // binding per name meant every write in the second scope was read against the first
+    // scope's value, so a test writing into `/tmp` was reported as a test writing into the
+    // package. Both directions are asserted, because a resolver that always took the *last*
+    // binding in the file would pass the first half and fail the second.
+    const scratchAfterRoot = [
+      "const path = resolve(ROOT, 'scripts', target);",
+      "const dir = mkdtempSync(join(tmpdir(), 'fixture-'));",
+      "const copy = join(dir, 'copy.mjs');",
+      "writeFileSync(copy, readFileSync(path, 'utf8'));",
+    ].join('\n');
+    expect(writesIntoThePackage(scratchAfterRoot)).toEqual([]);
+    const rootAfterScratch = [
+      "const dir = mkdtempSync(join(tmpdir(), 'fixture-'));",
+      "const copy = join(dir, 'copy.mjs');",
+      "writeFileSync(copy, 'x');",
+      "const path = resolve(ROOT, 'scripts', target);",
+      "writeFileSync(path, 'x');",
+    ].join('\n');
+    expect(writesIntoThePackage(rootAfterScratch)).toHaveLength(1);
   });
 
   it('flags a write through a location-derived path, whatever the binding is called', () => {

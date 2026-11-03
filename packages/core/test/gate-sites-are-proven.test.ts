@@ -409,6 +409,34 @@ function inferredDrives(body: string): string[] {
 }
 
 /**
+ * Whether a test file names a script in an `import` sentence.
+ *
+ * Static or dynamic, and both spellings are in use: `format-spec.mjs` is reached by a
+ * dynamic import inside a test body, `gate-receipt.mjs` by a static one at the top.
+ * The path is matched loosely -- anything ending in `scripts/<name>` -- because a
+ * test file lives at a depth this rule should not have to know.
+ */
+function importsScript(body: string, script: string): boolean {
+  const escaped = script.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Two spellings, and the second is the one this tree writes. A path that ends in
+  // `scripts/<name>` is the obvious form, and it is what `published-refusals.test.ts`
+  // uses for `format-spec.mjs`. A file that reaches a script through
+  // `pathToFileURL(resolve(ROOT, 'scripts', '<name>'))` -- which is how the deriver's
+  // own tests import it, deliberately, because a static import of a script trips
+  // `scripts-are-classified` -- names the file and the directory as two string
+  // literals and never as one path.
+  //
+  // So the second form is: the file names this script, and it loads from `scripts/`.
+  // That is weaker than a path match and still not a bare mention -- a file that
+  // quotes a script's name without an import sentence is rejected, which is the
+  // defect rule 3 recorded.
+  const direct = new RegExp(`(?:from\\s*|import\\s*\\(\\s*)['"][^'"]*scripts/${escaped}['"]`);
+  if (direct.test(body)) return true;
+  const names = new RegExp(`['"\`]${escaped}['"\`]`);
+  return names.test(body) && /import\s*\(/.test(body) && /['"]scripts['"]/.test(body);
+}
+
+/**
  * What is wrong with one `provedBy` pointer, given the script it claims to prove.
  *
  * Shared by the site list and the throw partition, because the two claims have the
@@ -418,7 +446,13 @@ function inferredDrives(body: string): string[] {
  * and the scripts the spawn calls actually name) and a disagreement in either
  * direction is reported rather than resolved.
  */
-function proofProblems(where: string, provedBy: string, scriptPath: string, root: string): string[] {
+function proofProblems(
+  where: string,
+  provedBy: string,
+  scriptPath: string,
+  root: string,
+  kind: 'exit' | 'throw' = 'exit',
+): string[] {
   const problems: string[] = [];
   const script = scriptPath.split('/').pop() ?? scriptPath;
   let body: string;
@@ -445,6 +479,17 @@ function proofProblems(where: string, provedBy: string, scriptPath: string, root
   const inferred = inferredDrives(body);
   const declaredHere = declared.includes(script) || declared.includes(scriptPath);
   const inferredHere = inferred.includes(script) || inferred.includes(scriptPath);
+  // A `throw` has a second way into a process, and it is the commoner one: a module
+  // that a test **imports** and calls. `derive-gate-sites-refusals.test.ts` reaches
+  // the deriver's refusals by importing `exitsIn` and handing it a broken source --
+  // there is no child, no spawn and no `DRIVES` entry, and the claim is still true.
+  //
+  // So an import sentence is evidence for a throw and not for an exit. It is not a
+  // weaker check: `verify-site-proofs.mjs` measures the same claim with a loader that
+  // rewrites the statement, in whichever of the two ways the file reaches it.
+  if (kind === 'throw' && !declaredHere && !inferredHere && importsScript(body, script)) {
+    return problems;
+  }
   if (!declaredHere && !inferredHere) {
     problems.push(
       `${where}: ${provedBy} neither declares ${script} in DRIVES nor spawns it, ` +
@@ -518,10 +563,19 @@ function violationsOf(inventory: Inventory, root: string): string[] {
   // the inventory published none before v3.45, so this rule is what keeps the second
   // half of the table from going stale in silence.
   //
-  // Only `fatal` is proved. The other three dispositions are not exits, and a proof
-  // attached to one of them would be a claim that a test reaches a line and that the
-  // line ends the process -- which for `unguarded`, `guarded` and `rethrow` is false by
-  // construction, and for `unguarded` is decided in a frame this table does not own.
+  // Every row is proved or exempt, and which of the two is a claim the row states.
+  //
+  // v3.45 published these rows with a disposition and nothing else, and forty of the
+  // forty-one read as "fine" while meaning "no test has ever executed this line". A
+  // census over the suite found **twenty** of them unreached. Twelve of those could be
+  // aimed at and now are (`published-refusals.test.ts`, `derive-gate-sites-refusals.
+  // test.ts`, `build-example-bundle.test.ts`); nine cannot be, and each carries the
+  // sentence saying why; one was reachable only through a *defect* and is now a
+  // diagnosis instead.
+  //
+  // Only `fatal` still has to be proved: the other three dispositions do not end a
+  // process, so proving one is a claim that a test reaches the line, not that the line
+  // refuses. That is the claim `verify-site-proofs.mjs` measures for both.
   const throwRows = inventory.throws?.rows ?? [];
   const tally: Record<string, number> = { fatal: 0, unguarded: 0, guarded: 0, rethrow: 0 };
   for (const row of throwRows) {
@@ -534,20 +588,34 @@ function violationsOf(inventory: Inventory, root: string): string[] {
     if (row.message === undefined || row.message.length === 0) {
       problems.push(`${where} is a throw with no message, so the row is a bare coordinate`);
     }
-    if (row.disposition === 'fatal') {
-      if (row.status !== 'proved') {
-        problems.push(`${where} is a fatal throw with status '${String(row.status)}', so nothing proves it`);
-        continue;
-      }
+    if (row.disposition === 'fatal' && row.status !== 'proved') {
+      problems.push(`${where} is a fatal throw with status '${String(row.status)}', so nothing proves it`);
+      continue;
+    }
+    if (row.status === 'proved') {
       if (typeof row.provedBy !== 'string' || row.provedBy.length === 0) {
         problems.push(`${where} is proved but names no test`);
         continue;
       }
-      problems.push(...proofProblems(where, row.provedBy, row.script, root));
-    } else if (row.status !== undefined) {
+      problems.push(...proofProblems(where, row.provedBy, row.script, root, 'throw'));
+      if (row.reason !== undefined) {
+        problems.push(`${where} is proved and also carries a reason, so the two accounts can disagree`);
+      }
+    } else if (row.status === 'exempt') {
+      if (row.provedBy !== undefined) {
+        problems.push(`${where} is exempt and also names a test, which is the state rule 2 forbids`);
+      }
+      if (typeof row.reason !== 'string') {
+        problems.push(`${where} is exempt without a reason`);
+        continue;
+      }
+      if (row.reason.length <= 40) {
+        problems.push(`${where} exempts itself in ${row.reason.length} characters: '${row.reason}'`);
+      }
+    } else {
       problems.push(
-        `${where} is a ${row.disposition} throw and claims status '${row.status}'; ` +
-          'only a fatal throw ends a process',
+        `${where} is a ${row.disposition} throw with status '${String(row.status)}', which is neither ` +
+          'proved nor exempt -- so the row says nothing about whether a test reaches it',
       );
     }
   }
@@ -897,18 +965,54 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
       );
     });
 
-    it('rejects a proof attached to a throw that does not end a process', () => {
-      // `unguarded`, `guarded` and `rethrow` are published so a reader can see what the
-      // rule declined. A `provedBy` on one of them would claim a test reaches a line
-      // *and that the line ends the process*, which is false by construction.
+    it('rejects an exemption that also names a test, which is two accounts of one line', () => {
+      // v3.45 published the throw partition with a disposition and nothing else, and
+      // this corruption is what that looked like once the rows had to say something:
+      // an `exempt` row keeps its sentence and grows a `provedBy`, so the row claims
+      // both "no test can reach this" and "this test reaches it". Rule 2 forbids the
+      // pair, and the same guard has to cover both partitions.
       const rows = (committed.throws?.rows ?? []).map((row) =>
-        row.disposition === 'unguarded' && row.status === undefined
-          ? { ...row, status: 'proved', provedBy: 'packages/core/test/battery-budget.test.ts' }
+        row.status === 'exempt'
+          ? { ...row, provedBy: 'packages/core/test/battery-budget.test.ts' }
           : row,
       );
-      const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-proved-unguarded');
+      const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-exempt-proved');
       expect(violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot())).toContainEqual(
-        expect.stringContaining('only a fatal throw ends a process'),
+        expect.stringContaining('is exempt and also names a test'),
+      );
+    });
+
+    it('rejects a proved throw that also carries a reason', () => {
+      // A `provedBy` and a `reason` are opposite claims about the same line: one says
+      // a test arrives, the other says why none can. A row carrying both would pass
+      // either check on its own, so the pair is rejected rather than resolved.
+      const rows = (committed.throws?.rows ?? []).map((row) =>
+        row.status === 'proved'
+          ? { ...row, reason: 'This sentence is long enough to satisfy the exemption length guard.' }
+          : row,
+      );
+      const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-proved-reason');
+      expect(violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot())).toContainEqual(
+        expect.stringContaining('is proved and also carries a reason'),
+      );
+    });
+
+    it('rejects a throw row that says neither proved nor exempt', () => {
+      // This is the state all forty-one rows shipped in before v3.46. Publishing a
+      // disposition is not a statement about execution, so a row without a status is
+      // the silence the rule exists to refuse -- and it has to be refused even when
+      // the row is a `rethrow`, which no rule ever obliges to be proved.
+      const rows = (committed.throws?.rows ?? []).map((row): Throw => {
+        if (row.disposition !== 'rethrow') return row;
+        const bare: Record<string, unknown> = { ...row };
+        delete bare.status;
+        delete bare.provedBy;
+        delete bare.reason;
+        return bare as unknown as Throw;
+      });
+      const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-silent');
+      expect(violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot())).toContainEqual(
+        expect.stringContaining('so the row says nothing about whether a test reaches it'),
       );
     });
 

@@ -184,10 +184,58 @@ function testSource(file: string): string {
  * Character scanner rather than a regex, because comments and strings nest in the
  * sense that matters here (`// spawnSync` inside a template literal) and a regex
  * cannot track which mode the scan is in.
+ *
+ * ## The fourth mode, and the false red that added it
+ *
+ * A **regex literal** is a third kind of quotation, and this scanner did not know it
+ * existed. So a pattern holding a quote -- `/['"]/`, which is how a reader accepts
+ * either kind of quotation -- opened a string that never closed, and everything from
+ * there to the next matching quote in the file was swallowed. The symptom was not in
+ * this file: `gate-sites-are-proven.test.ts` grew such a pattern, and this gate
+ * reported that file as stating no suite budget at all while the file plainly stated
+ * one -- the same class of defect as the previous three, a reader that knows fewer
+ * spellings than the language has, and it fails in the direction of a false red.
+ *
+ * Whether a `/` opens a regex or divides is decided by the last significant character
+ * emitted, which is the one-token lookbehind a scanner without a parser can have: an
+ * operator or an opening bracket before it means a value is expected, so `/` starts a
+ * pattern; a name, a number or a closing bracket means one just ended, so `/` divides.
+ * A trailing keyword is the exception (`return /re/` starts a pattern, `return a / b`
+ * does not), and it is checked only when the keyword is the last whole token.
  */
 function stripCommentsAndStrings(source: string): string {
   let out = '';
   let i = 0;
+  /** The last non-space character this scanner kept, and the word before a `/`. */
+  const context = (): { ch: string; word: string } => {
+    const trimmed = out.replace(/\s+$/, '');
+    const ch = trimmed.slice(-1);
+    const word = /([A-Za-z_$][\w$]*)$/.exec(trimmed)?.[1] ?? '';
+    return { ch, word };
+  };
+  /** Keywords after which a `/` opens a pattern rather than dividing. */
+  const REGEX_AFTER_WORD = new Set([
+    'return',
+    'typeof',
+    'instanceof',
+    'in',
+    'of',
+    'new',
+    'delete',
+    'void',
+    'case',
+    'do',
+    'else',
+    'yield',
+    'await',
+    'throw',
+  ]);
+  const startsRegex = (): boolean => {
+    const { ch, word } = context();
+    if (ch === '') return true;
+    if (REGEX_AFTER_WORD.has(word)) return true;
+    return '([{,;:=!&|?+-*%~^<>'.includes(ch);
+  };
   while (i < source.length) {
     const two = source.slice(i, i + 2);
     if (two === '//') {
@@ -201,6 +249,29 @@ function stripCommentsAndStrings(source: string): string {
       continue;
     }
     const ch = source[i]!;
+    if (ch === '/' && startsRegex()) {
+      // A pattern runs to the first unescaped `/` outside a character class, and the
+      // class matters: `/[/"]/` holds a slash inside brackets.
+      i += 1;
+      let inClass = false;
+      while (i < source.length) {
+        const c = source[i];
+        if (c === '\\') {
+          i += 2;
+          continue;
+        }
+        if (c === '[') inClass = true;
+        else if (c === ']') inClass = false;
+        else if (c === '/' && !inClass) {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      while (i < source.length && /[a-z]/.test(source[i]!)) i += 1;
+      out += '/""/';
+      continue;
+    }
     if (ch === "'" || ch === '"' || ch === '`') {
       const quote = ch;
       i += 1;
@@ -562,6 +633,36 @@ describe('the suite budget · a file that walks the inventory states one for the
   it('does not read a budget out of a comment, and does not resolve an unknown name', () => {
     expect(suiteBudget("// describe('x', { timeout: 30_000 }, () => {});\n")).toBe(0);
     expect(suiteBudget("describe('x', { timeout: UNDECLARED_MS }, () => {});")).toBe(0);
+  });
+
+  it('reads the suite budget in a file whose code holds a regex with a quote in it', () => {
+    // The false red that added the fourth mode to the scanner. `gate-sites-are-proven.
+    // test.ts` grows `/['"]/` -- a pattern accepting either kind of quotation -- and the
+    // scanner treated the `'` inside it as the start of a string, swallowed everything
+    // up to the next matching quote, and reported that file as stating no suite budget
+    // while its suite stated one. A gate that answers "no" to a file that said yes is
+    // the failure mode this whole file is about, so the fixture is the shape that broke
+    // it and not a tidied version of that shape.
+    const source = [
+      "const T_MS = 30_000;",
+      "const quoted = /['\"]/g.test(name);",
+      "const other = /[/'\"]/.test(text);",
+      "describe('suite', { timeout: T_MS }, () => {});",
+      '',
+    ].join('\n');
+    expect(suiteBudget(source)).toBe(30_000);
+  });
+
+  it('still divides, and still reads a pattern that follows a keyword', () => {
+    // The lookbehind has to be right in both directions. A scanner that called every
+    // `/` a pattern would swallow the rest of a file that divides, which is the same
+    // defect pointing the other way -- and `return /re/` is the one place where the
+    // character before the slash says "divide" and the token before it says "pattern".
+    expect(suiteBudget('const half = total / 2;\ndescribe("x", { timeout: 30_000 }, () => {});')).toBe(
+      30_000,
+    );
+    expect(suiteBudget('const re = /abc/;\ndescribe("x", { timeout: 30_000 }, () => {});')).toBe(30_000);
+    expect(largestBudget('function f() { return /a/.test(x); }\n')).toBe(0);
   });
 });
 

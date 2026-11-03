@@ -1501,9 +1501,9 @@ The seams follow `RCA_CI_WORKFLOW` and `RCA_CI_BASELINE`: an unset variable is t
 
 | item | value |
 | --- | --- |
-| `core` test suite | **228 files, 5612 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **232 files, 5799 tests passed** (as of this commit) |
+| `core` test suite | **228 files, 5612 tests passed** (as of v3.45) |
+| `cli` test suite | **4 files, 187 tests passed** (as of v3.45) |
+| repo test suite | **232 files, 5799 tests passed** (as of v3.45) |
 | throw partition | **41 statements**: 1 `fatal`, 36 `unguarded`, 1 `guarded`, 3 `rethrow`; 15 scripts |
 | failure sites | **114** across 56 scripts, unchanged; `excluded` `{16 zero}` unchanged |
 | proof plan | `verify-site-proofs`: **108 claim(s)** across 45 files, including the one fatal throw -- PASSED |
@@ -1534,3 +1534,199 @@ process. This round asked a question about the **subject line**: *what counts as
 not a syntax, and the inventory had been listing one syntax of a thing the language has two of. So the next
 ruler is: **before checking every claim, check that the population of claims was enumerated by what the
 thing does -- and when the enumerator matches a spelling, ask what the other spelling is.**
+
+## v3.46 — the inventory published forty-one throws and never asked whether any test ran one
+
+v3.45 ended with a procedure rather than a result: *before checking every claim, check that the population of
+claims was enumerated by what the thing does.* It had just published 41 throw statements with a disposition
+each and proved **one** of them, and the sentence explaining that -- "the other three are not exits" -- was
+true about exits and silent about execution.
+
+This round asked the missing question of all forty-one: **has any test ever executed this line?** The answer
+was no for twenty of them.
+
+### One — the instrument that existed was blind on exactly the statements it was asked about
+
+The obvious reading is coverage: run the suite under V8, read the counter on the block holding each `throw`,
+and a zero means the line never ran. That reading is worthless, and the way it fails is silent: a block that
+ends by throwing never completes, so its counter is never incremented.
+
+Measured on a three-function probe -- one throws and is caught, one throws and is not, one does not throw --
+all three report `count: 0` for the enclosing block. Not a threshold, not a rounding: the instrument cannot
+distinguish *ran and threw* from *never ran*, on the precise statement under examination.
+
+Had this been believed, the census would have reported **41 of 41** throws unexecuted and the round would
+have been spent writing tests for lines already covered. So the question had to be answered by changing the
+program instead of counting it.
+
+### Two — the witness, and the three ways it was wrong before it worked
+
+`scripts/throw-witness.mjs` rewrites `throw X;` into `{ __rcaThrow(<line>, "<file>"); throw X; }`. A block is
+a statement, so the rewrite is legal in every position a `throw` can occupy -- the unbraced body of an `if`, a
+`case`, a label, a `do`, an arrow's block -- and it inserts no newline, so every line number the inventory,
+the stack traces and the exit hook already publish keeps pointing where it did.
+
+Three defects, each found by running it rather than by reading it:
+
+| defect | symptom | repair |
+| --- | --- | --- |
+| the recorder read `process.argv[1]` | `doc-counts-rows.mjs`'s three throws published as `measure-doc-counts.mjs:271/:487/:534` -- a file under 270 lines | the file name is a literal in the rewrite, computed at transform time |
+| the source arrives as **bytes** | `typeof source === 'string'` was false for every module, so nothing was instrumented and the run reported success | decode `Uint8Array`; a string is returned |
+| the preload runs in two threads | registered twice, so every reached throw was recorded twice | idempotence guard on the instrument's own call |
+
+A fourth was structural. The suite reaches `scripts/*.mjs` two ways, and the loader sees one: a **spawned**
+gate is a node process, a **imported** module is compiled by Vite inside a vitest worker. So
+`derive-gate-sites.mjs:631` -- asserted by `derive-gate-sites-throws.test.ts` on the day it was written --
+reported nothing, which reads exactly like a row no test reaches. Repair: a Vite plugin calling the **same**
+exported function, plus `test/setup/throw-witness.ts` as the worker's recorder. Measured before the setup
+file: every test passed and the trace stayed empty, because the rewrite called a global that was not in that
+process and the `typeof` guard swallowed the failure -- which is what the guard is for and also why the guard
+alone could not report it.
+
+### Three — the census: twenty-one reached, twenty not
+
+| | count | what it meant |
+| --- | --- | --- |
+| reached | **21** | a test executes the line today |
+| not reached | **20** | no test has ever executed it, on any machine, since it was written |
+
+Twenty refusals in a tree whose entire argument is that every refusal is enumerated and proved. Of those,
+**eleven** could be aimed at and now are: ten in `published-refusals.test.ts` (two `EISDIR`/`ENOTDIR` shapes
+through `check-citations.mjs`, a fixture without `samples` through four `probe-type-misses` arms, a missing
+workspace file through `score-fault-extraction.mjs`, a malformed spec through `format-spec.mjs` in-process, a
+404 and a 200 through `serve-site.mjs`), one in `derive-gate-sites-refusals.test.ts`, and two that already had
+tests which named the file rather than the line.
+
+**Nine cannot be reached**, and the rule refuses the word "unreachable" for them. Each carries a sentence
+about that line:
+
+- `build-example-bundle.mjs:57`, `:60` guard the pack contract, not an input: `normalizePackEntries` refuses a
+  duplicate path first, and example files carry an `examples/order-prod/` prefix, so the two rows cannot
+  collide -- `build-example-bundle.test.ts` measures that they differ.
+- `measure-doc-counts.mjs:267` was reachable only through a **defect**: a missing `pnpm-workspace.yaml` raised
+  `ENOENT` out of `workspacePackages`, and that is now a diagnosis (finding 218's rule, applied again).
+- `probe-m1-ceiling.mjs:118`, `probe-type-misses.mjs:255` and `:1319` assert a partition over values the same
+  function produced: firing them requires that function to disagree with itself.
+- `probe-type-misses.mjs:550`, `:665`, `:931` repeat the check `:526` and `:570` make, in blocks that run
+  later, on the same file: the first block to read it refuses it, so these cannot be the one that reports.
+
+The rule is now three clauses: **`fatal` must be proved; a `proved` row must name a test that reaches the
+line and must not also carry a reason; an `exempt` row must carry a reason, must not name a test, and reasons
+may not repeat.** A row that says neither is reported in the words that describe the old table: *"so the row
+says nothing about whether a test reaches it."*
+
+### Four — a throw *can* be mutated, and the seam is in the source
+
+v3.45 closed the sensitivity gate's throw claim as unmutable: *the language offers nothing between the
+statement and the unwind*. That is true of a running process and false of a file. The loader that records a
+throw can delete it instead --
+
+```js
+// RCA_HOLLOW_THROW=scripts/x.mjs:12
+{ typeof __rcaThrow === 'function' && __rcaThrow(12, "x.mjs", true); }
+```
+
+-- at the same line, through the same plugin, with the recorder already armed. The third argument makes the
+recorder write `hollowed <site>`, which keeps apart the two readings that look identical from outside: *the
+mutant arrived and the suite did not notice* from *the mutant never arrived*.
+
+```
+verify-sites-are-sensitive: PASSED (139 claim(s) across 51 file(s), 190 run(s), 4.0 min --
+  107 exit(s) hollowed, 32 throw(s) removed -- and some test goes red for every one of them)
+```
+
+**Zero survivors**, and the two mutants are counted apart in the summary, because a run that emptied every
+exit and removed no throw would otherwise read like a complete one. The list of claims this gate cannot
+mutate is empty.
+
+### Five — the claim was read off the disposition, so thirty-one proofs went unmeasured
+
+`claimedSites` is what both proof gates read to decide what to run, and it admitted `throws` rows only when
+`disposition === 'fatal'`. That was finding 375's reasoning surviving inside the instrument after the
+inventory had abandoned it: the table said *thirty-two rows are proved*, and the plan measured **one**.
+
+The condition is now `status === 'proved'`, and the fact compared is the one the row claims: a throw is
+honoured by **reaching** the line -- the witness's `reached` set, which includes a throw a caller caught --
+falling back to the deaths the hook recorded when the witness did not arm. Measured: **139 claims across 51
+files, all reached**. Thirty-one proofs had been true all along; being true is not being measured.
+
+### Six — the reader that knew three kinds of quotation
+
+`timeout-budget.test.ts` reads test files through a character scanner that strips comments and string
+literals. It knew strings, template literals, line comments and block comments, and not **regex literals**.
+
+This round added `/['"]/` to `gate-sites-are-proven.test.ts` -- a pattern accepting either kind of quotation --
+and the scanner read the quote inside it as the start of a string, swallowed everything up to the next
+matching quote, and reported:
+
+```
+gate-sites-are-proven.test.ts states no suite budget, only per-test ones: expected 0 to be greater than 5000
+```
+
+The file states `timeout: RULE_TIMEOUT_MS`. That is the fourth false red from a reader that knew fewer
+spellings than the language has, and the third recorded in that file, which is why the repair is a fourth mode
+rather than an escaped pattern: distinguishing a regex from division needs one token of lookbehind -- an
+operator or an opening bracket before the slash means a value is expected, a name or a closing bracket means
+one just ended, and a trailing keyword is the exception (`return /re/` starts a pattern, `return a / b` does
+not).
+
+### Seven — the guard read a name's first binding, and accused a test of the race it prevents
+
+One more reader, and it is the second this round found by adding a file rather than by reading one.
+`tests-do-not-write-inside-the-package.test.ts` follows a write's target through its `const` bindings, and
+it kept **the first binding per name in the file**. `published-refusals.test.ts` binds `path` twice -- once to
+`resolve(ROOT, 'scripts', target)`, once to `join(SCRATCH, name)` -- so every write in the second scope was
+read against the first scope's value, and a test writing into `/tmp` was reported as a test racing every other
+worker:
+
+```
+packages/core/test/published-refusals.test.ts:77  mkdirSync(dirname(path), { recursive: true });
+packages/core/test/published-refusals.test.ts:78  writeFileSync(path, contents);
+```
+
+The guard's documented false negatives are harmless; this was a false **positive**, which accuses a test of
+the exact defect the file exists to prevent -- the direction that gets a guard switched off instead of
+repaired. A name resolves to the nearest binding at or before the write now, and a binding's own expression
+resolves at its own line. Two controls hold both orders.
+
+### Readings
+
+> Ledger for `v3.46`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **230 files, 5652 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **234 files, 5839 tests passed** (as of this commit) |
+| throw partition | **41 statements**: 1 `fatal`, 36 `unguarded`, 1 `guarded`, 3 `rethrow`; **32 proved, 9 exempt** |
+| the census | **21 reached, 20 not**; 11 driven by tests written this round, 9 exempt with a sentence about the line |
+| failure sites | **114** across 56 scripts, unchanged; `excluded` `{16 zero}` unchanged |
+| proof plan | `verify-site-proofs`: **139 claim(s)** across 51 files, including all 32 throw claims -- PASSED |
+| sensitivity | `verify-sites-are-sensitive`: **139 claim(s)**, 190 runs, **0 survivors**, 4.0 min; 107 exits hollowed, 32 throws removed |
+| new tests | **40**: 19 in `throw-witness.test.ts`, 11 in `published-refusals.test.ts`, 3 in `gate-sites-are-proven.test.ts`, 2 in `site-proofs.test.ts`, 2 in `timeout-budget.test.ts`, and one each in `build-example-bundle`, `derive-gate-sites-refusals`, `stall-watch-is-installed` and `tests-do-not-write-inside-the-package` |
+| instrument cost | the rewrite is a lexical `/\bthrow\b/` check before `typescript` is required, so a module with no throw pays one regex; the suite pays one property read per module while the plugin is unarmed |
+| `docs:check` | green: 386 findings / 1–389, 10 volumes / 194 rounds, 1621 citations naming 386 numbers, 568 open entries with 529 carrying a reason, and the counts re-derived from three measured suites |
+| CI | pending -- the run for this commit is recorded in the round that follows it |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P1** | TA's embedding fallback | twelfth round untouched: the protocol names neither a model nor a threshold | needs a named model and a named threshold, and a sentence saying it is a choice rather than a transcription |
+| **P2** | a key whose description carries no keyword scores 0 | the protocol is silent; this repository takes 0 | record it as a gap; do not invent a redistribution |
+| **P3** | the sensitivity gate's cost grows linearly with claims | 139 claims, 190 runs, 4.0 min | the CI job still holds about 320 runs before the budget; shard by file before then |
+| **P4** | nine throw rows rest on a sentence rather than a measurement | three are shadowed by a proved line in a block that runs first, three assert a partition over values the same function produced | the shadowed three are reachable by **unit-testing the function that holds them** rather than by driving the whole probe; that is a test, not an argument |
+| **P5** | the witness is invisible to a child that drops the environment | a script loaded without `NODE_OPTIONS` is not rewritten, exactly as its exits are not recorded | unchanged this round; it is the same one-level blind spot as P7 |
+| **P6** | ~~four scripts hold throws and no published site~~ | **closed**: `format-spec.mjs:669` and `serve-site.mjs:38` are driven; `doc-counts-rows.mjs` and `gate-receipt.mjs` reach theirs through the gates that import them | -- |
+| **P7** | the blind spot still sees only one level | a wrapper that does not inherit hides its own child | unchanged this round |
+| **P8** | the compiler is a runtime dependency of four readers | `derive-gate-sites.mjs`, `gate-proofs.mjs`, the witness and the Vite plugin all use `typescript` | the witness is the cheap one -- a lexical gate before the import -- and the plugin costs nothing while unarmed; "a gate with no dependencies" still needs a third correct reading |
+| **P9** | the batteries job sits 3 to 11 minutes from its ceiling | eight readings against a 30-minute budget span **19.2 to 27.3** | take a fresh baseline before adding a step; the spread is the fact rather than any one value |
+
+**The lesson, for the round after this one.** The round was opened by a claim that four dispositions described
+41 refusals, and it turned out that the description had never been connected to an execution: the table said
+*what a throw is* and every gate asked *whether it ran*, and nothing bridged the two. The bridge was an
+instrument that did not exist, and building it took four corrections, each of which made the instrument
+report **nothing** rather than report something wrong -- bytes not decoded, attribution by process, a road the
+loader cannot see, a recorder absent from the worker. So the next ruler is: **when a census finds zero, prove
+the instrument can find one before you believe it** -- and the cheapest proof is a fixture where the answer is
+known.

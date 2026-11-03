@@ -147,8 +147,6 @@ try {
  * was never asked is the defect this gate exists to prevent.
  */
 const everything = claimedSites(inventory);
-const hollowable = everything.filter((claim) => claim.kind !== 'throw');
-const immovable = everything.filter((claim) => claim.kind === 'throw');
 if (everything.length === 0) {
   // The shape that would pass forever: no claims, so nothing to violate, and a
   // summary line that reads like a clean bill of health.
@@ -159,7 +157,7 @@ if (everything.length === 0) {
   process.exit(1);
 }
 
-const claimed = hollowable;
+const claimed = everything;
 const byFile = claimsByFile(claimed);
 /** The same entries, by file, for the run phase. */
 const claimsOf = new Map(byFile);
@@ -198,6 +196,7 @@ function rerun(file) {
  * be measured at all, and the mutant run needs to know the mutant arrived.
  */
 function runOnce(file, site) {
+  // `site` is the claim being hollowed, or null for the baseline run.
   const absolute = resolve(ROOT, file);
   if (!existsSync(absolute)) {
     return Promise.resolve({
@@ -214,8 +213,20 @@ function runOnce(file, site) {
     NODE_OPTIONS: `${process.env['NODE_OPTIONS'] ?? ''} --require=${hook}`.trim(),
     RCA_SITE_TRACE: trace,
   };
-  if (site !== null) env.RCA_HOLLOW_SITE = site;
-  else delete env.RCA_HOLLOW_SITE;
+  // One mutant per kind of claim. An exit is hollowed by replacing the argument of a
+  // call the hook can see; a throw is hollowed by removing the statement, which only
+  // the loader in `throw-witness.mjs` can do, so that run also arms the witness.
+  delete env.RCA_HOLLOW_SITE;
+  delete env.RCA_HOLLOW_THROW;
+  delete env.RCA_THROW_WITNESS;
+  if (site !== null) {
+    if (site.kind === 'throw') {
+      env.RCA_HOLLOW_THROW = site.site;
+      env.RCA_THROW_WITNESS = join(HERE, 'throw-witness.mjs');
+    } else {
+      env.RCA_HOLLOW_SITE = site.site;
+    }
+  }
   const child = spawn(process.execPath, [vitestEntry(), 'run', relative(TESTS, absolute), '--reporter=dot'], {
     cwd: TESTS,
     env,
@@ -288,7 +299,7 @@ for (const outcome of baselines) {
 }
 
 const claims = runnable.flatMap((file) => (claimsOf.get(file) ?? []).map((claim) => ({ file, claim })));
-const mutants = await pool(claims, CONCURRENCY, ({ file, claim }) => runOnce(file, claim.site));
+const mutants = await pool(claims, CONCURRENCY, ({ file, claim }) => runOnce(file, claim));
 
 const survivors = [];
 const unmeasured = [];
@@ -307,7 +318,8 @@ for (const [index, outcome] of mutants.entries()) {
     // sentence has to say that rather than call the test insensitive.
     unmeasured.push({
       head:
-        `${claim.site} is claimed by ${file}, which passed with the exit hollowed but never ` +
+        `${claim.site} is claimed by ${file}, which passed with ` +
+        `${claim.kind === 'throw' ? 'the throw removed' : 'the exit hollowed'} but never ` +
         'recorded the mutant, so this run cannot say whether it would notice',
       detail: [rerun(file)],
     });
@@ -349,16 +361,11 @@ if (failures > 0) {
   process.exit(1);
 }
 
+const exits = claimed.filter((claim) => claim.kind === 'exit').length;
+const throws = claimed.length - exits;
 process.stdout.write(
   `verify-sites-are-sensitive: PASSED (${String(claimed.length)} claim(s) across ` +
-    `${String(runnable.length)} file(s), ${String(runs)} run(s), ${minutes} min, every claimed exit ` +
-    'can disappear and some test goes red)\n',
+    `${String(runnable.length)} file(s), ${String(runs)} run(s), ${minutes} min -- ` +
+    `${String(exits)} exit(s) hollowed, ${String(throws)} throw(s) removed -- and some test goes red ` +
+    'for every one of them)\n',
 );
-if (immovable.length > 0) {
-  // Named, with the reason, so the number above cannot be read as the whole inventory.
-  process.stdout.write(
-    `verify-sites-are-sensitive: ${String(immovable.length)} claim(s) are not mutated here -- ` +
-      'a throw has no seam this gate can replace:\n',
-  );
-  for (const claim of immovable) process.stdout.write(`  ${claim.site} <- ${claim.file}\n`);
-}

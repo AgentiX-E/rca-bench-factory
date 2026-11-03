@@ -174,6 +174,38 @@ export const HOOK_SOURCE = [
   '  });',
   '}',
   '',
+  '// The listener above sees a throw that *ended* a process. A throw a caller caught is',
+  '// the same statement doing the same job one frame down, and no listener can see it:',
+  '// the exception never reaches the runtime. So the module that holds the throw is',
+  '// rewritten before it is evaluated -- `scripts/throw-witness.mjs` -- and this preload',
+  '// is where that loader is registered and where the line it rewrites calls home.',
+  '//',
+  '// One environment name, not two: `RCA_THROW_WITNESS` carries the absolute path of the',
+  '// loader, so "the witness is on" and "here is the witness" cannot disagree.',
+  'const witness = process.env.RCA_THROW_WITNESS || "";',
+  'if (out && witness !== "") {',
+  '  try {',
+  '    require("node:module").register(require("node:url").pathToFileURL(witness).href);',
+  '  } catch {',
+  '    // A witness that could not be registered is a measurement that did not happen.',
+  '    // It is not a verdict about the gate, and the run that asked for it reports the',
+  '    // absence of `reached` lines as its own problem rather than as the gate`s.',
+  '  }',
+  '  fs.appendFileSync(out, "witness on\\n");',
+  '  globalThis.__rcaThrow = function witnessedThrow(line, file, hollowed) {',
+  '    try {',
+  '      if (typeof file !== "string" || !/^[A-Za-z0-9._-]+\\.mjs$/.test(file)) return;',
+  '      const site = "scripts/" + file + ":" + String(line);',
+  '      fs.appendFileSync(out, "reached " + site + "\\n");',
+  '      // "the mutant arrived here" and "this statement was reached" are different',
+  '      // facts, and a green run whose mutant never arrived is not a survivor.',
+  '      if (hollowed === true) fs.appendFileSync(out, "hollowed " + site + "\\n");',
+  '    } catch {',
+  '      // Same rule as every other write in this file.',
+  '    }',
+  '  };',
+  '}',
+  '',
   '// A child started with an env that drops NODE_OPTIONS runs without this hook, and',
   '// its exits are invisible to the run that started it. The parent is still',
   '// instrumented at the moment it spawns, so that is where the difference between',
@@ -241,8 +273,40 @@ export function hookFile(dir) {
 export function parseTrace(text) {
   const found = new Set();
   for (const line of String(text).split('\n')) {
-    if (line.startsWith('spawn ') || line.startsWith('hollow ') || line.startsWith('throw ')) continue;
+    if (/^(spawn|hollow|throw|reached) /.test(line)) continue;
     const hit = /\/scripts\/([A-Za-z0-9._-]+\.mjs):(\d+)\s*$/.exec(line);
+    if (hit !== null) found.add(`scripts/${hit[1]}:${hit[2]}`);
+  }
+  return [...found].sort();
+}
+
+/**
+ * Whether the throw witness was installed in the run that produced this trace.
+ *
+ * The recorder is installed by `site-proofs.mjs`'s preload in a child and by
+ * `test/setup/throw-witness.ts` in a worker, and both write `witness on` when they do.
+ * Without this line a run whose recorder never arrived would report every throw as
+ * unreached, which is an accusation about the tree made out of a broken measurement --
+ * the mistake the blind-spot column exists to avoid, one instrument over.
+ */
+export function witnessArmed(text) {
+  return /^witness on\s*$/m.test(String(text));
+}
+
+/**
+ * The throw statements a run **reached**, whether or not anything caught them.
+ *
+ * A third fact from the same trace file, and it is not `parseThrows` with a wider
+ * net: `parseThrows` reads what the runtime reported when a process died, this reads
+ * what the rewritten statement announced before it threw. The two are nested --
+ * `parseThrows ⊆ parseReached` -- and that containment is a property a test asserts,
+ * because a throw that ended a process and was not announced is a rewrite that did
+ * not arrive, which would silently widen the gap this instrument exists to close.
+ */
+export function parseReached(text) {
+  const found = new Set();
+  for (const line of String(text).split('\n')) {
+    const hit = /^reached scripts\/([A-Za-z0-9._-]+\.mjs):(\d+)\s*$/.exec(line);
     if (hit !== null) found.add(`scripts/${hit[1]}:${hit[2]}`);
   }
   return [...found].sort();
@@ -262,7 +326,10 @@ export function parseTrace(text) {
 export function parseHollows(text) {
   const found = [];
   for (const line of String(text).split('\n')) {
-    const hit = /^hollow (scripts\/[A-Za-z0-9._-]+\.mjs:\d+)\s*$/.exec(line);
+    // Two spellings because there are two mutants: the exit hook replaces a call's
+    // argument (`hollow`), and the throw witness removes a statement (`hollowed`).
+    // One reader, because the question is the same one -- did the mutant arrive.
+    const hit = /^(?:hollow|hollowed) (scripts\/[A-Za-z0-9._-]+\.mjs:\d+)\s*$/.exec(line);
     if (hit !== null && !found.includes(hit[1])) found.push(hit[1]);
   }
   return found.sort();
@@ -367,16 +434,20 @@ export function claimedSites(inventory) {
       kind: 'exit',
     });
   }
-  // A fatal throw is the same claim with a different fact behind it: the gate refused
-  // by throwing, Node printed the stack and exited 1. It is proved by the same two
+  // A throw is the same claim with a different fact behind it: the gate refused by
+  // throwing, Node printed the stack and exited 1. It is proved by the same two
   // questions -- does the named file reach the line, and would the suite notice if it
   // did not -- so it belongs in the same plan rather than in a second one nobody runs.
   //
-  // The other three dispositions are not claims. `unguarded` decides its exit in a
-  // caller's frame, and `guarded` / `rethrow` do not end a process at all.
+  // v3.45 claimed only `fatal` throws here, and that was the same mistake the inventory
+  // was making one level up: it treated the disposition as the claim. It is not. A row
+  // with `status: proved` says a test reaches the line, and reaching is exactly what
+  // this file measures -- the witness records the statement before it executes, so a
+  // `throw` a caller catches is still recorded. Reading the fact as "the process ended
+  // here" narrowed it to the one disposition that ends it, and left the other
+  // thirty-one proved throws unmeasured while the inventory called them proved.
   const throws = Array.isArray(inventory?.throws?.rows) ? inventory.throws.rows : [];
   for (const row of throws) {
-    if (row?.disposition !== 'fatal') continue;
     if (row?.status !== 'proved') continue;
     if (typeof row.provedBy !== 'string' || row.provedBy === '') continue;
     claims.push({
@@ -425,7 +496,14 @@ export function claimsByFile(claimed) {
  *   - the file started the script in sight and the exit did not come -> the claim is
  *     false, and either the pointer or the test has to change.
  */
-export function unprovenClaims(claimed, firedByFile, blindByFile = new Map(), thrownByFile = new Map()) {
+export function unprovenClaims(
+  claimed,
+  firedByFile,
+  blindByFile = new Map(),
+  thrownByFile = new Map(),
+  reachedByFile = new Map(),
+  armedByFile = new Set(),
+) {
   const violations = [];
   for (const claim of claimed) {
     const fired = firedByFile.get(claim.file);
@@ -435,12 +513,29 @@ export function unprovenClaims(claimed, firedByFile, blindByFile = new Map(), th
       );
       continue;
     }
-    // Two facts, two sets. A throw is not an exit that happened a different way: the
-    // hook writes them from different places, and reading one as the other would let a
-    // run that crashed satisfy a claim about a refusal the gate chose.
-    const seen = claim.kind === 'throw' ? (thrownByFile.get(claim.file) ?? new Set()) : fired;
+    // A throw claim needs the witness, and a run whose witness did not arm cannot
+    // answer it in either direction. Saying "never reaches this throw" here would be
+    // the instrument's failure reported as the gate's.
+    if (claim.kind === 'throw' && !armedByFile.has(claim.file)) {
+      violations.push(
+        `${claim.site} is claimed by ${claim.file}, whose run armed no throw witness, so this claim is unmeasured`,
+      );
+      continue;
+    }
+    // Three facts, three sets. A throw is not an exit that happened a different way:
+    // the hook writes them from different places, and reading one as the other would
+    // let a run that crashed satisfy a claim about a refusal the gate chose.
+    //
+    // A throw claim is honoured by *reaching* the statement, not by ending a process
+    // on it: a caller that catches it is a reader, and a row proved by a test that
+    // expects the throw is proved. When the witness did not run, the ended set is the
+    // only evidence there is, so it is used -- and the narrower fact is named in the
+    // sentence rather than silently standing in for the wider one.
+    const seen = claim.kind === 'throw'
+      ? (reachedByFile.get(claim.file) ?? thrownByFile.get(claim.file) ?? new Set())
+      : fired;
     if (seen.has(claim.site)) continue;
-    const what = claim.kind === 'throw' ? 'never throws at this line' : 'never reaches this exit';
+    const what = claim.kind === 'throw' ? 'never reaches this throw' : 'never reaches this exit';
     if (blindByFile.get(claim.file)?.has(claim.script) === true) {
       violations.push(
         `${claim.site} is claimed by ${claim.file}, which started ${claim.script} in a child that ` +

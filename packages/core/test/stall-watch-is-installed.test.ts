@@ -51,6 +51,7 @@ import {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const CORE_CONFIG = resolve(ROOT, 'packages', 'core', 'vitest.config.ts');
 const HOOK = resolve(ROOT, 'packages', 'core', 'test', 'setup', 'stall-watch.ts');
+const WITNESS = resolve(ROOT, 'packages', 'core', 'test', 'setup', 'throw-witness.ts');
 const BATTERY = resolve(ROOT, 'packages', 'core', 'test', 'stall-budget.test.ts');
 
 const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-setup-files-'));
@@ -164,16 +165,42 @@ describe('setup files · what a config declares', () => {
 });
 
 describe('setup files · this package installs the stopwatch', () => {
-  it('installs exactly one setup file, and it is the stall watch', () => {
+  it('installs exactly two setup files: the stopwatch, then the throw witness', () => {
     const scan = installedSetupFiles(CORE_CONFIG);
 
     expect(scan.problems).toEqual([]);
-    // One entry rather than "contains": a second setup file would be a second
-    // place the suite's behaviour is altered, and this assertion is the one that
-    // makes a reader look at it.
-    expect(scan.entries).toEqual(['./test/setup/stall-watch.ts']);
-    expect(scan.resolved).toEqual([HOOK]);
+    // Both entries, in order, rather than "contains". This assertion started as
+    // "exactly one", on the argument that a second setup file would be a second place
+    // the suite's behaviour is altered -- and that argument is still why the list is
+    // spelled out. v3.46 added the second one deliberately: the throw witness is
+    // rewritten into `scripts/*.mjs` by a Vite plugin, and the call it makes needs a
+    // recorder in the worker, because the preload that installs one for spawned
+    // children does not reach into a worker. A third entry still has to be justified
+    // here, which is the property this test exists for.
+    expect(scan.entries).toEqual([
+      './test/setup/stall-watch.ts',
+      './test/setup/throw-witness.ts',
+    ]);
+    expect(scan.resolved).toEqual([HOOK, WITNESS]);
     expect(basename(scan.resolved[0]!)).toBe('stall-watch.ts');
+    expect(basename(scan.resolved[1]!)).toBe('throw-witness.ts');
+  });
+
+  it('installs a witness that records nothing unless a proof run armed it', () => {
+    // The second setup file runs in **every** worker of **every** run, and the suite
+    // runs thousands of times more often than a census does. Two environment variables
+    // have to be set before it defines anything, because a recorder that armed itself
+    // would write into the trace of whatever run happened to inherit the path -- and a
+    // file that writes nothing when disarmed cannot fail a test that never asked.
+    const source = readFileSync(WITNESS, 'utf8');
+    expect(source).toMatch(/const trace = process\.env\['RCA_SITE_TRACE'\] \?\? '';/);
+    expect(source).toMatch(/const witness = process\.env\['RCA_THROW_WITNESS'\] \?\? '';/);
+    expect(source).toMatch(/if \(trace !== '' && witness !== ''\) \{/);
+    // Every write inside `try`: a measurement may not become a verdict about the gate,
+    // which is the same rule the preload's recorder follows one process over.
+    const writes = [...source.matchAll(/appendFileSync\(/g)];
+    expect(writes.length).toBeGreaterThan(0);
+    expect(source).toMatch(/} catch \{[\s\S]*A record that cannot be written is a measurement that failed/);
   });
 
   it('installs a hook that registers, budgets and throws', () => {

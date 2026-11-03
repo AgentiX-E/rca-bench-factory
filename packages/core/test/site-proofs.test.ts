@@ -121,23 +121,78 @@ describe('site-proofs · what the inventory claims', () => {
     ]);
   });
 
-  it('claims a fatal throw beside the exits, and no other disposition', () => {
-    // A fatal throw is the same claim with a different fact behind it. The other three
-    // are not claims: `unguarded` decides its exit in a caller's frame, and `guarded`
-    // and `rethrow` do not end a process at all -- asking a run to prove one of those
-    // would ask it to confirm something the inventory already says cannot happen.
+  it('claims a proved throw of any disposition, because the fact is that the line was reached', () => {
+    // The first version of this test asserted the opposite: only `fatal` was a claim,
+    // on the argument that `guarded` and `rethrow` do not end a process. That argument
+    // is true and it answers a question nobody asked. A row with `status: proved` says
+    // a test reaches the line; the witness records the statement as it executes, so a
+    // throw a caller catches is recorded too. Narrowing the claim to `fatal` left the
+    // thirty-one non-fatal proved throws in the shipped inventory unmeasured while the
+    // inventory called them proved -- the defect this file exists to find, one level up.
+    //
+    // What stays out is the row with no status: it says nothing, so there is nothing to
+    // measure, and excusing it here would turn silence back into a pass.
     const withThrows = {
       ...inventory,
       throws: {
         rows: [
           { script: 'scripts/c.mjs', line: 7, disposition: 'fatal', status: 'proved', provedBy: 'packages/core/test/c.test.ts' },
           { script: 'scripts/c.mjs', line: 9, disposition: 'unguarded', status: 'proved', provedBy: 'packages/core/test/c.test.ts' },
-          { script: 'scripts/c.mjs', line: 11, disposition: 'fatal' },
+          { script: 'scripts/c.mjs', line: 11, disposition: 'guarded', status: 'proved', provedBy: 'packages/core/test/d.test.ts' },
+          { script: 'scripts/c.mjs', line: 13, disposition: 'rethrow', status: 'proved', provedBy: 'packages/core/test/d.test.ts' },
+          { script: 'scripts/c.mjs', line: 15, disposition: 'fatal', status: 'exempt', reason: 'a sentence long enough to pass rule 4' },
+          { script: 'scripts/c.mjs', line: 17, disposition: 'fatal' },
         ],
       },
     };
     expect(claimedSites(withThrows).filter((claim) => claim.kind === 'throw')).toEqual([
       { script: 'scripts/c.mjs', line: 7, site: 'scripts/c.mjs:7', file: 'packages/core/test/c.test.ts', kind: 'throw' },
+      { script: 'scripts/c.mjs', line: 9, site: 'scripts/c.mjs:9', file: 'packages/core/test/c.test.ts', kind: 'throw' },
+      { script: 'scripts/c.mjs', line: 11, site: 'scripts/c.mjs:11', file: 'packages/core/test/d.test.ts', kind: 'throw' },
+      { script: 'scripts/c.mjs', line: 13, site: 'scripts/c.mjs:13', file: 'packages/core/test/d.test.ts', kind: 'throw' },
+    ]);
+  });
+
+  it('accepts a throw claim honoured by reaching the line, which is narrower than ending on it', () => {
+    // Three states, and this is the one the witness added: a test that imports the
+    // module, calls it inside `expect(...).toThrow()`, and catches what it threw. The
+    // throw never ends a process and the claim is still true, so a rule that demanded
+    // the ended set would accuse every import-based proof in the tree.
+    const withThrows = {
+      sites: [],
+      throws: {
+        rows: [
+          { script: 'scripts/c.mjs', line: 21, disposition: 'rethrow', status: 'proved', provedBy: 'packages/core/test/c.test.ts' },
+        ],
+      },
+    };
+    const claim = claimedSites(withThrows);
+    const fired = new Map([['packages/core/test/c.test.ts', new Set<string>()]]);
+    const reached = new Map([['packages/core/test/c.test.ts', new Set(['scripts/c.mjs:21'])]]);
+    const armed = new Set(['packages/core/test/c.test.ts']);
+    expect(unprovenClaims(claim, fired, new Map(), new Map(), reached, armed)).toEqual([]);
+    // Without the reached set the same claim is a violation, which is what makes the
+    // previous line a measurement rather than a message that always passes.
+    expect(unprovenClaims(claim, fired, new Map(), new Map(), new Map(), armed)).toEqual([
+      expect.stringContaining('never reaches this throw'),
+    ]);
+  });
+
+  it('says a throw claim is unmeasured when no witness armed, rather than accusing the pointer', () => {
+    // The instrument's own failure, reported as the instrument's. A run that never
+    // installed the recorder has no reached set, and reading that as "the line is not
+    // reached" would accuse every pointer in a tree whose loader broke.
+    const withThrows = {
+      sites: [],
+      throws: {
+        rows: [
+          { script: 'scripts/c.mjs', line: 21, disposition: 'unguarded', status: 'proved', provedBy: 'packages/core/test/c.test.ts' },
+        ],
+      },
+    };
+    const fired = new Map([['packages/core/test/c.test.ts', new Set<string>()]]);
+    expect(unprovenClaims(claimedSites(withThrows), fired, new Map(), new Map(), new Map(), new Set())).toEqual([
+      expect.stringContaining('armed no throw witness'),
     ]);
   });
 
@@ -145,6 +200,12 @@ describe('site-proofs · what the inventory claims', () => {
     // Two facts, two sets. The hook writes them from different places, and reading one
     // as the other would let a run that merely crashed satisfy a claim about a refusal
     // the gate chose.
+    //
+    // The throw side now has two sets of its own rather than one: the witness records
+    // every statement it reaches, and the hook records the throws that ended a process.
+    // Both are needed -- the first is the wider fact and the second is the only evidence
+    // there is when the witness did not arm -- so this fixture passes an armed witness
+    // and puts the site only in the exit set, which must not be read across.
     const withThrows = {
       sites: [],
       throws: {
@@ -154,12 +215,13 @@ describe('site-proofs · what the inventory claims', () => {
       },
     };
     const claim = claimedSites(withThrows);
+    const armed = new Set(['packages/core/test/c.test.ts']);
     const exited = new Map([['packages/core/test/c.test.ts', new Set(['scripts/c.mjs:7'])]]);
-    expect(unprovenClaims(claim, exited, new Map(), new Map())).toEqual([
-      expect.stringContaining('never throws at this line'),
+    expect(unprovenClaims(claim, exited, new Map(), new Map(), new Map(), armed)).toEqual([
+      expect.stringContaining('never reaches this throw'),
     ]);
     const thrown = new Map([['packages/core/test/c.test.ts', new Set(['scripts/c.mjs:7'])]]);
-    expect(unprovenClaims(claim, exited, new Map(), thrown)).toEqual([]);
+    expect(unprovenClaims(claim, exited, new Map(), thrown, new Map(), armed)).toEqual([]);
   });
 
   it('reports a claim the run did not honour, and names both halves', () => {

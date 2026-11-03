@@ -35,6 +35,15 @@ import { diagnoseRedRun } from '../../../scripts/doc-counts-rows.mjs';
  * only way to prove the diagnosis reaches a terminal instead of a stack.
  */
 
+/**
+ * The one script this file drives, declared so that `gate-sites-are-proven.test.ts`
+ * can reconcile the declaration against the spawns it can see. `measure-doc-counts.mjs:182`
+ * is published as a throw with this file as its proof: the red-run diagnosis is what that
+ * throw builds, and a file that spawned the gate without saying so would make the pointer
+ * unreadable in the only place a reader looks.
+ */
+export const DRIVES = ['scripts/measure-doc-counts.mjs'];
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const SCRIPT = resolve(ROOT, 'scripts', 'measure-doc-counts.mjs');
 

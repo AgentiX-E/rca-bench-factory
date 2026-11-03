@@ -92,6 +92,21 @@ describe('a reference to the exit family that is not a call is refused', () => {
     expect(message).toContain('verify-sites-are-sensitive.mjs');
     expect(message).toContain('never be measured');
   });
+
+  it('refuses a file it cannot parse, rather than answering from part of one', () => {
+    // The arm that had never run. `throwsIn`'s twin at `:631` is asserted in
+    // `derive-gate-sites-throws.test.ts`, and this one -- the same refusal in the
+    // exit reader -- was not: every source the tests feed `exitsIn` is valid, so the
+    // guard had only ever been read, never taken.
+    //
+    // What it prevents is the worst answer this file can give. A half-parsed source
+    // yields an empty condition and "no guard", and the two are indistinguishable in
+    // the published row -- so a tree the parser could not read would be reported as a
+    // tree with sixteen unconditional exits.
+    const message = refusalOf('function (');
+    expect(message).toContain('parser rejected this file');
+    expect(message).toContain('no exit can be classified in it');
+  });
 });
 
 describe('a call is classified, never refused, however it is spelled', () => {

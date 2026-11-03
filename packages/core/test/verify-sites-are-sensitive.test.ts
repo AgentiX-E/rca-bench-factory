@@ -171,7 +171,11 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
       expect(result.stderr).toBe('');
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('1 claim(s)');
-      expect(result.stdout).toContain('every claimed exit can disappear');
+      // The summary counts the two mutants separately, because a run that emptied
+      // every exit and removed no throw is a different reading from one that emptied
+      // both -- and the fixture holds one exit claim, so both numbers are known here.
+      expect(result.stdout).toContain('1 exit(s) hollowed, 0 throw(s) removed');
+      expect(result.stdout).toContain('some test goes red');
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }

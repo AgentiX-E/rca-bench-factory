@@ -368,7 +368,21 @@ function sum(values) {
  * checkable instead of authoritative.
  */
 function workspacePackages() {
-  const yaml = readFileSync(resolve(ROOT, 'pnpm-workspace.yaml'), 'utf8');
+  let yaml;
+  try {
+    yaml = readFileSync(resolve(ROOT, 'pnpm-workspace.yaml'), 'utf8');
+  } catch (error) {
+    // A missing workspace file is a state of the tree, and this reader answers states
+    // of the tree with a diagnosis. It used to rethrow the `ENOENT` here, which reached
+    // `measure-doc-counts.mjs`'s bare `throw error` and printed a stack: the one shape
+    // the whole `MeasurementUnavailable` split exists to avoid. Found by a census that
+    // asked which of the published refusals any test had ever executed -- this line was
+    // reachable, and the reason it was reachable was a defect.
+    refuse([
+      `no ${resolve(ROOT, 'pnpm-workspace.yaml')}: the scopes are read from the workspace list.`,
+      `The read failed with ${String(error.code ?? error.message)}.`,
+    ]);
+  }
   const block = /^packages:\s*\n((?:[ \t]*-[^\n]*\n?)+)/m.exec(yaml);
   if (block === null) {
     refuse(['pnpm-workspace.yaml has no `packages:` list this reader can parse.']);

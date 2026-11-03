@@ -268,4 +268,32 @@ describe('scripts/build-example-bundle.mjs · what it refuses', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('no example files found');
   });
+
+  it('keeps an example file named MANIFEST.json apart from the pack manifest', () => {
+    // This began as an attempt to reach the gate's duplicate-path refusal, and it
+    // answered a different question: **the collision that refusal guards against
+    // cannot happen**, and the reason is one line of the pack.
+    //
+    // `buildExamplePack` prefixes every example file with its repository path
+    // (`examples/order-prod/…`) and writes the manifest at the pack root
+    // (`MANIFEST.json`), so an example directory holding a file of that name lands
+    // on `examples/order-prod/MANIFEST.json` -- a different row. And a *real*
+    // duplicate could not reach the gate either: the pack ends by normalising its
+    // own output through `normalizePackEntries`, which refuses a repeated path, and
+    // `pack-archive.test.ts` holds that refusal.
+    //
+    // So the gate's two internal invariants are guards on the pack's contract rather
+    // than conditions an input can produce, and both are exempt in the inventory.
+    // This test is the evidence for the first half: the two rows are distinct.
+    const tree = treeWithExamples((dir) => {
+      writeFileSync(join(dir, 'MANIFEST.json'), '{"files":[]}\n');
+    });
+
+    expect(run(tree).status).toBe(0);
+    const meta = JSON.parse(
+      readFileSync(join(tree, 'site', 'assets', 'example-pack.json'), 'utf8'),
+    ) as { paths: string[] };
+    expect(meta.paths).toContain('MANIFEST.json');
+    expect(meta.paths).toContain('examples/order-prod/MANIFEST.json');
+  });
 });
