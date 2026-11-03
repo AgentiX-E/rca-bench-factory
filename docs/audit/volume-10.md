@@ -971,3 +971,123 @@ site is about:
 { "script": "scripts/score-fault-extraction.mjs", "line": 153, "verdict": "code",
   "status": "proved", "provedBy": "packages/core/test/fault-extraction-scripts.test.ts" }
 ```
+
+## Finding 375 — the inventory counted one spelling of "no", and the language has two
+
+The published rule named a syntax:
+
+> a `process.exit(...)` call whose argument is not a known zero.
+
+A gate refuses two ways, and the second is not a call. A `throw` that nothing catches ends the process with
+status 1 and prints the stack -- to a shell, `process.exit(1)` and an escaping `throw` are the same refusal,
+and every consumer of this inventory is a shell. Measured: **41 throw statements across 15 scripts**, and the
+table published **none** of them.
+
+The cost is not a missing count. This inventory is the single source of three questions the campaign asks
+about every refusal -- does a test reach it (`verify-site-proofs.mjs`), would the suite notice if it stopped
+refusing (`verify-sites-are-sensitive.mjs`), can the whole gate be emptied (`verify-gates-are-testable.mjs`,
+whose subjects are `inventory.sites.map(script)`) -- so a refusal outside the table is outside all three, and
+`gate-sites-are-proven.test.ts` cannot even report it as unproved.
+
+Four scripts hold throws and **no** published site: `doc-counts-rows.mjs`, `format-spec.mjs`,
+`gate-receipt.mjs`, `serve-site.mjs`. Three are libraries and one is a server, which is why the omission had
+not been noticed: none of them is a gate, so "which exit does a test reach" was never asked of the script at
+all -- the question was asked of the *sites*, and there were none.
+
+The inventory now publishes a second partition, `throws`, with four dispositions that add up to the number
+of statements: `fatal` (no enclosing function, no enclosing `try` -- ends the process), `unguarded` (in a
+function, no `try` -- hands control to the caller), `guarded` (in a `try` block), and `rethrow` (in a
+`catch`, rethrowing the caught binding). Measured: **1 / 36 / 1 / 3**.
+
+Only `fatal` is proved. The other three are not exits -- `unguarded` decides its exit in a caller's frame,
+and `guarded` / `rethrow` do not end a process at all -- and a `provedBy` on one of them would claim that a
+test reaches a line *and that the line ends the process*, which is false by construction.
+
+## Finding 376 — the refusal that guarded every battery bound had never executed
+
+`measure-ci-baseline.mjs` records how long each CI step took, and every `timeout-minutes` in the batteries
+job is a multiple of that measurement. It refuses twice:
+
+```js
+if (TOKEN === '' || !/^\d+$/.test(RUN)) {
+  process.stderr.write('usage: …');
+  process.exit(2);                                    // published as a site, proved
+}
+
+const job = jobs.jobs.find((one) => one.name.toLowerCase().includes(JOB));
+if (job === undefined) throw new Error(`run ${RUN} holds no job matching "${JOB}"`);   // published nowhere
+```
+
+`battery-budget.test.ts` drove the first arm -- an empty token, and a run id that is not a number -- and
+asserted `status === 2` for both. The second arm needs an API answer of 200 carrying a job list without the
+job, which nothing in the suite could produce, so that line had never run. The read it guards is the one
+that turns a run into the numbers every bound is a multiple of: a wrong job matched here would size every
+bound from the wrong steps, and the gate that reads the file (`check-battery-budget.mjs`) would still pass,
+because it checks relations against the file rather than the file against GitHub.
+
+Repair: two environment seams on the script (`RCA_GITHUB_API`, `RCA_CI_OUT`), read only by the test, which
+answers from a **real local HTTP server**. Nothing stubs `fetch`. Three paths that had never executed are
+now driven: a 500 from the API (`:62`), a run whose jobs carry no `batteries` (`:69`), and the success path
+that writes the file -- the last asserting the written shape, including that the runner's own bookkeeping
+steps are dropped rather than given a bound they never had.
+
+Measured after the repair: `verify-site-proofs` observes the exit at `:69` in the run of
+`battery-budget.test.ts` and reports **108 claims across 45 files**, all reached.
+
+## Finding 377 — a `try` and a `catch` stop at a function boundary, not at a line
+
+The first reading of throws carried its context down the whole subtree, so
+`try { const f = () => { throw x; }; }` called `f`'s throw **guarded**. It is not: the `try` sits above the
+function's *definition*, and at the moment `f` runs from somewhere else that `try` is not on the stack.
+
+This is the same defect as reading `condition` from the nearest `if` line above an exit (finding 358), one
+construct over: a layout scan answering a scope question. The fix is the boundary the language actually has,
+so the walk resets both `guarded` and `rethrow` when it enters a function.
+
+Both directions are driven by fixtures: a `try` around a function definition does not guard its throw, and a
+`catch` around one does not make it a forward.
+
+Measured on the tree: **0 instances** of either shape today, which is why the reading could have been wrong
+without a symptom -- and why the fixtures exist rather than the measurement.
+
+## Finding 378 — a `catch` does not make its body a forward, the thrown value does
+
+The classification keyed on the word `catch`, which put four statements in `rethrow`. One of them is not a
+forward:
+
+```js
+} catch (error) {
+  throw new SuiteFailed(scope.name, diagnoseRedRun(scope.name, error));   // measure-doc-counts.mjs:182
+}
+```
+
+A red `pnpm` becomes this repository's own verdict, with a diagnosis attached. That is a decision made
+*here*, and it escapes the function exactly like any other `unguarded` throw. The three that are forwards
+(`check-citations.mjs:50`, `:60`, `measure-doc-counts.mjs:267`) all rethrow the caught binding itself.
+
+So the test is whether the thrown expression **is** the caught binding, not whether a `catch` encloses it.
+Measured after the change: **3 rethrow, 36 unguarded**; the one that moved is the one that was making a
+decision.
+
+## Finding 379 — an instrument that cannot mutate a claim must say so, not leave it out of the total
+
+`verify-sites-are-sensitive.mjs` hollows a site by replacing its exit code with zero from the calling frame.
+The mutant is a **value**, which is why it needs no journal and no restore path. A `throw` has no such seam:
+the language offers nothing between the statement and the unwind, so nothing the hook installs can catch it
+and return zero instead.
+
+The first version of the gate therefore asked `claimedSites` for every claim, got 108 including the fatal
+throw, and would have reported that one as a **survivor** -- printed as *the witness reaches the exit and does
+not depend on it*, which is an accusation against a test for a limit of the instrument. That is finding 359's
+mistake one instrument over.
+
+The gate now separates what it can mutate from what it cannot, and prints the second list under the summary:
+
+```
+verify-sites-are-sensitive: PASSED (107 claim(s) across 45 file(s), 152 run(s), 3.3 min, …)
+verify-sites-are-sensitive: 1 claim(s) are not mutated here -- a throw has no seam this gate can replace:
+  scripts/measure-ci-baseline.mjs:69 <- packages/core/test/battery-budget.test.ts
+```
+
+A summary that read "108 claims, all proved" while one of them was never asked is the exact shape this gate
+was written to refuse.

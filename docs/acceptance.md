@@ -136,6 +136,28 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   enclosing function changes **4** rows and **no published site's diagnostic**. Where
   no message exists in scope the site publishes `verdict` -- the expression whose
   value becomes the status -- so no row is a bare coordinate.
+- **A refusal is a throw as well as an exit, and both are inventoried** (v3.45). A
+  gate that throws and lets the exception escape ends the process with status 1 --
+  to a shell, the same refusal as `process.exit(1)`. The tree holds **41 throw
+  statements across 15 scripts** and the inventory published none of them, so the
+  campaign's three questions (is it reached, is it depended on, can the gate be
+  hollowed) were never asked of any. The shape that made this a defect:
+  `measure-ci-baseline.mjs` refuses a run whose jobs carry no `batteries` with a
+  **top-level throw**, while the `process.exit(2)` for a usage error beside it was
+  published and proved -- and the only test drove the usage arm, so the refusal that
+  runs when the network answered had never executed. The inventory now publishes a
+  second partition, `throws`, with four dispositions that add up to the number of
+  statements: `fatal` (ends the process, proved like a site), `unguarded` (hands
+  control to its caller), `guarded` (caught in this frame), `rethrow` (forwards a
+  decision made above). Clearance, each a distinct check: the partition is recounted
+  by an independent traversal of all 75 scripts; `gate-sites-are-proven.test.ts` rule
+  8 refuses a `fatal` with no proof, a proof on any other disposition, a partition
+  whose counts disagree with its rows, and an empty partition; `site-proofs.mjs`
+  observes a fatal throw from the gate's own `uncaughtException` listener, kept in a
+  separate trace from the exit hook so a crash cannot satisfy a claim about a refusal
+  the gate chose. `verify-sites-are-sensitive.mjs` names the claims it does **not**
+  mutate -- a throw has no seam a value-mutant can replace -- rather than leaving them
+  out of a total that reads as complete.
 - **A comment is found by the token boundaries, not by a lexer** (v3.43). Both
   hand-written strippers desynced on a quote or a backtick inside a regex literal
   -- 12 of 75 scripts, 28 of 219 test files -- and the second one credited two

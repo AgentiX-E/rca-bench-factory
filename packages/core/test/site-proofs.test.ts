@@ -13,6 +13,7 @@ import {
   hookFile,
   parseHollows,
   parseSpawns,
+  parseThrows,
   parseTrace,
   unprovenClaims,
 } from '../../../scripts/site-proofs.mjs';
@@ -115,9 +116,50 @@ describe('site-proofs · what the inventory claims', () => {
 
   it('claims only the sites that name a proof', () => {
     expect(claimedSites(inventory)).toEqual([
-      { script: 'scripts/a.mjs', line: 4, site: 'scripts/a.mjs:4', file: 'packages/core/test/a.test.ts' },
-      { script: 'scripts/a.mjs', line: 9, site: 'scripts/a.mjs:9', file: 'packages/core/test/b.test.ts' },
+      { script: 'scripts/a.mjs', line: 4, site: 'scripts/a.mjs:4', file: 'packages/core/test/a.test.ts', kind: 'exit' },
+      { script: 'scripts/a.mjs', line: 9, site: 'scripts/a.mjs:9', file: 'packages/core/test/b.test.ts', kind: 'exit' },
     ]);
+  });
+
+  it('claims a fatal throw beside the exits, and no other disposition', () => {
+    // A fatal throw is the same claim with a different fact behind it. The other three
+    // are not claims: `unguarded` decides its exit in a caller's frame, and `guarded`
+    // and `rethrow` do not end a process at all -- asking a run to prove one of those
+    // would ask it to confirm something the inventory already says cannot happen.
+    const withThrows = {
+      ...inventory,
+      throws: {
+        rows: [
+          { script: 'scripts/c.mjs', line: 7, disposition: 'fatal', status: 'proved', provedBy: 'packages/core/test/c.test.ts' },
+          { script: 'scripts/c.mjs', line: 9, disposition: 'unguarded', status: 'proved', provedBy: 'packages/core/test/c.test.ts' },
+          { script: 'scripts/c.mjs', line: 11, disposition: 'fatal' },
+        ],
+      },
+    };
+    expect(claimedSites(withThrows).filter((claim) => claim.kind === 'throw')).toEqual([
+      { script: 'scripts/c.mjs', line: 7, site: 'scripts/c.mjs:7', file: 'packages/core/test/c.test.ts', kind: 'throw' },
+    ]);
+  });
+
+  it('does not let an exit satisfy a claim about a throw, or the reverse', () => {
+    // Two facts, two sets. The hook writes them from different places, and reading one
+    // as the other would let a run that merely crashed satisfy a claim about a refusal
+    // the gate chose.
+    const withThrows = {
+      sites: [],
+      throws: {
+        rows: [
+          { script: 'scripts/c.mjs', line: 7, disposition: 'fatal', status: 'proved', provedBy: 'packages/core/test/c.test.ts' },
+        ],
+      },
+    };
+    const claim = claimedSites(withThrows);
+    const exited = new Map([['packages/core/test/c.test.ts', new Set(['scripts/c.mjs:7'])]]);
+    expect(unprovenClaims(claim, exited, new Map(), new Map())).toEqual([
+      expect.stringContaining('never throws at this line'),
+    ]);
+    const thrown = new Map([['packages/core/test/c.test.ts', new Set(['scripts/c.mjs:7'])]]);
+    expect(unprovenClaims(claim, exited, new Map(), thrown)).toEqual([]);
   });
 
   it('reports a claim the run did not honour, and names both halves', () => {
@@ -326,6 +368,84 @@ describe('site-proofs · the hook records what the parser reads', () => {
       // leaves no file behind. Reading absence as an empty trace is the honest
       // reading -- inventing the file would be the hook writing about itself.
       expect(existsSync(trace) ? parseTrace(readFileSync(trace, 'utf8')) : []).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('records a throw that ended the process, which the exit hook cannot see', () => {
+    // A gate refuses two ways, and only one of them is a call. `throw` ends the process
+    // with status 1 and Node prints the stack -- to a shell, the same refusal. The hook
+    // above replaces `process.exit`, so it is blind to this by construction, and the
+    // inventory's second half needs a different observation.
+    const dir = mkdtempSync(join(tmpdir(), 'site-proofs-throw-'));
+    try {
+      mkdirSync(join(dir, 'scripts'), { recursive: true });
+      const gate = join(dir, 'scripts', 'gate.mjs');
+      writeFileSync(gate, ['const answer = 1;', "throw new Error('the run holds no job');", ''].join('\n'));
+      const trace = join(dir, 'trace.log');
+      const result = spawnSync(process.execPath, [gate], {
+        encoding: 'utf8',
+        env: { ...process.env, NODE_OPTIONS: `--require=${hookFile(dir)}`, RCA_SITE_TRACE: trace },
+      });
+      // The verdict is the gate's: still 1, and the message still reaches stderr in the
+      // form the runtime would have printed it.
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('the run holds no job');
+      const text = readFileSync(trace, 'utf8');
+      expect(parseThrows(text)).toEqual(['scripts/gate.mjs:2']);
+      // An exit trace and a throw trace are different facts, and a parser that read one
+      // as the other would let a crash satisfy a claim about a refusal.
+      expect(parseTrace(text)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('records nothing for a throw the gate caught itself', () => {
+    // A caught throw is not a refusal; it is control flow. Recording it would publish
+    // every `try { ... } catch { }` in the tree as a failure site.
+    const dir = mkdtempSync(join(tmpdir(), 'site-proofs-caught-'));
+    try {
+      mkdirSync(join(dir, 'scripts'), { recursive: true });
+      const gate = join(dir, 'scripts', 'gate.mjs');
+      writeFileSync(
+        gate,
+        ["try { throw new Error('caught'); } catch { /* handled */ }", 'process.exit(0);', ''].join('\n'),
+      );
+      const trace = join(dir, 'trace.log');
+      const result = spawnSync(process.execPath, [gate], {
+        encoding: 'utf8',
+        env: { ...process.env, NODE_OPTIONS: `--require=${hookFile(dir)}`, RCA_SITE_TRACE: trace },
+      });
+      expect(result.status).toBe(0);
+      const text = existsSync(trace) ? readFileSync(trace, 'utf8') : '';
+      expect(parseThrows(text)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves a process that is not a gate on the runtime\'s own handling', () => {
+    // The listener is installed only in the process that *is* the gate, because the
+    // suite's own worker has exception handling of its own: taking it away would turn a
+    // red test into a green process, which is the worst trade in this file.
+    const dir = mkdtempSync(join(tmpdir(), 'site-proofs-notgate-'));
+    try {
+      const trace = join(dir, 'trace.log');
+      const result = spawnSync(process.execPath, ['-e', "throw new Error('inner')"], {
+        encoding: 'utf8',
+        env: { ...process.env, NODE_OPTIONS: `--require=${hookFile(dir)}`, RCA_SITE_TRACE: trace },
+      });
+      expect(result.status).toBe(1);
+      // The hook's report *starts* with `Uncaught `; the runtime's own starts with the
+      // line that threw (`[eval]:1` here, a path for a file). Testing for the prefix
+      // rather than for the words after it is what makes this a discriminator: a first
+      // version asserted `not.toContain('Uncaught Error')` and passed under the very
+      // mutant it was written for, because the hook writes `Uncaught [eval]:1`.
+      expect(result.stderr.startsWith('Uncaught ')).toBe(false);
+      const text = existsSync(trace) ? readFileSync(trace, 'utf8') : '';
+      expect(parseThrows(text)).toEqual([]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

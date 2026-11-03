@@ -149,6 +149,31 @@ export const HOOK_SOURCE = [
   '  return original(code);',
   '};',
   '',
+  '// A gate can also refuse by throwing, and an uncaught throw ends the process with',
+  '// status 1 -- to a shell the same refusal as `process.exit(1)`. The hook above',
+  '// cannot see it: it replaces a function, and a `throw` is not a call. So the',
+  '// process that is *the gate* also listens for the exception, records the line the',
+  '// stack names, writes the stack the runtime would have written, and exits 1.',
+  '//',
+  '// The gate test is `process.argv[1]`, not a guess: it is the script this process',
+  "// was started to run. The suite's own worker does not match -- its argv[1] is the",
+  "// runner -- which is what keeps this from taking vitest's exception handling away",
+  '// from vitest and turning a red test into a green process.',
+  'if (out && /[\\/]scripts[\\/][A-Za-z0-9._-]+\\.mjs$/.test(String(process.argv[1] || ""))) {',
+  '  process.on("uncaughtException", (error) => {',
+  '    try {',
+  '      const stack = String((error && error.stack) || error);',
+  '      const hit = /\\(?([^()\\s]*[\\/]scripts[\\/][A-Za-z0-9._-]+\\.mjs):(\\d+):\\d+\\)?/.exec(stack);',
+  '      if (hit !== null) fs.appendFileSync(out, "throw " + hit[1] + ":" + hit[2] + "\\n");',
+  '      process.stderr.write("Uncaught " + stack + "\\n");',
+  '    } catch {',
+  '      // A trace that cannot be written is a measurement that failed, and a',
+  '      // measurement may not become a verdict about the gate.',
+  '    }',
+  '    return original(1);',
+  '  });',
+  '}',
+  '',
   '// A child started with an env that drops NODE_OPTIONS runs without this hook, and',
   '// its exits are invisible to the run that started it. The parent is still',
   '// instrumented at the moment it spawns, so that is where the difference between',
@@ -216,7 +241,7 @@ export function hookFile(dir) {
 export function parseTrace(text) {
   const found = new Set();
   for (const line of String(text).split('\n')) {
-    if (line.startsWith('spawn ') || line.startsWith('hollow ')) continue;
+    if (line.startsWith('spawn ') || line.startsWith('hollow ') || line.startsWith('throw ')) continue;
     const hit = /\/scripts\/([A-Za-z0-9._-]+\.mjs):(\d+)\s*$/.exec(line);
     if (hit !== null) found.add(`scripts/${hit[1]}:${hit[2]}`);
   }
@@ -241,6 +266,24 @@ export function parseHollows(text) {
     if (hit !== null && !found.includes(hit[1])) found.push(hit[1]);
   }
   return found.sort();
+}
+
+/**
+ * The lines a run threw from, and the process ended on.
+ *
+ * The hook records these from the gate's own `uncaughtException` listener, and they
+ * are kept apart from the exit trace on purpose: an exit is a decision the gate
+ * *made*, a throw is a decision that escaped it, and the two are proved by the same
+ * question but not by the same fact. Merging them into one set would let a red run
+ * count a throw as an exit if the same line ever held both.
+ */
+export function parseThrows(text) {
+  const found = new Set();
+  for (const line of String(text).split('\n')) {
+    const hit = /^throw (?:.*?\/scripts\/([A-Za-z0-9._-]+\.mjs)):(\d+)\s*$/.exec(line);
+    if (hit !== null) found.add(`scripts/${hit[1]}:${hit[2]}`);
+  }
+  return [...found].sort();
 }
 
 /**
@@ -321,6 +364,27 @@ export function claimedSites(inventory) {
       line: site.line,
       site: `${site.script}:${String(site.line)}`,
       file: site.provedBy,
+      kind: 'exit',
+    });
+  }
+  // A fatal throw is the same claim with a different fact behind it: the gate refused
+  // by throwing, Node printed the stack and exited 1. It is proved by the same two
+  // questions -- does the named file reach the line, and would the suite notice if it
+  // did not -- so it belongs in the same plan rather than in a second one nobody runs.
+  //
+  // The other three dispositions are not claims. `unguarded` decides its exit in a
+  // caller's frame, and `guarded` / `rethrow` do not end a process at all.
+  const throws = Array.isArray(inventory?.throws?.rows) ? inventory.throws.rows : [];
+  for (const row of throws) {
+    if (row?.disposition !== 'fatal') continue;
+    if (row?.status !== 'proved') continue;
+    if (typeof row.provedBy !== 'string' || row.provedBy === '') continue;
+    claims.push({
+      script: row.script,
+      line: row.line,
+      site: `${row.script}:${String(row.line)}`,
+      file: row.provedBy,
+      kind: 'throw',
     });
   }
   return claims;
@@ -361,7 +425,7 @@ export function claimsByFile(claimed) {
  *   - the file started the script in sight and the exit did not come -> the claim is
  *     false, and either the pointer or the test has to change.
  */
-export function unprovenClaims(claimed, firedByFile, blindByFile = new Map()) {
+export function unprovenClaims(claimed, firedByFile, blindByFile = new Map(), thrownByFile = new Map()) {
   const violations = [];
   for (const claim of claimed) {
     const fired = firedByFile.get(claim.file);
@@ -371,17 +435,20 @@ export function unprovenClaims(claimed, firedByFile, blindByFile = new Map()) {
       );
       continue;
     }
-    if (fired.has(claim.site)) continue;
+    // Two facts, two sets. A throw is not an exit that happened a different way: the
+    // hook writes them from different places, and reading one as the other would let a
+    // run that crashed satisfy a claim about a refusal the gate chose.
+    const seen = claim.kind === 'throw' ? (thrownByFile.get(claim.file) ?? new Set()) : fired;
+    if (seen.has(claim.site)) continue;
+    const what = claim.kind === 'throw' ? 'never throws at this line' : 'never reaches this exit';
     if (blindByFile.get(claim.file)?.has(claim.script) === true) {
       violations.push(
         `${claim.site} is claimed by ${claim.file}, which started ${claim.script} in a child that ` +
-          'did not carry the hook, so this run cannot say whether that exit was reached',
+          `did not carry the hook, so this run cannot say whether that line was reached`,
       );
       continue;
     }
-    violations.push(
-      `${claim.site} is claimed by ${claim.file}, which runs ${claim.script} and never reaches this exit`,
-    );
+    violations.push(`${claim.site} is claimed by ${claim.file}, which runs ${claim.script} and ${what}`);
   }
   return violations;
 }

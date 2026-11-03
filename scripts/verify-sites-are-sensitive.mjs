@@ -132,8 +132,24 @@ try {
   process.exit(1);
 }
 
-const claimed = claimedSites(inventory);
-if (claimed.length === 0) {
+/**
+ * The claims this gate can mutate, and the ones it cannot.
+ *
+ * A mutant here is a *value*: the hook replaces the exit code with zero from the frame
+ * that called it. That works because `process.exit` is a function this hook can
+ * replace, and a `throw` is not -- the language has no seam between the statement and
+ * the unwind. So a fatal throw is claimed and reached (that is `verify-site-proofs`),
+ * but its disappearance cannot be simulated from outside the process, and pretending
+ * otherwise would report the instrument's blindness as a witness that does not care.
+ *
+ * They are counted and printed rather than dropped, for the reason every other basket
+ * in this campaign is: a summary that reads "108 claims, all proved" while one of them
+ * was never asked is the defect this gate exists to prevent.
+ */
+const everything = claimedSites(inventory);
+const hollowable = everything.filter((claim) => claim.kind !== 'throw');
+const immovable = everything.filter((claim) => claim.kind === 'throw');
+if (everything.length === 0) {
   // The shape that would pass forever: no claims, so nothing to violate, and a
   // summary line that reads like a clean bill of health.
   process.stderr.write(
@@ -143,6 +159,7 @@ if (claimed.length === 0) {
   process.exit(1);
 }
 
+const claimed = hollowable;
 const byFile = claimsByFile(claimed);
 /** The same entries, by file, for the run phase. */
 const claimsOf = new Map(byFile);
@@ -337,3 +354,11 @@ process.stdout.write(
     `${String(runnable.length)} file(s), ${String(runs)} run(s), ${minutes} min, every claimed exit ` +
     'can disappear and some test goes red)\n',
 );
+if (immovable.length > 0) {
+  // Named, with the reason, so the number above cannot be read as the whole inventory.
+  process.stdout.write(
+    `verify-sites-are-sensitive: ${String(immovable.length)} claim(s) are not mutated here -- ` +
+      'a throw has no seam this gate can replace:\n',
+  );
+  for (const claim of immovable) process.stdout.write(`  ${claim.site} <- ${claim.file}\n`);
+}

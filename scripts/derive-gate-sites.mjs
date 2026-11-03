@@ -38,6 +38,28 @@
  * legible, because `verify-gates-are-testable.mjs` takes its subjects from this
  * table: **21 scripts could have been emptied with nothing watching them.**
  *
+ * ## The other half of "no", which this table did not publish until v3.45
+ *
+ * A gate refuses two ways. The first is a call. The second is a `throw` that nothing
+ * catches: Node prints the stack and exits 1, which to a shell is the same refusal.
+ * The tree holds **41 throw statements across 15 scripts** and the table published
+ * none of them, so the campaign's three questions -- is it reached, is it depended on,
+ * can the gate be hollowed -- were never asked about any of them.
+ *
+ * One made that a defect rather than a scope note. `measure-ci-baseline.mjs` refuses a
+ * run whose jobs carry no `batteries` with a **top-level** `throw`; the script's
+ * `process.exit(2)` for a usage error was published beside it and proved, while
+ * `battery-budget.test.ts` drove only the usage arm. The refusal that runs when the
+ * network answered had never executed.
+ *
+ * The throws are published as a second partition, `throws`, with four dispositions --
+ * `fatal` ends the process and is proved like a site, `unguarded` hands control to its
+ * caller, `guarded` is caught in the frame that holds it, `rethrow` forwards a decision
+ * made above. `throwsIn` documents the boundaries; the short version is that a `try`
+ * and a `catch` stop at a function boundary, because neither is on the stack when the
+ * function runs somewhere else, and that a `catch` that builds a *new* failure has made
+ * a decision of its own rather than forwarding one.
+ *
  * Deliberately **not** counted as sites:
  *
  *   - a call whose argument is a known zero: the numeric literal `0` -- `0x0` and
@@ -533,6 +555,133 @@ export function exitsIn(name, source) {
 }
 
 /**
+ * The message a throw will print, read from the expression rather than from the
+ * statement.
+ *
+ * `throw new Error('the run holds no job')` is readable as itself, but the same
+ * statement written `throw new Error(\`run ${RUN} ...\`)` is a template whose text
+ * carries a substitution, and publishing the whole expression twice over -- once as
+ * the statement, once as its argument -- adds nothing. So a `new X(<literal>)` form
+ * publishes the literal with its substitutions kept, and everything else publishes
+ * the flattened expression.
+ *
+ * A row with no text at all would be a coordinate, which is what rule 5 of
+ * `gate-sites-are-proven.test.ts` forbids for a site; the same reasoning applies
+ * here, so this returns the statement's own text when the argument yields nothing.
+ */
+function throwMessage(node, file) {
+  const expression = node.expression;
+  if (ts.isNewExpression(expression) && expression.arguments !== undefined) {
+    for (const argument of expression.arguments) {
+      if (ts.isStringLiteral(argument) || ts.isNoSubstitutionTemplateLiteral(argument)) {
+        return argument.text.replace(/\s+/g, ' ').trim().slice(0, 120);
+      }
+      if (ts.isTemplateExpression(argument)) {
+        return flat(argument, file).replace(/^`|`$/g, '').slice(0, 120);
+      }
+    }
+  }
+  return flat(expression, file).slice(0, 120);
+}
+
+/**
+ * Every throw statement in one file, partitioned four ways.
+ *
+ * ## Why the inventory reads throws at all
+ *
+ * The published rule is about `process.exit(...)` calls, and a gate that refuses by
+ * throwing is the same refusal to a shell: Node prints the stack and exits 1. The
+ * tree holds **40 throw statements across 15 scripts**, and until v3.45 the
+ * inventory published none of them.
+ *
+ * The one that made this a defect rather than a scope note is
+ * `measure-ci-baseline.mjs:55`: a top-level `throw` refusing a run whose jobs carry
+ * no `batteries`. The script's `process.exit(2)` is published and proved beside it,
+ * while `battery-budget.test.ts` drives only the usage arm -- so the refusal that
+ * runs when the network answered was reached by nothing, counted by nothing, and
+ * could have broken without a word.
+ *
+ * ## The four baskets, and why the boundaries are facts about the language
+ *
+ * | disposition | where | what it does |
+ * | --- | --- | --- |
+ * | `fatal` | no enclosing function, no enclosing `try` | ends the process, unconditionally |
+ * | `unguarded` | in a function, no enclosing `try` | hands control to the caller, which decides |
+ * | `guarded` | in a `try` block | this frame catches it |
+ * | `rethrow` | in a `catch`, rethrowing the caught binding | carries a decision made above |
+ *
+ * `guarded` and `rethrow` reset when the walk enters a function, because the `try`
+ * above a function's *definition* is not on the stack when that function runs
+ * somewhere else. That is a fact, not a heuristic: `try { const f = () => { throw x; }; }`
+ * does not guard `f`.
+ *
+ * A `catch` does not make its body a forward: the test is whether the thrown
+ * expression *is* the caught binding. `measure-doc-counts.mjs:182` throws a
+ * `SuiteFailed` built from a red `pnpm`, which is this repository's verdict rather
+ * than pnpm's, so it is `unguarded` like any other throw that leaves its function.
+ *
+ * `fatal` is an exit and is proved like one. `unguarded` is published with its
+ * disposition because the answer is not in this file -- the caller's frame decides,
+ * and a reading that guessed would publish a line the trace never reports. `guarded`
+ * and `rethrow` are published so a reader can see what the rule declined.
+ */
+export function throwsIn(name, source) {
+  const file = ts.createSourceFile(name, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  if (file.parseDiagnostics.length > 0) {
+    throw new Error(
+      `${name}: the parser rejected this file (${String(file.parseDiagnostics.length)} error(s)), ` +
+        'so no throw can be classified in it',
+    );
+  }
+  const rows = [];
+  const counts = { fatal: 0, unguarded: 0, guarded: 0, rethrow: 0 };
+  const walk = (node, context) => {
+    if (ts.isTryStatement(node)) {
+      walk(node.tryBlock, { ...context, guarded: true });
+      if (node.catchClause !== undefined) {
+        const caught = node.catchClause.variableDeclaration?.name;
+        walk(node.catchClause, {
+          ...context,
+          rethrowName: caught === undefined ? undefined : caught.getText(file),
+        });
+      }
+      if (node.finallyBlock !== undefined) walk(node.finallyBlock, context);
+      return;
+    }
+    if (ts.isThrowStatement(node)) {
+      const expression = node.expression;
+      const forwarded =
+        context.rethrowName !== undefined
+        && ts.isIdentifier(expression)
+        && expression.text === context.rethrowName;
+      const disposition = context.guarded
+        ? 'guarded'
+        : forwarded
+          ? 'rethrow'
+          : context.inFunction
+            ? 'unguarded'
+            : 'fatal';
+      counts[disposition] += 1;
+      rows.push({
+        line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1,
+        disposition,
+        message: throwMessage(node, file),
+      });
+    }
+    // A function is a boundary for both `guarded` and `rethrow`: neither the `try`
+    // above its definition nor the `catch` around it is on the stack when it runs.
+    const next = ts.isFunctionLike(node)
+      ? { inFunction: true, guarded: false, rethrowName: undefined }
+      : context;
+    ts.forEachChild(node, (child) => walk(child, next));
+  };
+  // `forEachChild` visits in source order, so `rows` is in line order without a
+  // sort -- and a sort would silently reorder two throws written on one line.
+  walk(file, { inFunction: false, guarded: false, rethrowName: undefined });
+  return { rows, counts };
+}
+
+/**
  * The diagnostic a site prints about itself: the longest string literal in the
  * first argument of the nearest preceding diagnostic call **in the same function**.
  *
@@ -660,12 +809,14 @@ function derive() {
   const files = scriptFiles();
 
   const sites = [];
+  const throws = [];
   // Accumulated by key rather than by naming each tally here. The set of tallies
   // lives in `exitsIn` alone, so adding one there cannot leave a zero here that
   // the report then prints as a measurement -- which is what happened when
   // `computed` and `numeric_other` stopped being exclusions: this side kept
   // adding `undefined` and the committed file read `"computed": null`.
   const excluded = {};
+  const counts = { fatal: 0, unguarded: 0, guarded: 0, rethrow: 0 };
   for (const file of files) {
     const source = readFileSync(join(SCRIPTS, file), 'utf8');
     const read = exitsIn(file, source);
@@ -673,9 +824,12 @@ function derive() {
     for (const [kind, count] of Object.entries(read.excluded)) {
       excluded[kind] = (excluded[kind] ?? 0) + count;
     }
+    const readThrows = throwsIn(file, source);
+    for (const row of readThrows.rows) throws.push({ script: `scripts/${file}`, ...row });
+    for (const [kind, count] of Object.entries(readThrows.counts)) counts[kind] += count;
   }
 
-  return { sites, excluded, scanned: files.length };
+  return { sites, throws: { counts, rows: throws }, excluded, scanned: files.length };
 }
 
 /**
@@ -705,7 +859,7 @@ function derive() {
  * in `main()` restored the columns and this function then dropped them again.
  * The derived text looked perfect, which is why it took a round trip to notice.
  */
-function serialise({ sites, excluded, scanned }) {
+function serialise({ sites, excluded, scanned, throws }) {
   const payload = {
     rule:
       'a process.exit(...) call whose argument is not a known zero -- no argument at all is zero; ' +
@@ -724,6 +878,25 @@ function serialise({ sites, excluded, scanned }) {
       if (s.reason) entry.reason = s.reason;
       return entry;
     }),
+    throws: {
+      rule:
+        'every throw statement, partitioned four ways: `fatal` (no enclosing function, no enclosing try) ' +
+        'ends the process and is proved like a site; `unguarded` (in a function, no enclosing try) hands ' +
+        'control to its caller, which decides; `guarded` (in a try block) is caught here; `rethrow` (in a ' +
+        'catch, rethrowing the caught binding) carries a decision made above. A try or a catch stops at a ' +
+        'function boundary, because neither is on the stack when the function runs elsewhere. ' +
+        'fatal + unguarded + guarded + rethrow is the number of throw statements; ' +
+        'see scripts/derive-gate-sites.mjs',
+      counts: throws.counts,
+      rows: throws.rows.map((row) => {
+        const entry = { script: row.script, line: row.line, disposition: row.disposition };
+        if (row.message) entry.message = row.message;
+        if (row.status) entry.status = row.status;
+        if (row.provedBy) entry.provedBy = row.provedBy;
+        if (row.reason) entry.reason = row.reason;
+        return entry;
+      }),
+    },
   };
   return `${JSON.stringify(payload, null, 2)}\n`;
 }
@@ -762,29 +935,67 @@ function serialise({ sites, excluded, scanned }) {
  * accident this fixes.
  */
 export function carryAnnotations(sites, priorSites) {
-  const fingerprint = (site) =>
-    [site.script, site.condition ?? '', site.diagnostic ?? '', site.verdict ?? ''].join('\u0000');
+  const result = carryColumns(sites, priorSites, (site) =>
+    [site.script, site.condition ?? '', site.diagnostic ?? '', site.verdict ?? ''].join('\u0000'),
+  );
+  return {
+    sites: result.rows,
+    carried: result.carried,
+    priorAnnotated: result.priorAnnotated,
+    strays: result.strays,
+  };
+}
 
+/**
+ * The same carry, for the throw partition.
+ *
+ * A throw's fingerprint is its script, its disposition and the message it prints --
+ * the three derived columns. Disposition belongs in it because the same message under
+ * two dispositions is two different claims: a `throw new Error('usage')` that moves
+ * out of a function changes from `fatal` to `unguarded`, and the proof written for the
+ * first does not describe the second.
+ */
+export function carryThrowAnnotations(rows, priorRows) {
+  const result = carryColumns(rows, priorRows, (row) =>
+    [row.script, row.disposition ?? '', row.message ?? ''].join('\u0000'),
+  );
+  return {
+    rows: result.rows,
+    carried: result.carried,
+    priorAnnotated: result.priorAnnotated,
+    strays: result.strays,
+  };
+}
+
+/**
+ * Attach the hand-authored columns to the rows they describe, matching by
+ * fingerprint and preferring a row that has not moved.
+ *
+ * Shared by sites and throws so that the two cannot drift apart in *how* they carry
+ * a proof: the failure this fixes -- a moved line dropping a proof from a row that
+ * did not change -- was found once and would otherwise have to be found again.
+ */
+function carryColumns(rows, priorRows, fingerprint) {
   const pending = new Map();
-  for (const site of priorSites) {
-    const key = fingerprint(site);
+  for (const row of priorRows) {
+    const key = fingerprint(row);
     if (!pending.has(key)) pending.set(key, []);
-    pending.get(key).push(site);
+    pending.get(key).push(row);
   }
 
   let carried = 0;
   const strays = [];
-  const merged = sites.map((site) => {
-    const candidates = pending.get(fingerprint(site)) ?? [];
+  const merged = rows.map((row) => {
+    const candidates = pending.get(fingerprint(row)) ?? [];
     const before = candidates.length === 1
       ? candidates[0]
-      : candidates.find((c) => c.line === site.line);
+      : candidates.find((c) => c.line === row.line);
     if (before === undefined) {
-      if (candidates.length > 0) strays.push(`${site.script}:${site.line}`);
-      return site;
+      if (candidates.length > 0) strays.push(`${row.script}:${row.line}`);
+      return row;
     }
     candidates.splice(candidates.indexOf(before), 1);
-    const entry = { ...site };
+    const entry = { ...row };
     for (const column of ['status', 'provedBy', 'reason']) {
       if (before[column] !== undefined) entry[column] = before[column];
     }
@@ -793,9 +1004,9 @@ export function carryAnnotations(sites, priorSites) {
   });
 
   return {
-    sites: merged,
+    rows: merged,
     carried,
-    priorAnnotated: priorSites.filter((site) => site.status !== undefined).length,
+    priorAnnotated: priorRows.filter((row) => row.status !== undefined).length,
     strays,
   };
 }
@@ -819,6 +1030,7 @@ function main() {
     }
     const committed = JSON.parse(readFileSync(out, 'utf8'));
     const derivedSites = JSON.parse(text).sites;
+    const derivedThrows = JSON.parse(text).throws;
 
     /**
      * Compare only the columns this script owns.
@@ -838,10 +1050,14 @@ function main() {
       if (site.verdict !== undefined) entry.verdict = site.verdict;
       return entry;
     };
+    const ownedThrow = (row) => ({ script: row.script, line: row.line, disposition: row.disposition, message: row.message });
     const same =
       JSON.stringify(committed.sites.map(owned)) === JSON.stringify(derivedSites.map(owned)) &&
       committed.scanned === derived.scanned &&
-      JSON.stringify(committed.excluded) === JSON.stringify(derived.excluded);
+      JSON.stringify(committed.excluded) === JSON.stringify(derived.excluded) &&
+      JSON.stringify((committed.throws?.rows ?? []).map(ownedThrow)) ===
+        JSON.stringify(derivedThrows.rows.map(ownedThrow)) &&
+      JSON.stringify(committed.throws?.counts) === JSON.stringify(derivedThrows.counts);
 
     if (!same) {
       const key = (s) => `${s.script}:${s.line}`;
@@ -856,18 +1072,37 @@ function main() {
           return JSON.stringify(owned(before)) !== JSON.stringify(owned(s));
         })
         .map((s) => `${key(s)} — the guard's text changed, so the fingerprint must move with it`);
+      const priorThrows = (committed.throws?.rows ?? []).map(ownedThrow);
+      const throwKey = (row) => `${row.script}:${row.line}`;
+      const haveThrow = new Set(priorThrows.map(throwKey));
+      const wantThrow = new Set(derivedThrows.rows.map(throwKey));
+      const throwsAdded = derivedThrows.rows.filter((r) => !haveThrow.has(throwKey(r))).map(throwKey);
+      const throwsRemoved = priorThrows.filter((r) => !wantThrow.has(throwKey(r))).map(throwKey);
+      const throwsMoved = derivedThrows.rows
+        .filter((r) => haveThrow.has(throwKey(r)))
+        .filter((r) => {
+          const before = priorThrows.find((c) => throwKey(c) === throwKey(r));
+          return JSON.stringify(before) !== JSON.stringify(ownedThrow(r));
+        })
+        .map((r) => `${throwKey(r)} — the throw's disposition or message changed`);
       fail([
         `${out} is stale.`,
         ...(added.length ? ['', 'sites present in the tree and absent from the table:', ...added.map((k) => `  ${k}`)] : []),
         ...(removed.length ? ['', 'sites in the table and absent from the tree:', ...removed.map((k) => `  ${k}`)] : []),
         ...(moved.length ? ['', 'sites whose fingerprint no longer matches:', ...moved.map((k) => `  ${k}`)] : []),
+        ...(throwsAdded.length ? ['', 'throws present in the tree and absent from the table:', ...throwsAdded.map((k) => `  ${k}`)] : []),
+        ...(throwsRemoved.length ? ['', 'throws in the table and absent from the tree:', ...throwsRemoved.map((k) => `  ${k}`)] : []),
+        ...(throwsMoved.length ? ['', 'throws whose classification no longer matches:', ...throwsMoved.map((k) => `  ${k}`)] : []),
         '',
-        'Run `node scripts/derive-gate-sites.mjs` and add a `status` for any new site.',
+        'Run `node scripts/derive-gate-sites.mjs` and add a `status` for any new fatal site.',
       ]);
     }
     console.log(
       `derive-gate-sites: OK (${derivedSites.length} failure site(s) across ` +
         `${new Set(derivedSites.map((s) => s.script)).size} script(s); ` +
+        `throws: ${Object.entries(derivedThrows.counts)
+          .map(([kind, n]) => `${n} ${kind}`)
+          .join(', ')}; ` +
         `excluded: ${Object.entries(derived.excluded)
           .map(([kind, n]) => `${n} ${kind}`)
           .join(', ')})`,
@@ -879,12 +1114,22 @@ function main() {
 
   const prior = existsSync(out) ? JSON.parse(readFileSync(out, 'utf8')) : { sites: [] };
   const carried = carryAnnotations(derived.sites, prior.sites ?? []);
-  const merged = { ...derived, sites: carried.sites };
+  const carriedThrows = carryThrowAnnotations(derived.throws.rows, prior.throws?.rows ?? []);
+  const merged = {
+    ...derived,
+    sites: carried.sites,
+    throws: { counts: derived.throws.counts, rows: carriedThrows.rows },
+  };
 
   writeFileSync(out, serialise(merged));
   console.log(
     `${derived.sites.length} failure site(s) across ` +
       `${new Set(derived.sites.map((s) => s.script)).size} of ${derived.scanned} script(s)`,
+  );
+  console.log(
+    `throws: ${Object.entries(derived.throws.counts)
+      .map(([kind, n]) => `${n} ${kind}`)
+      .join(', ')} -- ${String(derived.throws.counts.fatal + derived.throws.counts.unguarded + derived.throws.counts.guarded + derived.throws.counts.rethrow)} statement(s) partitioned`,
   );
   console.log(
     `annotations: ${carried.carried} of ${carried.priorAnnotated} carried` +
@@ -893,6 +1138,13 @@ function main() {
         : `, ${carried.priorAnnotated - carried.carried} dropped (their guard text changed, or ` +
           'their site is gone)' +
           (carried.strays.length > 0 ? `; ambiguous: ${carried.strays.join(', ')}` : '')),
+  );
+  console.log(
+    `throw annotations: ${carriedThrows.carried} of ${carriedThrows.priorAnnotated} carried` +
+      (carriedThrows.carried === carriedThrows.priorAnnotated
+        ? ''
+        : `, ${carriedThrows.priorAnnotated - carriedThrows.carried} dropped` +
+          (carriedThrows.strays.length > 0 ? `; ambiguous: ${carriedThrows.strays.join(', ')}` : '')),
   );
   console.log(`written to ${out}`);
 }

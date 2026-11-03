@@ -24,17 +24,31 @@
  * only the file it produced.
  *
  * Usage: `node scripts/measure-ci-baseline.mjs <run-id>` with `GITHUB_TOKEN` set.
+ *
+ * `RCA_GITHUB_API` and `RCA_CI_OUT` are read only by `battery-budget.test.ts`, which
+ * answers from a local server so that the script's three network-shaped refusals are
+ * reached by a test rather than by nobody. See the constants below.
  */
 
 import { writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 
 const TOKEN = process.env.GITHUB_TOKEN ?? '';
 const RUN = process.argv[2] ?? '';
 const OWNER = 'AgentiX-E';
 const REPO = 'rca-bench-factory';
 const JOB = 'batteries';
-const OUT = resolve(import.meta.dirname, '..', 'golden-master', 'ci-baseline.json');
+const OUT = resolve(
+  process.env['RCA_CI_OUT'] ?? join(import.meta.dirname, '..', 'golden-master', 'ci-baseline.json'),
+);
+// The API root is a seam for the same reason `RCA_CI_WORKFLOW` and `RCA_CI_BASELINE`
+// are: three of this script's four refusals -- a non-200 answer, a run whose jobs
+// carry no `batteries` job, and the success path that writes the file -- can only be
+// reached by a network that answers. Without the seam the two top-level throws below
+// were executed by nothing, and a refusal no test reaches is a refusal that can break
+// without a word. Only this script reads the variable; the shipped value is the real
+// host and an unset variable is the shipped value.
+const API = process.env['RCA_GITHUB_API'] ?? 'https://api.github.com';
 
 if (TOKEN === '' || !/^\d+$/.test(RUN)) {
   process.stderr.write('usage: GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs <run-id>\n');
@@ -42,7 +56,7 @@ if (TOKEN === '' || !/^\d+$/.test(RUN)) {
 }
 
 async function get(path) {
-  const response = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}${path}`, {
+  const response = await fetch(`${API}/repos/${OWNER}/${REPO}${path}`, {
     headers: { authorization: `Bearer ${TOKEN}`, accept: 'application/vnd.github+json' },
   });
   if (!response.ok) throw new Error(`${path}: HTTP ${String(response.status)}`);

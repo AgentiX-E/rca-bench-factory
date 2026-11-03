@@ -197,11 +197,23 @@ interface Site {
   reason?: string;
 }
 
+/** One throw statement, with the disposition the derivation gave it. */
+interface Throw {
+  script: string;
+  line: number;
+  disposition: 'fatal' | 'unguarded' | 'guarded' | 'rethrow';
+  message?: string;
+  status?: string;
+  provedBy?: string;
+  reason?: string;
+}
+
 interface Inventory {
   rule: string;
   scanned: number;
   excluded: Record<string, number>;
   sites: Site[];
+  throws?: { rule: string; counts: Record<string, number>; rows: Throw[] };
 }
 
 const committed: Inventory = JSON.parse(readFileSync(INVENTORY, 'utf8'));
@@ -397,6 +409,55 @@ function inferredDrives(body: string): string[] {
 }
 
 /**
+ * What is wrong with one `provedBy` pointer, given the script it claims to prove.
+ *
+ * Shared by the site list and the throw partition, because the two claims have the
+ * same shape -- "this file makes this line happen" -- and a second, weaker copy of
+ * the check for throws would repeat the defect rule 3 already records: a mention is
+ * not an execution. Two accounts are read from the file (the declared `DRIVES` table
+ * and the scripts the spawn calls actually name) and a disagreement in either
+ * direction is reported rather than resolved.
+ */
+function proofProblems(where: string, provedBy: string, scriptPath: string, root: string): string[] {
+  const problems: string[] = [];
+  const script = scriptPath.split('/').pop() ?? scriptPath;
+  let body: string;
+  try {
+    body = readFileSync(resolve(root, provedBy), 'utf8');
+  } catch {
+    return [`${where} names ${provedBy}, which does not exist`];
+  }
+  if (!body.includes(script)) {
+    return [`${where} names ${provedBy}, but that file never mentions ${script}`];
+  }
+  // Rule 7. Rule 3 above is satisfied by a mention, and a mention is not an
+  // execution -- see the header for the check-official.mjs site that was
+  // published as proved on a source-text regex. Both signals are required, and a
+  // disagreement between them is reported rather than resolved.
+  //
+  // The two sides are normalised to a bare filename before comparison. `DRIVES`
+  // holds repository-relative paths (`scripts/apply-pins.mjs`) and the inference
+  // resolves through the file's own bindings, while `script` above is the basename
+  // the inventory records. Comparing the mixed forms directly made every
+  // correctly-declared file read as undeclared -- a defect in the rule, caught by
+  // running it against the declarations rather than by reading it.
+  const declared = declaredDrives(body);
+  const inferred = inferredDrives(body);
+  const declaredHere = declared.includes(script) || declared.includes(scriptPath);
+  const inferredHere = inferred.includes(script) || inferred.includes(scriptPath);
+  if (!declaredHere && !inferredHere) {
+    problems.push(
+      `${where}: ${provedBy} neither declares ${script} in DRIVES nor spawns it, ` +
+        `so the site is named rather than executed`,
+    );
+  } else if (declaredHere !== inferredHere) {
+    const side = declaredHere ? 'declares it but never spawns it' : 'spawns it but does not declare it';
+    problems.push(`${where}: ${provedBy} ${side} (${script}), so the two accounts disagree`);
+  }
+  return problems;
+}
+
+/**
  * Check every rule except rule 1, so the same function can be run against a
  * corrupted inventory below. Returns the list of violations; empty means valid.
  *
@@ -421,43 +482,10 @@ function violationsOf(inventory: Inventory, root: string): string[] {
         problems.push(`${where} is proved but names no test`);
         continue;
       }
-      const target = resolve(root, site.provedBy);
-      let body: string;
-      try {
-        body = readFileSync(target, 'utf8');
-      } catch {
-        problems.push(`${where} names ${site.provedBy}, which does not exist`);
+      const pointerProblems = proofProblems(where, site.provedBy, site.script, root);
+      if (pointerProblems.length > 0) {
+        problems.push(...pointerProblems);
         continue;
-      }
-      const script = site.script.split('/').pop() ?? site.script;
-      if (!body.includes(script)) {
-        problems.push(`${where} names ${site.provedBy}, but that file never mentions ${script}`);
-        continue;
-      }
-      // Rule 7. Rule 3 above is satisfied by a mention, and a mention is not an
-      // execution -- see the header for the check-official.mjs site that was
-      // published as proved on a source-text regex. Both signals are required,
-      // and a disagreement between them is reported rather than resolved.
-      //
-      // The two sides are normalised to a bare filename before comparison.
-      // `DRIVES` holds repository-relative paths (`scripts/apply-pins.mjs`) and
-      // the inference resolves through the file's own bindings, while `script`
-      // above is the basename the inventory records. Comparing the mixed forms
-      // directly made every correctly-declared file read as undeclared -- a
-      // defect in the rule, caught by running it against the declarations rather
-      // than by reading it.
-      const declared = declaredDrives(body);
-      const inferred = inferredDrives(body);
-      const declaredHere = declared.includes(script) || declared.includes(site.script);
-      const inferredHere = inferred.includes(script) || inferred.includes(site.script);
-      if (!declaredHere && !inferredHere) {
-        problems.push(
-          `${where}: ${site.provedBy} neither declares ${script} in DRIVES nor spawns it, ` +
-            `so the site is named rather than executed`,
-        );
-      } else if (declaredHere !== inferredHere) {
-        const side = declaredHere ? 'declares it but never spawns it' : 'spawns it but does not declare it';
-        problems.push(`${where}: ${site.provedBy} ${side} (${script}), so the two accounts disagree`);
       }
       if (site.reason !== undefined) {
         problems.push(`${where} is proved and also carries a reason, so the two accounts can disagree`);
@@ -483,6 +511,56 @@ function violationsOf(inventory: Inventory, root: string): string[] {
     }
   }
 
+  // Rule 8 -- the throw partition.
+  //
+  // A throw is the other way a gate says no: Node prints the stack and exits 1, which
+  // to a shell is the same refusal as `process.exit(1)`. The tree holds 41 of them and
+  // the inventory published none before v3.45, so this rule is what keeps the second
+  // half of the table from going stale in silence.
+  //
+  // Only `fatal` is proved. The other three dispositions are not exits, and a proof
+  // attached to one of them would be a claim that a test reaches a line and that the
+  // line ends the process -- which for `unguarded`, `guarded` and `rethrow` is false by
+  // construction, and for `unguarded` is decided in a frame this table does not own.
+  const throwRows = inventory.throws?.rows ?? [];
+  const tally: Record<string, number> = { fatal: 0, unguarded: 0, guarded: 0, rethrow: 0 };
+  for (const row of throwRows) {
+    const where = `${row.script}:${row.line}`;
+    if (!(row.disposition in tally)) {
+      problems.push(`${where} has disposition '${String(row.disposition)}', which is none of the four`);
+      continue;
+    }
+    tally[row.disposition] += 1;
+    if (row.message === undefined || row.message.length === 0) {
+      problems.push(`${where} is a throw with no message, so the row is a bare coordinate`);
+    }
+    if (row.disposition === 'fatal') {
+      if (row.status !== 'proved') {
+        problems.push(`${where} is a fatal throw with status '${String(row.status)}', so nothing proves it`);
+        continue;
+      }
+      if (typeof row.provedBy !== 'string' || row.provedBy.length === 0) {
+        problems.push(`${where} is proved but names no test`);
+        continue;
+      }
+      problems.push(...proofProblems(where, row.provedBy, row.script, root));
+    } else if (row.status !== undefined) {
+      problems.push(
+        `${where} is a ${row.disposition} throw and claims status '${row.status}'; ` +
+          'only a fatal throw ends a process',
+      );
+    }
+  }
+  if (throwRows.length === 0) {
+    problems.push('the throw partition is empty, so every throw in the tree is outside the inventory');
+  }
+  if (JSON.stringify(tally) !== JSON.stringify(inventory.throws?.counts)) {
+    problems.push(
+      `the throw partition does not add up: counts say ${JSON.stringify(inventory.throws?.counts)}, ` +
+        `the rows hold ${JSON.stringify(tally)}`,
+    );
+  }
+
   const duplicates = reasons.filter((reason, i) => reasons.indexOf(reason) !== i);
   if (duplicates.length > 0) {
     problems.push(`repeated exemption reason: '${duplicates[0]}'`);
@@ -502,14 +580,29 @@ function withInventory(sites: Site[], name: string): string {
   return dir;
 }
 
+/** Write an inventory whose throw partition is replaced, leaving the sites alone. */
+function withThrows(rows: Throw[], counts: Record<string, number>, name: string): string {
+  const dir = join(scratch, name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, 'gate-sites.json'),
+    JSON.stringify({ ...committed, throws: { rule: committed.throws?.rule ?? '', counts, rows } }, null, 2),
+  );
+  return dir;
+}
+
 /** Copy every file a `provedBy` pointer names into a scratch root. */
 function pointerRoot(): string {
   const dir = join(scratch, 'pointer-root');
-  for (const site of committed.sites) {
-    if (site.provedBy === undefined) continue;
-    const target = join(dir, site.provedBy);
+  const pointers = [
+    ...committed.sites.map((site) => site.provedBy),
+    ...(committed.throws?.rows ?? []).map((row) => row.provedBy),
+  ];
+  for (const provedBy of pointers) {
+    if (provedBy === undefined) continue;
+    const target = join(dir, provedBy);
     mkdirSync(dirname(target), { recursive: true });
-    copyFileSync(resolve(ROOT, site.provedBy), target);
+    copyFileSync(resolve(ROOT, provedBy), target);
   }
   return dir;
 }
@@ -539,6 +632,19 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
       expect(committedShape).toEqual(derivedShape);
       expect(committed.scanned).toBe(derived.scanned);
       expect(committed.excluded).toEqual(derived.excluded);
+
+      // The throw partition is a second half of the same table, and it drifted in
+      // exactly the same way before it existed: the tree held 41 throw statements and
+      // the inventory published none of them. Comparing only `sites` here would let
+      // the new half go stale in silence, which is the defect this rule exists for.
+      const bare = (row: Throw) => ({
+        script: row.script,
+        line: row.line,
+        disposition: row.disposition,
+        message: row.message,
+      });
+      expect((committed.throws?.rows ?? []).map(bare)).toEqual((derived.throws?.rows ?? []).map(bare));
+      expect(committed.throws?.counts).toEqual(derived.throws?.counts);
     });
 
     it('records the derivation rule it was produced under', () => {
@@ -776,6 +882,61 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
     it('rejects a short inventory', () => {
       const problems = violationsOf({ ...committed, sites: [] }, ROOT);
       expect(problems.some((p) => p.includes('only 0 site(s) recorded'))).toBe(true);
+    });
+
+    it('rejects a fatal throw with nothing proving it', () => {
+      // The one shape the partition published in v3.45 has to earn: a top-level throw
+      // ends the process, so it is proved like a site. Stripping the proof must be
+      // reported rather than accepted.
+      const rows = (committed.throws?.rows ?? []).map((row) =>
+        row.disposition === 'fatal' ? { ...row, status: undefined, provedBy: undefined } : row,
+      );
+      const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-unproved');
+      expect(violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot())).toContainEqual(
+        expect.stringContaining('fatal throw with status'),
+      );
+    });
+
+    it('rejects a proof attached to a throw that does not end a process', () => {
+      // `unguarded`, `guarded` and `rethrow` are published so a reader can see what the
+      // rule declined. A `provedBy` on one of them would claim a test reaches a line
+      // *and that the line ends the process*, which is false by construction.
+      const rows = (committed.throws?.rows ?? []).map((row) =>
+        row.disposition === 'unguarded' && row.status === undefined
+          ? { ...row, status: 'proved', provedBy: 'packages/core/test/battery-budget.test.ts' }
+          : row,
+      );
+      const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-proved-unguarded');
+      expect(violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot())).toContainEqual(
+        expect.stringContaining('only a fatal throw ends a process'),
+      );
+    });
+
+    it('rejects a partition whose counts do not add up to its rows', () => {
+      // The whole point of publishing `counts` beside `rows` is that the two can
+      // disagree. If nothing compares them, `counts` is decoration.
+      const counts = { ...(committed.throws?.counts ?? {}), unguarded: 0 };
+      const dir = withThrows(committed.throws?.rows ?? [], counts, 'throw-counts');
+      expect(violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot())).toContainEqual(
+        expect.stringContaining('does not add up'),
+      );
+    });
+
+    it('rejects an empty partition, which is the state the inventory was in before v3.45', () => {
+      const dir = withThrows([], { fatal: 0, unguarded: 0, guarded: 0, rethrow: 0 }, 'throw-empty');
+      expect(violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot())).toContainEqual(
+        expect.stringContaining('throw partition is empty'),
+      );
+    });
+
+    it('rejects a throw with no message, because a coordinate is not a claim', () => {
+      const rows = (committed.throws?.rows ?? []).map((row) =>
+        row.disposition === 'rethrow' ? { ...row, message: undefined } : row,
+      );
+      const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-silent');
+      expect(violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot())).toContainEqual(
+        expect.stringContaining('bare coordinate'),
+      );
     });
 
     it('reports the shipped tree as clean when run through the same function', () => {

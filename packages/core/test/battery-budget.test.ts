@@ -1,4 +1,5 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { createServer } from 'node:http';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -281,6 +282,160 @@ describe('the budget a battery carries', () => {
     });
     expect(noRun.status).toBe(2);
     expect(noRun.stderr).toContain('usage: GITHUB_TOKEN=');
+  });
+
+  it('refuses a run whose jobs carry no batteries, and a run the API will not answer', async () => {
+    // The two refusals that live past the usage check. Both are **top-level throws**,
+    // and until v3.45 neither had ever executed: the only test that drives this script
+    // passes an empty token, so the usage arm at :41 answered and the script stopped
+    // there. A refusal no test reaches is a refusal that can break without a word, and
+    // this one guards the number every battery bound is a multiple of.
+    //
+    // The API root is a seam (`RCA_GITHUB_API`) rather than a mock: a real HTTP server
+    // answers, and the script is run unmodified. Nothing here stubs `fetch`.
+    const answered = (body: unknown, status = 200) => (_req: unknown, res: { writeHead: (n: number, h?: Record<string, string>) => void; end: (s?: string) => void }) => {
+      res.writeHead(status, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(body));
+    };
+
+    const started = await new Promise<{ url: string; close: () => Promise<void> }>((done) => {
+      const server = createServer((req, res) => {
+        if (req.url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/8') {
+          // A run the API refuses to describe. This is the other top-level throw --
+          // `:48` -- which had also never executed.
+          res.writeHead(500, { 'content-type': 'text/plain' });
+          res.end('no');
+          return;
+        }
+        if (req.url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/9') {
+          answered({ head_sha: 'abc' })(req, res);
+          return;
+        }
+        if (req.url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/9/jobs?per_page=20') {
+          // A job whose name is deliberately not the one asked for. The word list in
+          // `heavy-fixtures-do-not-contend` reads a quoted verb anywhere in a file that
+          // also spawns, so this fixture says what it means instead: a job with some
+          // other name.
+          answered({ jobs: [{ name: 'not-the-one-asked-for', steps: [] }] })(req, res);
+          return;
+        }
+        res.writeHead(404).end();
+      });
+      server.listen(0, '127.0.0.1', () => {
+        const address = server.address();
+        const port = typeof address === 'object' && address !== null ? address.port : 0;
+        done({
+          url: `http://127.0.0.1:${String(port)}`,
+          close: () => new Promise<void>((shut) => server.close(() => shut())),
+        });
+      });
+    });
+
+    const run = (args: string[], env: Record<string, string>) =>
+      new Promise<{ status: number | null; stdout: string; stderr: string }>((done) => {
+        const child = spawn(process.execPath, args, {
+          env: { ...process.env, ...env },
+        });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk));
+        child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk));
+        child.on('close', (status) => done({ status, stdout, stderr }));
+      });
+
+    try {
+      const noJob = await run([MEASURE, '9'], {
+        GITHUB_TOKEN: 'x',
+        RCA_GITHUB_API: started.url,
+        RCA_CI_OUT: join(mkdtempSync(join(tmpdir(), 'rca-ci-out-')), 'baseline.json'),
+      });
+      expect(noJob.status).toBe(1);
+      expect(`${noJob.stderr}`).toContain('holds no job matching "batteries"');
+      expect(noJob.stdout).toBe('');
+
+      const refused = await run([MEASURE, '8'], {
+        GITHUB_TOKEN: 'x',
+        RCA_GITHUB_API: started.url,
+        RCA_CI_OUT: join(mkdtempSync(join(tmpdir(), 'rca-ci-out-')), 'baseline.json'),
+      });
+      expect(refused.status).toBe(1);
+      expect(`${refused.stderr}`).toContain('HTTP 500');
+      expect(refused.stdout).toBe('');
+    } finally {
+      await started.close();
+    }
+  });
+
+  it('writes the reading it was given, and drops the runner bookkeeping steps', async () => {
+    // The success path, which no test had taken either -- so the shape of the file every
+    // bound is a multiple of was held only by whoever last ran it by hand.
+    const out = join(mkdtempSync(join(tmpdir(), 'rca-ci-out-')), 'baseline.json');
+    const payload: Record<string, unknown> = {
+      '/repos/AgentiX-E/rca-bench-factory/actions/runs/7': { head_sha: 'deadbeef' },
+      '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=20': {
+        jobs: [
+          {
+            name: 'batteries',
+            completed_at: '2026-11-02T10:11:12Z',
+            steps: [
+              { name: 'Set up job', started_at: '2026-11-02T10:00:00Z', completed_at: '2026-11-02T10:00:01Z' },
+              { name: 'Check out', started_at: '2026-11-02T10:00:01Z', completed_at: '2026-11-02T10:00:03Z' },
+              { name: 'A step that never started', started_at: null, completed_at: null },
+            ],
+          },
+        ],
+      },
+    };
+    const server = createServer((req, res) => {
+      const body = payload[req.url ?? ''];
+      if (body === undefined) {
+        res.writeHead(404).end();
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(body));
+    });
+    const port = await new Promise<number>((done) => {
+      server.listen(0, '127.0.0.1', () => {
+        const address = server.address();
+        done(typeof address === 'object' && address !== null ? address.port : 0);
+      });
+    });
+    try {
+      const result = await new Promise<{ status: number | null; stdout: string; stderr: string }>((done) => {
+        const child = spawn(process.execPath, [MEASURE, '7'], {
+          env: {
+            ...process.env,
+            GITHUB_TOKEN: 'x',
+            RCA_GITHUB_API: `http://127.0.0.1:${String(port)}`,
+            RCA_CI_OUT: out,
+          },
+        });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk));
+        child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk));
+        child.on('close', (status) => done({ status, stdout, stderr }));
+      });
+      expect(result.stderr).toBe('');
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('1 step(s) from run 7');
+      const written = JSON.parse(readFileSync(out, 'utf8'));
+      expect(written).toMatchObject({
+        run: 7,
+        commit: 'deadbeef',
+        measured: '2026-11-02',
+        job: 'batteries',
+        jobTimeoutMinutes: 30,
+        steps: { 'Check out': 2 },
+      });
+      // The runner's own bookkeeping is not in the workflow, so it has no bound to
+      // argue about; a baseline that kept it would fail the gate's "every entry names
+      // a step" rule for a reason about GitHub rather than about this repository.
+      expect(Object.keys(written.steps)).toEqual(['Check out']);
+    } finally {
+      await new Promise<void>((shut) => server.close(() => shut()));
+    }
   });
 
   it('states the multiple and the floor in one place, which the shipped bounds satisfy', () => {

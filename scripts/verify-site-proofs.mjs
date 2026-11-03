@@ -74,6 +74,7 @@ import {
   claimedSites,
   failureSummary,
   hookFile,
+  parseThrows,
   parseTrace,
   unprovenClaims,
 } from './site-proofs.mjs';
@@ -133,7 +134,10 @@ function byFile() {
 
 if (listOnly) {
   for (const [file, claims] of byFile()) {
-    for (const claim of claims) process.stdout.write(`${claim.site} <- ${file}\n`);
+    for (const claim of claims) {
+      const kind = claim.kind === 'throw' ? ' (throw)' : '';
+      process.stdout.write(`${claim.site} <- ${file}${kind}\n`);
+    }
   }
   process.exit(0);
 }
@@ -199,13 +203,18 @@ function traceOf(file, hook) {
     };
   }
   const text = existsSync(trace) ? readFileSync(trace, 'utf8') : '';
-  return { fired: new Set(parseTrace(text)), blind: blindScripts(text) };
+  return {
+    fired: new Set(parseTrace(text)),
+    blind: blindScripts(text),
+    thrown: new Set(parseThrows(text)),
+  };
 }
 
 const hook = hookFile(scratch);
 
 const firedByFile = new Map();
 const blindByFile = new Map();
+const thrownByFile = new Map();
 const problems = [];
 for (const [file] of byFile()) {
   const outcome = traceOf(file, hook);
@@ -215,10 +224,11 @@ for (const [file] of byFile()) {
   }
   firedByFile.set(file, outcome.fired);
   blindByFile.set(file, outcome.blind);
+  thrownByFile.set(file, outcome.thrown);
 }
 rmSync(scratch, { recursive: true, force: true });
 
-const violations = unprovenClaims(claimed, firedByFile, blindByFile);
+const violations = unprovenClaims(claimed, firedByFile, blindByFile, thrownByFile);
 const failures = problems.length + violations.length;
 
 if (failures > 0) {
@@ -245,5 +255,5 @@ if (failures > 0) {
 const sites = claimed.length;
 process.stdout.write(
   `verify-site-proofs: PASSED (${String(sites)} claim(s) across ${String(firedByFile.size)} file(s), ` +
-    'every exit reached by the file that claims it)\n',
+    'every claim reached by the file that names it -- an exit it took, or a throw it ended on)\n',
 );

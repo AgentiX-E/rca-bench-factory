@@ -1330,9 +1330,9 @@ Two rows now have no message in scope, and a bare coordinate is what rule 5 forb
 
 | item | value |
 | --- | --- |
-| `core` test suite | **227 files, 5584 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **231 files, 5771 tests passed** (as of this commit) |
+| `core` test suite | **227 files, 5584 tests passed** (as of v3.44) |
+| `cli` test suite | **4 files, 187 tests passed** (as of v3.44) |
+| repo test suite | **231 files, 5771 tests passed** (as of v3.44) |
 | coverage, four dimensions | unchanged; nothing under `packages/*/src/` moved |
 | new tests | **16**: 14 in `derive-gate-sites-refusals.test.ts`, 1 in `derive-gate-sites-tally.test.ts`, 1 in `gate-sites-are-proven.test.ts` |
 | the tally | `{16 zero, 2 indirect}` -> **`{16 zero}`**; sites 112 -> **114**; calls 130 either way |
@@ -1379,3 +1379,156 @@ Two rows now have no message in scope, and a bare coordinate is what rule 5 forb
 The corpus, the answer keys, the checkpoints, the score targets, the export, the pool's price, and every
 budget the plan enforces. Nothing under `packages/*/src/` moved. This round's subject is the rule that
 decides which exits the inventory publishes.
+
+## v3.45 — the inventory published one spelling of "no" and there are two
+
+v3.44 ended with a ruler for the next round: *ask whether the exit ends the process before asking whether
+it looks like an exit.* This round turned that ruler on the inventory's own subject line, and the subject
+was wrong in the same way the last four rounds were wrong: it described **the syntax of a refusal** rather
+than **a refusal**.
+
+The published rule is *a `process.exit(...)` call whose argument is not a known zero*. A gate that throws
+and lets the exception escape ends the process with status 1, prints the stack, and to a shell is
+indistinguishable from `process.exit(1)`. Measured: **41 throw statements across 15 scripts**, and the
+inventory published **none** of them.
+
+| the rule said | the tree did | what it cost |
+| --- | --- | --- |
+| a failure exit is a `process.exit` call | 41 throws across 15 scripts end processes too | three questions (reached? depended on? hollowable?) never asked of any of them |
+| the usage exit at `measure-ci-baseline.mjs` is the script's refusal | a top-level throw beside it is the refusal that runs when the network answered | the only test drove the usage arm, so the other arm had never executed |
+
+### One — the sentence that decides a script's status had no witness, and its neighbour did
+
+`measure-ci-baseline.mjs` refuses twice. `process.exit(2)` when the usage is wrong, and a **top-level**
+`throw` when the run holds no job named `batteries`:
+
+```js
+if (TOKEN === '' || !/^\d+$/.test(RUN)) {
+  process.stderr.write('usage: …');
+  process.exit(2);                                    // published, proved
+}
+…
+if (job === undefined) throw new Error(`run ${RUN} holds no job matching "${JOB}"`);   // published nowhere
+```
+
+`battery-budget.test.ts` drove the first with an empty token and a non-numeric run id, and asserted
+`status === 2` twice. The second needs a network that answers 200 with a job list that does not carry the
+job, which no test had, so that line had never run -- in any test, on any machine, since it was written.
+
+This is not a coverage number. It is the shape the campaign exists to find: a refusal that guards the
+number **every battery bound is a multiple of**, sitting outside all three questions, because the rule that
+enumerates refusals was written about a call.
+
+### Two — four baskets, and the boundaries are facts about the language
+
+The partition is published beside `sites`, under `throws`, and it is total: `fatal + unguarded + guarded +
+rethrow` is the number of throw statements, checked in `derive-gate-sites-throws.test.ts` by a traversal
+that shares no code with the reading (it counts `ThrowStatement` nodes and nothing else).
+
+| disposition | where | what it does |
+| --- | --- | --- |
+| `fatal` | no enclosing function, no enclosing `try` | ends the process, unconditionally |
+| `unguarded` | in a function, no enclosing `try` | hands control to the caller, which decides |
+| `guarded` | in a `try` block | this frame catches it |
+| `rethrow` | in a `catch`, rethrowing the caught binding | carries a decision made above |
+
+Measured: **1 fatal, 36 unguarded, 1 guarded, 3 rethrow**.
+
+Two boundaries were decided by measurement rather than taste.
+
+**A `try` stops at a function boundary.** `try { const f = () => { throw x; }; }` does not guard `f`: the
+`try` above its *definition* is not on the stack when it runs somewhere else. Writing the reading the other
+way would have called every throw in an arrow function defined anywhere under a `try` guarded, which is the
+same defect as reading `condition` from the nearest `if` line.
+
+**A `catch` is not a forward by itself.** The test is whether the thrown expression *is* the caught binding.
+`measure-doc-counts.mjs:182` builds a `SuiteFailed` from a red `pnpm` inside a `catch`; that is this
+repository's verdict rather than pnpm's, so it escapes its function like any other `unguarded` throw. Three
+of the four catch-resident throws are forwards and one is a verdict, and a reading that keyed on the word
+`catch` would have said four.
+
+### Three — the second instrument, because a throw is not a call
+
+The reach instrument replaces `process.exit` and records the calling frame. A `throw` is not a call, so that
+hook is blind to it by construction -- not by oversight.
+
+The gate process now also listens for its own uncaught exception, and only when it *is* the gate
+(`process.argv[1]` names a script under `scripts/`). The guard is what keeps the suite's worker on vitest's
+exception handling: taking that away would turn a red test into a green process, which is the worst trade
+available here. The listener records the frame, writes the stack the runtime would have written, and exits 1
+through the original `process.exit`, so the verdict stays the gate's.
+
+The trace keeps the two facts apart. `parseThrows` reads `throw <file>:<line>` lines that `parseTrace`
+explicitly skips, and `unprovenClaims` reads the set that matches the claim's `kind`. Merging them would let
+a run that merely crashed satisfy a claim about a refusal the gate chose.
+
+| instrument | what it proves | what it cannot see |
+| --- | --- | --- |
+| exit hook (`process.exit`) | a claimed exit was reached | a throw |
+| uncaught listener (gate only) | a claimed fatal throw was reached | a throw the gate caught |
+| value mutant (`RCA_HOLLOW_SITE`) | the suite depends on that exit | a throw: there is no seam to replace |
+
+### Four — the claim that could not be mutated is named, not dropped
+
+`verify-sites-are-sensitive.mjs` hollows an exit by replacing its code with zero from the calling frame.
+That is a *value*, which is why it needs no journal and no restore path. A throw has no such seam: the
+language offers nothing between the statement and the unwind. So the gate now separates the claims it can
+mutate from the one it cannot, and **prints the ones it cannot**:
+
+```
+verify-sites-are-sensitive: PASSED (107 claim(s) across 45 file(s), 152 run(s), 3.3 min, …)
+verify-sites-are-sensitive: 1 claim(s) are not mutated here -- a throw has no seam this gate can replace:
+  scripts/measure-ci-baseline.mjs:69 <- packages/core/test/battery-budget.test.ts
+```
+
+A summary that read "108 claims, all proved" while one of them was never asked is the exact defect this
+gate was written to prevent, one instrument over.
+
+### Five — the seam that made the line reachable
+
+`measure-ci-baseline.mjs` gained `RCA_GITHUB_API` and `RCA_CI_OUT`, read only by `battery-budget.test.ts`,
+which answers from a **real local HTTP server** -- nothing stubs `fetch`. Three paths are now driven that
+had never executed: a 500 from the API (`:62`), a run whose jobs carry no `batteries` (`:69`), and the
+success path that writes the file. The third asserts the shape every bound is a multiple of, including that
+the runner's own bookkeeping steps are dropped.
+
+The seams follow `RCA_CI_WORKFLOW` and `RCA_CI_BASELINE`: an unset variable is the shipped value, and a
+`grep` for each name finds exactly one reader.
+
+### Readings
+
+> Ledger for `v3.45`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **228 files, 5612 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **232 files, 5799 tests passed** (as of this commit) |
+| throw partition | **41 statements**: 1 `fatal`, 36 `unguarded`, 1 `guarded`, 3 `rethrow`; 15 scripts |
+| failure sites | **114** across 56 scripts, unchanged; `excluded` `{16 zero}` unchanged |
+| proof plan | `verify-site-proofs`: **108 claim(s)** across 45 files, including the one fatal throw -- PASSED |
+| sensitivity | `verify-sites-are-sensitive`: **107 claim(s)**, 152 runs, **0 survivors**, 3.3 min; 1 throw named as not-mutated |
+| new tests | **28**: 16 in `derive-gate-sites-throws.test.ts`, 5 in `gate-sites-are-proven.test.ts`, 5 in `site-proofs.test.ts`, 2 in `battery-budget.test.ts` |
+| deriver cost | 75 scripts in **0.42 s** (was 0.41), because the throw walk is a second pass over the same trees |
+| `docs:check` | pending |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P1** | TA's embedding fallback | eleventh round untouched: the protocol names neither a model nor a threshold | needs a named model and a named threshold, and a sentence saying it is a choice rather than a transcription |
+| **P2** | a key whose description carries no keyword scores 0 | the protocol is silent; this repository takes 0 | record it as a gap; do not invent a redistribution |
+| **P3** | the sensitivity gate costs grow linearly with claims | 107 claims at about 1.3 s each | the budget still holds about 500; shard by file before then |
+| **P4** | the throw partition is not mutated | 1 fatal claim, reached but not hollowable with a value | needs a source-level instrument that restores the file, which is what `verify-gates-are-testable.mjs` already does per gate |
+| **P5** | 34 `unguarded` throws are published but not proved | their exit is decided in a caller's frame | a call-graph reading would let them be proved against the exit they actually reach; the disposition is the honest answer until then |
+| **P6** | four scripts hold throws and no published site | `doc-counts-rows`, `format-spec`, `gate-receipt`, `serve-site` | all four are libraries or a server rather than gates, so "reach the line" is the question that applies; see whether a test drives each throw's line |
+| **P7** | the blind spot still sees only one level | a wrapper that does not inherit hides its own child | unchanged this round |
+| **P8** | the compiler is a runtime dependency of three gates | `derive-gate-sites.mjs`, `gate-proofs.mjs`, and the new reading all `import typescript` | "a gate with no dependencies" needs a third correct reading |
+| **P9** | the batteries job is 2.7 minutes from its ceiling | six readings: 19.2, 21.9, 26.7, 27.2, 26.8, 27.3 against 30 | take a fresh baseline before adding a step to that job |
+
+**The lesson, for the round after this one.** The last five rounds each asked a version of "is this claim
+true?" -- is there a run, can the run disagree, which thing does the sentence name, does the sentence end the
+process. This round asked a question about the **subject line**: *what counts as a refusal*. The answer is
+not a syntax, and the inventory had been listing one syntax of a thing the language has two of. So the next
+ruler is: **before checking every claim, check that the population of claims was enumerated by what the
+thing does -- and when the enumerator matches a spelling, ask what the other spelling is.**
