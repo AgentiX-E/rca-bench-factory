@@ -1706,7 +1706,7 @@ resolves at its own line. Two controls hold both orders.
 | new tests | **40**: 19 in `throw-witness.test.ts`, 11 in `published-refusals.test.ts`, 3 in `gate-sites-are-proven.test.ts`, 2 in `site-proofs.test.ts`, 2 in `timeout-budget.test.ts`, and one each in `build-example-bundle`, `derive-gate-sites-refusals`, `stall-watch-is-installed` and `tests-do-not-write-inside-the-package` |
 | instrument cost | the rewrite is a lexical `/\bthrow\b/` check before `typescript` is required, so a module with no throw pays one regex; the suite pays one property read per module while the plugin is unarmed |
 | `docs:check` | green: 386 findings / 1–389, 10 volumes / 194 rounds, 1621 citations naming 386 numbers, 568 open entries with 529 carrying a reason, and the counts re-derived from three measured suites |
-| CI | pending -- the run for this commit is recorded in the round that follows it |
+| CI | run `41597295486` on `af8fd9ad2`: **6 of 6 jobs success** -- build 6.0, sensitivity **9.4**, batteries **22.4**, backend 1.1, golden master 0.9, cold-tree 0.3 min |
 
 ### Left open, in the order the goal is reached
 
@@ -1714,7 +1714,7 @@ resolves at its own line. Two controls hold both orders.
 | --- | --- | --- | --- |
 | **P1** | TA's embedding fallback | twelfth round untouched: the protocol names neither a model nor a threshold | needs a named model and a named threshold, and a sentence saying it is a choice rather than a transcription |
 | **P2** | a key whose description carries no keyword scores 0 | the protocol is silent; this repository takes 0 | record it as a gap; do not invent a redistribution |
-| **P3** | the sensitivity gate's cost grows linearly with claims | 139 claims, 190 runs, 4.0 min | the CI job still holds about 320 runs before the budget; shard by file before then |
+| **P3** | the sensitivity gate's cost grows linearly with claims | 139 claims, 190 runs, 4.0 min locally and **9.4 min on the runner** -- the previous round measured 7.0 for 150, so 40 more claims cost 2.4 minutes | the 15-minute budget holds about 300 runs at this rate; shard by file before then |
 | **P4** | nine throw rows rest on a sentence rather than a measurement | three are shadowed by a proved line in a block that runs first, three assert a partition over values the same function produced | the shadowed three are reachable by **unit-testing the function that holds them** rather than by driving the whole probe; that is a test, not an argument |
 | **P5** | the witness is invisible to a child that drops the environment | a script loaded without `NODE_OPTIONS` is not rewritten, exactly as its exits are not recorded | unchanged this round; it is the same one-level blind spot as P7 |
 | **P6** | ~~four scripts hold throws and no published site~~ | **closed**: `format-spec.mjs:669` and `serve-site.mjs:38` are driven; `doc-counts-rows.mjs` and `gate-receipt.mjs` reach theirs through the gates that import them | -- |
