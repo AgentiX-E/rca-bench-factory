@@ -28,13 +28,28 @@ const ARCHIVE_NAME = 'rca-bench-factory-examples.tar.gz';
 const ARCHIVE_PATH = resolve(ROOT, `site/assets/${ARCHIVE_NAME}`);
 const META_PATH = resolve(ROOT, 'site/assets/example-pack.json');
 
-/** Read every regular file under `dir`, keyed by its repository-relative path. */
+/**
+ * Read every regular file under `dir`, keyed by its repository-relative path.
+ *
+ * **Recursive**, and that word is the whole of finding 398. The first version
+ * walked one directory and skipped every entry that was not a file, so an example
+ * tree that grew a subdirectory would lose its contents **silently**: the pack
+ * would still build, still verify against `--check`, and still be one file short
+ * of the tree it advertises. Nothing in the repository could see it -- the
+ * download's own index is produced by this function, so it agreed with itself.
+ *
+ * The tree is flat today, which is why no test had ever asked. The question was
+ * not answerable from the archive; it is answerable from the tree, and the fix
+ * is to walk it rather than to have a test pin its current shape. Paths keep
+ * their separators relative to the example directory, so a nested file lands on
+ * `examples/order-prod/<dir>/<name>` -- a distinct pack row.
+ */
 function readExampleFiles() {
   const files = {};
-  for (const name of readdirSync(EXAMPLE_DIR).sort()) {
+  for (const name of readdirSync(EXAMPLE_DIR, { recursive: true }).sort()) {
     const full = resolve(EXAMPLE_DIR, name);
     if (!statSync(full).isFile()) continue;
-    files[`examples/order-prod/${name}`] = readFileSync(full, 'utf8');
+    files[`examples/order-prod/${name.split('\\').join('/')}`] = readFileSync(full, 'utf8');
   }
   if (Object.keys(files).length === 0) {
     throw new Error(`no example files found under ${EXAMPLE_DIR}`);

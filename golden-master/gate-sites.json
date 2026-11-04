@@ -22,7 +22,7 @@
     },
     {
       "script": "scripts/build-example-bundle.mjs",
-      "line": 103,
+      "line": 118,
       "condition": "!ok",
       "diagnostic": "${path} is stale - run \\",
       "status": "proved",
@@ -401,7 +401,7 @@
     },
     {
       "script": "scripts/derive-gate-sites.mjs",
-      "line": 219,
+      "line": 220,
       "diagnostic": "derive-gate-sites: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/gate-sites-are-proven.test.ts"
@@ -900,7 +900,7 @@
     "rows": [
       {
         "script": "scripts/build-example-bundle.mjs",
-        "line": 40,
+        "line": 55,
         "disposition": "unguarded",
         "message": "no example files found under ${EXAMPLE_DIR}",
         "status": "proved",
@@ -908,18 +908,28 @@
       },
       {
         "script": "scripts/build-example-bundle.mjs",
-        "line": 57,
+        "line": 72,
         "disposition": "unguarded",
         "message": "the example pack contains duplicate paths",
         "status": "exempt",
+        "statement": "The shipped example tree produces a pack in which no archive path appears twice.",
+        "heldBy": {
+          "file": "packages/core/test/build-example-bundle.test.ts",
+          "test": "ships each archive path once, so no example file can shadow another"
+        },
         "reason": "A duplicate path in the pack cannot reach this line. The pack ends by normalising its own output through `normalizePackEntries`, which refuses a repeated path first -- and that refusal is held by `pack-archive.test.ts`. The case a reader would try, an example directory holding its own `MANIFEST.json`, does not collide either: example files are prefixed with `examples/order-prod/`, so the two rows differ. `build-example-bundle.test.ts` measures that, and this line stays as a guard on the pack contract rather than on an input."
       },
       {
         "script": "scripts/build-example-bundle.mjs",
-        "line": 60,
+        "line": 75,
         "disposition": "unguarded",
         "message": "the example pack must ship a MANIFEST.json to be verifiable",
         "status": "exempt",
+        "statement": "The shipped example tree's pack contains MANIFEST.json, and the file count includes it.",
+        "heldBy": {
+          "file": "packages/core/test/build-example-bundle.test.ts",
+          "test": "carries every file in the real example tree and the manifest, and counts them in one number"
+        },
         "reason": "The pack always appends `MANIFEST.json` (`buildExamplePack` ends with it), so a tree in which the manifest is absent from the archive is a tree whose pack has been changed -- and the pack is tested where it lives. The guard states the contract the download page depends on: the archive the page advertises is one a reader can verify."
       },
       {
@@ -948,7 +958,7 @@
       },
       {
         "script": "scripts/derive-gate-sites.mjs",
-        "line": 475,
+        "line": 476,
         "disposition": "unguarded",
         "message": "new Error( `${name}: the parser rejected this file (${String(file.parseDiagnostics.length)} error(s)), ` + 'so no exit c",
         "status": "proved",
@@ -956,7 +966,7 @@
       },
       {
         "script": "scripts/derive-gate-sites.mjs",
-        "line": 544,
+        "line": 545,
         "disposition": "unguarded",
         "message": "new Error( `${name}: ${String(refusals.length)} reference(s) to the exit family that this inventory cannot ` + 'classify",
         "status": "proved",
@@ -964,7 +974,7 @@
       },
       {
         "script": "scripts/derive-gate-sites.mjs",
-        "line": 631,
+        "line": 632,
         "disposition": "unguarded",
         "message": "new Error( `${name}: the parser rejected this file (${String(file.parseDiagnostics.length)} error(s)), ` + 'so no throw ",
         "status": "proved",
@@ -1120,6 +1130,11 @@
         "disposition": "rethrow",
         "message": "error",
         "status": "exempt",
+        "statement": "Every state of the tree the measurement diagnoses raises a MeasurementUnavailable, so the rethrow carries only defects.",
+        "heldBy": {
+          "file": "packages/core/test/measure-doc-counts-readings.test.ts",
+          "test": "raises a MeasurementUnavailable for every state it diagnoses, so the rethrow carries only defects"
+        },
         "reason": "This is the line that re-throws whatever the two reading paths raised that is *not* a diagnosis. Every state of the tree is diagnosed: `refuse` raises `MeasurementUnavailable`, and the red-run and unreadable-summary paths raise subclasses of it. So the only thing that can arrive here is a defect in the reader itself. It was reachable once, through `workspacePackages` reading a missing `pnpm-workspace.yaml`, and that is fixed rather than proved: a missing workspace list is now a diagnosis, and `published-refusals.test.ts` drives it. A test that reached this line would be a test that broke the measurement."
       },
       {
@@ -1136,6 +1151,11 @@
         "disposition": "unguarded",
         "message": "recoverability partition does not cover the dataset: ${recoverable.length} + ${unrecoverable.length} != ${total}",
         "status": "exempt",
+        "statement": "The probe's two component halves cover its dataset and do not overlap.",
+        "heldBy": {
+          "file": "packages/core/test/m1-ceiling-probe.test.ts",
+          "test": "reports the two halves of the component partition as a partition"
+        },
         "reason": "The probe says so itself: `includes` over the same objects is exact, so the partition cannot fail to cover the dataset. The guard exists because the two halves are quoted as a partition in `docs/`, and a number quoted as a partition should be checked as one. Firing it would require `includes` to disagree with itself."
       },
       {
@@ -1144,6 +1164,11 @@
         "disposition": "unguarded",
         "message": "checkRca100Structure published no ${id} check",
         "status": "exempt",
+        "statement": "checkRca100Structure publishes exactly one check for each of the four vocabulary clauses the probe requires.",
+        "heldBy": {
+          "file": "packages/core/test/score.test.ts",
+          "test": "publishes the four vocabulary checks the probe requires, one per field"
+        },
         "reason": "A guard on `checkRca100Structure` publishing each of four named checks. The four ids come from the function that publishes them, so the guard fires only if that function loses a check -- which its own tests would report first, and which would be a defect rather than a state of an input."
       },
       {
@@ -1168,6 +1193,11 @@
         "disposition": "unguarded",
         "message": "classification partition does not cover the misses: ${covered} != ${classified.length}",
         "status": "exempt",
+        "statement": "classify returns one of exactly three kinds for every row it is handed, so the three counts sum to the row count.",
+        "heldBy": {
+          "file": "packages/core/test/type-miss-probe.test.ts",
+          "test": "classify returns one of its three kinds for every row, so the counts cannot leave one out"
+        },
         "reason": "The classification partition: `classify` returns one of three kinds for every row it is given, and the guard asserts that the three counts add up to the number of rows. Firing it would require the classifier to return nothing for a row it was handed."
       },
       {

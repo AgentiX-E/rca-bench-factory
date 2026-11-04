@@ -257,7 +257,7 @@ jobs:
         run: pnpm build
 
       - name: Every proved exit can disappear without a word
-        timeout-minutes: 18
+        timeout-minutes: 19
         run: node scripts/verify-sites-are-sensitive.mjs
 
   # The injection batteries. This is the long pole -- everything else in the workflow

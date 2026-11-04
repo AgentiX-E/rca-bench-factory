@@ -64,10 +64,11 @@ interface Counts {
  * readings moved to `scripts/doc-counts-rows.mjs`, so this file imports that and
  * keeps `SCRIPT` only for the spawns below, which is what the inventory expects.
  */
-const { COUNT_UNAVAILABLE, countsFromReports, parseSummary } = (await import(
+const { COUNT_UNAVAILABLE, MeasurementUnavailable, countsFromReports, parseSummary } = (await import(
   pathToFileURL(resolve(ROOT, 'scripts', 'doc-counts-rows.mjs')).href
 )) as {
   COUNT_UNAVAILABLE: string;
+  MeasurementUnavailable: new (...args: never[]) => Error;
   countsFromReports: (paths: string[]) => Record<'core' | 'cli' | 'repo', Counts>;
   parseSummary: (out: string, scope: string) => Counts;
 };
@@ -473,5 +474,47 @@ describe('what --from refuses', () => {
     const outcome = run(['--check', '--from', path]);
     expect(outcome.status, outcome.stderr).not.toBe(0);
     expect(outcome.stderr).toContain('has no testResults array');
+  });
+});
+
+/**
+ * The class every diagnosis shares, and the one line that depends on it.
+ *
+ * `measure-doc-counts.mjs:267` is a bare `throw error`: whatever the readers left
+ * uncaught reaches the process as a stack trace. The reason it is exempt rather
+ * than proved is that every *state of the tree* is answered as a diagnosis first,
+ * so only a defect in the reader can arrive there.
+ *
+ * That sentence is what these assertions replace. Each state named below is
+ * driven to its refusal and required to be a `MeasurementUnavailable` -- the
+ * common parent, not merely an object with a `name` field, which is what the
+ * other tests in this file read. A diagnosis that stopped inheriting would keep
+ * printing the right sentence and stop being catchable as one, and the rethrow
+ * would begin carrying states it was written to not carry.
+ */
+describe('the diagnosis class · one parent, so the rethrow carries only defects', () => {
+  it('raises a MeasurementUnavailable for every state it diagnoses, so the rethrow carries only defects', () => {
+    const red = report('core', (parsed) => {
+      parsed.testResults[0]!.status = 'failed';
+    });
+
+    const states: [string, () => unknown][] = [
+      ['a report of a red run', () => countsFromReports([red, report('cli')])],
+      ['a transcript of a red run', () => parseSummary(RED_SUMMARY, 'core')],
+      ['a transcript with no summary at all', () => parseSummary('nothing that looks like a summary\n', 'core')],
+      ['a transcript of a skipped run', () => parseSummary(ALL_SKIPPED_SUMMARY, 'core')],
+    ];
+
+    for (const [state, work] of states) {
+      // `toThrow(<class>)` walks the prototype chain, so this asserts the
+      // inheritance rather than the label. The label assertion stays in the tests
+      // above, where it belongs: they check what the reader says, this checks
+      // what it raises.
+      expect(work, `${state} must be a diagnosis`).toThrow(MeasurementUnavailable);
+    }
+
+    // The negative control: a count that exists is not a refusal, so a reader
+    // that raised on everything would fail here rather than pass the four above.
+    expect(() => parseSummary(CORE_SUMMARY, 'core')).not.toThrow();
   });
 });

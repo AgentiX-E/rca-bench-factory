@@ -2201,9 +2201,9 @@ because that is what a refresh looks like from inside.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **233 files, 5696 tests passed** (as of this commit) |
+| `core` test suite | **233 files, 5713 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **237 files, 5883 tests passed** (as of this commit) |
+| repo test suite | **237 files, 5900 tests passed** (as of this commit) |
 | new tests | **20**: 13 in `ledger-runs.test.ts` (the reader), 7 in `ci-budget.test.ts` (`R7` and its gate paths) |
 | the recording | **run 41749989956** at `75f2de650`, 7 jobs / 74 steps / **46 bounded**, 43 min measured; before this round it was `41670923224` at `61dff700c`, one run and one commit behind the tree |
 | the comparison | the ledger's newest row names run `41749989956`, which is the recording -- `(the recording)`, not one run behind; **3 older rows name no run** and are counted |
@@ -2221,7 +2221,7 @@ because that is what a refresh looks like from inside.
 | priority | item | state | next step |
 | --- | --- | --- | --- |
 | **P2** | a key whose description carries no keyword scores 0 | the protocol is silent; this repository takes 0 | record it as a gap; do not invent a redistribution |
-| **P3** | the sensitivity gate's cost grows linearly with claims | 142 claims, 194 runs, 4.0 min locally and 9.4 on the runner | the 15-minute budget holds about 300 runs at this rate; shard by file before then |
+| **P3** | the sensitivity gate's cost grows linearly with claims | 142 claims, 194 runs, 4.0 min locally and **9.0** on the runner; its bound moved 18 -> 19 this round | the 20-minute job budget holds it, and the bound expires at 19.3 of 20; shard by file before the claims outgrow the job rather than the step |
 | **P4** | six throw rows rest on a sentence rather than a measurement | three assert something about a table the same function produced, two guard the pack contract, one was reachable only through a defect | a test of the *statement* rather than of the line: for `pack`, the shipped example tree must yield unique paths and a manifest; for the partitions, the classifier's return set must stay closed. Both are falsifiable by the code change the guard is for, which is why they are not inputs |
 | **P5/P7** | the witness sees one level | a script loaded without `NODE_OPTIONS` is not rewritten, and a wrapper that does not inherit hides its child | unchanged; needs a second observation channel |
 | **P8** | the compiler is a runtime dependency of four readers | `derive-gate-sites.mjs`, `gate-proofs.mjs`, the witness and the Vite plugin | "a gate with no dependencies" still needs a third correct reading |
@@ -2233,3 +2233,166 @@ its **contents**; the one thing wrong with it was not in its contents. So the ru
 **when every check on an artefact passes, ask what the artefact is an index of, and check
 that the index still points at the thing** -- a commit, a run, a version, a corpus. The
 numbers were all true; they were true of a tree that had already run again.
+
+## v3.50 — six exemptions stood on sentences, and four of the sentences were already paid for
+
+Everything in this round starts from one line of the previous round's table: **P4 — six throw
+rows rest on a sentence rather than a measurement.** The rule that read them (rule 4) asked
+whether the sentence was longer than forty characters and distinct from its neighbours. It did
+not ask whether anything measured what the sentence claimed, and for two of the six nothing
+did.
+
+### One — the rule was about prose, and prose cannot fail (finding 397)
+
+An exemption says *no test can reach this line, because X*. That is a claim about the code, and
+claims about code can be checked. The six shipped rows each carried a paragraph, and the
+paragraphs were good: they explained the mechanism, named the guard, and said why an input could
+not produce the state. What none of them carried was the name of a test.
+
+The measurement that made the gap legible was reading the six against the suite. Four of them
+had a test that held their claim and did not say so:
+
+```
+probe-m1-ceiling.mjs:118     "includes over the same objects is exact"   held since v3.45, unnamed
+probe-type-misses.mjs:269    "publishes four named checks"              held across several assertions
+measure-doc-counts.mjs:267   "every state of the tree is diagnosed"     held for one of three states
+build-example-bundle.mjs:60  "the pack always appends MANIFEST.json"    held on a fixture, not the shipped pack
+```
+
+and two had nothing at all:
+
+```
+build-example-bundle.mjs:57  "the pack cannot contain a repeated path"  nothing asserted uniqueness
+probe-type-misses.mjs:1268   "classify returns one of three kinds"      the counts were checked against counts
+```
+
+That distribution is the finding. A prose exemption does not distinguish *held and unnamed* from
+*not held*, and a reader cannot tell the two apart either -- which is why the four were invisible
+for four rounds and would have stayed invisible.
+
+### Two — rule 9 asks for the claim and the test that holds it
+
+`gate-sites.json` grows two columns on the throw partition, and only there:
+
+| column | what it is |
+| --- | --- |
+| `statement` | the claim the exemption rests on, in one sentence a test could falsify |
+| `heldBy` | `{file, test}` -- the test that measures that claim, by exact title |
+
+Rule 9 refuses an exempt row without either, a file that does not exist, a file that is not a
+test, a title the file does not carry, two exemptions held by one test, two exemptions stating
+one claim, and a **proved** row that also carries an exemption's claim. The columns are refused
+on exit sites rather than ignored, so half-applying the convention is visible instead of inert.
+
+The rule's limit is stated where it is implemented: it checks that the title exists, not that the
+assertion inside that test is the claim. What it does establish is that deleting the test,
+renaming it, or pointing two claims at one test **reds the gate**. Measured twice on this tree:
+renaming the m1 title in the JSON turned rule 9 red with the row and the title in the message,
+and restoring it turned it green -- the rule is not a rule that cannot fail.
+
+### Three — writing the pack's statement found a reader that walks one directory (finding 398)
+
+The first statement -- *the shipped example tree produces a pack in which no archive path appears
+twice* -- could not be written against a fixture. `treeWithExamples()` copies six files into a
+scratch tree and the existing tests read the pack it produces; the claim is about the tree that
+**ships**, so the test builds from `examples/order-prod` and reads the committed index beside it.
+
+Building from the real tree is what exposed `readExampleFiles()`:
+
+```js
+for (const name of readdirSync(EXAMPLE_DIR).sort()) {
+  const full = resolve(EXAMPLE_DIR, name);
+  if (!statSync(full).isFile()) continue;      // a directory is skipped, silently
+```
+
+The tree is flat, so the archive was correct. The defect is that nothing could say it was: the
+index is written by the same reader as the archive, `--check` compares the archive with itself,
+and the download would have been one directory short the first time somebody put an example in a
+folder. Reproduced in a fixture -- `examples/order-prod/nested/extra.json`, nine rows before and
+ten after -- and fixed in the reader rather than pinned by an assertion:
+`readdirSync(dir, { recursive: true })`, with the relative path preserved so a nested file lands
+on its own pack row. The committed artefacts did not move a byte: the tree is still flat.
+
+This is the round's sharpest lesson, and it is not the one the round set out to learn. **A
+sentence about "the example tree" had been satisfied by a reader about "the example directory",
+and the difference is invisible while the tree happens to be one level deep.**
+
+### Four — the counts were checked against counts (finding 399)
+
+`probe-type-misses.mjs:1268` refuses when the three classification counts do not add up to the
+rows. The existing test compared the probe's three counts with three computed in the test by
+filtering on `kind`, and they agreed on both recorded runs. That is a check between two readings
+of one classification: a fourth kind would have incremented a key that does not exist, both sides
+would have agreed at a lower total, and the only reader that would have noticed is the guard the
+exemption says no test can reach.
+
+The closure is now measured against the shipped `classify` -- not this file's copy -- over a
+table built to be adversarial: an empty pair, a pair that normalizes to nothing, one that differs
+only by case, one that shares exactly one token, and every recorded miss of both runs. The
+remaining three statements are the same shape one layer in: `checkRca100Structure` must publish
+each of four checks exactly once; the measurement's diagnoses must all be a
+`MeasurementUnavailable` (the parent, not merely a `name`); and the m1 partition was already
+held, which is why its row only needed naming.
+
+### Five — the round's own readings
+
+`gate-sites.json`: 41 throws, **6 exempt and 6 held**, 114 exit sites across 56 of 79 scripts,
+`excluded {16 zero}`. Rule 9's block is 11 tests: the negative control, the two required columns,
+and one rejection per road (no statement, no held test, a missing file, a wrong title, a
+non-test file, a shared test, a repeated statement, a proved row carrying a claim, an exit site
+carrying the columns).
+
+The four statement tests are the round's product, and each is falsifiable against the defect it
+describes:
+
+| claim | test | the defect that reds it |
+| --- | --- | --- |
+| the shipped pack lists each path once | `build-example-bundle.test.ts` | a duplicate row in `paths` |
+| the pack carries the whole tree and the manifest | same file | a file the reader drops (measured: nested dir) |
+| every diagnosis is a `MeasurementUnavailable` | `measure-doc-counts-readings.test.ts` | a refusal that stops inheriting |
+| four vocabulary checks are published | `score.test.ts` | a check renamed or dropped |
+| `classify`'s return set is closed | `type-miss-probe.test.ts` | a fourth kind the counts do not hold |
+| the m1 partition covers its dataset | `m1-ceiling-probe.test.ts` | two halves that overlap or leave a row out |
+
+### Readings
+
+> Ledger for `v3.50`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **233 files, 5713 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **237 files, 5900 tests passed** (as of this commit) |
+| new tests | **17**: 11 rule-9 cases in `gate-sites-are-proven.test.ts`, 3 in `build-example-bundle.test.ts` (two statements and the nested-directory case), 1 in `measure-doc-counts-readings.test.ts`, 1 in `score.test.ts`, 1 in `type-miss-probe.test.ts` |
+| throw partition | **41 statements**: 4 `fatal`, 33 `unguarded`, 1 `guarded`, 3 `rethrow`; 35 proved; **6 exempt, 6 of them now holding a named test** |
+| the six claims | pack uniqueness, pack manifests and counts it, every diagnosis is a `MeasurementUnavailable`, four vocabulary checks published, `classify`'s return set closed, the m1 partition covers its dataset -- **4 already held and unnamed, 2 not held at all** |
+| failure sites | **114** across 56 of **79** scripts; `excluded` `{16 zero}` unchanged |
+| proof plan | `verify-site-proofs`: **142 claim(s)** across 52 file(s) -- PASSED, unchanged |
+| coverage | core **99.96 / 99.75 / 100 / 99.96**, cli **100 / 100 / 100 / 100** |
+| `docs:check` | green: **396 findings / 1–399**, 10 volumes / 198 rounds, **1639 citations** of 396 numbers, 568 open entries with 529 carrying a reason |
+| the bound that moved | **one**: the site-proofs step in `sensitivity` 18 -> **19** minutes, because the fresh recording measured it at **542 s** and twice that is 1084 s -- 4 s past 18 minutes. The job still holds: 19 minutes plus its 0.3 minute of setup inside a 20-minute budget |
+| the defect the round found | `readExampleFiles()` walked one directory and skipped every non-file silently; reproduced with `examples/order-prod/nested/extra.json` (9 rows before, 10 after), fixed by a recursive walk |
+| the rule, measured failing | renaming one `heldBy.test` in the inventory turned rule 9 red on `scripts/probe-m1-ceiling.mjs:118`; restoring it turned the block green |
+| the recording | **run 41762557378** at `38f138cc0`, 7 jobs / 74 steps / **46 bounded**, 46 min measured; re-taken because this round's ledger row names it, which is `R7` working on the round that reports it |
+| CI | run `41762557378` on `38f138cc0` (the run before this round's first push): **7 of 7 jobs success**, batteries-heavy **15.2**, batteries **11.1**, site proofs **9.4**, build 8.8, sensitivity 6.8, backend 0.6, golden master 1.2, cold tree 0.4 min -- **15.3 min of wall clock**. This round's own run is recorded in section six |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P2** | a key whose description carries no keyword scores 0 | the protocol is silent; this repository takes 0 | record it as a gap; do not invent a redistribution |
+| **P3** | the sensitivity gate's cost grows linearly with claims | 142 claims, 194 runs, 4.0 min locally and 9.4 on the runner | the 15-minute budget holds about 300 runs at this rate; shard by file before then |
+| **P4** | ~~six throw rows rest on a sentence rather than a measurement~~ | **closed**: every exempt throw states its claim and names the test that holds it, and rule 9 refuses a row that does neither | -- |
+| **P5/P7** | the witness sees one level | a script loaded without `NODE_OPTIONS` is not rewritten, and a wrapper that does not inherit hides its child | unchanged; needs a second observation channel |
+| **P8** | the compiler is a runtime dependency of four readers | `derive-gate-sites.mjs`, `gate-proofs.mjs`, the witness and the Vite plugin | "a gate with no dependencies" still needs a third correct reading |
+| **P9** | the batteries jobs sit inside their budgets | 11.1 and 15.2 measured against 25 each; the longest bound expires at 24.2 of 25 | a fresh baseline before adding another battery -- and `R7` now makes forgetting it impossible |
+| **P11** | a `heldBy` title is an index of an assertion | rule 9 checks that the title exists, not that the body still measures the claim | the `sensitivity` battery already knows how to hollow a claim; extending it to `heldBy` is the honest next move |
+| **P12** | the pack's index is written by the reader that writes the archive | the two agree by construction, so the **tree** is the only third opinion | `build-example-bundle.test.ts` reads the tree now; a `--check` that also compared the archive against a fresh recursive listing would close it in the tool rather than in a test |
+
+**The lesson, for the round after this one.** The six exemptions were not wrong -- every one of
+them was true. What was missing was the difference between *a claim that is true* and *a claim
+something measures*, and the inventory could not tell those apart because it recorded the claim
+in the one form that cannot fail. So the ruler is: **when a table records a judgement, ask what
+would have to change for that judgement to be wrong, and check that the answer is written down
+next to it** -- a test name, a run id, a command. The four claims that were already paid for had
+been paid for in a place the table did not point at.

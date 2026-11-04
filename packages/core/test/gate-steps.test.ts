@@ -1904,7 +1904,11 @@ describe('scripts/verify-local.mjs as a command', () => {
     expect(result.stdout).toContain('verify bounds all 7 of its step(s) on its own');
     expect(result.stdout).toContain("largest 12m of the job's 15m");
     expect(result.stdout).toContain('sensitivity bounds all 3 of its step(s) on its own');
-    expect(result.stdout).toContain("largest 18m of the job's 20m");
+    // 18 -> 19 in v3.50: the fresh recording measured the site-proofs step at 542 s,
+    // and twice that is 1084 s, which is 4 s past 18 minutes. The bound follows the
+    // measurement, so the assertion follows the bound -- it is the plan's own number
+    // rather than a preference, which is why it moves when a run moves.
+    expect(result.stdout).toContain("largest 19m of the job's 20m");
     expect(result.stdout).toContain('batteries bounds all 14 of its step(s) on its own');
     expect(result.stdout).toContain("largest 9m of the job's 25m");
     expect(result.stdout).toContain('batteries-heavy bounds all 4 of its step(s) on its own');

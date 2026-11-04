@@ -1670,3 +1670,73 @@ follow the measurement if somebody takes a new one, which is what `R7` is for.
 
 A gate whose first red is the tree it was written in is a gate that has been **observed**
 rather than described.
+
+## Finding 397 — six exemptions were sentences, and the rule measured the sentence's length
+
+`golden-master/gate-sites.json` publishes 41 `throw` statements, six of them `exempt`. The
+rule that reads them asks two things: that the row carry a `reason`, and that the reason be
+longer than forty characters and distinct from its neighbours. That is a rule about **prose**.
+Prose cannot fail.
+
+What the six reasons actually claimed was checkable, and two of the claims had never been
+checked at all:
+
+| row | what the reason claimed | whether a test measured it |
+| --- | --- | --- |
+| `build-example-bundle.mjs:57` | the pack cannot contain a repeated path | no -- nothing asserted the shipped pack's paths are unique |
+| `build-example-bundle.mjs:60` | the pack always appends `MANIFEST.json` | partly -- one fixture test read the manifest out of a *fixture* pack, never the shipped one |
+| `measure-doc-counts.mjs:267` | every state of the tree is diagnosed before this line | one of the three states (a missing workspace list) |
+| `probe-m1-ceiling.mjs:118` | `includes` over the same objects is exact | **yes** -- and had been for four rounds, unnamed |
+| `probe-type-misses.mjs:269` | `checkRca100Structure` publishes four named checks | spread across several assertions, stated by none |
+| `probe-type-misses.mjs:1268` | `classify` returns one of three kinds for every row | no -- the counts were compared with three recomputed counts |
+
+The fourth row is the one that makes the defect legible: a test in `m1-ceiling-probe.test.ts`
+had been asserting "the two halves of the component partition are a partition" since the probe
+was written, and the inventory never said so. **The claim was held; the row did not know.**
+An inventory that publishes a proof as prose is an inventory whose proofs a reader has to
+re-derive, and the re-derivation is exactly what nobody does on the fifth round.
+
+## Finding 398 — the pack's reader walked one directory, and the download is promised as a tree
+
+Writing the first row's statement -- *the shipped example tree produces a pack in which no
+archive path appears twice* -- required building the pack from the real tree instead of from a
+fixture, and that exposed the reader:
+
+```js
+for (const name of readdirSync(EXAMPLE_DIR).sort()) {
+  const full = resolve(EXAMPLE_DIR, name);
+  if (!statSync(full).isFile()) continue;      // a directory is skipped, silently
+```
+
+The tree is flat today (`examples/order-prod` holds six files), so nothing was wrong yet. What
+was wrong was that **nothing could say so**: the pack's index is written by the same reader, so
+the index agreed with the archive, `--check` compared the archive with itself, and the download
+would simply have been one directory short the first time anyone organised an example into a
+folder. Measured, by adding `examples/order-prod/nested/extra.json` to a fixture tree: the old
+reader's pack listed 9 rows and the new one lists 10, and the path
+`examples/order-prod/nested/extra.json` is present only in the second.
+
+The fix is the reader, not a guard: `readdirSync(dir, { recursive: true })`, with the relative
+path preserved so a nested file lands on a distinct pack row. The statement test is what found
+it, which is the point -- a sentence about "the example tree" had been satisfied by a reader
+about "the example directory", and the difference is invisible while the tree happens to be one
+level deep.
+
+## Finding 399 — the counts were checked against counts, and never against the classifier
+
+`probe-type-misses.mjs:1268` refuses when the three classification counts do not add up to the
+number of rows, and the inventory exempts it because `classify` is total: every pair comes back
+as one of exactly three strings. The existing test compared the probe's three counts with three
+counts computed here by filtering `c.kind === k`, and the two agreed for every recorded run.
+
+That comparison is a check between two readings of one classification, and it is blind in the
+one place the guard is about. A fourth kind would make `counts[kind]` increment a key that does
+not exist, and both sides would go on agreeing at a lower total -- unless the guard fired, and
+the guard is the line the exemption says no test can reach. The claim ("the return set is
+closed") had no test; the figure that depends on it had two.
+
+The closure is now measured against the shipped `classify` rather than this file's copy, over a
+table built to be adversarial: an empty pair, a pair that normalizes to nothing, one that
+differs only by case, one that shares exactly one token, and every recorded miss of both runs.
+All of them land inside the three kinds, which is what makes the three counts a partition rather
+than three tallies that happen to sum.

@@ -122,6 +122,18 @@ import { afterAll, describe, expect, it } from 'vitest';
  * script it never runs at all, which is what the old rule 3 accepted and what
  * the inventory published. A rule that reported site-level reachability would
  * have to execute every site, which is the coverage question, not this one.
+ *
+ * ## Rules 8 and 9, added later and stated here for the same reason
+ *
+ * Rule 8 (v3.45) is the **throw partition**: every `throw` statement, classified
+ * four ways, proved or exempt, with the four counts reconciled against the rows.
+ * Its long-form account sits above the code that implements it.
+ *
+ * Rule 9 (v3.50) is the **held statement**: an exempt throw must state the claim
+ * its exemption rests on and name the test that measures it, because a `reason`
+ * is prose and prose cannot fail. Its account sits above the block that tests it,
+ * and its limit is stated there too -- the rule checks that the title exists, not
+ * that the assertion inside it is the claim.
  */
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -195,6 +207,22 @@ interface Site {
   status?: string;
   provedBy?: string;
   reason?: string;
+  /** Named here only so a site that carries them can be rejected; see rule 9. */
+  statement?: string;
+  heldBy?: HeldBy;
+}
+
+/**
+ * The test that holds an exemption's statement.
+ *
+ * A throw exemption says "no test can reach this line, because X"; that sentence
+ * is the reason, and prose cannot fail. Rule 9 requires the row to state a claim
+ * a test could check and to name the test that checks it, so deleting that test
+ * reds the gate instead of leaving a sentence standing.
+ */
+interface HeldBy {
+  file: string;
+  test: string;
 }
 
 /** One throw statement, with the disposition the derivation gave it. */
@@ -205,6 +233,10 @@ interface Throw {
   message?: string;
   status?: string;
   provedBy?: string;
+  /** What the exemption claims, in one sentence a test can falsify. */
+  statement?: string;
+  /** The test that holds the statement; see rule 9. */
+  heldBy?: HeldBy;
   reason?: string;
 }
 
@@ -503,6 +535,54 @@ function proofProblems(
 }
 
 /**
+ * Rule 9 -- does the named test exist, and does it carry that title?
+ *
+ * An exemption is a sentence about why no test can reach a line, and a sentence
+ * cannot fail. So every exempt throw must also state a **claim** and name the
+ * test that measures it. This function checks the part a machine can: the file
+ * resolves, it is a test file, and it carries a test with exactly that title.
+ * Whether the assertion inside it really holds the claim is not decidable here,
+ * and is stated as the rule's limit rather than papered over.
+ *
+ * Deliberately *not* required: that the test file mentions the script. The claim
+ * an exemption makes is about the code's invariant -- the pack's paths are
+ * unique, the classifier's return set is closed -- and the honest test often
+ * lives where the function lives rather than where the script lives. Rule 3's
+ * mention test would reject every such proof, so heldBy asks a different
+ * question: does this title exist, in a real test file, and does no other
+ * exemption claim the same one (checked once over the whole table).
+ */
+function holdProblems(where: string, heldBy: HeldBy, root: string): string[] {
+  const problems: string[] = [];
+  if (typeof heldBy.file !== 'string' || heldBy.file.length === 0) {
+    return [`${where} names no file to hold its statement`];
+  }
+  if (typeof heldBy.test !== 'string' || heldBy.test.trim().length === 0) {
+    return [`${where} names no test to hold its statement`];
+  }
+  if (!heldBy.file.endsWith('.test.ts')) {
+    problems.push(`${where} is held by ${heldBy.file}, which is not a test file`);
+  }
+  let body: string;
+  try {
+    body = readFileSync(resolve(root, heldBy.file), 'utf8');
+  } catch {
+    return [...problems, `${where} is held by ${heldBy.file}, which does not exist`];
+  }
+  // The title must be a test's own name, not a phrase in a comment. All three
+  // quote styles occur in this suite, and `it(` is often followed by a newline and
+  // an indented title, so the match allows whitespace and requires the closing
+  // quote to be the one that opened: the delimiter is what makes "the string
+  // appears somewhere" into "a test is called this".
+  const escaped = heldBy.test.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const named = new RegExp(`(?:^|[^\\w.])(?:it|test)\\(\\s*(['"\`])${escaped}\\1`).test(body);
+  if (!named) {
+    problems.push(`${where} is held by ${heldBy.file}, which carries no test titled '${heldBy.test}'`);
+  }
+  return problems;
+}
+
+/**
  * Check every rule except rule 1, so the same function can be run against a
  * corrupted inventory below. Returns the list of violations; empty means valid.
  *
@@ -536,6 +616,13 @@ function violationsOf(inventory: Inventory, root: string): string[] {
         problems.push(`${where} is proved and also carries a reason, so the two accounts can disagree`);
       }
     } else if (site.status === 'exempt') {
+      // Rule 9 is about throw exemptions: a site's exemption says a *process*
+      // cannot be entered from a test, which is a different claim from an
+      // invariant a test can hold. The columns are refused here rather than
+      // ignored, so half-applying the convention is visible instead of inert.
+      if (site.statement !== undefined || site.heldBy !== undefined) {
+        problems.push(`${where} is an exit site carrying the throw partition's exemption columns`);
+      }
       // The `provedBy` check runs first and does not `continue`. When it ran last
       // the `continue` on a missing reason made it unreachable, so the
       // both-fields case passed the guard it was written to catch -- a defect in
@@ -578,6 +665,8 @@ function violationsOf(inventory: Inventory, root: string): string[] {
   // refuses. That is the claim `verify-site-proofs.mjs` measures for both.
   const throwRows = inventory.throws?.rows ?? [];
   const tally: Record<string, number> = { fatal: 0, unguarded: 0, guarded: 0, rethrow: 0 };
+  const statements: string[] = [];
+  const holdings: string[] = [];
   for (const row of throwRows) {
     const where = `${row.script}:${row.line}`;
     if (!(row.disposition in tally)) {
@@ -601,6 +690,12 @@ function violationsOf(inventory: Inventory, root: string): string[] {
       if (row.reason !== undefined) {
         problems.push(`${where} is proved and also carries a reason, so the two accounts can disagree`);
       }
+      if (row.statement !== undefined || row.heldBy !== undefined) {
+        problems.push(
+          `${where} is proved and also carries an exemption's claim, so the row says a test arrives ` +
+            'and that none can',
+        );
+      }
     } else if (row.status === 'exempt') {
       if (row.provedBy !== undefined) {
         problems.push(`${where} is exempt and also names a test, which is the state rule 2 forbids`);
@@ -611,6 +706,20 @@ function violationsOf(inventory: Inventory, root: string): string[] {
       }
       if (row.reason.length <= 40) {
         problems.push(`${where} exempts itself in ${row.reason.length} characters: '${row.reason}'`);
+      }
+      // Rule 9 -- the exemption names the test that holds its statement.
+      if (typeof row.statement !== 'string' || row.statement.trim().length <= 20) {
+        problems.push(
+          `${where} is exempt without stating a claim a test could hold, so the reason is the only account`,
+        );
+      } else {
+        statements.push(row.statement);
+      }
+      if (row.heldBy === undefined) {
+        problems.push(`${where} is exempt without naming the test that holds its statement`);
+      } else {
+        problems.push(...holdProblems(where, row.heldBy, root));
+        holdings.push(`${row.heldBy.file}\u0000${row.heldBy.test}`);
       }
     } else {
       problems.push(
@@ -626,6 +735,22 @@ function violationsOf(inventory: Inventory, root: string): string[] {
     problems.push(
       `the throw partition does not add up: counts say ${JSON.stringify(inventory.throws?.counts)}, ` +
         `the rows hold ${JSON.stringify(tally)}`,
+    );
+  }
+
+  // Rule 9's second half: one claim, one holding test. Two exemptions pointing at
+  // the same test means one of them is held by a test written for the other --
+  // which is exactly the state a pasted-down column produces, one layer out from
+  // the repeated-`reason` check below.
+  const repeatedStatement = statements.filter((text, i) => statements.indexOf(text) !== i);
+  if (repeatedStatement.length > 0) {
+    problems.push(`repeated exemption statement: '${repeatedStatement[0]}'`);
+  }
+  const repeatedHold = holdings.filter((key, i) => holdings.indexOf(key) !== i);
+  if (repeatedHold.length > 0) {
+    problems.push(
+      `two throw exemptions are held by the same test (${String(repeatedHold[0]).split('\u0000').join(' · ')}), ` +
+        'so one claim is measured by a test written for the other',
     );
   }
 
@@ -665,6 +790,10 @@ function pointerRoot(): string {
   const pointers = [
     ...committed.sites.map((site) => site.provedBy),
     ...(committed.throws?.rows ?? []).map((row) => row.provedBy),
+    // A holding test is read by rule 9 the same way a proof is read by rules 3
+    // and 7, so the fixture root has to carry those files too -- otherwise every
+    // exemption reads as "held by a file that does not exist" against the copy.
+    ...(committed.throws?.rows ?? []).map((row) => row.heldBy?.file),
   ];
   for (const provedBy of pointers) {
     if (provedBy === undefined) continue;
@@ -696,7 +825,9 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
       // added by hand and are not part of the derivation, so they are excluded
       // here and checked by the rules below.
       const derivedShape = derived.sites.map((s) => ({ ...s }));
-      const committedShape = committed.sites.map(({ status, provedBy, reason, ...rest }) => rest);
+      const committedShape = committed.sites.map(
+        ({ status, provedBy, statement, heldBy, reason, ...rest }) => rest,
+      );
       expect(committedShape).toEqual(derivedShape);
       expect(committed.scanned).toBe(derived.scanned);
       expect(committed.excluded).toEqual(derived.excluded);
@@ -1310,5 +1441,200 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
       expect(deriver).toHaveLength(1);
       expect(deriver[0]!.condition).toBeUndefined();
     });
+  });
+});
+
+/**
+ * Rule 9 -- an exemption names the test that holds its statement.
+ *
+ * ## The defect this rule answers
+ *
+ * Rule 4 asks an exemption to be longer than forty characters and distinct from
+ * its neighbours. That is a rule about **prose**, and prose cannot fail: the six
+ * throw exemptions shipped through v3.49 each carried a paragraph explaining why
+ * no test could reach the line, and none of them named the test that measures the
+ * claim the paragraph makes. `probe-m1-ceiling.mjs:118`'s reason said "`includes`
+ * over the same objects is exact, so the partition cannot fail to cover the
+ * dataset" -- and a test in `m1-ceiling-probe.test.ts` had been asserting exactly
+ * that for four rounds. The inventory simply did not say so.
+ *
+ * So the rule is not "an exemption needs a better sentence". It is: **state the
+ * claim, and name the test that measures it**. Where a claim was already held,
+ * naming it costs one line of JSON; where it was not, writing the test found the
+ * gaps this round closed (`build-example-bundle.test.ts` measured neither the
+ * uniqueness of the pack's paths nor that the example tree is flat, so a nested
+ * example file would have vanished from the download without a word;
+ * `type-miss-probe.test.ts` compared three counts against three recomputed counts
+ * without ever asserting that `classify` is total).
+ *
+ * ## What it can and cannot establish
+ *
+ * It establishes that the file resolves, that it is a test file, that a test with
+ * exactly that title exists, and that no two exemptions name the same test. It
+ * does **not** establish that the assertions inside that test really hold the
+ * claim -- that is not decidable from the inventory, and it is stated as the
+ * rule's limit rather than papered over. What it does establish is that deleting
+ * the test, renaming it, or pointing two claims at one test reds this gate, which
+ * is the difference between a sentence and a commitment.
+ *
+ * Unlike rule 3, `heldBy` does not require the file to mention the script. The
+ * claim is about an invariant, and the honest test often lives where the function
+ * lives -- `score.test.ts` holds the four published checks for a probe it never
+ * spawns, and that is the right place for it.
+ */
+describe('rule 9 · an exemption names the test that holds its statement', {
+  timeout: RULE_TIMEOUT_MS,
+}, () => {
+  const exempt = (): Throw[] => (committed.throws?.rows ?? []).filter((row) => row.status === 'exempt');
+
+  it('accepts the shipped tree, so the rule is not merely strict', () => {
+    // The negative control, and the reason this block is worth reading: every one
+    // of the six exemptions resolves, carries a statement, and names a test that
+    // exists under that exact title.
+    const problems = violationsOf(committed, ROOT).filter(
+      (problem) => problem.includes('holds its statement') || problem.includes('carries no test titled')
+        || problem.includes('claim a test could hold') || problem.includes('held by'),
+    );
+    expect(problems).toEqual([]);
+    expect(exempt().length).toBeGreaterThan(0);
+  });
+
+  it('states a claim for every exemption, rather than leaning on its reason', () => {
+    // A reason explains why the line cannot be reached; a statement is what a test
+    // can falsify. A row with only the first is the state this rule replaced, so
+    // the field is required rather than optional -- and it is stored in the table
+    // so a reader meets the claim before the explanation.
+    for (const row of exempt()) {
+      expect(typeof row.statement, `${row.script}:${String(row.line)}`).toBe('string');
+      expect(row.heldBy, `${row.script}:${String(row.line)}`).toBeDefined();
+    }
+  });
+
+  it('rejects an exemption that states no claim', () => {
+    const rows = (committed.throws?.rows ?? []).map((row) =>
+      row.status === 'exempt' ? { ...row, statement: undefined } : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-no-statement');
+    expect(violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot())).toContainEqual(
+      expect.stringContaining('claim a test could hold'),
+    );
+  });
+
+  it('rejects an exemption that names no test at all', () => {
+    // The exact shape all six shipped in: a reason, and nothing that can fail.
+    const rows = (committed.throws?.rows ?? []).map((row) =>
+      row.status === 'exempt' ? { ...row, heldBy: undefined } : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-no-heldby');
+    expect(violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot())).toContainEqual(
+      expect.stringContaining('without naming the test that holds its statement'),
+    );
+  });
+
+  it('rejects a holding test file that does not exist', () => {
+    const rows = (committed.throws?.rows ?? []).map((row) =>
+      row.status === 'exempt'
+        ? { ...row, heldBy: { file: 'packages/core/test/not-a-test.test.ts', test: row.heldBy?.test ?? '' } }
+        : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-heldby-missing');
+    expect(violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot())).toContainEqual(
+      expect.stringContaining('which does not exist'),
+    );
+  });
+
+  it('rejects a holding file that carries no test under that title', () => {
+    // The half that makes the pointer a claim rather than a path: a file can exist,
+    // mention the right things, and have had the test renamed out from under it.
+    const rows = (committed.throws?.rows ?? []).map((row) =>
+      row.status === 'exempt' && row.heldBy !== undefined
+        ? { ...row, heldBy: { ...row.heldBy, test: 'a test title this repository does not carry' } }
+        : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-heldby-title');
+    expect(violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot())).toContainEqual(
+      expect.stringContaining('carries no test titled'),
+    );
+  });
+
+  it('rejects a holding file that is not a test file', () => {
+    const rows = (committed.throws?.rows ?? []).map((row) =>
+      row.status === 'exempt' && row.heldBy !== undefined
+        ? { ...row, heldBy: { ...row.heldBy, file: row.script } }
+        : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-heldby-not-a-test');
+    expect(violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot())).toContainEqual(
+      expect.stringContaining('which is not a test file'),
+    );
+  });
+
+  it('rejects two exemptions held by the same test', () => {
+    // One claim, one test. Two rows pointing at one title means one of them is
+    // measured by a test written for the other -- the pasted-down column rule 4
+    // catches for `reason`, one layer out. The reasons stay distinct here, so the
+    // rejection can only come from rule 9.
+    const held = exempt().find((row) => row.heldBy !== undefined)?.heldBy;
+    expect(held).toBeDefined();
+    const rows = (committed.throws?.rows ?? []).map((row) =>
+      row.status === 'exempt' ? { ...row, heldBy: held } : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-heldby-shared');
+    expect(violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot())).toContainEqual(
+      expect.stringContaining('held by the same test'),
+    );
+  });
+
+  it('rejects two exemptions that state the same claim', () => {
+    const statement = 'The same sentence pasted down a column states nothing about either line.';
+    const rows = (committed.throws?.rows ?? []).map((row) =>
+      row.status === 'exempt' ? { ...row, statement } : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-statement-repeated');
+    expect(violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot())).toContainEqual(
+      expect.stringContaining('repeated exemption statement'),
+    );
+  });
+
+  it('rejects a proved throw that also carries an exemption claim', () => {
+    // A proved row says a test arrives; a statement-and-heldBy pair says none can
+    // reach it and instead measures a claim about the code. Both in one row is two
+    // accounts of the line, so the pair is refused rather than resolved.
+    const rows = (committed.throws?.rows ?? []).map((row) =>
+      row.status === 'proved'
+        ? {
+            ...row,
+            statement: 'This row is proved and also states a claim no test can reach it, which cannot both hold.',
+            heldBy: { file: 'packages/core/test/score.test.ts', test: 'publishes the four vocabulary checks the probe requires, one per field' },
+          }
+        : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-proved-heldby');
+    expect(violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot())).toContainEqual(
+      expect.stringContaining("carries an exemption's claim"),
+    );
+  });
+
+  it('rejects an exit site that carries the throw partition\'s exemption columns', () => {
+    // Rule 9 is scoped to throws on purpose: an exit site's exemption says a
+    // *process* cannot be entered from a test, which is a different claim from an
+    // invariant a test can hold. The columns are refused rather than ignored, so
+    // half-applying the convention is visible instead of inert.
+    const exemptSite = committed.sites.find((site) => site.status === 'exempt');
+    expect(exemptSite).toBeDefined();
+    const problems = violationsOf(
+      {
+        ...committed,
+        sites: [
+          {
+            ...exemptSite,
+            statement: 'A claim attached to a site exemption, which rule 9 does not read there.',
+            heldBy: { file: 'packages/core/test/score.test.ts', test: 'publishes the four vocabulary checks the probe requires, one per field' },
+          } as Site,
+        ],
+      },
+      ROOT,
+    );
+    expect(problems).toContainEqual(expect.stringContaining("the throw partition's exemption columns"));
   });
 });

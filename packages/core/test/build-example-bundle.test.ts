@@ -1,9 +1,22 @@
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+
+import { MANIFEST_FILE_NAME } from '../src/pack/archive.js';
+import { EXAMPLE_PACK_PREFIX, buildExamplePack } from '../src/pack/example.js';
 
 /**
  * The scripts this file executes.
@@ -296,4 +309,99 @@ describe('scripts/build-example-bundle.mjs · what it refuses', () => {
     expect(meta.paths).toContain('MANIFEST.json');
     expect(meta.paths).toContain('examples/order-prod/MANIFEST.json');
   });
+});
+
+/**
+ * The gate's two internal invariants, measured on the tree that ships.
+ *
+ * Both are `throw`s inside `buildBundle()` that no input can reach: the pack ends
+ * by normalising its own output, so a duplicate path is refused before the gate
+ * sees one, and the manifest is appended by the pack itself. Both rows are
+ * therefore `exempt` in `golden-master/gate-sites.json` -- and until v3.50 each
+ * exemption was a *sentence*, which cannot fail.
+ *
+ * These two tests are the sentences made falsifiable. They are not aimed at the
+ * lines; they measure what the lines assert, on the shipped example tree and on
+ * the committed index the download page reads.
+ *
+ * The flat-read assertion is the part with teeth. `readExampleFiles()` walks one
+ * directory and skips entries that are not files, so an example tree that grew a
+ * subdirectory would lose it **silently** -- the pack would still build, still
+ * verify, and still be one file short. Nothing else in this repository looks at
+ * that, and it is the reason the statement is about the tree rather than about
+ * the archive.
+ */
+describe('the pack invariants · held by the shipped tree, not by a sentence', () => {
+  const exampleFiles = (): Record<string, string> => {
+    // Recursive, because the claim is about the *tree* and the shipped reader now
+    // walks it: a listing that stopped at the top level would agree with the old
+    // reader and disagree with the tree, which is finding 398 exactly.
+    const names = readdirSync(REAL_EXAMPLES, { recursive: true }).sort();
+    const files: Record<string, string> = {};
+    for (const name of names) {
+      const full = resolve(REAL_EXAMPLES, name);
+      if (!statSync(full).isFile()) continue;
+      files[`examples/order-prod/${name}`] = readFileSync(full, 'utf8');
+    }
+    expect(Object.keys(files).length).toBeGreaterThan(0);
+    return files;
+  };
+
+  /** Archive paths with the pack's own prefix removed, which is what the page lists. */
+  const shippedPaths = (): string[] =>
+    buildExamplePack(exampleFiles()).map((entry) => entry.path.slice(EXAMPLE_PACK_PREFIX.length + 1));
+
+  const committedIndex = (): { fileCount: number; paths: string[] } =>
+    JSON.parse(readFileSync(resolve(ROOT, 'site', 'assets', 'example-pack.json'), 'utf8')) as {
+      fileCount: number;
+      paths: string[];
+    };
+
+  it('ships each archive path once, so no example file can shadow another', () => {
+    const paths = shippedPaths();
+    expect(paths.length).toBeGreaterThan(Object.keys(exampleFiles()).length);
+    expect(new Set(paths).size, 'a repeated path means two files landed on one row').toBe(paths.length);
+
+    // The artefact the page serves, held to the same statement. A fresh build and
+    // the committed index are two readings of one archive, and the claim is about
+    // both: `fileCount` is the number of rows, so it cannot disagree with them.
+    const index = committedIndex();
+    expect(new Set(index.paths).size).toBe(index.paths.length);
+    expect(index.fileCount).toBe(index.paths.length);
+  });
+
+  it('carries a nested example rather than dropping it without a word', () => {
+    // Finding 398, reproduced as a fixture. The reader used to walk one directory
+    // and skip every entry that was not a file, so this tree produced a pack that
+    // was one file short of the tree it advertises -- and every gate in the
+    // repository agreed, because the index is written by the same reader.
+    //
+    // The tree is flat today, which is what made the defect invisible rather than
+    // harmless: the next example somebody adds under a subdirectory is the one
+    // that would have gone missing, and the download would have looked complete.
+    const tree = treeWithExamples((dir) => {
+      mkdirSync(join(dir, 'nested'), { recursive: true });
+      writeFileSync(join(dir, 'nested', 'extra.json'), '{"nested":true}\n');
+    });
+
+    expect(run(tree).status).toBe(0);
+    const meta = JSON.parse(
+      readFileSync(join(tree, 'site', 'assets', 'example-pack.json'), 'utf8'),
+    ) as { fileCount: number; paths: string[] };
+    expect(meta.paths).toContain('examples/order-prod/nested/extra.json');
+    expect(meta.fileCount).toBe(meta.paths.length);
+  });
+
+  it(
+    'carries every file in the real example tree and the manifest, and counts them in one number',
+    () => {
+      const paths = shippedPaths();
+      const files = Object.keys(exampleFiles());
+      for (const file of files) {
+        expect(paths, `${file} is in the tree and must be in the pack`).toContain(file);
+      }
+      expect(paths).toContain(MANIFEST_FILE_NAME);
+      expect([...paths].sort()).toEqual(committedIndex().paths.sort());
+    },
+  );
 });

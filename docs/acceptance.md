@@ -252,6 +252,30 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   summary line carries the count, and `ledger-runs.test.ts` holds a case per rejected shape
   (a nine-character commit, a thirteen-digit token, a named row followed by an unnamed one).
 
+- **An exemption names the test that holds its statement** (v3.50). Six throw rows were exempt,
+  and each exemption was a paragraph explaining why no test could reach the line. That is a rule
+  about prose, and prose cannot fail: four of the six had a test measuring their claim and never
+  said so, and two had none. Each row now carries a `statement` (the claim, falsifiable) and a
+  `heldBy` (`{file, test}`, exact title), and rule 9 of `gate-sites-are-proven.test.ts` refuses a
+  row without either, a file that does not exist, a file that is not a test, a title the file does
+  not carry, two exemptions held by one test, two exemptions stating one claim, and a proved row
+  that also carries an exemption's claim. Measured: renaming one title in the inventory turns the
+  rule red with the row and the title in the message. The rule's limit is stated where it is
+  implemented -- it checks that the title exists, not that the assertion inside it is the claim.
+- **A statement test must be able to fail against the defect it describes** (v3.50). The two pack
+  claims are measured on the shipped tree and on the committed index, not on a fixture: the pack
+  must list each path once, and must carry every file in `examples/order-prod` plus
+  `MANIFEST.json`. Writing them found `readExampleFiles()` walking one directory and skipping
+  every non-file silently, so an example in a subdirectory would have vanished from the download
+  with the index agreeing. Reproduced (`examples/order-prod/nested/extra.json`: 9 rows before, 10
+  after), fixed by a recursive walk, and the committed artefacts did not move a byte.
+- **A partition is closed by the classifier, not by two tallies agreeing** (v3.50). The type-miss
+  counts were compared with three counts computed in the test, which agrees with itself for any
+  number of kinds; a fourth kind would have incremented a key that does not exist and only the
+  exempt guard would have noticed. `classify`'s return set is now measured against the **shipped**
+  function over an adversarial table -- an empty pair, one that normalizes to nothing, one that
+  differs by case, one sharing a single token, and every recorded miss of both runs.
+
 ## L4 — Official reproduction (Golden Master, official metrics and round trip)
 
 - `golden-master/verify.mjs` re-runs every exporter against the self-contained

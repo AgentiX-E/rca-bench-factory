@@ -191,8 +191,9 @@
  * ## What this script owns, and what it does not
  *
  * The table carries four derived columns -- `script`, `line`, `condition`,
- * `diagnostic` -- and three hand-authored ones: `status`, `provedBy`, `reason`,
- * recording which test proves each site. This script owns only the first four.
+ * `diagnostic` -- and five hand-authored ones: `status`, `provedBy`, `statement`,
+ * `heldBy`, `reason`, recording which test proves each site, what an exemption
+ * claims, and which test holds that claim. This script owns only the first four.
  *
  * `--check` therefore compares the derived columns alone, and a rewrite carries
  * the annotations across. Before both of those were true the two halves fought:
@@ -850,8 +851,9 @@ function derive() {
  * Serialise the table.
  *
  * The four derived columns come first and in a fixed order, so a re-derivation
- * produces byte-identical text for an unchanged tree. The three hand-authored
- * columns are appended after them when present, in their own fixed order.
+ * produces byte-identical text for an unchanged tree. The hand-authored columns
+ * are appended after them when present, in their own fixed order -- `reason`
+ * last, because it explains why the claim before it cannot be proved.
  *
  * Carrying the annotations through is the whole reason this function cannot
  * simply rebuild each entry from a schema. It used to do exactly that, and the
@@ -893,6 +895,8 @@ function serialise({ sites, excluded, scanned, throws }) {
         if (row.message) entry.message = row.message;
         if (row.status) entry.status = row.status;
         if (row.provedBy) entry.provedBy = row.provedBy;
+        if (row.statement) entry.statement = row.statement;
+        if (row.heldBy) entry.heldBy = row.heldBy;
         if (row.reason) entry.reason = row.reason;
         return entry;
       }),
@@ -905,8 +909,8 @@ function serialise({ sites, excluded, scanned, throws }) {
  * Carry the annotation columns across a rewrite -- by fingerprint, not by position.
  *
  * Re-deriving used to overwrite the whole file, which silently discarded every
- * `status`, `provedBy` and `reason` -- the three columns that are the only
- * reason the table is more than a list.
+ * `status`, `provedBy`, `statement`, `heldBy` and `reason` -- the columns that are
+ * the only reason the table is more than a list.
  *
  * The first repair matched annotations by `script:line` and said so: "a moved
  * guard loses a stale proof rather than inheriting a wrong one". The second half
@@ -996,7 +1000,7 @@ function carryColumns(rows, priorRows, fingerprint) {
     }
     candidates.splice(candidates.indexOf(before), 1);
     const entry = { ...row };
-    for (const column of ['status', 'provedBy', 'reason']) {
+    for (const column of ['status', 'provedBy', 'statement', 'heldBy', 'reason']) {
       if (before[column] !== undefined) entry[column] = before[column];
     }
     if (entry.status !== undefined) carried += 1;
@@ -1035,9 +1039,10 @@ function main() {
     /**
      * Compare only the columns this script owns.
      *
-     * The committed table carries three hand-authored columns as well --
-     * `status`, `provedBy` and `reason` -- recording which test proves each site
-     * and why any site is exempt. Comparing whole objects would report every
+     * The committed table carries hand-authored columns as well --
+     * `status`, `provedBy`, `statement`, `heldBy` and `reason` -- recording which
+     * test proves each site, what an exemption claims, and why the line itself
+     * cannot be reached. Comparing whole objects would report every
      * annotated site as "the guard's text changed", because the derived side has
      * no annotations to match. That is not drift; it is the annotation doing its
      * job, and a check that cannot tell the two apart fails on every correct

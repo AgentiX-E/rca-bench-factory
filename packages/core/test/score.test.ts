@@ -254,6 +254,30 @@ describe('checkRca100Structure', () => {
     expect(report.checks.every((c) => c.passed)).toBe(true);
   });
 
+  it('publishes the four vocabulary checks the probe requires, one per field', () => {
+    // `scripts/probe-type-misses.mjs:269` throws when one of these is missing, and
+    // it is exempt in the inventory because the ids come from the function that
+    // publishes them -- the guard fires only if that function loses a check. This
+    // is the claim that guard makes, measured: all four are published, once each,
+    // on an export that passes. A check renamed or dropped reds here rather than
+    // leaving a sentence in the inventory asserting it exists.
+    //
+    // The four are separate on purpose. `entity-set-in-vocabulary` is scoped to
+    // `metrics.json`, the two type clauses read different fields, and
+    // `topology-shape` is the structure they all sit in; one check wearing four
+    // names would pass a spot check of any single id.
+    const report = checkRca100Structure(rca100Files());
+    const ids = report.checks.map((check) => check.id);
+    for (const id of [
+      'topology-shape',
+      'entity-types-in-vocabulary',
+      'edge-types-in-vocabulary',
+      'entity-set-in-vocabulary',
+    ]) {
+      expect(ids.filter((seen) => seen === id), `${id} must be published exactly once`).toHaveLength(1);
+    }
+  });
+
   it('fails when there are no case directories', () => {
     const report = checkRca100Structure({});
     expect(report.checks.find((c) => c.id === 'case-present')?.passed).toBe(false);

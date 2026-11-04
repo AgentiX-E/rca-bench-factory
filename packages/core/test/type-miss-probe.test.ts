@@ -281,6 +281,46 @@ describe('the type misses are classified by a stated rule, not by taste', () => 
     }
   });
 
+  it('classify returns one of its three kinds for every row, so the counts cannot leave one out', () => {
+    // `scripts/probe-type-misses.mjs:1268` throws when the three counts do not add
+    // up to the rows, and the row is exempt in the inventory because `classify` is
+    // total: every pair it is handed comes back as one of exactly three strings, so
+    // the partition cannot leave a row unaccounted for. This is that claim measured
+    // -- against the shipped `classify`, not against this file's copy, because the
+    // shipped one is what the counts are incremented by.
+    //
+    // The table is adversarial on purpose: the normalizer folds whitespace and
+    // punctuation, so an empty pair, a pair that normalizes to nothing, a pair that
+    // differs only by case, and one that shares a token all have to land somewhere
+    // rather than returning `undefined`.
+    const adversarial: [string, string][] = [
+      ['cpu-saturation', 'CPU_Saturation'],
+      ['cpu-saturation', 'cpu saturation'],
+      ['cpu-saturation', 'saturation'],
+      ['cpu-saturation', 'network-loss'],
+      ['', ''],
+      ['', 'pod-kill'],
+      ['---', '---'],
+      ['K8s.Pod-OOM', 'k8s pod oom'],
+      ['unicode-fault', 'ünïcode fault'],
+      ['a', 'a-b-c-d-e'],
+    ];
+    const recorded = (Object.keys(RECORDED_RUNS) as RecordedRun[]).flatMap((run) =>
+      recordedTypeMisses(run).map(([, expected, actual]) => [expected, actual] as [string, string]),
+    );
+    const pairs = [...adversarial, ...recorded];
+    const kinds = readFromProbe<string[]>(`${JSON.stringify(pairs)}.map(([e, a]) => m.classify(e, a))`);
+
+    expect(kinds).toHaveLength(pairs.length);
+    const allowed = ['form-variant', 'shares-token', 'different-mechanism'];
+    for (const [index, kind] of kinds.entries()) {
+      expect(
+        allowed,
+        `${JSON.stringify(pairs[index])} classified as '${kind}', which is not one the counts hold`,
+      ).toContain(kind);
+    }
+  });
+
   it('the recorded misses are well formed, so a careless edit fails here', () => {
     // The rows are read from recorded bytes rather than transcribed, so the shape
     // assertion is no longer a guard on a hand copy -- it is a guard on the reader
