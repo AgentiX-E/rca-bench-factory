@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { budgetErrors, budgetSummary } from './ci-budget.mjs';
 import { readWorkflow, workflowPath } from './gate-steps.mjs';
+import { readLedger, VOLUMES } from './ledger-runs.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 
@@ -32,6 +33,17 @@ const ROOT = resolve(import.meta.dirname, '..');
  */
 const BASELINE = resolve(ROOT, process.env['RCA_CI_BASELINE'] ?? join('golden-master', 'ci-baseline.json'));
 
+/**
+ * Where the progress ledger lives, overridable for the same reason the recording is.
+ *
+ * `R7` compares the recording against the newest run the ledger reports, and both of its
+ * refusals are about a state the shipped tree is never in -- a recording one run behind,
+ * and a closing row that names no run. Neither can be observed by spawning this against
+ * the tree, and a test that edited a committed volume would be editing the log to test
+ * the log.
+ */
+const LEDGER = process.env['RCA_CI_LEDGER'] === undefined ? VOLUMES : resolve(ROOT, process.env['RCA_CI_LEDGER']);
+
 const workflow = readWorkflow(readFileSync(workflowPath(), 'utf8'));
 if (workflow.errors.length > 0) {
   process.stderr.write(`check-ci-budget: ci.yml does not parse:\n  ${workflow.errors.join('\n  ')}\n`);
@@ -46,10 +58,11 @@ try {
   process.exit(1);
 }
 
-const errors = budgetErrors(workflow, baseline);
+const ledger = readLedger(LEDGER);
+const errors = budgetErrors(workflow, baseline, ledger);
 if (errors.length > 0) {
   for (const error of errors) process.stderr.write(`check-ci-budget: ${error}\n`);
   process.stdout.write(`check-ci-budget: FAILED — ${String(errors.length)} problem(s)\n`);
   process.exit(1);
 }
-process.stdout.write(`${budgetSummary(workflow, baseline)}\n`);
+process.stdout.write(`${budgetSummary(workflow, baseline, ledger)}\n`);

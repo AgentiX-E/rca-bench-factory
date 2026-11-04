@@ -48,6 +48,21 @@
 // two sets in both directions -- so a job added tomorrow is a red gate until somebody
 // measures it, which is the only way the numbers stay numbers.
 //
+// ## The fifth question, which no number in the recording can answer (v3.49)
+//
+// Every rule above compares the recording against the workflow and against itself, and
+// all of them can pass on a recording of a tree that is no longer the one shipping. That
+// is not hypothetical: the round that gave the recording its job coverage shipped at
+// `91e320884`, the ledger gained a row citing run `41677264353`, and the recording stayed
+// at `41670923224`. Nothing refused it, and nothing could -- a stale recording is made of
+// real measurements of a real tree, and the only thing wrong with it is *when*.
+//
+// The ledger is the second opinion, because it is where a round writes down which run it
+// ended on. So the last rule is not about a bound at all: the recording may not be older
+// than the newest run the ledger reports, and the ledger's newest row has to name a run,
+// because otherwise there is nothing to compare against and the silence looks like
+// agreement. `ledger-runs.mjs` does the reading; the rule is `R7`.
+//
 // ## The fourth thing the arithmetic says
 //
 // Adding `R3` to a shipped tree immediately refuses more than a missing bound: it
@@ -111,13 +126,53 @@ function secondsOf(record, name) {
 }
 
 /**
+ * R7 -- the recording is not older than the round that reports it.
+ *
+ * Two failures, and the second is the one that makes the first meaningful. A newest row
+ * that names no run leaves the recording unopposed: every other rule passes, and the
+ * gate's silence reads as agreement with a round it never compared itself to. So the
+ * refusal is about the *ledger's* completeness as much as about the recording's age, and
+ * the sentence says which of the two the reader has to repair.
+ *
+ * `ledger` is null when the caller has no ledger to offer, and the rules are then absent
+ * rather than passing: a caller that does not pass one has not asked the question, and a
+ * module that answers questions nobody asked is the defect this file is about.
+ */
+export function ledgerErrors(baseline, ledger) {
+  if (ledger === null || ledger === undefined || ledger.read !== true) return [];
+  if (ledger.tail === null) return [];
+  const errors = [];
+  if (ledger.tail.runs.length === 0) {
+    errors.push(
+      `the ledger's newest closing reading (\`${ledger.tail.file}:${String(ledger.tail.line)}\`) ` +
+        'names no run, so nothing can say whether the recording describes the tree that reading ' +
+        'describes: end the row with the run id, as `| CI | run \`<id>\` on \`<commit>\`: ...` does',
+    );
+  }
+  if (
+    ledger.newest !== null &&
+    Number.isInteger(baseline.run) &&
+    baseline.run < ledger.newest.run
+  ) {
+    errors.push(
+      `the recording is from run ${String(baseline.run)} and \`${ledger.newest.file}:` +
+        `${String(ledger.newest.line)}\` reports run ${String(ledger.newest.run)}: a recording older ` +
+        'than the round that reports it describes a tree nobody shipped, so its seconds size the ' +
+        `bounds of a workflow that has since run -- take a new reading with \`node ` +
+        `scripts/measure-ci-baseline.mjs ${String(ledger.newest.run)}\``,
+    );
+  }
+  return errors;
+}
+
+/**
  * Every way the budget can be wrong, given the workflow and the recording.
  *
  * Returns sentences rather than a boolean, because there are six different repairs
  * behind the rules and a reader who is told "budgets: FAILED" has to guess which.
  */
-export function budgetErrors(workflow, baseline) {
-  const errors = [];
+export function budgetErrors(workflow, baseline, ledger = null) {
+  const errors = [...ledgerErrors(baseline, ledger)];
 
   // R1 -- the recording is a reading, and it says where it was taken.
   if (!Number.isInteger(baseline.run) || baseline.run <= 0) {
@@ -270,12 +325,39 @@ export function budgetErrors(workflow, baseline) {
 }
 
 /**
+ * How the recording compares with the newest run the ledger reports.
+ *
+ * Printed rather than implied, because the comparison is the whole content of `R7`: a
+ * reader who sees "as of run N; the ledger's newest run is N" knows the two were checked,
+ * and a reader who sees a count of rows that name no run knows what the check could not see.
+ */
+function ledgerText(ledger, baseline) {
+  if (ledger === null || ledger === undefined || ledger.read !== true) {
+    return 'no ledger to compare against';
+  }
+  const unnamed =
+    ledger.unnamed.length === 0
+      ? ''
+      : `, ${String(ledger.unnamed.length)} earlier row(s) name no run`;
+  if (ledger.newest === null) return `the ledger reports no run${unnamed}`;
+  // Equality is "(the recording)" and the other legal case is a recording from a refresh,
+  // which is newer than the round that prompted it. The distance between the two ids is
+  // deliberately not printed: run ids are sparse, so their difference reads as a count of
+  // runs and is not one.
+  const relation =
+    ledger.newest.run === baseline.run
+      ? ' (the recording)'
+      : `; the recording (${String(baseline.run)}) is newer`;
+  return `the ledger's newest run is ${String(ledger.newest.run)}${relation}${unnamed}`;
+}
+
+/**
  * The reading a green run prints: what the bounds cost against what the jobs measured.
  *
  * The jobs excused from step bounds are named here rather than in an error, because
  * the exception is legitimate and the reader should see it being taken.
  */
-export function budgetSummary(workflow, baseline) {
+export function budgetSummary(workflow, baseline, ledger = null) {
   const recorded = baseline.jobs ?? {};
   let measured = 0;
   let steps = 0;
@@ -317,6 +399,6 @@ export function budgetSummary(workflow, baseline) {
     `step(s) bounded, ${String(Math.round(measured / 60))} min measured (as of run ` +
     `${String(baseline.run)}); bounds total ${String(Math.round(bounds / 60))} min; tightest ` +
     `${tightest.name} at ${Number.isFinite(tightest.ratio) ? tightest.ratio.toFixed(1) : 'unmeasured'}x; ` +
-    excusedText
+    `${excusedText}; ${ledgerText(ledger, baseline)}`
   );
 }

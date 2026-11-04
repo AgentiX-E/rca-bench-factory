@@ -142,6 +142,16 @@ const REGISTER: Record<string, Entry> = {
       'milestone rests on disagreeing with itself.',
   },
 
+  'ledger-runs.mjs': {
+    class: 'data',
+    why:
+      'The workflow runs the progress ledger reports, as functions: which rows are closing readings, ' +
+      'which run ids they name, and which rows name none. It exists because the budget gate could check ' +
+      'every number in the recording and still not notice that the recording described a tree nobody ' +
+      'shipped -- the ledger is the only place that says which run a round ended on. No main and no ' +
+      'exit: `check-ci-budget.mjs` holds the verdict, so this file is importable by the cases that ' +
+      'drive it, and the gate stays a file the meta-gate can hollow out.',
+  },
   'type-miss-readings.mjs': {
     class: 'data',
     why:

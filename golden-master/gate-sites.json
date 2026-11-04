@@ -1,6 +1,6 @@
 {
   "rule": "a process.exit(...) call whose argument is not a known zero -- no argument at all is zero; sites and zero partition every process.exit call, whatever position the call sits in; a reference to the exit family that is not a call is refused rather than counted; see scripts/derive-gate-sites.mjs",
-  "scanned": 78,
+  "scanned": 79,
   "excluded": {
     "zero": 16
   },
@@ -83,7 +83,7 @@
     },
     {
       "script": "scripts/check-ci-budget.mjs",
-      "line": 38,
+      "line": 50,
       "condition": "workflow.errors.length > 0",
       "diagnostic": "check-ci-budget: ci.yml does not parse:\\n ${workflow.errors.join('\\n ')}\\n",
       "status": "proved",
@@ -91,7 +91,7 @@
     },
     {
       "script": "scripts/check-ci-budget.mjs",
-      "line": 46,
+      "line": 58,
       "condition": "catch",
       "diagnostic": "check-ci-budget: no recording at ${BASELINE} -- ${String(error)}\\n",
       "status": "proved",
@@ -99,7 +99,7 @@
     },
     {
       "script": "scripts/check-ci-budget.mjs",
-      "line": 53,
+      "line": 66,
       "condition": "errors.length > 0",
       "diagnostic": "check-ci-budget: ${error}\\n",
       "status": "proved",

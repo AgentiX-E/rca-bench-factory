@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,9 +11,11 @@ import {
   budgetErrors,
   budgetSummary,
   jobsOf,
+  ledgerErrors,
   stepsOf,
 } from '../../../scripts/ci-budget.mjs';
 import { readWorkflow } from '../../../scripts/gate-steps.mjs';
+import { readLedger } from '../../../scripts/ledger-runs.mjs';
 
 /**
  * A budget per step, sized by a measurement rather than by a guess.
@@ -328,6 +330,140 @@ describe('which jobs bound their steps at all', () => {
   });
 });
 
+/** A ledger fixture: the newest closing reading, and the rows that name no run. */
+function ledgerFixture(over: Record<string, unknown> = {}) {
+  return {
+    read: true,
+    rows: [{ file: 'volume-10.md', line: 2056, runs: [41670923224] }],
+    unnamed: [],
+    newest: { run: 41670923224, file: 'volume-10.md', line: 2056 },
+    tail: { file: 'volume-10.md', line: 2056, runs: [41670923224] },
+    ...over,
+  };
+}
+
+describe('the recording against the round that reports it', () => {
+  it('refuses a recording older than the newest run the ledger reports', () => {
+    // The defect the rule exists for, measured rather than imagined: the round that gave
+    // the recording its job coverage shipped at `91e320884`, the ledger gained a row citing
+    // run `41677264353`, and the recording stayed at `41670923224`. Every other rule passed
+    // -- each number in it was a real measurement of a real tree, and only the tree had moved.
+    const workflow = oneJob([...step('One battery', 12)]);
+    const recording = recordingOf({ batteries: { steps: { 'One battery': 351 } } });
+    const errors = ledgerErrors(recording, ledgerFixture({
+      newest: { run: 41677264353, file: 'volume-10.md', line: 2071 },
+      tail: { file: 'volume-10.md', line: 2071, runs: [41677264353] },
+    })).join('\n');
+    expect(errors).toContain('the recording is from run 41637098008');
+    expect(errors).toContain('reports run 41677264353');
+    expect(errors).toContain('describes a tree nobody shipped');
+    // The repair is a command rather than an instruction, because the reader is the
+    // person who can run it and the run id is the whole argument.
+    expect(errors).toContain('measure-ci-baseline.mjs 41677264353');
+    // And the two rules compose: the bounds are fine, and the question they answer is
+    // about a tree that has since run again.
+    expect(budgetErrors(workflow, recording, ledgerFixture({
+      newest: { run: 41677264353, file: 'volume-10.md', line: 2071 },
+      tail: { file: 'volume-10.md', line: 2071, runs: [41677264353] },
+    })).join('\n')).toContain('describes a tree nobody shipped');
+  });
+
+  it('accepts a recording taken from the run the ledger reports', () => {
+    const workflow = oneJob([...step('One battery', 12)]);
+    const recording = recordingOf({ batteries: { steps: { 'One battery': 351 } } }, { run: 41670923224 });
+    expect(budgetErrors(workflow, recording, ledgerFixture())).toEqual([]);
+  });
+
+  it('accepts a recording newer than the ledger, because a refresh is not a round', () => {
+    // A round states which run it ended on and the recording is refreshed from it; the
+    // commit that carries the refresh gets its own CI run, and no round reports it. So the
+    // recording is allowed to be ahead -- and being ahead is what the refresh produces.
+    const workflow = oneJob([...step('One battery', 12)]);
+    const recording = recordingOf({ batteries: { steps: { 'One battery': 351 } } }, { run: 41670923224 });
+    const behind = ledgerFixture({
+      newest: { run: 41670000000, file: 'volume-10.md', line: 2000 },
+      tail: { file: 'volume-10.md', line: 2000, runs: [41670000000] },
+    });
+    expect(budgetErrors(workflow, recording, behind)).toEqual([]);
+    expect(budgetSummary(workflow, recording, behind)).toContain('the recording (41670923224) is newer');
+  });
+
+  it('refuses a ledger whose newest row names no run, because nothing was compared', () => {
+    // The half of the rule that makes the other half mean something: a row that reports a
+    // wall clock without naming its run leaves the recording unopposed, and the gate's
+    // silence then reads as agreement with a round it never looked at.
+    const workflow = oneJob([...step('One battery', 12)]);
+    const recording = recordingOf({ batteries: { steps: { 'One battery': 351 } } });
+    const errors = ledgerErrors(recording, ledgerFixture({
+      tail: { file: 'volume-10.md', line: 2062, runs: [] },
+    })).join('\n');
+    expect(errors).toContain('volume-10.md:2062');
+    expect(errors).toContain('names no run');
+    expect(errors).toContain('end the row with the run id');
+  });
+
+  it('asks nothing when it is given no ledger, and prints that it could not compare', () => {
+    // A caller with no ledger has not asked whether the recording is current, and a module
+    // that answers unasked questions is what this file was written against. The summary
+    // says so instead of implying agreement.
+    const workflow = oneJob([...step('One battery', 12)]);
+    const recording = recordingOf({ batteries: { steps: { 'One battery': 351 } } });
+    expect(ledgerErrors(recording, null)).toEqual([]);
+    expect(budgetSummary(workflow, recording, null)).toContain('no ledger to compare against');
+    // `read: false` is a tree whose volumes could not be read: also not a comparison.
+    expect(ledgerErrors(recording, { read: false, rows: [], unnamed: [], newest: null, tail: null })).toEqual([]);
+  });
+
+  it('prints that the recording is the ledger\'s run, so the comparison is visible', () => {
+    const workflow = oneJob([...step('One battery', 12)]);
+    const recording = recordingOf({ batteries: { steps: { 'One battery': 351 } } }, { run: 41670923224 });
+    expect(budgetSummary(workflow, recording, ledgerFixture())).toContain(
+      "the ledger's newest run is 41670923224 (the recording)",
+    );
+  });
+
+  it('counts the rows that name no run, so a gap in the log is stated rather than silent', () => {
+    const workflow = oneJob([...step('One battery', 12)]);
+    const recording = recordingOf({ batteries: { steps: { 'One battery': 351 } } });
+    const summary = budgetSummary(
+      workflow,
+      recordingOf({ batteries: { steps: { 'One battery': 351 } } }, { run: 41670923224 }),
+      ledgerFixture({ unnamed: [{ file: 'volume-03.md', line: 1174, runs: [] }] }),
+    );
+    expect(summary).toContain('1 earlier row(s) name no run');
+  });
+
+  it('refuses through the gate, with the ledger named, rather than only inside a function', () => {
+    // The rule as the runner meets it. The ledger path is a seam for the same reason the
+    // recording is: both refusals describe a state the shipped tree is never in, and a test
+    // that edited a committed volume would be editing the log to test the log.
+    const dir = mkdtempSync(join(tmpdir(), 'rca-ci-ledger-'));
+    const stale = join(dir, 'volumes');
+    mkdirSync(stale);
+    writeFileSync(
+      join(stale, 'volume-01.md'),
+      '## v0.1\n\n> Ledger for `v0.1`.\n\n| CI | run `41999999999` on `abc`: 7 of 7 jobs success |\n',
+    );
+    const older = spawnSync(process.execPath, [GATE], {
+      encoding: 'utf8',
+      env: { ...process.env, RCA_CI_LEDGER: stale },
+    });
+    expect(older.status).toBe(1);
+    expect(older.stdout).toContain('check-ci-budget: FAILED');
+    expect(older.stderr).toContain('reports run 41999999999');
+
+    const silent = join(dir, 'silent');
+    mkdirSync(silent);
+    writeFileSync(join(silent, 'volume-01.md'), '## v0.2\n\n> Ledger for `v0.2`.\n\n| CI | **five jobs green** |\n');
+    const unnamed = spawnSync(process.execPath, [GATE], {
+      encoding: 'utf8',
+      env: { ...process.env, RCA_CI_LEDGER: silent },
+    });
+    expect(unnamed.status).toBe(1);
+    expect(unnamed.stderr).toContain('names no run');
+  });
+});
+
 describe('the recording the gate reads', () => {
   it('prints what the bounds cost against what the jobs measured', () => {
     const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)]);
@@ -401,7 +537,7 @@ describe('the recording the gate reads', () => {
   it('states the multiple and the floor in one place, which the shipped bounds satisfy', () => {
     const workflow = readWorkflow(readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8'));
     const baseline = JSON.parse(readFileSync(join(ROOT, 'golden-master', 'ci-baseline.json'), 'utf8'));
-    expect(budgetErrors(workflow, baseline)).toEqual([]);
+    expect(budgetErrors(workflow, baseline, readLedger())).toEqual([]);
     for (const job of jobsOf(workflow)) {
       for (const step of stepsOf(workflow, job.id)) {
         if (step.inheritedFrom === null) continue;
