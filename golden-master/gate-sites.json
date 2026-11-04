@@ -1,8 +1,8 @@
 {
   "rule": "a process.exit(...) call whose argument is not a known zero -- no argument at all is zero; sites and zero partition every process.exit call, whatever position the call sits in; a reference to the exit family that is not a call is refused rather than counted; see scripts/derive-gate-sites.mjs",
-  "scanned": 79,
+  "scanned": 80,
   "excluded": {
-    "zero": 16
+    "zero": 17
   },
   "sites": [
     {
@@ -22,7 +22,7 @@
     },
     {
       "script": "scripts/build-example-bundle.mjs",
-      "line": 118,
+      "line": 202,
       "condition": "!ok",
       "diagnostic": "${path} is stale - run \\",
       "status": "proved",
@@ -401,7 +401,7 @@
     },
     {
       "script": "scripts/derive-gate-sites.mjs",
-      "line": 220,
+      "line": 221,
       "diagnostic": "derive-gate-sites: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/gate-sites-are-proven.test.ts"
@@ -659,6 +659,54 @@
       "provedBy": "packages/core/test/fault-extraction-scripts.test.ts"
     },
     {
+      "script": "scripts/verify-claims-are-sensitive.mjs",
+      "line": 103,
+      "condition": "unknown.length > 0",
+      "diagnostic": "usage: node scripts/verify-claims-are-sensitive.mjs [--list]\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/claims-are-sensitive.test.ts"
+    },
+    {
+      "script": "scripts/verify-claims-are-sensitive.mjs",
+      "line": 116,
+      "condition": "catch",
+      "diagnostic": "verify-claims-are-sensitive: cannot read ${relative(ROOT, INVENTORY) || INVENTORY} -- ${String(error)}\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/claims-are-sensitive.test.ts"
+    },
+    {
+      "script": "scripts/verify-claims-are-sensitive.mjs",
+      "line": 132,
+      "condition": "exempt.length === 0",
+      "diagnostic": "verify-claims-are-sensitive: ${relative(ROOT, INVENTORY) || INVENTORY} holds no exempt",
+      "status": "proved",
+      "provedBy": "packages/core/test/claims-are-sensitive.test.ts"
+    },
+    {
+      "script": "scripts/verify-claims-are-sensitive.mjs",
+      "line": 172,
+      "condition": "missing.length > 0",
+      "diagnostic": "verify-claims-are-sensitive: ${String(where.row.script)}:${String(where.row.line)} is exempt",
+      "status": "proved",
+      "provedBy": "packages/core/test/claims-are-sensitive.test.ts"
+    },
+    {
+      "script": "scripts/verify-claims-are-sensitive.mjs",
+      "line": 257,
+      "condition": "for (const [signal, code] of [ ['SIGINT', 130], ['SIGTERM', 143], ])",
+      "verdict": "code",
+      "status": "proved",
+      "provedBy": "packages/core/test/claims-are-sensitive.test.ts"
+    },
+    {
+      "script": "scripts/verify-claims-are-sensitive.mjs",
+      "line": 385,
+      "condition": "failures > 0",
+      "diagnostic": "verify-claims-are-sensitive: FAILED -- ${String(failures)} problem(s)\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/claims-are-sensitive.test.ts"
+    },
+    {
       "script": "scripts/verify-example-pack.mjs",
       "line": 79,
       "condition": "paths.length === 0",
@@ -893,7 +941,7 @@
     "rule": "every throw statement, partitioned four ways: `fatal` (no enclosing function, no enclosing try) ends the process and is proved like a site; `unguarded` (in a function, no enclosing try) hands control to its caller, which decides; `guarded` (in a try block) is caught here; `rethrow` (in a catch, rethrowing the caught binding) carries a decision made above. A try or a catch stops at a function boundary, because neither is on the stack when the function runs elsewhere. fatal + unguarded + guarded + rethrow is the number of throw statements; see scripts/derive-gate-sites.mjs",
     "counts": {
       "fatal": 4,
-      "unguarded": 33,
+      "unguarded": 35,
       "guarded": 1,
       "rethrow": 3
     },
@@ -908,7 +956,7 @@
       },
       {
         "script": "scripts/build-example-bundle.mjs",
-        "line": 72,
+        "line": 118,
         "disposition": "unguarded",
         "message": "the example pack contains duplicate paths",
         "status": "exempt",
@@ -917,11 +965,17 @@
           "file": "packages/core/test/build-example-bundle.test.ts",
           "test": "ships each archive path once, so no example file can shadow another"
         },
+        "mutant": {
+          "file": "packages/core/src/pack/example.ts",
+          "find": "  return normalizePackEntries([...packed, { path: manifestPath, content: manifest }]);",
+          "replace": "  return [...normalizePackEntries([...packed, { path: manifestPath, content: manifest }]), { path: manifestPath, content: manifest }];",
+          "defect": "the pack appends the manifest twice, so one archive path shadows another and `fileCount` counts a row nobody can extract"
+        },
         "reason": "A duplicate path in the pack cannot reach this line. The pack ends by normalising its own output through `normalizePackEntries`, which refuses a repeated path first -- and that refusal is held by `pack-archive.test.ts`. The case a reader would try, an example directory holding its own `MANIFEST.json`, does not collide either: example files are prefixed with `examples/order-prod/`, so the two rows differ. `build-example-bundle.test.ts` measures that, and this line stays as a guard on the pack contract rather than on an input."
       },
       {
         "script": "scripts/build-example-bundle.mjs",
-        "line": 75,
+        "line": 121,
         "disposition": "unguarded",
         "message": "the example pack must ship a MANIFEST.json to be verifiable",
         "status": "exempt",
@@ -930,7 +984,40 @@
           "file": "packages/core/test/build-example-bundle.test.ts",
           "test": "carries every file in the real example tree and the manifest, and counts them in one number"
         },
+        "mutant": {
+          "file": "packages/core/src/pack/example.ts",
+          "find": "{ path: manifestPath, content: manifest }",
+          "replace": "{ path: `${prefix}/MANIFEST.txt`, content: manifest }",
+          "defect": "the manifest ships under a name no reader looks for, so the download stops being verifiable"
+        },
         "reason": "The pack always appends `MANIFEST.json` (`buildExamplePack` ends with it), so a tree in which the manifest is absent from the archive is a tree whose pack has been changed -- and the pack is tested where it lives. The guard states the contract the download page depends on: the archive the page advertises is one a reader can verify."
+      },
+      {
+        "script": "scripts/build-example-bundle.mjs",
+        "line": 133,
+        "disposition": "unguarded",
+        "message": "the example pack does not carry ${missing.join(', ')}",
+        "status": "exempt",
+        "statement": "The tree comparison names every file the pack's reader did not carry, and names none when it carried them all.",
+        "heldBy": {
+          "file": "packages/core/test/build-example-bundle.test.ts",
+          "test": "names a tree file the pack does not carry, and is silent when it carries them all"
+        },
+        "mutant": {
+          "file": "scripts/build-example-bundle.mjs",
+          "find": "  return treeListing(dir).filter((path) => !carried.includes(path));",
+          "replace": "  return [];",
+          "defect": "the comparison answers \"nothing is missing\" for every tree, so a reader that dropped a file would build a short download with every gate agreeing"
+        },
+        "reason": "The reader and the listing walk the same directory, so a file the reader skips is a defect in the reader rather than a state of the tree, and no input can produce one from outside."
+      },
+      {
+        "script": "scripts/build-example-bundle.mjs",
+        "line": 143,
+        "disposition": "unguarded",
+        "message": "new Error( `the example pack holds ${String(entries.length)} row(s) and the tree holds ` + `${String(inTree.length)} fil",
+        "status": "proved",
+        "provedBy": "packages/core/test/build-example-bundle.test.ts"
       },
       {
         "script": "scripts/check-citations.mjs",
@@ -958,7 +1045,7 @@
       },
       {
         "script": "scripts/derive-gate-sites.mjs",
-        "line": 476,
+        "line": 477,
         "disposition": "unguarded",
         "message": "new Error( `${name}: the parser rejected this file (${String(file.parseDiagnostics.length)} error(s)), ` + 'so no exit c",
         "status": "proved",
@@ -966,7 +1053,7 @@
       },
       {
         "script": "scripts/derive-gate-sites.mjs",
-        "line": 545,
+        "line": 546,
         "disposition": "unguarded",
         "message": "new Error( `${name}: ${String(refusals.length)} reference(s) to the exit family that this inventory cannot ` + 'classify",
         "status": "proved",
@@ -974,7 +1061,7 @@
       },
       {
         "script": "scripts/derive-gate-sites.mjs",
-        "line": 632,
+        "line": 633,
         "disposition": "unguarded",
         "message": "new Error( `${name}: the parser rejected this file (${String(file.parseDiagnostics.length)} error(s)), ` + 'so no throw ",
         "status": "proved",
@@ -1135,6 +1222,12 @@
           "file": "packages/core/test/measure-doc-counts-readings.test.ts",
           "test": "raises a MeasurementUnavailable for every state it diagnoses, so the rethrow carries only defects"
         },
+        "mutant": {
+          "file": "scripts/doc-counts-rows.mjs",
+          "find": "throw new MeasurementUnavailable(`the ${scope} summary cannot be read`",
+          "replace": "throw new Error(`the ${scope} summary cannot be read`",
+          "defect": "a transcript that carries no summary is refused as a plain Error, so a caller catching the measurement's diagnoses never sees it"
+        },
         "reason": "This is the line that re-throws whatever the two reading paths raised that is *not* a diagnosis. Every state of the tree is diagnosed: `refuse` raises `MeasurementUnavailable`, and the red-run and unreadable-summary paths raise subclasses of it. So the only thing that can arrive here is a defect in the reader itself. It was reachable once, through `workspacePackages` reading a missing `pnpm-workspace.yaml`, and that is fixed rather than proved: a missing workspace list is now a diagnosis, and `published-refusals.test.ts` drives it. A test that reached this line would be a test that broke the measurement."
       },
       {
@@ -1156,6 +1249,12 @@
           "file": "packages/core/test/m1-ceiling-probe.test.ts",
           "test": "reports the two halves of the component partition as a partition"
         },
+        "mutant": {
+          "file": "scripts/probe-m1-ceiling.mjs",
+          "find": "  const unrecoverable = samples.filter((s) => !recoverable.includes(s));",
+          "replace": "  const unrecoverable = samples.filter((s) => !recoverable.includes(s) || s === recoverable[0]);",
+          "defect": "the two halves overlap on one sample, so the partition the docs quote counts 31 of a 30-sample dataset"
+        },
         "reason": "The probe says so itself: `includes` over the same objects is exact, so the partition cannot fail to cover the dataset. The guard exists because the two halves are quoted as a partition in `docs/`, and a number quoted as a partition should be checked as one. Firing it would require `includes` to disagree with itself."
       },
       {
@@ -1168,6 +1267,12 @@
         "heldBy": {
           "file": "packages/core/test/score.test.ts",
           "test": "publishes the four vocabulary checks the probe requires, one per field"
+        },
+        "mutant": {
+          "file": "packages/core/src/score/score.ts",
+          "find": "check('topology-shape'",
+          "replace": "check('topology'",
+          "defect": "the structure check is published under a name the probe does not require, so the four vocabulary clauses become three"
         },
         "reason": "A guard on `checkRca100Structure` publishing each of four named checks. The four ids come from the function that publishes them, so the guard fires only if that function loses a check -- which its own tests would report first, and which would be a defect rather than a state of an input."
       },
@@ -1197,6 +1302,12 @@
         "heldBy": {
           "file": "packages/core/test/type-miss-probe.test.ts",
           "test": "classify returns one of its three kinds for every row, so the counts cannot leave one out"
+        },
+        "mutant": {
+          "file": "scripts/probe-type-misses.mjs",
+          "find": "  return 'different-mechanism';",
+          "replace": "  return 'unclassified';",
+          "defect": "classify answers with a fourth kind, so the three counts no longer sum to the rows they were taken from"
         },
         "reason": "The classification partition: `classify` returns one of three kinds for every row it is given, and the guard asserts that the three counts add up to the number of rows. Firing it would require the classifier to return nothing for a row it was handed."
       },

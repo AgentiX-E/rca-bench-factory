@@ -15,7 +15,7 @@
  *   site/assets/example-pack.json                  - size, digest and file list for the site
  */
 
-import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { opendirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -57,6 +57,52 @@ function readExampleFiles() {
   return files;
 }
 
+/**
+ * Every regular file under `dir`, listed by a different walk than the reader's.
+ *
+ * ## Why a second walk at all (finding 400)
+ *
+ * The pack's index is produced by `readExampleFiles()`, and `--check` compares the
+ * archive against that index. Both sides of that comparison come from the **same
+ * reader**, so a reader that drops a file produces an archive, an index and a passing
+ * check that all agree with each other and disagree with the tree. Finding 398 was
+ * exactly that, and it was found by a test, not by the tool.
+ *
+ * This function is the tool's third opinion: an `opendirSync` handle descended by hand,
+ * instead of `readdirSync(dir, { recursive: true })`. The independence is in the
+ * **descent** -- the recursion strategy is where 398's defect lived -- and it is stated
+ * that way rather than overclaimed: both ultimately list a directory with the same
+ * primitive underneath.
+ *
+ * The reader is not called here, and the two lists are compared as sets. A file the pack
+ * does not carry is refused in both modes, because a download that omits part of the tree
+ * it advertises is not something `--check` should be able to bless.
+ */
+export function treeListing(dir) {
+  const listed = [];
+  const descend = (relative) => {
+    const handle = opendirSync(relative === '' ? dir : resolve(dir, relative));
+    try {
+      for (;;) {
+        const entry = handle.readSync();
+        if (entry === null) break;
+        const path = relative === '' ? entry.name : `${relative}/${entry.name}`;
+        if (entry.isDirectory()) descend(path);
+        else if (entry.isFile()) listed.push(path);
+      }
+    } finally {
+      handle.closeSync();
+    }
+  };
+  descend('');
+  return listed.sort();
+}
+
+/** How many files the tree holds, and which of them the pack does not carry. */
+export function orphansInTree(dir, carried) {
+  return treeListing(dir).filter((path) => !carried.includes(path));
+}
+
 /** Build the archive and the metadata that describes it. */
 export function buildBundle() {
   const files = readExampleFiles();
@@ -75,6 +121,32 @@ export function buildBundle() {
     throw new Error('the example pack must ship a MANIFEST.json to be verifiable');
   }
 
+  // The third opinion: the tree, listed by a walk the reader does not share. Without it
+  // the archive and its index agree by construction and `--check` blesses a download that
+  // is missing a file. `fileCount` and `treeFileCount` are published as two numbers so a
+  // reader of the page can see the archive is three files larger than the tree: README,
+  // run.sh and the manifest.
+  const inTree = treeListing(EXAMPLE_DIR);
+  const carried = Object.keys(files).map((key) => key.slice('examples/order-prod/'.length));
+  const missing = inTree.filter((path) => !carried.includes(path));
+  if (missing.length !== 0) {
+    throw new Error(`the example pack does not carry ${missing.join(', ')}`);
+  }
+  // And the other direction, as arithmetic: the archive is the tree plus exactly the
+  // three files `buildExamplePack` generates. A file the *listing* sees and the reader
+  // does not is `missing` above; a row the archive has and neither sees is this count.
+  // A symlink in the tree reads here and not above: the reader follows it and the
+  // listing does not, so the two counts differ and this refuses -- which is the only
+  // honest answer until somebody decides which of the two readings the pack means.
+  const generated = ['README.md', 'run.sh', 'MANIFEST.json'];
+  if (entries.length !== inTree.length + generated.length) {
+    throw new Error(
+      `the example pack holds ${String(entries.length)} row(s) and the tree holds ` +
+        `${String(inTree.length)} file(s), which is not the ${String(generated.length)} ` +
+        `generated files apart: ${generated.join(', ')}`,
+    );
+  }
+
   return {
     archive,
     meta: {
@@ -87,11 +159,23 @@ export function buildBundle() {
       // manifest, so it is the archive total rather than the manifest's own
       // content count; `pack` reports both under those two names.
       fileCount: entries.length,
+      // The tree's own count, from the listing rather than from the reader. The two are
+      // published together so a reader can compare them without building anything.
+      treeFileCount: inTree.length,
       paths: entries.map((entry) => entry.path.slice(prefixLength)).sort(),
     },
   };
 }
 
+/**
+ * The script, as opposed to the module.
+ *
+ * `treeListing` and `orphansInTree` are exported so that the third opinion can be
+ * measured without a reader that drops a file -- a fixture the shipped reader cannot
+ * produce. Importing them must not build anything, so the work below runs only when this
+ * file is the entry point.
+ */
+function main() {
 const checkOnly = process.argv.includes('--check');
 const { archive, meta } = buildBundle();
 const renderedMeta = `${JSON.stringify(meta, null, 2)}\n`;
@@ -122,4 +206,9 @@ if (checkOnly) {
   writeFileSync(META_PATH, renderedMeta);
   console.log(`wrote ${ARCHIVE_PATH} (${meta.bytes} bytes, ${meta.fileCount} files, sha256 ${meta.sha256.slice(0, 12)}…)`);
   console.log(`wrote ${META_PATH}`);
+}
+}
+
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
 }

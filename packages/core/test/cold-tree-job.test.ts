@@ -114,7 +114,18 @@ function runCommands(body: string): string[] {
     }
     commands.push(block.join('\n'));
   }
-  return commands;
+  // A `run:` that chains with `&&` is two commands, and until v3.51 every step here ran
+  // one. The claims battery was added to an existing step's command (`finding 403`: a new
+  // step cannot be measured, and a step cannot be added without a measurement), so the
+  // chains are real -- and a scanner that read the whole line as one command stopped
+  // recognising the job as one that runs the suite at all. The split is here, at the one
+  // place every reader of this file goes through.
+  return commands.flatMap((command) =>
+    command
+      .split('&&')
+      .map((part) => part.trim())
+      .filter((part) => part !== ''),
+  );
 }
 
 const JOB = 'cold-tree';

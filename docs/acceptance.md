@@ -276,6 +276,28 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   function over an adversarial table -- an empty pair, one that normalizes to nothing, one that
   differs by case, one sharing a single token, and every recorded miss of both runs.
 
+- **An exemption carries the edit that makes its claim false** (v3.51). Rule 9 required a claim
+  and the test that holds it; a title is an index, and nothing checked the body behind it. Every
+  exempt throw now carries `mutant: {file, find, replace, defect}`, and
+  `verify-claims-are-sensitive.mjs` applies it and requires the named test to go red: **7 claims,
+  12 runs, 0 survivors**. Rule 10 refuses a `find` that no longer occurs exactly once, a
+  replacement that is the edit's own text, a target that does not exist, a target that is a test,
+  a `defect` nobody can review, two exemptions naming one edit, and a proved row that also names
+  one.
+- **A red run is not a caught claim** (v3.51). A mutation that does not parse fails every suite
+  for a reason about the mutation, which is how a battery reports a red as proof of everything. The
+  verdict scans the failure text first: `SyntaxError`, `Transform failed`, a module that will not
+  load, and a TypeScript plugin error are reported as **unmeasured** with the failure quoted, and
+  the summary separates a red on an assertion from a red on the code's own guard -- 6 and 1 on this
+  tree, because the m1 partition's claim is enforced by the probe refusing to publish.
+- **A check may not take both sides from the same reader** (v3.51). `--check` compared the example
+  archive with an index written by the reader that produced it, so a reader that dropped a file
+  produced three artefacts that agreed with each other (finding 398, one layer up). The build now
+  compares the archive with a walk it does not share -- `opendirSync` handles descended by hand --
+  and refuses in both directions: a tree file the pack does not carry, and an archive that is not
+  exactly `README.md`, `run.sh` and `MANIFEST.json` larger than the tree. Both counts are
+  published, so the page shows **9 rows against 6 files**.
+
 ## L4 — Official reproduction (Golden Master, official metrics and round trip)
 
 - `golden-master/verify.mjs` re-runs every exporter against the self-contained

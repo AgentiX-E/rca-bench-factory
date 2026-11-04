@@ -238,8 +238,13 @@ describe('the two baskets are a partition of the calls, not a remainder', () => 
       if (total !== counted) shortfalls.push(`${file}: classified ${String(total)}, holds ${String(counted)}`);
     }
     expect(shortfalls).toEqual([]);
-    expect(calls).toBe(130);
-    expect(sites).toBe(114);
+    // 137 = 120 failure sites + 17 zero exits. The step from 130/114 is v3.51's gate:
+    // six failure exits and one `--list` success exit, all in
+    // `verify-claims-are-sensitive.mjs`. The two numbers move together because the
+    // question is one -- does the classification account for every call -- and a round
+    // that added calls without moving them would be the drift this assertion is for.
+    expect(calls).toBe(137);
+    expect(sites).toBe(120);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

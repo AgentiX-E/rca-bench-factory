@@ -218,7 +218,9 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
       }
     }
     expect(shortfalls).toEqual([]);
-    expect(total).toBe(41);
+    // 43 is 41 plus the pack's two new guards -- a tree file the reader did not carry,
+    // and an archive that is not exactly the three generated files larger than the tree.
+    expect(total).toBe(43);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -247,7 +249,9 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
       'measure-ci-baseline.mjs:157',
       'measure-ci-baseline.mjs:164',
     ]);
-    expect(counts).toEqual({ fatal: 4, unguarded: 33, guarded: 1, rethrow: 3 });
+    // 35 unguarded: the two pack guards are `unguarded`, like every other throw inside a
+    // function with no enclosing `try`.
+    expect(counts).toEqual({ fatal: 4, unguarded: 35, guarded: 1, rethrow: 3 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

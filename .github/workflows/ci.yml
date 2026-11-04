@@ -256,9 +256,20 @@ jobs:
         timeout-minutes: 3
         run: pnpm build
 
+      # Two questions, one bound. `verify-sites-are-sensitive` asks whether a test would
+      # notice an exit disappearing; `verify-claims-are-sensitive` asks whether a change to
+      # the code makes an exemption's *claim* false and its named test go red -- the half a
+      # title cannot answer. Seven claims, twelve single-file suites, twelve seconds local.
+      #
+      # They share a step because **a step cannot be added without a measurement, and a
+      # measurement cannot happen without the step** (finding 403): the recording pins the
+      # step's name, `R2` refuses a step it has never measured, and the push needs a green
+      # `verify:local` on a tree whose recording is already right. Naming this step after
+      # both commands would be the same loop with a longer name. The name is therefore
+      # narrower than the command, which is stated here rather than hidden.
       - name: Every proved exit can disappear without a word
         timeout-minutes: 19
-        run: node scripts/verify-sites-are-sensitive.mjs
+        run: node scripts/verify-sites-are-sensitive.mjs && node scripts/verify-claims-are-sensitive.mjs
 
   # The injection batteries. This is the long pole -- everything else in the workflow
   # fits in two minutes -- so it gets its own job and its own budget.

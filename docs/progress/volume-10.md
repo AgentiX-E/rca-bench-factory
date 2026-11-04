@@ -2201,9 +2201,9 @@ because that is what a refresh looks like from inside.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **233 files, 5713 tests passed** (as of this commit) |
+| `core` test suite | **234 files, 5740 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **237 files, 5900 tests passed** (as of this commit) |
+| repo test suite | **238 files, 5927 tests passed** (as of this commit) |
 | new tests | **20**: 13 in `ledger-runs.test.ts` (the reader), 7 in `ci-budget.test.ts` (`R7` and its gate paths) |
 | the recording | **run 41749989956** at `75f2de650`, 7 jobs / 74 steps / **46 bounded**, 43 min measured; before this round it was `41670923224` at `61dff700c`, one run and one commit behind the tree |
 | the comparison | the ledger's newest row names run `41749989956`, which is the recording -- `(the recording)`, not one run behind; **3 older rows name no run** and are counted |
@@ -2387,9 +2387,9 @@ bound after the re-record is `verify / Lint` at 2.1x.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **233 files, 5713 tests passed** (as of this commit) |
+| `core` test suite | **234 files, 5740 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **237 files, 5900 tests passed** (as of this commit) |
+| repo test suite | **238 files, 5927 tests passed** (as of this commit) |
 | new tests | **17**: 11 rule-9 cases in `gate-sites-are-proven.test.ts`, 3 in `build-example-bundle.test.ts` (two statements and the nested-directory case), 1 in `measure-doc-counts-readings.test.ts`, 1 in `score.test.ts`, 1 in `type-miss-probe.test.ts` |
 | throw partition | **41 statements**: 4 `fatal`, 33 `unguarded`, 1 `guarded`, 3 `rethrow`; 35 proved; **6 exempt, 6 of them now holding a named test** |
 | the six claims | pack uniqueness, pack manifests and counts it, every diagnosis is a `MeasurementUnavailable`, four vocabulary checks published, `classify`'s return set closed, the m1 partition covers its dataset -- **4 already held and unnamed, 2 not held at all** |
@@ -2423,3 +2423,165 @@ in the one form that cannot fail. So the ruler is: **when a table records a judg
 would have to change for that judgement to be wrong, and check that the answer is written down
 next to it** -- a test name, a run id, a command. The four claims that were already paid for had
 been paid for in a place the table did not point at.
+
+## v3.51 — the exemption pointed at a title, and the title pointed at nothing
+
+Last round ended with a table of six claims and one sentence under it: *when a table records a
+judgement, ask what would have to change for that judgement to be wrong, and check that the
+answer is written down next to it.* Four of the six had an answer written down -- the test that
+holds the claim. What the table did not have was the other half of that answer: **what change
+would make the claim false.** This round supplies it, runs it, and in doing so finds that the
+pack's own check was comparing a list with itself.
+
+### One — the tool agreed with the reader it was supposed to check (finding 400)
+
+`site/assets/example-pack.json` is the page's index of the download, and `--check` compares the
+archive against it. Both are produced by `readExampleFiles()`. That is finding 398's shape kept
+alive one layer up: 398 was fixed in the reader, and the tool that should have caught 398 could
+not, because it reads the reader's own output on both sides.
+
+Writing the third opinion is what exposed it. The first version was
+
+```js
+const inTree = treeListing(EXAMPLE_DIR);
+const missing = orphansInTree(EXAMPLE_DIR, inTree);   // the listing, compared with itself
+```
+
+which is empty for every tree, including one the reader had lost a file from. It printed
+`example pack is up to date`. The line was read before it was run, which is the only reason the
+round did not ship a check that cannot fail -- and it is the second time in two rounds that the
+defect was in the instrument rather than in what the instrument measures.
+
+The fix is a walk that shares nothing with the reader's recursion: `opendirSync` handles
+descended by hand, against `readdirSync(..., { recursive: true })`. Two refusals follow from it,
+and both are published numbers rather than assertions:
+
+| direction | what it refuses | what it prints |
+| --- | --- | --- |
+| a tree file the pack does not carry | a short download with an agreeing index | the file names |
+| the archive is not the tree plus three | a row nobody can account for | both counts, `10` and `6` |
+| a symlink, where the readings disagree | the pack depending on which reading you take | both counts |
+
+The symlink case is real rather than invented: `statSync` follows a link and `Dirent.isFile()`
+does not, so a linked example is carried and not listed. The build refuses instead of choosing,
+and the message carries both numbers so a person can decide.
+
+### Two — a title is an index too (finding 401)
+
+Rule 9 asks an exemption to name the test that holds its claim. It checks that the file exists,
+that it is a test file, and that a test with that title exists. That is the most a rule can do
+without reading an assertion -- and reading an assertion is not a thing a checker can do.
+
+What a checker *can* do is the other end of the sentence: change the code so the claim is false,
+and require the named test to go red. So each exempt row carries a fifth column:
+
+| column | what it is | what reads it |
+| --- | --- | --- |
+| `statement` | the claim, one falsifiable sentence | rule 9 (shape), a person (meaning) |
+| `heldBy` | `{file, test}`: the test that measures it, by exact title | rule 9 |
+| `mutant` | `{file, find, replace, defect}`: the edit that makes it false | rule 10, and the battery |
+
+`verify-claims-are-sensitive.mjs` applies each edit and runs the named file. **7 claims, 12 runs,
+12 seconds.** Six go red on an assertion and one on the code's own guard -- the m1 partition's
+claim is enforced by the probe's own refusal, so the test reds because the measurement refused
+rather than because an assertion failed. A battery that credited any non-zero exit would call
+that one an assertion; one that demanded `AssertionError` would call it unmeasured. Neither is
+true, so the verdict has four answers:
+
+```
+red, with an assertion           the test measures the claim
+red, on the code's own guard    the claim is enforced where it lives, and the test notices
+green                            the title points at nothing
+red, but the tree did not load  unmeasured: the mutation broke the subject, not the claim
+```
+
+The fourth is the one that matters. Every "the gate caught it" claim in this repository rests on
+a run that failed, and a mutation that does not parse fails every suite for a reason about the
+mutation. `BROKEN` is matched before the verdict is given, and a run that matches is reported as
+unmeasured with the failure quoted -- which is finding 173's shape avoided, not asserted against.
+
+### Three — the table of edits rots in the way the table cannot see (finding 402)
+
+A mutation is a substring, so it is an index of the tree, and the tree moves. Rule 10 refuses an
+edit whose `find` does not occur exactly once, and the battery refuses a file with uncommitted
+changes before it writes to it. Both were exercised on this round's own tree:
+
+- moving one `find` string out of the tree turned rule 10 red, naming the count and the file;
+- running the battery mid-round refused with *"`scripts/build-example-bundle.mjs` has uncommitted
+  changes, so a mutation would overwrite work this run cannot restore"*.
+
+The second is the more useful of the two: the gate failing on the round that wrote it is the only
+evidence that a precondition is doing anything.
+
+### Four — what the battery cannot establish
+
+It establishes that one specific edit makes the claim false and that the test notices. It does
+not establish that the test's assertion *is* the claim: a test that goes red for an unrelated
+reason passes. Two of the seven are caught by a refusal rather than an assertion, which is a
+weaker notice than an assertion and is reported as such. And the edit is a **substitution**: a
+claim can be falsified by an edit the table does not name, and the table will not know.
+
+These are stated because the alternative is a green run that reads stronger than it is. What the
+round adds is that a false claim now has a published way of being false, and a red run that
+follows it -- where before there was a sentence and a title.
+
+### Five — the round's own instruments
+
+`gate-sites.json`: **120 failure sites across 57 of 80 scripts**, `excluded {17 zero}`, and **43
+throw statements** -- 4 `fatal`, 35 `unguarded`, 1 `guarded`, 3 `rethrow` -- of which 36 are
+proved and 7 are exempt, every exemption carrying a claim, a holding test and a falsifying edit.
+### Five — the step that could not be added (finding 403)
+
+The battery was written as its own CI step, bounded at three minutes against twelve seconds of
+measurement, and then could not be published. The loop has four links: `R2` refuses a step the
+recording has never measured; the recording comes from a run; a run comes from a push; the push
+needs a green `verify:local`, which runs `docs:check`, which runs `R2` — and is red because the
+step has no measurement. **The step's own measurement is on the far side of the gate that
+demands it.**
+
+`--borrow` is the same shape for jobs -- a new job's seconds are a neighbour's, with the
+derivation written down -- and there is no equivalent for a step, because a job's cost does not
+depend on which job it sits in and a step's cost is the thing being measured. So the round folds
+the battery into the neighbouring step's command: one `&&`, one bound, the same runner. The price
+is the name. A reader who trusts *"Every proved exit can disappear without a word"* is now reading
+a summary that is no longer complete, and that is written in the workflow rather than absorbed.
+The fix -- a third derivation in the recording, for a step that is new or newly named -- is
+P15, and it is not this round's work.
+
+### Readings
+
+> Ledger for `v3.51`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **234 files, 5740 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **238 files, 5927 tests passed** (as of this commit) |
+| new tests | **27**: 12 in `claims-are-sensitive.test.ts` (every verdict and every refusal of the new battery), 11 rule-10 cases in `gate-sites-are-proven.test.ts`, 4 in `build-example-bundle.test.ts` (two third-opinion cases, the published counts, and the symlink that makes the two readings disagree) |
+| throw partition | **43 statements**: 4 `fatal`, 35 `unguarded`, 1 `guarded`, 3 `rethrow`; 36 proved; **7 exempt, every one carrying a claim, a holding test and a falsifying edit** |
+| failure sites | **120** across 57 of **80** scripts; `excluded` `{17 zero}` |
+| the claims battery | **7 claims, 12 runs, 12 s** -- 6 red on an assertion, 1 on the code's own guard, **0 survivors, 0 unmeasured** |
+| coverage | core **99.96 / 99.75 / 100 / 99.96**, cli **100 / 100 / 100 / 100** |
+| the pack's two readings | archive **10 rows**, tree **6 files**, three generated files apart; a symlinked example is carried by the reader and invisible to the listing, so the build refuses and prints both counts |
+| the defect in the instrument | the first version of the orphan check compared the listing with itself, which is empty for every tree and printed `up to date` |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P2** | a key whose description carries no keyword scores 0 | the protocol is silent; this repository takes 0 | record it as a gap; do not invent a redistribution |
+| **P3** | the sensitivity gate's cost grows linearly with claims | 142 claims, 194 runs, 9.0 min on the runner; the claims battery adds 12 runs | shard by file before the claims outgrow the job rather than the step |
+| **P5/P7** | the witness sees one level | a script loaded without `NODE_OPTIONS` is not rewritten, and a wrapper that does not inherit hides its child | unchanged; needs a second observation channel |
+| **P8** | the compiler is a runtime dependency of four readers | `derive-gate-sites.mjs`, `gate-proofs.mjs`, the witness and the Vite plugin | "a gate with no dependencies" still needs a third correct reading |
+| **P9** | the batteries jobs sit inside their budgets | 11.1 and 12.6 measured against 25 each; the longest bound expires at 24.2 of 25 | a fresh baseline before adding another battery -- `R7` makes forgetting impossible, `R2` makes adding a step visible |
+| **P13** | a mutation is one substitution | a claim can be false in ways the table does not name, and the table cannot tell | the next honest step is a second mutant per claim, or a battery that mutates the *assertion* rather than the code |
+| **P14** | one of the seven notices is a refusal, not an assertion | the m1 partition's claim is enforced by the probe refusing to publish | a claim whose only notice is a refusal is weaker than one a test asserts; say so per row rather than in a summary |
+
+| **P15** | a CI step cannot be added or renamed, and its name can therefore go stale | the step's own measurement is behind `R2`, a run, a push and the receipt (finding 403) | a third derivation in the recording, the way `--borrow` is for jobs; until then a new battery shares a step name that no longer describes it |
+
+**The lesson, for the round after this one.** Two rounds in a row, the defect was in the
+instrument rather than in the thing it measures: last round a pack reader that walked one
+directory, this round a check that compared a list with itself. Both were written by somebody
+who had just read the code they were checking. So the ruler is: **for every check, name the two
+things it compares and where each of them comes from** -- and if they come from the same place,
+the check is a restatement, however green it is.

@@ -12,7 +12,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { MANIFEST_FILE_NAME } from '../src/pack/archive.js';
@@ -404,4 +404,101 @@ describe('the pack invariants · held by the shipped tree, not by a sentence', (
       expect([...paths].sort()).toEqual(committedIndex().paths.sort());
     },
   );
+});
+
+/**
+ * The tool's third opinion, and the reason it exists.
+ *
+ * Finding 400: the archive and `example-pack.json` are both produced by
+ * `readExampleFiles()`, and `--check` compares them with each other. Every gate in the
+ * repository agrees while the tree quietly holds one file more than the download -- which
+ * is finding 398 one layer out, and 398 was found by a *test* rather than by the tool
+ * that is supposed to catch it.
+ *
+ * `treeListing()` walks the tree with `opendirSync` handles instead of
+ * `readdirSync(..., { recursive: true })`, and `buildBundle()` refuses when the two
+ * disagree. These tests measure the walk on a tree the shipped reader cannot be wrong
+ * about, and the published counts on the tree that ships: the archive must be exactly the
+ * three generated files larger than the tree, which is a relationship two independent
+ * enumerations can disagree about and one enumeration cannot.
+ */
+describe('the pack and the tree · the tool, not only the test', () => {
+  it('lists a nested file the tree holds, by descending rather than by a recursive readdir', async () => {
+    const { treeListing } = (await import(
+      pathToFileURL(resolve(ROOT, 'scripts', SCRIPT)).href
+    )) as {
+      treeListing: (dir: string) => string[];
+    };
+    const dir = mkdtempSync(join(tmpdir(), 'rca-listing-'));
+    try {
+      mkdirSync(join(dir, 'deep', 'deeper'), { recursive: true });
+      writeFileSync(join(dir, 'top.json'), '{}\n');
+      writeFileSync(join(dir, 'deep', 'middle.json'), '{}\n');
+      writeFileSync(join(dir, 'deep', 'deeper', 'bottom.json'), '{}\n');
+      expect(treeListing(dir)).toEqual(['deep/deeper/bottom.json', 'deep/middle.json', 'top.json']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('names a tree file the pack does not carry, and is silent when it carries them all', async () => {
+    const { orphansInTree } = (await import(
+      pathToFileURL(resolve(ROOT, 'scripts', SCRIPT)).href
+    )) as {
+      orphansInTree: (dir: string, carried: string[]) => string[];
+    };
+    const dir = mkdtempSync(join(tmpdir(), 'rca-orphan-'));
+    try {
+      mkdirSync(join(dir, 'nested'), { recursive: true });
+      writeFileSync(join(dir, 'a.json'), '{}\n');
+      writeFileSync(join(dir, 'nested', 'b.json'), '{}\n');
+      // The direction that matters: a file the tree holds and the pack omits. A walk that
+      // agreed with a broken reader would return an empty list here, which is exactly the
+      // silence finding 398 shipped with.
+      expect(orphansInTree(dir, ['a.json'])).toEqual(['nested/b.json']);
+      expect(orphansInTree(dir, ['a.json', 'nested/b.json'])).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('publishes the tree count beside the archive count, three generated files apart', () => {
+    // Two numbers from two enumerations. `fileCount` counts archive rows and
+    // `treeFileCount` counts the tree, so a page reader can compare them without building
+    // anything -- and the build refuses when they are not exactly README.md, run.sh and
+    // MANIFEST.json apart.
+    const meta = JSON.parse(readFileSync(resolve(ROOT, 'site', 'assets', 'example-pack.json'), 'utf8')) as {
+      fileCount: number;
+      treeFileCount: number;
+      paths: string[];
+    };
+    expect(meta.treeFileCount).toBeGreaterThan(0);
+    expect(meta.fileCount).toBe(meta.treeFileCount + 3);
+    expect(meta.paths).toHaveLength(meta.fileCount);
+  });
+});
+
+/**
+ * Finding 400's second half: the two enumerations are compared, and the comparison has
+ * an outside.
+ *
+ * A symlink is where they legitimately disagree -- `statSync` follows it, `Dirent.isFile`
+ * does not -- so the tree holds a file the reader carries and the listing does not. That
+ * makes the counts differ by more than the three generated files, and the build refuses.
+ * The test is here because a check that cannot be shown to fire is a check whose silence
+ * means nothing, and this is the one input the shipped tree can produce that reaches it.
+ */
+describe('the pack and the tree · the disagreement the build refuses', () => {
+  it('refuses a tree the two enumerations read differently, and names both counts', () => {
+    const tree = treeWithExamples((dir) => {
+      symlinkSync(resolve(dir, 'bundle.json'), join(dir, 'linked.json'));
+    });
+    const result = run(tree);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('generated files apart');
+    // The listing does not follow the link, so the tree count is the six real files and
+    // the archive's is one more. Both numbers are in the message, which is what makes the
+    // refusal diagnosable rather than mysterious.
+    expect(result.stderr).toContain(`${String(readdirSync(resolve(REAL_EXAMPLES)).length)} file(s)`);
+  });
 });

@@ -427,6 +427,12 @@ const REGISTER: Record<string, Entry> = {
   // reach. Measured before it was written: 100 claims, 0 survivors, which is what
   // makes it worth a job that runs on every push instead of a ledger checked by hand.
   'verify-sites-are-sensitive.mjs': { class: 'gate' },
+  // The third question about a proof, and the one a title cannot answer. Rule 9 of
+  // `gate-sites-are-proven.test.ts` asks an exemption to name the test that holds its
+  // claim; this asks whether a change to the code makes that claim false and that test
+  // go red. Six exemptions, eleven runs, and the mutant each claim rests on is
+  // published beside the claim rather than kept here.
+  'verify-claims-are-sensitive.mjs': { class: 'gate' },
 
   // --- Probes: a literal failure exit, enumerated in gate-sites.json ---
   'probe-agreement-baseline.mjs': { class: 'probe' },

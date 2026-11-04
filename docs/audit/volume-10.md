@@ -1740,3 +1740,115 @@ table built to be adversarial: an empty pair, a pair that normalizes to nothing,
 differs only by case, one that shares exactly one token, and every recorded miss of both runs.
 All of them land inside the three kinds, which is what makes the three counts a partition rather
 than three tallies that happen to sum.
+
+## Finding 400 — the download's index was written by the reader it was supposed to check
+
+`site/assets/example-pack.json` lists every path in the archive, and `--check` compares the
+archive against it. Both sides come from `readExampleFiles()`. A reader that drops a file
+therefore produces an archive, an index and a **passing check** that agree with one another
+and disagree with the tree — which is finding 398 exactly, one round later, still in the
+tree, because 398 was fixed in the reader and nobody asked what the *tool* would have said.
+
+The measurement that made it visible was writing the check:
+
+```js
+const inTree = treeListing(EXAMPLE_DIR);
+const missing = orphansInTree(EXAMPLE_DIR, inTree);   // the listing, compared with itself
+```
+
+That is the first version, and it is a tautology: `inTree.filter((p) => !inTree.includes(p))`
+is empty for every tree, including one the reader had lost a file from. It printed
+`example pack is up to date` and would have kept printing it. The defect was found by
+reading the line while wiring it, not by a test — and it is the same shape as 398: a check
+whose two sides share a source can only ever agree.
+
+The fix is a third reading and an arithmetic. `treeListing()` descends with `opendirSync`
+handles instead of `readdirSync(..., { recursive: true })`, so the recursion strategy — where
+398's defect lived — is not shared. The build then refuses in two directions: a tree file the
+pack does not carry, and an archive that is not exactly the three generated files
+(`README.md`, `run.sh`, `MANIFEST.json`) larger than the tree. Both counts are published, so a
+reader of the download page can compare them without building anything: **9 rows against 6
+files**.
+
+The two readings also disagree about one real thing, and the disagreement is informative
+rather than noise: `statSync` follows a symlink and `Dirent.isFile()` does not, so a symlinked
+example is carried by the reader and invisible to the listing. The build refuses and names both
+counts. That is the honest answer until somebody decides which of the two readings the pack
+means; a check that silently picked one would be the defect this finding is about.
+
+## Finding 401 — rule 9 made an exemption point at a title, and a title is an index too
+
+v3.50 closed six exemptions that were prose by requiring each to state a claim and name the
+test that holds it. The rule checks that the file resolves, that it is a test file, and that a
+test with exactly that title exists. What it cannot check is the thing the sentence is about:
+whether the body of that test still measures the claim.
+
+That gap is not hypothetical at the scale this repository works at. The six claims are four
+different kinds of statement — a uniqueness property, a presence property, a class, a
+partition, a closure — and each is one edit away from being false. Nothing had ever *made* one
+false. The inventory said "held", and "held" meant "a title exists".
+
+So the exemption now carries a fifth column, `mutant`: `{file, find, replace, defect}`. The
+edit is published beside the claim it falsifies, and `verify-claims-are-sensitive.mjs` applies
+it and requires the named test to go red. Measured on this tree: **7 claims, 12 runs, 12
+seconds, 6 red on an assertion and 1 on the code's own guard, no survivors.**
+
+The distribution is the finding. One of the seven is caught by the *code refusing*, not by an
+assertion: the m1 partition's claim is enforced by the guard the exemption is about, and
+mutating the derivation makes the probe throw before it can publish anything — so the test reds
+because the measurement refused. A battery that treated any non-zero exit as "caught" would
+report that red as an assertion; one that demanded an `AssertionError` would report it as
+unmeasured. Both are wrong, so the verdict distinguishes "the tree broke" (`SyntaxError`,
+`Transform failed`, a module that will not load — reported as unmeasured, never as caught)
+from "something noticed" — and says which of the two notice-paths fired.
+
+The sixth assertion was the seventh claim, added late in the round: the pack's "no orphan"
+claim is caught because the comparison returns an empty list and the test asserts a name. So
+the split moved from 5 and 2 to **6 and 1** when the seventh claim arrived, which is the point
+of reporting the split at all — it is a reading, not a description of the design.
+
+## Finding 402 — a table of edits rots in the one way the table cannot see
+
+A mutation is a substring replacement, so it is an index of the tree. The tree moves. Rule 10
+therefore refuses a `find` that does not occur exactly once, and the battery refuses a file
+with uncommitted changes before it writes to it — the second because a restore would otherwise
+put back somebody else's edit, and because a run that starts on a dirty file cannot distinguish
+its own mutation from what it found.
+
+Both refusals were exercised rather than assumed. Moving one `find` string out of the tree
+turned rule 10 red with the count and the file; and the
+battery, run against the working tree while this round was still being written, refused with
+"`scripts/build-example-bundle.mjs` has uncommitted changes, so a mutation would overwrite work
+this run cannot restore" — the gate failing on the round that wrote it, which is the only
+evidence that a precondition is a precondition.
+
+## Finding 403 — a step cannot be added, because its measurement is behind the gate that wants it
+
+The round wrote the battery as its own CI step, gave it a three-minute bound against twelve
+seconds of measurement, and then could not publish it. The loop is four links long and every
+link is a rule this repository added deliberately:
+
+1. `check-ci-budget`'s `R2` refuses a step of `ci.yml` that the recording has never measured:
+   *a bound for it would be a guess*.
+2. The recording comes from `measure-ci-baseline.mjs <run-id>`, so the run has to contain the
+   step.
+3. A run happens after a push, and the pusher refuses a tree with no `verify:local` receipt.
+4. `verify:local` runs `docs:check`, which runs `check-ci-budget`, which is red — because of (1).
+
+So the step's own measurement is on the far side of the gate that demands it. `--borrow` exists
+for exactly this shape and only for **jobs**: `--borrow batteries-heavy=batteries` records a new
+job's seconds as the neighbouring job's, with the derivation written down. There is no
+equivalent for a step, and the reason is visible in the code: a job is a unit whose cost does
+not depend on which job it sits in, and a step is a unit whose cost is the thing being measured.
+
+The round's answer was to fold the battery into the neighbouring step's command — the same
+runner, one `&&`, one bound — which works and costs something worth naming: the step is called
+*"Every proved exit can disappear without a word"* and now runs two batteries. **The name is
+narrower than the command, and a reader who trusts the name is reading a summary that is no
+longer complete.** That is the price, and it is recorded here rather than absorbed.
+
+The fix is a third derivation in the recording, the one `--borrow` already is for jobs: a step
+that is new or newly named takes its seconds from a step that ran, says which, and says which
+run it came from. That is not this round's work, and pretending the loop is not there — by
+naming the step after both commands, which is the same loop with a longer name — would leave the
+next round to hit it again with less context.

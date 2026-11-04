@@ -4,6 +4,7 @@
   "bytes": 5949,
   "sha256": "29ff674cc28ed9a9c5a5d4b0ed05b986c8bca5f558f55986d6942d020bd0b3ef",
   "fileCount": 9,
+  "treeFileCount": 6,
   "paths": [
     "MANIFEST.json",
     "README.md",

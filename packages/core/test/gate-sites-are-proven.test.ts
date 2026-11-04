@@ -123,7 +123,7 @@ import { afterAll, describe, expect, it } from 'vitest';
  * the inventory published. A rule that reported site-level reachability would
  * have to execute every site, which is the coverage question, not this one.
  *
- * ## Rules 8 and 9, added later and stated here for the same reason
+ * ## Rules 8, 9 and 10, added later and stated here for the same reason
  *
  * Rule 8 (v3.45) is the **throw partition**: every `throw` statement, classified
  * four ways, proved or exempt, with the four counts reconciled against the rows.
@@ -134,6 +134,13 @@ import { afterAll, describe, expect, it } from 'vitest';
  * is prose and prose cannot fail. Its account sits above the block that tests it,
  * and its limit is stated there too -- the rule checks that the title exists, not
  * that the assertion inside it is the claim.
+ *
+ * Rule 10 (v3.51) is the **falsifier**: an exempt throw must name an edit that makes
+ * its claim false, and `verify-claims-are-sensitive.mjs` applies that edit and requires
+ * the named test to go red. Rule 9 made the exemption point at a title; this makes the
+ * title point at a change. What it still cannot do is read the assertion -- a test that
+ * goes red for the wrong reason passes -- which is why the battery distinguishes a red
+ * on an assertion, a red on the code's own guard, and a run that broke the tree.
  */
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -207,9 +214,10 @@ interface Site {
   status?: string;
   provedBy?: string;
   reason?: string;
-  /** Named here only so a site that carries them can be rejected; see rule 9. */
+  /** Named here only so a site that carries them can be rejected; see rules 9 and 10. */
   statement?: string;
   heldBy?: HeldBy;
+  mutant?: Mutant;
 }
 
 /**
@@ -237,7 +245,22 @@ interface Throw {
   statement?: string;
   /** The test that holds the statement; see rule 9. */
   heldBy?: HeldBy;
+  /** The edit that makes the statement false; see rule 10. */
+  mutant?: Mutant;
   reason?: string;
+}
+
+/**
+ * The edit that makes an exemption's claim false.
+ *
+ * `defect` is what a reader meets first: a substitution whose purpose has to be inferred
+ * is a substitution nobody will maintain, and the battery's failure message quotes it.
+ */
+interface Mutant {
+  file: string;
+  find: string;
+  replace: string;
+  defect: string;
 }
 
 interface Inventory {
@@ -583,6 +606,63 @@ function holdProblems(where: string, heldBy: HeldBy, root: string): string[] {
 }
 
 /**
+ * Rule 10 -- is the named mutation still an edit this tree can make?
+ *
+ * Rule 9 establishes that a test with the right title exists. It cannot establish that
+ * the assertion inside it is the claim, and no reader can: semantics are not decidable
+ * from an inventory. What *can* be established is the other end of the same sentence --
+ * that a **change to the code the claim is about** makes it false. That is what
+ * `verify-claims-are-sensitive.mjs` runs, and this function is the half that needs no
+ * child process: the substitution has to still apply.
+ *
+ * Three ways it stops applying, and they are the three this refuses. The file is gone;
+ * the `find` text no longer occurs, or occurs more than once (a mutant that fires in two
+ * places measures two claims and reports one); the `find` and `replace` are the same, so
+ * the "mutation" leaves the tree alone and the claim can never be falsified. The `defect`
+ * clause is required for a reason the other rules also use: a mutation whose purpose has
+ * to be guessed is a mutation the next round deletes.
+ *
+ * Deliberately *not* required: that the mutant lives in the script that contains the
+ * throw. For the pack's two claims the throw is in the build script and the defect is in
+ * the function it calls, which is where the claim lives.
+ */
+function mutantProblems(where: string, mutant: Mutant, root: string): string[] {
+  const problems: string[] = [];
+  if (typeof mutant.file !== 'string' || mutant.file.length === 0) {
+    return [`${where} names no file to mutate`];
+  }
+  if (typeof mutant.find !== 'string' || mutant.find.length === 0) {
+    return [`${where} names no text to replace, so its mutation would change nothing`];
+  }
+  if (typeof mutant.replace !== 'string' || mutant.replace === mutant.find) {
+    return [`${where} mutates text into itself, so the tree it measures is the tree it read`];
+  }
+  if (typeof mutant.defect !== 'string' || mutant.defect.trim().length <= 40) {
+    problems.push(
+      `${where} names a mutation whose defect is unexplained in ${String(mutant.defect ?? '').length} ` +
+        'characters, so the edit and its purpose cannot be reviewed together',
+    );
+  }
+  if (mutant.file.endsWith('.test.ts')) {
+    problems.push(`${where} mutates ${mutant.file}, a test, so the red run would be about the test file`);
+  }
+  let body: string;
+  try {
+    body = readFileSync(resolve(root, mutant.file), 'utf8');
+  } catch {
+    return [...problems, `${where} mutates ${mutant.file}, which does not exist`];
+  }
+  const occurrences = body.split(mutant.find).length - 1;
+  if (occurrences !== 1) {
+    problems.push(
+      `${where} mutates '${mutant.find.split('\n')[0]}' in ${mutant.file}, which occurs ` +
+        `${String(occurrences)} time(s) there: a mutation has to land on exactly one site`,
+    );
+  }
+  return problems;
+}
+
+/**
  * Check every rule except rule 1, so the same function can be run against a
  * corrupted inventory below. Returns the list of violations; empty means valid.
  *
@@ -620,7 +700,7 @@ function violationsOf(inventory: Inventory, root: string): string[] {
       // cannot be entered from a test, which is a different claim from an
       // invariant a test can hold. The columns are refused here rather than
       // ignored, so half-applying the convention is visible instead of inert.
-      if (site.statement !== undefined || site.heldBy !== undefined) {
+      if (site.statement !== undefined || site.heldBy !== undefined || site.mutant !== undefined) {
         problems.push(`${where} is an exit site carrying the throw partition's exemption columns`);
       }
       // The `provedBy` check runs first and does not `continue`. When it ran last
@@ -667,6 +747,7 @@ function violationsOf(inventory: Inventory, root: string): string[] {
   const tally: Record<string, number> = { fatal: 0, unguarded: 0, guarded: 0, rethrow: 0 };
   const statements: string[] = [];
   const holdings: string[] = [];
+  const mutants: string[] = [];
   for (const row of throwRows) {
     const where = `${row.script}:${row.line}`;
     if (!(row.disposition in tally)) {
@@ -696,6 +777,12 @@ function violationsOf(inventory: Inventory, root: string): string[] {
             'and that none can',
         );
       }
+      if (row.mutant !== undefined) {
+        problems.push(
+          `${where} is proved and also names a mutation, so the row says a test reaches the exit ` +
+            'and that the exit is only an exemption',
+        );
+      }
     } else if (row.status === 'exempt') {
       if (row.provedBy !== undefined) {
         problems.push(`${where} is exempt and also names a test, which is the state rule 2 forbids`);
@@ -720,6 +807,16 @@ function violationsOf(inventory: Inventory, root: string): string[] {
       } else {
         problems.push(...holdProblems(where, row.heldBy, root));
         holdings.push(`${row.heldBy.file}\u0000${row.heldBy.test}`);
+      }
+      // Rule 10 -- the claim has an edit that makes it false.
+      if (row.mutant === undefined) {
+        problems.push(
+          `${where} is exempt without naming a mutation that would make its claim false, so the ` +
+            'claim is a sentence a title points at rather than a measurement',
+        );
+      } else {
+        problems.push(...mutantProblems(where, row.mutant, root));
+        mutants.push(`${row.mutant.file}\u0000${row.mutant.find}`);
       }
     } else {
       problems.push(
@@ -759,6 +856,18 @@ function violationsOf(inventory: Inventory, root: string): string[] {
     problems.push(`repeated exemption reason: '${duplicates[0]}'`);
   }
 
+  // Rule 10's second half: one claim, one falsifier. Two rows naming the same edit mean
+  // one substitution is counted as the falsifier of two sentences -- the pasted-down
+  // column shape one layer out -- and the battery would apply one mutation and credit
+  // two claims with noticing it.
+  const repeatedMutant = mutants.filter((key, i) => mutants.indexOf(key) !== i);
+  if (repeatedMutant.length > 0) {
+    problems.push(
+      `two throw exemptions name the same mutation (${String(repeatedMutant[0]).split('\u0000').join(' \u00b7 ')}), ` +
+        'so one edit is counted as falsifying two claims',
+    );
+  }
+
   return problems;
 }
 
@@ -794,6 +903,8 @@ function pointerRoot(): string {
     // and 7, so the fixture root has to carry those files too -- otherwise every
     // exemption reads as "held by a file that does not exist" against the copy.
     ...(committed.throws?.rows ?? []).map((row) => row.heldBy?.file),
+    // Rule 10 reads the mutant's target the same way, so the copy carries those too.
+    ...(committed.throws?.rows ?? []).map((row) => row.mutant?.file),
   ];
   for (const provedBy of pointers) {
     if (provedBy === undefined) continue;
@@ -826,7 +937,7 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
       // here and checked by the rules below.
       const derivedShape = derived.sites.map((s) => ({ ...s }));
       const committedShape = committed.sites.map(
-        ({ status, provedBy, statement, heldBy, reason, ...rest }) => rest,
+        ({ status, provedBy, statement, heldBy, mutant, reason, ...rest }) => rest,
       );
       expect(committedShape).toEqual(derivedShape);
       expect(committed.scanned).toBe(derived.scanned);
@@ -1636,5 +1747,179 @@ describe('rule 9 · an exemption names the test that holds its statement', {
       ROOT,
     );
     expect(problems).toContainEqual(expect.stringContaining("the throw partition's exemption columns"));
+  });
+});
+
+/**
+ * Rule 10 -- an exemption names the edit that makes its claim false.
+ *
+ * ## The defect this rule answers
+ *
+ * Rule 9 was a real step: the six exemptions went from paragraphs to claims with a named
+ * test. It is also an **index of an index**. The row says "the test called X measures
+ * this claim", and nothing checks that X's body still does -- a rename is caught, a
+ * hollowed assertion is not. That gap cannot be closed by reading; the only instrument
+ * that answers it is a mutation, which is why the edit is published in the row and run by
+ * `verify-claims-are-sensitive.mjs`.
+ *
+ * ## What it checks here, and what it hands to the battery
+ *
+ * The half that needs no child process: the target exists, the `find` text occurs exactly
+ * once, the substitution is not a no-op, the target is not a test, and the defect is
+ * explained. That is enough to make a drifted mutant a red gate instead of a silent
+ * no-op, which is the failure mode a table of edits actually has -- the tree moves, the
+ * string does not.
+ *
+ * The battery is the other half: apply it and require the named test to red. Its limit is
+ * stated there and repeated here because it matters: a test that goes red for the wrong
+ * reason passes this rule. What the rule establishes is that the claim *can* be made
+ * false and that something notices when it is.
+ */
+describe('rule 10 · an exemption names the edit that falsifies its claim', {
+  timeout: RULE_TIMEOUT_MS,
+}, () => {
+  const exempt = (): Throw[] => (committed.throws?.rows ?? []).filter((row) => row.status === 'exempt');
+
+  it('accepts the shipped tree, so the rule is not merely strict', () => {
+    const problems = violationsOf(committed, ROOT).filter(
+      (problem) =>
+        problem.includes('makes its claim false') ||
+        problem.includes('mutation') ||
+        problem.includes('mutates') ||
+        problem.includes('text to replace'),
+    );
+    expect(problems).toEqual([]);
+    expect(exempt().length).toBeGreaterThan(0);
+  });
+
+  it('states a mutation for every exemption, with the four parts a reader needs', () => {
+    for (const row of exempt()) {
+      const mutant = row.mutant;
+      expect(mutant, `${row.script}:${String(row.line)}`).toBeDefined();
+      expect(typeof mutant?.file).toBe('string');
+      expect(typeof mutant?.find).toBe('string');
+      expect(typeof mutant?.replace).toBe('string');
+      expect(mutant?.defect.length ?? 0).toBeGreaterThan(40);
+    }
+  });
+
+  it('rejects an exemption with no mutation at all', () => {
+    const rows = (committed.throws?.rows ?? []).map((row) =>
+      row.status === 'exempt' ? { ...row, mutant: undefined } : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-no-mutant');
+    expect(
+      violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot()),
+    ).toContainEqual(expect.stringContaining('without naming a mutation'));
+  });
+
+  it('rejects a mutation whose text has drifted out of the tree', () => {
+    // The failure mode a table of edits has: the tree moves, the string does not, and a
+    // battery that applied nothing would report the claim as held.
+    const rows = (committed.throws?.rows ?? []).map((row) =>
+      row.status === 'exempt' && row.mutant !== undefined
+        ? { ...row, mutant: { ...row.mutant, find: 'a line this repository does not carry' } }
+        : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-mutant-drifted');
+    const problems = violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot());
+    expect(problems).toContainEqual(expect.stringContaining('occurs'));
+    expect(problems).toContainEqual(expect.stringContaining('exactly one site'));
+  });
+
+  it('rejects a mutation whose text lands on more than one site', () => {
+    // A mutant that fires in two places measures two claims and reports one, which is the
+    // direction that always looks green.
+    const rows = (committed.throws?.rows ?? []).map((row) =>
+      row.status === 'exempt' && row.mutant !== undefined
+        ? { ...row, mutant: { ...row.mutant, find: 'const' } }
+        : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-mutant-ambiguous');
+    expect(
+      violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot()),
+    ).toContainEqual(expect.stringContaining('exactly one site'));
+  });
+
+  it('rejects a mutation that replaces text with itself', () => {
+    const rows = (committed.throws?.rows ?? []).map((row) =>
+      row.status === 'exempt' && row.mutant !== undefined
+        ? { ...row, mutant: { ...row.mutant, replace: row.mutant.find } }
+        : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-mutant-noop');
+    expect(
+      violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot()),
+    ).toContainEqual(expect.stringContaining('into itself'));
+  });
+
+  it('rejects a mutation of a file that does not exist', () => {
+    const rows = (committed.throws?.rows ?? []).map((row) =>
+      row.status === 'exempt' && row.mutant !== undefined
+        ? { ...row, mutant: { ...row.mutant, file: 'packages/core/src/not-a-module.ts' } }
+        : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-mutant-missing');
+    expect(
+      violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot()),
+    ).toContainEqual(expect.stringContaining('which does not exist'));
+  });
+
+  it('rejects a mutation whose defect nobody can review', () => {
+    const rows = (committed.throws?.rows ?? []).map((row) =>
+      row.status === 'exempt' && row.mutant !== undefined
+        ? { ...row, mutant: { ...row.mutant, defect: 'breaks it' } }
+        : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-mutant-vague');
+    expect(
+      violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot()),
+    ).toContainEqual(expect.stringContaining('unexplained'));
+  });
+
+  it('rejects a mutation of a test file, which would make the red run about the test', () => {
+    const rows = (committed.throws?.rows ?? []).map((row) =>
+      row.status === 'exempt' && row.mutant !== undefined
+        ? { ...row, mutant: { ...row.mutant, file: 'packages/core/test/score.test.ts' } }
+        : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-mutant-targets-test');
+    expect(
+      violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot()),
+    ).toContainEqual(expect.stringContaining('a test, so the red run would be about the test file'));
+  });
+
+  it('rejects two exemptions naming one mutation', () => {
+    // One edit, two claims: the battery would apply it once and credit both. The reasons
+    // and statements stay distinct here, so the rejection can only come from rule 10.
+    const first = exempt().find((row) => row.mutant !== undefined)?.mutant;
+    expect(first).toBeDefined();
+    const rows = (committed.throws?.rows ?? []).map((row) =>
+      row.status === 'exempt' ? { ...row, mutant: first } : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-mutant-shared');
+    expect(
+      violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot()),
+    ).toContainEqual(expect.stringContaining('name the same mutation'));
+  });
+
+  it('rejects a proved throw that also names a mutation', () => {
+    const rows = (committed.throws?.rows ?? []).map((row) =>
+      row.status === 'proved' && row.mutant === undefined
+        ? {
+            ...row,
+            mutant: {
+              file: 'packages/core/src/pack/example.ts',
+              find: 'const manifestPath',
+              replace: 'const manifestPathUnused',
+              defect: 'a row that says a test reaches this exit and that the exit is an exemption',
+            },
+          }
+        : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-proved-mutant');
+    expect(
+      violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot()),
+    ).toContainEqual(expect.stringContaining('and also names a mutation'));
   });
 });
