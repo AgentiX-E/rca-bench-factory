@@ -1,0 +1,10 @@
+{
+  "declared": [
+    {
+      "job": "sensitivity",
+      "step": "Every exemption's claim can be made false",
+      "minutes": 3,
+      "why": "The claims battery shared the sites step for one round because a step could not be measured before it existed (findings 403 and 405). It runs its own command from this round on, and the first run that measures it deletes this sentence."
+    }
+  ]
+}

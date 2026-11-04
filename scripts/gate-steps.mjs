@@ -546,6 +546,10 @@ export const STEP_PLAN = {
   },
   'sensitivity / Build (core then cli; cli resolves core\'s dist)': { local: true },
   'sensitivity / Every proved exit can disappear without a word': { local: true },
+  'sensitivity / Every exemption\'s claim can be made false': {
+    local: true,
+    note: 'twelve single-file suites, one per exemption; ~36 s on a runner, which is why it is the only step bounded at the floor',
+  },
 
   // ---- backend --------------------------------------------------------------
   //

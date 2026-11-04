@@ -72,8 +72,58 @@
 // reason to add slack -- it is the arithmetic saying that one job is doing too much
 // for one budget, and the repair is another job. That is why this round splits the
 // batteries in two instead of raising their ceiling.
+//
+// ## The step that has not run yet (v3.52, finding 405)
+//
+// Every rule above compares a bound with a measurement, and a workflow that adds a
+// step has none -- by construction, because the measurement is of a run of the
+// workflow. So the gate refused every new step, and the round that needed one folded a
+// second battery into an existing step's command and left the step's name describing
+// half of what it ran (finding 403). A name narrower than its command is the same
+// defect the step bound exists to remove, one level down: the verdict names a battery
+// that is not the one that hung, and a reader who trusts the name reads a green line
+// about a command it never ran.
+//
+// The repair is not to let a step be unbounded. It is to let the tree say **which step
+// it added and what it will be bounded at**, in a file of its own, so that the first
+// run that measures the step is the run that deletes the sentence.
+// `golden-master/ci-declarations.json` holds those sentences, and `R8` is what each has
+// to satisfy:
+//
+// - the step exists in the job it names, and the recording does not measure it -- a
+//   declaration that outlives its measurement is a bound nobody ever checked against a
+//   run, which is the thing `R2` refuses;
+// - the bound is the one the workflow declares, not one the declaration invents, and it
+//   satisfies the floor -- the rules that do not need a measurement still apply;
+// - its bound would still expire before the job does, computed from the measurements of
+//   the steps in front of it, because that arithmetic is about the position rather than
+//   about this step's cost;
+// - it is the **last** step of its job that is not measured. Anywhere else and every
+//   bound after it would be argued from a sum with a hole in it, and the deadline would
+//   be short by an unknown number of seconds;
+// - it carries an argument. A declaration is a claim about work the repository has
+//   decided to do, and a claim with no words is a shrug with a filename.
+//
+// `R4`'s multiple is the one rule with nothing to stand on, and it is the one rule that
+// is answered last: the recording this file exists to make possible is a measurement of
+// that step, so the round after this one is refused if the bound was too small. That is
+// a refusal a person can act on, unlike the standing refusal of every new step.
+//
+// The lifetime is one recording, and it is structural rather than promised. The only
+// writer of the recording is `measure-ci-baseline.mjs`, which refuses to write a
+// reading that does not include every step of the workflow. So the first refresh after
+// a declaration measures it, and `R7` forces a refresh on every round that cites a run.
 
 import { timeoutOf } from './gate-steps.mjs';
+
+/**
+ * How long a declaration's argument has to be.
+ *
+ * The same threshold `gate-sites.json` puts on the description of a mutant, for the
+ * same reason: the point is not the number, it is that a sentence of forty characters
+ * says what a step is for and a sentence of five says "battery".
+ */
+export const WHY_LENGTH = 40;
 
 /** The multiples and the floor. Stated here, quoted by the gate and by the tests. */
 export const MULTIPLE = 2;
@@ -123,6 +173,76 @@ export function jobsOf(workflow) {
 function secondsOf(record, name) {
   const value = (record?.steps ?? {})[name];
   return typeof value === 'number' ? value : null;
+}
+
+/**
+ * The declarations file, read into the shape the rules work in.
+ *
+ * Returns a map of job id to a map of step name to the promise made about it, plus the
+ * sentences for everything that cannot be read at all. Two things are deliberately not
+ * errors here: a missing file, because having no declaration is the normal state and
+ * the state the round after this one is in; and an entry whose *step* the workflow does
+ * not have, because that check needs the job's steps and belongs with the job.
+ *
+ * The shape checks are here rather than at the call site for the reason `stepsOf` is:
+ * one reader, one verdict, and a test that can call it with nothing but a workflow.
+ */
+export function readDeclarations(workflow, declarations) {
+  const declared = new Map();
+  const errors = [];
+  if (declarations === null || declarations === undefined) return { declared, errors };
+  const list = declarations.declared;
+  if (!Array.isArray(list)) {
+    errors.push(
+      'the declarations file has no `declared` list, so no step in it can be read: write the ' +
+        'list, or delete the file and let the recording speak for the tree',
+    );
+    return { declared, errors };
+  }
+  if (list.length === 0) {
+    errors.push(
+      'the declarations file declares nothing: an empty list describes the state of having no ' +
+        'declarations, which is the state of not having the file -- delete it',
+    );
+    return { declared, errors };
+  }
+  const ids = new Set(jobsOf(workflow).map((job) => job.id));
+  for (const entry of list) {
+    const job = String(entry?.job ?? '');
+    const step = String(entry?.step ?? '');
+    const minutes = entry?.minutes;
+    const why = String(entry?.why ?? '');
+    const where = `\`${job} / ${step}\``;
+    if (!ids.has(job)) {
+      errors.push(
+        `the declarations file names \`${job}\`, which is not a job of ci.yml: a promise about a ` +
+          'job that does not exist is a promise about nothing',
+      );
+      continue;
+    }
+    if (!Number.isInteger(minutes) || minutes < FLOOR_MINUTES) {
+      errors.push(
+        `${where} is declared at ${String(minutes)} min: the floor is ${String(FLOOR_MINUTES)}, because ` +
+          'a measurement cannot see a cold package index or a missed cache, and a declaration sees ' +
+          'less than a measurement does',
+      );
+    }
+    if (why.trim().length < WHY_LENGTH) {
+      errors.push(
+        `${where} is declared without an argument: say what the step is for in at least ` +
+          `${String(WHY_LENGTH)} characters, because the round that reads this file is deciding ` +
+          'whether to believe a number about work it has never seen run',
+      );
+    }
+    const pending = declared.get(job) ?? new Map();
+    if (pending.has(step)) {
+      errors.push(`${where} is declared twice, so a reader cannot tell which bound is meant`);
+      continue;
+    }
+    pending.set(step, { minutes, why });
+    declared.set(job, pending);
+  }
+  return { declared, errors };
 }
 
 /**
@@ -178,8 +298,10 @@ export function ledgerErrors(baseline, ledger) {
  * Returns sentences rather than a boolean, because there are six different repairs
  * behind the rules and a reader who is told "budgets: FAILED" has to guess which.
  */
-export function budgetErrors(workflow, baseline, ledger = null) {
-  const errors = [...ledgerErrors(baseline, ledger)];
+export function budgetErrors(workflow, baseline, ledger = null, declarations = null) {
+  const parsed = readDeclarations(workflow, declarations);
+  const errors = [...ledgerErrors(baseline, ledger), ...parsed.errors];
+  const declared = parsed.declared;
 
   // R1 -- the recording is a reading, and it says where it was taken.
   if (!Number.isInteger(baseline.run) || baseline.run <= 0) {
@@ -243,14 +365,18 @@ export function budgetErrors(workflow, baseline, ledger = null) {
       continue;
     }
 
-    // R2, second half -- the steps of this job, in both directions.
+    const pending = declared.get(job.id) ?? new Map();
+
+    // R2, second half -- the steps of this job, in both directions. A step a round has
+    // declared is not excused from being measured; it is excused from being measured
+    // *yet*, and `R8` below is what it owes instead.
     for (const step of steps) {
-      if (secondsOf(record, step.name) === null) {
-        errors.push(
-          `\`${job.id} / ${step.name}\` has no baseline, so a bound for it would be a guess: run ` +
-            '`node scripts/measure-ci-baseline.mjs <run-id>` against a green run',
-        );
-      }
+      if (secondsOf(record, step.name) !== null) continue;
+      if (pending.has(step.name)) continue;
+      errors.push(
+        `\`${job.id} / ${step.name}\` has no baseline, so a bound for it would be a guess: run ` +
+          '`node scripts/measure-ci-baseline.mjs <run-id>` against a green run',
+      );
     }
     const names = new Set(steps.map((step) => step.name));
     for (const name of Object.keys(record.steps ?? {})) {
@@ -258,6 +384,42 @@ export function budgetErrors(workflow, baseline, ledger = null) {
         errors.push(
           `the recording holds \`${name}\` for \`${job.id}\`, which is not a step of that job: a ` +
             'recording that outlives its step describes a tree that no longer exists',
+        );
+      }
+    }
+
+    // R8 -- what a declaration owes once its step is known. Two of the three are about
+    // the step existing and the promise expiring; the per-step rules below take the rest.
+    for (const [name, promise] of pending) {
+      const step = steps.find((one) => one.name === name);
+      if (step === undefined) {
+        errors.push(
+          `the declarations file names \`${job.id} / ${name}\`, which is not a step of that job: the ` +
+            'step it was written for has been renamed or removed, so the promise describes nothing',
+        );
+        continue;
+      }
+      const seconds = secondsOf(record, name);
+      if (seconds !== null) {
+        errors.push(
+          `\`${job.id} / ${name}\` was measured at ${String(seconds)} s and the declarations file still ` +
+            'says it has not been: delete the entry, because the measurement is the thing the ' +
+            'declaration was waiting for and a promise that outlives it is a bound nobody checked',
+        );
+        continue;
+      }
+      if (step.inheritedFrom !== 'step') {
+        errors.push(
+          `\`${job.id} / ${name}\` is declared but declares no \`timeout-minutes\` of its own, so the ` +
+            'declaration has no bound to stand behind and the job budget would answer for it instead',
+        );
+        continue;
+      }
+      if (promise.minutes !== step.minutes) {
+        errors.push(
+          `\`${job.id} / ${name}\` is declared at ${String(promise.minutes)} min and ci.yml bounds it ` +
+            `at ${String(step.minutes)}: the declaration is about the number the workflow will ` +
+            'enforce, so the two have to be the same number',
         );
       }
     }
@@ -323,6 +485,37 @@ export function budgetErrors(workflow, baseline, ledger = null) {
             );
           }
         }
+      } else if (step.inheritedFrom === 'step' && pending.has(step.name)) {
+        // R8 -- the half of `R4`/`R5` that survives having no measurement. The deadline is
+        // about the bound's position in the job, so everything it needs is the steps in
+        // front of it, all of which are measured; and the floor is about the cold runner,
+        // which is the same argument whether or not this step has ever run.
+        if (step.minutes < FLOOR_MINUTES) {
+          errors.push(
+            `\`${step.name}\` is declared at ${String(step.minutes)} min: the floor is ` +
+              `${String(FLOOR_MINUTES)}, and a step that has not run yet is the case the floor is for`,
+          );
+        }
+        if (job.timeoutMinutes !== null) {
+          const deadline = step.minutes * 60 + before;
+          if (deadline > job.timeoutMinutes * 60) {
+            errors.push(
+              `\`${step.name}\` is declared at ${String(step.minutes)} min and the steps before it in ` +
+                `\`${job.id}\` measured ${String(Math.round(before / 60))} min, so its bound would expire ` +
+                `at ${String(Math.round(deadline / 60))} min -- past the job's ${String(job.timeoutMinutes)}. ` +
+                'The job would die first and name nothing, which is the defect the bound is for',
+            );
+          }
+        }
+        const after = steps.slice(steps.indexOf(step) + 1);
+        const measuredAfter = after.filter((one) => secondsOf(record, one.name) !== null);
+        if (measuredAfter.length > 0) {
+          errors.push(
+            `\`${job.id} / ${step.name}\` is declared and \`${String(measuredAfter[0]?.name)}\` after it ` +
+              'has been measured: a step no run has measured has to be the last of its job, because ' +
+              'every bound after it would be argued from a sum with a hole in it',
+          );
+        }
       }
       if (typeof seconds === 'number') before += seconds;
     }
@@ -364,7 +557,7 @@ function ledgerText(ledger, baseline) {
  * The jobs excused from step bounds are named here rather than in an error, because
  * the exception is legitimate and the reader should see it being taken.
  */
-export function budgetSummary(workflow, baseline, ledger = null) {
+export function budgetSummary(workflow, baseline, ledger = null, declarations = null) {
   const recorded = baseline.jobs ?? {};
   let measured = 0;
   let steps = 0;
@@ -397,15 +590,30 @@ export function budgetSummary(workflow, baseline, ledger = null) {
     }
   }
 
+  // The steps that are bounded and not measured are named here rather than folded into
+  // the ratio above: their bound has no denominator, and a summary that left them out
+  // would read as a workflow with one fewer step than it has.
+  const awaiting = [];
+  for (const [job, pending] of readDeclarations(workflow, declarations).declared) {
+    for (const name of pending.keys()) {
+      if (secondsOf(recorded[job] ?? {}, name) === null) awaiting.push(`${job} / ${name}`);
+    }
+  }
+
   const excusedText =
     excused.length === 0
       ? 'no job leans on its own budget'
       : `bounded by its own budget alone: ${excused.join(', ')}`;
+  const declaredText =
+    awaiting.length === 0
+      ? 'no step is declared unmeasured'
+      : `${String(awaiting.length)} step(s) declared and awaiting the run that measures them: ` +
+        awaiting.join(', ');
   return (
     `check-ci-budget: OK — ${String(jobCount)} job(s) recorded, ${String(bounded)} of ${String(steps)} ` +
     `step(s) bounded, ${String(Math.round(measured / 60))} min measured (as of run ` +
     `${String(baseline.run)}); bounds total ${String(Math.round(bounds / 60))} min; tightest ` +
     `${tightest.name} at ${Number.isFinite(tightest.ratio) ? tightest.ratio.toFixed(1) : 'unmeasured'}x; ` +
-    `${excusedText}; ${ledgerText(ledger, baseline)}`
+    `${excusedText}; ${declaredText}; ${ledgerText(ledger, baseline)}`
   );
 }

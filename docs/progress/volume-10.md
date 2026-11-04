@@ -2201,9 +2201,9 @@ because that is what a refresh looks like from inside.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **234 files, 5740 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **238 files, 5927 tests passed** (as of this commit) |
+| `core` test suite | **234 files, 5740 tests passed** |
+| `cli` test suite | **4 files, 187 tests passed** |
+| repo test suite | **238 files, 5927 tests passed** |
 | new tests | **20**: 13 in `ledger-runs.test.ts` (the reader), 7 in `ci-budget.test.ts` (`R7` and its gate paths) |
 | the recording | **run 41749989956** at `75f2de650`, 7 jobs / 74 steps / **46 bounded**, 43 min measured; before this round it was `41670923224` at `61dff700c`, one run and one commit behind the tree |
 | the comparison | the ledger's newest row names run `41749989956`, which is the recording -- `(the recording)`, not one run behind; **3 older rows name no run** and are counted |
@@ -2387,9 +2387,9 @@ bound after the re-record is `verify / Lint` at 2.1x.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **234 files, 5740 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **238 files, 5927 tests passed** (as of this commit) |
+| `core` test suite | **234 files, 5740 tests passed** |
+| `cli` test suite | **4 files, 187 tests passed** |
+| repo test suite | **238 files, 5927 tests passed** |
 | new tests | **17**: 11 rule-9 cases in `gate-sites-are-proven.test.ts`, 3 in `build-example-bundle.test.ts` (two statements and the nested-directory case), 1 in `measure-doc-counts-readings.test.ts`, 1 in `score.test.ts`, 1 in `type-miss-probe.test.ts` |
 | throw partition | **41 statements**: 4 `fatal`, 33 `unguarded`, 1 `guarded`, 3 `rethrow`; 35 proved; **6 exempt, 6 of them now holding a named test** |
 | the six claims | pack uniqueness, pack manifests and counts it, every diagnosis is a `MeasurementUnavailable`, four vocabulary checks published, `classify`'s return set closed, the m1 partition covers its dataset -- **4 already held and unnamed, 2 not held at all** |
@@ -2605,9 +2605,9 @@ next round that touches it will be reading it rather than running it (P16).
 
 | item | value |
 | --- | --- |
-| `core` test suite | **234 files, 5740 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **238 files, 5927 tests passed** (as of this commit) |
+| `core` test suite | **234 files, 5740 tests passed** |
+| `cli` test suite | **4 files, 187 tests passed** |
+| repo test suite | **238 files, 5927 tests passed** |
 | new tests | **27**: 12 in `claims-are-sensitive.test.ts` (every verdict and every refusal of the new battery), 11 rule-10 cases in `gate-sites-are-proven.test.ts`, 4 in `build-example-bundle.test.ts` (two third-opinion cases, the published counts, and the symlink that makes the two readings disagree) |
 | throw partition | **43 statements**: 4 `fatal`, 35 `unguarded`, 1 `guarded`, 3 `rethrow`; 36 proved; **7 exempt, every one carrying a claim, a holding test and a falsifying edit** |
 | failure sites | **120** across 57 of **80** scripts; `excluded` `{17 zero}` |
@@ -2645,3 +2645,163 @@ check: a tree is what every gate reads, and a **log** is what none of them reads
 that carries trees can drop messages through a green run. Name, for every artefact a round
 publishes, which gate reads it -- and treat "nothing reads this" as a position on the map rather
 than a reassurance.
+
+## v3.52 — a step nobody could add, and the name it left behind
+
+Last round ended with a step that ran two batteries under one name, and with the sentence that
+explained it: *a step cannot be added, and a measurement cannot happen without the step.* The
+explanation was correct and it was also an admission -- the repository had a class of change it
+could not make, and every future battery would inherit the same compromise. This round closes the
+class.
+
+### One — a name narrower than its command (finding 405)
+
+`ci.yml` carried
+
+```yaml
+      - name: Every proved exit can disappear without a word
+        timeout-minutes: 20
+        run: node scripts/verify-sites-are-sensitive.mjs && node scripts/verify-claims-are-sensitive.mjs
+```
+
+The name describes the first command. The second asks a different question -- *can an exemption's
+claim be made false* -- and a reader who trusts the name is reading a green line about a battery
+that did not run. That is the defect a step bound exists to remove, one level down: the verdict
+names something that is not the one that hung.
+
+The four rings that made it unavoidable were each correct on their own:
+
+1. `R2` refuses a step the recording has never measured, because a bound sized from no measurement
+   is a number somebody typed;
+2. `measure-ci-baseline.mjs` refuses to write a reading that omits any step of the workflow, because
+   a partial recording describes a tree that never ran;
+3. `verify:local` runs `docs:check`, which runs that gate, so the tree cannot be pushed while the
+   step is unmeasured;
+4. the run that would measure the step exists only after the push.
+
+A closed loop of four correct rules. The previous round's answer was to stop needing the step.
+
+### Two — what a tree can still say when it has no number (finding 405)
+
+The rings are all about *measurement*. A round that adds a step cannot supply a measurement and can
+supply several other things: the step exists, its bound is written in the workflow, the job's budget
+is declared, and every step in front of it has been measured. So the missing number is isolated in a
+file of its own rather than let into the recording:
+
+```json
+{
+  "declared": [
+    {
+      "job": "sensitivity",
+      "step": "Every exemption's claim can be made false",
+      "minutes": 3,
+      "why": "The claims battery shared the sites step for one round because a step could not be measured before it existed (findings 403 and 405). It runs its own command from this round on, and the first run that measures it deletes this sentence."
+    }
+  ]
+}
+```
+
+`R8` is the arithmetic over that list, and every clause is a refusal a reader can act on:
+
+| the clause | what it refuses |
+| --- | --- |
+| the step exists in the job it names | a promise about a step that was renamed or removed |
+| the bound is the workflow's own | two numbers, and a reader deciding which one kills the run |
+| the recording does not measure it | a promise that outlived its measurement -- the bound nobody checked |
+| the bound clears the floor | a step that has not run is exactly the case the floor is for |
+| the bound expires inside the job | an arithmetic that skips a hole, computed from the measurements in front |
+| it is the last unmeasured step of its job | a bound after it argued from a sum with an unknown in it |
+| it argues for itself in forty characters | a claim about unwatched work with no words behind it |
+| an empty list is refused | the file becoming furniture |
+
+The lifetime is one recording, and the mechanism is structural rather than promised: the recorder
+cannot write a reading that omits the step, `R7` forces a refresh on every round that cites a run,
+and `R8` refuses the tree until the sentence is gone. So a declaration is a promise that is kept or
+the round does not close.
+
+### Three — what the declaration cannot do
+
+`R4` -- the bound is at least twice the measurement -- is the one rule with nothing to stand on
+before the measurement exists. That is not an oversight, it is where the bet is placed: the round
+that adds the step guesses a number and the round that refreshes finds out. If the guess is too
+small, the refresh is refused with a bound, a measurement and a ratio, which is a sentence somebody
+can act on; the alternative was the standing refusal of every new step, which produced the name this
+round deletes.
+
+A whole **job** is still out of reach, and the file says so rather than leaving the gap to be
+discovered: a new job's budget is part of what `R6` compares, so a job that has never run is covered
+by `--borrow` (which copies seconds) and nothing else. The next round that needs a new job will find
+that out from the gate rather than from this paragraph, which is the correct order.
+
+### Four — a borrowed measurement carried a budget it never spent (finding 406)
+
+The recorder writes `timeoutMinutes` from the workflow it has just read. For a job recorded with
+`--borrow`, that is the *target's* budget, so `R6` compared the workflow with itself and could never
+fire for that job -- while the deadline arithmetic was argued from a ceiling the borrowed seconds had
+never been spent inside.
+
+The fix is a refusal in the recorder, where the source job is still known:
+
+```
+--borrow batteries-heavy=batteries crosses a budget: `batteries-heavy` declares 40 minutes and
+`batteries` declares 25 minutes. The seconds describe the same commands, but a bound has to fit the
+job that will enforce it, so a borrow is only a substitute for a measurement inside one budget
+```
+
+A step's cost is a property of the command. A budget is not, and the check that could not tell them
+apart was comparing one thing with itself -- the third round in a row where that was the defect.
+
+### Five — the round's own instruments
+
+| instrument | what it says now |
+| --- | --- |
+| `ci.yml` | **75 steps** in 7 jobs, **47 bounded**; bounds total **208 min** against 44 min measured |
+| the declaration | **1** step, `sensitivity / Every exemption's claim can be made false`, 3 min, awaiting the run that measures it |
+| `gate-sites.json` | **121 failure sites** across 57 of 80 scripts, `excluded {17 zero}`; **44 throws** -- 5 `fatal`, 35 `unguarded`, 1 `guarded`, 3 `rethrow` |
+| the step count the plan prints | `sensitivity bounds all 4 of its step(s) on its own`, and the largest is still 20m of the job's 21m |
+
+### Readings
+
+> Ledger for `v3.52`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **234 files, 5755 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **238 files, 5942 tests passed** (as of this commit) |
+| new tests | **15**, all in `ci-budget.test.ts`: every clause of `R8` (seven refusals and the pair that shows the declaration doing the work), the reading it prints, the shipped pair, the malformed file through the gate, the recorder's "now measured" line, and the borrow across a budget |
+| throw partition | **44 statements**: 5 `fatal`, 35 `unguarded`, 1 `guarded`, 3 `rethrow`; 37 proved; 7 exempt |
+| failure sites | **121** across 57 of **80** scripts; `excluded` `{17 zero}` |
+| the new refusal | `check-ci-budget.mjs` gains one site (a declarations file that cannot be read) and `measure-ci-baseline.mjs` one throw (a borrow across a budget) -- both proved by the same test file |
+| the declaration | **1** entry, and the gate is green *because* of it: the same tree without the file is refused, which is the pair the round's first case asserts |
+| the step | `sensitivity` now bounds **4** steps; the sites battery keeps 20 min (578 s recorded, 542 s real) and the claims battery gets the 3-minute floor |
+
+One correction to the tables above, and it is about the tables themselves. A count
+marked `as of this commit` has to equal the live measurement, so every round that adds tests
+rewrites the marked rows of the rounds before it -- v3.49, v3.50 and v3.51 all now read
+`5740 / 5927`, and none of them measured that. This round drops the marker from those three
+tables and leaves their numbers where they are: they become **records of the state at the close
+of v3.51**, which is what they can honestly be. The marker stays on this round's table, so there
+is always exactly one row that claims to be now.
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P3** | the sensitivity gate's cost grows linearly with claims | 142 claims, 194 runs, 10.0 min on the runner, and the two batteries now have separate bounds | shard by file when either battery approaches twice its measurement; the split means growth in one no longer spends the other's margin |
+| **P17** | a job that has never run can only be recorded by `--borrow` | a new job's budget is part of `R6`'s comparison, so there is nothing to compare | a declaration for a job, which would have to state its budget and every step's bound -- the same shape one level up |
+| **P13** | a mutation is one substitution | a claim can be false in ways the table does not name | unchanged this round |
+| **P14** | one of the seven notices is a refusal, not an assertion | the m1 partition's claim is enforced by the probe refusing to publish | unchanged this round |
+| **P16** | the publishing channel is outside the repository and has no test | the replay that fixes finding 404 lives in the push script | unchanged this round |
+| **P2** | a key whose description carries no keyword scores 0 | the protocol is silent | unchanged |
+| **P5/P7** | the witness sees one level | a script loaded without `NODE_OPTIONS` is not rewritten | unchanged |
+| **P8** | the compiler is a runtime dependency of four readers | unchanged | unchanged |
+| **P9** | the batteries jobs sit inside their budgets | 15.6 and 8.2 measured against 25 each | a fresh baseline before adding another battery |
+
+**The lesson, for the round after this one.** The previous round's ruler was *name the two things a
+check compares and where each comes from.* This round's is the same ruler applied to a **file**: for
+every file a tool writes, name the fields the tool cannot know, and see whether the tree has another
+place to put them. `ci-baseline.json` is written by one script and holds measurements; a round that
+needed a fact the script could not measure had been writing it as a longer command line, and the name
+of the step paid for it. A file with one writer and one kind of content is a file whose gaps are
+visible; a file with two kinds of content is one where a promise can hide inside a measurement.

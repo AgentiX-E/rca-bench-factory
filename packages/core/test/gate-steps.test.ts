@@ -1903,7 +1903,9 @@ describe('scripts/verify-local.mjs as a command', () => {
     expect(result.stdout).not.toContain('verify 15m across');
     expect(result.stdout).toContain('verify bounds all 7 of its step(s) on its own');
     expect(result.stdout).toContain("largest 12m of the job's 15m");
-    expect(result.stdout).toContain('sensitivity bounds all 3 of its step(s) on its own');
+    // 3 -> 4 in v3.52: the sensitivity job's one battery became two, because a step can
+    // now be declared for one recording instead of being folded into a neighbour's name.
+    expect(result.stdout).toContain('sensitivity bounds all 4 of its step(s) on its own');
     // 18 -> 19 in v3.50: the fresh recording measured the site-proofs step at 542 s,
     // and twice that is 1084 s, which is 4 s past 18 minutes. The bound follows the
     // measurement, so the assertion follows the bound -- it is the plan's own number

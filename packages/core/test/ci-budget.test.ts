@@ -8,10 +8,12 @@ import { describe, expect, it } from 'vitest';
 import {
   FLOOR_MINUTES,
   MULTIPLE,
+  WHY_LENGTH,
   budgetErrors,
   budgetSummary,
   jobsOf,
   ledgerErrors,
+  readDeclarations,
   stepsOf,
 } from '../../../scripts/ci-budget.mjs';
 import { readWorkflow } from '../../../scripts/gate-steps.mjs';
@@ -237,6 +239,194 @@ describe('the arithmetic of one job', () => {
     ).join('\n');
     expect(errors).toContain('had 30 minutes and ci.yml now declares 45');
     expect(errors).toContain('re-measured together');
+  });
+});
+
+/**
+ * One declaration, in the shape `golden-master/ci-declarations.json` holds them.
+ *
+ * The argument is part of the shape rather than a nicety: the file exists so that a round
+ * can add a step the recording has not seen, and the round after it is deciding whether to
+ * believe a bound about work nobody has watched run. A declaration without a reason asks
+ * the reader to take that on trust.
+ */
+function declarationOf(over: Record<string, unknown> = {}) {
+  return {
+    job: 'batteries',
+    step: 'Quick battery',
+    minutes: 3,
+    why: 'the claims battery had no step of its own, so its command rode in the step next to it',
+    ...over,
+  };
+}
+
+describe('the step the recording has not measured yet', () => {
+  it('accepts a declared step whose bound is the one the workflow declares, and refuses it without', () => {
+    // The pair is the rule: the same tree is green with the declaration and refused
+    // without it, so the case cannot pass by the rule having stopped looking.
+    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)]);
+    const recording = recordingOf({ batteries: { steps: { 'Slow battery': 351 } } });
+    expect(budgetErrors(workflow, recording, null, { declared: [declarationOf()] })).toEqual([]);
+    expect(budgetErrors(workflow, recording).join('\n')).toContain('has no baseline');
+  });
+
+  it('refuses a declaration that outlived its measurement, because the measurement was the point', () => {
+    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)]);
+    const recording = recordingOf({ batteries: { steps: { 'Slow battery': 351, 'Quick battery': 40 } } });
+    const errors = budgetErrors(workflow, recording, null, { declared: [declarationOf()] }).join('\n');
+    expect(errors).toContain('was measured at 40 s and the declarations file still says it has not been');
+    expect(errors).toContain('delete the entry');
+  });
+
+  it('refuses a declaration that invents a bound the workflow does not declare', () => {
+    // A declaration is about the number the workflow will enforce. Two numbers is a
+    // reader deciding which one the run will actually be killed by.
+    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)]);
+    const recording = recordingOf({ batteries: { steps: { 'Slow battery': 351 } } });
+    const errors = budgetErrors(workflow, recording, null, {
+      declared: [declarationOf({ minutes: 7 })],
+    }).join('\n');
+    expect(errors).toContain('is declared at 7 min and ci.yml bounds it at 3');
+  });
+
+  it('refuses a declaration naming a step, or a job, that ci.yml does not have', () => {
+    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)]);
+    const recording = recordingOf({ batteries: { steps: { 'Slow battery': 351 } } });
+    const stepless = budgetErrors(workflow, recording, null, {
+      declared: [declarationOf({ step: 'A battery that never was' })],
+    }).join('\n');
+    expect(stepless).toContain('which is not a step of that job');
+    expect(stepless).toContain('the promise describes nothing');
+
+    const jobless = budgetErrors(workflow, recording, null, {
+      declared: [declarationOf({ job: 'batteries-heavy' })],
+    }).join('\n');
+    expect(jobless).toContain('which is not a job of ci.yml');
+  });
+
+  it('refuses a declared step that any measured step follows, because the sum would have a hole', () => {
+    // The declaration is about a step that has not run. A bound after it is argued from
+    // the measurements in front of it, and the declared step's own cost is exactly the
+    // number the recording does not have -- so the deadline would be short by an unknown
+    // amount and the bound would expire later than the profile says.
+    const workflow = oneJob([...step('Quick battery', 3), ...step('Slow battery', 12)]);
+    const errors = budgetErrors(
+      workflow,
+      recordingOf({ batteries: { steps: { 'Slow battery': 351 } } }),
+      null,
+      { declared: [declarationOf()] },
+    ).join('\n');
+    expect(errors).toContain('has to be the last of its job');
+    expect(errors).toContain('a sum with a hole in it');
+  });
+
+  it('refuses a declaration with no argument, because a claim with no words is a shrug', () => {
+    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)]);
+    const recording = recordingOf({ batteries: { steps: { 'Slow battery': 351 } } });
+    const errors = budgetErrors(workflow, recording, null, {
+      declared: [declarationOf({ why: 'battery' })],
+    }).join('\n');
+    expect(errors).toContain(`at least ${String(WHY_LENGTH)} characters`);
+    expect(errors).toContain('whether to believe a number about work it has never seen run');
+  });
+
+  it('refuses a declared step under the floor, and a declared step bounded only by its job', () => {
+    // Two refusals that need no measurement, so they are the ones a declaration cannot
+    // dodge by pointing at a run that has not happened.
+    const low = oneJob([...step('Slow battery', 12), ...step('Quick battery', 2)]);
+    const lowErrors = budgetErrors(
+      low,
+      recordingOf({ batteries: { steps: { 'Slow battery': 351 } } }),
+      null,
+      { declared: [declarationOf({ minutes: 2 })] },
+    ).join('\n');
+    expect(lowErrors).toContain(`the floor is ${String(FLOOR_MINUTES)}`);
+
+    const inheritedStep = oneJob([...step('Slow battery', 12), ...inherited('Quick battery')]);
+    const inheritedErrors = budgetErrors(
+      inheritedStep,
+      recordingOf({ batteries: { steps: { 'Slow battery': 351 } } }),
+      null,
+      { declared: [declarationOf({ minutes: 30 })] },
+    ).join('\n');
+    expect(inheritedErrors).toContain('no `timeout-minutes` of its own');
+    expect(inheritedErrors).toContain('the job budget would answer for it instead');
+  });
+
+  it('refuses a declared bound that would expire past the job, using the measurements in front of it', () => {
+    // 300 s of a 10-minute job is left, and the declaration asks for 6 minutes of it.
+    // The rule is `R5` with the declaration's number standing where a measurement would.
+    const workflow = oneJob([...step('Slow battery', 10), ...step('Quick battery', 6)], 10);
+    const errors = budgetErrors(
+      workflow,
+      recordingOf({ batteries: { minutes: 10, steps: { 'Slow battery': 300 } } }),
+      null,
+      { declared: [declarationOf({ minutes: 6 })] },
+    ).join('\n');
+    expect(errors).toContain('would expire at 11 min');
+    expect(errors).toContain("past the job's 10");
+  });
+
+  it('refuses a step declared twice, and a declarations file that says nothing', () => {
+    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)]);
+    const recording = recordingOf({ batteries: { steps: { 'Slow battery': 351 } } });
+    expect(
+      budgetErrors(workflow, recording, null, { declared: [declarationOf(), declarationOf()] }).join('\n'),
+    ).toContain('is declared twice');
+    // An empty list is the state of having no declarations, which is the state of not
+    // having the file -- and a file that persists in that state is furniture.
+    expect(budgetErrors(workflow, recording, null, { declared: [] }).join('\n')).toContain(
+      'declares nothing',
+    );
+    expect(budgetErrors(workflow, recording, null, { steps: {} }).join('\n')).toContain(
+      'has no `declared` list',
+    );
+  });
+
+  it('reads nothing out of a tree that has declared nothing, which is the normal state', () => {
+    const workflow = oneJob([...step('Slow battery', 12)]);
+    expect(readDeclarations(workflow, null)).toEqual({ declared: new Map(), errors: [] });
+    expect(readDeclarations(workflow, undefined)).toEqual({ declared: new Map(), errors: [] });
+  });
+
+  it('names the declared step in the reading, so the step count and the ratios still add up', () => {
+    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)]);
+    const recording = recordingOf({ batteries: { steps: { 'Slow battery': 351 } } });
+    const declared = budgetSummary(workflow, recording, null, { declared: [declarationOf()] });
+    expect(declared).toContain('2 of 2 step(s) bounded');
+    expect(declared).toContain('1 step(s) declared and awaiting the run that measures them');
+    expect(declared).toContain('batteries / Quick battery');
+    expect(budgetSummary(workflow, recording)).toContain('no step is declared unmeasured');
+  });
+
+  it('holds the shipped declaration to the workflow it describes, so it cannot become furniture', () => {
+    // The one case about the committed pair rather than a fixture: one declaration, one
+    // step, and the bound the workflow actually writes. `R8` refuses a stale entry, so a
+    // round that measured this step and kept the sentence would be red -- this asserts the
+    // same facts from the other side, where a reader can see what the file claims.
+    const workflow = readWorkflow(readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8'));
+    const declarations = JSON.parse(
+      readFileSync(join(ROOT, 'golden-master', 'ci-declarations.json'), 'utf8'),
+    );
+    expect(readDeclarations(workflow, declarations).errors).toEqual([]);
+    const [only] = declarations.declared;
+    expect(only.job).toBe('sensitivity');
+    expect(only.step).toBe("Every exemption's claim can be made false");
+    const bounded = stepsOf(workflow, 'sensitivity').find((one) => one.name === only.step);
+    expect(bounded?.minutes).toBe(only.minutes);
+  });
+
+  it('refuses through the gate, with the declarations file named, rather than only inside a function', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rca-ci-declarations-'));
+    const broken = join(dir, 'broken.json');
+    writeFileSync(broken, '{ "declared": [');
+    const result = spawnSync(process.execPath, [GATE], {
+      encoding: 'utf8',
+      env: { ...process.env, RCA_CI_DECLARATIONS: broken },
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('no readable declarations at');
+    expect(result.stderr).toContain('broken.json');
   });
 });
 
@@ -537,7 +727,12 @@ describe('the recording the gate reads', () => {
   it('states the multiple and the floor in one place, which the shipped bounds satisfy', () => {
     const workflow = readWorkflow(readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8'));
     const baseline = JSON.parse(readFileSync(join(ROOT, 'golden-master', 'ci-baseline.json'), 'utf8'));
-    expect(budgetErrors(workflow, baseline, readLedger())).toEqual([]);
+    const declarations = JSON.parse(readFileSync(join(ROOT, 'golden-master', 'ci-declarations.json'), 'utf8'));
+    expect(budgetErrors(workflow, baseline, readLedger(), declarations)).toEqual([]);
+    // And the recording alone is not enough for this tree, which is the whole point of
+    // the declaration: one step has no measurement yet, and `R2` is right to refuse it.
+    // A case that passed both ways would be describing a tree that has never existed.
+    expect(budgetErrors(workflow, baseline, readLedger())).not.toEqual([]);
     for (const job of jobsOf(workflow)) {
       for (const step of stepsOf(workflow, job.id)) {
         if (step.inheritedFrom === null) continue;
@@ -609,10 +804,11 @@ const API_JOBS = {
 async function withApi<T>(
   answer: (url: string) => { status: number; body: unknown } | null,
   body: (env: Record<string, string>) => Promise<T>,
+  source = TWO_JOBS,
 ): Promise<T> {
   const dir = mkdtempSync(join(tmpdir(), 'rca-ci-fixture-'));
   const workflow = join(dir, 'ci.yml');
-  writeFileSync(workflow, TWO_JOBS);
+  writeFileSync(workflow, source);
   const server = createServer((req, res) => {
     const found = answer(req.url ?? '');
     if (found === null) {
@@ -634,6 +830,10 @@ async function withApi<T>(
       RCA_GITHUB_API: `http://127.0.0.1:${String(port)}`,
       RCA_CI_WORKFLOW: workflow,
       RCA_CI_OUT: join(dir, 'ci-baseline.json'),
+      // The shipped declarations file is a file about the shipped workflow. A fixture
+      // workflow that inherited it would be reading a sentence about a job it does not
+      // have, and the recorder's own report would depend on a committed file.
+      RCA_CI_DECLARATIONS: join(dir, 'ci-declarations.json'),
     });
   } finally {
     await new Promise<void>((shut) => server.close(() => shut()));
@@ -743,6 +943,92 @@ describe('the recorder', () => {
     // seconds and not the set of jobs they are checked against -- said out loud, because
     // the next reader will otherwise take the pair for one tree.
     expect(written.note).toContain('did not exist in the run its seconds came from');
+  });
+
+  it('reports the declarations its reading has just answered, and leaves them for the round to delete', async () => {
+    // The promise and its answer are one edit apart: this run measures the step, and the
+    // gate refuses the tree until the sentence is gone. The recorder says so rather than
+    // deleting it, because the sentence is the only account of why the step was added --
+    // a tool that removed it would erase the reasoning at the moment it stopped being
+    // needed, which is the moment somebody would want to read it.
+    const result = await withApi(
+      (url) => {
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/13') {
+          return { status: 200, body: { head_sha: 'feedface', updated_at: '2026-11-02T10:31:00Z' } };
+        }
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/13/jobs?per_page=100') {
+          return { status: 200, body: API_JOBS };
+        }
+        return null;
+      },
+      async (env) => {
+        const path = join(dirname(env['RCA_CI_OUT'] as string), 'declared.json');
+        writeFileSync(
+          path,
+          JSON.stringify({
+            declared: [
+              {
+                job: 'batteries-heavy',
+                step: 'Slow battery',
+                minutes: 16,
+                why: 'the two probes that rewrite a source file a hundred times had no step of their own',
+              },
+              {
+                job: 'a-job-this-run-never-ran',
+                step: 'Slow battery',
+                minutes: 3,
+                why: 'a second entry that this reading does not answer, to prove the count is of answers',
+              },
+            ],
+          }),
+        );
+        const out = await runRecorder(['13'], { ...env, RCA_CI_DECLARATIONS: path });
+        return { out, path };
+      },
+    );
+    expect(result.out.status).toBe(0);
+    expect(result.out.stdout).toContain('1 declaration(s) are now measured and can be deleted');
+    // Still there, and still saying what it said.
+    expect(readFileSync(result.path, 'utf8')).toContain('a-job-this-run-never-ran');
+  });
+
+  it('refuses to borrow across a budget, because the seconds are the same commands and the ceiling is not', async () => {
+    // The hole `R6` cannot see. A borrowed job records the *target's* budget, so the
+    // comparison between recording and workflow is the workflow against itself and never
+    // fires for that job -- while the deadline arithmetic is argued from a ceiling the
+    // borrowed seconds have never been spent inside. The refusal is here rather than in
+    // the rule because the recording is the only place the source is still known.
+    const UNEQUAL = workflowText([
+      {
+        id: 'batteries',
+        name: 'injection batteries, one step each (no survivors, no inert)',
+        minutes: 25,
+        steps: [...step('Slow battery', 12)],
+      },
+      {
+        id: 'batteries-heavy',
+        name: 'injection batteries, one step each (no survivors, no inert)',
+        minutes: 40,
+        steps: [...step('Slow battery', 12)],
+      },
+    ]);
+    const result = await withApi(
+      (url) => {
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/14') {
+          return { status: 200, body: { head_sha: 'cafebabe', updated_at: '2026-11-02T10:31:00Z' } };
+        }
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/14/jobs?per_page=100') {
+          return { status: 200, body: { jobs: [API_JOBS.jobs[0]] } };
+        }
+        return null;
+      },
+      (env) => runRecorder(['14', '--borrow', 'batteries-heavy=batteries'], env),
+      UNEQUAL,
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('crosses a budget');
+    expect(result.stderr).toContain('`batteries-heavy` declares 40 minutes');
+    expect(result.stderr).toContain('`batteries` declares 25 minutes');
   });
 
   it('refuses a borrow that names no job of the workflow', async () => {

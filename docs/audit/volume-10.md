@@ -1894,3 +1894,57 @@ Two limits, stated because the alternative is a claim stronger than the instrume
   published for the record; their trees are the steps on the way to the tree `verify:local`
   measured, and the script still refuses to move the ref unless the tip's tree survives. That is
   the same bargain as before, made explicit for the commits that were previously dropped.
+
+## Finding 405 — a step cannot be added, so its name describes half of what it runs
+
+`ci.yml` carried one step that ran two batteries. The round that wrote it explained itself: a step
+cannot be added. `R2` refuses a step the recording has never measured; `measure-ci-baseline.mjs`
+refuses to write a reading that omits any step of the workflow; `verify:local` runs `docs:check`,
+which runs that gate; and the run that would measure the step exists only after the push the gate is
+blocking. Four rings, each correct, and together they forbid the one act every new battery needs:
+arriving.
+
+The cost was a name. `Every proved exit can disappear without a word` described the first command and
+not the second, so a reader of a green run was reading a line about a battery that had not been the
+subject of it. That is the defect step bounds exist to remove, one level down -- the verdict names
+something that is not the one that hung -- and the previous round's repair was to stop needing the
+step rather than to open the ring.
+
+The repair this round is not a fifth exception. It is to notice that all four rings are about
+**measurement**, and that a tree which adds a step can still say everything except the number: the
+step exists, the bound is written, the job's budget is declared, and the steps in front of it have
+been measured. So the missing number is isolated in a file of its own,
+`golden-master/ci-declarations.json`, and `R8` is the arithmetic over it -- the step exists, the
+bound is the workflow's own, the recording does not measure it yet, the bound clears the floor, the
+expiry fits the job, no measured step follows it, and it argues for itself in forty characters or
+more.
+
+The lifetime is one recording, and it is structural rather than promised. The recorder will not write
+a reading that omits a step, so the first refresh measures it; `R7` requires a refresh on every round
+that cites a run, so that refresh is the round the declaration was made in; and `R8` refuses the tree
+until the sentence is deleted. A promise that outlives its measurement is refused with those words,
+because it is the same defect as a bound nobody checked.
+
+What cannot be settled until the measurement exists is `R4`'s multiple -- the bound must be at least
+twice the cost. That is where the bet is placed, and it is placed in public: the round that adds the
+step guesses, and the round that refreshes is refused if the guess was too small. A refusal that
+names a bound, a measurement and a ratio is a sentence somebody can act on; the standing refusal of
+every new step was not.
+
+## Finding 406 — a borrowed measurement carried a budget it never spent
+
+`--borrow` records a new job's steps from the seconds the job it was split out of measured. The
+argument is sound for the seconds: a step's cost is a property of the command, not of which job it
+sits in. The budget is not a property of the command, and the recorder wrote the recording's
+`timeoutMinutes` from the workflow it had just read -- the target's budget, not the source's.
+
+So for a borrowed job, `R6` compared the workflow with itself and could never fire, while the
+deadline arithmetic was argued from a ceiling the borrowed seconds had never been spent inside. Two
+jobs whose steps are the same commands are still told apart by what they are allowed to spend. The
+recorder now refuses a borrow across a budget and prints both numbers, which is the only place the
+source is still known.
+
+The shape is the round's larger one, one field over: a number that came from somewhere other than
+where the check believed it came from. Three rounds in a row, the defect has been a comparison whose
+two sides were not independent -- a pack index written by its own reader, a check that compared a
+list with itself, and now a budget copied from the job that was being checked.

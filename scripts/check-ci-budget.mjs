@@ -13,7 +13,7 @@
  * a failing test.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { budgetErrors, budgetSummary } from './ci-budget.mjs';
 import { readWorkflow, workflowPath } from './gate-steps.mjs';
@@ -44,6 +44,24 @@ const BASELINE = resolve(ROOT, process.env['RCA_CI_BASELINE'] ?? join('golden-ma
  */
 const LEDGER = process.env['RCA_CI_LEDGER'] === undefined ? VOLUMES : resolve(ROOT, process.env['RCA_CI_LEDGER']);
 
+/**
+ * Where the declarations live: the steps this tree added that no run has measured yet.
+ *
+ * A separate file from the recording because the two are different kinds of statement.
+ * The recording is a measurement and `measure-ci-baseline.mjs` is its only writer; a
+ * declaration is a promise, written by the round that adds the step and deleted by the
+ * round whose run measures it. Keeping the promise inside the measurement would put a
+ * number in a file that only measurements may enter -- and would leave the promise with
+ * no owner to delete it, since the tool rewrites the whole object.
+ *
+ * A missing file is the normal state and not an error. A file that cannot be read is.
+ */
+const DECLARATIONS =
+  process.env['RCA_CI_DECLARATIONS'] === undefined
+    ? join(ROOT, 'golden-master', 'ci-declarations.json')
+    : resolve(ROOT, process.env['RCA_CI_DECLARATIONS']);
+
+
 const workflow = readWorkflow(readFileSync(workflowPath(), 'utf8'));
 if (workflow.errors.length > 0) {
   process.stderr.write(`check-ci-budget: ci.yml does not parse:\n  ${workflow.errors.join('\n  ')}\n`);
@@ -59,10 +77,28 @@ try {
 }
 
 const ledger = readLedger(LEDGER);
-const errors = budgetErrors(workflow, baseline, ledger);
+
+/**
+ * The declarations, or nothing at all when the tree has none.
+ *
+ * `existsSync` rather than a `catch` around the read: the two states are different, and
+ * a reader that treated "no file" as "an empty list" would also treat "a file with a
+ * typo in it" as one, which is the mistake `R8` exists to catch one level up.
+ */
+let declarations = null;
+if (existsSync(DECLARATIONS)) {
+  try {
+    declarations = JSON.parse(readFileSync(DECLARATIONS, 'utf8'));
+  } catch (error) {
+    process.stderr.write(`check-ci-budget: no readable declarations at ${DECLARATIONS} -- ${String(error)}\n`);
+    process.exit(1);
+  }
+}
+
+const errors = budgetErrors(workflow, baseline, ledger, declarations);
 if (errors.length > 0) {
   for (const error of errors) process.stderr.write(`check-ci-budget: ${error}\n`);
   process.stdout.write(`check-ci-budget: FAILED — ${String(errors.length)} problem(s)\n`);
   process.exit(1);
 }
-process.stdout.write(`${budgetSummary(workflow, baseline, ledger)}\n`);
+process.stdout.write(`${budgetSummary(workflow, baseline, ledger, declarations)}\n`);

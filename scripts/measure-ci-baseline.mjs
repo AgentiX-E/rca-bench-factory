@@ -50,7 +50,7 @@
  * the script's network-shaped refusals are reached by a test rather than by nobody.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { jobsOf, stepsOf } from './ci-budget.mjs';
 import { readWorkflow, workflowPath } from './gate-steps.mjs';
@@ -153,6 +153,24 @@ for (const job of jobsOf(workflow)) {
   if (borrowedFrom !== undefined && !byId.has(borrowedFrom)) {
     throw new Error(`--borrow names \`${borrowedFrom}\`, which is not a job of this workflow`);
   }
+  // A borrowed reading is a measurement of the *commands*, and a budget is not a command.
+  // `R6` compares the recording's job budget with the workflow's, and a borrowed job
+  // records the target's budget -- so for that job the check compares the workflow with
+  // itself and can never fire, while the deadline arithmetic is argued from a ceiling the
+  // borrowed seconds have never been spent inside. Two jobs whose steps are the same
+  // commands are still told apart by what they are allowed to spend, and that is the one
+  // thing a borrow cannot copy.
+  const ranIn = borrowedFrom === undefined ? undefined : byId.get(borrowedFrom);
+  if (ranIn !== undefined && ranIn.timeoutMinutes !== job.timeoutMinutes) {
+    throw new Error(
+      `--borrow ${job.id}=${borrowedFrom} crosses a budget: \`${job.id}\` declares ` +
+        `${job.timeoutMinutes === null ? 'no budget' : `${String(job.timeoutMinutes)} minutes`} and ` +
+        `\`${borrowedFrom}\` declares ` +
+        `${ranIn.timeoutMinutes === null ? 'none' : `${String(ranIn.timeoutMinutes)} minutes`}. The seconds ` +
+        'describe the same commands, but a bound has to fit the job that will enforce it, so a borrow is ' +
+        'only a substitute for a measurement inside one budget',
+    );
+  }
   if (source === undefined) {
     throw new Error(`run ${RUN} holds no job named "${apiNameOf(job)}", so \`${job.id}\` has no reading`);
   }
@@ -196,7 +214,34 @@ if (Object.keys(derived).length > 0) {
 
 const stepCount = Object.values(recorded).reduce((sum, one) => sum + Object.keys(one.steps).length, 0);
 writeFileSync(OUT, `${JSON.stringify(reading, null, 2)}\n`);
+
+/**
+ * The declarations this recording has just answered.
+ *
+ * Deleting the sentence is the round's job and not this script's: the declaration says
+ * why the step was added, and a tool that removed it would erase the only account of
+ * that. So the count is printed here, at the moment the promise becomes measurable, and
+ * `check-ci-budget` refuses the tree until the sentence is gone -- which is the same
+ * round, because the recording and the deletion are one edit to the same kind of file.
+ *
+ * A declaration this run did not measure cannot reach this point: the loop above throws
+ * for every step of the workflow the run did not report, declared or not.
+ */
+const DECLARATIONS = resolve(
+  process.env['RCA_CI_DECLARATIONS'] ??
+    join(import.meta.dirname, '..', 'golden-master', 'ci-declarations.json'),
+);
+const declaredNow = existsSync(DECLARATIONS)
+  ? JSON.parse(readFileSync(DECLARATIONS, 'utf8'))?.declared
+  : undefined;
+const answered = Array.isArray(declaredNow)
+  ? declaredNow.filter(
+      (one) => typeof recorded[String(one?.job ?? '')]?.steps?.[String(one?.step ?? '')] === 'number',
+    ).length
+  : 0;
+
 process.stdout.write(
   `ci-baseline: ${String(Object.keys(recorded).length)} job(s) and ${String(stepCount)} step(s) from ` +
-    `run ${RUN}${Object.keys(derived).length > 0 ? `, ${String(Object.keys(derived).length)} borrowed` : ''}\n`,
+    `run ${RUN}${Object.keys(derived).length > 0 ? `, ${String(Object.keys(derived).length)} borrowed` : ''}` +
+    `${answered === 0 ? '' : `; ${String(answered)} declaration(s) are now measured and can be deleted`}\n`,
 );

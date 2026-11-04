@@ -297,6 +297,24 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   and refuses in both directions: a tree file the pack does not carry, and an archive that is not
   exactly `README.md`, `run.sh` and `MANIFEST.json` larger than the tree. Both counts are
   published, so the page shows **9 rows against 6 files**.
+- **A step may be bounded before it has been measured, for exactly one recording** (v3.52).
+  `R2` refused every step the recording had never measured, and a recording cannot describe a step
+  that has not run -- so no battery could arrive with a bound, and the previous round folded a
+  second command into an existing step's line and left the name describing half of it (finding
+  405). `golden-master/ci-declarations.json` now holds the sentences that break the ring, and `R8`
+  refuses one unless: the step exists in that job, the bound is the workflow's own, the recording
+  still does not measure it, the bound clears the floor, its expiry fits the job's budget, no
+  measured step follows it, and it argues for itself in at least forty characters. The lifetime is
+  one recording and it is structural -- the recorder will not write a reading that omits a step,
+  `R7` forces a refresh on every round that cites a run, and the gate refuses the tree until the
+  sentence is deleted. `R4`'s multiple is settled by that refresh rather than by the round that
+  added the step, which is where the bet is placed and where it is paid.
+- **A check may not compare a thing with itself, named per side** (v3.52). `--borrow` recorded a
+  new job's steps from the job it was split out of, including that job's *budget* -- so `R6`
+  compared the workflow with itself for a borrowed job and could never fire, while the deadline
+  arithmetic used a ceiling the borrowed seconds had never been spent inside. The recorder now
+  refuses a borrow across a budget and prints both numbers (finding 406): a step's cost is a
+  property of the command, and a budget is not.
 
 ## L4 — Official reproduction (Golden Master, official metrics and round trip)
 

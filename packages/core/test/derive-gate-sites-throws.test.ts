@@ -219,8 +219,9 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     }
     expect(shortfalls).toEqual([]);
     // 43 is 41 plus the pack's two new guards -- a tree file the reader did not carry,
-    // and an archive that is not exactly the three generated files larger than the tree.
-    expect(total).toBe(43);
+    // and an archive that is not exactly the three generated files larger than the tree;
+    // 44 is that plus v3.52's refusal to borrow across a budget.
+    expect(total).toBe(44);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -246,12 +247,15 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     expect(fatal).toEqual([
       'measure-ci-baseline.mjs:132',
       'measure-ci-baseline.mjs:154',
-      'measure-ci-baseline.mjs:157',
-      'measure-ci-baseline.mjs:164',
+      'measure-ci-baseline.mjs:165',
+      'measure-ci-baseline.mjs:175',
+      'measure-ci-baseline.mjs:182',
     ]);
     // 35 unguarded: the two pack guards are `unguarded`, like every other throw inside a
-    // function with no enclosing `try`.
-    expect(counts).toEqual({ fatal: 4, unguarded: 35, guarded: 1, rethrow: 3 });
+    // function with no enclosing `try`. 5 fatal is v3.52's addition: a borrow across a
+    // budget, which is the one refusal in that script that is about the workflow's
+    // arithmetic rather than about the run it is reading.
+    expect(counts).toEqual({ fatal: 5, unguarded: 35, guarded: 1, rethrow: 3 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

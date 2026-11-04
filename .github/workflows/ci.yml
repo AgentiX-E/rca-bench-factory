@@ -263,27 +263,44 @@ jobs:
         timeout-minutes: 3
         run: pnpm build
 
-      # Two questions, one bound. `verify-sites-are-sensitive` asks whether a test would
-      # notice an exit disappearing; `verify-claims-are-sensitive` asks whether a change to
-      # the code makes an exemption's *claim* false and its named test go red -- the half a
-      # title cannot answer. Seven claims, twelve single-file suites, twelve seconds local.
+      # Two batteries, two bounds -- and a step that no run has measured yet.
       #
-      # They share a step because **a step cannot be added without a measurement, and a
-      # measurement cannot happen without the step** (finding 403): the recording pins the
-      # step's name, `R2` refuses a step it has never measured, and the push needs a green
-      # `verify:local` on a tree whose recording is already right. Naming this step after
-      # both commands would be the same loop with a longer name. The name is therefore
-      # narrower than the command, which is stated here rather than hidden.
-      # The bound, the ceiling and the second battery (v3.51 close-out). The step measured
-      # **542 s** in run 41785707854 and **578 s** in run 41809961840 -- the claims battery
-      # is 36 s of it. The multiple is two, so the bound is 20 minutes (1200 s against
-      # 1156 s) and the ceiling has to hold the bound plus the 19 s of setup before it:
-      # 1219 s, which is 21 minutes and not 20. The ceiling moved rather than the bound,
-      # because the bound is the number that names a hang and 2.08 times a measurement is
-      # already the floor of what a slower runner is allowed to cost.
+      # `verify-sites-are-sensitive` asks whether a test would notice an exit disappearing;
+      # `verify-claims-are-sensitive` asks whether an edit makes an exemption's *claim* false
+      # and its named test go red -- the half a title cannot answer. Seven claims, twelve
+      # single-file suites, twelve seconds local.
+      #
+      # They shared this step until v3.52, and not by choice: a step could not be added.
+      # The recording pins the step's name, `R2` refused a step it had never measured, and
+      # a measurement needs a run that the gate's own redness was blocking (finding 403).
+      # The result was a step whose name described half of what it ran, which is the defect
+      # a step bound exists to remove, one level down: the verdict names a battery that is
+      # not the one that hung, and a reader who trusts the name reads a green line about a
+      # command it never ran.
+      #
+      # The second battery is its own step now, and `golden-master/ci-declarations.json`
+      # says so. `R8` lets a step the recording has not measured carry a bound anyway, on
+      # four conditions: the step exists, the bound is the one written here rather than one
+      # the declaration invents, the bound still expires before the job does, and the step is
+      # the last of its job that no run has measured. The lifetime is one recording, and it
+      # is structural rather than promised: `measure-ci-baseline.mjs` refuses to write a
+      # reading that omits any step of the workflow, so the first refresh measures this one,
+      # and `R7` requires a refresh on every round that cites a run.
+      #
+      # The bound is the floor, and the number behind it is subtraction rather than a guess:
+      # the combined step measured 578 s in run 41809961840 and the sites battery alone 542 s
+      # in run 41785707854, so this battery is 36 s of it -- 180 s is five times that, and
+      # 3 min is what the floor allows a step that could also be 0 s on a run whose cache
+      # missed. `R4` is the rule that has nothing to stand on until the measurement exists,
+      # which is why the refresh is the moment this bound is checked rather than merely
+      # written.
       - name: Every proved exit can disappear without a word
         timeout-minutes: 20
-        run: node scripts/verify-sites-are-sensitive.mjs && node scripts/verify-claims-are-sensitive.mjs
+        run: node scripts/verify-sites-are-sensitive.mjs
+
+      - name: Every exemption's claim can be made false
+        timeout-minutes: 3
+        run: node scripts/verify-claims-are-sensitive.mjs
 
   # The injection batteries. This is the long pole -- everything else in the workflow
   # fits in two minutes -- so it gets its own job and its own budget.
