@@ -2354,6 +2354,33 @@ describes:
 | `classify`'s return set is closed | `type-miss-probe.test.ts` | a fourth kind the counts do not hold |
 | the m1 partition covers its dataset | `m1-ceiling-probe.test.ts` | two halves that overlap or leave a row out |
 
+### Six — the run, and the recording taken from it
+
+`41785707854` on `de4242299`: **7 of 7 jobs success**, and the fastest wall clock this
+repository has recorded -- **12.6 minutes**, against 15.3 the round before and 16.4 two rounds
+back.
+
+| job | minutes |
+| --- | --- |
+| injection batteries, the two that rewrite a probe a hundred times | **12.6** |
+| injection batteries, one step each | 9.6 |
+| build / typecheck / lint / coverage / mutation | 8.9 |
+| every proved exit can disappear without a word | 8.9 |
+| golden master / official metric / examples / documents | 0.9 |
+| a backend this repository did not write | 0.7 |
+| cold tree / no build / every precondition declared | 0.3 |
+
+The step that forced the bound to 19 minutes measured **510 s** here, and the two batteries
+that were 7.9 and 7.0 minutes four hours earlier measured **5.8** and **6.3**. Nothing in the
+tree explains that spread; the runner does. It is the reason the bounds are twice the
+measurement and not a tenth above it: a bound tight to the last reading would have moved twice
+this round and been wrong both times, and a 19-minute bound with a 510 s measurement has 2.2x
+of room in it.
+
+Recording re-taken from this run, as `R7` requires: the ledger's newest row is this section, and
+a recording older than the run the round reports describes a tree nobody shipped. The tightest
+bound after the re-record is `verify / Lint` at 2.1x.
+
 ### Readings
 
 > Ledger for `v3.50`.
@@ -2373,8 +2400,8 @@ describes:
 | the bound that moved | **one**: the site-proofs step in `sensitivity` 18 -> **19** minutes, because the fresh recording measured it at **542 s** and twice that is 1084 s -- 4 s past 18 minutes. The job still holds: 19 minutes plus its 0.3 minute of setup inside a 20-minute budget |
 | the defect the round found | `readExampleFiles()` walked one directory and skipped every non-file silently; reproduced with `examples/order-prod/nested/extra.json` (9 rows before, 10 after), fixed by a recursive walk |
 | the rule, measured failing | renaming one `heldBy.test` in the inventory turned rule 9 red on `scripts/probe-m1-ceiling.mjs:118`; restoring it turned the block green |
-| the recording | **run 41762557378** at `38f138cc0`, 7 jobs / 74 steps / **46 bounded**, 46 min measured; re-taken because this round's ledger row names it, which is `R7` working on the round that reports it |
-| CI | run `41762557378` on `38f138cc0` (the run before this round's first push): **7 of 7 jobs success**, batteries-heavy **15.2**, batteries **11.1**, site proofs **9.4**, build 8.8, sensitivity 6.8, backend 0.6, golden master 1.2, cold tree 0.4 min -- **15.3 min of wall clock**. This round's own run is recorded in section six |
+| the recording | **run 41785707854** at `de4242299`, 7 jobs / 74 steps / **46 bounded**, 41 min measured; taken from the run this round's ledger row names, which is `R7` working on the round that reports it |
+| CI | run `41785707854` on `de4242299`: **7 of 7 jobs success** -- batteries-heavy **12.6**, batteries **9.6**, build 8.9, sensitivity 8.9, golden master 0.9, backend 0.7, cold tree 0.3 min; **12.6 min of wall clock**, the fastest recorded. The run before the round, `41762557378` on `38f138cc0`, was 7 of 7 in 15.3 |
 
 ### Left open, in the order the goal is reached
 
