@@ -2191,9 +2191,9 @@ The convention that keeps this stable is worth stating, because it looks like an
 refresh commit's run is not a closing reading.** The recording is taken *from* the run a round
 cites, so the commit carrying the new recording cannot cite the run that verifies it -- that run
 would be newer than the recording, and `R7` would refuse it, and its repair too, for ever. This
-round cites `41749989956`; the runs of `4e78ef8`, `75f2de650` and `f62b962` are the ones that
-verified it, and the summary reads `the recording is newer` because that is what a refresh looks
-like from inside.
+round cites `41749989956`; the runs of `4e78ef8`, `75f2de650`, `f62b962` and `012b81af9` -- every
+commit after it -- verify it and stay uncited, and the summary reads `the recording is newer`
+because that is what a refresh looks like from inside.
 
 ### Readings
 
