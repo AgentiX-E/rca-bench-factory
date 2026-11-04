@@ -794,8 +794,10 @@ jobs:
       # went False and the run looked caught while the probe's actual decision had
       # not been exercised. It is checked for data-only injections, where "the
       # partition must move" is the whole point of the edit.
+      # 530 s on run 41749989956, so twice is 1060 and the bound is 18 -- the same
+      # arithmetic as every other bound here, applied to a measurement that had moved.
       - name: Type-miss probe battery (no survivors, no inert, no blind mutations)
-        timeout-minutes: 17
+        timeout-minutes: 18
         run: python3 scripts/injection/type-miss-probe.py
 
       # P1-5 asks for T2's six backends to be measured and the unsupported ones
@@ -809,5 +811,5 @@ jobs:
       # was mutated, and a mutation that never applied is not evidence about
       # anything.
       - name: Backend-support battery (no survivors, no inert, no misattributed mutations)
-        timeout-minutes: 14
+        timeout-minutes: 15
         run: python3 scripts/injection/backend-support.py

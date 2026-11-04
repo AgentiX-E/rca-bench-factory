@@ -1644,11 +1644,11 @@ the failure mode worse than silence.
 ### The round it caught
 
 This is the part worth writing down: the rule was written **after** the defect, and the
-defect was still there. The round's own ledger row cites `41677264353`, and with that row in
-place the gate refused the shipped recording:
+defect was still there. The round's row then cited `41677264353`, and with that row in place
+the gate refused the shipped recording:
 
 ```
-check-ci-budget: the recording is from run 41670923224 and `volume-10.md:2185` reports run
+check-ci-budget: the recording is from run 41670923224 and `volume-10.md:2173` reports run
 41677264353: a recording older than the round that reports it describes a tree nobody
 shipped, so its seconds size the bounds of a workflow that has since run -- take a new
 reading with `node scripts/measure-ci-baseline.mjs 41677264353`
@@ -1658,9 +1658,15 @@ check-ci-budget: FAILED — 1 problem(s)
 The file is `docs/progress/volume-10.md` and the line is the one it printed then: the row
 moves as the ledger grows, which is why the message names the file and not only the row. The
 repair was one command, and the summary then read `the ledger's newest run is 41677264353
-(the recording)`. No bound moved -- the new measurement was inside the bounds the old one had
-produced, the tightest being `batteries-heavy / Backend-support battery` at 2.0x and the
-longest bound expiring at 22.8 min inside a 25-minute budget.
+(the recording)`.
+
+Two bounds moved anyway, and not because of that repair: the run after it measured the same
+steps again and both heavy batteries had grown -- 494 s to 530 s, 418 s to 427 s -- so 17
+minutes was under twice 530 and 14 was under twice 427, by 40 s and 14 s. They move to 18 and
+15, and the deadlines still fit: 18.4 min and 24.2 min inside a 25-minute job. What is left is
+a prediction rather than a defect -- at this rate the second bound expires past the job's
+budget in two or three rounds and the heavy job splits the way `batteries` did. The bounds only
+follow the measurement if somebody takes a new one, which is what `R7` is for.
 
 A gate whose first red is the tree it was written in is a gate that has been **observed**
 rather than described.

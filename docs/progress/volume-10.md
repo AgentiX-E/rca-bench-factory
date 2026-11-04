@@ -2151,7 +2151,7 @@ The rule was written after the defect, and the defect was still there. With this
 ledger row citing `41677264353`, the gate refused the shipped recording:
 
 ```
-check-ci-budget: the recording is from run 41670923224 and `volume-10.md:2185` reports
+check-ci-budget: the recording is from run 41670923224 and `volume-10.md:2173` reports
 run 41677264353: a recording older than the round that reports it describes a tree nobody
 shipped, so its seconds size the bounds of a workflow that has since run -- take a new
 reading with `node scripts/measure-ci-baseline.mjs 41677264353`
@@ -2164,6 +2164,29 @@ observed rather than described -- and no bound moved, because the new measuremen
 the bounds the old one had produced: the tightest is `batteries-heavy / Backend-support
 battery` at 2.0x, and the longest bound still expires inside its job's budget.
 
+### Five — and the successor run pushed two bounds under the multiple
+
+Citing the round's own run is one thing; the run after it is another. `41749989956` measured the
+same steps as `41677264353` and two of them had grown:
+
+```
+`Type-miss probe battery` is bounded at 17 min and measured 530 s        (was 494 s)
+`Backend-support battery` is bounded at 14 min and measured 427 s       (was 418 s)
+```
+
+17 minutes is 1020 s and twice 530 is 1060; 14 minutes is 840 s and twice 427 is 854. Both
+bounds were under the multiple, by 40 s and 14 s -- bounds that kill a legitimate run on a slow
+runner and report it as a hang. So they move to **18** and **15** minutes, and the job's
+arithmetic still holds: the type-miss bound expires at 18.4 min and the backend-support bound at
+24.2 of the job's 25.
+
+That is the drift v3.48 predicted, now with a number on it: the type-miss battery went 479 -> 494
+-> 530 s across three consecutive runs, about +5% a run, and the two bounds that size it have
+followed 16 -> 17 -> 18. **The prediction is arithmetic from here**: at +5% a round the second
+bound expires past the job's budget in two or three rounds, and the batteries-heavy job splits
+again for the same reason the batteries did -- which is why P9 says *re-take the baseline before
+adding a battery*, and why `R7` now makes forgetting to impossible.
+
 ### Readings
 
 > Ledger for `v3.49`.
@@ -2174,15 +2197,16 @@ battery` at 2.0x, and the longest bound still expires inside its job's budget.
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
 | repo test suite | **237 files, 5883 tests passed** (as of this commit) |
 | new tests | **20**: 13 in `ledger-runs.test.ts` (the reader), 7 in `ci-budget.test.ts` (`R7` and its gate paths) |
-| the recording | **run 41677264353** at `91e320884`, 7 jobs / 74 steps / **46 bounded**, 45 min measured; the previous recording was `41670923224` at `61dff700c`, one run and one commit behind |
-| the comparison | the ledger's newest row names run `41677264353`, which is the recording; **3 older rows name no run** and are counted |
-| the gate's first red | `the recording is from run 41670923224 and volume-10.md:2185 reports run 41677264353` -- on the tree the rule was written in |
+| the recording | **run 41749989956** at `75f2de650`, 7 jobs / 74 steps / **46 bounded**, 43 min measured; before this round it was `41670923224` at `61dff700c`, one run and one commit behind the tree |
+| the comparison | the ledger's newest row names run `41749989956`, which is the recording -- `(the recording)`, not one run behind; **3 older rows name no run** and are counted |
+| the gate's first red | `the recording is from run 41670923224 and volume-10.md:2173 reports run 41677264353` -- on the tree the rule was written in |
+| the bounds that moved | **two**: type-miss 17 -> **18** (530 s) and backend-support 14 -> **15** (427 s), both under the multiple on the successor run |
 | throw partition | **41 statements**: 4 `fatal`, 33 `unguarded`, 1 `guarded`, 3 `rethrow`; 35 proved, 6 exempt -- unchanged |
 | failure sites | **114** across 56 of **79** scripts; `excluded` `{16 zero}` unchanged |
 | proof plan | `verify-site-proofs`: **142 claim(s)** across 52 file(s) -- PASSED, unchanged |
 | coverage | core **99.96 / 99.75 / 100 / 99.96**, cli **100 / 100 / 100 / 100** |
 | `docs:check` | green: **393 findings / 1–396**, 10 volumes / 197 rounds, **1633 citations** of 393 numbers, 568 open entries with 529 carrying a reason |
-| CI | run `41677264353` on `91e320884`: **7 of 7 jobs success** -- batteries-heavy **15.8**, batteries **11.9**, build 8.8, sensitivity 7.2, golden master 0.9, backend 0.7, cold-tree 0.4 min; **15.9 min of wall clock** |
+| CI | run `41749989956` on `75f2de650`: **7 of 7 jobs success** -- batteries-heavy **16.4**, batteries **11.6**, build 6.9, sensitivity 6.8, backend 1.0, golden master 0.7, cold-tree 0.3 min; **16.4 min of wall clock**. The run before it, `41677264353` on `91e320884`, was 7 of 7 in 15.9 |
 
 ### Left open, in the order the goal is reached
 

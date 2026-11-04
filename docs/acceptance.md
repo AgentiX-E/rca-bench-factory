@@ -236,6 +236,13 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   the rule was written in, and its repair is a command it prints (`measure-ci-baseline.mjs
   <run>`); a fixture per road (older than the ledger, newer than it, no ledger, a ledger that
   could not be read).
+- **The bounds follow the measurement only if a new one is taken** (v3.49). Citing the round's
+  own run and re-recording it left every bound valid; the run *after* it measured the same
+  steps again and two had grown (494 -> 530 s, 418 -> 427 s), which put 17 minutes under twice
+  530 and 14 under twice 427 by 40 s and 14 s. Both move to 18 and 15, and the deadlines still
+  fit (18.4 and 24.2 of 25). Clearance: `R7` is what makes the re-record unavoidable, and the
+  arithmetic is what turns a drifted measurement into a refused bound rather than a slow
+  failure.
 - **A closing reading that does not name its run is a row, not a measurement** (v3.49). The
   half of `R7` that makes the other half mean anything: the ledger's **newest** `| CI |` row
   must name a run id, because otherwise the recording is unopposed and the gate's silence
