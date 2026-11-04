@@ -279,13 +279,14 @@ jobs:
       # command it never ran.
       #
       # The second battery is its own step now, and `golden-master/ci-declarations.json`
-      # says so. `R8` lets a step the recording has not measured carry a bound anyway, on
-      # four conditions: the step exists, the bound is the one written here rather than one
-      # the declaration invents, the bound still expires before the job does, and the step is
-      # the last of its job that no run has measured. The lifetime is one recording, and it
-      # is structural rather than promised: `measure-ci-baseline.mjs` refuses to write a
-      # reading that omits any step of the workflow, so the first refresh measures this one,
-      # and `R7` requires a refresh on every round that cites a run.
+      # said so for the one round it took to measure it. `R8` let a step the recording had
+      # not measured carry a bound anyway, on every condition that does not need a number:
+      # the step exists in that job, the bound is the one written here rather than one the
+      # declaration invents and it clears the floor, it still expires before the job does,
+      # no measured step follows it, and it argues for itself in a sentence. The lifetime is
+      # one recording, and it is structural rather than promised: `measure-ci-baseline.mjs`
+      # refuses to write a reading that omits any step of the workflow, so the first refresh
+      # measures this one, and `R7` requires a refresh on every round that cites a run.
       #
       # The bound is the floor, and the number behind it is subtraction rather than a guess:
       # the combined step measured 578 s in run 41809961840 and the sites battery alone 542 s
@@ -293,7 +294,8 @@ jobs:
       # 3 min is what the floor allows a step that could also be 0 s on a run whose cache
       # missed. `R4` is the rule that has nothing to stand on until the measurement exists,
       # which is why the refresh is the moment this bound is checked rather than merely
-      # written.
+      # written -- and it was: run 41835348742 measured the step at **20 s**, nine times its
+      # bound, and the declaration was deleted in the commit that recorded it.
       - name: Every proved exit can disappear without a word
         timeout-minutes: 20
         run: node scripts/verify-sites-are-sensitive.mjs
