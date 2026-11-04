@@ -2187,6 +2187,14 @@ bound expires past the job's budget in two or three rounds, and the batteries-he
 again for the same reason the batteries did -- which is why P9 says *re-take the baseline before
 adding a battery*, and why `R7` now makes forgetting to impossible.
 
+The convention that keeps this stable is worth stating, because it looks like an omission: **a
+refresh commit's run is not a closing reading.** The recording is taken *from* the run a round
+cites, so the commit carrying the new recording cannot cite the run that verifies it -- that run
+would be newer than the recording, and `R7` would refuse it, and its repair too, for ever. This
+round cites `41749989956`; the runs of `4e78ef8`, `75f2de650` and `f62b962` are the ones that
+verified it, and the summary reads `the recording is newer` because that is what a refresh looks
+like from inside.
+
 ### Readings
 
 > Ledger for `v3.49`.

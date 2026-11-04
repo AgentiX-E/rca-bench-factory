@@ -137,6 +137,13 @@ function secondsOf(record, name) {
  * `ledger` is null when the caller has no ledger to offer, and the rules are then absent
  * rather than passing: a caller that does not pass one has not asked the question, and a
  * module that answers questions nobody asked is the defect this file is about.
+ *
+ * One convention follows from the rule and is worth stating because it looks like an
+ * omission: **a refresh commit's run is not a closing reading.** The recording is taken
+ * *from* the run a round cites, so the commit that carries the new recording cannot cite
+ * the run that verifies it -- that run would then be newer than the recording and `R7`
+ * would refuse, and so would its repair, for ever. A round cites one run; the refresh run
+ * goes uncited, which is why the summary can read `the recording is newer` and be right.
  */
 export function ledgerErrors(baseline, ledger) {
   if (ledger === null || ledger === undefined || ledger.read !== true) return [];
