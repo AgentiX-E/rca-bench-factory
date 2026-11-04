@@ -1580,3 +1580,87 @@ the set it belongs to: a budget for the job that timed out, a recording of the j
 budget described, a shell check that listed jobs instead of asking them. The set was in the
 workflow the whole time, and the reader that could have walked it -- `gate-steps.mjs` -- was
 already parsing every job, using the job ids to key its plan, and returning only the steps.
+
+## Finding 396 — every number in the recording was checked, and none of them said which tree
+
+`ci-budget.mjs` had five rules and all five compared the recording against the workflow or
+against itself: the run and commit and date are present (`R1`), the jobs and steps match
+the workflow in both directions (`R2`), a job that costs minutes bounds its steps (`R3`),
+a bound is at least twice its measurement and at least the floor (`R4`), and a bound
+expires before the job does (`R5`). The gate was green, and the recording it read was
+run `41670923224` taken at `61dff700c`.
+
+The shipped tree at that moment was `91e320884`, and its run was `41677264353`. The
+recording was one run and one commit behind, and **nothing in the tree could have said
+so**: every second in the file is a real measurement of a real tree, taken by the only
+script that may write it, and the one thing that had moved was *which tree*. A recording
+does not age in any way its own contents can show.
+
+The gap is not the arithmetic; it is the missing second opinion. The repository does
+write down which run a round ended on -- the `| CI |` row of the round's ledger, which
+reports the jobs' wall clock after the run comes back green -- and nothing read it. It
+was prose: `check-citations.mjs` verifies finding numbers, no gate looked at a run id, and
+the newest row was the only sentence in the tree that knew the current run and the only
+one that could disagree with the recording.
+
+### What the rule reads, and why the row rather than the log
+
+A `| CI |` row is the round's closing reading, and it is written **after** the run is
+green, because a row reporting a red run's timings is not a closing reading. So the newest
+run in such a row is a run this repository has already looked at, and the recording has no
+business being older than it. That is `R7`: a comparison, not a number.
+
+Two halves, and the second is what makes the first mean anything. The recording may not be
+older than the newest cited run; and **the ledger's newest row must name its run**, because
+a row that reports a wall clock without naming the run leaves the recording unopposed --
+the gate's silence would then read as agreement with a round it never compared itself to.
+A rule that only compared numbers would pass on a log that stopped naming runs, which is
+the same defect one layer out.
+
+### The three rows that name no run
+
+`runsIn` found three `| CI |` rows in the shipped log with no run id: `volume-03.md:1174`,
+`volume-08.md:835`, `volume-10.md:882`. They report what a job looked like rather than
+what a run measured ("the new step reads the reports in 0.056 s", "five jobs green on the
+fourth push"), and they predate the convention.
+
+They are **counted, not corrected**. Naming a run for them now would mean deriving the id
+from a commit in git history and guessing which of that commit's runs is meant -- two
+runs exist per push here (the workflow and the anchor round trip) -- and an invented
+provenance is worse than a stated gap. So the reader returns them as `unnamed`, the
+summary prints how many there are, and the rule needs only that the **newest** row names
+one. The count is in the reading line rather than in a comment, because a gap nobody sees
+is a gap nobody closes.
+
+### Why the ids cannot be confused with the commits beside them
+
+The rows cite both, in the same backticks, a few characters apart: `run `41677264353` on
+`91e320884``. A run id is ten to twelve digits; a commit here is written as nine
+characters. The pattern is stated once, in `ledger-runs.mjs`, and the reading is bounded on
+both sides so a thirteen-digit token is not read as its first twelve -- a reader that
+returned a slightly wrong run id would refuse the tree for a run that never ran, which is
+the failure mode worse than silence.
+
+### The round it caught
+
+This is the part worth writing down: the rule was written **after** the defect, and the
+defect was still there. The round's own ledger row cites `41677264353`, and with that row in
+place the gate refused the shipped recording:
+
+```
+check-ci-budget: the recording is from run 41670923224 and `volume-10.md:2185` reports run
+41677264353: a recording older than the round that reports it describes a tree nobody
+shipped, so its seconds size the bounds of a workflow that has since run -- take a new
+reading with `node scripts/measure-ci-baseline.mjs 41677264353`
+check-ci-budget: FAILED — 1 problem(s)
+```
+
+The file is `docs/progress/volume-10.md` and the line is the one it printed then: the row
+moves as the ledger grows, which is why the message names the file and not only the row. The
+repair was one command, and the summary then read `the ledger's newest run is 41677264353
+(the recording)`. No bound moved -- the new measurement was inside the bounds the old one had
+produced, the tightest being `batteries-heavy / Backend-support battery` at 2.0x and the
+longest bound expiring at 22.8 min inside a 25-minute budget.
+
+A gate whose first red is the tree it was written in is a gate that has been **observed**
+rather than described.

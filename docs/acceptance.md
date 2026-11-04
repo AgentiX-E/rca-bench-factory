@@ -226,6 +226,24 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   `cold-tree-job.test.ts` -- every job that runs the suite installs the shells its fixtures
   spawn -- asked it for `zsh` and got nothing back. The step is there now; the equality is
   what found it, one round after the job was written.
+- **A recording is only as good as the tree it describes, and the ledger is the second
+  opinion** (v3.49). Every rule in `ci-budget.mjs` read the recording's *contents*, and all
+  five passed on a recording of a tree that had since run again: `41670923224` at
+  `61dff700c` sizing the bounds of `91e320884`, whose run is `41677264353`. A recording does
+  not age in any way its own numbers show, so `R7` compares it with the newest run the
+  progress ledger reports -- a `| CI |` row is written after a green run, so the newest id in
+  one is a run this repository has already read. Clearance: the gate's first red was the tree
+  the rule was written in, and its repair is a command it prints (`measure-ci-baseline.mjs
+  <run>`); a fixture per road (older than the ledger, newer than it, no ledger, a ledger that
+  could not be read).
+- **A closing reading that does not name its run is a row, not a measurement** (v3.49). The
+  half of `R7` that makes the other half mean anything: the ledger's **newest** `| CI |` row
+  must name a run id, because otherwise the recording is unopposed and the gate's silence
+  reads as agreement with a round nobody compared it to. Three older rows in the shipped log
+  name none; they are **counted and printed** rather than corrected, because deriving an id
+  from a commit now would be inventing provenance -- two runs exist per push. Clearance: the
+  summary line carries the count, and `ledger-runs.test.ts` holds a case per rejected shape
+  (a nine-character commit, a thirteen-digit token, a named row followed by an unnamed one).
 
 ## L4 — Official reproduction (Golden Master, official metrics and round trip)
 

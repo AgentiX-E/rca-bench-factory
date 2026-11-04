@@ -2040,9 +2040,9 @@ had moved -- which is only possible because the recording is a run and the run i
 
 | item | value |
 | --- | --- |
-| `core` test suite | **232 files, 5675 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **236 files, 5862 tests passed** (as of this commit) |
+| `core` test suite | **232 files, 5675 tests passed** (as of v3.48) |
+| `cli` test suite | **4 files, 187 tests passed** (as of v3.48) |
+| repo test suite | **236 files, 5862 tests passed** (as of v3.48) |
 | jobs recorded | **7** of 7, **74** steps, **46** of them bounded; 45 min measured, and the recording is the newest green run rather than the one a job borrowed from |
 | the two budget jobs | `batteries` 674 s against 25 min; `batteries-heavy` 914 s against 25; the run waits for the longer |
 | the bounds that refused | five, on a recording three days newer: 12/479, 5/221, 5/185, 13/416, and one expiring at 31 min in a 30-minute job |
@@ -2075,3 +2075,129 @@ equality, immediately found a job that a list would have missed. So the next rul
 a rule is written because something failed, ask which set that thing is a member of, and
 write the rule over the set** -- because a rule shaped by one member is a rule that will be
 satisfied by the next member being different, and the difference is invisible from inside.
+
+## v3.49 — the recording's every number was checked, and none of them said which tree
+
+v3.48 closed with a ruler rather than a result: *when a rule is written because something
+failed, ask which set that thing is a member of, and write the rule over the set.* It had
+just split the batteries in two because the arithmetic said one job was doing too much for
+one budget.
+
+This round asks the same question of the whole budget gate, one level up. Every rule in
+`ci-budget.mjs` is a relation between the recording, the workflow and the arithmetic -- and
+together they can all pass on a recording of a tree that is no longer shipping. The gap was
+not in the arithmetic. It was that **the recording does not know when it has aged**, and
+nothing else in the tree was asked.
+
+### One — the recording was one run behind, and all five rules agreed (finding 396)
+
+The shipped recording was run `41670923224` at `61dff700c`, 7 jobs and 74 steps, 45 minutes
+measured. The shipped tree was `91e320884`, whose run is `41677264353`:
+
+| | recording | the tree that shipped |
+| --- | --- | --- |
+| commit | `61dff700c` | `91e320884` |
+| run | `41670923224` | `41677264353` |
+| jobs / steps | 7 / 74 | 7 / 74 |
+| measured | 45 min | 46 min |
+
+Every second in the file is a real measurement, taken by the only script that may write it.
+The one thing that had moved is *which tree*. That is the shape of the defect: a recording
+cannot age in any way its own contents show, so the rules that read its contents cannot see
+it -- and the tree was full of gates that would have refused a wrong number and did not
+notice an old one.
+
+### Two — the second opinion was already written, as prose
+
+The ledger's `| CI |` row reports the jobs' wall clock, and it is written after the run
+comes back green -- so the newest run in such a row is a run this repository has already
+looked at. Nothing read it. `check-citations.mjs` verifies finding numbers; no gate looked
+at a run id at all. That row was the only sentence in the tree that knew the current run
+and the only one that could disagree with the recording, and it was prose.
+
+So `R7` is a comparison rather than a number: the recording may not be older than the
+newest run the ledger reports. And its second half is what makes the first mean anything --
+**the ledger's newest row must name its run**, because a row that reports a wall clock
+without naming the run leaves the recording unopposed, and the gate's silence would read as
+agreement with a round it never compared itself to. A rule that only compared ids would
+pass on a log that had stopped naming them, which is the same defect one layer out.
+
+### Three — the reader, and the three rows that name no run
+
+`ledger-runs.mjs` is the reading: which rows are closing readings, which numbers in them
+are run ids, and which rows name none. A run id is **ten to twelve digits and nothing
+else**; the rows cite commits a few characters away in the same backticks, and this
+repository writes those as nine characters, so the two cannot be confused by length. The
+bound is checked on both sides so a thirteen-digit token is not read as its first twelve --
+a reader that returned a slightly wrong id would refuse the tree for a run that never ran.
+
+It found three `| CI |` rows in the shipped log with no run id:
+
+```
+volume-03.md:1174   the new step reads the reports in 0.056 s
+volume-08.md:835    five jobs green on the fourth push
+volume-10.md:882    a sixth job, `sensitivity`, 15-minute budget
+```
+
+They report what a job looked like rather than what a run measured, and they predate the
+convention. They are **counted, not corrected**: naming a run for them now means deriving
+the id from a commit in git history and guessing which of that push's two runs is meant, and
+an invented provenance is worse than a stated gap. The reader returns them as `unnamed`, the
+summary prints how many, and the rule asks only that the **newest** row name one.
+
+### Four — the gate's first red was the tree it was written in
+
+The rule was written after the defect, and the defect was still there. With this round's
+ledger row citing `41677264353`, the gate refused the shipped recording:
+
+```
+check-ci-budget: the recording is from run 41670923224 and `volume-10.md:2185` reports
+run 41677264353: a recording older than the round that reports it describes a tree nobody
+shipped, so its seconds size the bounds of a workflow that has since run -- take a new
+reading with `node scripts/measure-ci-baseline.mjs 41677264353`
+check-ci-budget: FAILED — 1 problem(s)
+```
+
+The repair is one command, and the summary then reads `the ledger's newest run is
+41677264353 (the recording)`. A gate whose first red is the tree it was written in has been
+observed rather than described -- and no bound moved, because the new measurement was within
+the bounds the old one had produced: the tightest is `batteries-heavy / Backend-support
+battery` at 2.0x, and the longest bound still expires inside its job's budget.
+
+### Readings
+
+> Ledger for `v3.49`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **233 files, 5696 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **237 files, 5883 tests passed** (as of this commit) |
+| new tests | **20**: 13 in `ledger-runs.test.ts` (the reader), 7 in `ci-budget.test.ts` (`R7` and its gate paths) |
+| the recording | **run 41677264353** at `91e320884`, 7 jobs / 74 steps / **46 bounded**, 45 min measured; the previous recording was `41670923224` at `61dff700c`, one run and one commit behind |
+| the comparison | the ledger's newest row names run `41677264353`, which is the recording; **3 older rows name no run** and are counted |
+| the gate's first red | `the recording is from run 41670923224 and volume-10.md:2185 reports run 41677264353` -- on the tree the rule was written in |
+| throw partition | **41 statements**: 4 `fatal`, 33 `unguarded`, 1 `guarded`, 3 `rethrow`; 35 proved, 6 exempt -- unchanged |
+| failure sites | **114** across 56 of **79** scripts; `excluded` `{16 zero}` unchanged |
+| proof plan | `verify-site-proofs`: **142 claim(s)** across 52 file(s) -- PASSED, unchanged |
+| coverage | core **99.96 / 99.75 / 100 / 99.96**, cli **100 / 100 / 100 / 100** |
+| `docs:check` | green: **393 findings / 1–396**, 10 volumes / 197 rounds, **1633 citations** of 393 numbers, 568 open entries with 529 carrying a reason |
+| CI | run `41677264353` on `91e320884`: **7 of 7 jobs success** -- batteries-heavy **15.8**, batteries **11.9**, build 8.8, sensitivity 7.2, golden master 0.9, backend 0.7, cold-tree 0.4 min; **15.9 min of wall clock** |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P2** | a key whose description carries no keyword scores 0 | the protocol is silent; this repository takes 0 | record it as a gap; do not invent a redistribution |
+| **P3** | the sensitivity gate's cost grows linearly with claims | 142 claims, 194 runs, 4.0 min locally and 9.4 on the runner | the 15-minute budget holds about 300 runs at this rate; shard by file before then |
+| **P4** | six throw rows rest on a sentence rather than a measurement | three assert something about a table the same function produced, two guard the pack contract, one was reachable only through a defect | a test of the *statement* rather than of the line: for `pack`, the shipped example tree must yield unique paths and a manifest; for the partitions, the classifier's return set must stay closed. Both are falsifiable by the code change the guard is for, which is why they are not inputs |
+| **P5/P7** | the witness sees one level | a script loaded without `NODE_OPTIONS` is not rewritten, and a wrapper that does not inherit hides its child | unchanged; needs a second observation channel |
+| **P8** | the compiler is a runtime dependency of four readers | `derive-gate-sites.mjs`, `gate-proofs.mjs`, the witness and the Vite plugin | "a gate with no dependencies" still needs a third correct reading |
+| **P9** | the batteries jobs sit inside their budgets | 11.9 and 15.8 measured against 25 each; the longest bound expires at 22.8 | a fresh baseline before adding another battery -- and `R7` now makes forgetting it impossible |
+| **P10** | ~~the measurement drifts and nothing notices~~ | **closed**: `R7` refuses a recording older than the newest run the ledger reports, and the ledger's newest row must name its run | -- |
+
+**The lesson, for the round after this one.** The recording had five rules and all five read
+its **contents**; the one thing wrong with it was not in its contents. So the ruler is:
+**when every check on an artefact passes, ask what the artefact is an index of, and check
+that the index still points at the thing** -- a commit, a run, a version, a corpus. The
+numbers were all true; they were true of a tree that had already run again.
