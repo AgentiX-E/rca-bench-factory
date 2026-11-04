@@ -2530,7 +2530,8 @@ follows it -- where before there was a sentence and a title.
 `gate-sites.json`: **120 failure sites across 57 of 80 scripts**, `excluded {17 zero}`, and **43
 throw statements** -- 4 `fatal`, 35 `unguarded`, 1 `guarded`, 3 `rethrow` -- of which 36 are
 proved and 7 are exempt, every exemption carrying a claim, a holding test and a falsifying edit.
-### Five — the step that could not be added (finding 403)
+
+### Six — the step that could not be added (finding 403)
 
 The battery was written as its own CI step, bounded at three minutes against twelve seconds of
 measurement, and then could not be published. The loop has four links: `R2` refuses a step the
@@ -2548,6 +2549,56 @@ a summary that is no longer complete, and that is written in the workflow rather
 The fix -- a third derivation in the recording, for a step that is new or newly named -- is
 P15, and it is not this round's work.
 
+### Seven — the run, and the push that carried one commit of four (finding 404)
+
+| CI | run `41809961840` on `b323263a0`: **7 of 7 jobs success** -- batteries-heavy **15.6**,
+batteries **8.2**, build 9.1, sensitivity **10.0**, golden master 0.6, backend 0.6, cold tree
+0.4 min; **15.6 min of wall clock**. The run before the round, `41785707854` on `de4242299`, was
+7 of 7 in 12.6 |
+
+The recording was re-taken from that run, as `R7` requires: the ledger's newest row is now this
+one, and a recording older than the run the round reports describes a tree nobody shipped. The
+tightest bound after the re-record is `verify / Lint` at 2.0x.
+
+The ceiling moved with it, and the number is derived rather than picked. The one expensive step
+of `sensitivity` measured **542 s** in the previous run and **578 s** in this one -- the claims
+battery is the 36 s between them. Twice 578 is 1156 s, so its bound is 20 minutes; the 19 s of
+setup in front of it puts the bound's expiry at 1219 s; a 20-minute ceiling would kill the job 19
+seconds before the step's own bound could fire, which is exactly the defect step bounds exist to
+remove (`R5`). So the ceiling goes 20 -> **21**, which is `ceil(1219 / 60)`. The bound moved first
+and the ceiling followed, in that order, because a ceiling is a backstop and the bound is the
+number that names a hang.
+
+#### Finding 404 — the push sends the head revision, so a round of commits arrives as one
+
+Four commits were made for this round: `10ef7dd` (the claim's falsifying edit), `b7ae319` (the
+docs), `091650a` (the step that could not be added), `35645c4` (the two defects the local gate
+found). The remote holds **one**, `b323263a0`, whose message is the last of them.
+
+The mechanism is the publishing channel and it is written down in it: the API takes a message and
+a set of files, so every push rebuilds its commit object; when the local parent is the remote tip
+the rebuild lands on the same sha, and when an earlier push already rebuilt one, the tip is posted
+**on the remote tip** and the commits in between are never sent. The tree survives -- every push
+ends by comparing the published tree with the local one and refuses to move the ref if they
+differ -- and the messages do not.
+
+Nothing in this repository could have noticed. The receipt gate asks about a **tree**. `docs:check`
+reads files. CI checks out a tree. The audit's own questions are about what the tree can
+demonstrate. A log is the one artefact no gate reads, so a push that quietly rewrites it is a push
+that passes everything.
+
+The fix is to replay rather than hop: walk back from the revision being published to the newest
+commit whose **tree** the remote already holds -- a tree is the only thing the two repositories can
+honestly be compared on, since the shas of rebuilt commits differ -- and post each commit after it
+in order, each one on the one before. A round is three or four commits, so a replay is three or
+four tree diffs. `PUSH_PLAN_ONLY=1` prints the plan and creates nothing, which is how the decision
+was read before it was published.
+
+This close-out commit is the first use: it is published as its own commit rather than folded into
+the last, which is the property the fix is for. The limit is stated rather than hidden: the
+publishing channel is not in this repository, so no test in this suite covers the replay, and the
+next round that touches it will be reading it rather than running it (P16).
+
 ### Readings
 
 > Ledger for `v3.51`.
@@ -2564,20 +2615,23 @@ P15, and it is not this round's work.
 | coverage | core **99.96 / 99.75 / 100 / 99.96**, cli **100 / 100 / 100 / 100** |
 | the pack's two readings | archive **10 rows**, tree **6 files**, three generated files apart; a symlinked example is carried by the reader and invisible to the listing, so the build refuses and prints both counts |
 | the defect in the instrument | the first version of the orphan check compared the listing with itself, which is empty for every tree and printed `up to date` |
+| the recording | **run 41809961840** at `b323263a0`, 7 jobs / 74 steps / **46 bounded**, 44 min measured; taken from the run this round's ledger row names, which is `R7` working on the round that reports it |
+| the bound and the ceiling it needs | the sensitivity step 19 -> **20** minutes (578 s measured; twice is 1156 s) and the job 20 -> **21**, which is `ceil((1200 + 19) / 60)` -- a 20-minute ceiling would have killed the job 19 s before the step's bound could fire |
+| the log | **four local commits, one remote commit** until this close-out (finding 404); the push now replays the ancestry and publishes each commit as itself |
 
 ### Left open, in the order the goal is reached
 
 | priority | item | state | next step |
 | --- | --- | --- | --- |
 | **P2** | a key whose description carries no keyword scores 0 | the protocol is silent; this repository takes 0 | record it as a gap; do not invent a redistribution |
-| **P3** | the sensitivity gate's cost grows linearly with claims | 142 claims, 194 runs, 9.0 min on the runner; the claims battery adds 12 runs | shard by file before the claims outgrow the job rather than the step |
+| **P3** | the sensitivity gate's cost grows linearly with claims | 142 claims, 194 runs, 10.0 min on the runner; the claims battery adds 12 runs and 36 s | shard by file before the claims outgrow the job rather than the step -- the ceiling has 1 minute of headroom left after this round |
 | **P5/P7** | the witness sees one level | a script loaded without `NODE_OPTIONS` is not rewritten, and a wrapper that does not inherit hides its child | unchanged; needs a second observation channel |
 | **P8** | the compiler is a runtime dependency of four readers | `derive-gate-sites.mjs`, `gate-proofs.mjs`, the witness and the Vite plugin | "a gate with no dependencies" still needs a third correct reading |
-| **P9** | the batteries jobs sit inside their budgets | 11.1 and 12.6 measured against 25 each; the longest bound expires at 24.2 of 25 | a fresh baseline before adding another battery -- `R7` makes forgetting impossible, `R2` makes adding a step visible |
+| **P9** | the batteries jobs sit inside their budgets | 15.6 and 8.2 measured against 25 each; the longest bound expires at 24.2 of 25 | a fresh baseline before adding another battery -- `R7` makes forgetting impossible, `R2` makes adding a step visible |
 | **P13** | a mutation is one substitution | a claim can be false in ways the table does not name, and the table cannot tell | the next honest step is a second mutant per claim, or a battery that mutates the *assertion* rather than the code |
 | **P14** | one of the seven notices is a refusal, not an assertion | the m1 partition's claim is enforced by the probe refusing to publish | a claim whose only notice is a refusal is weaker than one a test asserts; say so per row rather than in a summary |
-
 | **P15** | a CI step cannot be added or renamed, and its name can therefore go stale | the step's own measurement is behind `R2`, a run, a push and the receipt (finding 403) | a third derivation in the recording, the way `--borrow` is for jobs; until then a new battery shares a step name that no longer describes it |
+| **P16** | the publishing channel is outside the repository and has no test | the replay that fixes finding 404 lives in the push script, which this suite never loads | move the plan computation into a module the suite can import, the way `ci-budget.mjs` was moved out of the gate |
 
 **The lesson, for the round after this one.** Two rounds in a row, the defect was in the
 instrument rather than in the thing it measures: last round a pack reader that walked one
@@ -2585,3 +2639,9 @@ directory, this round a check that compared a list with itself. Both were writte
 who had just read the code they were checking. So the ruler is: **for every check, name the two
 things it compares and where each of them comes from** -- and if they come from the same place,
 the check is a restatement, however green it is.
+
+The close-out added a third, and it is the same ruler turned on the *output* rather than on a
+check: a tree is what every gate reads, and a **log** is what none of them reads, so a channel
+that carries trees can drop messages through a green run. Name, for every artefact a round
+publishes, which gate reads it -- and treat "nothing reads this" as a position on the map rather
+than a reassurance.

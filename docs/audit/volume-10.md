@@ -1852,3 +1852,45 @@ that is new or newly named takes its seconds from a step that ran, says which, a
 run it came from. That is not this round's work, and pretending the loop is not there — by
 naming the step after both commands, which is the same loop with a longer name — would leave the
 next round to hit it again with less context.
+
+## Finding 404 — the push carries a tree, so the log it publishes can lose commits
+
+The round made four commits and the remote received one. `10ef7dd` (the falsifying edit),
+`b7ae319` (the documents), `091650a` (the step that could not be added) and `35645c4` (the two
+defects the local gate found on the way) arrived as `b323263a0`, whose message is the last of
+them. Every tree was byte-identical at every step, the receipt gate passed, `verify:local` was
+green over 32 commands, CI was 7 of 7 -- and a reader of the published history would conclude
+that this round was a single change.
+
+The mechanism is in the channel and was written down there without being counted as a risk. The
+API has no way to receive a pack: a push here posts a **tree** and a **message**, and the commit
+object is rebuilt around them. When the local parent is the remote tip, the rebuild reproduces
+the local commit exactly. When an earlier push already rebuilt one -- which happens the first
+time a local parent is not a remote object -- the tip is posted on the remote tip and **the
+commits in between are not sent at all**. The script's own fallback text says so: *"the content
+is identical, the ancestry is not"*. That sentence was true and incomplete: the content of the
+intermediate commits was identical to nothing, because it was never sent.
+
+What made it invisible is worth more than the bug. Every reader in this repository asks about a
+**tree**: `gate-receipt.mjs` keys its receipts on `HEAD^{tree}`, `verify-local.mjs` covers the
+working tree, CI checks out a tree, and the audit asks what the tree can demonstrate. A tree is
+the unit of everything here, and a log is the one artefact no gate reads. So the channel could
+drop the round's account of itself and every instrument said green, truthfully.
+
+The repair is to stop hopping. `push_incremental.py` now walks back from the revision being
+published to the newest commit whose **tree** the remote already holds -- a tree is the only
+thing the two repositories can be compared on, since rebuilt commits have different shas -- and
+posts each commit after it in order, each on the one before. Three or four commits cost three or
+four tree diffs. `PUSH_PLAN_ONLY=1` prints the plan and creates nothing, which is how the plan was
+read before it was published, and this close-out is its first use.
+
+Two limits, stated because the alternative is a claim stronger than the instrument:
+
+- **The replay is not in this repository.** It lives in the publishing script, which the suite
+  never loads, so no test covers it; the next round that changes it will be reading it rather
+  than running it (P16). The honest fix is to move the plan computation into a module the suite
+  can import, exactly as the budget arithmetic was moved out of `check-ci-budget.mjs`.
+- **A tree the receipt blessed is the tip's, not the ancestors'.** The replayed commits are
+  published for the record; their trees are the steps on the way to the tree `verify:local`
+  measured, and the script still refuses to move the ref unless the tip's tree survives. That is
+  the same bargain as before, made explicit for the commits that were previously dropped.

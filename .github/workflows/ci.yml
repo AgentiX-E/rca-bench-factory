@@ -221,7 +221,14 @@ jobs:
     # build and pass together, which is 2.1 times the local figure. The budget is a
     # little over twice the runner's measurement, and it is bounded so that a hang is
     # reported as a budget being spent rather than six hours later.
-    timeout-minutes: 20
+    #
+    # It is 21 rather than 20 as of v3.51's close-out, and the number is derived rather
+    # than chosen: the one expensive step measured 578 s, its bound is therefore 20
+    # minutes, and the 19 s of setup before it means the bound expires at 1219 s. A
+    # ceiling of 20 would kill the job 19 s before the step's own bound could fire, which
+    # is the defect step bounds exist to remove (`ci-budget.mjs`, `R5`). The ceiling is
+    # `ceil(1219 / 60)`.
+    timeout-minutes: 21
     steps:
       - name: Check out
         timeout-minutes: 3
@@ -267,8 +274,15 @@ jobs:
       # `verify:local` on a tree whose recording is already right. Naming this step after
       # both commands would be the same loop with a longer name. The name is therefore
       # narrower than the command, which is stated here rather than hidden.
+      # The bound, the ceiling and the second battery (v3.51 close-out). The step measured
+      # **542 s** in run 41785707854 and **578 s** in run 41809961840 -- the claims battery
+      # is 36 s of it. The multiple is two, so the bound is 20 minutes (1200 s against
+      # 1156 s) and the ceiling has to hold the bound plus the 19 s of setup before it:
+      # 1219 s, which is 21 minutes and not 20. The ceiling moved rather than the bound,
+      # because the bound is the number that names a hang and 2.08 times a measurement is
+      # already the floor of what a slower runner is allowed to cost.
       - name: Every proved exit can disappear without a word
-        timeout-minutes: 19
+        timeout-minutes: 20
         run: node scripts/verify-sites-are-sensitive.mjs && node scripts/verify-claims-are-sensitive.mjs
 
   # The injection batteries. This is the long pole -- everything else in the workflow
