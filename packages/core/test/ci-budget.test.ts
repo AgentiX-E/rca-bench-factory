@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,6 +45,7 @@ export const DRIVES = ['scripts/check-ci-budget.mjs', 'scripts/measure-ci-baseli
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const GATE = join(ROOT, 'scripts', 'check-ci-budget.mjs');
 const MEASURE = join(ROOT, 'scripts', 'measure-ci-baseline.mjs');
+const DECLARATIONS = join(ROOT, 'golden-master', 'ci-declarations.json');
 
 /** One job of a fixture workflow: an id, its label, its budget, and its steps. */
 interface FixtureJob {
@@ -399,21 +400,69 @@ describe('the step the recording has not measured yet', () => {
     expect(budgetSummary(workflow, recording)).toContain('no step is declared unmeasured');
   });
 
-  it('holds the shipped declaration to the workflow it describes, so it cannot become furniture', () => {
-    // The one case about the committed pair rather than a fixture: one declaration, one
-    // step, and the bound the workflow actually writes. `R8` refuses a stale entry, so a
-    // round that measured this step and kept the sentence would be red -- this asserts the
-    // same facts from the other side, where a reader can see what the file claims.
+  it('keeps the shipped declarations naming exactly the steps the recording has not measured', () => {
+    // The one case about the committed pair rather than a fixture, and it is a
+    // biconditional rather than a shape: the declarations name the unmeasured steps, no
+    // more and no fewer. Both halves are defects -- a promise that outlived its
+    // measurement is a bound nobody checked, and a step nobody wrote down is a bound that
+    // does not exist -- and the file is expected to be *absent* most of the time, because
+    // the round that measures a step deletes its sentence. A case that asserted the file
+    // existed would be red in every round but the one that added a step.
     const workflow = readWorkflow(readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8'));
-    const declarations = JSON.parse(
-      readFileSync(join(ROOT, 'golden-master', 'ci-declarations.json'), 'utf8'),
+    const baseline = JSON.parse(readFileSync(join(ROOT, 'golden-master', 'ci-baseline.json'), 'utf8'));
+    const declarations = existsSync(DECLARATIONS) ? JSON.parse(readFileSync(DECLARATIONS, 'utf8')) : null;
+    const read = readDeclarations(workflow, declarations);
+    expect(read.errors).toEqual([]);
+    const promised = [...read.declared].flatMap(([job, steps]) =>
+      [...steps.keys()].map((name) => `${job} / ${name}`),
     );
-    expect(readDeclarations(workflow, declarations).errors).toEqual([]);
-    const [only] = declarations.declared;
-    expect(only.job).toBe('sensitivity');
-    expect(only.step).toBe("Every exemption's claim can be made false");
-    const bounded = stepsOf(workflow, 'sensitivity').find((one) => one.name === only.step);
-    expect(bounded?.minutes).toBe(only.minutes);
+    const unmeasured = jobsOf(workflow).flatMap((job) => {
+      const record = baseline.jobs?.[job.id];
+      return stepsOf(workflow, job.id)
+        .filter((bounded) => typeof record?.steps?.[bounded.name] !== 'number')
+        .map((bounded) => `${job.id} / ${bounded.name}`);
+    });
+    expect(promised.sort()).toEqual(unmeasured.sort());
+  });
+
+  it('says OK through the gate for a tree whose one unmeasured step is declared', () => {
+    // The success path of the new file, driven end to end rather than inferred from
+    // `budgetErrors`: the shipped tree has no declarations on most days -- the round that
+    // measures a step deletes its sentence -- so without this case the wiring between the
+    // gate and the file would be exercised only by its refusals.
+    const dir = mkdtempSync(join(tmpdir(), 'rca-ci-declared-'));
+    const workflow = join(dir, 'ci.yml');
+    writeFileSync(
+      workflow,
+      workflowText([
+        { id: 'batteries', minutes: 25, steps: [...step('Slow battery', 12), ...step('Quick battery', 3)] },
+      ]),
+    );
+    const recording = join(dir, 'baseline.json');
+    writeFileSync(
+      recording,
+      JSON.stringify(recordingOf({ batteries: { minutes: 25, steps: { 'Slow battery': 351 } } })),
+    );
+    const declared = join(dir, 'declarations.json');
+    writeFileSync(declared, JSON.stringify({ declared: [declarationOf()] }));
+    const ledger = join(dir, 'volumes');
+    mkdirSync(ledger);
+    writeFileSync(join(ledger, 'volume-01.md'), '## v0.1\n\n> Ledger for `v0.1`.\n\n| item | value |\n| --- | --- |\n| suite | 1 |\n');
+    const result = spawnSync(process.execPath, [GATE], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        RCA_CI_WORKFLOW: workflow,
+        RCA_CI_BASELINE: recording,
+        RCA_CI_DECLARATIONS: declared,
+        RCA_CI_LEDGER: ledger,
+      },
+    });
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('check-ci-budget: OK');
+    expect(result.stdout).toContain('1 step(s) declared and awaiting the run that measures them');
+    expect(result.stdout).toContain('batteries / Quick battery');
   });
 
   it('refuses through the gate, with the declarations file named, rather than only inside a function', () => {
@@ -727,12 +776,10 @@ describe('the recording the gate reads', () => {
   it('states the multiple and the floor in one place, which the shipped bounds satisfy', () => {
     const workflow = readWorkflow(readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8'));
     const baseline = JSON.parse(readFileSync(join(ROOT, 'golden-master', 'ci-baseline.json'), 'utf8'));
-    const declarations = JSON.parse(readFileSync(join(ROOT, 'golden-master', 'ci-declarations.json'), 'utf8'));
+    // The declarations are read the way the gate reads them: absent is the normal state,
+    // and whether this tree has one is the previous case's business.
+    const declarations = existsSync(DECLARATIONS) ? JSON.parse(readFileSync(DECLARATIONS, 'utf8')) : null;
     expect(budgetErrors(workflow, baseline, readLedger(), declarations)).toEqual([]);
-    // And the recording alone is not enough for this tree, which is the whole point of
-    // the declaration: one step has no measurement yet, and `R2` is right to refuse it.
-    // A case that passed both ways would be describing a tree that has never existed.
-    expect(budgetErrors(workflow, baseline, readLedger())).not.toEqual([]);
     for (const job of jobsOf(workflow)) {
       for (const step of stepsOf(workflow, job.id)) {
         if (step.inheritedFrom === null) continue;

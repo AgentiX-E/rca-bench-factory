@@ -2755,10 +2755,24 @@ apart was comparing one thing with itself -- the third round in a row where that
 
 | instrument | what it says now |
 | --- | --- |
-| `ci.yml` | **75 steps** in 7 jobs, **47 bounded**; bounds total **208 min** against 44 min measured |
+| `ci.yml` | **75 steps** in 7 jobs, **47 bounded**; bounds total **208 min** against 43 min measured |
 | the declaration | **1** step, `sensitivity / Every exemption's claim can be made false`, 3 min, awaiting the run that measures it |
 | `gate-sites.json` | **121 failure sites** across 57 of 80 scripts, `excluded {17 zero}`; **44 throws** -- 5 `fatal`, 35 `unguarded`, 1 `guarded`, 3 `rethrow` |
 | the step count the plan prints | `sensitivity bounds all 4 of its step(s) on its own`, and the largest is still 20m of the job's 21m |
+
+### Six — the run, and the sentence it deleted
+
+| CI | run `41835348742` on `12010eb76`: **7 of 7 jobs success** -- batteries-heavy **12.0**, batteries **11.6**, build 9.4, sensitivity **8.8**, golden master 0.7, backend 0.7, cold tree 0.6 min; **13.1 min of wall clock**. The split step ran **20 s** against its three-minute bound and the sites battery **482 s** against twenty |
+
+The recording was re-taken from that run, as `R7` requires, and the declaration was consumed
+by it: the recorder printed `1 declaration(s) are now measured and can be deleted`, the file was
+deleted in the same commit as the recording, and `R8` had been refusing the tree until it was.
+That is the whole lifecycle of a promise in one round -- written by the round that added the step,
+measured by the run that round closes on, deleted by the close-out.
+
+The number the declaration guessed is 20 s against 180 s of bound: nine times, where `R4` asks
+for two. The sites battery is 482 s against 1200 s, which is 2.5 times. Both bounds were sized
+before this run existed; one of them was a guess and the guess was generous.
 
 ### Readings
 
@@ -2766,14 +2780,14 @@ apart was comparing one thing with itself -- the third round in a row where that
 
 | item | value |
 | --- | --- |
-| `core` test suite | **234 files, 5755 tests passed** (as of this commit) |
+| `core` test suite | **234 files, 5756 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **238 files, 5942 tests passed** (as of this commit) |
-| new tests | **15**, all in `ci-budget.test.ts`: every clause of `R8` (seven refusals and the pair that shows the declaration doing the work), the reading it prints, the shipped pair, the malformed file through the gate, the recorder's "now measured" line, and the borrow across a budget |
+| repo test suite | **238 files, 5943 tests passed** (as of this commit) |
+| new tests | **16**, all in `ci-budget.test.ts`: every clause of `R8` (seven refusals and the pair that shows the declaration doing the work), the reading it prints, the shipped pair, the malformed file through the gate, the recorder's "now measured" line, and the borrow across a budget |
 | throw partition | **44 statements**: 5 `fatal`, 35 `unguarded`, 1 `guarded`, 3 `rethrow`; 37 proved; 7 exempt |
 | failure sites | **121** across 57 of **80** scripts; `excluded` `{17 zero}` |
 | the new refusal | `check-ci-budget.mjs` gains one site (a declarations file that cannot be read) and `measure-ci-baseline.mjs` one throw (a borrow across a budget) -- both proved by the same test file |
-| the declaration | **1** entry, and the gate is green *because* of it: the same tree without the file is refused, which is the pair the round's first case asserts |
+| the declaration | **1** entry when the round was pushed, and green *because* of it -- the same tree without the file is refused, which is the pair the round's first case asserts. The run measured the step at **20 s** against a 180 s bound, and the entry is deleted in this close-out: `no step is declared unmeasured` |
 | the step | `sensitivity` now bounds **4** steps; the sites battery keeps 20 min (578 s recorded, 542 s real) and the claims battery gets the 3-minute floor |
 
 One correction to the tables above, and it is about the tables themselves. A count
