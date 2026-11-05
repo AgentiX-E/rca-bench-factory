@@ -727,6 +727,43 @@ Ten scenarios E1–E10 exercise the full pipeline (T1–T6 ingest, each target f
 degradation, quarantine, evolution). HITL is budgeted at **12–22.5 person-days per
 1,000 cases** (vs 55–110 manual) — roughly a 78% reduction.
 
+## The publishing channel
+
+The channel that carries every revision to the remote is a decision, an execution and an entry
+point, and the boundary between the first two is the whole of what makes the third checkable.
+
+- **A plan is data, and it is written before any object exists.** It names every commit to publish,
+  the entries of each tree, and where each one hangs; the two names it cannot know -- the commit
+  SHAs the API will assign -- are symbols, `remote` or the local commit whose rebuilt form precedes
+  this one, and the executor resolves each exactly once and refuses a symbol it cannot resolve. A
+  plan that carried `parent: null` for the executor to fill in would have a hole in the one field
+  that decides the history.
+- **A remote that holds neither the revision nor any tree of its ancestry is refused.** Publishing
+  the tip alone is how finding 404 lost two of three commits: the tree arrives, the sentences do
+  not, and every check about content is satisfied. A branch that does not exist is a different
+  state -- there is nothing to locate, so the whole ancestry is the window -- and it is published.
+- **A tree listing that reports itself truncated cannot decide what is deleted.** A path missing
+  from a partial listing and a path that was never there are the same absence; the refusal arrives
+  before the first upload rather than after it.
+- **A replayed commit has exactly one parent.** A merge's second parent is a history the remote
+  would not receive, so the SHA it receives would not be the SHA that was written -- refused at the
+  plan, not discovered at the log. The root of a plan onto an unborn branch has none, and that
+  exception is stated in the same condition rather than assumed by a caller.
+- **The remote log equals the local log after a replay, compared line for line, and the remote's
+  tip SHA equals the local one.** Trees were equal on the day finding 404 happened; comparing
+  commits compares the thing the round wrote. This is proved against a bare repository and against
+  a server that speaks the API's shapes over a socket and writes real git objects, with no token
+  and no network.
+- **The receipt is checked where the push can see it.** A repository with a `verify:local` is asked
+  for a receipt keyed on the tip's tree and the push refuses without one; a repository without a
+  gate is not asked, because a rule that refused every push there would be turned off rather than
+  satisfied.
+- **What is not claimed.** The GitHub transport's network behaviour is exercised against a local
+  server that implements the four endpoints, not against `api.github.com`: the retry rule and the
+  utf-8 fallback are driven, and the possibility that the live API answers something this server
+  does not model remains. The repository cannot test the network it publishes to, and says so here
+  rather than in a comment.
+
 ## Definition of Done (per change and per release)
 
 - [ ] All layers L0–L3 green locally and in CI.

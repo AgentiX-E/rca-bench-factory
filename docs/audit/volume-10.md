@@ -1948,3 +1948,140 @@ The shape is the round's larger one, one field over: a number that came from som
 where the check believed it came from. Three rounds in a row, the defect has been a comparison whose
 two sides were not independent -- a pack index written by its own reader, a check that compared a
 list with itself, and now a budget copied from the job that was being checked.
+
+## Finding 407 — the channel that publishes every finding was never run by a test
+
+Four hundred rounds of findings reached `api.github.com` through `push_incremental.py`: 362 lines
+of Python in a scratch directory outside both repositories, with no test, no review, no CI, and one
+assertion. The assertion was `if base != local_tree: refuse` -- content, compared with content. It
+was sufficient while content was the only thing the channel could get wrong.
+
+It was not sufficient in v3.51, when the channel published one commit out of three. Every tree was
+byte-identical, `verify:local` was green, and the round's account of itself had lost two thirds of
+its sentences. The repair walked back to the newest commit whose tree the remote held and
+republished everything after it, and its only execution was the incident it repaired.
+
+The defect is not that the repair was wrong. It is that the **decision** -- which commits, in what
+order, on what parent -- had no subject: it was a function inside a file that immediately performed
+the effect, so the only way to look at a plan was an environment variable on a program that must not
+be run against a branch it might move, and the printed plan was read by nobody and compared with
+nothing.
+
+What the round did with it:
+
+| before | after |
+| --- | --- |
+| `replay_plan(rev, base_tree)` inside a 362-line Python script outside the tree | `planPublish({remote, commits})` in `scripts/publish-plan.mjs`, a function of data returning data |
+| the effect interleaved with the decision in the same file and the same loop | `scripts/publish.mjs` executes a plan and never computes one |
+| no test, no address to test | 26 cases in `publish-plan.test.ts` against real repositories, 32 in `publish.test.ts` including an end-to-end publish over HTTP |
+
+The plan says everything except the two fields it cannot know. It is written before any object
+exists, so the commit SHAs are the API's answer and not the planner's guess; what it carries instead
+is where each object hangs -- `parent` and `base`, each either the remote tip or the local commit
+whose rebuilt form precedes this one. The executor resolves a symbol exactly once and refuses one
+it cannot resolve. A plan with `parent: null` for the executor to fill in would have a hole in the
+one field that decides the history, which is finding 404 with better manners.
+
+The strongest assertion the suite makes is not about a tree. After a replay,
+`git -C remote rev-parse main` equals `git -C local rev-parse HEAD`, and the two logs are equal line
+for line -- because a commit is a deterministic function of its tree, its parents, its message and
+its identities, so a rebuilt commit is *the same commit* when the plan is right. Narrowing the plan
+back to the tip alone turns 8 of the file's 32 cases red, and the first of them is the log
+comparison. The trees stay equal; the sentences do not.
+
+## Finding 408 — the fallback that produced the incident survived the repair, announced by one line
+
+`replay_plan` returned `None` when no local commit's tree appeared in the remote's ancestry -- a
+rewritten history, a rebase, the wrong branch. The caller's answer was:
+
+```python
+if plan is None:
+    print("the remote holds no tree of this revision's ancestry -- publishing the tip alone")
+    plan = [REV]
+```
+
+That is the incident exactly: the tip's content arrives, the ancestry does not, every tree matches,
+and the round's messages are lost. The repair added the replay above it and left the fallback in
+place, so after v3.51 both "the remote is behind" and "the remote is on a different history" ended
+at `VERIFIED` -- separated by a line of stdout that nothing reads.
+
+A refusal replaces it, and it quotes the finding, because a reader who meets this state will
+otherwise re-derive it from a log comparison that looks correct:
+
+```
+the remote holds neither 4a1c9ff02 nor any tree of its ancestry: its tip is 7c3e1ab88
+(tree 91f0d2c4e) and no local commit has that tree. Publishing the tip alone is how
+finding 404 lost two of three commits — the tree arrives and the sentences do not.
+Rebase onto the remote, or publish the branch that produced that tip
+```
+
+The case that proves it also checks that nothing was written to either repository, which is the
+difference between a refusal and a report of one.
+
+An unborn branch is not the same state and does not take the same path. `head: null` means there is
+nothing to locate, so the whole ancestry is the window and the root commit legitimately has no
+parent -- published onto nothing, which is what a first push is. It is exercised against a bare
+repository whose ref has been deleted, and it ends in the same equality every other case asserts.
+
+## Finding 409 — a listing that said it was partial was used to decide what to delete
+
+`GET /git/trees/{sha}?recursive=1` truncates at 100 000 entries or seven megabytes and reports
+`truncated: true` when it does. The channel computed its deletions as *every path in the remote
+listing that the local revision does not have*. A path absent from a partial listing and a path that
+was never there are the same absence, and the direction of the error is the bad one: files the
+local revision removed stay on the remote, and the rebuilt tree keeps them.
+
+The assertion at the end does notice -- the built tree is compared with the local one and the ref
+does not move. It notices after every blob of the round has been uploaded, with a message about two
+trees and no cause. The refusal now arrives before the first upload and names the listing:
+
+```
+the tree listing is truncated, so it cannot be used to decide what to delete:
+a path missing from a partial listing and a path that was never there read the same
+```
+
+The case asserts three things, and the second two are the ones that make it a refusal rather than a
+later error: the message, that no `POST /git/trees` was made, and that no `POST /git/blobs` was.
+
+## Finding 410 — a merge was republished with one parent
+
+`"parents": [head]` -- one line, always, in the commit the channel posts. A merge inside the
+replayed window therefore arrives with its second side removed, and the SHA the remote records is
+not the SHA that was written. Nothing in the channel compared the two, because the comparison it
+made was between trees.
+
+This repository's history is linear, so the line survived four hundred rounds by never being
+reachable. That is a fact about this history and not about the code: the sentence would be true of
+any repository the channel is pointed at next, and it would become false silently.
+
+The planner refuses a replayed commit with any number of parents other than one, and says what the
+second parent is: *a merge carries a history in its second parent that the remote would not receive,
+so the SHA it receives would not be the SHA that was written*. Zero parents is allowed in exactly
+one state -- the root of a plan onto a branch that does not exist -- and that exception is stated in
+the same condition rather than implied by a caller. The case builds a real merge, two branches and
+`--no-ff`, so the refusal is proved against git's own notion of a merge rather than a hand-made
+record with two parents in it.
+
+## Finding 411 — an alternate object directory let the harness answer its own question
+
+The local transport exists so the execution has a subject: a bare repository standing where
+`api.github.com` stands, written with the same objects, so a correct replay leaves the remote's
+commit SHAs equal to the local ones. The first version of it added the source repository to
+`GIT_ALTERNATE_OBJECT_DIRECTORIES` so that a rebuilt commit could find its parent. The suite was
+green.
+
+It was green because `git commit-tree` does not write an object it can already reach. The rebuilt
+commit was byte-identical to the local one because it *was* the local one, found through a wire
+that was not there -- nothing had crossed the boundary, and the equality was a statement about one
+repository compared with itself.
+
+The failure surfaced sideways. The ref update refused to move the branch backwards, and the reason
+was `git -C remote cat-file -t <rebuilt>` answering `could not get object info`: the object existed,
+in the repository the harness had let the server see. Removing the alternates fixed the equality and
+made it stronger than it was designed to be -- the remote now holds only what was uploaded, so an
+object the plan references without sending it fails loudly rather than being found locally.
+
+The rule this leaves is the round's ruler turned on its own instruments: **for every assertion, name
+the observable that would be absent if the code did nothing.** When the answer is "nothing", the
+assertion is measuring the harness. It is the same failure as finding 406 one level out -- a check
+whose two sides were not independent -- and it is the third round in a row with that shape.
