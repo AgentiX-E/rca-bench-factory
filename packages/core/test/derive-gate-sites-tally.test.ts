@@ -238,15 +238,17 @@ describe('the two baskets are a partition of the calls, not a remainder', () => 
       if (total !== counted) shortfalls.push(`${file}: classified ${String(total)}, holds ${String(counted)}`);
     }
     expect(shortfalls).toEqual([]);
-    // 138 = 121 failure sites + 17 zero exits. The step from 130/114 is v3.51's gate:
+    // 140 = 123 failure sites + 17 zero exits. 121 -> 123 is v3.53's entry point: the
+    // publish channel's two exits, which used to live outside the repository and therefore
+    // outside every count in this file. The step from 130/114 is v3.51's gate:
     // six failure exits and one `--list` success exit, all in
     // `verify-claims-are-sensitive.mjs`; 137/120 -> 138/121 is v3.52's, which added one
     // refusal to `check-ci-budget.mjs` -- a declarations file that cannot be read. The two
     // numbers move together because the question is one -- does the classification account
     // for every call -- and a round that added calls without moving them would be the
     // drift this assertion is for.
-    expect(calls).toBe(138);
-    expect(sites).toBe(121);
+    expect(calls).toBe(140);
+    expect(sites).toBe(123);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

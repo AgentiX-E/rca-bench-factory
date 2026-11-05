@@ -220,8 +220,10 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     expect(shortfalls).toEqual([]);
     // 43 is 41 plus the pack's two new guards -- a tree file the reader did not carry,
     // and an archive that is not exactly the three generated files larger than the tree;
-    // 44 is that plus v3.52's refusal to borrow across a budget.
-    expect(total).toBe(44);
+    // 44 is that plus v3.52's refusal to borrow across a budget. 72 is v3.53, which moved
+    // the publish channel into the tree: every refusal that used to be a `raise SystemExit`
+    // in a Python file outside both repositories is now a throw a test can reach.
+    expect(total).toBe(72);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -255,7 +257,7 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // function with no enclosing `try`. 5 fatal is v3.52's addition: a borrow across a
     // budget, which is the one refusal in that script that is about the workflow's
     // arithmetic rather than about the run it is reading.
-    expect(counts).toEqual({ fatal: 5, unguarded: 35, guarded: 1, rethrow: 3 });
+    expect(counts).toEqual({ fatal: 5, unguarded: 60, guarded: 1, rethrow: 6 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

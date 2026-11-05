@@ -335,6 +335,34 @@ const REGISTER: Record<string, Entry> = {
       'no exit -- verify-local.mjs decides what to do with the three states, and it is a gate, so the ' +
       'decision lives here where tree-repair.test.ts can drive it against a fixture cache.',
   },
+  'publish-plan.mjs': {
+    class: 'data',
+    why:
+      'The decision a push makes, as a function: which commits the remote does not hold, what each one\'s ' +
+      'tree is relative to the one before it, and the refusals that stop a plan from describing a history ' +
+      'nobody wrote. No main and no exit -- `publish-cli.mjs` is the gate and this is what it asks. It moved ' +
+      'here in v3.53 from a Python script outside both repositories, where the replay that repaired finding ' +
+      '404 had been executed exactly once, against a live branch, in the round that wrote it.',
+  },
+
+  'publish.mjs': {
+    class: 'data',
+    why:
+      'Executing a plan: the receipt check, the four API calls, and the assertion that the tip\'s tree ' +
+      'survived the round trip before the ref moves. No main and no exit; the two transports it ships are ' +
+      'what the suite drives, one against a bare repository and one against a server that speaks the API\'s ' +
+      'shapes over a socket, so the end-to-end assertion is an equality of commit SHAs rather than of trees.',
+  },
+
+  'publish-cli.mjs': {
+    class: 'gate',
+    why:
+      'It exits 2 on an argument it does not know and 1 on a refusal, so it is a gate by the inventory rule, ' +
+      'and it is the only part of the publishing channel that is one: the decision and the execution are ' +
+      'modules no test may hollow. Both exits are driven by `publish.test.ts`, which spawns it for a missing ' +
+      'token, an unknown flag and a real push to a local remote.',
+  },
+
   'gate-receipt.mjs': {
     class: 'data',
     why:
