@@ -1448,9 +1448,9 @@ sentence for the round rather than erasing the only account of why the job exist
 
 | item | value |
 | --- | --- |
-| `core` test suite | **238 files, 5887 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **242 files, 6074 tests passed** (as of this commit) |
+| `core` test suite | **237 files, 5849 tests passed** (at v3.54) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.54) |
+| repo test suite | **241 files, 6036 tests passed** (at v3.54) |
 | new tests | **30**: 19 for `R9` (the whitelist, the whole-step relation, the lifetime, the summary and the self-check), 8 for the split (the grammar, the partition, the shipped workflow's plan, and the two refusals), and 4 for `R6`'s asymmetry (a narrower budget refused, a missing one refused, a wider one accepted and named, a removed one accepted) with one existing case rewritten from the wider direction to the narrower |
 | throw partition | **74 statements**: 6 `fatal`, 60 `unguarded`, 1 `guarded`, 7 `rethrow` |
 | failure sites | **123** across 58 of **83** scripts; two re-annotated after their guard text changed |
@@ -1468,6 +1468,7 @@ sentence for the round rather than erasing the only account of why the job exist
 | priority | item | state | next step |
 | --- | --- | --- | --- |
 | **P1** | real network shapes beyond a closed socket | local servers drive 5xx, 400 and 422 | keep a reading of what the API actually answered on every real push |
+| **P2** | a mistyped `--branch` reads as an unborn branch | `publish-cli --branch main` on a `master` repository found no ref, so the plan was "publish the whole history onto nothing"; only the merge refusal stopped it. A linear history would have created a second branch silently | refuse a plan whose base is `null` on a repository that is not empty, unless the caller says `--new-branch` |
 | **P2** | P13: a mutation is one substitution | unchanged | a second mutation, or an assertion about mutations |
 | **P2** | P2 / P5 / P7 / P8 | unchanged | unchanged |
 | **P3** | P9 / P14 | unchanged | unchanged |
@@ -1596,14 +1597,37 @@ inside a ceiling that does not move, and reports a hang seven minutes sooner. A 
 tolerance for imprecision and a bound is a claim about a command, so the claim was corrected
 and the tolerance left alone.
 
-### Six — the instruments
+### Six — the instrument that could not say why (finding 428)
+
+The first CI run of this round failed the sites battery's shard 2, and what it printed was a
+file, a verdict, and an instruction to re-run the file by hand. The same shard passes locally
+in 2.9 minutes with 92 claims and 120 runs, so the reader had no exit code and not one line of
+output to think with.
+
+`failureSummary` is right and is not the defect: it quotes at most four lines of a failed run
+and returns **nothing** when the run names no failing test, because a summary it invented
+would be a sentence about a failure nobody described. The case that arrived here is the one it
+cannot describe -- vitest exiting non-zero **with every test passing** when a worker's RPC
+deadline expires -- so the summary was empty and the gate printed an empty detail. `outputTail`
+quotes the last three lines the run did print, under `its own output ends:`, which is evidence
+rather than a diagnosis; the sentence also carries the exit code now, because a red test and a
+dead runner are different findings.
+
+The other half is a hypothesis the next run tests, and it is finding 297's shape one layer out:
+the battery runs four claimants at a time, each a `vitest` of its own, and every child sized
+its pool from the machine -- four claimants on a four-vCPU runner ask for **sixteen** workers.
+`--maxWorkers=1` costs nothing for a one-file run and removes the oversubscription by
+construction.
+
+### Seven — the instruments
 
 The mutation set is the new rules' failure shapes, one substitution each: a tie in the
 slowest-reading lookup going to the older run, a duplicate day admitted, the age check
 inverted, the deadline falling back to the recorded day, an action step keying an empty
 command, a seed demanding every job, a seed writing the recording, and a seed allowed to be
 newer than it. Eight red. Each of those eight is a number that would have looked plausible
-on the summary line, which is the same lesson this repository keeps relearning.
+on the summary line, which is the same lesson this repository keeps relearning. Three more
+hold the instrument's two repairs.
 
 ### Readings
 
@@ -1611,9 +1635,12 @@ on the summary line, which is the same lesson this repository keeps relearning.
 
 | item | value |
 | --- | --- |
-| `core` suite | **238 files, 5887 tests passed**; 38 of them in `ci-readings.test.ts`, six of those for `--seed` |
+| `core` test suite | **238 files, 5890 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **242 files, 6077 tests passed** (as of this commit) |
+| `core` suite | **238 files, 5890 tests passed**; **41** of them new this round -- 38 in `ci-readings.test.ts` (six for `--seed`), one for `outputTail`, two for the instrument's red-baseline report |
 | coverage | `core` **99.96 / 99.75 / 100 / 99.96**, `cli` **100 / 100 / 100 / 100** |
-| mutation | **8** substitutions of the new rules, **8** red, restored green at 115 cases |
+| mutation | **11** substitutions, **11** red: eight on the new rules (restored green at 115 cases) and three on the instrument. The third of those **survived** on its first case -- the fixture held exactly three lines, so "the tail" and "the head" were the same three -- and the case was what needed fixing |
 | failure sites | **124** across **58** of **83** scripts; throws **79** = 11 `fatal` + 60 `unguarded` + 1 `guarded` + 7 `rethrow` |
 | site proofs | **189** claims across **57** files, every one driven |
 | the gate's own summary | 8 jobs recorded, **61 of 82** steps bounded, 49 min measured, bounds total **301** min, **6** readings of the workflow |

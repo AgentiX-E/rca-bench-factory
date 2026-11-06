@@ -10,6 +10,7 @@ import {
   claimedSites,
   claimsByFile,
   failureSummary,
+  outputTail,
   hookFile,
   parseHollows,
   parseSpawns,
@@ -355,6 +356,34 @@ describe('site-proofs · what a red run says about itself', () => {
     ].join('\n');
     expect(failureSummary(many)).toHaveLength(4);
     expect(failureSummary(many)).not.toContain('FAIL  c.test.ts > three');
+  });
+
+  it('quotes the tail of a run whose output carries no report at all', () => {
+    // The other half of the same question. A run that dies before printing a report --
+    // vitest exiting non-zero with every test passing is the measured case -- has no
+    // `FAIL`, no error line and no totals, and a gate that printed nothing left the
+    // reader with a filename. The tail is quoted as evidence, not summarised as a
+    // diagnosis, which is the distinction between this function and `failureSummary`.
+    // Five lines, because three would not tell "the tail" from "the head": the first
+    // mutation of this function kept the wrong end and the case stayed green.
+    const died = [
+      '',
+      ' RUN  v3.2.4 /repo',
+      'x\u00b7',
+      'stdout | x.test.ts',
+      'it did nothing',
+      '[vitest-worker]: Timeout calling "onTaskUpdate"',
+      '',
+    ].join('\n');
+    expect(outputTail(died)).toEqual([
+      'stdout | x.test.ts',
+      'it did nothing',
+      '[vitest-worker]: Timeout calling "onTaskUpdate"',
+    ]);
+    // Three lines by default, and never a fabricated fourth: a run that printed one
+    // line is quoted as one line.
+    expect(outputTail('only this')).toEqual(['only this']);
+    expect(outputTail('')).toEqual([]);
   });
 
   it('invents nothing when the report carries none of those lines', () => {

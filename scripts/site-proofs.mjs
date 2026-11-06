@@ -414,6 +414,29 @@ export function failureSummary(text) {
 }
 
 /**
+ * The last lines a run printed, for a run that printed no report at all.
+ *
+ * `failureSummary` deliberately yields nothing for output carrying no `FAIL`, no error
+ * line and no totals, because a summary it invented would be a sentence about a failure
+ * nobody described. That refusal is right, and it is also why the first real red of the
+ * sites battery arrived with no explanation whatsoever: vitest can exit non-zero **with
+ * every test passing** -- `[vitest-worker]: Timeout calling "onTaskUpdate"` is the one
+ * this repository has measured twice -- and such a run prints none of the three lines.
+ * The caller then had a file, an exit code, and nothing else.
+ *
+ * So this is not a summary and does not pretend to be one: it is the run's own tail,
+ * quoted, labelled as such by the sentence that prints it. A reader gets the evidence
+ * rather than a diagnosis, which is the difference the two functions are for.
+ */
+export function outputTail(text, lines = 3) {
+  const all = String(text)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '');
+  return all.slice(-lines).map((line) => line.slice(0, 160));
+}
+
+/**
  * Every site the inventory claims is proved, as `{ site, file }`.
  *
  * Exempt sites are not claims and are left out: their argument is that no input can

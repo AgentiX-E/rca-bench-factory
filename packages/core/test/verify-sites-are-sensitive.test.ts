@@ -48,6 +48,10 @@ interface FixtureOptions {
   assert?: boolean;
   blind?: boolean;
   red?: boolean;
+  /** Fails with output that carries no report at all: every test passing, non-zero exit. */
+  silent?: boolean;
+  /** Writes the arguments it was given, so a case can read what the gate asked for. */
+  argv?: boolean;
 }
 
 /** A repository the gate can be pointed at: an inventory, a gate, and a runner. */
@@ -95,6 +99,8 @@ function fixture(claims: { line: 1 | 2; file: string }[], options: FixtureOption
     options.assert === true ? 'ASSERT' : '',
     options.blind === true ? 'BLIND' : '',
     options.red === true ? 'RED' : '',
+    options.silent === true ? 'SILENT' : '',
+    options.argv === true ? 'ARGV' : '',
   ]
     .filter((one) => one !== '')
     .join(' ');
@@ -110,7 +116,7 @@ function fixture(claims: { line: 1 | 2; file: string }[], options: FixtureOption
   // either checks the status or does not.
   const runner = [
     "import { spawnSync } from 'node:child_process';",
-    "import { readFileSync } from 'node:fs';",
+    "import { readFileSync, writeFileSync } from 'node:fs';",
     "import { dirname, resolve } from 'node:path';",
     "import { fileURLToPath } from 'node:url';",
     'const here = dirname(fileURLToPath(import.meta.url));',
@@ -118,6 +124,18 @@ function fixture(claims: { line: 1 | 2; file: string }[], options: FixtureOption
     'const text = readFileSync(file, "utf8");',
     'const pick = /PICK (\\w+)/.exec(text)[1];',
     'const want = pick === "one" ? 1 : 2;',
+    'if (text.includes("ARGV")) {',
+    // The path arrives as a parameter rather than being guessed from the runner's own
+    // location: this template is source-as-a-string, so a `resolve(here, ...)` here
+    // reads to `tests-do-not-write-inside-the-package.test.ts` as a write into the
+    // package -- and the rule it enforces is the right one, so the fixture is what
+    // should change.
+    '  writeFileSync(process.env.FIXTURE_ARGV, process.argv.slice(2).join(" "));',
+    '}',
+    'if (text.includes("SILENT")) {',
+    '  process.stdout.write("[vitest-worker]: Timeout calling " + String.fromCharCode(34) + "onTaskUpdate" + String.fromCharCode(34) + "\\n");',
+    '  process.exit(1);',
+    '}',
     'if (text.includes("RED")) {',
     '  process.stdout.write(" FAIL  " + file + " > drives the gate\\n");',
     '  process.stdout.write("AssertionError: expected 1 to be 0 // Object.is equality\\n");',
@@ -157,6 +175,7 @@ function runGate(
       RCA_SENSITIVE_VITEST: join(tree, 'runner.mjs'),
       RCA_SENSITIVE_TESTS: join(tree, 'packages', 'core'),
       RCA_SENSITIVE_CONCURRENCY: '2',
+      FIXTURE_ARGV: join(tree, 'argv.txt'),
       ...env,
     },
   });
@@ -233,6 +252,49 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
       expect(result.stderr).toContain('AssertionError: expected 1 to be 0');
       expect(result.stderr).toContain('Tests  1 failed (1)');
       expect(result.stderr).toContain('run it alone:');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('quotes the tail when the run failed with no report to summarise', () => {
+    // The first real red of this battery on a runner was exactly this shape:
+    // `[vitest-worker]: Timeout calling "onTaskUpdate"`, every test passing, exit 1.
+    // `failureSummary` correctly yields nothing for output that names no failing test,
+    // so the gate printed a file, an exit code and no evidence -- the same defect the
+    // previous round fixed for a *survivor*, one arm over.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      assert: true,
+      silent: true,
+    });
+    try {
+      const result = runGate(tree);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('does not pass on its own (exit 1)');
+      expect(result.stderr).toContain('its own output ends: [vitest-worker]: Timeout calling');
+      expect(result.stderr).toContain('run it alone:');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('gives each claimant run one worker, because a one-file run has nothing to share', () => {
+    // Four claimants at a time, each a vitest of its own: left to the default every
+    // child sizes its pool from the machine, so four claimants on a four-vCPU runner
+    // ask for sixteen workers. The signature of that is a red with every test passing,
+    // and this repository has already paid for it once inside the suite (finding 297).
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      assert: true,
+      argv: true,
+    });
+    try {
+      const result = runGate(tree);
+      expect(result.status).toBe(0);
+      const argv = readFileSync(join(tree, 'argv.txt'), 'utf8');
+      expect(argv).toContain('--maxWorkers=1');
+      // And the file it was asked about, relative to the package the run happens in,
+      // so the flag is not asserted on a run that measured something else.
+      expect(argv).toContain('run test/one.test.ts');
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }

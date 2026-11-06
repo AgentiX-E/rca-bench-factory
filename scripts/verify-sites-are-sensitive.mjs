@@ -95,6 +95,7 @@ import {
   claimedSites,
   claimsByFile,
   failureSummary,
+  outputTail,
   hookFile,
   parseHollows,
   parseShard,
@@ -271,10 +272,22 @@ function runOnce(file, site) {
       env.RCA_HOLLOW_SITE = site.site;
     }
   }
-  const child = spawn(process.execPath, [vitestEntry(), 'run', relative(TESTS, absolute), '--reporter=dot'], {
-    cwd: TESTS,
-    env,
-  });
+  // One worker, because this run is one file.
+  //
+  // The battery runs four claimants at a time, and each child is a vitest of its own:
+  // left to the default, every child sizes its pool from the machine, so four claimants
+  // on a four-vCPU runner ask for sixteen workers. That is the oversubscription finding
+  // 297 removed inside the suite, one layer out, and its signature is the same -- a red
+  // with every test passing, because the files that pay are the synchronous ones. A
+  // one-file run has nothing to parallelise, so the flag costs no wall clock.
+  const child = spawn(
+    process.execPath,
+    [vitestEntry(), 'run', relative(TESTS, absolute), '--reporter=dot', '--maxWorkers=1'],
+    {
+      cwd: TESTS,
+      env,
+    },
+  );
   let output = '';
   child.stdout.on('data', (chunk) => {
     output += String(chunk);
@@ -333,9 +346,22 @@ for (const outcome of baselines) {
     problems.push({ head: outcome.problem, detail: outcome.detail });
   } else if (outcome.status !== 0) {
     // Red before any mutation. Crediting it would make every mutant look caught.
+    // The exit code is part of the sentence because the two shapes of this red are not
+    // the same finding: a red test and a runner that died with every test passing both
+    // arrive here, and only the number tells them apart before the output is read.
+    const reported = failureSummary(outcome.output);
     problems.push({
-      head: `${outcome.file} does not pass on its own, so its claims are unmeasured`,
-      detail: [...failureSummary(outcome.output), rerun(outcome.file)],
+      head:
+        `${outcome.file} does not pass on its own (exit ${String(outcome.status)}), so its claims are ` +
+        'unmeasured',
+      // A run whose output carries no report at all -- the shape vitest takes when its
+      // worker's RPC deadline expires, with every test passing -- leaves the summary
+      // empty. The tail is quoted rather than summarised: it is evidence, and the
+      // sentence says whose.
+      detail:
+        reported.length === 0
+          ? [...outputTail(outcome.output).map((line) => `its own output ends: ${line}`), rerun(outcome.file)]
+          : [...reported, rerun(outcome.file)],
     });
   } else {
     runnable.push(outcome.file);
