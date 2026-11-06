@@ -609,7 +609,14 @@ describe('ci · the shells the suite cross-checks against are installed', () => 
    * first version of this test came to match prose. The id is the key in the
    * `jobs:` map and is unique by construction.
    */
-  const SUITE_JOB_IDS = ['verify', 'batteries', 'batteries-heavy', 'cold-tree', 'sensitivity'];
+  const SUITE_JOB_IDS = [
+    'verify',
+    'batteries',
+    'batteries-heavy',
+    'cold-tree',
+    'sensitivity',
+    'sensitivity-shard',
+  ];
 
   /** The binaries `check-no-unsafe-shell.test.ts` spawns by name. */
   const SHELLS = ['zsh', 'bash'];
@@ -698,7 +705,12 @@ describe('ci · the shells the suite cross-checks against are installed', () => 
       const body = jobBody(id);
       if (body.includes('vitest')) return true;
       return runCommands(body).some((command) => {
-        const target = /^(?:node|python3) (scripts\/\S+)$/.exec(command)?.[1];
+        // The `$` this used to carry made a command with arguments invisible: the
+        // sharded battery runs `node scripts/verify-sites-are-sensitive.mjs --shard 1/2`,
+        // and a guard that stops reading at the first space answers "this job runs no
+        // suite" about a job that does nothing else. The script is the first token; the
+        // flags after it are arguments to that same script, not a second command.
+        const target = /^(?:node|python3) (scripts\/\S+)/.exec(command)?.[1];
         if (target === undefined) return false;
         const full = resolve(ROOT, target);
         return existsSync(full) && readFileSync(full, 'utf8').includes('vitest');
