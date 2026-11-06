@@ -198,6 +198,27 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Whether a thrown value is the connection breaking rather than the program being wrong.
+ *
+ * `fetch` answers a closed socket with a `TypeError` whose cause carries an undici code,
+ * not with a response, so the status-based retry in `call` cannot see it. The first real
+ * push of v3.53 met `UND_ERR_SOCKET (other side closed)` on `POST /git/blobs` while the
+ * same body was accepted on the next connection -- a state no in-process server had
+ * produced, because a server that answers cannot also disappear. Anything else (a bad
+ * JSON body, a programmer's error, a refusal to start) is let through unchanged: a retry
+ * is for a connection, not for a mistake.
+ */
+export function isNetworkFailure(error) {
+  if (error === null || typeof error !== 'object') return false;
+  const cause = error.cause;
+  const code = (cause !== null && typeof cause === 'object' && 'code' in cause ? cause.code : undefined) ?? error.code;
+  if (typeof code === 'string' && (code.startsWith('UND_ERR_') || code === 'ECONNRESET' || code === 'EPIPE')) {
+    return true;
+  }
+  return error instanceof TypeError && error.message === 'fetch failed';
+}
+
 const sleepFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -208,6 +229,11 @@ const sleepFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * tree during v3.51's close-out and accepted the same body on the next attempt. Three
  * attempts, then the refusal, because a retry that runs for ever is a push nobody can
  * read.
+ *
+ * The same retry covers a connection that closes without answering. In v3.53's first real
+ * push, undici threw `UND_ERR_SOCKET (other side closed)` on `POST /git/blobs`; the body
+ * was accepted on the next connection. A server in the suite had never produced that
+ * shape, so the test below destroys a socket rather than answering over it.
  *
  * The encoding fallback is the other measured rule. `docs/audit.md` at 1.1 MB was refused
  * as base64 with `400 malformed request` on every attempt, and the *same bytes* sent as
@@ -232,16 +258,29 @@ export function githubTransport({
   const base = `${api}/repos/${owner}/${repo}`;
 
   async function call(method, path, body, attempt = 1) {
-    const response = await fetchImpl(`${base}${path}`, {
-      method,
-      headers: {
-        authorization: `Bearer ${token}`,
-        accept: 'application/vnd.github+json',
-        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    const text = await response.text();
+    let response;
+    let text;
+    try {
+      response = await fetchImpl(`${base}${path}`, {
+        method,
+        headers: {
+          authorization: `Bearer ${token}`,
+          accept: 'application/vnd.github+json',
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      text = await response.text();
+    } catch (error) {
+      // A closed socket is not a status: undici throws instead of answering, so the 5xx
+      // retry below never sees it. Retry the same request with the same backoff; a failure
+      // that is not a broken connection is let through as itself.
+      if (isNetworkFailure(error) && attempt < retries) {
+        await sleep(Math.min(2 * attempt, 10) * 1000);
+        return call(method, path, body, attempt + 1);
+      }
+      throw error;
+    }
     if (response.status >= 500 && attempt < retries) {
       await sleep(Math.min(2 * attempt, 10) * 1000);
       return call(method, path, body, attempt + 1);

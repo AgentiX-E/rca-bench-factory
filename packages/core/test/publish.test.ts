@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { writeReceipt } from '../../../scripts/gate-receipt.mjs';
-import { ApiError, githubTransport, localTransport, publish, requireReceipt } from '../../../scripts/publish.mjs';
+import { ApiError, githubTransport, isNetworkFailure, localTransport, publish, requireReceipt } from '../../../scripts/publish.mjs';
 
 /**
  * Executing a plan against a repository that stands where the API stands.
@@ -268,6 +268,8 @@ interface Behaviour {
   blobStatus: number | null;
   refStatus: number | null;
   patchStatus: number | null;
+  dropOnce: string | null;
+  dropAll: string | null;
 }
 
 /**
@@ -288,6 +290,8 @@ async function api(remote: string) {
     blobStatus: null,
     refStatus: null,
     patchStatus: null,
+    dropOnce: null,
+    dropAll: null,
   };
   const local = localTransport({ remote });
 
@@ -302,6 +306,15 @@ async function api(remote: string) {
       const url = new URL(request.url ?? '/', 'http://127.0.0.1');
       const key = `${request.method} ${url.pathname}`;
       behaviour.requests.push(key);
+
+      if (behaviour.dropOnce === key || behaviour.dropAll === key) {
+        behaviour.dropOnce = null;
+        // The peer closes the connection without an answer: undici reports a TypeError
+        // whose cause is UND_ERR_SOCKET, which is not a status and cannot be answered by
+        // the 500 retry. This is the shape the first real push met.
+        request.socket.destroy();
+        return;
+      }
 
       const chunks: Buffer[] = [];
       for await (const chunk of request) chunks.push(chunk as Buffer);
@@ -426,6 +439,80 @@ describe('publishing through the GitHub transport, against a server that writes 
     } finally {
       await server.close();
     }
+  });
+
+  it('retries a request whose socket the peer closed, and the push still ends at the local tip', async () => {
+    const { source, remote, shas } = stage('socket-drop');
+    at(remote, shas[3]!);
+    const server = await api(remote);
+    try {
+      server.behaviour.dropOnce = 'POST /repos/owner/repo/git/blobs';
+      const transport = githubTransport({
+        token: 'a-token-for-the-server',
+        owner: 'owner',
+        repo: 'repo',
+        api: server.base,
+        sleep: async () => undefined,
+      });
+      const result = await publish({ root: source, rev: 'HEAD', branch: 'main', transport });
+      expect(result.identical).toBe(true);
+      expect(log(remote, 'main')).toBe(log(source, 'HEAD'));
+      // The dropped request has no answer to count as an object; the retry does. Assert
+      // the retry happened rather than that the first request silently disappeared.
+      expect(server.behaviour.requests.filter((key) => key === 'POST /repos/owner/repo/git/blobs').length).toBeGreaterThan(1);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('spends exactly its retry budget on a connection that never answers, then refuses', async () => {
+    const { source, remote, shas } = stage('socket-always');
+    at(remote, shas[3]!);
+    const server = await api(remote);
+    try {
+      server.behaviour.dropAll = 'POST /repos/owner/repo/git/blobs';
+      const transport = githubTransport({
+        token: 'a-token-for-the-server',
+        owner: 'owner',
+        repo: 'repo',
+        api: server.base,
+        sleep: async () => undefined,
+        retries: 3,
+      });
+      await expect(publish({ root: source, rev: 'HEAD', branch: 'main', transport })).rejects.toThrow(/fetch failed|other side closed|UND_ERR/);
+      expect(server.behaviour.requests.filter((key) => key === 'POST /repos/owner/repo/git/blobs')).toHaveLength(3);
+      // Nothing was forced: the ref is where it started.
+      expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[3]!);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('does not retry a failure that is not a broken connection', async () => {
+    let calls = 0;
+    const transport = githubTransport({
+      token: 'a-token-for-the-server',
+      owner: 'owner',
+      repo: 'repo',
+      fetchImpl: async () => {
+        calls += 1;
+        throw new Error('the caller built a request it cannot send');
+      },
+      sleep: async () => undefined,
+    });
+    await expect(transport.head('main')).rejects.toThrow('the caller built a request it cannot send');
+    expect(calls).toBe(1);
+  });
+
+  it('names only the errors a connection can produce, so a programmer error stays an error', async () => {
+    const closed = new TypeError('fetch failed');
+    Object.defineProperty(closed, 'cause', { value: Object.assign(new Error('other side closed'), { code: 'UND_ERR_SOCKET' }) });
+    expect(isNetworkFailure(closed)).toBe(true);
+    expect(isNetworkFailure(new TypeError('fetch failed'))).toBe(true);
+    expect(isNetworkFailure(Object.assign(new Error('reset'), { code: 'ECONNRESET' }))).toBe(true);
+    expect(isNetworkFailure(new Error('the caller built a request it cannot send'))).toBe(false);
+    expect(isNetworkFailure(new TypeError('wrong number of arguments'))).toBe(false);
+    expect(isNetworkFailure(null)).toBe(false);
   });
 
   it('falls back to a utf-8 body when the base64 one is refused, and the commit is still the local one', async () => {
