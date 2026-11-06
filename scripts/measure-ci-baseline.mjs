@@ -71,6 +71,29 @@ const OUT = resolve(
 const API = process.env['RCA_GITHUB_API'] ?? 'https://api.github.com';
 
 /**
+ * The declarations this tree has written, and which whole jobs are still waiting.
+ *
+ * A job promise (`R9`) is the one shape this script has to know about rather than leave
+ * to the gate: the recording is the *answer* to a promise, and a job that has not run
+ * cannot be in it. So a declared job the run did not report leaves a gap in the file
+ * on purpose, and the first run that reports it fills the gap in the same commit the
+ * round deletes the promise. `--borrow` is refused for such a job: borrowed seconds
+ * would put its id in the recording without a run of that job ever having happened,
+ * which is the exact shape `R6` refuses one level down.
+ */
+const DECLARATIONS = resolve(
+  process.env['RCA_CI_DECLARATIONS'] ??
+    join(import.meta.dirname, '..', 'golden-master', 'ci-declarations.json'),
+);
+const DECLARED_JOBS = new Set(
+  existsSync(DECLARATIONS)
+    ? (JSON.parse(readFileSync(DECLARATIONS, 'utf8'))?.jobs ?? []).map((one) =>
+        String(one?.job ?? ''),
+      )
+    : [],
+);
+
+/**
  * `--borrow <new>=<ran>`: which job a job that has never run takes its seconds from.
  *
  * Read from the arguments rather than from the environment, because it is a statement
@@ -146,6 +169,13 @@ const derived = {};
 const apiNameOf = (job) => (job.name === '' ? job.id : job.name);
 for (const job of jobsOf(workflow)) {
   const borrowedFrom = BORROW.get(job.id);
+  if (DECLARED_JOBS.has(job.id) && borrowedFrom !== undefined) {
+    throw new Error(
+      `--borrow ${job.id}=${borrowedFrom} names a declared job: a job promise waits for its ` +
+        'first run, and a borrow is not a run -- the seconds would come from a different job ' +
+        'and the promise would expire against a number nobody measured',
+    );
+  }
   const source =
     borrowedFrom === undefined
       ? byName.get(apiNameOf(job))
@@ -172,6 +202,14 @@ for (const job of jobsOf(workflow)) {
     );
   }
   if (source === undefined) {
+    if (DECLARED_JOBS.has(job.id)) {
+      // A declared job that this run did not report is a gap, not a failure. Writing
+      // borrowed or invented seconds here would answer the promise with a measurement
+      // of something else, and `R9` would then expire it against a number no run of
+      // this job ever produced. `check-ci-budget` reads the same promise and the same
+      // recording, so the gap is a state the gate can be green in.
+      continue;
+    }
     throw new Error(`run ${RUN} holds no job named "${apiNameOf(job)}", so \`${job.id}\` has no reading`);
   }
   const measured = secondsByName(source);
@@ -227,21 +265,26 @@ writeFileSync(OUT, `${JSON.stringify(reading, null, 2)}\n`);
  * A declaration this run did not measure cannot reach this point: the loop above throws
  * for every step of the workflow the run did not report, declared or not.
  */
-const DECLARATIONS = resolve(
-  process.env['RCA_CI_DECLARATIONS'] ??
-    join(import.meta.dirname, '..', 'golden-master', 'ci-declarations.json'),
-);
 const declaredNow = existsSync(DECLARATIONS)
-  ? JSON.parse(readFileSync(DECLARATIONS, 'utf8'))?.declared
+  ? JSON.parse(readFileSync(DECLARATIONS, 'utf8'))
   : undefined;
-const answered = Array.isArray(declaredNow)
-  ? declaredNow.filter(
-      (one) => typeof recorded[String(one?.job ?? '')]?.steps?.[String(one?.step ?? '')] === 'number',
-    ).length
-  : 0;
+const declaredSteps = Array.isArray(declaredNow?.declared) ? declaredNow.declared : [];
+const declaredJobsNow = Array.isArray(declaredNow?.jobs) ? declaredNow.jobs : [];
+const answered = declaredSteps.filter(
+  (one) => typeof recorded[String(one?.job ?? '')]?.steps?.[String(one?.step ?? '')] === 'number',
+).length;
+// A job promise is answered by the job itself appearing in the recording, not by one
+// of its steps: the promise is about a budget, and `R4`/`R5` settle its bounds from
+// every step's seconds once they exist.
+const answeredJobs = declaredJobsNow.filter(
+  (one) => recorded[String(one?.job ?? '')] !== undefined,
+).length;
+const waitingJobs = [...DECLARED_JOBS].filter((id) => recorded[id] === undefined).length;
 
 process.stdout.write(
   `ci-baseline: ${String(Object.keys(recorded).length)} job(s) and ${String(stepCount)} step(s) from ` +
     `run ${RUN}${Object.keys(derived).length > 0 ? `, ${String(Object.keys(derived).length)} borrowed` : ''}` +
-    `${answered === 0 ? '' : `; ${String(answered)} declaration(s) are now measured and can be deleted`}\n`,
+    `${answered === 0 ? '' : `; ${String(answered)} declaration(s) are now measured and can be deleted`}` +
+    `${answeredJobs === 0 ? '' : `; ${String(answeredJobs)} job declaration(s) are now measured and can be deleted`}` +
+    `${waitingJobs === 0 ? '' : `; ${String(waitingJobs)} job declaration(s) still awaiting their first run`}\n`,
 );

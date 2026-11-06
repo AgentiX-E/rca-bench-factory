@@ -386,8 +386,12 @@ describe('the step the recording has not measured yet', () => {
 
   it('reads nothing out of a tree that has declared nothing, which is the normal state', () => {
     const workflow = oneJob([...step('Slow battery', 12)]);
-    expect(readDeclarations(workflow, null)).toEqual({ declared: new Map(), errors: [] });
-    expect(readDeclarations(workflow, undefined)).toEqual({ declared: new Map(), errors: [] });
+    expect(readDeclarations(workflow, null)).toEqual({ declared: new Map(), jobs: new Map(), errors: [] });
+    expect(readDeclarations(workflow, undefined)).toEqual({
+      declared: new Map(),
+      jobs: new Map(),
+      errors: [],
+    });
   });
 
   it('names the declared step in the reading, so the step count and the ratios still add up', () => {
@@ -408,14 +412,23 @@ describe('the step the recording has not measured yet', () => {
     // does not exist -- and the file is expected to be *absent* most of the time, because
     // the round that measures a step deletes its sentence. A case that asserted the file
     // existed would be red in every round but the one that added a step.
+    //
+    // A job promise owns the whole gap of its job, so its steps are promised here too.
+    // The names come from the promise itself, not from the workflow: a declaration that
+    // renamed a step would then disagree with `unmeasured`, which is the point.
     const workflow = readWorkflow(readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8'));
     const baseline = JSON.parse(readFileSync(join(ROOT, 'golden-master', 'ci-baseline.json'), 'utf8'));
     const declarations = existsSync(DECLARATIONS) ? JSON.parse(readFileSync(DECLARATIONS, 'utf8')) : null;
     const read = readDeclarations(workflow, declarations);
     expect(read.errors).toEqual([]);
-    const promised = [...read.declared].flatMap(([job, steps]) =>
-      [...steps.keys()].map((name) => `${job} / ${name}`),
-    );
+    const promised = [
+      ...[...read.declared].flatMap(([job, steps]) =>
+        [...steps.keys()].map((name) => `${job} / ${name}`),
+      ),
+      ...[...read.jobs].flatMap(([job, promise]) =>
+        promise.steps.map((one) => `${job} / ${one.name}`),
+      ),
+    ];
     const unmeasured = jobsOf(workflow).flatMap((job) => {
       const record = baseline.jobs?.[job.id];
       return stepsOf(workflow, job.id)
@@ -1173,5 +1186,398 @@ describe('the recorder', () => {
     );
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('the workflow does not parse');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R9 -- a job the recording has never measured (v3.54, P17).
+// ---------------------------------------------------------------------------
+
+/**
+ * A job promise, in the shape `golden-master/ci-declarations.json` holds them.
+ *
+ * The four keys are a whitelist rather than a convention. The round that writes this
+ * file has not watched the job run: it cannot know a second, a run id, a commit, a
+ * ratio or a date. A promise carrying any of them is a measurement somebody invented,
+ * and refusing those keys by name is the one failure shape a local fixture can produce
+ * about a budget that only CI can spend. `R8` solved the step one level down; `R9` is
+ * the same shape at the level of the job, where `R6` has nothing to compare.
+ */
+function jobPromiseOf(over: Record<string, unknown> = {}) {
+  return {
+    job: 'batteries-heavy',
+    timeoutMinutes: 25,
+    steps: [
+      { name: 'Check out', minutes: 3 },
+      { name: 'Slow battery', minutes: 16 },
+    ],
+    why: 'the second shard of the sites battery needs its own ceiling, and no run has spent it yet',
+    ...over,
+  };
+}
+
+/** The workflow and the recording of the round a promise is written in. */
+function splitWorkflow() {
+  const read = readWorkflow(TWO_JOBS);
+  expect(read.errors).toEqual([]);
+  return read;
+}
+function splitRecording() {
+  return recordingOf({ batteries: { minutes: 25, steps: { 'Check out': 2, 'Slow battery': 49 } } });
+}
+function jobDeclarationOf(over: Record<string, unknown> = {}) {
+  return { jobs: [jobPromiseOf(over)] };
+}
+
+describe('a job the recording has never measured', () => {
+  it('accepts a declared job and refuses the same tree without the promise', () => {
+    // Cannot produce: a runner spending the promised 25 minutes. The pair is what this
+    // case can hold -- green with the promise, `R2` red without it -- so it cannot pass
+    // by the rule having stopped looking at the job set.
+    const workflow = splitWorkflow();
+    const recording = splitRecording();
+    expect(budgetErrors(workflow, recording, null, jobDeclarationOf())).toEqual([]);
+    expect(budgetErrors(workflow, recording).join('\n')).toContain(
+      '`batteries-heavy` is a job of ci.yml that the recording has never measured',
+    );
+  });
+
+  it('refuses a promise that outlived its first run', () => {
+    // Cannot produce: a real first run. The recording is written by hand here, which is
+    // exactly why the case is about the *shape* of an arrived measurement and not about
+    // the runner that produced it.
+    const workflow = splitWorkflow();
+    const recording = recordingOf({
+      batteries: { minutes: 25, steps: { 'Check out': 2, 'Slow battery': 49 } },
+      'batteries-heavy': { minutes: 25, steps: { 'Check out': 2, 'Slow battery': 300 } },
+    });
+    const errors = budgetErrors(workflow, recording, null, jobDeclarationOf()).join('\n');
+    expect(errors).toContain('has been measured by run');
+    expect(errors).toContain('delete the job promise');
+  });
+
+  it('refuses a budget the workflow does not declare, because a promise is not a second workflow', () => {
+    // Cannot produce: a job whose ceiling was enforced by GitHub. The number in `ci.yml`
+    // is read from text here, not spent.
+    const errors = budgetErrors(
+      splitWorkflow(),
+      splitRecording(),
+      null,
+      jobDeclarationOf({ timeoutMinutes: 40 }),
+    ).join('\n');
+    expect(errors).toContain('promises a budget of 40 min and ci.yml declares 25');
+  });
+
+  it('refuses a promise that omits a step, adds one, reorders them, or re-binds one', () => {
+    // Cannot produce: a step whose command hung. Four edits, four distinct sentences, so
+    // a reader repairing the file is told which of the four it is.
+    const workflow = splitWorkflow();
+    const recording = splitRecording();
+    const omitted = budgetErrors(workflow, recording, null, {
+      jobs: [jobPromiseOf({ steps: [{ name: 'Check out', minutes: 3 }] })],
+    }).join('\n');
+    expect(omitted).toContain('promises 1 step(s) and ci.yml has 2');
+
+    const added = budgetErrors(workflow, recording, null, {
+      jobs: [
+        jobPromiseOf({
+          steps: [
+            { name: 'Check out', minutes: 3 },
+            { name: 'Slow battery', minutes: 16 },
+            { name: 'A step that never was', minutes: 3 },
+          ],
+        }),
+      ],
+    }).join('\n');
+    expect(added).toContain('promises 3 step(s) and ci.yml has 2');
+
+    const reordered = budgetErrors(workflow, recording, null, {
+      jobs: [
+        jobPromiseOf({
+          steps: [
+            { name: 'Slow battery', minutes: 16 },
+            { name: 'Check out', minutes: 3 },
+          ],
+        }),
+      ],
+    }).join('\n');
+    expect(reordered).toContain('promises `Slow battery` in position 1 and ci.yml has `Check out`');
+
+    const rebound = budgetErrors(workflow, recording, null, {
+      jobs: [
+        jobPromiseOf({
+          steps: [
+            { name: 'Check out', minutes: 3 },
+            { name: 'Slow battery', minutes: 12 },
+          ],
+        }),
+      ],
+    }).join('\n');
+    expect(rebound).toContain('`batteries-heavy / Slow battery` promises 12 min and ci.yml bounds it at 16');
+  });
+
+  it('refuses a job with a step that inherits the job budget', () => {
+    // Cannot produce: a run in which the job died before a step bound could fire. That
+    // is the event `R5` measures; here only the workflow text says the bound is absent.
+    const workflow = readWorkflow(
+      workflowText([
+        {
+          id: 'batteries',
+          minutes: 25,
+          steps: [...inherited('Check out'), ...step('Slow battery', 16)],
+        },
+        {
+          id: 'batteries-heavy',
+          minutes: 25,
+          steps: [...inherited('Check out'), ...step('Slow battery', 16)],
+        },
+      ]),
+    );
+    expect(workflow.errors).toEqual([]);
+    const errors = budgetErrors(
+      workflow,
+      recordingOf({ batteries: { minutes: 25, steps: { 'Check out': 2, 'Slow battery': 49 } } }),
+      null,
+      jobDeclarationOf(),
+    ).join('\n');
+    expect(errors).toContain('gives it none of its own');
+    expect(errors).toContain('a declared job has to bound every step');
+  });
+
+  it('refuses a promised bound below the floor', () => {
+    // Cannot produce: a cold package index or a missed cache -- the two things the floor
+    // exists for and the two things no fixture can spend.
+    const errors = budgetErrors(
+      splitWorkflow(),
+      splitRecording(),
+      null,
+      {
+        jobs: [
+          jobPromiseOf({
+            steps: [
+              { name: 'Check out', minutes: 3 },
+              { name: 'Slow battery', minutes: 2 },
+            ],
+          }),
+        ],
+      },
+    ).join('\n');
+    expect(errors).toContain(`the floor is ${String(FLOOR_MINUTES)}`);
+    expect(errors).toContain('a step that has not run yet is the case the floor is for');
+  });
+
+  it('refuses a promise with no argument', () => {
+    // Cannot produce: a round that decides to believe a number about work it has never
+    // watched. The reader's decision is not an observable in a fixture.
+    const errors = budgetErrors(
+      splitWorkflow(),
+      splitRecording(),
+      null,
+      jobDeclarationOf({ why: 'shard' }),
+    ).join('\n');
+    expect(errors).toContain(`at least ${String(WHY_LENGTH)} characters`);
+  });
+
+  it('refuses a promise naming a job ci.yml does not have', () => {
+    // Cannot produce: a job that GitHub scheduled. The workflow's job ids are text.
+    const errors = budgetErrors(
+      splitWorkflow(),
+      splitRecording(),
+      null,
+      jobDeclarationOf({ job: 'a-job-that-never-was' }),
+    ).join('\n');
+    expect(errors).toContain('which is not a job of ci.yml');
+  });
+
+  it('refuses a job declared twice', () => {
+    // Cannot produce: two different first runs of one job. The fixture can only say the
+    // same promise twice, and the refusal is about a reader with two numbers.
+    const errors = budgetErrors(
+      splitWorkflow(),
+      splitRecording(),
+      null,
+      { jobs: [jobPromiseOf(), jobPromiseOf()] },
+    ).join('\n');
+    expect(errors).toContain('is declared as a job twice');
+  });
+
+  it('refuses a job with both a job promise and a step declaration', () => {
+    // Cannot produce: one run answering two promises in different ways. The two files
+    // would be edited by the same round, and `R8` and `R9` cannot both own the gap.
+    const errors = budgetErrors(splitWorkflow(), splitRecording(), null, {
+      declared: [declarationOf({ job: 'batteries-heavy', step: 'Slow battery', minutes: 16 })],
+      jobs: [jobPromiseOf()],
+    }).join('\n');
+    expect(errors).toContain('both a job promise and a step declaration');
+  });
+
+  it('refuses a promise carrying a measurement, because its writer has not seen the job run', () => {
+    // Cannot produce: a CI run that spent those seconds. This is the case the ruler
+    // points at: the local apparatus cannot spend the budget, but it *can* catch someone
+    // writing down the seconds that only a run could have produced.
+    const workflow = splitWorkflow();
+    const recording = splitRecording();
+    for (const key of ['seconds', 'run', 'commit', 'measured', 'ratio', 'derived']) {
+      const errors = budgetErrors(workflow, recording, null, {
+        jobs: [jobPromiseOf({ [key]: 313 })],
+      }).join('\n');
+      expect(errors).toContain(`carries \`${key}\``);
+      expect(errors).toContain('which is a measurement');
+    }
+  });
+
+  it('refuses a step inside a promise carrying a measurement', () => {
+    // Cannot produce: a per-step reading. A step promise may name a bound and a name,
+    // because both are in `ci.yml`; a second is not.
+    const errors = budgetErrors(splitWorkflow(), splitRecording(), null, {
+      jobs: [
+        jobPromiseOf({
+          steps: [
+            { name: 'Check out', minutes: 3, seconds: 2 },
+            { name: 'Slow battery', minutes: 16 },
+          ],
+        }),
+      ],
+    }).join('\n');
+    expect(errors).toContain('`batteries-heavy / Check out` carries `seconds`');
+    expect(errors).toContain('which is a measurement');
+  });
+
+  it('refuses a `jobs` key that is not a list, or a list that promises nothing', () => {
+    // Cannot produce: a tree whose declarations file was deleted. A missing key is the
+    // normal state and is not an error; these two are files that claim to say something.
+    const workflow = splitWorkflow();
+    const recording = splitRecording();
+    expect(budgetErrors(workflow, recording, null, { jobs: 'one job' }).join('\n')).toContain(
+      'has no `jobs` list',
+    );
+    expect(budgetErrors(workflow, recording, null, { jobs: [] }).join('\n')).toContain(
+      'declares no job',
+    );
+  });
+
+  it('does not pretend to compute a deadline from bounds that no run has spent', () => {
+    // Cannot produce: the `before` that `R5` needs. Every step of a new job is
+    // unmeasured, so the arithmetic has no terms; this case holds that `R9` says nothing
+    // about expiring, and that the first refresh is where `R4`/`R5` settle the numbers.
+    const errors = budgetErrors(splitWorkflow(), splitRecording(), null, jobDeclarationOf());
+    expect(errors).toEqual([]);
+    expect(errors.join('\n')).not.toContain('expires');
+    expect(errors.join('\n')).not.toContain('deadline');
+  });
+
+  it('names the waiting jobs in the summary, and reads the two kinds of promise apart', () => {
+    // Cannot produce: a green run that ends the waiting. The summary is about the tree as
+    // it stands, and a tree with a promise is a tree no finished run has described.
+    const workflow = splitWorkflow();
+    const recording = splitRecording();
+    expect(budgetSummary(workflow, recording, null, jobDeclarationOf())).toContain(
+      '1 job(s) declared and awaiting their first run: batteries-heavy',
+    );
+    const parsed = readDeclarations(workflow, {
+      declared: [declarationOf({ job: 'batteries', step: 'Slow battery', minutes: 12 })],
+      jobs: [jobPromiseOf()],
+    });
+    expect(parsed.errors).toEqual([]);
+    expect([...parsed.declared.keys()]).toEqual(['batteries']);
+    expect([...parsed.jobs.keys()]).toEqual(['batteries-heavy']);
+  });
+
+  it('every case about a job promise says which failure shape its fixture cannot produce', () => {
+    // Cannot produce: a runner that actually spends the promised budget. This case reads
+    // the source of the block rather than running a workflow, so what it holds is that
+    // no case was added without naming the limit of its own apparatus.
+    const source = readFileSync(fileURLToPath(import.meta.url), 'utf8');
+    const block = source.slice(source.indexOf("describe('a job the recording has never measured'"));
+    const cases = (block.match(/\n  it\('/g) ?? []).length;
+    // Only comment lines beginning with the mark count. A bare substring search also
+    // finds this case's own pattern and its prose, and a self-counting assertion would
+    // pass with one fewer real statement than cases -- the hollow witness this block is
+    // about. The mark is assembled so the pattern itself is not such a line either.
+    const mark = ['Cannot', 'produce:'].join(' ');
+    const limits = (block.match(new RegExp('^\\s*// ' + mark, 'gm')) ?? []).length;
+    expect(cases).toBeGreaterThan(10);
+    expect(limits).toBe(cases);
+  });
+});
+
+describe('the recorder and a declared job', () => {
+  it('leaves the gap open when a declared job never ran, and says it is still waiting', async () => {
+    // Cannot produce: a run in which GitHub scheduled the job. The server answers with
+    // one job and the declaration says the other is waiting, so the recording must keep
+    // the hole rather than fill it with a borrowed or invented number.
+    const result = await withApi(
+      (url) => {
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/21') {
+          return { status: 200, body: { head_sha: 'd00dd00d', updated_at: '2026-11-06T10:00:00Z' } };
+        }
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/21/jobs?per_page=100') {
+          return { status: 200, body: { jobs: [API_JOBS.jobs[0]] } };
+        }
+        return null;
+      },
+      async (env) => {
+        const path = env['RCA_CI_DECLARATIONS'] as string;
+        writeFileSync(path, JSON.stringify(jobDeclarationOf()));
+        const out = await runRecorder(['21'], env);
+        return { out, written: JSON.parse(readFileSync(env['RCA_CI_OUT'] as string, 'utf8')) };
+      },
+    );
+    expect(result.out.status).toBe(0);
+    expect(result.out.stdout).toContain('1 job declaration(s) still awaiting their first run');
+    expect(Object.keys(result.written.jobs)).toEqual(['batteries']);
+    expect(result.written.derived).toBeUndefined();
+  });
+
+  it('records a declared job once its first run reports it, and says the promise can be deleted', async () => {
+    // Cannot produce: the wall-clock cost of that first run. The API answer carries
+    // timestamps, not a runner; what is held is that the promise becomes an ordinary
+    // measurement and the file is left for the round to delete.
+    const result = await withApi(
+      (url) => {
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/22') {
+          return { status: 200, body: { head_sha: 'f00df00d', updated_at: '2026-11-06T11:00:00Z' } };
+        }
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/22/jobs?per_page=100') {
+          return { status: 200, body: API_JOBS };
+        }
+        return null;
+      },
+      async (env) => {
+        const path = env['RCA_CI_DECLARATIONS'] as string;
+        writeFileSync(path, JSON.stringify(jobDeclarationOf()));
+        const out = await runRecorder(['22'], env);
+        return { out, written: JSON.parse(readFileSync(env['RCA_CI_OUT'] as string, 'utf8')), path };
+      },
+    );
+    expect(result.out.status).toBe(0);
+    expect(result.out.stdout).toContain('1 job declaration(s) are now measured and can be deleted');
+    expect(Object.keys(result.written.jobs)).toEqual(['batteries', 'batteries-heavy']);
+    expect(readFileSync(result.path, 'utf8')).toContain('batteries-heavy');
+  });
+
+  it('refuses to borrow a declared job, because a borrow is not a run', async () => {
+    // Cannot produce: the first run of the declared job. A borrow would put its id in the
+    // recording without that run, so `R9` would expire the promise against a number that
+    // came from a different job -- the hole `R6` already refuses one level down.
+    const result = await withApi(
+      (url) => {
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/23') {
+          return { status: 200, body: { head_sha: 'c0dec0de', updated_at: '2026-11-06T12:00:00Z' } };
+        }
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/23/jobs?per_page=100') {
+          return { status: 200, body: { jobs: [API_JOBS.jobs[0]] } };
+        }
+        return null;
+      },
+      async (env) => {
+        writeFileSync(env['RCA_CI_DECLARATIONS'] as string, JSON.stringify(jobDeclarationOf()));
+        return runRecorder(['23', '--borrow', 'batteries-heavy=batteries'], env);
+      },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('names a declared job');
+    expect(result.stderr).toContain('a borrow is not a run');
+    expect(result.stdout).toBe('');
   });
 });

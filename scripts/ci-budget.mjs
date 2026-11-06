@@ -130,6 +130,29 @@ export const MULTIPLE = 2;
 export const FLOOR_MINUTES = 3;
 
 /**
+ * The only keys a promise about a whole job may carry (v3.54, P17).
+ *
+ * `R8` let a tree declare a *step* the recording had not measured, and the shape was
+ * honest because every field it wrote was already in `ci.yml`. A whole job is the same
+ * shape one level up, with one difference that is not a detail: the job's budget is part
+ * of `R6`'s comparison, so there is nothing for a new job to be compared with, and the
+ * only thing a round can say about it is what it has decided -- its id, the ceiling it
+ * wrote into `ci.yml`, the bound on every step, and why. A second, a run id, a commit, a
+ * date or a ratio is a measurement, and the round writing this file has watched none of
+ * them happen. That is why this is a whitelist rather than a documented convention: an
+ * extra key is refused by name, and the refusal is the one failure shape a local
+ * apparatus can produce about a budget that only CI can spend.
+ *
+ * `R9` deliberately computes no deadline. `R5` needs the seconds of the steps in front
+ * of a bound, and every step of a job that has never run is unmeasured -- the sum has no
+ * terms. The first green run supplies them, and `R4`/`R5` settle the numbers then. A
+ * rule that argued a deadline from the *bounds* would be claiming to know how long a
+ * runner spends in steps it has never seen, which is the forgery the whitelist refuses.
+ */
+export const JOB_PROMISE_KEYS = ['job', 'timeoutMinutes', 'steps', 'why'];
+export const STEP_PROMISE_KEYS = ['name', 'minutes'];
+
+/**
  * The steps of one job, in order, with the budget each declares.
  *
  * `inheritedFrom` is `'step'` only when the step writes its own `timeout-minutes`;
@@ -189,24 +212,45 @@ function secondsOf(record, name) {
  */
 export function readDeclarations(workflow, declarations) {
   const declared = new Map();
+  const jobs = new Map();
   const errors = [];
-  if (declarations === null || declarations === undefined) return { declared, errors };
-  const list = declarations.declared;
-  if (!Array.isArray(list)) {
+  if (declarations === null || declarations === undefined) return { declared, jobs, errors };
+  const ids = new Set(jobsOf(workflow).map((job) => job.id));
+
+  /**
+   * A file may carry either kind of promise, or both. `declared` used to be mandatory
+   * because it was the only kind; a file with only job promises is now a normal shape,
+   * and a file with neither kind is a file that says nothing -- the state of not having
+   * the file, wearing a filename.
+   */
+  const hasSteps = Array.isArray(declarations.declared);
+  const hasJobs = Array.isArray(declarations.jobs);
+  if (declarations.jobs !== undefined && !hasJobs) {
+    errors.push(
+      'the declarations file has no `jobs` list: a job promise has to be a list, one entry per ' +
+        'job that no run has measured, or the key should not be there at all',
+    );
+  }
+  if (!hasSteps && declarations.jobs === undefined) {
     errors.push(
       'the declarations file has no `declared` list, so no step in it can be read: write the ' +
         'list, or delete the file and let the recording speak for the tree',
     );
-    return { declared, errors };
+    return { declared, jobs, errors };
   }
-  if (list.length === 0) {
+  const list = hasSteps ? declarations.declared : [];
+  const jobList = hasJobs ? declarations.jobs : [];
+  if (list.length === 0 && jobList.length === 0 && errors.length === 0) {
     errors.push(
-      'the declarations file declares nothing: an empty list describes the state of having no ' +
-        'declarations, which is the state of not having the file -- delete it',
+      hasJobs && !hasSteps
+        ? 'the declarations file declares no job: an empty `jobs` list describes the state of ' +
+          'having no job promise, which is the state of not having the key -- delete it'
+        : 'the declarations file declares nothing: an empty list describes the state of having no ' +
+          'declarations, which is the state of not having the file -- delete it',
     );
-    return { declared, errors };
+    return { declared, jobs, errors };
   }
-  const ids = new Set(jobsOf(workflow).map((job) => job.id));
+
   for (const entry of list) {
     const job = String(entry?.job ?? '');
     const step = String(entry?.step ?? '');
@@ -242,7 +286,107 @@ export function readDeclarations(workflow, declarations) {
     pending.set(step, { minutes, why });
     declared.set(job, pending);
   }
-  return { declared, errors };
+
+  /**
+   * The job promises. The whitelist is the rule that makes this readable as a promise
+   * rather than as a recording: an extra key is necessarily a measurement (a second, a
+   * run id, a commit, a date, a ratio), and the round writing this file has watched none
+   * of those happen. `R9` can therefore refuse the one forgery a local apparatus *can*
+   * produce, while saying plainly that it cannot spend the budget itself.
+   */
+  for (const entry of jobList) {
+    const job = String(entry?.job ?? '');
+    const where = `\`${job}\``;
+    if (!ids.has(job)) {
+      errors.push(
+        `the declarations file names \`${job}\`, which is not a job of ci.yml: a promise about a ` +
+          'job that does not exist is a promise about nothing',
+      );
+      continue;
+    }
+    if (jobs.has(job)) {
+      errors.push(`${where} is declared as a job twice, so a reader cannot tell which promise is meant`);
+      continue;
+    }
+    if (declared.has(job)) {
+      errors.push(
+        `${where} has both a job promise and a step declaration: two promises about one job, and ` +
+          '`R8` and `R9` cannot both own the same gap in the recording',
+      );
+      continue;
+    }
+    const extra = Object.keys(entry ?? {}).filter((key) => !JOB_PROMISE_KEYS.includes(key));
+    if (extra.length > 0) {
+      for (const key of extra) {
+        errors.push(
+          `${where} carries \`${key}\`, which is a measurement: a job promise may only name what ` +
+            "its writer can know -- its id, its budget, its steps' bounds, and why",
+        );
+      }
+      continue;
+    }
+    const budget = entry.timeoutMinutes;
+    if (!Number.isInteger(budget) || budget <= 0) {
+      errors.push(
+        `${where} promises a budget of ${String(budget)} min, which is not a positive integer: ` +
+          'the number is the one ci.yml will enforce, not an estimate of a run',
+      );
+      continue;
+    }
+    const why = String(entry.why ?? '');
+    if (why.trim().length < WHY_LENGTH) {
+      errors.push(
+        `${where} is declared without an argument: say what the job is for in at least ` +
+          `${String(WHY_LENGTH)} characters, because the round that reads this file is deciding ` +
+          'whether to believe a budget about work it has never seen run',
+      );
+      continue;
+    }
+    const promised = entry.steps;
+    if (!Array.isArray(promised) || promised.length === 0) {
+      errors.push(`${where} promises no steps, so its bounds are not written down`);
+      continue;
+    }
+    const seen = new Set();
+    const parsedSteps = [];
+    let bad = false;
+    for (const one of promised) {
+      const name = String(one?.name ?? '');
+      const stepExtra = Object.keys(one ?? {}).filter((key) => !STEP_PROMISE_KEYS.includes(key));
+      if (stepExtra.length > 0) {
+        for (const key of stepExtra) {
+          errors.push(
+            `\`${job} / ${name}\` carries \`${key}\`, which is a measurement: a step promise may ` +
+              'only name the step and the bound ci.yml gives it',
+          );
+        }
+        bad = true;
+        continue;
+      }
+      if (name === '' || seen.has(name)) {
+        errors.push(
+          `\`${job}\` names the same step twice, so a reader cannot tell which bound is meant`,
+        );
+        bad = true;
+        continue;
+      }
+      seen.add(name);
+      const minutes = one.minutes;
+      if (!Number.isInteger(minutes) || minutes < FLOOR_MINUTES) {
+        errors.push(
+          `\`${job} / ${name}\` is promised at ${String(minutes)} min: the floor is ` +
+            `${String(FLOOR_MINUTES)}, and a step that has not run yet is the case the floor is for`,
+        );
+        bad = true;
+        continue;
+      }
+      parsedSteps.push({ name, minutes });
+    }
+    if (bad) continue;
+    jobs.set(job, { timeoutMinutes: budget, steps: parsedSteps, why });
+  }
+
+  return { declared, jobs, errors };
 }
 
 /**
@@ -302,6 +446,7 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
   const parsed = readDeclarations(workflow, declarations);
   const errors = [...ledgerErrors(baseline, ledger), ...parsed.errors];
   const declared = parsed.declared;
+  const declaredJobs = parsed.jobs;
 
   // R1 -- the recording is a reading, and it says where it was taken.
   if (!Number.isInteger(baseline.run) || baseline.run <= 0) {
@@ -328,6 +473,11 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
   const recorded = baseline.jobs ?? {};
   for (const job of jobs) {
     if (!(job.id in recorded)) {
+      // R9 owns this gap when a job promise names it. The promise is not a measurement:
+      // it says what the tree decided about the budget and every bound, and the first run
+      // that measures the job is the run that deletes it. Without the promise the gap is
+      // the one R2 refuses, because a job nobody measured has no bound anybody can size.
+      if (declaredJobs.has(job.id)) continue;
       errors.push(
         `\`${job.id}\` is a job of ci.yml that the recording has never measured, so nobody can say ` +
           'whether its steps are bounded at all: run `node scripts/measure-ci-baseline.mjs <run-id>` ' +
@@ -521,6 +671,95 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
     }
   }
 
+  // R9 -- what a promise about a whole job owes, once the workflow and the recording
+  // are both known. It is a relation, not a number: every field below is something the
+  // tree already says, so a promise that disagrees with the tree is a promise about a
+  // different workflow. The one thing it does not do is spend the budget. See the
+  // whitelist above for why no deadline is computed here.
+  for (const [id, promise] of declaredJobs) {
+    const job = jobs.find((one) => one.id === id);
+    // `readDeclarations` has already refused a promise naming no job of the workflow.
+    if (job === undefined) continue;
+
+    if (recorded[id] !== undefined) {
+      errors.push(
+        `\`${id}\` has been measured by run ${String(baseline.run)} and the declarations file ` +
+          'still says it has not: delete the job promise, because its first run is the thing it ' +
+          'was waiting for and a promise that outlives it is a budget nobody checked',
+      );
+      continue;
+    }
+    if (promise.timeoutMinutes !== job.timeoutMinutes) {
+      errors.push(
+        `\`${id}\` promises a budget of ${String(promise.timeoutMinutes)} min and ci.yml declares ` +
+          `${job.timeoutMinutes === null ? 'none' : String(job.timeoutMinutes)}: a promise is about ` +
+          'the number the job will enforce, not a second workflow with its own ceiling',
+      );
+      continue;
+    }
+
+    const steps = stepsOf(workflow, id);
+    if (promise.steps.length !== steps.length) {
+      errors.push(
+        `\`${id}\` promises ${String(promise.steps.length)} step(s) and ci.yml has ` +
+          `${String(steps.length)}: a job promise has to name every step of the job it waits for, ` +
+          'because the bound it owes is a bound on each one',
+      );
+      continue;
+    }
+    let bad = false;
+    for (let index = 0; index < steps.length; index += 1) {
+      const promised = promise.steps[index];
+      const actual = steps[index];
+      if (promised.name !== actual.name) {
+        errors.push(
+          `\`${id}\` promises \`${promised.name}\` in position ${String(index + 1)} and ci.yml has ` +
+            `\`${actual.name}\`: a promise names the order a run will spend, so a renamed or ` +
+            'reordered step is a different promise',
+        );
+        bad = true;
+        continue;
+      }
+      if (actual.error !== null) {
+        errors.push(`\`${id} / ${actual.name}\`: ${actual.error}`);
+        bad = true;
+        continue;
+      }
+      if (actual.inheritedFrom !== 'step') {
+        errors.push(
+          `\`${id} / ${actual.name}\` promises a bound but ci.yml gives it none of its own: a ` +
+            "declared job has to bound every step, because the job's own budget is the only " +
+            'number a run has never spent',
+        );
+        bad = true;
+        continue;
+      }
+      if (promised.minutes !== actual.minutes) {
+        errors.push(
+          `\`${id} / ${actual.name}\` promises ${String(promised.minutes)} min and ci.yml bounds it ` +
+            `at ${String(actual.minutes)}: the declaration is about the number the workflow will ` +
+            'enforce, so the two have to be the same number',
+        );
+        bad = true;
+        continue;
+      }
+      if (actual.minutes < FLOOR_MINUTES) {
+        errors.push(
+          `\`${id} / ${actual.name}\` is bounded at ${String(actual.minutes)} min: the floor is ` +
+            `${String(FLOOR_MINUTES)}, and a step that has not run yet is the case the floor is for`,
+        );
+        bad = true;
+      }
+    }
+    if (bad) continue;
+
+    // No deadline is computed. `R5` argues one from the seconds measured in front of a
+    // bound, and a job that has never run has none -- the sum has no terms. The first
+    // green run supplies them and `R4`/`R5` settle the numbers in the same commit that
+    // deletes the promise. A rule that argued a deadline from the bounds instead would
+    // be claiming to know how long a runner spends in steps it has never watched.
+  }
+
   return errors;
 }
 
@@ -593,11 +832,19 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   // The steps that are bounded and not measured are named here rather than folded into
   // the ratio above: their bound has no denominator, and a summary that left them out
   // would read as a workflow with one fewer step than it has.
+  const parsedDeclarations = readDeclarations(workflow, declarations);
   const awaiting = [];
-  for (const [job, pending] of readDeclarations(workflow, declarations).declared) {
+  for (const [job, pending] of parsedDeclarations.declared) {
     for (const name of pending.keys()) {
       if (secondsOf(recorded[job] ?? {}, name) === null) awaiting.push(`${job} / ${name}`);
     }
+  }
+  // A job promise is reported separately from a step promise: its bound has no
+  // denominator at all, and a summary that folded the two together would read as one
+  // kind of waiting when the first run settles them with different rules.
+  const awaitingJobs = [];
+  for (const [job] of parsedDeclarations.jobs) {
+    if (recorded[job] === undefined) awaitingJobs.push(job);
   }
 
   const excusedText =
@@ -609,11 +856,16 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
       ? 'no step is declared unmeasured'
       : `${String(awaiting.length)} step(s) declared and awaiting the run that measures them: ` +
         awaiting.join(', ');
+  const jobsText =
+    awaitingJobs.length === 0
+      ? 'no job is declared unmeasured'
+      : `${String(awaitingJobs.length)} job(s) declared and awaiting their first run: ` +
+        awaitingJobs.join(', ');
   return (
     `check-ci-budget: OK — ${String(jobCount)} job(s) recorded, ${String(bounded)} of ${String(steps)} ` +
     `step(s) bounded, ${String(Math.round(measured / 60))} min measured (as of run ` +
     `${String(baseline.run)}); bounds total ${String(Math.round(bounds / 60))} min; tightest ` +
     `${tightest.name} at ${Number.isFinite(tightest.ratio) ? tightest.ratio.toFixed(1) : 'unmeasured'}x; ` +
-    `${excusedText}; ${declaredText}; ${ledgerText(ledger, baseline)}`
+    `${excusedText}; ${declaredText}; ${jobsText}; ${ledgerText(ledger, baseline)}`
   );
 }

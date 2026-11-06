@@ -1,0 +1,18 @@
+{
+  "jobs": [
+    {
+      "job": "sensitivity-shard",
+      "timeoutMinutes": 26,
+      "steps": [
+        { "name": "Check out", "minutes": 3 },
+        { "name": "Set up Node.js", "minutes": 3 },
+        { "name": "Set up pnpm", "minutes": 3 },
+        { "name": "Install dependencies", "minutes": 3 },
+        { "name": "Install the shells the suite cross-checks against", "minutes": 3 },
+        { "name": "Build (core then cli; cli resolves core's dist)", "minutes": 3 },
+        { "name": "Every proved exit can disappear without a word (shard 2 of 2)", "minutes": 25 }
+      ],
+      "why": "the sites battery measured 626 seconds against a bound that R4 put at 1252, so its sorted files are split across two jobs; this job has never run, and its ceiling, every step bound and this argument are all the round can honestly write down before the first green run measures it"
+    }
+  ]
+}
