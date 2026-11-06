@@ -26,11 +26,20 @@
  *
  * `--dry-run` reads the remote and prints the plan without creating any object, which is
  * the one thing the previous channel could not do without also being able to publish.
+ *
+ * ## What `--record` writes, and why it writes it here
+ *
+ * One **push** per invocation: `{ rev, branch, rows }`, where `rows` are the attempts the
+ * transport made. The transport knows the rows and not the push -- it is handed a branch
+ * and a body and never told that a publish began -- while this file has the branch, the
+ * revision and the moment they belong together. So the unit is assembled here, and a push
+ * that made no request writes nothing at all rather than an empty push.
  */
 
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { githubTransport, localTransport, publish } from './publish.mjs';
+import { readRev } from './publish-plan.mjs';
 import { appendReadings, formatSummary, summariseReadings } from './publish-readings.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -133,16 +142,47 @@ async function main(argv, env, out) {
       // facts are separate: the remote may hold the commit while the history is unwritable,
       // and a reader has to be told which of the two happened rather than one exit code
       // standing for both.
-      try {
-        const total = appendReadings(resolve(ROOT, options.record), readings);
-        out(`${formatSummary(summariseReadings(readings))} (${total} row(s) in ${options.record})`);
-      } catch (error) {
-        out(`RECORD FAILED: ${String(error.message ?? error)}`);
-        code = 1;
+      if (readings.length === 0) {
+        // A push that made no request is not a push the file can hold: the gate refused, or
+        // the revision did not resolve, and either way there is nothing this channel met.
+        out('publish-readings: no request was made, so nothing was recorded');
+      } else {
+        try {
+          // The tip is named here rather than in the transport, because the transport does
+          // not know what a push is -- `publish()` does, and this is the only place that
+          // has both the question and the answer. `rev` is null when the revision cannot be
+          // resolved, which is the state the file records as "nobody named this tip"
+          // instead of an empty string that would read as a named one.
+          const merged = appendReadings(resolve(ROOT, options.record), {
+            rev: resolvedRev(options.root, options.rev),
+            branch: options.branch,
+            rows: readings,
+          });
+          out(`${formatSummary(summariseReadings(merged))} (${merged.length} push(es) in ${options.record})`);
+        } catch (error) {
+          out(`RECORD FAILED: ${String(error.message ?? error)}`);
+          code = 1;
+        }
       }
     }
   }
   return code;
+}
+
+/**
+ * The commit a push carried, or `null` when the revision cannot be resolved.
+ *
+ * The push itself refuses an unresolvable revision one call earlier and with its own
+ * words, so a `null` reaching the file is only ever the case where the push got as far as
+ * making requests -- and a recording that invented a SHA would be worse than one that says
+ * nobody named it.
+ */
+function resolvedRev(root, rev) {
+  try {
+    return readRev({ root, rev });
+  } catch {
+    return null;
+  }
 }
 
 const invokedDirectly = process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);

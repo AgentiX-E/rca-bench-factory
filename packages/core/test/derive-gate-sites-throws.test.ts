@@ -232,7 +232,12 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // `publish-readings.mjs` that stop an append from replacing a history it could not
     // read. The round also removed a `catch` in `publish-cli.mjs` that only re-raised --
     // a row the inventory had been carrying as a forward nothing could observe.
-    expect(total).toBe(81);
+    //
+    // 82 is v3.57, where a push became the unit of that file: `appendReadings` refuses a
+    // push with no rows, because a file that holds one passes its own gate and says the
+    // channel made a request it never made. The reader refuses the same shape one function
+    // up; the writer is the boundary that can still be handed it.
+    expect(total).toBe(82);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -274,8 +279,9 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // file is written, because a seed that turned out to be the recording would have
     // already replaced the day the bounds are argued from. 62 unguarded is v3.56's two
     // refusals in `publish-readings.mjs` -- a history that is not JSON, and one that is not
-    // a list -- both of which stop an append from replacing what it could not read.
-    expect(counts).toEqual({ fatal: 11, unguarded: 62, guarded: 1, rethrow: 7 });
+    // a list -- both of which stop an append from replacing what it could not read. 63 is
+    // v3.57's third, the push with no rows.
+    expect(counts).toEqual({ fatal: 11, unguarded: 63, guarded: 1, rethrow: 7 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

@@ -1,42 +1,58 @@
 #!/usr/bin/env node
 /**
- * What the API answered on a real push, kept as a reading rather than as a memory.
+ * What the API answered on each real push, kept as a reading rather than as a memory.
  *
  * ## The gap this closes
  *
  * Finding 412 recorded the first real push losing a request to a closed socket, and the
  * repair was a retry that recognises a broken connection. What no round could do was
  * answer the next question: *on the push that worked, what did the API actually say?*
- * The channel printed its plan and its verdict and nothing about the thirty-odd
- * requests underneath them -- how many, how long, which of them retried, what the
- * upstream answered on the ones that did. Every later repair therefore started from one
- * anecdote per round, which is the sample of one `R10` was written about one layer over.
- *
- * The entry on the open list says it exactly: *keep a reading of what the API answered
- * on every real push.* This is that file, and this is the reader for it.
+ * The channel printed its plan and its verdict and nothing about the thirty-odd requests
+ * underneath them -- how many, how long, which of them retried, what the upstream answered
+ * on the ones that did. Every later repair therefore started from one anecdote per round,
+ * which is the sample of one `R10` was written about one layer over.
  *
  * ## Why a record of attempts rather than of pushes
  *
  * A push is not a unit the API sees. The unit is one request, and every failure this
  * channel has met arrived on one: `POST /git/blobs` answered `500` with an empty body
  * once, the same body was accepted on the next connection, and a socket closed under a
- * third. A per-push average would have hidden all three. So the file holds one row per
+ * third. A per-push average would have hidden all three. So a push holds one row per
  * **attempt**, and the retries are visible as consecutive rows of the same request with
  * `attempt` counting up.
  *
+ * ## And why a push is still a unit of the file
+ *
+ * v3.56 wrote those rows into one flat list, and the flat list answered the first question
+ * while destroying the second. The file it produced held **five** pushes; a reader could
+ * count requests and could not say how many pushes carried them, so the open list recorded
+ * the file as one round deep -- not because the history was shallow but because it had no
+ * unit to be deep in. The five pushes in it differ by two orders of magnitude on the one
+ * number a channel's variance lives in: the slowest request of one push is 2 120 ms and of
+ * another 29 632 ms (findings 433, 434).
+ *
+ * So a row is a row inside a push, and a push is `{ rev, branch, rows }`. The boundary is
+ * not inferred from a gap in the timestamps -- that would be a threshold read back as a
+ * fact. It is structural: `publish()` asks the remote for the branch before it decides
+ * anything, so **the first request of every push is `GET /git/ref/heads/<branch>`**, and a
+ * second such read inside one push means either two pushes were folded together or a
+ * `PATCH` was refused with `422` and the branch was read again. Both are checked.
+ *
+ * `rev` is the commit the push carried, or `null` for the pushes recorded before this
+ * field existed: their rows never named a tip, and a reader that filled one in would be
+ * inventing the one fact it is supposed to report. The summary prints how many pushes have
+ * a named tip, so the gap stays a number rather than a footnote.
+ *
  * ## What the checks can and cannot say
  *
- * They can say the file is a record of what a transport did: every row has a method, a
- * path, an attempt, a status **or** an error, and a duration; the timestamps do not run
- * backwards; and a second attempt is preceded by its first. They cannot say the numbers
- * are true -- only the process that made the request knows that -- and they do not
- * pretend to. A row that says `500` on an attempt that actually got `201` would pass
- * every check here, which is the same limit `check-open-list` states about its own
- * entries.
- *
- * The one inference the checks *do* make is about gaps. If a row says `attempt: 3` and
- * the row before it is not attempt 2 of the same request, then a row is missing or out
- * of order, and both make the retry count a lie -- so it is refused rather than printed.
+ * They can say the file is a record of pushes: each has a revision, a branch and rows; each
+ * row has a method, a path, an attempt, a status **or** an error, and a duration; the
+ * timestamps do not run backwards; a second attempt is preceded by its first; a push begins
+ * by reading the branch it publishes; and consecutive pushes do not overlap in time. They
+ * cannot say the numbers are true -- only the process that made the request knows that --
+ * and they do not pretend to. A row that says `500` on an attempt that actually got `201`
+ * would pass every check here, which is the same limit `check-open-list` states about its
+ * own entries.
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -50,10 +66,15 @@ const ROOT = resolve(HERE, '..');
 export const READINGS = 'golden-master/publish-readings.json';
 
 const METHODS = new Set(['GET', 'POST', 'PATCH', 'PUT', 'DELETE']);
+const SHA = /^[0-9a-f]{40}$/;
+
+/** The path a push reads before it decides anything, and the only row a push may begin with. */
+const branchRead = (branch) => `/git/ref/heads/${branch}`;
+const refUpdate = (branch) => `/git/refs/heads/${branch}`;
 
 /** A row is well formed, or it is a number a later reader would take on trust. */
-function shapeErrors(row, index) {
-  const at = `row ${index + 1}`;
+function shapeErrors(row, index, where) {
+  const at = `${where} row ${index + 1}`;
   if (row === null || typeof row !== 'object' || Array.isArray(row)) return [`${at} is not an object`];
   const problems = [];
   const integer = (value, name, minimum) => {
@@ -94,60 +115,134 @@ function shapeErrors(row, index) {
 }
 
 /**
- * Every problem with a set of readings, in one list.
+ * Every defect in one push, in one list.
  *
- * A list rather than a throw, because a reader that stops at the first defect in a file
- * of two hundred rows makes the operator re-run the gate once per defect. The same
- * argument `check-doc-counts` makes about its own diagnostics.
+ * The row shape is judged first and the boundary second, because the boundary rules read
+ * `method`, `path` and `attempt` -- fields the shape check has just judged, and a row
+ * without them would otherwise be reported twice for one defect.
  */
-export function readingErrors(entries) {
-  if (Array.isArray(entries) !== true) return ['the file is not an array of rows'];
-  if (entries.length === 0) {
-    return ['the file holds no readings, so nothing on this channel has ever been measured; a reading of nothing is not a reading'];
+function pushErrors(push, index) {
+  const at = `push ${index + 1}`;
+  if (push === null || typeof push !== 'object' || Array.isArray(push)) return [`${at} is not an object`];
+  if (!('rows' in push) && ('method' in push || 'path' in push || 'attempt' in push)) {
+    // The v3.56 shape, refused rather than upgraded: a row on its own does not say which
+    // push produced it, and a reader that guessed would be inventing the one fact this
+    // round added.
+    return [`${at} is a row, not a push: a push is \`{ rev, branch, rows }\` and a row on its own does not say which push it belonged to`];
   }
   const problems = [];
+  if (!('rev' in push)) {
+    // Required, and `null` where the tip was never named -- the same argument the row's
+    // `status` makes: an absent field cannot be told from a writer that forgot it.
+    problems.push(`${at}: has no \`rev\` field, so a push whose tip was never named reads the same as one whose recorder forgot to ask`);
+  } else if (push.rev !== null && (typeof push.rev !== 'string' || !SHA.test(push.rev))) {
+    problems.push(`${at}: \`rev\` is ${JSON.stringify(push.rev)}, which is neither a 40-character commit SHA nor null`);
+  }
+  if (typeof push.branch !== 'string' || push.branch === '' || /\s/.test(push.branch)) {
+    problems.push(`${at}: \`branch\` is ${JSON.stringify(push.branch)}, not a branch name`);
+  }
+  if (!Array.isArray(push.rows) || push.rows.length === 0) {
+    problems.push(`${at}: \`rows\` is ${Array.isArray(push.rows) ? 'empty' : JSON.stringify(push.rows)}, and a push that made no request is not a push this file can hold`);
+    return problems;
+  }
   // A loop rather than `problems.push(...shapeErrors(...))`: the spread's length is a
   // function of the rows, which is the shape `spread-append-guard` refuses -- the same
   // repair `historyErrors` needed in v3.55, for the same reason.
-  entries.forEach((row, index) => {
-    for (const problem of shapeErrors(row, index)) problems.push(problem);
+  push.rows.forEach((row, position) => {
+    for (const problem of shapeErrors(row, position, at)) problems.push(problem);
   });
-  // Shape first: the two order rules below read fields the shape check has just judged,
-  // and a row without an `attempt` would otherwise be reported twice for one defect.
   if (problems.length > 0) return problems;
-  for (let index = 1; index < entries.length; index += 1) {
-    const row = entries[index];
-    const previous = entries[index - 1];
-    if (row.at < previous.at) {
-      problems.push(`row ${index + 1} happened ${previous.at - row.at} ms before the row above it, so the file is not in the order the requests were made`);
-    }
-    if (row.attempt > 1) {
-      const continues = previous.method === row.method && previous.path === row.path && previous.attempt === row.attempt - 1;
-      if (!continues) {
+
+  const [first] = push.rows;
+  const read = branchRead(push.branch);
+  if (first.method !== 'GET' || first.path !== read) {
+    problems.push(
+      `${at} begins with ${first.method} ${first.path}, and every push begins by reading the branch it publishes ` +
+        `(GET ${read}): that row is where one push ends and the next begins, so without it the file cannot be split`,
+    );
+  } else if (first.attempt !== 1) {
+    problems.push(`${at} begins with attempt ${first.attempt} of GET ${read}, and its first attempt belongs to a push the file does not hold`);
+  }
+
+  let refusedUpdate = false;
+  for (let position = 0; position < push.rows.length; position += 1) {
+    const row = push.rows[position];
+    if (position > 0) {
+      const previous = push.rows[position - 1];
+      if (row.at < previous.at) {
+        problems.push(`${at} row ${position + 1} happened ${previous.at - row.at} ms before the row above it, so the push is not in the order the requests were made`);
+      }
+      if (row.attempt > 1) {
+        const continues = previous.method === row.method && previous.path === row.path && previous.attempt === row.attempt - 1;
+        if (!continues) {
+          problems.push(
+            `${at} row ${position + 1} is attempt ${row.attempt} of ${row.method} ${row.path} and the row above it is ` +
+              `attempt ${previous.attempt} of ${previous.method} ${previous.path}: a retry needs its own first attempt ` +
+              'inside the same push, or the number of retries this file reports is a number it cannot defend',
+          );
+        }
+      }
+      // The channel re-reads the branch in exactly two places: `updateRef` answers a 422 by
+      // asking what the branch moved to, and a `500` on the read itself is retried. Every
+      // other second read inside one push is a second push written into the first one --
+      // and a folded push always begins with attempt 1 of that read, which is what makes
+      // the exemption safe rather than a hole.
+      if (row.method === 'GET' && row.path === read && row.attempt === 1 && !refusedUpdate) {
         problems.push(
-          `row ${index + 1} is attempt ${row.attempt} of ${row.method} ${row.path} and the row above it is ` +
-            `attempt ${previous.attempt} of ${previous.method} ${previous.path}: a retry needs its own first attempt, ` +
-            'or the number of retries this file reports is a number it cannot defend',
+          `${at} row ${position + 1} reads the branch a second time and no PATCH ${refUpdate(push.branch)} above it was refused ` +
+            'with 422: this file began a new push there and stored it as the end of this one',
         );
       }
+    }
+    if (row.method === 'PATCH' && row.path === refUpdate(push.branch) && row.status === 422) refusedUpdate = true;
+  }
+  return problems;
+}
+
+/**
+ * Every problem with a set of pushes, in one list.
+ *
+ * A list rather than a throw, because a reader that stops at the first defect in a file of
+ * two hundred rows makes the operator re-run the gate once per defect. The same argument
+ * `check-doc-counts` makes about its own diagnostics.
+ */
+export function readingErrors(pushes) {
+  if (Array.isArray(pushes) !== true) return ['the file is not a list of pushes'];
+  if (pushes.length === 0) {
+    return ['the file holds no readings, so nothing on this channel has ever been measured; a reading of nothing is not a reading'];
+  }
+  const problems = [];
+  pushes.forEach((push, index) => {
+    for (const problem of pushErrors(push, index)) problems.push(problem);
+  });
+  // Shape first, then order: a push whose rows are not rows has no last row to compare.
+  if (problems.length > 0) return problems;
+  for (let index = 1; index < pushes.length; index += 1) {
+    const previous = pushes[index - 1].rows;
+    const first = pushes[index].rows[0];
+    const last = previous[previous.length - 1];
+    if (first.at < last.at) {
+      problems.push(
+        `push ${index + 1} starts ${last.at - first.at} ms before push ${index} ended, so the file is not in the order the pushes were made`,
+      );
     }
   }
   return problems;
 }
 
 /**
- * What the readings say, in one line and in one object.
+ * What one push's rows say, in one object.
  *
  * `retried` counts *retries*, not rows: three attempts on one request is two retries, and
  * reporting it as three would make a channel that retries once look like one that retries
  * twice.
  */
-export function summariseReadings(entries) {
+function summariseRows(rows) {
   const statuses = new Map();
   let retried = 0;
   let unanswered = 0;
   let slowest = null;
-  for (const row of entries) {
+  for (const row of rows) {
     const key = row.status === null || row.status === undefined ? 'no-answer' : String(row.status);
     statuses.set(key, (statuses.get(key) ?? 0) + 1);
     if (row.status === null || row.status === undefined) unanswered += 1;
@@ -160,7 +255,7 @@ export function summariseReadings(entries) {
     return Number(a[0]) - Number(b[0]);
   });
   return {
-    total: entries.length,
+    total: rows.length,
     retried,
     unanswered,
     statuses: order.map(([status, count]) => ({ status, count })),
@@ -168,29 +263,63 @@ export function summariseReadings(entries) {
   };
 }
 
-/** The summary as the sentence a terminal prints, so the gate's own output is checkable. */
+/**
+ * What the file says, for the file and for each push in it.
+ *
+ * The per-push figures are the reason the push became a unit: a channel's variance is a
+ * question about pushes, and an average over the whole file answers it with a number no
+ * single push ever produced.
+ */
+export function summariseReadings(pushes) {
+  const per = pushes.map((push) => ({ rev: push.rev, branch: push.branch, ...summariseRows(push.rows) }));
+  const whole = summariseRows(pushes.flatMap((push) => push.rows));
+  return {
+    pushes: pushes.length,
+    named: pushes.filter((push) => push.rev !== null && push.rev !== undefined).length,
+    ...whole,
+    per,
+  };
+}
+
+/** The summary as the lines a terminal prints, so the gate's own output is checkable. */
 export function formatSummary(summary) {
   const statuses = summary.statuses.map((one) => `${one.status}x${one.count}`).join(' ');
   const slowest = summary.slowest === null ? 'nothing was measured' : `slowest ${summary.slowest.method} ${summary.slowest.path} ${summary.slowest.ms} ms`;
-  return (
-    `publish-readings: ${summary.total} request(s), ${summary.retried} retried, ` +
+  const headline =
+    `publish-readings: ${summary.pushes} push(es) (${summary.named} with a named tip), ` +
+    `${summary.total} request(s), ${summary.retried} retried, ` +
     `${summary.total - summary.unanswered} answered, ${summary.unanswered} unanswered; ${slowest}; ` +
-    `statuses ${statuses}`
-  );
+    `statuses ${statuses}`;
+  // A breakdown of one thing is that thing, so the per-push lines appear only when there
+  // is more than one push to tell apart.
+  if (summary.pushes <= 1) return headline;
+  const lines = summary.per.map((one, index) => {
+    const slowestOne = one.slowest === null ? 'nothing measured' : `slowest ${one.slowest.method} ${one.slowest.path} ${one.slowest.ms} ms`;
+    const rev = one.rev === null || one.rev === undefined ? 'none' : one.rev.slice(0, 9);
+    return `  push ${index + 1}/${summary.pushes} ${one.branch} rev=${rev}: ${one.total} request(s), ${one.retried} retried, ${one.unanswered} unanswered; ${slowestOne}`;
+  });
+  return [headline, ...lines].join('\n');
 }
 
 /**
- * Append this push's rows to the history, and report how many the file holds.
+ * Append one push to the history, and return the whole file.
  *
  * Append rather than replace, because the question the file answers is *what has this
  * channel ever met* -- a replace would keep the last push and delete the day the socket
  * closed, which is the only row anybody will ever want.
  *
+ * A push that made no request is refused here as well as by the reader: a push whose array
+ * is empty is a push the file cannot describe, and the caller that wrote it would otherwise
+ * get a file which passes its own gate and says nothing.
+ *
  * A file that exists but cannot be read is **not** overwritten. Losing a history to a
  * parse error is the failure `--seed` was written to avoid one layer over, and here the
  * repair is the operator's: the old rows are still there to be looked at.
  */
-export function appendReadings(file, entries) {
+export function appendReadings(file, push) {
+  if (push === null || typeof push !== 'object' || !Array.isArray(push.rows) || push.rows.length === 0) {
+    throw new TypeError('a push is appended with the rows it made: a push that made no request is not one this file can hold');
+  }
   const path = resolve(file);
   let existing = [];
   if (existsSync(path)) {
@@ -201,12 +330,12 @@ export function appendReadings(file, entries) {
       throw new TypeError(`the history at ${file} is not JSON, so appending would replace it: ${String(error.message)}`);
     }
     if (Array.isArray(existing) !== true) {
-      throw new TypeError(`the history at ${file} is not an array of rows, so appending would replace it`);
+      throw new TypeError(`the history at ${file} is not an array of pushes, so appending would replace it`);
     }
   }
-  const merged = [...existing, ...entries];
+  const merged = [...existing, push];
   writeFileSync(path, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
-  return merged.length;
+  return merged;
 }
 
 /**
@@ -229,7 +358,7 @@ export function parseArgs(argv) {
   return { options };
 }
 
-/** The file's rows, or the reason it has none. Reading and judging are one step because
+/** The file's pushes, or the reason it has none. Reading and judging are one step because
  *  a verdict about a file nobody could open is not a verdict. */
 export function inspect(file) {
   const path = resolve(ROOT, file);

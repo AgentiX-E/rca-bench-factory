@@ -617,7 +617,7 @@
     },
     {
       "script": "scripts/publish-cli.mjs",
-      "line": 151,
+      "line": 191,
       "condition": "invokedDirectly",
       "verdict": "code",
       "status": "proved",
@@ -625,7 +625,7 @@
     },
     {
       "script": "scripts/publish-cli.mjs",
-      "line": 154,
+      "line": 194,
       "condition": "invokedDirectly",
       "diagnostic": "publish failed: ${String(error.message ?? error)}",
       "status": "proved",
@@ -989,7 +989,7 @@
     "rule": "every throw statement, partitioned four ways: `fatal` (no enclosing function, no enclosing try) ends the process and is proved like a site; `unguarded` (in a function, no enclosing try) hands control to its caller, which decides; `guarded` (in a try block) is caught here; `rethrow` (in a catch, rethrowing the caught binding) carries a decision made above. A try or a catch stops at a function boundary, because neither is on the stack when the function runs elsewhere. fatal + unguarded + guarded + rethrow is the number of throw statements; see scripts/derive-gate-sites.mjs",
     "counts": {
       "fatal": 11,
-      "unguarded": 62,
+      "unguarded": 63,
       "guarded": 1,
       "rethrow": 7
     },
@@ -1417,7 +1417,7 @@
       },
       {
         "script": "scripts/publish-cli.mjs",
-        "line": 78,
+        "line": 87,
         "disposition": "unguarded",
         "message": "--transport local needs --remote DIR: a bare repository to write",
         "status": "proved",
@@ -1425,7 +1425,7 @@
       },
       {
         "script": "scripts/publish-cli.mjs",
-        "line": 81,
+        "line": 90,
         "disposition": "unguarded",
         "message": "'${options.transport}' is not a transport this channel has",
         "status": "proved",
@@ -1433,7 +1433,7 @@
       },
       {
         "script": "scripts/publish-cli.mjs",
-        "line": 83,
+        "line": 92,
         "disposition": "unguarded",
         "message": "--repo OWNER/NAME is required for the GitHub transport",
         "status": "proved",
@@ -1521,7 +1521,15 @@
       },
       {
         "script": "scripts/publish-readings.mjs",
-        "line": 201,
+        "line": 321,
+        "disposition": "unguarded",
+        "message": "a push is appended with the rows it made: a push that made no request is not one this file can hold",
+        "status": "proved",
+        "provedBy": "packages/core/test/publish-readings.test.ts"
+      },
+      {
+        "script": "scripts/publish-readings.mjs",
+        "line": 330,
         "disposition": "unguarded",
         "message": "the history at ${file} is not JSON, so appending would replace it: ${String(error.message)}",
         "status": "proved",
@@ -1529,9 +1537,9 @@
       },
       {
         "script": "scripts/publish-readings.mjs",
-        "line": 204,
+        "line": 333,
         "disposition": "unguarded",
-        "message": "the history at ${file} is not an array of rows, so appending would replace it",
+        "message": "the history at ${file} is not an array of pushes, so appending would replace it",
         "status": "proved",
         "provedBy": "packages/core/test/publish-readings.test.ts"
       },

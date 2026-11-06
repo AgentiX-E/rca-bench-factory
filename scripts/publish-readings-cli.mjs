@@ -50,6 +50,9 @@ if (invokedDirectly) {
     console.error(`publish-readings: FAILED (${options.file})`);
     process.exit(1);
   }
-  console.log(`${formatSummary(summariseReadings(found.entries))} (${options.file})`);
-  if (options.check) console.log(`publish-readings: OK (${found.entries.length} row(s) of ${options.file})`);
+  const summary = summariseReadings(found.entries);
+  console.log(`${formatSummary(summary)} (${options.file})`);
+  if (options.check) {
+    console.log(`publish-readings: OK (${summary.pushes} push(es), ${summary.total} row(s) of ${options.file})`);
+  }
 }
