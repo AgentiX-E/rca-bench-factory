@@ -1793,7 +1793,7 @@ incident in this volume.
 | mutation | **10** substitutions, **10** red: an unanswered attempt not recorded, every row claiming attempt 1, a row with neither status nor error accepted, a retry not following its own first attempt, an append that replaces, a rate limit invented as zero, a retry counted as a row, `--record` allowed on a transport that makes no request, an unreadable file reported as empty, and a file that cannot be read saying nothing about why |
 | failure sites | **126** across **59** of **84** scripts; throws **81** = 11 `fatal` + 62 `unguarded` + 1 `guarded` + 7 `rethrow` |
 | site proofs | **193** claims across **58** files, every one driven |
-| the history | `golden-master/publish-readings.json`: **28 rows** -- 26 answered, **2 unanswered**, 2 retried, slowest `POST /git/blobs` **28 385 ms** |
+| the history | `golden-master/publish-readings.json`: **36 rows** after the two pushes that carried this commit -- 34 answered, **2 unanswered**, 2 retried, slowest `POST /git/blobs` **28 385 ms**. The file lags the push that carries it by one, by construction: the rows for a push are written after it lands |
 | the push | 25 request(s) for one commit of 611 file(s): **17** changed, **0** removed, one `POST /git/blobs` of 63 102 bytes that closed twice -- **28 385 ms** then **10 289 ms** -- and was accepted on the third attempt in **1 343 ms**. The retry that finding 412 added is what carried the push, and the two rows that say so are the ones no earlier round could have produced |
 
 
