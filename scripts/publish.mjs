@@ -104,18 +104,89 @@ async function readRemote({ transport, branch }) {
 }
 
 /**
+ * How many names a refusal prints before it starts counting.
+ *
+ * A refusal is read in a terminal and acted on by somebody who mistyped a branch, so the
+ * sentence has to carry the names that exist -- and a repository with two hundred branches
+ * would turn one sentence into a page. Five is enough to recognise the intended one, and
+ * the rest is a number.
+ */
+const NAMES_SHOWN = 5;
+
+/**
+ * What a repository holds, in the words a refusal uses.
+ *
+ * Branches and tags are named separately because they answer different questions: a
+ * repository with one tag and no branch is one where no push has ever landed, and a
+ * sentence that said "1 ref" would leave the reader to guess which. Anything else under
+ * `refs/` -- `refs/pull/7/head`, `refs/notes/commits` -- is counted rather than named: it
+ * makes the repository non-empty, which is the fact the refusal turns on, and this channel
+ * has no opinion about its name.
+ */
+export function refSentence(names) {
+  const branches = [];
+  const tags = [];
+  let other = 0;
+  for (const name of names) {
+    if (name.startsWith('refs/heads/')) branches.push(name.slice('refs/heads/'.length));
+    else if (name.startsWith('refs/tags/')) tags.push(name.slice('refs/tags/'.length));
+    else other += 1;
+  }
+  const listing = (values) =>
+    values.length <= NAMES_SHOWN
+      ? values.join(', ')
+      : `${values.slice(0, NAMES_SHOWN).join(', ')} and ${values.length - NAMES_SHOWN} more`;
+  const parts = [];
+  if (branches.length > 0) parts.push(`${branches.length} branch(es): ${listing(branches)}`);
+  if (tags.length > 0) parts.push(`${tags.length} tag(s): ${listing(tags)}`);
+  if (other > 0) parts.push(`${other} other ref(s)`);
+  return parts.join('; ');
+}
+
+/**
  * Publish `rev` to `branch` through `transport`, one planned commit at a time.
  *
  * Returns a record rather than printing one, because the two states a caller must tell
  * apart -- *the remote already had this* and *this round moved it* -- are not the same
  * claim and a log line is not a return value.
  */
-export async function publish({ root, rev, branch, transport, gate = true, dryRun = false, log = () => {} }) {
+export async function publish({
+  root,
+  rev,
+  branch,
+  transport,
+  gate = true,
+  dryRun = false,
+  newBranch = false,
+  log = () => {},
+}) {
   const tip = readRev({ root, rev });
   const tipTree = readTreeOf({ root, rev });
   if (gate) requireReceipt({ root, rev, tree: tipTree });
 
   const remote = await readRemote({ transport, branch });
+  if (remote.head === null && !newBranch) {
+    // A `404` on the branch read is two states wearing one status, and only one of them is
+    // this channel's business. On an empty repository the branch is unborn and replaying
+    // the whole history is the only thing a push can mean. On a repository that holds
+    // refs, the branch is *absent*, and the same plan would create it, publish the history
+    // onto it, report success -- and leave the branch that was meant untouched. The push
+    // that met this in practice was stopped by the merge refusal only because the two
+    // branches had diverged; a linear history would have created a second branch silently,
+    // which is the worse failure of the two because nothing afterwards is wrong.
+    //
+    // The listing is asked for here rather than in `readRemote` so that the ordinary path
+    // -- a branch that exists -- pays nothing for a question it does not ask.
+    const held = await transport.refs();
+    if (held.length > 0) {
+      throw new TypeError(
+        `'${branch}' does not exist and the remote is not empty: it holds ${refSentence(held)}. ` +
+          'A branch that is absent on a repository that has refs is a name that is wrong, not a branch that is ' +
+          'new: publishing this history there would create it and leave the branch that was meant untouched. ' +
+          'Pass --new-branch to say the branch is meant to be new',
+      );
+    }
+  }
   const ancestry = readAncestry({ root, rev: tip });
 
   // An unborn branch has no content to locate, so the whole ancestry is the window. A
@@ -367,6 +438,36 @@ export function githubTransport({
         throw error;
       }
     },
+    /**
+     * Every ref in the repository, as names.
+     *
+     * Only asked for after a branch read answered 404, because that is the one moment the
+     * channel cannot tell "this branch is new" from "this branch is misspelled". A hundred
+     * is the page size: the decision needs one ref to exist and the sentence needs a few
+     * names to print, so a repository with more branches than that is answered by the
+     * first hundred rather than by a walk through the rest.
+     */
+    async refs() {
+      let listing;
+      try {
+        listing = await call('GET', '/git/refs?per_page=100');
+      } catch (error) {
+        // An empty repository is the one state the API announces with a status instead of
+        // a list, and `409` here means exactly what an empty array means: there is no ref
+        // to report. Anything else is forwarded, because a listing this channel was not
+        // allowed to read is not a repository with no refs -- the two would differ by a
+        // push onto a branch that already exists.
+        if (error instanceof ApiError && error.status === 409) return [];
+        throw error;
+      }
+      if (!Array.isArray(listing)) {
+        throw new TypeError(
+          `the API answered the ref listing with ${typeof listing}, which is not a list of refs: ` +
+            'reading it as an empty repository would publish a whole history onto a branch that may exist',
+        );
+      }
+      return listing.map((ref) => String(ref.ref));
+    },
     async commit(sha) {
       const commit = await call('GET', `/git/commits/${sha}`);
       return { sha: commit.sha, tree: commit.tree.sha };
@@ -406,7 +507,38 @@ export function githubTransport({
       });
       return commit.sha;
     },
+    /**
+     * Move the branch -- or create it, which is a different call.
+     *
+     * `PATCH /git/refs/heads/<branch>` updates a reference that must already exist, so an
+     * absent branch cannot be moved onto a commit: it is created with `POST /git/refs`.
+     * Until v3.58 this function only patched, and the unborn path therefore ended every
+     * real push with a `422` described as *"the branch moved while the plan was being
+     * executed: it was null and is undefined"* -- a sentence about a branch that had never
+     * existed, for a call the API was never going to accept. The suite did not see it
+     * because the server it drives created the branch on the PATCH, which is the one thing
+     * the real endpoint refuses.
+     *
+     * The refusal here does **not** re-read the branch, and the moved-ref refusal above
+     * does. The difference is what `expected` means: a SHA can be compared to what the
+     * branch is now and the sentence can name both, while `null` says only that the branch
+     * was absent -- so any answer other than "the name is taken" is noise, and a second read
+     * would be a second branch read inside one push, which the readings gate refuses
+     * without an exemption it would then have to grow.
+     */
     async updateRef({ branch, sha, expected }) {
+      if (expected === null) {
+        try {
+          await call('POST', '/git/refs', { ref: `refs/heads/${branch}`, sha });
+        } catch (error) {
+          if (!(error instanceof ApiError) || error.status !== 422) throw error;
+          throw new TypeError(
+            `the branch '${branch}' was absent when the plan was made and is not now: the name was taken while ` +
+              'the commits were being created, and nothing was forced — re-read the branch and plan again',
+          );
+        }
+        return;
+      }
       try {
         await call('PATCH', `/git/refs/heads/${branch}`, { sha, force: false });
       } catch (error) {
@@ -465,6 +597,11 @@ export function localTransport({ remote }) {
       });
       if (result.status !== 0) return null;
       return { sha: result.stdout.trim() };
+    },
+    /** The same answer the API gives: full ref names, one per line, in `refs/` order. */
+    async refs() {
+      const out = runGit(remote, ['for-each-ref', '--format=%(refname)'], { encoding: 'utf8' });
+      return out.split('\n').filter((name) => name !== '');
     },
     async commit(sha) {
       const raw = runGit(remote, ['cat-file', 'commit', requireSha(sha, 'a commit to read')], { encoding: 'utf8' });
@@ -527,9 +664,16 @@ export function localTransport({ remote }) {
       const current = await this.head(branch);
       const now = current === null ? null : current.sha;
       if (now !== expected) {
+        // The two refusals say different things because `expected` knows different things:
+        // a SHA can be compared and both halves printed, while an absent branch can only be
+        // reported as one that is not absent any more. The sentence matches the API's, so a
+        // push that meets the race reads the same whichever transport carried it.
         throw new TypeError(
-          `the branch moved while the plan was being executed: it was ${String(expected).slice(0, 9)} and is ` +
-            `${String(now).slice(0, 9)}. Nothing was forced — re-read the branch and plan again`,
+          expected === null
+            ? `the branch '${branch}' was absent when the plan was made and is not now: it is ${String(now).slice(0, 9)}, ` +
+              'and nothing was forced — re-read the branch and plan again'
+            : `the branch moved while the plan was being executed: it was ${String(expected).slice(0, 9)} and is ` +
+              `${String(now).slice(0, 9)}. Nothing was forced — re-read the branch and plan again`,
         );
       }
       if (now !== null) {

@@ -27,6 +27,11 @@
  * `--dry-run` reads the remote and prints the plan without creating any object, which is
  * the one thing the previous channel could not do without also being able to publish.
  *
+ * `--new-branch` is the caller saying a branch the remote does not have is meant to be new.
+ * Without it a `404` on the branch read is refused when the repository holds any ref at
+ * all, because at that point the missing branch is a *name* that is wrong, and the push
+ * that follows would create the wrong branch rather than fail.
+ *
  * ## What `--record` writes, and why it writes it here
  *
  * One **push** per invocation: `{ rev, branch, rows }`, where `rows` are the attempts the
@@ -46,17 +51,27 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
 
 const USAGE =
-  'usage: publish-cli.mjs --rev REV --branch NAME [--root DIR] [--dry-run] [--no-gate]\n' +
+  'usage: publish-cli.mjs --rev REV --branch NAME [--root DIR] [--dry-run] [--no-gate] [--new-branch]\n' +
   '       [--transport github|local] [--repo OWNER/NAME] [--remote DIR] [--record FILE] [--api URL]';
+
+/**
+ * The flags that take no value.
+ *
+ * One list rather than one `if` per flag at the bottom of the loop: a valueless flag that
+ * is not here swallows the argument after it, and `--new-branch --rev HEAD` would then
+ * refuse with "--rev is required" -- a sentence about the wrong mistake.
+ */
+const VALUELESS = new Set(['--dry-run', '--no-gate', '--new-branch']);
 
 /** `--key value` and `--flag`, and a refusal for anything else: a typo is not a default. */
 export function parseArgs(argv) {
-  const options = { root: ROOT, branch: null, rev: null, dryRun: false, gate: true, transport: 'github', repo: null, remote: null, record: null, api: 'https://api.github.com' };
+  const options = { root: ROOT, branch: null, rev: null, dryRun: false, gate: true, newBranch: false, transport: 'github', repo: null, remote: null, record: null, api: 'https://api.github.com' };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     const value = argv[index + 1];
     if (flag === '--dry-run') options.dryRun = true;
     else if (flag === '--no-gate') options.gate = false;
+    else if (flag === '--new-branch') options.newBranch = true;
     else if (flag === '--root') options.root = resolve(String(value));
     else if (flag === '--rev') options.rev = value;
     else if (flag === '--branch') options.branch = value;
@@ -68,7 +83,7 @@ export function parseArgs(argv) {
     else return { error: `unknown argument '${flag}'` };
     // A flag that took a value consumed it: without this, `--rev HEAD` reads HEAD as the
     // next flag and the refusal names the value instead of the mistake.
-    if (flag !== '--dry-run' && flag !== '--no-gate') index += 1;
+    if (!VALUELESS.has(flag)) index += 1;
   }
   if (options.rev === undefined || options.rev === null) return { error: '--rev is required' };
   if (options.branch === undefined || options.branch === null) return { error: '--branch is required' };
@@ -120,6 +135,7 @@ async function main(argv, env, out) {
       transport,
       gate: options.gate,
       dryRun: options.dryRun,
+      newBranch: options.newBranch,
       log: (line) => out(line),
     });
     if (result.state === 'current') code = 0;

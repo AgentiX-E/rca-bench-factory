@@ -272,6 +272,14 @@ describe('the row that says where one push ends', () => {
     expect(readingErrors([withRows([head(), row(), PATCH_422, head({ at: 1200, status: 200 })])])).toEqual([]);
   });
 
+  it('accepts the ref listing a 404 on the branch read asks for, and does not read it as a second read', () => {
+    // The shape a mistyped branch leaves: the branch read answers 404 and the push asks
+    // what the repository does hold. It is a different path from the branch read, and a
+    // rule that matched on a prefix would have counted it as the second push it is not.
+    const listing = { at: 1050, method: 'GET', path: '/git/refs?per_page=100', attempt: 1, status: 200, ms: 6, sent: 0, received: 300 };
+    expect(readingErrors([withRows([head({ status: 404 }), listing])])).toEqual([]);
+  });
+
   it('refuses a push that starts before the push above it ended', () => {
     const problems = readingErrors([push({ rows: [head({ at: 9000 })] }), push({ rev: null, rows: [head({ at: 8999 })] })]);
     expect(problems).toHaveLength(1);
@@ -438,6 +446,12 @@ async function api() {
         behaviour.dropOnce = null;
         request.socket.destroy();
         return;
+      }
+      // The listing a 404 on the branch read asks for, and the only route whose path is a
+      // prefix of another: `/git/refs` does not begin with `/git/ref/`, so it has to be
+      // answered before the branch-read branches below rather than after them.
+      if (key === 'GET /repos/owner/repo/git/refs') {
+        return send(200, []);
       }
       if (behaviour.unborn && key.startsWith('GET /repos/owner/repo/git/ref/')) {
         return send(404, { message: 'Not Found' });
@@ -647,12 +661,17 @@ describe('the command line that keeps the reading', () => {
     expect(result.stdout).toContain('nothing was created');
     expect(result.stdout).toContain('publish-readings: 1 push(es)');
     expect(result.stdout).toContain('1 with a named tip');
-    expect(result.stdout).toContain('1 request(s)');
+    // Two requests, not one: the 404 on the branch read is followed by the listing that
+    // says whether the branch is new or the name is wrong, and the recording counts the
+    // question as well as the answer. A summary that said "1 request" here would be a
+    // number taken from before the channel learned to ask.
+    expect(result.stdout).toContain('2 request(s)');
     expect(result.stdout).toContain('(1 push(es) in');
     const pushes = JSON.parse(readFileSync(file, 'utf8'));
     expect(readingErrors(pushes)).toEqual([]);
     expect(pushes[0]).toMatchObject({ rev: revision, branch: 'main' });
     expect(pushes[0].rows[0]).toMatchObject({ method: 'GET', path: '/git/ref/heads/main', attempt: 1, status: 404 });
+    expect(pushes[0].rows[1]).toMatchObject({ method: 'GET', path: '/git/refs?per_page=100', attempt: 1, status: 200 });
   });
 
   it('appends to a history that already holds another push, and counts both', async () => {

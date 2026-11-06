@@ -237,7 +237,19 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // push with no rows, because a file that holds one passes its own gate and says the
     // channel made a request it never made. The reader refuses the same shape one function
     // up; the writer is the boundary that can still be handed it.
-    expect(total).toBe(82);
+    //
+    // 85 is v3.58, where a 404 on the branch read stopped being one state: the refusal a
+    // mistyped branch earns, the refusal of a listing that is not a list, and the `throw
+    // error` that forwards a `403` on that listing instead of reading it as an empty
+    // repository. Three statements, one question -- *is this branch new or is its name
+    // wrong* -- and each of them is the boundary one of the other two cannot see.
+    //
+    // 87 adds the other end of the same question: the write that creates a branch has its
+    // own refusal for a name that was taken while the commits were being created, and its
+    // own `throw error` for a failure that is not that refusal. The read asks whether the
+    // branch is new; the write is the only place that can act on the answer, and the two
+    // ends of one question are two statements because neither can see the other's state.
+    expect(total).toBe(87);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -281,7 +293,12 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // refusals in `publish-readings.mjs` -- a history that is not JSON, and one that is not
     // a list -- both of which stop an append from replacing what it could not read. 63 is
     // v3.57's third, the push with no rows.
-    expect(counts).toEqual({ fatal: 11, unguarded: 63, guarded: 1, rethrow: 7 });
+    // 66 unguarded is v3.58's three: the refusal a mistyped branch earns, the listing it
+    // asks for when it cannot be one shape, and the refusal a creation earns when the name
+    // was taken first. 9 rethrow is its two -- a `403` on that listing is forwarded, because
+    // a listing this channel was not allowed to read is not a repository with no refs, and
+    // the creation forwards everything that is not the 422 of a taken name.
+    expect(counts).toEqual({ fatal: 11, unguarded: 66, guarded: 1, rethrow: 9 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

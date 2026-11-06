@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { writeReceipt } from '../../../scripts/gate-receipt.mjs';
-import { ApiError, githubTransport, isNetworkFailure, localTransport, publish, requireReceipt } from '../../../scripts/publish.mjs';
+import { ApiError, githubTransport, isNetworkFailure, localTransport, publish, refSentence, requireReceipt } from '../../../scripts/publish.mjs';
 
 /**
  * Executing a plan against a repository that stands where the API stands.
@@ -112,6 +112,40 @@ function log(root: string, rev: string) {
   return git(root, ['log', '--format=%H %s', rev]).trim();
 }
 
+/**
+ * The sentence a refusal answers a mistyped branch with.
+ *
+ * A refusal that says "this branch does not exist" leaves the operator to guess whether the
+ * repository is empty -- which is the difference between a typo and a first push. The names
+ * that do exist are the answer, and they are put in one sentence whose only judgement is
+ * how much of a long list to print.
+ */
+describe('the sentence a refusal names the refs it found with', () => {
+  it('names branches and tags separately, because they are different kinds of ref', () => {
+    expect(refSentence(['refs/heads/main', 'refs/tags/v1.0'])).toBe('1 branch(es): main; 1 tag(s): v1.0');
+  });
+
+  it('prints a short list whole and cuts a long one, so a message stays a message', () => {
+    const three = ['refs/heads/a', 'refs/heads/b', 'refs/heads/c'];
+    expect(refSentence(three)).toBe('3 branch(es): a, b, c');
+    const seven = [...three, 'refs/heads/d', 'refs/heads/e', 'refs/heads/f', 'refs/heads/g'];
+    expect(refSentence(seven)).toBe('7 branch(es): a, b, c, d, e and 2 more');
+    // The boundary itself, which the two cases above walk past. A battery substituting `<=`
+    // for `<` survived this file until these two lines existed: three names and seven names
+    // answer the same under either comparison, and only five -- the number itself -- differs.
+    const five = ['refs/heads/a', 'refs/heads/b', 'refs/heads/c', 'refs/heads/d', 'refs/heads/e'];
+    expect(refSentence(five)).toBe('5 branch(es): a, b, c, d, e');
+    expect(refSentence([...five, 'refs/heads/f'])).toBe('6 branch(es): a, b, c, d, e and 1 more');
+  });
+
+  it('counts a ref it cannot name as one, rather than dropping it', () => {
+    // `refs/pull/7/head` and `refs/notes/commits` are refs: a repository holding only those
+    // is not empty, and a sentence that printed nothing would read exactly like one.
+    expect(refSentence(['refs/pull/7/head', 'refs/notes/commits'])).toBe('2 other ref(s)');
+    expect(refSentence(['refs/heads/main', 'refs/pull/7/head'])).toBe('1 branch(es): main; 1 other ref(s)');
+  });
+});
+
 describe('publishing to a repository through the local transport', () => {
   it('replays every commit the remote does not have, and the remote log becomes the local log', () => {
     const { source, remote, shas } = stage('replay');
@@ -180,6 +214,59 @@ describe('publishing to a repository through the local transport', () => {
     expect(result.identical).toBe(true);
     expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
     expect(log(remote, 'main')).toBe(log(source, 'HEAD'));
+  });
+
+  it('refuses a branch that does not exist on a repository that has branches', async () => {
+    // The state a typo produces: `--branch mian` on a repository whose branch is `main`.
+    // The read answers 404, which is the same status an unborn branch answers, and the plan
+    // that follows publishes the whole history onto a branch nobody asked for.
+    const { source, remote, shas } = stage('mistyped');
+    at(remote, shas[1]!);
+    const transport = localTransport({ remote });
+
+    await expect(publish({ root: source, rev: 'HEAD', branch: 'mian', transport })).rejects.toThrow(
+      /'mian' does not exist and the remote is not empty: it holds 1 branch\(es\): main/,
+    );
+    // Nothing was created: the refusal is two reads and no write, which is the difference
+    // between a push that says no and a push that creates a branch and then says no.
+    expect(spawnSync('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/mian']).status).not.toBe(0);
+    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+  });
+
+  it('publishes onto a branch that does not exist when the caller says it is new', async () => {
+    const { source, remote, shas } = stage('declared-new');
+    at(remote, shas[1]!);
+    const transport = localTransport({ remote });
+
+    const result = await publish({ root: source, rev: 'HEAD', branch: 'release', transport, newBranch: true });
+    expect(result.identical).toBe(true);
+    expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
+    // The branch that was there did not move: a new branch is a second name for the same
+    // history, not a push that lands on the wrong one as well.
+    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+  });
+
+  it('refuses to create a branch that appeared between the plan and the ref', async () => {
+    // The race the creation path has to answer: the plan was made against an absent branch
+    // and something else created it first. Asserted on the transport directly, because the
+    // window it is about cannot be held open through `publish()`.
+    const { remote, shas } = stage('local-appeared');
+    const transport = localTransport({ remote });
+    await expect(transport.updateRef({ branch: 'main', sha: shas[2]!, expected: null })).rejects.toThrow(
+      /the branch 'main' was absent when the plan was made and is not now: it is [0-9a-f]{9}/,
+    );
+    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
+  });
+
+  it('does not ask for a ref listing on the ordinary path, where the branch read answered', async () => {
+    const { source, remote, shas } = stage('no-probe');
+    at(remote, shas[3]!);
+    const asked: string[] = [];
+    const transport = localTransport({ remote });
+    const counted = { ...transport, refs: async () => { asked.push('refs'); return transport.refs(); } };
+
+    await publish({ root: source, rev: 'HEAD', branch: 'main', transport: counted });
+    expect(asked).toEqual([]);
   });
 
   it('refuses when the remote holds neither the revision nor any tree of its ancestry', async () => {
@@ -270,6 +357,9 @@ interface Behaviour {
   patchStatus: number | null;
   dropOnce: string | null;
   dropAll: string | null;
+  refsStatus: number | null;
+  refsNotAList: boolean;
+  createStatus: number | null;
 }
 
 /**
@@ -292,6 +382,9 @@ async function api(remote: string) {
     patchStatus: null,
     dropOnce: null,
     dropAll: null,
+    refsStatus: null,
+    refsNotAList: false,
+    createStatus: null,
   };
   const local = localTransport({ remote });
 
@@ -326,10 +419,23 @@ async function api(remote: string) {
       }
 
       const path = url.pathname.replace('/repos/owner/repo', '');
-      if (request.method === 'GET' && path === '/git/ref/heads/main') {
+      // The branch is taken from the path rather than fixed to `main`: a case about a
+      // mistyped branch asks for one that does not exist, and a route that only knew
+      // `main` would answer it with the router's 404 -- the right status for the wrong
+      // reason, which is a case that would pass on a channel that never asked.
+      const refRead = /^\/git\/ref\/heads\/(.+)$/.exec(path);
+      if (request.method === 'GET' && refRead !== null) {
         if (behaviour.refStatus !== null) return fail(behaviour.refStatus, 'the reader is not allowed to ask');
-        const head = await local.head('main');
+        const head = await local.head(refRead[1]!);
         return head === null ? fail(404, 'Not Found') : send(200, { object: { sha: head.sha } });
+      }
+      if (request.method === 'GET' && path === '/git/refs') {
+        if (behaviour.refsStatus !== null) return fail(behaviour.refsStatus, 'the listing is not available');
+        const names = await local.refs();
+        // Two shapes, and only one of them is a list: `refsNotAList` produces the answer a
+        // reader must refuse rather than read as "no refs", because an empty repository and
+        // an answer this channel cannot parse are not the same fact.
+        return send(200, behaviour.refsNotAList ? { refs: names } : names.map((ref) => ({ ref, object: { sha: '0'.repeat(40) } })));
       }
       if (request.method === 'GET' && path.startsWith('/git/commits/')) {
         const commit = await local.commit(path.slice('/git/commits/'.length));
@@ -364,19 +470,33 @@ async function api(remote: string) {
         const sha = await local.createCommit(body);
         return send(201, { sha });
       }
-      if (request.method === 'PATCH' && path === '/git/refs/heads/main') {
+      const refWrite = /^\/git\/refs\/heads\/(.+)$/.exec(path);
+      if (request.method === 'PATCH' && refWrite !== null) {
+        const name = refWrite[1]!;
         if (behaviour.patchStatus !== null) return fail(behaviour.patchStatus, 'not a ref you may write');
+        const before = await local.head(name);
+        // A branch is created with `POST /git/refs` and never by moving it: the ref update
+        // is a PATCH on a reference that has to be there. A server that created the ref
+        // here would let the channel's unborn path pass on a call the API refuses, which
+        // is the difference this round is about.
+        if (before === null) return fail(422, 'Reference does not exist');
         // A push that arrives after somebody else's: the ref moves between the read this
         // channel did and the write it asks for, which is the state `force: false` exists
         // to refuse.
-        const before = await local.head('main');
         if (behaviour.moveOnPatch !== null) at(remote, behaviour.moveOnPatch);
         try {
-          await local.updateRef({ branch: 'main', sha: body.sha, expected: before === null ? null : before.sha });
+          await local.updateRef({ branch: name, sha: body.sha, expected: before.sha });
         } catch (error) {
           return fail(422, String((error as Error).message));
         }
         return send(200, { object: { sha: body.sha } });
+      }
+      if (request.method === 'POST' && path === '/git/refs') {
+        if (behaviour.createStatus !== null) return fail(behaviour.createStatus, 'Reference already exists');
+        const name = String(body.ref).replace('refs/heads/', '');
+        if ((await local.head(name)) !== null) return fail(422, 'Reference already exists');
+        await local.updateRef({ branch: name, sha: body.sha, expected: null });
+        return send(201, { ref: body.ref, object: { sha: body.sha } });
       }
         return fail(404, `no route for ${key}`);
       } catch (error) {
@@ -558,6 +678,96 @@ describe('publishing through the GitHub transport, against a server that writes 
       const result = await publish({ root: source, rev: 'HEAD', branch: 'main', transport });
       expect(result.identical).toBe(true);
       expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
+      // The 404 is answered by asking what the repository does hold: one read, and it is
+      // what tells an unborn branch on an empty repository from a name that is wrong.
+      expect(server.behaviour.requests.filter((key) => key === 'GET /repos/owner/repo/git/refs')).toHaveLength(1);
+      // And the branch is *created* rather than moved: the ref update is a PATCH on a
+      // reference that has to exist, so a channel that can publish an unborn branch at all
+      // is one that asks for `POST /git/refs`. Until v3.58 it did not, and this case passed
+      // because the server here created the branch on the PATCH -- a call the API refuses.
+      expect(server.behaviour.requests).toContain('POST /repos/owner/repo/git/refs');
+      expect(server.behaviour.requests.filter((key) => key.startsWith('PATCH'))).toEqual([]);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('turns a branch that appeared during the push into a sentence, and forces nothing', async () => {
+    // The mirror of the moved-ref refusal: the plan was made against an absent branch and
+    // the creation is refused because the name is taken. The channel does not re-read the
+    // branch here -- see the comment on `updateRef` -- so the sentence says what it knows.
+    const { source, remote } = stage('http-create-refused');
+    git(remote, ['update-ref', '-d', 'refs/heads/main']);
+    const server = await api(remote);
+    server.behaviour.createStatus = 422;
+    try {
+      const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
+      await expect(publish({ root: source, rev: 'HEAD', branch: 'main', transport })).rejects.toThrow(
+        /the branch 'main' was absent when the plan was made and is not now/,
+      );
+      expect(spawnSync('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/main']).status).not.toBe(0);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('refuses a branch the remote does not have, before it creates a single object', async () => {
+    const { source, remote, shas } = stage('http-mistyped');
+    at(remote, shas[1]!);
+    const server = await api(remote);
+    try {
+      const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
+      await expect(publish({ root: source, rev: 'HEAD', branch: 'mian', transport })).rejects.toThrow(
+        /'mian' does not exist and the remote is not empty/,
+      );
+      expect(server.behaviour.requests).toEqual(['GET /repos/owner/repo/git/ref/heads/mian', 'GET /repos/owner/repo/git/refs']);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('reads a 409 on the listing as an empty repository, which is what the status says', async () => {
+    const { source, remote, shas } = stage('http-empty-409');
+    git(remote, ['update-ref', '-d', 'refs/heads/main']);
+    const server = await api(remote);
+    server.behaviour.refsStatus = 409;
+    try {
+      const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
+      const result = await publish({ root: source, rev: 'HEAD', branch: 'main', transport });
+      expect(result.identical).toBe(true);
+      expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('forwards a refusal on the listing rather than reading it as an empty repository', async () => {
+    // A listing this channel was not allowed to read is not a repository with no refs, and
+    // the difference is a push onto a branch that may already exist.
+    const { source, remote } = stage('http-refs-refused');
+    git(remote, ['update-ref', '-d', 'refs/heads/main']);
+    const server = await api(remote);
+    server.behaviour.refsStatus = 403;
+    try {
+      const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
+      await expect(publish({ root: source, rev: 'HEAD', branch: 'main', transport })).rejects.toThrow(/-> 403/);
+      expect(server.behaviour.requests.filter((key) => key.startsWith('POST'))).toEqual([]);
+      expect(server.behaviour.requests).toEqual(['GET /repos/owner/repo/git/ref/heads/main', 'GET /repos/owner/repo/git/refs']);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('refuses a listing that is not a list, instead of counting it as no refs', async () => {
+    const { source, remote } = stage('http-refs-shape');
+    git(remote, ['update-ref', '-d', 'refs/heads/main']);
+    const server = await api(remote);
+    server.behaviour.refsNotAList = true;
+    try {
+      const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
+      await expect(publish({ root: source, rev: 'HEAD', branch: 'main', transport })).rejects.toThrow(
+        /is not a list of refs/,
+      );
     } finally {
       await server.close();
     }
@@ -795,6 +1005,48 @@ describe('the command line a push goes through', () => {
     expect(result.stdout).toContain('1/1');
     expect(result.stdout).toContain('VERIFIED');
     expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
+  });
+
+  it('refuses a mistyped branch from the command line, and names the flag that would allow it', () => {
+    const { source, remote, shas } = stage('cli-mistyped');
+    at(remote, shas[1]!);
+    const result = run(['--rev', 'HEAD', '--branch', 'mian', '--root', source, '--transport', 'local', '--remote', remote]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("'mian' does not exist and the remote is not empty");
+    expect(result.stderr).toContain('--new-branch');
+    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+  });
+
+  it('forwards a refusal on the creation that is not the one of a taken name', async () => {
+    // The creation has exactly one refusal of its own -- the name was taken -- and every
+    // other status is the API's, forwarded as itself. A channel that read a `403` as "the
+    // branch appeared" would tell the operator to re-read a branch it was never allowed to
+    // create.
+    const { source, remote } = stage('http-create-refused-403');
+    git(remote, ['update-ref', '-d', 'refs/heads/main']);
+    const server = await api(remote);
+    server.behaviour.createStatus = 403;
+    try {
+      const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
+      await expect(publish({ root: source, rev: 'HEAD', branch: 'main', transport })).rejects.toThrow(/-> 403/);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('publishes onto a new branch when the flag says the branch is meant to be new', () => {
+    const { source, remote, shas } = stage('cli-new-branch');
+    at(remote, shas[1]!);
+    // `--new-branch` is first on purpose: the argument loop advances by two for a flag that
+    // takes a value, so a valueless flag missing from that list swallows the argument after
+    // it -- here `--rev`, which would fail as `--rev is required` rather than as itself.
+    const result = run([
+      '--new-branch', '--rev', 'HEAD', '--branch', 'release', '--root', source,
+      '--transport', 'local', '--remote', remote,
+    ]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('VERIFIED');
+    expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
   });
 
   it('prints the plan a dry run would execute and moves nothing', () => {
