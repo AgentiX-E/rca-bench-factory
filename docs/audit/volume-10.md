@@ -2449,3 +2449,51 @@ less.
 
 So 25 became 22 in both shard jobs, and the ceiling stayed at 26. The gate's own summary shows
 the result: `tightest sensitivity / Every proved exit can disappear without a word at 2.1x`.
+
+## Finding 428 — the instrument that could not say why, on the first red it had to explain
+
+The first CI run of this round failed the sites battery's shard 2 with one sentence:
+
+```
+verify-sites-are-sensitive: some claimants could not be measured at all:
+  packages/core/test/sensitivity-shards.test.ts does not pass on its own, so its claims are unmeasured
+    run it alone: node ... run packages/core/test/sensitivity-shards.test.ts --reporter=dot
+```
+
+A file, a verdict, and an instruction to go and reproduce it by hand. The same shard passes
+locally in 2.9 minutes with 92 claims and 120 runs, so the reader had nothing to go on: not the
+exit code, not one line of what the run printed.
+
+Two functions were in the way, and the first is right. `failureSummary` picks at most four
+lines out of a failed run -- the failing test, the error line, the totals -- and deliberately
+returns **nothing** when none of the three is present, because a summary it invented would be a
+sentence about a failure nobody described. What it cannot do is hand back the evidence instead
+of a diagnosis, and that is exactly the case here: vitest exits non-zero **with every test
+passing** when a worker's RPC deadline expires (`[vitest-worker]: Timeout calling
+"onTaskUpdate"`), which this repository has now measured three times and written down twice.
+Such a run prints none of the three lines, so the summary was empty, so the gate printed an
+empty detail.
+
+`outputTail` is the second function: the last three lines the run actually printed, trimmed and
+truncated, printed under `its own output ends:` so a reader knows it is a quotation rather than
+a summary. `failureSummary` keeps its contract and its case; the caller chooses between the two
+by whether the summary is empty. The sentence also carries the exit code now --
+`does not pass on its own (exit 1)` -- because a red test and a dead runner are different
+findings and only the number tells them apart before the output is read.
+
+The second half is a hypothesis the reading supports and the first CI run of the fix will test.
+The battery runs `CONCURRENCY = 4` claimants at a time, and each claimant is a `vitest` of its
+own: left to the default, every child sizes its pool from the machine, so four claimants on a
+four-vCPU runner ask for **sixteen** workers. That is finding 297's oversubscription inside the
+suite reproduced one layer out, and its signature is the one that arrived: a red with every test
+passing, paid for by the synchronous files. A one-file run has nothing to parallelise, so
+`--maxWorkers=1` costs no wall clock and removes the oversubscription by construction.
+
+Neither change makes the battery faster. Both make its next red legible, which is the property
+the battery exists to have and the one it did not have when it mattered.
+
+Three mutations hold the pair: one-file runs sizing their pool from the machine, a red run with
+no report explaining nothing, and a tail that keeps the first lines instead of the last. The
+third **survived** on its first case -- the fixture had exactly three lines, so "the tail" and
+"the head" were the same three lines -- which is the same defect the mutation is for, in the
+test rather than the code.
