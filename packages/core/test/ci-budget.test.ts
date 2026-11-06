@@ -679,9 +679,16 @@ describe('the recording against the round that reports it', () => {
     const dir = mkdtempSync(join(tmpdir(), 'rca-ci-ledger-'));
     const stale = join(dir, 'volumes');
     mkdirSync(stale);
+    // A run newer than the shipped recording, read rather than guessed. The fixture used
+    // to say `41999999999` -- a "future" run that v3.53's refresh at 42131836805
+    // overtook, after which the case that has to refuse started passing. A test with a
+    // hard-coded date is a test the next recording breaks, and the refusal under test is
+    // about the *order* of two runs, not about either number.
+    const recorded = JSON.parse(readFileSync(join(ROOT, 'golden-master', 'ci-baseline.json'), 'utf8'));
+    const newer = Number(recorded.run) + 1;
     writeFileSync(
       join(stale, 'volume-01.md'),
-      '## v0.1\n\n> Ledger for `v0.1`.\n\n| CI | run `41999999999` on `abc`: 7 of 7 jobs success |\n',
+      `## v0.1\n\n> Ledger for \`v0.1\`.\n\n| CI | run \`${newer}\` on \`abc\`: 7 of 7 jobs success |\n`,
     );
     const older = spawnSync(process.execPath, [GATE], {
       encoding: 'utf8',
@@ -689,7 +696,7 @@ describe('the recording against the round that reports it', () => {
     });
     expect(older.status).toBe(1);
     expect(older.stdout).toContain('check-ci-budget: FAILED');
-    expect(older.stderr).toContain('reports run 41999999999');
+    expect(older.stderr).toContain(`reports run ${newer}`);
 
     const silent = join(dir, 'silent');
     mkdirSync(silent);
