@@ -2340,3 +2340,112 @@ the demonstration twice in three runs: the slower shard's 13-minute plan was ref
 that looked right against the reading in front of them. The next round that sizes a bound should
 say which reading it used and what it expects a slower day to cost, or the number is a guess
 with a decimal point.
+
+## Finding 423 — every bound in this workflow was argued from the last day rather than from the worst day
+
+Finding 422 ended with a sentence and a promise: *a bound sized from one reading is a bound
+sized from the wrong statistic, and the next round that sizes a bound should say which reading
+it used and what it expects a slower day to cost*. Every bound in `.github/workflows/ci.yml`
+was, until this round, a multiple of **one** number -- the seconds of the single run
+`golden-master/ci-baseline.json` happened to record. `R4`'s `2x` was twice *that* day. The
+statistic a bound needs is a maximum over days, and the recording holds a sample of one by
+construction, so the rule was arithmetically exact about the wrong quantity. It showed up
+three times in three runs -- a 13-minute plan refused by a 440-second reading, `backend`
+unbounded because it had never been slow in front of the recorder, `Lint` refused by 361
+against 720 after being sized from 347 -- and each time the repair was to move a number.
+
+`R10` is the rule the arithmetic was missing. `golden-master/ci-readings.json` holds one entry
+per run the recorder has ever measured, each step carrying its seconds **and the command those
+seconds were spent on**; a bound must be at least twice the slowest reading of *its command*,
+from whichever job and whichever run. The command is stored in each entry rather than resolved
+through today's tree, because a renamed step would otherwise lose its series, and losing a
+series is losing the slow day that justified a bound.
+
+Two consequences fall out of keying by command instead of by name. The same command in two
+jobs is one series: `sensitivity` and `sensitivity-shard` run the same script on the same
+claims, so the slowest day of either is the slowest day of both, which is the honest reading
+and also the one that stops a new job from starting with no history. And an action step keys
+by its name, because an action has no `run:` of its own and the download is what costs -- two
+jobs that both `Set up Node.js` are the same dowload, not two.
+
+The summary now says which reading the tightest bound is tight against, by job, seconds and
+run id: `tightest sensitivity / Every proved exit can disappear without a word at 2.1x of the
+slowest reading of its command (633 s in ... run 42142175689)`. A ratio nobody can trace to a
+run is the number this round exists to stop printing.
+
+## Finding 424 — a history that demands today's workflow shape deletes the days a bound needs
+
+The first version of `R10` had the recorder write the history entry with the same strictness
+as the recording: every job of today's workflow, every step of every job, or refuse. That is
+correct for the recording -- a bound with no reading is the state `R2` refuses -- and it is
+exactly wrong for a history. `42131836805` ran **seven** jobs; today's workflow has eight,
+because v3.54 added `sensitivity-shard`. The recorder refused the run with `holds no job named
+"sensitivity-shard"`, and a rule that insists on this will refuse every run from before the
+last structural change -- which is to say, adding a job silently resets the evidence to the
+sample of one that `R10` was written to remove.
+
+The two files answer different questions and now have different rules. The **recording** is
+what CI will spend: it must describe the workflow as it stands, so a gap is a refusal. A
+**seed** (`--seed`) is evidence about a command on a day: it is appended to the history, never
+to the recording, and a job or step that did not exist then is named in the report rather than
+thrown -- `seeded run 42131836805 with 7 of 8 job(s) and 75 step(s); 1 item(s) did not exist
+then: sensitivity-shard did not exist`. A seed may not be newer than the recording (that day
+is the recording, not a seed), may not be the recording (one day entered twice is one day
+weighted twice), and may not be combined with `--borrow` (borrowed seconds are not a day
+anything ran).
+
+This is the difference that makes `R10` worth having. With four consecutive runs of one
+afternoon the "slowest day" was a fast day, and the gate accepted a `sensitivity` bound of 20
+minutes that a seeded **633 s** day promptly refused.
+
+## Finding 425 — a deadline summed the recording rather than the slowest day, so two ceilings had been checked against a fast day
+
+`R5` says a step bound must expire before its job does: `bound + the steps in front of it <=
+the job's ceiling`. The prefix was summed from the seconds in the recording -- one day, the
+day. Under `R10` that sum is no longer the right one: if a step may legitimately take twice
+its recorded time, then everything in front of the bound may too, and a ceiling validated
+against the fast prefix is a ceiling that a slow morning overruns. The job then dies at its
+own ceiling and names no step, which is the whole defect step bounds exist to remove.
+
+The prefix is now each step's slowest recorded day. Two ceilings moved as a direct result and
+neither had been touched by this round:
+
+| job | bound whose deadline broke the ceiling | prefix at its slowest day | old ceiling | new ceiling |
+| --- | --- | --- | --- | --- |
+| `verify` | `Lint` 14 min | 1019 s (the shell install at 153 s, not 9) | 15 | **18** |
+| `batteries-heavy` | the 15-minute backend-support bound | 1532 s | 25 | **27** |
+
+Both were green before and would have failed the first slow morning. `Test with coverage` was
+the second step out of `verify` at 902 s, which is how close the old 15 was.
+
+## Finding 426 — the shell install's bound was under twice its own slow day
+
+`Install the shells the suite cross-checks against` was bounded at 3 minutes in all five jobs
+that run it. Its reading in the recording is 9 seconds, so twice the day was 18 -- inside 180
+by a wide margin, and green for ten rounds. The history holds **153 s** for the same command
+on `42131836805`: an `apt-get update` against a slow mirror. Twice 153 is 306, which does not
+fit in 180.
+
+The bound is 6 minutes in every job. Nothing about the step changed; the difference is that a
+day exists in which it took 17 times longer than the day the bound was written on, and until
+this round nothing in the tree could see that day. This is finding 423's defect in its purest
+form -- a bound's `2x` was measured against a number that had only ever been small.
+
+## Finding 427 — a bound can be too wide to fit inside its own ceiling
+
+The sites battery's bound was 25 minutes, set in v3.53 from a 626 s day. The history now holds
+633 s, and twice that is 1266 s, which 1500 still covers -- so `R4` and `R10` were satisfied.
+`R5` was not, once the prefix was counted at its slowest day: 1500 s of bound plus 180 s of
+shell install in front of it is **1680**, and the ceiling is **1560**. The job would have died
+first and named nothing.
+
+There are two repairs and they are not equal. Raise the ceiling to 29 and the deadline fits;
+narrow the bound to 22 (1320 s, 2.09x the slowest day) and the deadline is 1500, inside 1560
+with the ceiling untouched. The second is better on the thing the bound is for: a hang is
+reported seven minutes sooner, and the job's worst case does not grow. A ceiling is a
+tolerance for imprecision; a bound is a claim about a command. Raising the tolerance to keep a
+claim that was already looser than the evidence requires is the move that makes budgets mean
+less.
+
+So 25 became 22 in both shard jobs, and the ceiling stayed at 26. The gate's own summary shows
+the result: `tightest sensitivity / Every proved exit can disappear without a word at 2.1x`.

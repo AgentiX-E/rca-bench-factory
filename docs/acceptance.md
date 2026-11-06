@@ -864,3 +864,45 @@ and only one direction invalidates the reading.
   twice is 722 against 720. The bound is 14 minutes now. The claim this repository makes is
   therefore only that every bound is at least twice its reading -- never that it is *enough*
   for a slower day, which is a number no reading can supply.
+
+## A bound is twice the slowest recorded day of its command
+
+`R4` used to ask for twice **the** measurement, and "the" was the single run
+`ci-baseline.json` happened to hold. That is a maximum taken over a sample of one, and the
+round that noticed spent three runs proving it: a 13-minute plan refused by a 440-second
+reading, `backend` unbounded because it had never been slow in front of the recorder, `Lint`
+refused by 361 s against 720 after being sized from 347.
+
+- **What is claimed.** Every step bound is at least twice the slowest reading of the command
+  it bounds, across every run in `golden-master/ci-readings.json` and every job that ran it.
+  The summary names the reading: `tightest sensitivity / Every proved exit can disappear
+  without a word at 2.1x of the slowest reading of its command (633 s in ..., run
+  42142175689)`. A bound whose ratio cannot be traced to a run is the defect, not the claim.
+- **A bound is keyed by the command, not by the step's name.** Two jobs that run the same
+  script share one series, and an action step is keyed by its name because an action has no
+  `run:` of its own and the download is what costs. A renamed step keeps its entry, because
+  each reading stores the command its seconds were spent on rather than resolving one through
+  today's tree.
+- **The history outlives the workflow.** `--seed` appends a past run and never touches the
+  recording, and a job or step that did not exist then is named rather than refused. Adding a
+  job would otherwise reset every bound's evidence to the sample of one the rule exists to
+  remove; the round that added `sensitivity-shard` refused two earlier runs for exactly that
+  reason before the flag existed.
+- **A deadline counts the prefix at its slowest day.** `R5` compares `bound + the steps in
+  front of it` with the job's ceiling, and the prefix is each step's slowest recorded day, not
+  the recording's. Two ceilings moved because of it -- `verify` 15 to **18**, `batteries-heavy`
+  25 to **27** -- and neither had been touched by the round that found them. A ceiling
+  validated against a fast prefix is a ceiling a slow morning overruns, and the job then dies
+  naming no step.
+- **A bound can be too wide to fit inside its own ceiling, and narrowing beats raising.**
+  `sensitivity`'s 25-minute bound plus a 180-second prefix is 1680 s against a 1560 s ceiling.
+  The bound is **22** minutes (2.09x the slowest day) and the ceiling stayed at 26, because a
+  ceiling is a tolerance for imprecision and a bound is a claim about a command.
+- **What is not claimed.** The history holds only the days this repository recorded. A day
+  slower than every entry is still refused for being slow rather than accepted, which is the
+  correct verdict and also the boundary: the rule guarantees a margin over the worst day
+  **already measured**, never over the worst day that exists. The spread that matters is
+  runner variance, and the only way to learn it is to keep recording; six runs is six runs.
+  Nor does the rule say anything about a bound's *absolute* size -- 2.1x of a 633-second
+  command is 22 minutes, and a workflow whose commands grow will keep growing its bounds
+  until somebody measures the commands rather than the bounds.
