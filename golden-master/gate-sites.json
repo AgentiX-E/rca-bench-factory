@@ -967,7 +967,7 @@
       "fatal": 5,
       "unguarded": 60,
       "guarded": 1,
-      "rethrow": 6
+      "rethrow": 7
     },
     "rows": [
       {
@@ -1481,7 +1481,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 230,
+        "line": 256,
         "disposition": "unguarded",
         "message": "the GitHub transport needs a token: it is read from the environment and never committed",
         "status": "proved",
@@ -1489,7 +1489,15 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 249,
+        "line": 282,
+        "disposition": "rethrow",
+        "message": "error",
+        "status": "proved",
+        "provedBy": "packages/core/test/publish.test.ts"
+      },
+      {
+        "script": "scripts/publish.mjs",
+        "line": 288,
         "disposition": "unguarded",
         "message": "new ApiError(method, path, response.status, text)",
         "status": "proved",
@@ -1497,7 +1505,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 264,
+        "line": 303,
         "disposition": "rethrow",
         "message": "error",
         "status": "proved",
@@ -1505,7 +1513,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 267,
+        "line": 306,
         "disposition": "unguarded",
         "message": "the API refuses ${path} in every encoding: ${String(last?.message)}",
         "status": "proved",
@@ -1513,7 +1521,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 278,
+        "line": 317,
         "disposition": "rethrow",
         "message": "error",
         "status": "proved",
@@ -1521,7 +1529,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 301,
+        "line": 340,
         "disposition": "unguarded",
         "message": "the plan carries a blob for '${entry.path}' that the executor did not read",
         "status": "proved",
@@ -1529,7 +1537,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 324,
+        "line": 363,
         "disposition": "rethrow",
         "message": "error",
         "status": "proved",
@@ -1537,7 +1545,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 326,
+        "line": 365,
         "disposition": "unguarded",
         "message": "new TypeError( `the branch moved while the plan was being executed: it was ${String(expected).slice(0, 9)} and is ` + `$",
         "status": "proved",
@@ -1545,7 +1553,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 409,
+        "line": 448,
         "disposition": "unguarded",
         "message": "the plan carries a blob for '${entry.path}' that the executor did not read",
         "status": "proved",
@@ -1553,7 +1561,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 441,
+        "line": 480,
         "disposition": "unguarded",
         "message": "new TypeError( `the branch moved while the plan was being executed: it was ${String(expected).slice(0, 9)} and is ` + `$",
         "status": "proved",
@@ -1561,7 +1569,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 449,
+        "line": 488,
         "disposition": "unguarded",
         "message": "refusing to move ${branch} backwards: ${sha.slice(0, 9)} does not descend from ${now.slice(0, 9)}",
         "status": "proved",
