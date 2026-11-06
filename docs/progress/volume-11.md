@@ -192,6 +192,22 @@ The honest next step is therefore not a tighter bound but a measured partition -
 claimant file once, then cut where the seconds are -- and it has to come with its own
 reading, because the bound can only be tightened after a run of the rearranged command.
 
+### Eight — the bound that was two seconds short
+
+Refreshing the recording to the third run failed the gate on `Lint`, which this round had not
+touched: **361 s** against a **12-minute** bound. Twice 361 is 722; the bound was 720. It had
+been sized in v3.53 from **347 s**, where twice is 694 -- inside by 26 seconds. Nothing about
+the step changed except the machine, which is the one thing a measurement of a machine always
+has.
+
+`R4`'s multiple is a floor on the margin, and a bound sitting exactly on a floor has no room
+for the measurement's own spread: 347 to 361 is 4%, and 4% is enough. The repair is **14**
+minutes, 2.33x, which fits the job without moving the ceiling (840 + 27 s of setup = 867 of
+900). The round therefore produced the same demonstration three times in three runs -- the
+shards' 13-minute plan refused at 440 s, `backend` never bounded because 37 s never crossed
+the line, and this one refused by 361 s -- and all three are the same sentence: a bound sized
+from one reading is sized from the wrong statistic.
+
 ### Left open, in the order the goal is reached
 
 | priority | item | state | next step |
@@ -1438,7 +1454,9 @@ sentence for the round rather than erasing the only account of why the job exist
 | new tests | **30**: 19 for `R9` (the whitelist, the whole-step relation, the lifetime, the summary and the self-check), 8 for the split (the grammar, the partition, the shipped workflow's plan, and the two refusals), and 4 for `R6`'s asymmetry (a narrower budget refused, a missing one refused, a wider one accepted and named, a removed one accepted) with one existing case rewritten from the wider direction to the narrower |
 | throw partition | **74 statements**: 6 `fatal`, 60 `unguarded`, 1 `guarded`, 7 `rethrow` |
 | failure sites | **123** across 58 of **83** scripts; two re-annotated after their guard text changed |
-| the recording | run `42165763231`, **8 jobs / 82 steps / 61 bounded**, 47 min measured; bounds total **290 min**, tightest `batteries-heavy / Backend-support battery` at **2.2x**. Before the settlement it was run `42131836805`, 7 jobs / 75 steps, with one declared job deliberately absent |
+| the recording | run `42172498744`, **8 jobs / 82 steps / 61 bounded**, 45 min measured; bounds total **292 min**, tightest `verify / Test with coverage` at **2.3x**. Before the settlement it was run `42131836805`, 7 jobs / 75 steps, with one declared job deliberately absent |
+| the bound that was two seconds short | `Lint` measured **361 s** in `42172498744` and **347 s** in v3.53's reading; twice 361 is **722**, and its bound was **720**. `R4` refused a step that had done nothing but run on a slightly slower machine. It is **14** minutes now -- 2.33x -- and 840 plus the 27 s measured in front of it is 867, inside the 15-minute ceiling, so no ceiling moved and `R6` had nothing to excuse |
+| the third run | `42172498744`: **8 of 8 jobs success**, batteries-heavy **11.4**, build **9.2**, batteries **8.7**, sensitivity-shard **6.6**, sensitivity **5.2**, golden master **3.1**, backend **0.8**, cold tree **0.5** min; **12.2 min of wall clock**. The installed backend took **50 s** this time -- a mirror having a good day |
 | the job that had never been bounded | `backend` measured **296 s** in `42165763231` against **37 s** in the run before it -- `apt-get install prometheus` on a bad and a good day. Over three minutes the floor applies to every step of the job, and seven steps at three minutes are 21, one more than the 20-minute ceiling it had, so the job could not be bounded at all until the ceiling moved. It is **34** now: five setup steps at 3, the install at **16** (1.5x the 648 s a cold runner measured, 3.5x the 273 s of the install step in this run), the reader at 3 |
 | `R6`, split in two | a budget *narrower* than the one the reading was taken under is still refused, because a bound that fit the wider ceiling may expire after the job has already died; a *wider* one is accepted and named in the summary (`backend 20 -> 34`), because no step bound moves and `R5`'s deadline only gains room. Refusing that direction closed the same circle `R9` opens: a ceiling could then only be widened by a run, and a run happens after the push this gate has to pass |
 | the split, measured | shard 1 **248 s**, shard 2 **387 s** -- **635 s** together against **626 s** unsharded; the wall clock is the slower shard, **7.0 of 12.5 min**, where the battery used to be the longest job at 11.3 |

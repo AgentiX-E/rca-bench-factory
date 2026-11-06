@@ -2314,3 +2314,29 @@ an exception a reader cannot see is an exception the recording appears to have t
 Four cases hold it: narrower refused, missing refused, wider accepted and named, removed
 accepted. The case that used to assert the wider direction was refused now asserts the
 narrower one, which is the behaviour that was always meant.
+
+## Finding 422 — a bound at exactly twice a reading fires on a five per cent slower day
+
+Refreshing the recording to run `42172498744` failed the gate on `Lint`, a step this round had
+not touched: **361 s** measured against a **12-minute** bound. Twice 361 is **722**, and 720 is
+two seconds short. The bound had been sized in v3.53 from a reading of **347 s**, where twice is
+694 -- inside 720 by 26 seconds. Nothing about the step changed; the runner had a slightly
+different day, which is the one thing a measurement of a runner always has.
+
+Read the rule as written and the gate is correct: it refuses a bound under twice the
+measurement, because a runner twice as slow should be reported as slow rather than as hung.
+Read it against a sequence of readings and the defect is in the sizing, not the rule. `R4`'s
+lower bound is a *floor* on the margin, and a bound placed exactly on a floor has no room for
+the thing floors cannot see: the measurement's own spread. 347 to 361 is 4%, and 4% is enough.
+
+The repair is 14 minutes -- 840 s, 2.33x the reading, and 840 plus the 27 s measured in front of
+it is 867, inside the 15-minute ceiling. No ceiling moved, so `R6` had nothing to excuse, and
+the gate is green with the recording and the workflow agreeing again.
+
+The lesson is not "add margin" -- that sentence would justify any number. It is that a bound
+sized from **one** reading is a bound sized from the wrong statistic, and this round produced
+the demonstration twice in three runs: the slower shard's 13-minute plan was refused by 440 s
+(finding on `R9`'s settlement), and the lint bound was refused by 361 s. Both were arithmetic
+that looked right against the reading in front of them. The next round that sizes a bound should
+say which reading it used and what it expects a slower day to cost, or the number is a guess
+with a decimal point.

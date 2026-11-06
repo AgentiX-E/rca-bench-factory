@@ -857,3 +857,10 @@ and only one direction invalidates the reading.
   It is sized from a range rather than from one reading, and if a run does install from a
   mirror slower than 648 s the bound will fire and be re-sized from that run -- which is the
   only honest way to size a step whose cost belongs to somebody else's server.
+
+- **A bound is a floor plus a reading, not a reading doubled.** `R4` asks for at least twice the
+  measurement, and a bound placed exactly there is refused by the next run that is 5% slower:
+  `Lint` measured 347 s when its 12-minute bound was chosen and 361 s three runs later, where
+  twice is 722 against 720. The bound is 14 minutes now. The claim this repository makes is
+  therefore only that every bound is at least twice its reading -- never that it is *enough*
+  for a slower day, which is a number no reading can supply.
