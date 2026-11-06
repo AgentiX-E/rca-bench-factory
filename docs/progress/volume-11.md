@@ -1644,6 +1644,7 @@ hold the instrument's two repairs.
 | failure sites | **124** across **58** of **83** scripts; throws **79** = 11 `fatal` + 60 `unguarded` + 1 `guarded` + 7 `rethrow` |
 | site proofs | **189** claims across **57** files, every one driven |
 | the gate's own summary | 8 jobs recorded, **61 of 82** steps bounded, 49 min measured, bounds total **301** min, **6** readings of the workflow |
+| the run | `42205959904`: **8 of 8 jobs success**, **15.0** min wall clock -- batteries-heavy 15.0, batteries 11.7, build 7.7, sensitivity-shard **6.8**, sensitivity 5.3, golden master 0.8, backend 0.7, cold tree 0.3. The shard that failed the run before it passes with the same claims and the same mutants; the only change is `--maxWorkers=1` |
 
 
 ### Left open, in the order the goal is reached
@@ -1656,6 +1657,25 @@ hold the instrument's two repairs.
 | **P2** | `backend`'s 16-minute install bound has never met a slow day | unchanged, and `R10` now divides it by the 648 s cold day | the history will answer it the first time a slow mirror is recorded |
 | **P3** | the shards are unbalanced by file cost, not by count | unchanged | time each claimant file once, cut where the seconds are |
 | **P3** | P2 / P5 / P7 / P8 / P9 / P14 | unchanged | unchanged |
+
+### Eight — the run, and the shard that went green
+
+Run `42205959904` is **8 of 8 jobs success** in **15.0 minutes** of wall clock, which is
+`batteries-heavy` and nothing else: batteries 11.7, build 7.7, sensitivity-shard **6.8**,
+sensitivity **5.3**, golden master 0.8, backend 0.7, cold tree 0.3.
+
+The shard is the reading that matters. It is the one that failed the previous run, and it
+passes now with the same claims, the same files and the same mutations -- the only difference
+being `--maxWorkers=1` on each claimant run. That is one measurement, not a proof, and it is
+the measurement the hypothesis predicted: four claimants each sizing their pool from a
+four-vCPU runner is sixteen workers for four files, and the file that paid was the one whose
+duration is a single synchronous block. Nothing about the battery's own arithmetic changed.
+
+The four bounds this round moved all survived their first real day: `sensitivity` at 22
+minutes against a 5.3-minute job, `batteries-heavy` at 27 against 15.0, `verify` at 18 against
+7.7, and the shell install at 6 minutes in all five jobs. None of them was close, which is
+what a bound sized from the slowest recorded day rather than from the last one looks like on
+an ordinary day.
 
 **The lesson, for the round after this one.** A rule that divides by a number should say
 which number, and the file that holds the numbers should be able to grow backwards. Both
