@@ -1231,9 +1231,9 @@ assertion is measuring the harness.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **236 files, 5819 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **240 files, 6006 tests passed** (as of this commit) |
+| `core` test suite | **236 files, 5819 tests passed** |
+| `cli` test suite | **4 files, 187 tests passed** |
+| repo test suite | **240 files, 6006 tests passed** |
 | new tests | **62**: 26 in `publish-plan.test.ts` (base location, message bytes, the file table from both sources, the entries diff, six plan refusals, the symbols) and 36 in `publish.test.ts` (local transport end to end, dry run, unborn branch, receipt, four refusals a broken transport produces, ten HTTP cases, five CLI cases, and the closed socket) |
 | throw partition | **73 statements**: 5 `fatal`, 60 `unguarded`, 1 `guarded`, 7 `rethrow`; 66 proved; 7 exempt |
 | failure sites | **123** across 58 of **83** scripts; `excluded` `{17 zero}` |
@@ -1312,3 +1312,107 @@ assertions would have said so -- because the assertion compared two things that 
 object. A test whose two sides can be the same object is a test of the harness. The next place to
 apply it is the one item on this list that has never been measured at all: P17's job declaration,
 where the artifact under test would be a budget that only CI can spend.
+
+## v3.54 — a job no run had measured, and the budget only CI can spend
+
+The previous round ended with a ruler: *for every test, name the failure shape it cannot
+produce.* It also named the one item on the open list that had never been measured at all:
+P17's job declaration, whose subject is a budget that only CI can spend. This round takes
+both at once, and takes P3 with them, because a declaration no real job ever uses is a
+mechanism with the same defect as the channel in v3.53.
+
+### One — the same shape one level up (P17)
+
+`R8` let a tree declare a **step** the recording had not measured, and every field it wrote
+was already in `ci.yml`. A whole **job** is that shape one level up, with a difference that
+is not a detail: the job's ceiling is part of `R6`'s comparison, so a job no run has
+measured has nothing to be compared with, and `--borrow` was refused across a budget in
+v3.52. `R9` is the answer. A job promise names four things and no others: the job id, the
+ceiling written in `ci.yml`, the bound on **every** step of that job, and an argument of at
+least forty characters. `budgetErrors` checks each of them against the workflow, exempts
+the job from `R2`'s gap, and refuses the promise the moment the recording holds that job --
+because its first run is the thing it was waiting for.
+
+### Two — a whitelist, because the ruler is about what a writer cannot know
+
+A local apparatus cannot spend a runner's budget. It can, however, catch someone writing
+down the seconds that only a run could have produced. `JOB_PROMISE_KEYS` and
+`STEP_PROMISE_KEYS` are whitelists rather than a documented convention: an extra key --
+`seconds`, `run`, `commit`, `measured`, `ratio`, `derived` -- is refused by name as a
+measurement its writer has not watched happen. `R9` deliberately computes **no deadline**:
+`R5` needs the seconds measured in front of a bound, and every step of a job that has never
+run is unmeasured, so the sum has no terms. The first green run supplies them and `R4`/`R5`
+settle the numbers in the commit that deletes the promise. Nineteen cases in
+`ci-budget.test.ts` hold these rules, and each says in a comment which failure shape its
+fixture cannot produce; a twentieth reads the block and refuses a case added without that
+sentence. The mark is assembled and matched only on comment lines so the case does not
+count its own pattern.
+
+### Three — a real job, so the promise is used rather than merely tested (P3)
+
+The sites battery measured **626 s** on the runner against a bound `R4` put at 1252 s --
+52 s was the closest this campaign has come to refusing a legitimate run. v3.53 bought the
+margin back with a rule (20 -> 25, ceiling 21 -> 26); this round spends less instead. The
+sorted claimant files are divided by position across `sensitivity` and a new job
+`sensitivity-shard`, each running one half against the same 25-minute bound, so the wall
+clock is the slower shard rather than their sum. `checkShardPlan` reads the real `ci.yml`
+and the real inventory and refuses a plan that omits a shard, calls one twice, puts two in
+one job, disagrees on the count, or measures one claim twice or not at all. The shipped
+script refuses a shard with no claimant, because two green jobs one of which measured
+nothing is a shape a single job cannot produce.
+
+The bound is **not** tightened in the round that splits: its measurement is of the
+unsharded command, and `R4` has to size a bound from a run of the command it will enforce.
+The step's name is unchanged for the same reason -- `R2` pins the recording to it, so a
+recording taken from the unsharded run still names a step that exists.
+
+### Four — a guard that stopped seeing a command with arguments
+
+Registering the new job found a defect that had nothing to do with budgets.
+`cold-tree-job.test.ts` decides which jobs run the suite by following each `run:` command
+to the script it names. Its pattern ended in `$`, so
+`node scripts/verify-sites-are-sensitive.mjs --shard 1/2` did not match and the guard
+answered "this job runs no suite" about a job that does nothing else. Adding a flag made a
+whole job invisible to the shell check. The `$` is gone, `sensitivity-shard` is registered
+in `SUITE_JOB_IDS`, and the six jobs that run the suite are named again.
+
+### Five — the recorder keeps the gap open
+
+`measure-ci-baseline.mjs` now knows a job promise. A declared job a run never reported is
+skipped, not filled with a borrowed or invented number: the recording keeps the hole, and
+`R9` reads the same promise and the same recording, so the gap is a state the gate can be
+green in. A `--borrow` of a declared job is refused, because a borrow is not a first run --
+it would put the id in the recording against seconds from a different job. The first run
+that reports the job records it normally, says the promise can be deleted, and leaves the
+sentence for the round rather than erasing the only account of why the job exists.
+
+### Readings
+
+> Ledger for `v3.54`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **237 files, 5846 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **241 files, 6033 tests passed** (as of this commit) |
+| new tests | **27**: 19 for `R9` (the whitelist, the whole-step relation, the lifetime, the summary and the self-check) and 8 for the split (the grammar, the partition, the shipped workflow's plan, and the two refusals) |
+| throw partition | **74 statements**: 6 `fatal`, 60 `unguarded`, 1 `guarded`, 7 `rethrow` |
+| failure sites | **123** across 58 of **83** scripts; two re-annotated after their guard text changed |
+| the recording | run `42131836805`, **7 jobs / 75 steps**, and one declared job deliberately absent |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P1** | real network shapes beyond a closed socket | local servers drive 5xx, 400 and 422 | keep a reading of what the API actually answered on every real push |
+| **P2** | P13: a mutation is one substitution | unchanged | a second mutation, or an assertion about mutations |
+| **P2** | P2 / P5 / P7 / P8 | unchanged | unchanged |
+| **P3** | P9 / P14 | unchanged | unchanged |
+
+**The lesson, for the round after this one.** The previous ruler was about a test: name the
+failure shape it cannot produce. Applied to P17 it produced a whitelist rather than a
+simulation -- the local suite cannot spend a budget, but it can refuse a promise that
+claims to have measured one. The honest boundary is therefore written into the rule and
+the tests instead of being discovered later: `R9` says nothing about a deadline, and the
+first CI run is where the numbers are settled. A mechanism that has never been used by a
+real job is a mechanism nobody has tested, so this round also gives it one.

@@ -788,3 +788,40 @@ point, and the boundary between the first two is the whole of what makes the thi
 The factory **does not** claim a dataset is compliant if it fabricated a missing
 modality. A target that requires an absent modality is reported as infeasible (or
 exported as its largest valid subset with an explicit gap) — never silently "filled".
+
+## The job declaration and the split
+
+A round that adds a job has to publish a tree in which the recording does not yet mention it,
+and the gate has to be green on that tree before CI can run it. `R9` is the contract for that
+one round.
+
+- **A promise names only what its writer can know.** A `jobs` entry in
+  `golden-master/ci-declarations.json` carries four keys and no others: the job id, the ceiling
+  `ci.yml` declares, the bound on every step of that job in order, and an argument of at least
+  forty characters. `seconds`, `run`, `commit`, `measured`, `ratio` and `derived` are refused by
+  name at both the job and the step level. `budgetErrors` checks the ceiling, the complete ordered
+  step relation, a bound of each step's own and the floor; `R2`'s gap is excused for this job
+  only; and the promise is refused the moment the recording holds the job, because its first run
+  is what it was waiting for.
+- **No deadline is claimed.** `R5` argues one from the seconds measured in front of a bound, and
+  a job that has never run has none. `R9` computes no deadline, says so, and leaves the numbers
+  to the first green run, where `R4`/`R5` settle them in the commit that deletes the promise.
+  A rule that printed an arithmetic expression over bounds would be claiming knowledge of a
+  runner it has never watched.
+- **A borrow is not a run.** `measure-ci-baseline.mjs` skips a declared job that a run does not
+  report and keeps the gap in the recording; it refuses `--borrow` for a declared job; and the
+  first run that reports it records it normally and says the promise can be deleted without
+  erasing the sentence itself.
+- **A split proves its union.** Two shards of the sites battery run in two different jobs.
+  `checkShardPlan` reads the real workflow and the real inventory and refuses a missing shard, a
+  duplicated one, two shards in one job, disagreeing counts, an empty shard, and any claim
+  measured zero or two times. The shipped script refuses an empty shard before spawning a child.
+  In v3.54 the two shards measured **87 and 96 claims across 28 files each**, and their combined
+  `--list` output is byte-for-byte the unsharded list.
+- **What is not claimed.** The promise does **not** establish that its budget is enough: only CI
+  can spend it, and no local apparatus can produce a job that timed out. Nor does the split
+  balance wall-clock time -- position-based sharding measured 1.6 and 3.4 minutes locally, so
+  the slower shard, not the sum, bounds the workflow; if that shard approaches twice its own
+  measurement the shards should be re-partitioned from a measurement rather than by position.
+  The 25-minute bound was deliberately not tightened in the round that split the command,
+  because `R4` has to size a bound from a run of the command it will enforce.

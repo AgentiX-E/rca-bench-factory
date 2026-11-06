@@ -2131,3 +2131,129 @@ channel rebuilt history with UTC author dates, so the remote is a different line
 same trees, and the CLI prints `identical: false` rather than a `VERIFIED` it cannot justify. The
 end-to-end log equality belongs to the test, where both sides are local git objects; the real
 push proves that every commit arrived. Neither claim stands in for the other.
+
+## Finding 413 — a job that has never run has no place in the budget rules
+
+`R6` compares the ceiling in the recording with the ceiling `ci.yml` declares for the same
+job id. A job no run has measured has no entry in the recording, so `R2` refuses it as "a job
+nobody can size a bound for", and `--borrow` has refused a pair with unequal budgets since
+finding 406. Two correct rules meet and close the loop: adding a job needs a recording, a
+recording needs a run, a run happens after the push, and the push needs `verify:local`, which
+runs `check-ci-budget`. P17 had been on the open list for a round with no way forward.
+
+The repair is not a fifth exception but a promise, one level above `R8`. `ci-declarations.json`
+gains a `jobs` list; each entry may name exactly four things -- the job id, the ceiling written
+in `ci.yml`, the bound on **every** step of that job in order, and an argument of at least forty
+characters. `R9` checks each against the workflow, exempts the job from `R2`'s gap, and refuses
+the promise the moment the recording holds that job, because its first run is the thing it was
+waiting for. A file with only `jobs` and no `declared` is a normal shape; a file with neither is
+a file that says nothing and is refused.
+
+Nineteen cases in `ci-budget.test.ts` drive the whole relation: the pair that is green with the
+promise and red without it, the expired promise, a budget the workflow does not declare, a step
+omitted / added / reordered / re-bound, a step with no bound of its own, the floor, the argument,
+a job that does not exist, a duplicate promise, two promises about one job, the two whitelist
+shapes, the two empty-file shapes, the summary, the separation of the two maps, and the refusal
+to pretend a deadline exists. Each says which failure shape its fixture cannot produce.
+
+## Finding 414 — a promise carrying a measurement would forge the one number only CI can spend
+
+The previous round's ruler was about a file: name the fields its writer cannot know. This
+round's is about a test: name the failure shape it cannot produce. On a job declaration the two
+are the same question. A local apparatus cannot spend a runner's budget -- it cannot produce a
+job that timed out, or a step that took 313 seconds -- but it *can* catch somebody writing
+those seconds into the promise, because the forged number has to arrive as a field.
+
+`JOB_PROMISE_KEYS` and `STEP_PROMISE_KEYS` are therefore whitelists rather than a documented
+convention. `seconds`, `run`, `commit`, `measured`, `ratio` and `derived` are each refused by
+name, at both the job and the step level; the sentence says the promise may only name what its
+writer can know. Without this rule a reader would take the file for a recording, and `R4`'s
+multiple and the first-run settlement would both be argued from a number no run produced.
+
+The ruler is also enforced rather than recited. Every case in the new block carries a
+`Cannot produce:` comment, and a case of its own reads the block back and refuses any new case
+without one. The mark is assembled from two pieces and counted only on comment lines, so the
+check does not count its own pattern as a mark -- a self-counting assertion would pass with one
+fewer real statement than cases, which is the hollow witness this campaign keeps finding.
+
+## Finding 415 — a job with no measurement has no deadline, and a rule that computes one is lying
+
+`R5` asks whether a step's bound expires before the job does: the bound plus the **measured
+seconds** of every step in front of it has to fit inside the job's ceiling. Every step of a job
+that has never run is unmeasured, so the sum has no terms. Substituting the *bounds* for the
+measurements would be claiming to know how long a runner spends in steps nobody has watched --
+the same forgery finding 414 refuses -- and it would refuse every ordinary job, because the
+bounds of seven three-minute setup steps and one twenty-five-minute battery already exceed a
+twenty-six-minute ceiling even though the setup steps take twenty-two seconds between them.
+
+`R9` computes no deadline at all. The absence is written into the rule, into a case that asserts
+the green path contains neither `expires` nor `deadline`, and into the acceptance boundary. The
+first green run supplies the seconds, and `R4`/`R5` settle the bounds in the same commit that
+deletes the promise. A rule that answered a question it has no evidence for would have been
+harder to notice than no rule: it would print an arithmetic expression and look like proof.
+
+## Finding 416 — a borrow would settle a declaration without a run
+
+`measure-ci-baseline.mjs` is the only writer of the recording, and the recording is the answer
+to a promise. If a declared job were borrowed from another job, its id would appear in the
+recording and `R9` would immediately demand the promise's deletion -- against seconds from a
+different job, on a run in which this job did not exist. That is finding 406's "compare a thing
+with itself" one level over: the promise's lifetime is one real run, and a borrow would shorten
+it to one manual recording.
+
+The recorder now reads the same declarations file as the gate. A declared job the run does not
+report is skipped, not filled: the recording keeps the hole, prints how many promises are still
+waiting, and `check-ci-budget` is green in that state because `R9` reads the same promise and
+the same recording. A `--borrow` naming a declared job is refused with a sentence that says a
+borrow is not a run. The first run that reports the job records it normally and says the promise
+can be deleted, leaving the sentence for the round -- a tool that erased it would delete the only
+account of why the job exists. Three end-to-end cases drive the three shapes against a real HTTP
+server and a fixture workflow.
+
+## Finding 417 — a split can silently measure a subset of itself
+
+The sites battery measured 626 seconds on the runner against a bound `R4` put at 1252 seconds;
+v3.53 bought back the 52-second shortage by moving the bound from 20 to 25 and the ceiling from
+21 to 26. This round spends less instead: the sorted claimant files are divided by position
+between `sensitivity` and a new `sensitivity-shard` job, each running half the claims against
+the same 25-minute bound, so the wall clock is the slower shard rather than their sum.
+
+A split introduces a failure shape a single job cannot have. Omit a shard, call one twice, put
+two shards in one job, disagree on `n`, or leave one shard with no files, and each shard's own
+summary still reads as a clean bill of health about the claims it did run. Nothing in the
+summary can see the claims it did not. `checkShardPlan` reads the real `ci.yml` and the real
+inventory, recomputes the partition with the same pure function the shipped script uses, and
+refuses each of those six edits with a different sentence: the indices must cover `1..n`, every
+shard sits in a different job, every shard holds a file, and every proved claim is measured
+exactly once. A case merges the `--list` output of both shards and compares it line by line with
+the unsharded `--list`, so the function agreeing with itself is not the evidence -- the shipped
+script is.
+
+## Finding 418 — an empty shard passes while measuring nothing
+
+When `n` exceeds the number of claimant files, `position % n === i - 1` yields an empty file
+list for some shards. An empty baseline list and an empty mutant list are both empty, so
+`failures` is zero and the script prints `PASSED`. Zero is also the output of an empty suite, an
+isolated suite and a collection failure, which is the shape this repository has refused in
+counting, in fault extraction and in the site inventory.
+
+`verify-sites-are-sensitive.mjs` now refuses a shard with no claimant before spawning any child,
+in the same exit that refuses an inventory with no proved site. The case drives `--shard 999/999`
+against the shipped tree and asserts three things: a non-zero exit, the diagnostic
+`holds no claimant`, and empty stdout -- no claim can be reported green by a run that ran none.
+
+## Finding 419 — one flag made an entire job invisible to the shell guard
+
+`cold-tree-job.test.ts` decides which jobs run the suite by following each `run:` line to the
+script it names and reading that script for `vitest`. Its pattern ended in `$`, so
+`node scripts/verify-sites-are-sensitive.mjs --shard 1/2` did not match. Adding an argument
+changed nothing about what the job does, yet the guard answered "this job runs no suite" about a
+job that does nothing else. Worse, the old `sensitivity` job disappeared from the same set, and
+because the assertion is an equality in both directions, **all fifteen cases stayed green** with
+one fewer item on each side.
+
+The `$` is gone and the script is taken as the first token; the flags after it are arguments to
+that script, not a second command. `sensitivity-shard` is registered in `SUITE_JOB_IDS`, and the
+six jobs that run the suite are named again. This defect was found by registering the new job,
+not by reading the guard -- the same way finding 395 was found, and the reason the register is
+checked against the workflow rather than trusted.
