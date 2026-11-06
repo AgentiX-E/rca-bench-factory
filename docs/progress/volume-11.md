@@ -1779,30 +1779,34 @@ body.
 Two rows out of twenty-five, and they are worth more than every prose description of the
 incident in this volume.
 
-### Six — the red that arrived two runs later, on a file this round never touched
+### Six — the red that arrived two runs later, and the local pass that was not a refutation
 
 The second CI run failed `Test with coverage` on `sensitivity-shards.test.ts`:
 `expected [ …(193) ] to deeply equal [ …(183) ]`. Four calls, seconds apart, one inventory --
 the unsharded `--list` printed 183 claim lines and the two sharded ones printed 193 between
 them (finding 432).
 
-Two candidates, one killed by a measurement. The gate prints a line per claim and calls
-`process.exit(0)`, and a pipe is asynchronous, so a lost tail is a plausible mechanism -- but a
-new case builds a **2 000-claim** inventory (about 160 KB, past any pipe buffer) and the count
-comes back whole. So the gate does not drop its tail. What is left is the file: something wrote
-a derivation **before** this round's `status` annotations were carried into it, which is 183
-claims exactly. No test spawns the deriver without `--check` or `--stdout`, and every fixture
-that runs it copies the tree first; the writer was not found.
+The mechanism that fits is a discarded tail: the gate writes one line per claim to a pipe and
+then calls `process.exit(0)`, and a pipe is asynchronous, so whatever is still buffered dies
+with the process. The test of it was a **2 000-claim** plan -- 160 KB, past any pipe buffer --
+and on this machine the count came back **whole**. That was written up as "the candidate is
+excluded", which was a conclusion drawn from one machine's scheduler.
 
-What was repaired is the question. A partition is a statement about **one** list, and three
-independent reads of a file something else may be writing is a different question -- the case
-was passing by the file's stillness rather than by its own logic. It now drives all four calls
-against a copy trimmed to **fifty** proved sites through `RCA_SENSITIVE_INVENTORY`, and asserts
-`50`, so the count itself says which file was read.
+The next CI run ran the same case and answered **171 of 2 000**. So the candidate was right and
+the local pass was not a refutation of it: it was a reading about a machine that happens to
+drain the pipe faster than the process exits. The case that was written to *prove* the tail
+would be lost is the case that lost it, one environment over -- and the environment that can
+produce the shape is the one the workflow runs on.
 
-Two findings in one, and the second is the uncomfortable one: a test that holds a real
-invariant (the shards tile the inventory) can still be green for the wrong reason, and the
-wrongness only shows on the day something else moves the file.
+The repair is one line of intent: `writeFileSync(1, plan)` -- the same bytes down the same
+descriptor, with the caller waiting. A program about to exit owes its reader a flushed pipe, and
+`console.log` in a loop has never owed anybody that.
+
+Two lessons, and the second is the uncomfortable one. A test that holds a real invariant (the
+shards tile the inventory) can still be green for the wrong reason, and the wrongness only shows
+on the day something moves the file -- which is why the shard case now reads a trimmed copy of
+fifty sites and asserts `50`. And a local pass on a timing hypothesis is a statement about local
+timing: the only machine that could falsify it was the one that had already failed.
 
 ### Readings
 

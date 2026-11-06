@@ -929,6 +929,13 @@ from an anecdote again.
   `isNetworkFailure` and the recorder, so a row cannot name a code the retry did not consider.
 - **The file is required rather than optional.** A gate that skipped the comparison when the
   history was absent would print `OK` about a question it had not asked.
+- **A plan that is printed is flushed before the process ends.** `--list` writes its whole
+  plan with one `writeFileSync(1, ...)`, because `process.stdout.write` on a pipe is
+  asynchronous and `process.exit(0)` discards what is still buffered. Measured twice: 193 lines
+  from the sharded calls against 183 from the unsharded one in CI, and a 2 000-claim plan that
+  answered 171. A local run of the same case returned all 2 000, which is a statement about
+  local timing rather than a refutation -- the machine that can produce the shape is the one
+  the workflow runs on.
 - **What is not claimed.** The rows are not verified: a row that says `201` on an attempt that
   got `500` passes every check, and only the process that made the request knows otherwise.
   Nor can the file tell one push from another -- there is no push id, so a reader can count

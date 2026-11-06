@@ -2562,39 +2562,38 @@ observe it: the failures it would have caught are thrown outside its `try`, and 
 left in the inventory said a forward existed that no test ever reached. A row nothing can
 reach is a row that says nothing about whether the code is live.
 
-## Finding 432 — three reads of one file, and the two counts that disagreed
+## Finding 432 — the plan that was printed as far as the pipe happened to drain
 
-The second CI run of the round failed `Test with coverage` on a test this round never
-touched:
+The second CI run of the round failed `Test with coverage` on a test this round never touched:
 
 ```
 FAIL test/sensitivity-shards.test.ts > the --list of every shard is the unsharded --list
 AssertionError: expected [ …(193) ] to deeply equal [ …(183) ]
 ```
 
-The four calls are seconds apart and read the same `golden-master/gate-sites.json`: one
-unsharded `--list` printed **183** claim lines, the two sharded ones printed **193** between
-them. The first CI run of the same round was green on the same test, and the only difference
-between the two trees was a document and the readings file.
+Four calls, seconds apart, one `golden-master/gate-sites.json`: the unsharded `--list` printed
+**183** claim lines and the two sharded calls printed **193** between them. The first CI run of
+the same round was green on the same test.
 
-Two candidates were worth measuring, and the first was cheap to kill. The gate writes one line
-per claim and then calls `process.exit(0)`; a pipe is asynchronous, so lines still in the
-stream's buffer would be discarded, and the loss would be a tail. A new case builds a 2 000-claim
-inventory -- about 160 KB, past any pipe buffer -- and asserts the line count: it passes, so the
-gate does not lose its tail, and the discarded-buffer explanation is wrong.
+The mechanism that fits is a discarded tail. The gate writes one line per claim with
+`process.stdout.write` and then calls `process.exit(0)`; on a pipe that write is asynchronous, so
+everything still in the stream's buffer dies with the process. A gate that prints a plan and
+exits is exactly the shape that loses it, and the loss would be the last N lines printed --
+which is why the sorted diff showed the missing rows scattered rather than cut off the end.
 
-That leaves the file itself: something rewrote `gate-sites.json` between the calls, and the
-183-line version is exactly a derivation **before** the round's `status` annotations were
-carried into it (126 sites, 10 of them without a `provedBy`). No test spawns the deriver without
-`--check` or `--stdout`; every fixture that does run it copies the tree first and symlinks only
-`node_modules`. The writer was not found.
+The test of that hypothesis was a **2 000-claim** inventory, about 160 KB, past any pipe buffer.
+On this machine the count came back **whole**, and the round wrote that up as "the candidate is
+excluded". That was wrong, and the way it was wrong is the finding: a local pass is a statement
+about local timing. The next CI run executed the same case and answered **171 of 2 000**. The
+case built to prove the tail would be lost is the case that lost it, one environment over.
 
-What was repaired is the question the case asks. A partition is a statement about **one** list,
-and three independent reads of a file that something else may be writing is a different
-question. The case now writes a copy trimmed to fifty proved sites and drives all four calls
-against it through `RCA_SENSITIVE_INVENTORY`, asserting `50` itself -- so the count says which
-file was read, and a run that ignored the variable fails instead of passing by luck.
+The repair is `writeFileSync(1, plan)`: the same bytes down the same descriptor, with the caller
+waiting. A program about to exit owes its reader a flushed pipe, and a loop of `console.log` has
+never owed anybody that.
 
-This is recorded as a repair of the test's dependency rather than of the writer, because the
-writer is not identified. The honest state is: one shape explained and excluded, one unexplained,
-and a case that can no longer be moved by it.
+Two things were repaired and one was not. The gate now flushes. The shard case no longer depends
+on a file staying still while four processes read it: it drives all four calls against a copy
+trimmed to fifty proved sites through `RCA_SENSITIVE_INVENTORY` and asserts `50`, so the count
+says which file was read. What was **not** repaired is the observation that started it -- a test
+holding a real invariant can be green for the wrong reason, and only the day something moves the
+file shows it.

@@ -87,7 +87,7 @@
 
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -208,9 +208,23 @@ const claimed = byFile.flatMap(([, claims]) => claims);
 const claimsOf = new Map(byFile);
 
 if (listOnly) {
+  // Written once, synchronously, and only then exited (finding 432).
+  //
+  // `process.stdout.write` on a pipe is asynchronous: the bytes go into the stream's buffer
+  // and the process may end before the kernel has them. `process.exit(0)` after a write per
+  // line is therefore a plan that is printed only as far as the pipe happened to drain --
+  // and the two shards' calls, run after it in one test, read the same file and answered 193
+  // claims between them against this call's 183. Ten lines, scattered through the output.
+  //
+  // `writeFileSync(1, ...)` is the same bytes down the same descriptor with the caller waiting,
+  // which is what a program about to exit owes its reader. It costs nothing a gate cares about,
+  // and the alternative -- letting the process end naturally -- would mean restructuring the
+  // run phase below for a branch that never reaches it.
+  let plan = '';
   for (const [file, claims] of byFile) {
-    for (const claim of claims) process.stdout.write(`${claim.site} <- ${file}\n`);
+    for (const claim of claims) plan += `${claim.site} <- ${file}\n`;
   }
+  writeFileSync(1, plan);
   process.exit(0);
 }
 

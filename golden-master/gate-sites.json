@@ -978,7 +978,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 431,
+      "line": 445,
       "condition": "failures > 0",
       "diagnostic": "verify-sites-are-sensitive: FAILED -- ${String(failures)} problem(s)\\n",
       "status": "proved",
