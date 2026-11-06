@@ -1987,6 +1987,7 @@ many attempts it holds, which of them named a tip, and what each one cost.
 | failure sites | **126** across **59** of **85** scripts; throws **82** = 11 `fatal` + 63 `unguarded` + 1 `guarded` + 7 `rethrow` |
 | site proofs | **193** claims across **58** files, every one driven |
 | the history | `golden-master/publish-readings.json`: **90 rows** in **6 attempts** -- 3 / 25 / 8 / 16 / 13 / 25 -- 87 answered, **3 unanswered**, 3 retried. Slowest request per attempt: 5 044 / **28 385** / 2 120 / 2 211 / **29 632** / 1 790 ms. The first five carry `rev: null`; the sixth is `e23e9e352`, and the file prints `1 with a named tip` |
+| the runs | `42269783832` **8 of 8** (15.5 min) on the first push of the round, with no red and no rerun: `build / typecheck / lint / coverage / mutation` 8 min, the two injection batteries 12 and 15 min, shard 1 of the sensitivity battery 5 min and shard 2 4 min |
 | the boundary | the five migrated attempts begin at rows 0, 3, 28, 36 and 52, which are the five `GET /git/ref/heads/master` rows. The gaps at 30 s and 32 s are retries inside attempts 2 and 5, not boundaries: a 20-second threshold would have answered seven |
 
 
