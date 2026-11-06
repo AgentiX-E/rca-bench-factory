@@ -224,8 +224,10 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // the publish channel into the tree: every refusal that used to be a `raise SystemExit`
     // in a Python file outside both repositories is now a throw a test can reach. 73 is
     // the round's close-out: a socket the peer closed is retried, and the branch that lets
-    // every other failure through is a throw of its own.
-    expect(total).toBe(73);
+    // every other failure through is a throw of its own. 74 is v3.54: a declared job that
+    // has never run must not be answered by `--borrow`, and that refusal is a throw a test
+    // reaches rather than a sentence in a comment.
+    expect(total).toBe(74);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -249,17 +251,18 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
       fatal.push(...read.rows.filter((row) => row.disposition === 'fatal').map((row) => `${file}:${String(row.line)}`));
     }
     expect(fatal).toEqual([
-      'measure-ci-baseline.mjs:132',
-      'measure-ci-baseline.mjs:154',
-      'measure-ci-baseline.mjs:165',
-      'measure-ci-baseline.mjs:175',
-      'measure-ci-baseline.mjs:182',
+      'measure-ci-baseline.mjs:155',
+      'measure-ci-baseline.mjs:173',
+      'measure-ci-baseline.mjs:184',
+      'measure-ci-baseline.mjs:195',
+      'measure-ci-baseline.mjs:213',
+      'measure-ci-baseline.mjs:220',
     ]);
-    // 35 unguarded: the two pack guards are `unguarded`, like every other throw inside a
-    // function with no enclosing `try`. 5 fatal is v3.52's addition: a borrow across a
-    // budget, which is the one refusal in that script that is about the workflow's
-    // arithmetic rather than about the run it is reading.
-    expect(counts).toEqual({ fatal: 5, unguarded: 60, guarded: 1, rethrow: 7 });
+    // 60 unguarded: the two pack guards are `unguarded`, like every other throw inside a
+    // function with no enclosing `try`. 6 fatal is v3.54's addition to v3.52's five: a
+    // borrow of a declared job, which is a refusal about a first run that has not
+    // happened rather than about the run the script is reading.
+    expect(counts).toEqual({ fatal: 6, unguarded: 60, guarded: 1, rethrow: 7 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

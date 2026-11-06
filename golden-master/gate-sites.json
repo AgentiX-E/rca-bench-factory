@@ -187,7 +187,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1382,
       "condition": "invalid.length > 0",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(invalid.length)} case(s) could not be read as a FaultCase",
+      "diagnostic": "check-fault-cases: FAILED — ${String(invalid.length)} case(s) could not be read as a FaultCase",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -195,7 +195,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1750,
       "condition": "problems.length > 0",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
+      "diagnostic": "check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -203,7 +203,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1759,
       "condition": "unnamed.length > 0",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
+      "diagnostic": "check-fault-cases: FAILED — ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -211,7 +211,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1767,
       "condition": "index.cases.length < floor",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(index.cases.length)} four-layer case(s), below the floor of",
+      "diagnostic": "check-fault-cases: FAILED — ${String(index.cases.length)} four-layer case(s), below the floor of",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -527,15 +527,15 @@
       "script": "scripts/install-git-hooks.mjs",
       "line": 41,
       "condition": "result.state === 'missing-hook' || result.state === 'unset'",
-      "diagnostic": "install-git-hooks: FAILED (${result.state}) \u2014 ${result.message}\\n",
+      "diagnostic": "install-git-hooks: FAILED (${result.state}) — ${result.message}\\n",
       "status": "proved",
       "provedBy": "packages/core/test/git-hooks.test.ts"
     },
     {
       "script": "scripts/measure-ci-baseline.mjs",
-      "line": 96,
+      "line": 119,
       "condition": "TOKEN === '' || !/^\\d+$/.test(RUN)",
-      "diagnostic": "usage: GITHUB_TOKEN=\u2026 node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>]\\n",
+      "diagnostic": "usage: GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>]\\n",
       "status": "proved",
       "provedBy": "packages/core/test/ci-budget.test.ts"
     },
@@ -922,15 +922,15 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 113,
-      "condition": "unknown.length > 0",
-      "diagnostic": "usage: node scripts/verify-sites-are-sensitive.mjs [--list]\\n",
+      "line": 150,
+      "condition": "unknown.length > 0 || (shard !== null && !shard.ok)",
+      "diagnostic": "usage: node scripts/verify-sites-are-sensitive.mjs [--list] [--shard <i>/<n>]\\n",
       "status": "proved",
-      "provedBy": "packages/core/test/verify-sites-are-sensitive.test.ts"
+      "provedBy": "packages/core/test/sensitivity-shards.test.ts"
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 122,
+      "line": 159,
       "condition": "!Number.isInteger(CONCURRENCY) || CONCURRENCY < 1",
       "diagnostic": "verify-sites-are-sensitive: RCA_SENSITIVE_CONCURRENCY must be a positive integer,",
       "status": "proved",
@@ -938,7 +938,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 132,
+      "line": 169,
       "condition": "catch",
       "diagnostic": "verify-sites-are-sensitive: cannot read ${relative(ROOT, INVENTORY) || INVENTORY} -- ${String(error)}\\n",
       "status": "proved",
@@ -946,15 +946,15 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 157,
-      "condition": "everything.length === 0",
-      "diagnostic": "verify-sites-are-sensitive: ${relative(ROOT, INVENTORY) || INVENTORY} holds no proved site,",
+      "line": 202,
+      "condition": "everything.length === 0 || byFile.length === 0",
+      "diagnostic": "verify-sites-are-sensitive: ${what}, so this run would pass while measuring nothing\\n",
       "status": "proved",
-      "provedBy": "packages/core/test/verify-sites-are-sensitive.test.ts"
+      "provedBy": "packages/core/test/sensitivity-shards.test.ts"
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 361,
+      "line": 405,
       "condition": "failures > 0",
       "diagnostic": "verify-sites-are-sensitive: FAILED -- ${String(failures)} problem(s)\\n",
       "status": "proved",
@@ -964,7 +964,7 @@
   "throws": {
     "rule": "every throw statement, partitioned four ways: `fatal` (no enclosing function, no enclosing try) ends the process and is proved like a site; `unguarded` (in a function, no enclosing try) hands control to its caller, which decides; `guarded` (in a try block) is caught here; `rethrow` (in a catch, rethrowing the caught binding) carries a decision made above. A try or a catch stops at a function boundary, because neither is on the stack when the function runs elsewhere. fatal + unguarded + guarded + rethrow is the number of throw statements; see scripts/derive-gate-sites.mjs",
     "counts": {
-      "fatal": 5,
+      "fatal": 6,
       "unguarded": 60,
       "guarded": 1,
       "rethrow": 7
@@ -1189,7 +1189,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 103,
+        "line": 126,
         "disposition": "unguarded",
         "message": "${path}: HTTP ${String(response.status)}",
         "status": "proved",
@@ -1197,7 +1197,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 132,
+        "line": 155,
         "disposition": "fatal",
         "message": "the workflow does not parse, so there is nothing to measure:\\n${workflow.errors.join('\\n')}",
         "status": "proved",
@@ -1205,7 +1205,15 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 154,
+        "line": 173,
+        "disposition": "fatal",
+        "message": "new Error( `--borrow ${job.id}=${borrowedFrom} names a declared job: a job promise waits for its ` + 'first run, and a b",
+        "status": "proved",
+        "provedBy": "packages/core/test/ci-budget.test.ts"
+      },
+      {
+        "script": "scripts/measure-ci-baseline.mjs",
+        "line": 184,
         "disposition": "fatal",
         "message": "--borrow names \\`${borrowedFrom}\\`, which is not a job of this workflow",
         "status": "proved",
@@ -1213,7 +1221,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 165,
+        "line": 195,
         "disposition": "fatal",
         "message": "new Error( `--borrow ${job.id}=${borrowedFrom} crosses a budget: \\`${job.id}\\` declares ` + `${job.timeoutMinutes === nu",
         "status": "proved",
@@ -1221,7 +1229,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 175,
+        "line": 213,
         "disposition": "fatal",
         "message": "run ${RUN} holds no job named \"${apiNameOf(job)}\", so \\`${job.id}\\` has no reading",
         "status": "proved",
@@ -1229,7 +1237,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 182,
+        "line": 220,
         "disposition": "fatal",
         "message": "new Error( `\\`${job.id} / ${step.name}\\` is not a step of \"${source.name}\" in run ${RUN}: a bound cannot be ` + 'sized f",
         "status": "proved",
