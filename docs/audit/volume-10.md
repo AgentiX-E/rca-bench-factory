@@ -2561,3 +2561,40 @@ The same round removed a `catch` in `publish-cli.mjs` that only re-raised. Nothi
 observe it: the failures it would have caught are thrown outside its `try`, and the row it
 left in the inventory said a forward existed that no test ever reached. A row nothing can
 reach is a row that says nothing about whether the code is live.
+
+## Finding 432 — three reads of one file, and the two counts that disagreed
+
+The second CI run of the round failed `Test with coverage` on a test this round never
+touched:
+
+```
+FAIL test/sensitivity-shards.test.ts > the --list of every shard is the unsharded --list
+AssertionError: expected [ …(193) ] to deeply equal [ …(183) ]
+```
+
+The four calls are seconds apart and read the same `golden-master/gate-sites.json`: one
+unsharded `--list` printed **183** claim lines, the two sharded ones printed **193** between
+them. The first CI run of the same round was green on the same test, and the only difference
+between the two trees was a document and the readings file.
+
+Two candidates were worth measuring, and the first was cheap to kill. The gate writes one line
+per claim and then calls `process.exit(0)`; a pipe is asynchronous, so lines still in the
+stream's buffer would be discarded, and the loss would be a tail. A new case builds a 2 000-claim
+inventory -- about 160 KB, past any pipe buffer -- and asserts the line count: it passes, so the
+gate does not lose its tail, and the discarded-buffer explanation is wrong.
+
+That leaves the file itself: something rewrote `gate-sites.json` between the calls, and the
+183-line version is exactly a derivation **before** the round's `status` annotations were
+carried into it (126 sites, 10 of them without a `provedBy`). No test spawns the deriver without
+`--check` or `--stdout`; every fixture that does run it copies the tree first and symlinks only
+`node_modules`. The writer was not found.
+
+What was repaired is the question the case asks. A partition is a statement about **one** list,
+and three independent reads of a file that something else may be writing is a different
+question. The case now writes a copy trimmed to fifty proved sites and drives all four calls
+against it through `RCA_SENSITIVE_INVENTORY`, asserting `50` itself -- so the count says which
+file was read, and a run that ignored the variable fails instead of passing by luck.
+
+This is recorded as a repair of the test's dependency rather than of the writer, because the
+writer is not identified. The honest state is: one shape explained and excluded, one unexplained,
+and a case that can no longer be moved by it.

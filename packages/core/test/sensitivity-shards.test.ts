@@ -1,8 +1,9 @@
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import {
   checkShardPlan,
   claimedSites,
@@ -34,6 +35,10 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const GATE = join(ROOT, 'scripts', 'verify-sites-are-sensitive.mjs');
 const WORKFLOW = join(ROOT, '.github', 'workflows', 'ci.yml');
 const INVENTORY = join(ROOT, 'golden-master', 'gate-sites.json');
+
+/** One file, read by every call this file makes, so the question is the partition. */
+const SNAPSHOTS = mkdtempSync(join(tmpdir(), 'rca-shard-plan-'));
+afterAll(() => rmSync(SNAPSHOTS, { recursive: true, force: true }));
 
 /** One call in `ci.yml`, reduced to the three facts the partition is argued from. */
 interface Spec {
@@ -158,14 +163,34 @@ describe('the shards ci.yml actually calls', () => {
     // Cannot produce: a mutant run. `--list` spawns no claimant, so what this holds is
     // that the *shipped script* partitions the shipped inventory the way the pure
     // function says it does -- not merely that the function agrees with itself.
-    const env = { ...process.env };
-    // The gate resolves its inventory and its claimants from `process.cwd()`. A suite run
-    // from `packages/core` would otherwise look for `packages/core/golden-master`, and
-    // the refusal would be about a directory rather than about the shipped inventory.
+    // The inventory is copied once and every call below reads **that** file.
+    //
+    // CI failed this case once with 193 lines from the three calls that scan a shard and
+    // 183 from the one that scans none -- seconds apart, against the file both read. The
+    // property this case is for is "the shards partition the whole list", and a partition
+    // is a statement about **one** list: three independent reads of a file something else
+    // may be writing is a different question, and one this test is not asking. The copy is
+    // not a tolerance for a flaky subject -- it is the variable this case has to hold fixed
+    // (finding 432).
+    // Trimmed to fifty proved sites so the count itself says which file was read: with the
+    // copy in force the whole list is fifty, and a run that ignored `RCA_SENSITIVE_INVENTORY`
+    // would answer with the inventory's own count and fail here rather than pass by luck.
+    const snapshot = join(SNAPSHOTS, 'gate-sites.json');
+    const full = JSON.parse(readFileSync(INVENTORY, 'utf8'));
+    const proved = full.sites.filter((site: { status?: string }) => site.status === 'proved').slice(0, 50);
+    writeFileSync(
+      snapshot,
+      JSON.stringify({ ...full, sites: proved, throws: { ...full.throws, rows: [] } }, null, 2),
+      'utf8',
+    );
+    const env = { ...process.env, RCA_SENSITIVE_INVENTORY: snapshot };
+    // The gate resolves its claimants from `process.cwd()`. A suite run from
+    // `packages/core` would otherwise look for `packages/core/packages`, and the refusal
+    // would be about a directory rather than about the shipped inventory.
     const all = spawnSync(process.execPath, [GATE, '--list'], { encoding: 'utf8', env, cwd: ROOT });
     expect(all.status).toBe(0);
     const whole = all.stdout.trim().split('\n').filter(Boolean).sort();
-    expect(whole.length).toBeGreaterThan(10);
+    expect(whole.length).toBe(50);
     const parts: string[] = [];
     for (const spec of planOf().specs) {
       const one = spawnSync(process.execPath, [GATE, '--list', '--shard', `${spec.index}/${spec.count}`], {

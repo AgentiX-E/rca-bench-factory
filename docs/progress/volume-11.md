@@ -1779,16 +1779,41 @@ body.
 Two rows out of twenty-five, and they are worth more than every prose description of the
 incident in this volume.
 
+### Six — the red that arrived two runs later, on a file this round never touched
+
+The second CI run failed `Test with coverage` on `sensitivity-shards.test.ts`:
+`expected [ …(193) ] to deeply equal [ …(183) ]`. Four calls, seconds apart, one inventory --
+the unsharded `--list` printed 183 claim lines and the two sharded ones printed 193 between
+them (finding 432).
+
+Two candidates, one killed by a measurement. The gate prints a line per claim and calls
+`process.exit(0)`, and a pipe is asynchronous, so a lost tail is a plausible mechanism -- but a
+new case builds a **2 000-claim** inventory (about 160 KB, past any pipe buffer) and the count
+comes back whole. So the gate does not drop its tail. What is left is the file: something wrote
+a derivation **before** this round's `status` annotations were carried into it, which is 183
+claims exactly. No test spawns the deriver without `--check` or `--stdout`, and every fixture
+that runs it copies the tree first; the writer was not found.
+
+What was repaired is the question. A partition is a statement about **one** list, and three
+independent reads of a file something else may be writing is a different question -- the case
+was passing by the file's stillness rather than by its own logic. It now drives all four calls
+against a copy trimmed to **fifty** proved sites through `RCA_SENSITIVE_INVENTORY`, and asserts
+`50`, so the count itself says which file was read.
+
+Two findings in one, and the second is the uncomfortable one: a test that holds a real
+invariant (the shards tile the inventory) can still be green for the wrong reason, and the
+wrongness only shows on the day something else moves the file.
+
 ### Readings
 
 > Ledger for `v3.56`.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **239 files, 5931 tests passed** (as of this commit) |
+| `core` test suite | **239 files, 5932 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **243 files, 6118 tests passed** (as of this commit) |
-| new tests | **41** in `publish-readings.test.ts`: 17 on the shape rules, 5 on the summary, 4 on appending, 7 on what the transport hands the recorder, 5 on the reader a gate runs, 3 on the command line |
+| repo test suite | **243 files, 6119 tests passed** (as of this commit) |
+| new tests | **42**: 41 in `publish-readings.test.ts` (17 on the shape rules, 5 on the summary, 4 on appending, 7 on what the transport hands the recorder, 5 on the reader a gate runs, 3 on the command line) and one in `verify-sites-are-sensitive.test.ts` -- a 2 000-claim plan, which is the case that excluded a lost stdout tail |
 | coverage | `core` and `cli` unchanged in the dimensions the gate measures; `scripts/` is outside the coverage ceiling by construction -- its drivers are the site proofs |
 | mutation | **10** substitutions, **10** red: an unanswered attempt not recorded, every row claiming attempt 1, a row with neither status nor error accepted, a retry not following its own first attempt, an append that replaces, a rate limit invented as zero, a retry counted as a row, `--record` allowed on a transport that makes no request, an unreadable file reported as empty, and a file that cannot be read saying nothing about why |
 | failure sites | **126** across **59** of **84** scripts; throws **81** = 11 `fatal` + 62 `unguarded` + 1 `guarded` + 7 `rethrow` |

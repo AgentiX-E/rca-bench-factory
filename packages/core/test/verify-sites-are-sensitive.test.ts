@@ -182,6 +182,55 @@ function runGate(
   return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 }
 
+/**
+ * A plan long enough that the write has to be flushed rather than exited past.
+ *
+ * ## The measurement this case exists for
+ *
+ * CI's `sensitivity-shards.test.ts` failed once with `expected [ …(193) ] to deeply equal
+ * [ …(183) ]`: the unsharded `--list` produced 183 lines and the two shards 193. Nothing
+ * had changed the inventory -- the two calls that disagreed ran seconds apart against the
+ * same file. What they differed in was **timing**: the gate prints one line per claim and
+ * then calls `process.exit(0)`, and a pipe is asynchronous, so the lines still in the
+ * stream's buffer are discarded. The ten missing rows were the last ten printed, which is
+ * why the sorted diff showed them scattered rather than truncated off the end.
+ *
+ * 2 000 claims is about 160 KB, well past the pipe's own buffer, so the defect is not a
+ * race that happens once in twenty runs: the old shape loses its tail every time.
+ */
+describe('verify-sites-are-sensitive.mjs · a plan that cannot fit in a pipe', () => {
+  it('prints every claim, and exits only after the last one has been written', () => {
+    const root = mkdtempSync(join(tmpdir(), 'rca-plan-'));
+    const claims = 2000;
+    try {
+      mkdirSync(join(root, 'golden-master'), { recursive: true });
+      const sites = Array.from({ length: claims }, (_, index) => ({
+        script: `scripts/site-${String(index)}.mjs`,
+        line: index + 1,
+        condition: 'the exit',
+        verdict: 'code',
+        status: 'proved',
+        provedBy: 'packages/core/test/a-claimant.test.ts',
+      }));
+      writeFileSync(
+        join(root, 'golden-master', 'gate-sites.json'),
+        JSON.stringify({ rule: 'a fixture rule', scanned: claims, excluded: { zero: 0 }, sites, throws: { rule: 'none', counts: {}, rows: [] } }),
+        'utf8',
+      );
+      const run = spawnSync(process.execPath, [GATE, '--list'], {
+        encoding: 'utf8',
+        env: { ...process.env, RCA_SENSITIVE_ROOT: root },
+        maxBuffer: 64 * 1024 * 1024,
+      });
+      expect(run.stderr).toBe('');
+      expect(run.status).toBe(0);
+      expect(run.stdout.trim().split('\n').filter(Boolean)).toHaveLength(claims);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () => {
   it('passes when the claimant fails as soon as the exit stops failing', () => {
     const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], { assert: true });
