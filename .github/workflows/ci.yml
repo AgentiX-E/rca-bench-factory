@@ -38,7 +38,15 @@ jobs:
     runs-on: ubuntu-latest
     # Not a performance assertion: a job that hangs has to be reported as a budget
     # being spent rather than six hours later.
-    timeout-minutes: 15
+    #
+    # 15 until v3.55, and 18 now, because the deadline was being argued from a fast day.
+    # `Lint`'s 14-minute bound plus the steps in front of it is 1019 s once each of those
+    # steps is counted at its slowest recorded day rather than at the day of the
+    # recording -- 164 s of that prefix is the shell install at 153 s instead of 9 --
+    # and 1019 does not fit in 900. `Test with coverage` was the second one out, at 902.
+    # 18 is a minute more than the longest deadline, so the step bound still fires before
+    # the job does rather than with it.
+    timeout-minutes: 18
     steps:
       - name: Check out
         timeout-minutes: 3
@@ -61,7 +69,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install the shells the suite cross-checks against
-        timeout-minutes: 3
+        timeout-minutes: 6
         # `check-no-unsafe-shell.test.ts` compares the gate's rule against what
         # `zsh` and `bash` actually do with the same string, which is the
         # strongest acceptance criterion in the tree: the thing being modelled is
@@ -296,7 +304,7 @@ jobs:
       # shells the suite cross-checks against is a job whose verdicts depend on which
       # runner it landed on (finding 130).
       - name: Install the shells the suite cross-checks against
-        timeout-minutes: 3
+        timeout-minutes: 6
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
@@ -344,8 +352,16 @@ jobs:
       # the recording to it, so a recording taken from the unsharded run still names a
       # step that exists. `checkShardPlan` reads both shard calls and the real inventory
       # and refuses a plan whose union is not every proved claim exactly once.
+      # 25 until v3.55, and 22 now. The bound was 25 because one day measured 626 s and
+      # twice that is 1252; the history holds a 633 s day since, and twice 633 is 1266,
+      # which 25 still covers -- but the deadline no longer does. Three minutes of shell
+      # install in front of this step, counted at the 153 s it has really taken, puts the
+      # 25-minute bound's expiry at 1680 s, past the 26-minute ceiling: the job would die
+      # first and name nothing. 22 minutes is 7 s of room over twice the slowest recorded
+      # day and 1500 s of deadline, which fits. Narrowing the bound is what makes the
+      # ceiling unnecessary rather than the other way round.
       - name: Every proved exit can disappear without a word
-        timeout-minutes: 25
+        timeout-minutes: 22
         run: node scripts/verify-sites-are-sensitive.mjs --shard 1/2
 
       - name: Every exemption's claim can be made false
@@ -388,7 +404,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install the shells the suite cross-checks against
-        timeout-minutes: 3
+        timeout-minutes: 6
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
@@ -398,7 +414,7 @@ jobs:
       # A shard whose files never arrive would be a green job that measured nothing.
       # `verify-sites-are-sensitive.mjs` refuses an empty shard before spawning a child.
       - name: Every proved exit can disappear without a word (shard 2 of 2)
-        timeout-minutes: 25
+        timeout-minutes: 22
         run: node scripts/verify-sites-are-sensitive.mjs --shard 2/2
 
   # The injection batteries. This is the long pole -- everything else in the workflow
@@ -439,7 +455,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install the shells the suite cross-checks against
-        timeout-minutes: 3
+        timeout-minutes: 6
         # `check-no-unsafe-shell.test.ts` compares the gate's rule against what
         # `zsh` and `bash` actually do with the same string, which is the
         # strongest acceptance criterion in the tree: the thing being modelled is
@@ -883,8 +899,12 @@ jobs:
   batteries-heavy:
     name: injection batteries, the two that rewrite a probe a hundred times
     runs-on: ubuntu-latest
-    # 914 s measured, 22 min for the bound chain, 25 declared.
-    timeout-minutes: 25
+    # 914 s measured, 22 min for the bound chain, 25 declared -- and 27 from v3.55, when
+    # the deadline started counting the prefix at its slowest recorded day: the 15-minute
+    # backend-support bound plus 632 s in front of it is 1532 s, which is 25.5 minutes and
+    # does not fit in 25. 27 is that deadline rounded up to the next whole minute plus one,
+    # which is the smallest amount of room the workflow's unit can express.
+    timeout-minutes: 27
     steps:
       - name: Check out
         timeout-minutes: 3
@@ -911,7 +931,7 @@ jobs:
       # `cold-tree-job.test.ts` asks for that of a job rather than of the job the rule was
       # written about, which is how this step was found missing here.
       - name: Install the shells the suite cross-checks against
-        timeout-minutes: 3
+        timeout-minutes: 6
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)

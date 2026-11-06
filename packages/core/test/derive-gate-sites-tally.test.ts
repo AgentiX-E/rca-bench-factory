@@ -246,9 +246,10 @@ describe('the two baskets are a partition of the calls, not a remainder', () => 
     // refusal to `check-ci-budget.mjs` -- a declarations file that cannot be read. The two
     // numbers move together because the question is one -- does the classification account
     // for every call -- and a round that added calls without moving them would be the
-    // drift this assertion is for.
-    expect(calls).toBe(140);
-    expect(sites).toBe(123);
+    // drift this assertion is for. 141/124 is v3.55's: `check-ci-budget.mjs` now refuses a
+    // tree with no history of readings, which is one more exit and one more site.
+    expect(calls).toBe(142);
+    expect(sites).toBe(124);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

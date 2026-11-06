@@ -42,7 +42,21 @@
  * recording is a deliberate act, run by hand after a green CI run, and the gate reads
  * only the file it produced.
  *
- * Usage: `node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>]`
+ * ## Why an older run may be appended without being the recording
+ *
+ * `R10` divides a bound by the slowest reading of the command it bounds, and a bound is
+ * only as good as the worst day the history has seen. A history that starts today sees
+ * one machine population on one afternoon, which is the defect `R10` was written for,
+ * one level up: a maximum taken over a sample of one.
+ *
+ * So `--seed <run-id>` appends a past day and never touches the recording. The run may
+ * be a tree this workflow no longer has -- a job added last round is not in a run from
+ * before it -- and that is the point: a rule that demanded every job of today's workflow
+ * in every past day would delete exactly the slow days a bound needs, and adding a job
+ * would silently reset the evidence to nothing. The recording keeps the strict rule,
+ * because bounds are sized from it and a gap there would be a bound with no reading.
+ *
+ * Usage: `node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>] [--seed]`
  * with `GITHUB_TOKEN` set.
  *
  * `RCA_GITHUB_API`, `RCA_CI_WORKFLOW` and `RCA_CI_OUT` are read only by
@@ -52,7 +66,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { jobsOf, stepsOf } from './ci-budget.mjs';
+import { commandOf, jobsOf, mergeReading, readReadings, stepsOf } from './ci-budget.mjs';
 import { readWorkflow, workflowPath } from './gate-steps.mjs';
 
 const TOKEN = process.env.GITHUB_TOKEN ?? '';
@@ -62,6 +76,25 @@ const REPO = 'rca-bench-factory';
 const OUT = resolve(
   process.env['RCA_CI_OUT'] ?? join(import.meta.dirname, '..', 'golden-master', 'ci-baseline.json'),
 );
+
+/**
+ * Where the history of readings lives, and why the recording is now one entry in it.
+ *
+ * `R10` divides a bound by the slowest reading of the command it bounds, and the
+ * recording holds one day by construction. So every reading this script takes is also
+ * appended here, with the command each step spent its seconds on -- and both files are
+ * written from one measurement, which is why the gate can compare them second by second
+ * and refuse a tree where only one of them was edited.
+ *
+ * A file that exists and cannot be read is left alone: this script's job is to record,
+ * and silently replacing a history it could not parse would delete the slow day that
+ * justifies a bound. The gate then refuses the missing reading, which is a sentence a
+ * person can act on rather than a file that quietly got shorter.
+ */
+const READINGS = resolve(
+  process.env['RCA_CI_READINGS'] ?? join(import.meta.dirname, '..', 'golden-master', 'ci-readings.json'),
+);
+
 // The API root is a seam for the same reason `RCA_CI_WORKFLOW` and `RCA_CI_BASELINE`
 // are: three of this script's refusals -- a non-200 answer, a run that carries no job
 // of that name, and the success path that writes the file -- can only be reached by a
@@ -112,11 +145,29 @@ function borrowPairs(argv) {
 
 const BORROW = borrowPairs(process.argv.slice(3));
 
+/**
+ * `--seed`: this run is a past day, appended to the history and not to the recording.
+ *
+ * The two files are written from one measurement when the measurement is the recording.
+ * A seed is the other relation: it is evidence about a command, taken on a day the
+ * workflow may not have had today's shape, and the only thing it can answer is "how slow
+ * has this command been". So it may be partial, and it may not replace the recording --
+ * an older tree is not a description of the bounds CI will enforce.
+ */
+const SEED = process.argv.slice(3).includes('--seed');
+
 if (TOKEN === '' || !/^\d+$/.test(RUN)) {
   process.stderr.write(
-    'usage: GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>]\n',
+    'usage: GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>] [--seed]\n',
   );
   process.exit(2);
+}
+if (SEED && BORROW.size > 0) {
+  throw new Error(
+    '--seed and --borrow say different things: a seed is a day this run really measured, and a borrow is ' +
+      'seconds borrowed from a job that ran the same commands. A borrowed seed would put a number in the ' +
+      'history that no run of that command produced',
+  );
 }
 
 async function get(path) {
@@ -164,6 +215,47 @@ const byId = new Map(jobsOf(workflow).map((one) => [one.id, one]));
 
 const recorded = {};
 const derived = {};
+// The command each step ran, per job, kept beside the seconds so the entry appended to
+// the history is self-describing: `R10` compares a bound with every reading of *the
+// command*, and a history that named steps would lose a series to a rename.
+const history = {};
+// What a seed could not find, reported rather than thrown: a job added last round is not
+// in a run from before it, and the seconds that day spent on the commands it did run are
+// still the worst day a bound has to survive.
+const seedGaps = [];
+
+/**
+ * A seed describes a past tree, and a past tree is not the recording.
+ *
+ * The recording is what CI's bounds are sized against, so it has to be a run of the
+ * workflow as it stands. An older run answers a different question -- how slow has this
+ * command been -- and answering it does not make the run the newest day. Refusing here
+ * rather than replacing the recording is the whole difference between the two files.
+ */
+if (SEED && existsSync(OUT)) {
+  let held;
+  try {
+    held = JSON.parse(readFileSync(OUT, 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `the recording at ${OUT} cannot be parsed (${String(error)}), so a seed cannot be told from it: ` +
+        'a seed is a day older than the recording, and the only file that says which day that is is unreadable',
+    );
+  }
+  if (Number(RUN) > Number(held?.run ?? 0)) {
+    throw new Error(
+      `--seed names run ${RUN}, which is newer than the recording (run ${String(held?.run)}): a day that ` +
+        'has not been recorded is the recording, not a seed, and appending it here would leave the bounds ' +
+        'argued from a day the recording says is not the newest',
+    );
+  }
+  if (Number(RUN) === Number(held?.run)) {
+    throw new Error(
+      `--seed names run ${RUN}, which is the recording: it is already in the history, and a second entry ` +
+        'for one day would weight that day twice when the slowest reading is looked up',
+    );
+  }
+}
 // GitHub reports a job under its `name:` when it has one and under its id when it does
 // not, so the key the API answers to is the label the reader kept, or the id.
 const apiNameOf = (job) => (job.name === '' ? job.id : job.name);
@@ -202,6 +294,10 @@ for (const job of jobsOf(workflow)) {
     );
   }
   if (source === undefined) {
+    if (SEED) {
+      seedGaps.push(`\`${job.id}\` did not exist`);
+      continue;
+    }
     if (DECLARED_JOBS.has(job.id)) {
       // A declared job that this run did not report is a gap, not a failure. Writing
       // borrowed or invented seconds here would answer the promise with a measurement
@@ -214,17 +310,30 @@ for (const job of jobsOf(workflow)) {
   }
   const measured = secondsByName(source);
   const steps = {};
+  const commands = {};
   for (const step of stepsOf(workflow, job.id)) {
     const seconds = measured.get(step.name);
     if (seconds === undefined) {
+      if (SEED) {
+        seedGaps.push(`\`${job.id} / ${step.name}\` did not run`);
+        continue;
+      }
       throw new Error(
         `\`${job.id} / ${step.name}\` is not a step of "${source.name}" in run ${RUN}: a bound cannot be ` +
           'sized from a step that did not run',
       );
     }
     steps[step.name] = seconds;
+    commands[step.name] = commandOf(step);
+  }
+  // A job none of whose steps this workflow still has is a job from a different tree
+  // altogether: its seconds measure nothing a bound of today could be written against.
+  if (Object.keys(steps).length === 0) {
+    seedGaps.push(`\`${job.id}\` ran no step this workflow still has`);
+    continue;
   }
   recorded[job.id] = { name: job.name, timeoutMinutes: job.timeoutMinutes, steps };
+  history[job.id] = commands;
   if (borrowedFrom !== undefined) {
     derived[job.id] =
       `its steps ran inside \`${borrowedFrom}\` in run ${RUN}, so these seconds are that job's measurement ` +
@@ -251,7 +360,76 @@ if (Object.keys(derived).length > 0) {
 }
 
 const stepCount = Object.values(recorded).reduce((sum, one) => sum + Object.keys(one.steps).length, 0);
-writeFileSync(OUT, `${JSON.stringify(reading, null, 2)}\n`);
+if (SEED && Object.keys(recorded).length === 0) {
+  throw new Error(
+    `run ${RUN} measured no step this workflow has, so it is not a day any bound of this tree could be ` +
+      'argued from: a seed is evidence about these commands, and a run that shares none of them is ' +
+      'evidence about a different workflow',
+  );
+}
+// A seed is not the recording, so the recording is not written. The refusal above is the
+// only place the two files are allowed to disagree, and it is a refusal rather than a
+// quieter write for the reason every rule here is: a bound argued from the wrong day is
+// indistinguishable from a bound argued from the right one until the day it fires.
+if (!SEED) writeFileSync(OUT, `${JSON.stringify(reading, null, 2)}\n`);
+
+/**
+ * The same measurement, appended to the history `R10` divides by.
+ *
+ * One measurement, two files: `ci-baseline.json` is the day the bounds are argued from,
+ * and `ci-readings.json` is every day anybody has measured, so that a bound can be
+ * refused for being under a slow day that is already in the record. The seconds are
+ * copied rather than re-derived, because a second derivation is a second answer.
+ */
+const entry = {
+  run: Number(RUN),
+  commit: run.head_sha,
+  measured: reading.measured,
+  jobs: {},
+};
+for (const [jobId, one] of Object.entries(recorded)) {
+  const byStep = {};
+  for (const [name, seconds] of Object.entries(one.steps)) {
+    byStep[name] = { seconds, command: history[jobId][name] };
+  }
+  entry.jobs[jobId] = byStep;
+}
+
+let appended = null;
+let historyNote = '';
+if (!existsSync(READINGS)) {
+  appended = mergeReading(null, entry);
+} else {
+  let existing;
+  try {
+    existing = JSON.parse(readFileSync(READINGS, 'utf8'));
+  } catch (error) {
+    historyNote = `; the readings at ${READINGS} cannot be parsed (${String(error)}), so this reading was not appended`;
+  }
+  if (existing !== undefined) {
+    const checked = readReadings(existing);
+    if (checked.errors.length === 0) {
+      appended = mergeReading(existing, entry);
+    } else {
+      historyNote = `; the readings at ${READINGS} cannot be read (${String(checked.errors[0])}), so this reading was not appended`;
+    }
+  }
+}
+if (appended !== null) writeFileSync(READINGS, `${JSON.stringify(appended, null, 2)}\n`);
+
+if (SEED) {
+  // A seed answers no declaration: a promise is answered by a run of the job it promises,
+  // and a day from before the job existed is not that run.
+  process.stdout.write(
+    `ci-baseline: seeded run ${RUN} with ${String(Object.keys(recorded).length)} of ` +
+      `${String(jobsOf(workflow).length)} job(s) and ${String(stepCount)} step(s)` +
+      `${seedGaps.length === 0 ? '' : `; ${String(seedGaps.length)} item(s) did not exist then: ${seedGaps.join(', ')}`}` +
+      `${appended === null ? '' : `; the history holds ${String(appended.readings.length)} reading(s)`}` +
+      `\n`,
+  );
+  if (historyNote !== '') process.stderr.write(`ci-baseline: ${historyNote.replace(/^; /, '')}\n`);
+  process.exit(0);
+}
 
 /**
  * The declarations this recording has just answered.
@@ -286,5 +464,8 @@ process.stdout.write(
     `run ${RUN}${Object.keys(derived).length > 0 ? `, ${String(Object.keys(derived).length)} borrowed` : ''}` +
     `${answered === 0 ? '' : `; ${String(answered)} declaration(s) are now measured and can be deleted`}` +
     `${answeredJobs === 0 ? '' : `; ${String(answeredJobs)} job declaration(s) are now measured and can be deleted`}` +
-    `${waitingJobs === 0 ? '' : `; ${String(waitingJobs)} job declaration(s) still awaiting their first run`}\n`,
+    `${waitingJobs === 0 ? '' : `; ${String(waitingJobs)} job declaration(s) still awaiting their first run`}` +
+    `${appended === null ? '' : `; the history holds ${String(appended.readings.length)} reading(s)`}` +
+    `\n`,
 );
+if (historyNote !== '') process.stderr.write(`ci-baseline: ${historyNote.replace(/^; /, '')}\n`);

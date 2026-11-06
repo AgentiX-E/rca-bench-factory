@@ -61,6 +61,21 @@ const DECLARATIONS =
     ? join(ROOT, 'golden-master', 'ci-declarations.json')
     : resolve(ROOT, process.env['RCA_CI_DECLARATIONS']);
 
+/**
+ * Where the history of readings lives: every day the recorder has measured, not just the
+ * one the bounds are argued from.
+ *
+ * `R10` divides by the slowest reading of the command a step bounds, and that number
+ * only exists in this file. It is required rather than optional: a gate that quietly
+ * skipped the comparison whenever the file was missing would report the bounds of a tree
+ * it had not asked the question of, which is the silence this module exists to replace.
+ */
+const READINGS = resolve(
+  ROOT,
+  process.env['RCA_CI_READINGS'] ?? join('golden-master', 'ci-readings.json'),
+);
+
+
 
 const workflow = readWorkflow(readFileSync(workflowPath(), 'utf8'));
 if (workflow.errors.length > 0) {
@@ -73,6 +88,25 @@ try {
   baseline = JSON.parse(readFileSync(BASELINE, 'utf8'));
 } catch (error) {
   process.stderr.write(`check-ci-budget: no recording at ${BASELINE} -- ${String(error)}\n`);
+  process.exit(1);
+}
+
+/**
+ * The history, refused when it is absent in the same way the recording is.
+ *
+ * The two files are one measurement written twice -- the recorder writes both -- so a
+ * tree that has one and not the other is a tree whose bounds were argued from a day
+ * nobody recorded. Making the absence fatal is the difference between "no history" and
+ * "R10 found nothing wrong", and only one of those is worth printing.
+ */
+let readings;
+try {
+  readings = JSON.parse(readFileSync(READINGS, 'utf8'));
+} catch (error) {
+  process.stderr.write(
+    `check-ci-budget: no history of readings at ${READINGS} -- ${String(error)}: the bounds are sized ` +
+      'against the slowest day recorded, so the file the recorder appends to has to be there\n',
+  );
   process.exit(1);
 }
 
@@ -95,10 +129,11 @@ if (existsSync(DECLARATIONS)) {
   }
 }
 
-const errors = budgetErrors(workflow, baseline, ledger, declarations);
+const errors = budgetErrors(workflow, baseline, ledger, declarations, readings);
 if (errors.length > 0) {
   for (const error of errors) process.stderr.write(`check-ci-budget: ${error}\n`);
   process.stdout.write(`check-ci-budget: FAILED — ${String(errors.length)} problem(s)\n`);
   process.exit(1);
 }
-process.stdout.write(`${budgetSummary(workflow, baseline, ledger, declarations)}\n`);
+process.stdout.write(`${budgetSummary(workflow, baseline, ledger, declarations, readings)}\n`);
+

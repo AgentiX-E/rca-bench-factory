@@ -11,6 +11,7 @@ import {
   WHY_LENGTH,
   budgetErrors,
   budgetSummary,
+  commandOf,
   jobsOf,
   ledgerErrors,
   readDeclarations,
@@ -80,13 +81,26 @@ function oneJob(steps: string[], minutes = 30) {
   return workflowOf([{ id: 'batteries', minutes, steps }]);
 }
 
-/** A step whose budget is its own. */
-function step(name: string, minutes: number, command = 'node scripts/inject-x.mjs'): string[] {
+/**
+ * A step whose budget is its own.
+ *
+ * The default command carries the step's name because `R10` keys a series by the
+ * command: two fixture steps that shared one command string would share one series, and
+ * a case about a bound would then be answered by an unrelated step's seconds.
+ */
+function step(
+  name: string,
+  minutes: number,
+  command = `node scripts/inject-${name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.mjs`,
+): string[] {
   return [`      - name: ${name}`, `        timeout-minutes: ${String(minutes)}`, `        run: ${command}`];
 }
 
 /** A step that inherits the job's budget, which is the shape this module refuses. */
-function inherited(name: string, command = 'node scripts/inject-x.mjs'): string[] {
+function inherited(
+  name: string,
+  command = `node scripts/inject-${name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.mjs`,
+): string[] {
   return [`      - name: ${name}`, `        run: ${command}`];
 }
 
@@ -117,6 +131,43 @@ function recordingOf(
     measured: '2026-11-03',
     jobs: recorded,
     ...over,
+  };
+}
+
+/**
+ * The history `R10` reads, built from one recording of one workflow.
+ *
+ * The commands come from the workflow rather than from the recording, because that is
+ * how the recorder writes them: it reads the tree it is about to measure, and a fixture
+ * that invented a command string would describe a series no step belongs to.
+ */
+function readingsOf(
+  workflow: { steps: unknown[] },
+  recording: { run: number; commit: string; measured: string; jobs: Record<string, { steps: Record<string, number> }> },
+  over: Record<string, unknown> = {},
+) {
+  const jobs: Record<string, Record<string, { seconds: number; command: string }>> = {};
+  for (const job of jobsOf(workflow)) {
+    const record = recording.jobs[job.id];
+    if (record === undefined) continue;
+    const byStep: Record<string, { seconds: number; command: string }> = {};
+    for (const one of stepsOf(workflow, job.id)) {
+      const seconds = record.steps[one.name];
+      if (typeof seconds !== 'number') continue;
+      byStep[one.name] = { seconds, command: commandOf(one) };
+    }
+    jobs[job.id] = byStep;
+  }
+  return {
+    readings: [
+      {
+        run: recording.run,
+        commit: recording.commit,
+        measured: recording.measured,
+        jobs,
+        ...over,
+      },
+    ],
   };
 }
 
@@ -194,7 +245,7 @@ describe('the arithmetic of one job', () => {
         },
       }),
     ).join('\n');
-    expect(errors).toContain('the steps before it in `batteries` measured 20 min');
+    expect(errors).toContain('the steps before it in `batteries` account for 20 min');
     expect(errors).toContain('expires at 33 min');
   });
 
@@ -509,6 +560,18 @@ describe('the step the recording has not measured yet', () => {
     );
     const declared = join(dir, 'declarations.json');
     writeFileSync(declared, JSON.stringify({ declared: [declarationOf()] }));
+    // The history this fixture's bounds are argued from, which is one reading of the
+    // fixture's own run: `R10` refuses a history whose newest entry is not the recording,
+    // and a case about a declaration should not depend on which run the tree last met.
+    const readingsPath = join(dir, 'readings.json');
+    writeFileSync(
+      readingsPath,
+      JSON.stringify(
+        readingsOf(workflowOf([
+          { id: 'batteries', minutes: 25, steps: [...step('Slow battery', 12), ...step('Quick battery', 3)] },
+        ]), recordingOf({ batteries: { minutes: 25, steps: { 'Slow battery': 351 } } })),
+      ),
+    );
     const ledger = join(dir, 'volumes');
     mkdirSync(ledger);
     writeFileSync(join(ledger, 'volume-01.md'), '## v0.1\n\n> Ledger for `v0.1`.\n\n| item | value |\n| --- | --- |\n| suite | 1 |\n');
@@ -520,6 +583,7 @@ describe('the step the recording has not measured yet', () => {
         RCA_CI_BASELINE: recording,
         RCA_CI_DECLARATIONS: declared,
         RCA_CI_LEDGER: ledger,
+        RCA_CI_READINGS: readingsPath,
       },
     });
     expect(result.stderr).toBe('');
@@ -952,6 +1016,10 @@ async function withApi<T>(
       // workflow that inherited it would be reading a sentence about a job it does not
       // have, and the recorder's own report would depend on a committed file.
       RCA_CI_DECLARATIONS: join(dir, 'ci-declarations.json'),
+      // The history `R10` reads. Without it the recorder would append a fixture's run to
+      // the tree's own history, which is a measurement of a workflow that does not exist
+      // -- and the failing case would be the gate, in a test two describes away.
+      RCA_CI_READINGS: join(dir, 'ci-readings.json'),
     });
   } finally {
     await new Promise<void>((shut) => server.close(() => shut()));
@@ -985,6 +1053,9 @@ describe('the recorder', () => {
     expect(bare.status).toBe(2);
     expect(bare.stderr).toContain('usage: GITHUB_TOKEN=');
     expect(bare.stderr).toContain('--borrow');
+    // And the other way to call it: a flag the usage line does not name is a flag nobody
+    // finds, which is how `--seed` would have lived on a script that has two modes.
+    expect(bare.stderr).toContain('--seed');
     expect(bare.stdout).toBe('');
 
     const noRun = spawnSync(process.execPath, [MEASURE, 'not-a-run'], {

@@ -1448,9 +1448,9 @@ sentence for the round rather than erasing the only account of why the job exist
 
 | item | value |
 | --- | --- |
-| `core` test suite | **237 files, 5849 tests passed** (as of this commit) |
+| `core` test suite | **238 files, 5887 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **241 files, 6036 tests passed** (as of this commit) |
+| repo test suite | **242 files, 6074 tests passed** (as of this commit) |
 | new tests | **30**: 19 for `R9` (the whitelist, the whole-step relation, the lifetime, the summary and the self-check), 8 for the split (the grammar, the partition, the shipped workflow's plan, and the two refusals), and 4 for `R6`'s asymmetry (a narrower budget refused, a missing one refused, a wider one accepted and named, a removed one accepted) with one existing case rewritten from the wider direction to the narrower |
 | throw partition | **74 statements**: 6 `fatal`, 60 `unguarded`, 1 `guarded`, 7 `rethrow` |
 | failure sites | **123** across 58 of **83** scripts; two re-annotated after their guard text changed |
@@ -1509,3 +1509,130 @@ run `42131836805`; in `42160224254` it is **4.9** and **7.0** in parallel, and
 with its claims -- is therefore no longer the thing that lengthens a run, which is a
 different statement from "the shards are balanced": shard 2 is **1.6x** shard 1, exactly the
 imbalance the local reading predicted.
+
+## v3.55 — the statistic a bound was always supposed to be taken from
+
+v3.54 closed with a sentence it had earned three times in three runs: *a bound sized from a
+single reading of a variable step is a bound that expires the first time the runner has a
+different day.* The open list then recorded the honest version of it -- every bound's number
+should say which reading it came from and what a slower day is expected to cost. This round
+is the one that answers it, and the answer is not a margin. It is a different statistic.
+
+### One — the maximum was being taken over a sample of one (finding 423, `R10`)
+
+`R4` asks for twice **the** measurement. "The" was one run: the one in
+`golden-master/ci-baseline.json`. A bound needs a maximum over days, and a recording is one
+day by construction, so the rule was exact about the wrong quantity and green while being
+wrong -- a bound could satisfy it and still fire on a day this repository had already
+measured.
+
+`R10` closes the gap. `golden-master/ci-readings.json` holds one entry per run the recorder
+has ever measured; each step in it carries its seconds **and the command those seconds were
+spent on**. A bound must be at least twice the slowest reading of *its command*, from
+whichever job and whichever run. The command is stored rather than resolved through today's
+tree because a renamed step would otherwise lose its series, and losing a series is losing
+the slow day that justified a bound. Two shapes fall out of keying by command: the same
+script in two jobs is one series (`sensitivity` and `sensitivity-shard` now share theirs),
+and an action step keys by its name, because an action has no `run:` of its own and the
+download is what costs.
+
+The file is required rather than optional. A gate that skipped the comparison whenever the
+history was absent would print `OK` about a question it had not asked, which is the silence
+`R10` exists to remove; the refusal names the path it looked for.
+
+### Two — the history has to outlive the workflow it describes (finding 424, `--seed`)
+
+The first version demanded of a reading what `R2` demands of the recording: every job of
+today's workflow, every step of every job. That is right for the recording -- a bound with
+no reading is the gap `R2` refuses -- and wrong for a history, because `42131836805` ran
+seven jobs and today's workflow has eight. The recorder refused it, and a rule that insists
+will refuse every run from before the last structural change: adding a job silently resets
+every bound's evidence to the sample of one the rule was written to remove.
+
+So the two files answer different questions and now have different rules. The **recording**
+is what CI will spend and must describe the workflow as it stands. A **seed** is evidence
+about a command on a day: it is appended to the history, never to the recording, and what
+did not exist then is printed rather than thrown --
+`seeded run 42131836805 with 7 of 8 job(s) and 75 step(s); 1 item(s) did not exist then`.
+A seed may not be newer than the recording, may not be the recording (one day entered twice
+is one day weighted twice), and may not be combined with `--borrow` (borrowed seconds are not
+a day anything ran).
+
+The result is a six-run history where there had been four consecutive runs of one afternoon,
+and the difference is not cosmetic: the gate immediately refused a `sensitivity` bound of 20
+minutes against a seeded **633 s** day.
+
+### Three — a deadline summed the recording rather than the slowest day (finding 425)
+
+`R5` says a bound must expire before its job does: `bound + the steps in front of it` fits
+inside the ceiling. The prefix was the recording's seconds. Under `R10` that is no longer the
+right sum -- if a step may legitimately take twice its recorded time, so may everything in
+front of it -- and a ceiling validated against a fast prefix is a ceiling a slow morning
+overruns, after which the job dies and names no step, which is the defect step bounds exist
+to remove.
+
+Two ceilings moved and neither had been touched by this round: `verify` from 15 to **18**
+(`Lint`'s 14-minute bound plus 1019 s of prefix, 164 s of which is the shell install at 153 s
+rather than 9, and `Test with coverage` was the second one out at 902), and `batteries-heavy`
+from 25 to **27** (the 15-minute backend-support bound plus 1532 s, which does not fit in
+1500).
+
+### Four — the bound that was under twice its own slow day (finding 426)
+
+`Install the shells the suite cross-checks against` was bounded at 3 minutes in all five jobs
+that run it, against a 9-second reading, and green for ten rounds. The history holds **153 s**
+for the same command: an `apt-get update` against a slow mirror. Twice that is 306, which
+does not fit in 180. It is **6** minutes everywhere now. Nothing about the step changed --
+what changed is that a day exists on which it took seventeen times longer, and until this
+round nothing in the tree could see that day.
+
+### Five — a bound too wide for its own ceiling, and why narrowing beat raising (finding 427)
+
+`sensitivity`'s bound was 25 minutes, and the seeded 633 s day still fits inside twice it.
+`R5` did not: 1500 s of bound plus 180 s of prefix is **1680**, against a **1560** ceiling.
+Two repairs, not equal. Raising the ceiling to 29 keeps a bound that is looser than the
+evidence requires; narrowing to **22** minutes (1320 s, 2.09x) puts the deadline at 1500 s
+inside a ceiling that does not move, and reports a hang seven minutes sooner. A ceiling is a
+tolerance for imprecision and a bound is a claim about a command, so the claim was corrected
+and the tolerance left alone.
+
+### Six — the instruments
+
+The mutation set is the new rules' failure shapes, one substitution each: a tie in the
+slowest-reading lookup going to the older run, a duplicate day admitted, the age check
+inverted, the deadline falling back to the recorded day, an action step keying an empty
+command, a seed demanding every job, a seed writing the recording, and a seed allowed to be
+newer than it. Eight red. Each of those eight is a number that would have looked plausible
+on the summary line, which is the same lesson this repository keeps relearning.
+
+### Readings
+
+> Ledger for `v3.55`.
+
+| item | value |
+| --- | --- |
+| `core` suite | **238 files, 5887 tests passed**; 38 of them in `ci-readings.test.ts`, six of those for `--seed` |
+| coverage | `core` **99.96 / 99.75 / 100 / 99.96**, `cli` **100 / 100 / 100 / 100** |
+| mutation | **8** substitutions of the new rules, **8** red, restored green at 115 cases |
+| failure sites | **124** across **58** of **83** scripts; throws **79** = 11 `fatal` + 60 `unguarded` + 1 `guarded` + 7 `rethrow` |
+| site proofs | **189** claims across **57** files, every one driven |
+| the gate's own summary | 8 jobs recorded, **61 of 82** steps bounded, 49 min measured, bounds total **301** min, **6** readings of the workflow |
+
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P1** | real network shapes beyond a closed socket | unchanged | keep a reading of what the API answered on every real push |
+| **P2** | the history is six runs, four of them one afternoon | seeded from `42131836805` and `42142175689` plus this round's runs | record every green run; a bound's worst day is only as good as the worst day recorded |
+| **P2** | P13: a mutation is one substitution | unchanged | a second mutation, or an assertion about mutations |
+| **P2** | `backend`'s 16-minute install bound has never met a slow day | unchanged, and `R10` now divides it by the 648 s cold day | the history will answer it the first time a slow mirror is recorded |
+| **P3** | the shards are unbalanced by file cost, not by count | unchanged | time each claimant file once, cut where the seconds are |
+| **P3** | P2 / P5 / P7 / P8 / P9 / P14 | unchanged | unchanged |
+
+**The lesson, for the round after this one.** A rule that divides by a number should say
+which number, and the file that holds the numbers should be able to grow backwards. Both
+halves were needed: `R10` without `--seed` would have divided by an afternoon, and `--seed`
+without `R10` would have recorded days nothing read. The next round's version of this
+question is the one on the open list -- a margin is a claim about the *next* day, and no
+maximum over recorded days can make it. Six runs is six runs.

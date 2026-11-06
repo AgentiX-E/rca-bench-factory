@@ -1907,7 +1907,7 @@ describe('scripts/verify-local.mjs as a command', () => {
     expect(result.stdout).toContain('cold-tree 20m across 4 step(s)');
     expect(result.stdout).not.toContain('verify 15m across');
     expect(result.stdout).toContain('verify bounds all 7 of its step(s) on its own');
-    expect(result.stdout).toContain("largest 14m of the job's 15m");
+    expect(result.stdout).toContain("largest 14m of the job's 18m");
     // 3 -> 4 in v3.52: the sensitivity job's one battery became two, because a step can
     // now be declared for one recording instead of being folded into a neighbour's name.
     expect(result.stdout).toContain('sensitivity bounds all 4 of its step(s) on its own');
@@ -1919,11 +1919,15 @@ describe('scripts/verify-local.mjs as a command', () => {
     // bound, and the 19 s of setup in front of the step needs a ceiling above 1219 s.
     // 20 -> 25 and 21 -> 26 in v3.53's close-out: 626 s in run 42131836805 needs 1252 s,
     // and 22 s of setup puts the 1500 s bound's deadline at 1522 s.
-    expect(result.stdout).toContain("largest 25m of the job's 26m");
+    expect(result.stdout).toContain("largest 22m of the job's 26m");
     expect(result.stdout).toContain('batteries bounds all 14 of its step(s) on its own');
     expect(result.stdout).toContain("largest 9m of the job's 25m");
     expect(result.stdout).toContain('batteries-heavy bounds all 4 of its step(s) on its own');
-    expect(result.stdout).toContain("largest 18m of the job's 25m");
+    // 25 -> 27 in v3.55's close-out: the 15-minute backend-support bound plus the 632 s
+    // its predecessors account for on their slowest recorded days is 1532 s, which does
+    // not fit in 1500. The step bound did not move; only the ceiling above it did, which
+    // is the point -- a deadline is a property of the prefix, not of the step.
+    expect(result.stdout).toContain("largest 18m of the job's 27m");
     expect(result.stdout).toContain('a hang there names the step rather than the job');
     // And the condition, which is the last default this runner had to state: a step
     // runs only after the ones before it have passed, which is GitHub's default and
@@ -2099,7 +2103,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     // And what the run spent, so the budget is a measurement rather than a limit
     // nobody looks at until it fires.
     expect(result.stdout).toContain('budget:  verify');
-    expect(result.stdout).toContain('of 15m');
+    expect(result.stdout).toContain('of 18m');
   });
 
   it('runs a step in the directory the workflow names, which is the whole claim about that key', () => {

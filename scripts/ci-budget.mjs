@@ -113,6 +113,42 @@
 // writer of the recording is `measure-ci-baseline.mjs`, which refuses to write a
 // reading that does not include every step of the workflow. So the first refresh after
 // a declaration measures it, and `R7` forces a refresh on every round that cites a run.
+//
+// ## The day the bound was not sized from (v3.55, finding 423)
+//
+// Every rule above divides by one number: the seconds the current recording has for the
+// step. v3.54 spent three quarters of a round discovering what that costs. A bound of
+// twelve minutes was placed on `Lint` from a reading of **347 s** -- twice 347 is 694,
+// comfortably inside 720 -- and three runs later the same step, doing the same work on
+// a slightly slower machine, measured **361 s**, where twice is 722 against a bound of
+// 720. Nothing had changed but the day.
+//
+// The recording cannot answer that complaint, because it holds one day by construction:
+// it is the reading of the run a round cites, and taking every reading is not what a
+// baseline is for. So the tree keeps a **history** -- `golden-master/ci-readings.json`,
+// appended by the same recorder that writes the recording -- and `R10` divides by the
+// worst day in it rather than by the last one:
+//
+// - the history's newest reading is the recording's run, in both directions, because a
+//   reading that was taken and not written down is a day no bound can see, and a
+//   reading newer than the recording describes a tree the recording has moved past;
+// - the two files are compared step by step for that run -- one measurement, two files,
+//   and a history that has been edited by hand is refused for disagreeing;
+// - a bound is at least twice the **slowest reading of the command it bounds**, taken
+//   from any run in the history and from any job that ran it.
+//
+// That last clause is the one the evidence forced. The steps that install the shells the
+// suite cross-checks against are bounded at three minutes in five jobs, and in run
+// `42172498744` the same command took **153 s** in one job and **8 s** in another --
+// because its cost belongs to a package mirror, not to the job that asked for it. Sizing
+// each job's bound from its own fast day is a bound that fires on a slow one, which is
+// the defect `R4` exists to remove, one level down. So the series is keyed by the
+// command: a step with no `run` of its own -- an action -- is keyed by its name, because
+// the action is what costs and its name is the only handle the workflow offers.
+//
+// `R4` survives all of it. It is the answer when there is no history to consult, and it
+// is the reason a reading of the tree under test is still taken: `R10` compares a bound
+// with the days already recorded, and the day just recorded is one of them.
 
 import { timeoutOf } from './gate-steps.mjs';
 
@@ -390,6 +426,244 @@ export function readDeclarations(workflow, declarations) {
 }
 
 /**
+ * The command a step runs, which is what a bound is really about (v3.55, `R10`).
+ *
+ * A step with no `run` of its own uses an action, and the action is what costs, so its
+ * name is the handle: `Set up Node.js` in two jobs is the same download and the same
+ * extraction, and it should not be timed twice as if it were two different things. The
+ * whitespace is collapsed because a `run:` block is folded by YAML and a bound is not.
+ */
+export function commandOf(step) {
+  const run = typeof step?.run === 'string' ? step.run.replace(/\s+/g, ' ').trim() : '';
+  return run === '' ? `step:${String(step?.name ?? '')}` : run;
+}
+
+/**
+ * The history of readings, read into the shape the rules work in.
+ *
+ * Each entry is one run's measurement, and each step in it carries the seconds **and
+ * the command those seconds were spent on**. The command is stored rather than resolved
+ * through today's tree for one reason: a renamed step would otherwise lose its series,
+ * and losing a series is losing the slow day that justified a bound. Storing it makes
+ * each reading self-describing, which is what a log has to be to be a log.
+ *
+ * The errors are per entry and they are refusals rather than warnings: a reading with
+ * no run, no commit, no date, no step, or a step with no seconds is a row a reader
+ * cannot place, and `R10` compares bounds with rows.
+ */
+export function readReadings(file) {
+  const rows = [];
+  const errors = [];
+  if (file === null || file === undefined) return { rows, errors };
+  const list = file.readings;
+  if (!Array.isArray(list)) {
+    errors.push(
+      'the readings file has no `readings` list: the history is one entry per run that measured the ' +
+        'workflow, and a file that is not a list of them is a file no bound can be compared with',
+    );
+    return { rows, errors };
+  }
+  if (list.length === 0) {
+    errors.push(
+      'the readings file holds no reading: an empty history describes the state of having no history, ' +
+        'which is the state of not having the file -- delete it, or fill it from a run that measured ' +
+        'the tree',
+    );
+    return { rows, errors };
+  }
+  const seen = new Set();
+  for (let index = 0; index < list.length; index += 1) {
+    const entry = list[index] ?? {};
+    const where = `the reading at position ${String(index + 1)}`;
+    const run = entry.run;
+    if (!Number.isInteger(run) || run <= 0) {
+      errors.push(
+        `${where} names no workflow run, so its seconds are numbers somebody typed: every reading is a ` +
+          'run, and the run id is what makes it one',
+      );
+      continue;
+    }
+    if (seen.has(run)) {
+      errors.push(
+        `${where} is run ${String(run)} a second time: a run that was measured twice would be counted ` +
+          'twice when the slowest day is looked up, and a bound would be argued from one day twice',
+      );
+      continue;
+    }
+    seen.add(run);
+    if (!/^[0-9a-f]{40}$/.test(String(entry.commit ?? ''))) {
+      errors.push(
+        `run ${String(run)} names no commit, so a reader cannot tell which tree its seconds describe`,
+      );
+      continue;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(entry.measured ?? ''))) {
+      errors.push(
+        `run ${String(run)} has no measurement date: a reading that cannot be dated cannot be told from ` +
+          'one taken before the machine pool changed',
+      );
+      continue;
+    }
+    const jobs = entry.jobs;
+    if (jobs === null || typeof jobs !== 'object' || Array.isArray(jobs) || Object.keys(jobs).length === 0) {
+      errors.push(
+        `run ${String(run)} holds no job, so it measured nothing that a bound could be sized from`,
+      );
+      continue;
+    }
+    const steps = new Map();
+    let bad = false;
+    for (const [jobId, byStep] of Object.entries(jobs)) {
+      if (
+        byStep === null ||
+        typeof byStep !== 'object' ||
+        Array.isArray(byStep) ||
+        Object.keys(byStep).length === 0
+      ) {
+        errors.push(
+          `run ${String(run)} holds \`${jobId}\` with no step in it: a job entry with nothing measured ` +
+            'reads as a job that took no time, which is not a thing a runner does',
+        );
+        bad = true;
+        continue;
+      }
+      for (const [name, one] of Object.entries(byStep)) {
+        const seconds = one?.seconds;
+        const command = one?.command;
+        if (!Number.isInteger(seconds) || seconds < 0) {
+          errors.push(
+            `\`${jobId} / ${name}\` in run ${String(run)} holds ${String(seconds)} seconds: a reading is ` +
+              'a whole number of seconds, and zero is allowed because a step that ran and did nothing ' +
+              'measurable took none',
+          );
+          bad = true;
+          continue;
+        }
+        if (typeof command !== 'string' || command.trim() === '') {
+          errors.push(
+            `\`${jobId} / ${name}\` in run ${String(run)} does not say which command it timed, so its ` +
+              'seconds cannot be compared with the bound of a step that runs the same command',
+          );
+          bad = true;
+          continue;
+        }
+        steps.set(`${jobId}\u0000${name}`, { seconds, command, job: jobId, step: name });
+      }
+    }
+    if (bad) continue;
+    rows.push({ run, commit: entry.commit, measured: entry.measured, steps });
+  }
+  rows.sort((a, b) => a.run - b.run);
+  return { rows, errors };
+}
+
+/**
+ * One reading written into a history, newest last, one entry per run.
+ *
+ * Rewriting the same run replaces its entry rather than adding a second one: the
+ * recorder may legitimately be run twice against one run -- after a failure, or to
+ * re-seed -- and a history with two rows for one day would weight that day twice.
+ */
+export function mergeReading(file, entry) {
+  const existing = Array.isArray(file?.readings) ? file.readings : [];
+  const kept = existing.filter((one) => one?.run !== entry.run);
+  return { readings: [...kept, entry].sort((a, b) => Number(a.run) - Number(b.run)) };
+}
+
+/**
+ * The slowest reading of one command, across every run and every job that ran it.
+ *
+ * Ties go to the newer run, so the answer is a function of the file rather than of the
+ * order somebody happened to append in -- the sentence `R10` prints names a run, and two
+ * answers for one file would make the sentence unwritable.
+ */
+export function worstReadingFor(rows, command) {
+  let worst = null;
+  for (const row of rows) {
+    for (const one of row.steps.values()) {
+      if (one.command !== command) continue;
+      if (
+        worst === null ||
+        one.seconds > worst.seconds ||
+        (one.seconds === worst.seconds && row.run > worst.run)
+      ) {
+        worst = { seconds: one.seconds, run: row.run, job: one.job, step: one.step };
+      }
+    }
+  }
+  return worst;
+}
+
+/**
+ * `R10` -- the history is the recording's, and the recording is the history's last day.
+ *
+ * Two directions, and both are about the same defect: a reading that exists in one file
+ * and not the other. A reading behind the recording is a day that was measured and not
+ * written down, so no bound can be argued from it; a reading ahead of the recording is a
+ * tree the recording no longer describes, which is `R7`'s complaint one level finer. And
+ * when the tail *is* the recording's run, the two files have to agree second by second,
+ * because they are one measurement written twice and a disagreement means one of them
+ * was edited by hand.
+ */
+function historyErrors(baseline, parsed) {
+  const errors = [...parsed.errors];
+  if (parsed.errors.length > 0) return errors;
+  const rows = parsed.rows;
+  const tail = rows[rows.length - 1];
+  if (tail.run < baseline.run) {
+    errors.push(
+      `the newest reading in the history is run ${String(tail.run)} and the recording is run ` +
+        `${String(baseline.run)}: a reading that was taken and not written down is a day no bound can ` +
+        'see, and the recorder writes both files from one measurement -- record the run again, or say ' +
+        'in the history why that day was dropped',
+    );
+    return errors;
+  }
+  if (tail.run > baseline.run) {
+    errors.push(
+      `the history holds a reading of run ${String(tail.run)}, which is newer than the recording (run ` +
+        `${String(baseline.run)}): the bounds would be argued from days the recording does not describe ` +
+        '-- record that run as the recording rather than beside it',
+    );
+    return errors;
+  }
+  const recorded = baseline.jobs ?? {};
+  for (const [jobId, job] of Object.entries(recorded)) {
+    for (const [name, seconds] of Object.entries(job?.steps ?? {})) {
+      const held = tail.steps.get(`${jobId}\u0000${name}`);
+      if (held === undefined) {
+        errors.push(
+          `run ${String(tail.run)} measured \`${jobId} / ${name}\` and its reading in the history does ` +
+            'not hold it: the recording and the history are one measurement written twice, so a step in ' +
+            'one and not the other means one of them was edited',
+        );
+        continue;
+      }
+      if (held.seconds !== seconds) {
+        errors.push(
+          `\`${jobId} / ${name}\` took ${String(seconds)} s in the recording and ` +
+            `${String(held.seconds)} s in the history, both for run ${String(tail.run)}: one measurement ` +
+            'cannot have two answers, so one of the two files was edited by hand',
+        );
+      }
+    }
+  }
+  const measured = new Set();
+  for (const [jobId, job] of Object.entries(recorded)) {
+    for (const name of Object.keys(job?.steps ?? {})) measured.add(`${jobId}\u0000${name}`);
+  }
+  for (const [key, one] of tail.steps) {
+    if (measured.has(key)) continue;
+    errors.push(
+      `the history holds \`${one.job} / ${one.step}\` for run ${String(tail.run)} and the recording does ` +
+        'not: the two files are one measurement, so a step in the history alone means one of them was ' +
+        'edited',
+    );
+  }
+  return errors;
+}
+
+/**
  * R7 -- the recording is not older than the round that reports it.
  *
  * Two failures, and the second is the one that makes the first meaningful. A newest row
@@ -463,11 +737,24 @@ export function narrowed(record, job) {
  * Returns sentences rather than a boolean, because there are six different repairs
  * behind the rules and a reader who is told "budgets: FAILED" has to guess which.
  */
-export function budgetErrors(workflow, baseline, ledger = null, declarations = null) {
+export function budgetErrors(workflow, baseline, ledger = null, declarations = null, readings = null) {
   const parsed = readDeclarations(workflow, declarations);
   const errors = [...ledgerErrors(baseline, ledger), ...parsed.errors];
   const declared = parsed.declared;
   const declaredJobs = parsed.jobs;
+
+  // R10 -- the history of readings, and the two shapes of a reading that exists in one
+  // file and not the other. `readings` is null when the caller has no history to offer,
+  // and the rules are then absent rather than passing, for the reason `ledger` is: a
+  // caller that did not pass one has not asked the question.
+  const parsedReadings = readings === null || readings === undefined ? null : readReadings(readings);
+  // Appended one at a time rather than spread: the list is bounded by the workflow's step
+  // count, but a spread into `push` is the shape `spread-append-guard.test.ts` refuses,
+  // and the exemption list is for the cases where a loop cannot say it better.
+  if (parsedReadings !== null) {
+    for (const one of historyErrors(baseline, parsedReadings)) errors.push(one);
+  }
+  const historyKnown = parsedReadings !== null && parsedReadings.errors.length === 0;
 
   // R1 -- the recording is a reading, and it says where it was taken.
   if (!Number.isInteger(baseline.run) || baseline.run <= 0) {
@@ -633,7 +920,21 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
     // R4 and R5 -- per step: a job that bounds some of its steps bounds all of them,
     // the bound is at least the multiple and the floor, and it can expire before the
     // job does.
+    //
+    // The sum in front of a bound is taken from the slowest recorded day of each step,
+    // not from the day being recorded, for the reason `R10` exists: a deadline argued
+    // from a fast day is a deadline that holds until the prefix has a slow one. The
+    // difference is not hypothetical -- refreshing the recording to a run in which the
+    // shell install took 91 s instead of 9 moved `sensitivity`'s deadline from 1519 to
+    // 1601 seconds and out of a 26-minute ceiling, on a tree where nothing had changed
+    // but the day the prefix was measured on.
+    const slowest = (one, own) => {
+      if (!historyKnown) return own;
+      const worst = worstReadingFor(parsedReadings.rows, commandOf(one));
+      return worst === null ? own : Math.max(own, worst.seconds);
+    };
     let before = 0;
+
     for (const step of steps) {
       const seconds = secondsOf(record, step.name);
       if (step.error !== null) {
@@ -659,12 +960,35 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
               `${String(FLOOR_MINUTES)}, because a measurement cannot see a cold package index or a missed cache`,
           );
         }
+        // R10 -- the same arithmetic as `R4`, divided by the slowest reading of **the
+        // command** rather than by this step's reading of the recording. The two are
+        // disjoint by construction: `R4` speaks for the day being recorded, this speaks
+        // for every other day and every other job that ran the same command, so a step
+        // that is under twice its own measurement is refused once rather than twice.
+        if (historyKnown) {
+          const worst = worstReadingFor(parsedReadings.rows, commandOf(step));
+          const ownDay =
+            worst !== null &&
+            worst.run === baseline.run &&
+            worst.job === job.id &&
+            worst.seconds === seconds;
+          if (worst !== null && !ownDay && bound < MULTIPLE * worst.seconds) {
+            errors.push(
+              `\`${job.id} / ${step.name}\` is bounded at ${String(step.minutes)} min and the same command ` +
+                `took ${String(worst.seconds)} s in \`${worst.job} / ${worst.step}\` in run ` +
+                `${String(worst.run)}: the bound is under twice the slowest day already recorded, so a ` +
+                'run that meets the day this repository has met before is refused for being slow rather ' +
+                'than for hanging -- size the bound from that reading, or say in the history why it is not ' +
+                'comparable',
+            );
+          }
+        }
         if (job.timeoutMinutes !== null) {
           const deadline = bound + before;
           if (deadline > job.timeoutMinutes * 60) {
             errors.push(
               `\`${step.name}\` is bounded at ${String(step.minutes)} min and the steps before it in ` +
-                `\`${job.id}\` measured ${String(Math.round(before / 60))} min, so its bound expires at ` +
+                `\`${job.id}\` account for ${String(Math.round(before / 60))} min on their slowest recorded days, so its bound expires at ` +
                 `${String(Math.round(deadline / 60))} min -- past the job's ${String(job.timeoutMinutes)}. ` +
                 'The job would die first and name nothing, which is the defect the bound is for',
             );
@@ -686,7 +1010,7 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
           if (deadline > job.timeoutMinutes * 60) {
             errors.push(
               `\`${step.name}\` is declared at ${String(step.minutes)} min and the steps before it in ` +
-                `\`${job.id}\` measured ${String(Math.round(before / 60))} min, so its bound would expire ` +
+                `\`${job.id}\` account for ${String(Math.round(before / 60))} min on their slowest recorded days, so its bound would expire ` +
                 `at ${String(Math.round(deadline / 60))} min -- past the job's ${String(job.timeoutMinutes)}. ` +
                 'The job would die first and name nothing, which is the defect the bound is for',
             );
@@ -702,7 +1026,7 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
           );
         }
       }
-      if (typeof seconds === 'number') before += seconds;
+      if (typeof seconds === 'number') before += slowest(step, seconds);
     }
   }
 
@@ -831,15 +1155,17 @@ function ledgerText(ledger, baseline) {
  * The jobs excused from step bounds are named here rather than in an error, because
  * the exception is legitimate and the reader should see it being taken.
  */
-export function budgetSummary(workflow, baseline, ledger = null, declarations = null) {
+export function budgetSummary(workflow, baseline, ledger = null, declarations = null, readings = null) {
   const recorded = baseline.jobs ?? {};
+  const parsedReadings = readings === null || readings === undefined ? null : readReadings(readings);
+  const historyKnown = parsedReadings !== null && parsedReadings.errors.length === 0;
   let measured = 0;
   let steps = 0;
   let bounded = 0;
   let bounds = 0;
   let jobCount = 0;
   const excused = [];
-  let tightest = { name: '', ratio: Infinity };
+  let tightest = { name: '', ratio: Infinity, worst: null };
   const widened = [];
 
   for (const job of jobsOf(workflow)) {
@@ -861,8 +1187,15 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
       if (step.inheritedFrom === 'step') {
         bounded += 1;
         bounds += step.minutes * 60;
-        const ratio = seconds === 0 ? Infinity : (step.minutes * 60) / seconds;
-        if (ratio < tightest.ratio) tightest = { name: `${job.id} / ${step.name}`, ratio };
+        // The denominator is the slowest reading of the command when there is a history
+        // to ask, because that is the number `R10` refuses against -- a summary computed
+        // from the recording alone would report a ratio the gate does not use.
+        const slowest = historyKnown ? worstReadingFor(parsedReadings.rows, commandOf(step)) : null;
+        const denominator = slowest === null ? seconds : Math.max(seconds, slowest.seconds);
+        const ratio = denominator === 0 ? Infinity : (step.minutes * 60) / denominator;
+        if (ratio < tightest.ratio) {
+          tightest = { name: `${job.id} / ${step.name}`, ratio, worst: slowest };
+        }
       }
     }
     measured += jobSeconds;
@@ -908,11 +1241,28 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
       ? 'no job was given a wider budget than its reading'
       : `budget(s) widened since the reading: ${widened.join(', ')} -- no step bound moves, ` +
         "and `R5`'s deadline only gains room";
+  // The tightest bound names the reading it is tight against, because that is the number
+  // `R10` would refuse it for and a reader has to be able to go and look at that run.
+  const tightestText =
+    `${tightest.name} at ${Number.isFinite(tightest.ratio) ? tightest.ratio.toFixed(1) : 'unmeasured'}x` +
+    (tightest.worst === null
+      ? ''
+      : ` of the slowest reading of its command (${String(tightest.worst.seconds)} s in ` +
+        `\`${tightest.worst.job} / ${tightest.worst.step}\`, run ${String(tightest.worst.run)})`);
+  const readingsText =
+    parsedReadings === null
+      ? 'no history of readings to compare against'
+      : parsedReadings.errors.length > 0
+        ? `the history of readings cannot be read: ${String(parsedReadings.errors.length)} problem(s)`
+        : `${String(parsedReadings.rows.length)} reading(s) of the workflow, run ` +
+          `${String(parsedReadings.rows[0]?.run)} to ` +
+          `${String(parsedReadings.rows[parsedReadings.rows.length - 1]?.run)}`;
   return (
     `check-ci-budget: OK — ${String(jobCount)} job(s) recorded, ${String(bounded)} of ${String(steps)} ` +
     `step(s) bounded, ${String(Math.round(measured / 60))} min measured (as of run ` +
     `${String(baseline.run)}); bounds total ${String(Math.round(bounds / 60))} min; tightest ` +
-    `${tightest.name} at ${Number.isFinite(tightest.ratio) ? tightest.ratio.toFixed(1) : 'unmeasured'}x; ` +
-    `${excusedText}; ${declaredText}; ${jobsText}; ${widenedText}; ${ledgerText(ledger, baseline)}`
+    `${tightestText}; ` +
+    `${excusedText}; ${declaredText}; ${jobsText}; ${widenedText}; ${readingsText}; ` +
+    `${ledgerText(ledger, baseline)}`
   );
 }

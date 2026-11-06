@@ -227,7 +227,7 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // every other failure through is a throw of its own. 74 is v3.54: a declared job that
     // has never run must not be answered by `--borrow`, and that refusal is a throw a test
     // reaches rather than a sentence in a comment.
-    expect(total).toBe(74);
+    expect(total).toBe(79);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -251,18 +251,24 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
       fatal.push(...read.rows.filter((row) => row.disposition === 'fatal').map((row) => `${file}:${String(row.line)}`));
     }
     expect(fatal).toEqual([
-      'measure-ci-baseline.mjs:155',
-      'measure-ci-baseline.mjs:173',
-      'measure-ci-baseline.mjs:184',
-      'measure-ci-baseline.mjs:195',
-      'measure-ci-baseline.mjs:213',
-      'measure-ci-baseline.mjs:220',
+      'measure-ci-baseline.mjs:166',
+      'measure-ci-baseline.mjs:206',
+      'measure-ci-baseline.mjs:240',
+      'measure-ci-baseline.mjs:246',
+      'measure-ci-baseline.mjs:253',
+      'measure-ci-baseline.mjs:265',
+      'measure-ci-baseline.mjs:276',
+      'measure-ci-baseline.mjs:287',
+      'measure-ci-baseline.mjs:309',
+      'measure-ci-baseline.mjs:321',
+      'measure-ci-baseline.mjs:364',
     ]);
     // 60 unguarded: the two pack guards are `unguarded`, like every other throw inside a
-    // function with no enclosing `try`. 6 fatal is v3.54's addition to v3.52's five: a
-    // borrow of a declared job, which is a refusal about a first run that has not
-    // happened rather than about the run the script is reading.
-    expect(counts).toEqual({ fatal: 6, unguarded: 60, guarded: 1, rethrow: 7 });
+    // function with no enclosing `try`. 11 fatal is v3.55's addition of five to v3.54's
+    // six, and all five are the same shape: `--seed` refuses at the top level, before any
+    // file is written, because a seed that turned out to be the recording would have
+    // already replaced the day the bounds are argued from.
+    expect(counts).toEqual({ fatal: 11, unguarded: 60, guarded: 1, rethrow: 7 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

@@ -2,7 +2,7 @@
   "rule": "a process.exit(...) call whose argument is not a known zero -- no argument at all is zero; sites and zero partition every process.exit call, whatever position the call sits in; a reference to the exit family that is not a call is refused rather than counted; see scripts/derive-gate-sites.mjs",
   "scanned": 83,
   "excluded": {
-    "zero": 17
+    "zero": 18
   },
   "sites": [
     {
@@ -83,7 +83,7 @@
     },
     {
       "script": "scripts/check-ci-budget.mjs",
-      "line": 68,
+      "line": 83,
       "condition": "workflow.errors.length > 0",
       "diagnostic": "check-ci-budget: ci.yml does not parse:\\n ${workflow.errors.join('\\n ')}\\n",
       "status": "proved",
@@ -91,7 +91,7 @@
     },
     {
       "script": "scripts/check-ci-budget.mjs",
-      "line": 76,
+      "line": 91,
       "condition": "catch",
       "diagnostic": "check-ci-budget: no recording at ${BASELINE} -- ${String(error)}\\n",
       "status": "proved",
@@ -99,7 +99,15 @@
     },
     {
       "script": "scripts/check-ci-budget.mjs",
-      "line": 94,
+      "line": 110,
+      "condition": "catch",
+      "diagnostic": "check-ci-budget: no history of readings at ${READINGS} -- ${String(error)}: the bounds are sized",
+      "status": "proved",
+      "provedBy": "packages/core/test/ci-readings.test.ts"
+    },
+    {
+      "script": "scripts/check-ci-budget.mjs",
+      "line": 128,
       "condition": "catch",
       "diagnostic": "check-ci-budget: no readable declarations at ${DECLARATIONS} -- ${String(error)}\\n",
       "status": "proved",
@@ -107,7 +115,7 @@
     },
     {
       "script": "scripts/check-ci-budget.mjs",
-      "line": 102,
+      "line": 136,
       "condition": "errors.length > 0",
       "diagnostic": "check-ci-budget: ${error}\\n",
       "status": "proved",
@@ -533,9 +541,9 @@
     },
     {
       "script": "scripts/measure-ci-baseline.mjs",
-      "line": 119,
+      "line": 163,
       "condition": "TOKEN === '' || !/^\\d+$/.test(RUN)",
-      "diagnostic": "usage: GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>]\\n",
+      "diagnostic": "usage: GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>] [--seed]\\n",
       "status": "proved",
       "provedBy": "packages/core/test/ci-budget.test.ts"
     },
@@ -964,7 +972,7 @@
   "throws": {
     "rule": "every throw statement, partitioned four ways: `fatal` (no enclosing function, no enclosing try) ends the process and is proved like a site; `unguarded` (in a function, no enclosing try) hands control to its caller, which decides; `guarded` (in a try block) is caught here; `rethrow` (in a catch, rethrowing the caught binding) carries a decision made above. A try or a catch stops at a function boundary, because neither is on the stack when the function runs elsewhere. fatal + unguarded + guarded + rethrow is the number of throw statements; see scripts/derive-gate-sites.mjs",
     "counts": {
-      "fatal": 6,
+      "fatal": 11,
       "unguarded": 60,
       "guarded": 1,
       "rethrow": 7
@@ -1189,7 +1197,15 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 126,
+        "line": 166,
+        "disposition": "fatal",
+        "message": "new Error( '--seed and --borrow say different things: a seed is a day this run really measured, and a borrow is ' + 'sec",
+        "status": "proved",
+        "provedBy": "packages/core/test/ci-readings.test.ts"
+      },
+      {
+        "script": "scripts/measure-ci-baseline.mjs",
+        "line": 177,
         "disposition": "unguarded",
         "message": "${path}: HTTP ${String(response.status)}",
         "status": "proved",
@@ -1197,7 +1213,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 155,
+        "line": 206,
         "disposition": "fatal",
         "message": "the workflow does not parse, so there is nothing to measure:\\n${workflow.errors.join('\\n')}",
         "status": "proved",
@@ -1205,7 +1221,31 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 173,
+        "line": 240,
+        "disposition": "fatal",
+        "message": "new Error( `the recording at ${OUT} cannot be parsed (${String(error)}), so a seed cannot be told from it: ` + 'a seed i",
+        "status": "proved",
+        "provedBy": "packages/core/test/ci-readings.test.ts"
+      },
+      {
+        "script": "scripts/measure-ci-baseline.mjs",
+        "line": 246,
+        "disposition": "fatal",
+        "message": "new Error( `--seed names run ${RUN}, which is newer than the recording (run ${String(held?.run)}): a day that ` + 'has n",
+        "status": "proved",
+        "provedBy": "packages/core/test/ci-readings.test.ts"
+      },
+      {
+        "script": "scripts/measure-ci-baseline.mjs",
+        "line": 253,
+        "disposition": "fatal",
+        "message": "new Error( `--seed names run ${RUN}, which is the recording: it is already in the history, and a second entry ` + 'for o",
+        "status": "proved",
+        "provedBy": "packages/core/test/ci-readings.test.ts"
+      },
+      {
+        "script": "scripts/measure-ci-baseline.mjs",
+        "line": 265,
         "disposition": "fatal",
         "message": "new Error( `--borrow ${job.id}=${borrowedFrom} names a declared job: a job promise waits for its ` + 'first run, and a b",
         "status": "proved",
@@ -1213,7 +1253,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 184,
+        "line": 276,
         "disposition": "fatal",
         "message": "--borrow names \\`${borrowedFrom}\\`, which is not a job of this workflow",
         "status": "proved",
@@ -1221,7 +1261,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 195,
+        "line": 287,
         "disposition": "fatal",
         "message": "new Error( `--borrow ${job.id}=${borrowedFrom} crosses a budget: \\`${job.id}\\` declares ` + `${job.timeoutMinutes === nu",
         "status": "proved",
@@ -1229,7 +1269,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 213,
+        "line": 309,
         "disposition": "fatal",
         "message": "run ${RUN} holds no job named \"${apiNameOf(job)}\", so \\`${job.id}\\` has no reading",
         "status": "proved",
@@ -1237,11 +1277,19 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 220,
+        "line": 321,
         "disposition": "fatal",
         "message": "new Error( `\\`${job.id} / ${step.name}\\` is not a step of \"${source.name}\" in run ${RUN}: a bound cannot be ` + 'sized f",
         "status": "proved",
         "provedBy": "packages/core/test/ci-budget.test.ts"
+      },
+      {
+        "script": "scripts/measure-ci-baseline.mjs",
+        "line": 364,
+        "disposition": "fatal",
+        "message": "new Error( `run ${RUN} measured no step this workflow has, so it is not a day any bound of this tree could be ` + 'argue",
+        "status": "proved",
+        "provedBy": "packages/core/test/ci-readings.test.ts"
       },
       {
         "script": "scripts/measure-doc-counts.mjs",
