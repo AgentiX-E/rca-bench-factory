@@ -480,6 +480,153 @@ export function claimsByFile(claimed) {
 }
 
 /**
+ * `--shard <i>/<n>`: which part of the sorted claimants one run is responsible for.
+ *
+ * The index is one-based because a shard is named by a person in `ci.yml`, and `1/2`
+ * reads as "the first of two" rather than "the second of two". A count of zero, an
+ * index past the count and a fraction that is not two integers are refused here rather
+ * than by the caller noticing an empty run -- a battery that measured nothing would
+ * otherwise print a clean bill of health.
+ *
+ * Returns a value rather than throwing, because the gate and the workflow both ask this
+ * question and both need the sentence that says why the argument is wrong.
+ */
+export function parseShard(text) {
+  const match = /^(\d+)\/(\d+)$/.exec(String(text ?? '').trim());
+  if (match === null) {
+    return {
+      ok: false,
+      error: `expected --shard <i>/<n> with one-based i and a positive n, not '${String(text)}'`,
+    };
+  }
+  const index = Number(match[1]);
+  const count = Number(match[2]);
+  if (count < 1) {
+    return { ok: false, error: `the shard count has to be at least 1, not ${String(count)}` };
+  }
+  if (index < 1 || index > count) {
+    return {
+      ok: false,
+      error: `shard ${String(index)}/${String(count)} is out of range: i runs from 1 to n`,
+    };
+  }
+  return { ok: true, index, count };
+}
+
+/**
+ * The claimants of one shard, from the sorted list `claimsByFile` returns.
+ *
+ * Position rather than file size, deliberately. A split by measured seconds would have
+ * to be re-derived after every run and would put the same file in different shards on
+ * different machines; a split by sorted position is a pure function of the inventory,
+ * so a plan written in `ci.yml` and a plan checked by a test are the same plan.
+ */
+export function shardClaims(byFile, index, count) {
+  return byFile.filter((_, position) => position % count === index - 1);
+}
+
+/**
+ * Whether the shard calls in a workflow measure every proved claim exactly once.
+ *
+ * A split is only an improvement if its union is the whole inventory. Each refusal
+ * names a different repair: a missing shard, a duplicated one, two shards in one job
+ * (which would run serially and save no wall clock), disagreeing counts, a shard with no
+ * file, and a claim measured twice or by nobody. It is a function of the inventory and
+ * the plan, so a test can reach every verdict without a runner -- which is the only
+ * place those verdicts can be reached at all.
+ */
+export function checkShardPlan(byFile, specs) {
+  const errors = [];
+  if (specs.length === 0) {
+    return [
+      'no call to verify-sites-are-sensitive.mjs carries --shard, so the battery is not ' +
+        'split at all and no partition can be checked',
+    ];
+  }
+  const counts = new Set(specs.map((one) => one.count));
+  if (counts.size !== 1) {
+    errors.push(
+      `the shard calls disagree on the count (${[...counts].join(', ')}): every shard of ` +
+        'one battery has to name the same n, or the modulo assigns the same file twice',
+    );
+    return errors;
+  }
+  const count = specs[0].count;
+  if (count < 2) {
+    errors.push(
+      `one shard is not a split: n is ${String(count)}, and a battery with one shard ` +
+        'still measures every claimant in one job',
+    );
+  }
+  for (let index = 1; index <= count; index += 1) {
+    const seen = specs.filter((one) => one.index === index).length;
+    if (seen === 0) {
+      errors.push(
+        `shard ${String(index)}/${String(count)} is not called by any step of ci.yml, so its ` +
+          'claimants are measured by nobody and the battery would pass on a subset of itself',
+      );
+    } else if (seen > 1) {
+      errors.push(
+        `shard ${String(index)}/${String(count)} is called ${String(seen)} times, so its ` +
+          'claimants are measured twice and the second run is charged to another job',
+      );
+    }
+  }
+  for (const one of specs) {
+    if (one.index < 1 || one.index > count) {
+      errors.push(
+        `shard ${String(one.index)}/${String(count)} is out of range, so its plan cannot ` +
+          'be argued about',
+      );
+    }
+  }
+  const seenJobs = new Set();
+  for (const one of specs) {
+    if (seenJobs.has(one.job)) {
+      errors.push(
+        `\`${one.job}\` calls two shards: they would run one after the other in the same ` +
+          'job, which is the same measurement with two names',
+      );
+    }
+    seenJobs.add(one.job);
+  }
+
+  const allSites = byFile.flatMap(([, claims]) => claims.map((claim) => claim.site));
+  const measured = [];
+  for (const one of specs) {
+    const files = shardClaims(byFile, one.index, one.count);
+    if (files.length === 0) {
+      errors.push(
+        `shard ${String(one.index)}/${String(one.count)} holds no claimant, so that run ` +
+          'would pass while measuring nothing',
+      );
+    }
+    // A loop rather than a spread: the number of claims is a function of the inventory,
+    // and a `push(...sites)` over it would overflow the argument limit on a tree with
+    // enough proved exits. The guard in `spread-append-guard.test.ts` exists for exactly
+    // this shape.
+    for (const [, claims] of files) {
+      for (const claim of claims) measured.push(claim.site);
+    }
+  }
+  for (const site of new Set(allSites)) {
+    const times = measured.filter((one) => one === site).length;
+    if (times === 0) {
+      errors.push(
+        `\`${site}\` is measured by no shard, so a claim that a test proves this exit ` +
+          'would go unchecked on this tree',
+      );
+    } else if (times > 1) {
+      errors.push(
+        `\`${site}\` is measured by ${String(times)} shards, so the partition is not a ` +
+          'partition at all',
+      );
+    }
+  }
+  return errors;
+}
+
+/**
  * The claims a run did not honour, as sentences.
  *
  * The comparison is **per file**, and that is the whole point. Pooling every file

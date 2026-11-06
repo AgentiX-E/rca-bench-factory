@@ -64,10 +64,25 @@
  * alternative is a test that edits a committed file -- which this repository does
  * not do. Same pattern as `RCA_SITE_PROOFS_*`, `RCA_CI_WORKFLOW` and `RCA_CI_BASELINE`.
  *
+ * ## A split by sorted position (v3.54, P3)
+ *
+ * The runner measured 626 s for this battery, 52 s short of the bound `R4` asked for,
+ * so its claimants are divided across two jobs. `--shard <i>/<n>` takes every
+ * `i`-th file of the sorted `claimsByFile` list; with no flag the run measures the whole
+ * inventory, which is what a local repair still wants. Position rather than measured
+ * cost, because a plan written in `ci.yml` and a plan checked by a test have to be the
+ * same plan on every machine.
+ *
+ * A shard with no claimant is refused, not reported green. Two green jobs, one of which
+ * measured nothing, is the shape a split can produce that a single job never can; the
+ * partition itself is checked by `checkShardPlan` against the real workflow and the
+ * real inventory, because the summary of one shard cannot see the claims it did not run.
+ *
  * ## Usage
  *
  *   node scripts/verify-sites-are-sensitive.mjs            # measure every claim
  *   node scripts/verify-sites-are-sensitive.mjs --list     # print the plan, run nothing
+ *   node scripts/verify-sites-are-sensitive.mjs --shard 1/2
  */
 
 import { spawn } from 'node:child_process';
@@ -82,7 +97,9 @@ import {
   failureSummary,
   hookFile,
   parseHollows,
+  parseShard,
   parseTrace,
+  shardClaims,
 } from './site-proofs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -106,10 +123,30 @@ const CONCURRENCY = Number(process.env['RCA_SENSITIVE_CONCURRENCY'] ?? '4');
 
 const args = process.argv.slice(2);
 const listOnly = args.includes('--list');
-const unknown = args.filter((one) => one !== '--list');
-if (unknown.length > 0) {
-  process.stderr.write(`verify-sites-are-sensitive: unknown argument '${unknown[0]}'\n`);
-  process.stderr.write('usage: node scripts/verify-sites-are-sensitive.mjs [--list]\n');
+const unknown = [];
+let shardText = null;
+for (let index = 0; index < args.length; index += 1) {
+  if (args[index] === '--list') continue;
+  if (args[index] === '--shard') {
+    shardText = String(args[index + 1] ?? '');
+    index += 1; // the value is consumed, not a stray argument
+    continue;
+  }
+  unknown.push(args[index]);
+}
+const shard = shardText === null ? null : parseShard(shardText);
+if (unknown.length > 0 || (shard !== null && !shard.ok)) {
+  // One refusal for both shapes. A battery that was given an argument it cannot read
+  // and a battery asked to measure no claims are the same risk -- a green line about a
+  // measurement that did not happen -- and both are kept out of the same exit.
+  const reason =
+    unknown.length > 0
+      ? `unknown argument '${unknown[0]}'`
+      : `invalid --shard '${String(shardText)}': ${shard.error}`;
+  process.stderr.write(`verify-sites-are-sensitive: ${reason}\n`);
+  process.stderr.write(
+    'usage: node scripts/verify-sites-are-sensitive.mjs [--list] [--shard <i>/<n>]\n',
+  );
   process.exit(1);
 }
 if (!Number.isInteger(CONCURRENCY) || CONCURRENCY < 1) {
@@ -147,18 +184,25 @@ try {
  * was never asked is the defect this gate exists to prevent.
  */
 const everything = claimedSites(inventory);
-if (everything.length === 0) {
-  // The shape that would pass forever: no claims, so nothing to violate, and a
-  // summary line that reads like a clean bill of health.
+const allByFile = claimsByFile(everything);
+const byFile =
+  shard === null ? allByFile : shardClaims(allByFile, shard.index, shard.count);
+if (everything.length === 0 || byFile.length === 0) {
+  // The shape that would pass forever: no claims in this run, so nothing to violate,
+  // and a summary line that reads like a clean bill of health. A shard past the file
+  // count is exactly that shape, and is refused here rather than by a reader noticing
+  // that one of the two green jobs measured nothing.
+  const what =
+    everything.length === 0
+      ? `${relative(ROOT, INVENTORY) || INVENTORY} holds no proved site`
+      : `shard ${String(shard.index)}/${String(shard.count)} holds no claimant`;
   process.stderr.write(
-    `verify-sites-are-sensitive: ${relative(ROOT, INVENTORY) || INVENTORY} holds no proved site, ` +
-      'so this run would pass while measuring nothing\n',
+    `verify-sites-are-sensitive: ${what}, so this run would pass while measuring nothing\n`,
   );
   process.exit(1);
 }
 
-const claimed = everything;
-const byFile = claimsByFile(claimed);
+const claimed = byFile.flatMap(([, claims]) => claims);
 /** The same entries, by file, for the run phase. */
 const claimsOf = new Map(byFile);
 

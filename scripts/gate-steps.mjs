@@ -551,6 +551,22 @@ export const STEP_PLAN = {
     note: 'twelve single-file suites, one per exemption; ~36 s on a runner, which is why it is the only step bounded at the floor',
   },
 
+  // ---- sensitivity-shard ----------------------------------------------------
+  //
+  // The second half of the sites battery, split out in v3.54 so the runner spends
+  // roughly half of 626 s in each of two jobs. The plan holds the new job by its own
+  // keys rather than by a wildcard: a wildcard would let a shard be added that runs
+  // nowhere in particular locally and still counts as covered.
+  'sensitivity-shard / Install dependencies': { local: true },
+  'sensitivity-shard / Install the shells the suite cross-checks against': {
+    remoteOnly: 'installs zsh through apt, which needs sudo and a package index',
+  },
+  'sensitivity-shard / Build (core then cli; cli resolves core\'s dist)': { local: true },
+  'sensitivity-shard / Every proved exit can disappear without a word (shard 2 of 2)': {
+    local: true,
+    note: 'the same gate as shard 1 of 2, driven with --shard 2/2; the plan names the pair rather than a wildcard',
+  },
+
   // ---- backend --------------------------------------------------------------
   //
   // Split out of `verify` by finding 206. The steps are the same; the budget is not:

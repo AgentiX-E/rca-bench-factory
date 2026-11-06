@@ -229,6 +229,15 @@ jobs:
     # and the 22 s of setup in front of the step puts its deadline at 1522 s. A ceiling
     # of 25 would kill the job before the step's own bound could fire, which is the defect
     # step bounds exist to remove (`ci-budget.mjs`, `R5`). The ceiling is `ceil(1522/60)`.
+    #
+    # Two shards, one bound each (v3.54). That 52 s was the closest this campaign has
+    # come to `R4` refusing a legitimate run, and the repair is to spend less rather than
+    # to buy another margin: the sorted claimant files are divided across this job and
+    # `sensitivity-shard`, so each runner spends roughly half of 626 s against the same
+    # 25-minute bound and the workflow's wall clock is the slower shard, not their sum.
+    # The bound is deliberately not tightened in the round that splits -- its measurement
+    # is of the unsharded command, and `R4` has to size a bound from a run of the command
+    # it will enforce. The first sharded run supplies that measurement.
     timeout-minutes: 26
     steps:
       - name: Check out
@@ -300,13 +309,67 @@ jobs:
       # 20 -> 25 in v3.53's close-out: 182 claims and 237 runs measured 626 s on the
       # runner, and twice that is 1252 s. The bound is a function of the measurement, so
       # it moves when the measurement does; the ceiling above it moves by `R5`.
+      #
+      # v3.54: this step runs shard 1 of 2. Its name is unchanged on purpose -- `R2` pins
+      # the recording to it, so a recording taken from the unsharded run still names a
+      # step that exists. `checkShardPlan` reads both shard calls and the real inventory
+      # and refuses a plan whose union is not every proved claim exactly once.
       - name: Every proved exit can disappear without a word
         timeout-minutes: 25
-        run: node scripts/verify-sites-are-sensitive.mjs
+        run: node scripts/verify-sites-are-sensitive.mjs --shard 1/2
 
       - name: Every exemption's claim can be made false
         timeout-minutes: 3
         run: node scripts/verify-claims-are-sensitive.mjs
+
+  # The second shard of the sites battery, in its own job so the two run at once.
+  #
+  # A new job is the one shape the budget rules could not accept: its ceiling is part of
+  # `R6`'s comparison, and a recording of a run in which it did not exist has nothing to
+  # compare. `--borrow` is no answer either -- v3.52 refused a borrow across a budget.
+  # `golden-master/ci-declarations.json` therefore carries a job promise (`R9`) for this
+  # one round: it names the job, the ceiling written below, the bound on every step, and
+  # why the job exists. It carries no seconds, run id or date, because its writer has
+  # watched none of those happen. The first green run measures the job, `R4`/`R5` settle
+  # the bounds, and the promise is deleted in the commit that records it.
+  sensitivity-shard:
+    name: every proved exit can disappear without a word (shard 2 of 2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 26
+    steps:
+      - name: Check out
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        timeout-minutes: 3
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        timeout-minutes: 3
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        timeout-minutes: 3
+        run: pnpm install --frozen-lockfile
+
+      - name: Install the shells the suite cross-checks against
+        timeout-minutes: 3
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
+      - name: Build (core then cli; cli resolves core's dist)
+        timeout-minutes: 3
+        run: pnpm build
+
+      # A shard whose files never arrive would be a green job that measured nothing.
+      # `verify-sites-are-sensitive.mjs` refuses an empty shard before spawning a child.
+      - name: Every proved exit can disappear without a word (shard 2 of 2)
+        timeout-minutes: 25
+        run: node scripts/verify-sites-are-sensitive.mjs --shard 2/2
 
   # The injection batteries. This is the long pole -- everything else in the workflow
   # fits in two minutes -- so it gets its own job and its own budget.
