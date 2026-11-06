@@ -1282,20 +1282,33 @@ settle.
   closed volume cannot take.**~~ **Closed by finding 208**, which applies the bound to the
   volume that can still grow and prints every size instead of judging the closed ones.
 
-- **The publish readings begin at v3.56.** `golden-master/publish-readings.json` holds the
-  pushes that carried the round which created the recorder, and nothing before it.
-  `[open: every earlier push happened before there was a row to write, so the history is one
-  round deep and a channel's variance is exactly what depth is for]`
-- **A push cannot be told from the requests that carried it.** The rows carry no push id, so a
-  reader can count requests, retries and unanswered attempts, and cannot say how many pushes
-  they belonged to or separate one push's latency from the next.
-  `[open: the transport does not know when a publish begins or ends -- `publish()` does -- so
-  the field belongs at the caller and no round has put it there yet]`
+- ~~**The publish readings begin at v3.56, and the history is one round deep.**~~
+  **Closed by finding 433**, which found the file holding **five** pushes -- 65 rows, three
+  retries, three unanswered attempts, written the same afternoon -- and no unit in which that
+  could be said. The entry was not a lie about the file's contents but a sentence about a file
+  whose depth could not be measured, which is why it read as one push. The attempt is now a thing
+  in the file, and the reader prints how many it holds.
+- ~~**A push cannot be told from the requests that carried it.**~~ **Closed by finding 433**, which
+  put the boundary at the caller: `publish()` asks the remote for the branch before it decides
+  anything, so the first row of every attempt is `GET /git/ref/heads/<branch>`, and the reader
+  refuses an attempt that begins with anything else as well as one that reads the branch a second
+  time. The summary now names the attempts, each one's own slowest request, and how many named a
+  tip -- and the two lines that showed the variance were enough to justify the unit: 2 120 ms on
+  one attempt against 29 632 ms on another (finding 434).
+- **The attempts recorded before v3.57 name no tip, and the file is one attempt behind.** All five
+  carry `rev: null`, because their rows never named a commit and a reader that filled one in would
+  be inventing the fact the field exists to report. The attempt that carries this round's push is
+  appended after the ref has moved, so it lands in the tree one push later.
+  `[open: the field is written from the next attempt on, so the count the summary prints --
+  `0 with a named tip` -- is the measure of how much of the history predates it; and an attempt
+  cannot record itself in the push that carries it, so the file is always its own last reader]`
 - **P13: a mutation is one substitution.** Every mutation battery in this repository makes a
   single edit, so a rule that is only wrong when two edits are made together is covered by
-  none of them.
-  `[open: a two-edit mutant needs a harness that applies both and restores both, and the
-  per-site runner applies one substitution per case by construction]`
+  none of them. v3.57 measured the prediction instead of restating it: every **pair** of its
+  thirteen substitutions was applied and restored together, and **78 pairs, 78 red, 0 survived**.
+  `[open: 78 pairs of *known* mutants is not the space of double edits -- a pair composing two
+  changes neither of which is in the battery is still unmeasured, and so is a mutation of the
+  assertion rather than of the code]`
 - **`backend`'s install bound has not met a slow day.** The 16-minute bound is sized from a
   648-second cold runner and a 273-second ordinary one.
   `[open: no recorded run has installed prometheus from a mirror slower than 648 seconds, and
@@ -1334,7 +1347,7 @@ and this table.
 | [volume-08.md](progress/volume-08.md) | 14 | v3.07 | v3.20 |
 | [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
-| [volume-11.md](progress/volume-11.md) | 10 | v3.47 | v3.56 |
+| [volume-11.md](progress/volume-11.md) | 11 | v3.47 | v3.57 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

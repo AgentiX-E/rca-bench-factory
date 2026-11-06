@@ -914,17 +914,37 @@ that closed, a `500` with an empty body that cleared on retry, a base64 body ref
 and accepted as `utf-8`. Each was true and none was a measurement, so the next round started
 from an anecdote again.
 
-- **What is claimed.** `golden-master/publish-readings.json` holds one row per **attempt**
-  made by the GitHub transport: `at`, `method`, `path`, `attempt`, `status`, `ms`, `sent`,
-  `received`, `remaining` when the API reported a rate limit, and `error` when the connection
-  broke. `--record FILE` asks the channel to append this push's rows, and the summary line
-  names the count, the retries, the unanswered attempts, the slowest request and the status
-  histogram.
+- **What is claimed.** `golden-master/publish-readings.json` holds one entry per **push** --
+  `{ rev, branch, rows }` -- and `rows` holds one entry per **attempt** made by the GitHub
+  transport: `at`, `method`, `path`, `attempt`, `status`, `ms`, `sent`, `received`, `remaining`
+  when the API reported a rate limit, and `error` when the connection broke. `--record FILE`
+  appends this push, and the summary names the number of pushes, how many of them have a named
+  tip, the request and retry counts, the unanswered attempts, the slowest request and the
+  status histogram -- followed by one line per push, because a channel's variance is a
+  question about pushes and an average over the file answers it with a number no single push
+  produced.
+- **The boundary between two pushes is structural, not a threshold.** `publish()` asks the
+  remote for the branch before it decides anything, so every push begins with
+  `GET /git/ref/heads/<branch>` and that row *is* where one push ends. A file is refused when
+  a push begins with any other request, when its first row reads a different branch, when it
+  begins with attempt 2 of that read (its first attempt would be in a push the file does not
+  hold), and when a later row reads the branch again with no `PATCH` above it refused as
+  `422` -- that last shape is two pushes stored as one.
+- **The two reasons the channel reads a branch twice are exempt.** A `422` on
+  `PATCH /git/refs/heads/<branch>` makes `updateRef` re-read the branch to say what the remote
+  moved to, and a `500` on the read is retried. The exemption is safe because a retry is
+  `attempt > 1` and a folded push always begins at attempt 1 -- which is not a hole in the
+  rule but the reason the file can be split at all.
+- **`rev` is the commit the push carried, or `null`.** The five pushes recorded before v3.57
+  are `null`: their rows never named a tip, and a reader that filled one in would be inventing
+  the fact it exists to report. The summary prints how many pushes have a named tip, so the
+  gap stays a number rather than a footnote.
 - **A retry is visible as two rows.** `publish-readings-cli.mjs` refuses a row that says
   `attempt: 3` without attempt 2 of the same request above it, because a missing row makes the
   retry count a number the file cannot defend. It also refuses a row with both a status and an
-  error, one with neither, a timestamp that runs backwards, and a file that holds no rows at
-  all -- a reading of nothing is not a reading.
+  error, one with neither, a timestamp that runs backwards, a push that starts before the push
+  above it ended, a push with no rows, and a file that holds no pushes at all -- a reading of
+  nothing is not a reading.
 - **The error's code is the field the retry reads.** One function, `failureCode`, answers both
   `isNetworkFailure` and the recorder, so a row cannot name a code the retry did not consider.
 - **The file is required rather than optional.** A gate that skipped the comparison when the
@@ -938,7 +958,8 @@ from an anecdote again.
   the workflow runs on.
 - **What is not claimed.** The rows are not verified: a row that says `201` on an attempt that
   got `500` passes every check, and only the process that made the request knows otherwise.
-  Nor can the file tell one push from another -- there is no push id, so a reader can count
-  requests and retries but not pushes. The history's depth is whatever this repository has
-  pushed since v3.56, which is the same limit the CI readings have: a worst day is only as
-  good as the worst day recorded.
+  The boundary rule says where a push begins, not that the rows inside one are the rows the
+  transport made. The history's depth is whatever this repository has pushed since v3.56 --
+  five pushes at v3.57, and the file in the tree is always one push behind, because a push
+  appends its rows after it has moved the ref. That is the same limit the CI readings have: a
+  worst day is only as good as the worst day recorded.

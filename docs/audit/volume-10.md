@@ -2597,3 +2597,90 @@ trimmed to fifty proved sites through `RCA_SENSITIVE_INVENTORY` and asserts `50`
 says which file was read. What was **not** repaired is the observation that started it -- a test
 holding a real invariant can be green for the wrong reason, and only the day something moves the
 file shows it.
+
+## Finding 433 — five pushes in a file that had no unit to be deep in
+
+The open list held the gap twice and in two different words. One entry said the publish readings
+*begin at v3.56* and that the history is **one round deep**; the other said a push cannot be told
+from the requests that carried it, because the rows carry no push id.
+
+They were one defect. The file did not hold one push. Partitioned by the only rule that survived
+contact with its rows, it holds **five** -- written the same afternoon, 65 rows between them:
+
+| attempt | rows | retried | unanswered | slowest request |
+| --- | --- | --- | --- | --- |
+| 1 | 3 | 0 | 0 | `GET /git/trees/ed3b1c254…` 5 044 ms |
+| 2 | 25 | 2 | 2 | `POST /git/blobs` **28 385 ms** |
+| 3 | 8 | 0 | 0 | `POST /git/blobs` 2 120 ms |
+| 4 | 16 | 0 | 0 | `POST /git/blobs` 2 211 ms |
+| 5 | 13 | 1 | 1 | `POST /git/blobs` **29 632 ms** |
+
+So the entry that called the file one round deep was not a lie about its contents. It was a
+sentence about a file in which depth could not be measured: 65 rows, no boundary, and a reader
+that could count requests, retries and unanswered attempts and could not say how many pushes had
+produced them. A number nobody can compute gets described by its size, and 65 rows from one
+afternoon reads as one push.
+
+The variance that went missing with the boundary is the whole reason to keep a history. The
+slowest request of attempt 3 is 2 120 ms and of attempt 5 is 29 632 ms -- fourteen times, in one
+file, on one branch, in one afternoon. A per-file average of about 8 000 ms describes a channel
+no single push ever met, which is the shape `R10` was written about (*a maximum taken over a
+sample of one*) arriving in the subject that was built to repair a different instance of it.
+
+The first attempt is three reads and no writes: `--dry-run`. It is counted, and it should be,
+which is why the honest name for the unit is a **publish attempt** rather than a push. A dry run
+is the attempt whose latency would otherwise have to be guessed at, and it is also the one that
+created nothing.
+
+The repair makes the attempt a thing in the file -- `{ rev, branch, rows }` -- and the reader
+prints how many attempts the file holds, how many of them named a tip, and one line each with
+that attempt's own slowest request.
+
+## Finding 434 — a boundary read off a gap answered the right number by accident
+
+With the rows timestamped, the obvious partition is a threshold: two requests more than *N*
+milliseconds apart begin different pushes. The six gaps in the file are 2 299 s, **30 s**,
+1 875 s, 3 183 s, 2 781 s and **32 s**, and the two short ones are *inside* a push -- each is the
+backoff before the retry of a blob upload that hung and then closed.
+
+A 20-second threshold answers **seven** attempts. A 60-second threshold answers **five**, which
+is correct, and correct by luck: every threshold between 32 s and 1 875 s produces the true
+partition. The 30-second retry gap is the refutation of the approach rather than an awkward
+case -- this channel has already spent 28 seconds hanging on one socket, so a push whose slowest
+request outlasts the threshold is a push the threshold cuts in half. A number that is right by
+accident, and that moves the answer as the channel gets slower, is the shape `R10` was written
+about a second time.
+
+So the boundary comes from the channel's own behaviour, where it is not a guess. `publish()`
+asks the remote for the branch before it decides anything, so the first request of every attempt
+is `GET /git/ref/heads/<branch>`, and that row *is* where one attempt ends. The reader enforces
+it from both sides: an attempt that begins with any other request is refused, and an attempt that
+reads the branch a **second** time is refused too -- because two attempts stored as one look
+exactly like that. The file that described itself as one push now states five boundaries, and
+would refuse a sixth that it could not place.
+
+`rev` is the commit the attempt carried and is `null` for these five: the rows never named a tip,
+and a reader that filled one in would be inventing the fact the field exists to report. The
+summary prints `0 with a named tip`, so the gap stays a number in the gate's own output.
+
+## Finding 435 — the rule refused the retry it had been written next to
+
+The second-read rule's first version called this a defect:
+
+```
+GET /git/ref/heads/main   attempt 1  status 500
+GET /git/ref/heads/main   attempt 2  status 200
+```
+
+A `500` on the branch read is retried by the rule v3.51 added, so a channel behaving exactly as
+designed produces the shape the new rule condemned. The case that states it was written before
+the rule was, and it went red in the same minute -- which is the entire argument for writing the
+case first in its smallest form, stated as an incident rather than as a preference.
+
+This channel reads a branch twice for exactly two reasons and neither is a hole in the boundary:
+`updateRef` answers a `422` by re-reading the branch to say what the remote moved to, and a
+`500` or a closed socket on the read itself is retried. The repair exempts both -- the `422` by
+looking for the refused `PATCH` above the read, the retry by `attempt > 1`, since a folded
+attempt always begins at attempt 1 of its own read. That last clause is what makes the exemption
+safe rather than convenient: an attempt that started at attempt 2 is refused outright, so no
+retry can be a second push in disguise.

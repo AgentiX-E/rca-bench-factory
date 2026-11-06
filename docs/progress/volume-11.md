@@ -1636,7 +1636,7 @@ hold the instrument's two repairs.
 | item | value |
 | --- | --- |
 | `core` test suite | **238 files, 5890 tests passed** (at v3.55) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.55) |
 | repo test suite | **242 files, 6077 tests passed** (at v3.55) |
 | `core` suite | **238 files, 5890 tests passed**; **41** of them new this round -- 38 in `ci-readings.test.ts` (six for `--seed`), one for `outputTail`, two for the instrument's red-baseline report |
 | coverage | `core` **99.96 / 99.75 / 100 / 99.96**, `cli` **100 / 100 / 100 / 100** |
@@ -1814,9 +1814,9 @@ timing: the only machine that could falsify it was the one that had already fail
 
 | item | value |
 | --- | --- |
-| `core` test suite | **239 files, 5932 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **243 files, 6119 tests passed** (as of this commit) |
+| `core` test suite | **239 files, 5932 tests passed** (at v3.56) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.56) |
+| repo test suite | **243 files, 6119 tests passed** (at v3.56) |
 | new tests | **42**: 41 in `publish-readings.test.ts` (17 on the shape rules, 5 on the summary, 4 on appending, 7 on what the transport hands the recorder, 5 on the reader a gate runs, 3 on the command line) and one in `verify-sites-are-sensitive.test.ts` -- a 2 000-claim plan, which is the case that excluded a lost stdout tail |
 | coverage | `core` and `cli` unchanged in the dimensions the gate measures; `scripts/` is outside the coverage ceiling by construction -- its drivers are the site proofs |
 | mutation | **10** substitutions, **10** red: an unanswered attempt not recorded, every row claiming attempt 1, a row with neither status nor error accepted, a retry not following its own first attempt, an append that replaces, a rate limit invented as zero, a retry counted as a row, `--record` allowed on a transport that makes no request, an unreadable file reported as empty, and a file that cannot be read saying nothing about why |
@@ -1844,3 +1844,154 @@ the three was worth having -- and the first version of the gate published its ow
 the reason it refused. The next question this channel will have to answer is not in this file:
 it is whether a *push* can be told apart from the requests that carried it, and the rows have
 no field for that yet.
+
+## v3.57 — the file was five pushes deep and the reader could not count
+
+v3.56 closed on the question it could not answer: a row says what one request did, and nothing
+in the file says which push the request belonged to. The open list held the same gap twice, and
+in two different words -- one entry said the history *begins at v3.56* and is **one round
+deep**, the other said a push cannot be told from the requests that carried it.
+
+They were one defect seen from two sides, and the first thing the repair did was contradict the
+first entry. The file did not hold one push. It held **five**, written the same afternoon, and
+nobody could say so because the unit they would have been counted in did not exist.
+
+### One — an entry that described the file as shallower than it was (finding 433)
+
+Five pushes, partitioned by the only rule that survived contact with the rows:
+
+| push | rows | retried | unanswered | slowest request |
+| --- | --- | --- | --- | --- |
+| 1 | 3 | 0 | 0 | `GET /git/trees/ed3b1c254…` 5 044 ms |
+| 2 | 25 | 2 | 2 | `POST /git/blobs` **28 385 ms** |
+| 3 | 8 | 0 | 0 | `POST /git/blobs` 2 120 ms |
+| 4 | 16 | 0 | 0 | `POST /git/blobs` 2 211 ms |
+| 5 | 13 | 1 | 1 | `POST /git/blobs` **29 632 ms** |
+
+The last two columns are the reason the unit had to exist. The slowest request of push 3 is
+**2 120 ms** and of push 5 is **29 632 ms** -- a factor of fourteen, in one file, on one
+afternoon, over one branch. A per-file average of 8 000 ms describes a channel no single push
+ever met, which is `R10`'s finding (*a maximum taken over a sample of one*) arriving in the
+subject that was written to fix a different one.
+
+Push 1 is worth its own sentence. It is three reads and no writes: `--dry-run`. The file counts
+it as a push because it made three requests, and the honest name for the unit is therefore a
+**publish attempt** rather than a push -- a dry run is an attempt that created nothing, and it
+is exactly the attempt whose latency a reader would otherwise have to guess at.
+
+### Two — the boundary is a row, not a gap (finding 434)
+
+The rows carry timestamps, so the obvious partition is a threshold: two requests more than *N*
+milliseconds apart begin different pushes. The gaps in this file are 2 299 s, **30 s**, 1 875 s,
+3 183 s, 2 781 s and **32 s** -- and the two short ones are inside a push, not between two: each
+is the backoff before the retry of a blob upload that hung and closed.
+
+A 20-second threshold answers **seven** pushes. A 60-second threshold answers **five**, which is
+right, and right by luck: any threshold between 32 s and 1 875 s gives the true partition, and
+the true partition is the one the head reads give. The 30-second retry gap is the refutation of
+the whole approach -- the channel has already spent 28 seconds hanging on one socket, so a push
+whose slowest request takes longer than the threshold is a push the threshold would cut in
+half. A number that is right by accident is the shape `R10` was written about, so the boundary
+had to come from the channel's own behaviour instead.
+
+It does. `publish()` asks the remote for the branch before it decides anything, so the first
+request of every attempt is `GET /git/ref/heads/<branch>`, and that row is where one attempt
+ends and the next begins. The reader enforces it in both directions: an attempt that begins with
+anything else is refused, and an attempt that reads the branch a *second* time is refused too --
+because that is exactly what two attempts stored as one look like. A file of five attempts now
+either states its boundary or fails its own gate.
+
+`rev` is the commit the attempt carried, and it is `null` for all five: the rows never named a
+tip, and a reader that filled one in would be inventing the fact it exists to report. The
+summary prints `0 with a named tip`, so the gap is a number in the gate's own output and stays
+one until the attempts that carry real tips replace it.
+
+### Three — the exemption a rule has to carry (finding 435)
+
+The second-read rule's first version refused this, and it is a legitimate attempt:
+
+```
+GET /git/ref/heads/main   attempt 1  status 500
+GET /git/ref/heads/main   attempt 2  status 200
+```
+
+A `500` on the branch read is retried by the rule v3.51 added, so a channel that behaves
+correctly produces the shape the new rule called a defect. The case asserting it was written
+before the rule was, so the rule was caught in the minute after it was written -- which is the
+argument for writing the case first, in the smallest possible form.
+
+There are exactly two reasons this channel reads a branch twice, and neither is a hole:
+`updateRef` answers a `422` by re-reading the branch to say what the remote moved to, and a
+`500`/closed socket on the read itself is retried. Both are exempt -- the `422` by looking for
+the refused `PATCH` above the read, the retry by `attempt > 1`, since a folded attempt always
+begins at attempt 1 of its own read.
+
+### Four — the writer refuses what the reader would have to
+
+`appendReadings` now refuses an attempt with no rows, and `publish-cli` writes none when no
+request was made. The reader refuses the same shape one function up, and the writer needs its
+own copy for the reason every boundary does: a file holding an empty attempt passes its own gate
+and states that the channel made a request it never made. A revision that does not resolve is
+caught before the first request, so the only paths that reach the writer with rows are paths
+that reached the API.
+
+The tip is resolved *after* the attempt, in the `finally` that also writes the rows, so a
+failure halfway through a push still names the commit it was trying to publish.
+
+### Five — the instruments
+
+Thirteen substitutions, one per claim, each run against the case that states it: the boundary
+rule, the empty-attempt refusal, the SHA shape, the missing-`rev` refusal, the cross-attempt
+order, the second-read rule, per-attempt retry continuity, the named-tip count, the per-attempt
+lines, the append refusal, the flat-list refusal, the revision the channel records, and the
+attempt that made no request. **13 of 13 red at the named case, and the tree restored green.**
+
+The open list's `P13` (*a mutation is one substitution*) got measured instead of restated: every
+**pair** of those thirteen substitutions was applied and restored together. **78 pairs, 78 red,
+0 survived.** That is not a closure -- it is a statement about the thirteen substitutions this
+battery has, not about the space of double edits -- but the entry no longer rests on a
+suspicion.
+
+### Readings
+
+> Ledger for `v3.57`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **239 files, 5954 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **243 files, 6141 tests passed** (as of this commit) |
+| new tests | **22** in `publish-readings.test.ts` (41 → 63): 5 on the file of attempts, 6 on one attempt, 5 on the row inside it, **8 on the boundary** -- a missing first read, a first read of another branch, a first read at attempt 2, a retry of that read accepted, two attempts folded into one, the `422` exemption, an out-of-order attempt, two attempts back to back -- and one each on the named-tip count, the per-attempt lines and the empty-append refusal |
+| coverage | `core` **99.96 / 99.75 / 100 / 99.96** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100**: both unchanged, because the subject is `scripts/` and its drivers are the site proofs |
+| mutation | **13** substitutions, **13** red at the named case, tree restored green: the boundary rule, the empty-attempt refusal, the SHA shape, the missing-`rev` refusal, cross-attempt order, the second-read rule, per-attempt retry continuity, the named-tip count, the per-attempt lines, the append refusal, the flat-list refusal, the revision the channel records, the attempt that made no request |
+| mutation, pairwise | **78** two-edit mutants -- every pair of the thirteen -- **78 red, 0 survived**, tree restored green |
+| failure sites | **126** across **59** of **85** scripts; throws **82** = 11 `fatal` + 63 `unguarded` + 1 `guarded` + 7 `rethrow` |
+| site proofs | **193** claims across **58** files, every one driven |
+| the history | `golden-master/publish-readings.json`: **65 rows** in **5 attempts** -- 3 / 25 / 8 / 16 / 13 -- 62 answered, **3 unanswered**, 3 retried. Slowest request per attempt: 5 044 / **28 385** / 2 120 / 2 211 / **29 632** ms. All five carry `rev: null`; the file prints `0 with a named tip` |
+| the boundary | the five attempts begin at rows 0, 3, 28, 36 and 52, which are the five `GET /git/ref/heads/master` rows. The gaps at 30 s and 32 s are retries inside attempts 2 and 5, not boundaries: a 20-second threshold would have answered seven |
+
+
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P2** | the attempts recorded before v3.57 name no tip, and the file is one attempt behind | **new**, and stated by the gate itself: `0 with a named tip` | every attempt from this round on carries its commit; the lag is structural, because an attempt appends its rows after it has moved the ref |
+| **P2** | the history is six runs, four of them one afternoon | unchanged | record every green run; a bound's worst day is only as good as the worst day recorded |
+| **P2** | P13: a mutation is one substitution | **measured**: 78 pairs of this round's thirteen, 78 red | a pair composing two changes neither of which is in the battery; or a mutation of the assertion |
+| **P2** | a wrong `--branch` is read as an unborn branch | unchanged | refuse a `null` base on a non-empty repository unless `--new-branch` |
+| **P2** | `backend`'s 16-minute install bound has never met a slow day | unchanged | the history will answer it the first time a slow mirror is recorded |
+| **P3** | the shards are unbalanced by file cost, not by count | unchanged | time each claimant file once, cut where the seconds are |
+| **P3** | P2 / P5 / P7 / P8 / P9 / P14 | unchanged | unchanged |
+
+**The lesson, for the round after this one.** The open list said the file was one round deep and
+it was five; the entry was not wrong about the rows, it was written about a file in which depth
+was not a computable number. An instrument that cannot be counted gets described by its size, and
+the description then reads as a measurement. The same shape as `R10`, one subject out: a maximum
+over a sample of one, a depth over a unit that did not exist.
+
+What is left is not another field. It is the lag that the field makes visible: an attempt writes
+its rows after it has moved the ref, so the file that records a push is always one push behind
+it, and the only way to close that is to record from the far side of the publish -- which is the
+next question this channel has to answer, and the first one whose answer cannot come from inside
+the push it describes.
