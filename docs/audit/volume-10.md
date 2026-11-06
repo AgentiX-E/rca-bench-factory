@@ -2259,3 +2259,58 @@ that script, not a second command. `sensitivity-shard` is registered in `SUITE_J
 six jobs that run the suite are named again. This defect was found by registering the new job,
 not by reading the guard -- the same way finding 395 was found, and the reason the register is
 checked against the workflow rather than trusted.
+
+## Finding 420 — a job that is never over the floor is never asked for a bound, so the first time it is, there is nowhere to put one
+
+Run `42165763231` failed the budget gate on `backend`, a job this round had not touched:
+seven steps, no `timeout-minutes` on any of them, 296 seconds measured. `R4`'s rule is
+"measured over the floor and bounded nowhere", and the previous run had measured the same
+job at 37 seconds, so the rule had been silent for ten rounds. The variable half is
+`sudo apt-get install prometheus`: a mirror having a bad day is not a finding about this
+repository, which the comment above the step had said since the job existed.
+
+What the rule had never been asked is the second-order question. Once a job is over the
+floor, the floor applies to **every** step of it -- that is the half of `R4` that stops a
+job from sharing one budget silently -- and seven steps at three minutes are **21**. The
+job's ceiling was **20**. So the job was one minute too small to be bounded the way every
+other job is, and the fix could not be "add seven bounds": it had to move the ceiling, which
+`R6` then refused.
+
+The ceiling is **34** now: five setup steps at 3, the install at **16**, the reader at 3. The
+sixteen is the part worth arguing. `R4` asks for twice the measurement and this step measured
+273 s in this run, which would say 10; it measured **648 s** on a cold runner, which this
+repository wrote down when the job was created. A bound sized on the warm day is a bound that
+fires on the cold one and reports a mirror as a hang. 16 is 3.5x the warm reading and 1.5x
+the cold one, and it is the only number in this workflow that was chosen from a range rather
+than from the reading in front of it -- which is why it is in the open list rather than
+described as settled.
+
+## Finding 421 — `R6` refused the safe direction of a budget change as hard as the dangerous one
+
+`R6` compared the recording's `timeoutMinutes` with `ci.yml`'s and refused any difference.
+The reason it gives is exact: the step bounds are arithmetic against the job's budget, so a
+recording taken under another budget is arguing about a different job. But "another budget"
+is two directions with different consequences, and the rule treated them as one.
+
+A **smaller** ceiling invalidates the reading. A bound that fitted inside 45 minutes may
+expire after the job has already died at 30, and that is the defect step bounds exist to
+remove -- the job dies, and the verdict names the job rather than the step.
+
+A **larger** ceiling invalidates nothing. No step bound moves. Every `deadline = bound +
+before` that fitted inside 20 minutes still fits inside 34, so `R5` only gains room. The
+reading describes the same commands, spent in the same seconds, and the only thing that
+changed is how long the container is allowed to be.
+
+Keeping the symmetric rule had a cost that is the same circle `R9` was written to open: a
+ceiling could only be widened by a run, a run happens after the push, and the push requires
+this gate. `backend` was blocked by it on the very round that had to bound the job.
+
+`narrowed(record, job)` is now the whole difference, four lines with a comment that says
+which direction is which. It also has a third shape that `null` makes easy to get wrong: a
+job with no ceiling has no deadline arithmetic at all, so *removing* a ceiling is the widest
+change there is and *adding* one is the narrowest, and both are stated. The summary reports
+every widening by name -- `budget(s) widened since the reading: backend 20 -> 34` -- because
+an exception a reader cannot see is an exception the recording appears to have taken itself.
+Four cases hold it: narrower refused, missing refused, wider accepted and named, removed
+accepted. The case that used to assert the wider direction was refused now asserts the
+narrower one, which is the behaviour that was always meant.

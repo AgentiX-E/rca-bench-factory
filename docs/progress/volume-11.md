@@ -152,6 +152,46 @@ of them is a copy of a guard standing in front of another.
 | sensitivity | `verify-sites-are-sensitive`: **139 claim(s)**, 191 runs, **0 survivors**, 4.2 min; 107 exits hollowed, 32 throws removed, and no claim left unmutated |
 | `docs:check` | green: 389 findings / 1–392, 10 volumes / 195 rounds, 1624 citations naming 389 numbers, 568 open entries with 529 carrying a reason, and the counts re-derived from three measured suites |
 
+### Six — the job that had never crossed the line
+
+The second run's refresh failed the budget gate on a job this round had not touched.
+`backend` measured **296 s** across seven steps and declared no `timeout-minutes` on any of
+them, which `R4` refuses above three minutes -- and it had measured **37 s** in the run
+before it. `apt-get install prometheus` is the variable half, and the comment in `ci.yml`
+had said so for ten rounds without the rule ever firing, because the rule is silent under
+the floor and the job had never been over it.
+
+The interesting part is what happens once it is over: the floor applies to **every** step of
+a job that bounds one, seven steps at three minutes are **21**, and the job's ceiling was
+**20**. A job slightly too slow to leave unbounded and slightly too small to bound the
+ordinary way. The ceiling moved to **34** -- five setup steps at 3, the install at **16**
+(1.5x the 648 s a cold runner measured for that step, 3.5x this run's 273 s), the reader at
+3 -- and every step now has a bound of its own. 16 rather than 10 is the whole argument of
+`R4`: a bound that fits the fast day fires on the slow day.
+
+That change then hit `R6`, which compared the recording's ceiling with `ci.yml`'s and
+refused any difference. The refusal was right in one direction and wrong in the other. A
+*smaller* ceiling invalidates the reading, because a bound that fitted inside the wider one
+may expire after the job has already died at the tighter one. A *larger* ceiling moves no
+step bound and only gives `R5`'s deadline more room, so a reading taken inside 20 minutes
+still describes every command that will run inside 34. Refusing the wider direction also
+closed the same circle `R9` exists to open -- a ceiling could only be widened by a run, and a
+run happens after the push this gate has to pass -- so `narrowed()` is now four lines and the
+summary names the widening: `backend 20 -> 34`.
+
+### Seven — what the two runs said about the split
+
+The first run's shards measured **248** and **387** seconds; the second's, **189** and
+**440**. The sum barely moved (**635 -> 629**) and the ratio did not: **1.56 -> 2.33**. The
+claim counts differ by ten (87 against 96), so the imbalance is not a count, it is a
+handful of expensive files landing in one shard by position. That is what position-based
+sharding buys and what it costs: a plan any machine can recompute, at the price of a wall
+clock that depends on which files the sort put together.
+
+The honest next step is therefore not a tighter bound but a measured partition -- time each
+claimant file once, then cut where the seconds are -- and it has to come with its own
+reading, because the bound can only be tightened after a run of the rearranged command.
+
 ### Left open, in the order the goal is reached
 
 | priority | item | state | next step |
@@ -1392,13 +1432,15 @@ sentence for the round rather than erasing the only account of why the job exist
 
 | item | value |
 | --- | --- |
-| `core` test suite | **237 files, 5846 tests passed** (as of this commit) |
+| `core` test suite | **237 files, 5849 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **241 files, 6033 tests passed** (as of this commit) |
-| new tests | **27**: 19 for `R9` (the whitelist, the whole-step relation, the lifetime, the summary and the self-check) and 8 for the split (the grammar, the partition, the shipped workflow's plan, and the two refusals) |
+| repo test suite | **241 files, 6036 tests passed** (as of this commit) |
+| new tests | **30**: 19 for `R9` (the whitelist, the whole-step relation, the lifetime, the summary and the self-check), 8 for the split (the grammar, the partition, the shipped workflow's plan, and the two refusals), and 4 for `R6`'s asymmetry (a narrower budget refused, a missing one refused, a wider one accepted and named, a removed one accepted) with one existing case rewritten from the wider direction to the narrower |
 | throw partition | **74 statements**: 6 `fatal`, 60 `unguarded`, 1 `guarded`, 7 `rethrow` |
 | failure sites | **123** across 58 of **83** scripts; two re-annotated after their guard text changed |
-| the recording | run `42160224254`, **8 jobs / 82 steps / 54 bounded**, 45 min measured; bounds total **256 min**, tightest `batteries / Every gate can be shown to fail` at **2.2x**. Before the settlement it was run `42131836805`, 7 jobs / 75 steps, with one declared job deliberately absent |
+| the recording | run `42165763231`, **8 jobs / 82 steps / 61 bounded**, 47 min measured; bounds total **290 min**, tightest `batteries-heavy / Backend-support battery` at **2.2x**. Before the settlement it was run `42131836805`, 7 jobs / 75 steps, with one declared job deliberately absent |
+| the job that had never been bounded | `backend` measured **296 s** in `42165763231` against **37 s** in the run before it -- `apt-get install prometheus` on a bad and a good day. Over three minutes the floor applies to every step of the job, and seven steps at three minutes are 21, one more than the 20-minute ceiling it had, so the job could not be bounded at all until the ceiling moved. It is **34** now: five setup steps at 3, the install at **16** (1.5x the 648 s a cold runner measured, 3.5x the 273 s of the install step in this run), the reader at 3 |
+| `R6`, split in two | a budget *narrower* than the one the reading was taken under is still refused, because a bound that fit the wider ceiling may expire after the job has already died; a *wider* one is accepted and named in the summary (`backend 20 -> 34`), because no step bound moves and `R5`'s deadline only gains room. Refusing that direction closed the same circle `R9` opens: a ceiling could then only be widened by a run, and a run happens after the push this gate has to pass |
 | the split, measured | shard 1 **248 s**, shard 2 **387 s** -- **635 s** together against **626 s** unsharded; the wall clock is the slower shard, **7.0 of 12.5 min**, where the battery used to be the longest job at 11.3 |
 | the promise, settled | the first green run measured `sensitivity-shard` at **387 s** against a 25-minute bound: **3.9x**, `R4` green, `R5`'s sum inside a 26-minute ceiling. The promise was deleted in this commit, which is the lifetime it declared -- one real run, not a borrow |
 | CI | run `42160224254` on `b054d7f9a`: **8 of 8 jobs success** -- batteries-heavy **12.5**, batteries **11.7**, sensitivity-shard **7.0**, build **6.0**, sensitivity **4.9**, cold tree **2.2**, golden master **1.0**, backend **0.6** min; **12.5 min of wall clock** |
@@ -1411,7 +1453,8 @@ sentence for the round rather than erasing the only account of why the job exist
 | **P2** | P13: a mutation is one substitution | unchanged | a second mutation, or an assertion about mutations |
 | **P2** | P2 / P5 / P7 / P8 | unchanged | unchanged |
 | **P3** | P9 / P14 | unchanged | unchanged |
-| **P3** | the split's bound is looser than `R4` would size it | 25 min against 387 s is **3.9x**, the loosest in the workflow | a run with a 13-minute bound (2.0x of 387 s), then `R4` settles it the way it settled this one |
+| **P3** | the shards are unbalanced by file cost, not by count | **248/387** then **189/440**, ratio 1.56 -> 2.33 while the counts differ by ten | time each claimant file once, cut where the seconds are, then settle the bound with a run of the rearranged command |
+| **P3** | `backend`'s 16-minute install bound has never met a slow day | sized from 648 s on a cold runner and 273 s in this run; 13 minutes was refused by `R4` at 440 s, which is the same arithmetic | a run that installs from a slow mirror, and the bound re-sized from it if 16 proves short |
 
 **The lesson, for the round after this one.** The previous ruler was about a test: name the
 failure shape it cannot produce. Applied to P17 it produced a whitelist rather than a
@@ -1433,12 +1476,14 @@ was now measured and could be deleted, and the deletion is part of this round's 
 against 387 s at **3.9x** -- a bound sized by a run of the command it enforces, which is the
 thing a declaration cannot do.
 
-What the round did **not** learn is whether 25 minutes is the right bound for the slower
-shard, only that it is inside `R4`: at 3.9x it is the loosest bound in the workflow, and the
-next round that touches this step should ask whether **13** minutes (2.0x of 387 s) would
-hold, which is what `R4` would size if the measurement were the only input. That question is
-left in the open list rather than answered by a guess, because answering it needs a run of a
-command with the tighter bound -- the same reason the split did not tighten it either.
+The next round was supposed to ask whether **13** minutes (2.0x of 387 s) would hold the
+slower shard. The run after this one answered it before anybody could ask: the same shard
+measured **440 s**, 13.7% slower, and 13 minutes is 780 s, which is under `R4`'s required
+twice the measurement (880 s). The suggestion was refused by its own arithmetic one run
+later. The lesson is not that 25 minutes is tight -- it is that a bound sized from a single
+reading of a variable step is a bound that expires the first time the runner has a
+different day, and the two shards' drift (**248 -> 189**, **387 -> 440**, sum **635 ->
+629**) is the measurement of how variable that day is.
 
 The split also moved the critical path. The sites battery was the longest job at 11.3 min in
 run `42131836805`; in `42160224254` it is **4.9** and **7.0** in parallel, and

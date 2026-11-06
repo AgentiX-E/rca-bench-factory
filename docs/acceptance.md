@@ -832,3 +832,28 @@ one round.
   deliberately not tightened in the round that split the command, because `R4` has to size a
   bound from a run of the command it will enforce: at 3.9x it is now the loosest bound in the
   workflow, and tightening it to 13 minutes is a change that needs its own run.
+
+## The two directions of a budget change
+
+`R6` compares the ceiling a recording was taken under with the ceiling `ci.yml` declares,
+and only one direction invalidates the reading.
+
+- **A narrower budget is refused.** A step bound that fitted inside the wider ceiling may
+  expire after the job has already died at the tighter one, which is the defect the bound
+  exists to remove. The sentence says the bounds and the budget have to be re-measured
+  together, and the repair is a run under the new ceiling.
+- **A wider budget is accepted, and named.** No step bound moves and `R5`'s deadline only
+  gains room, so a reading taken inside 20 minutes still describes every command that will
+  run inside 34. The summary prints `budget(s) widened since the reading: backend 20 -> 34`
+  so the exception is visible rather than mistaken for the recording's own number. A job with
+  no ceiling is the widest state of all, so removing one is accepted and adding one is
+  refused.
+- **`backend` is bounded now, at 34 minutes.** It measured 296 s in run `42165763231` against
+  37 s in the run before it, both spent mostly in `apt-get install prometheus`. Over the
+  three-minute floor every step needs its own bound, and seven steps at three minutes are 21,
+  one more than the 20-minute ceiling it had. The install's step is bounded at **16** -- 1.5x
+  the 648 s a cold runner measured and 3.5x this run's 273 s.
+- **What is not claimed.** The install bound has never met a slow day since it was written.
+  It is sized from a range rather than from one reading, and if a run does install from a
+  mirror slower than 648 s the bound will fire and be re-sized from that run -- which is the
+  only honest way to size a step whose cost belongs to somebody else's server.
