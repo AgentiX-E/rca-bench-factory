@@ -1282,6 +1282,29 @@ settle.
   closed volume cannot take.**~~ **Closed by finding 208**, which applies the bound to the
   volume that can still grow and prints every size instead of judging the closed ones.
 
+- **The publish readings begin at v3.56.** `golden-master/publish-readings.json` holds the
+  pushes that carried the round which created the recorder, and nothing before it.
+  `[open: every earlier push happened before there was a row to write, so the history is one
+  round deep and a channel's variance is exactly what depth is for]`
+- **A push cannot be told from the requests that carried it.** The rows carry no push id, so a
+  reader can count requests, retries and unanswered attempts, and cannot say how many pushes
+  they belonged to or separate one push's latency from the next.
+  `[open: the transport does not know when a publish begins or ends -- `publish()` does -- so
+  the field belongs at the caller and no round has put it there yet]`
+- **P13: a mutation is one substitution.** Every mutation battery in this repository makes a
+  single edit, so a rule that is only wrong when two edits are made together is covered by
+  none of them.
+  `[open: a two-edit mutant needs a harness that applies both and restores both, and the
+  per-site runner applies one substitution per case by construction]`
+- **`backend`'s install bound has not met a slow day.** The 16-minute bound is sized from a
+  648-second cold runner and a 273-second ordinary one.
+  `[open: no recorded run has installed prometheus from a mirror slower than 648 seconds, and
+  the bound will be re-sized from the first one that does rather than guessed at now]`
+- **The sensitivity shards are cut by file count, not by cost.** Both hold the same number of
+  claimant files and their wall clocks differ by seconds.
+  `[open: the split is balanced by count and unbalanced by duration, and fixing it needs each
+  claimant file timed once -- which the battery does not record today]`
+
 
 
 ## Pass log
@@ -1311,7 +1334,7 @@ and this table.
 | [volume-08.md](progress/volume-08.md) | 14 | v3.07 | v3.20 |
 | [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
-| [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
+| [volume-11.md](progress/volume-11.md) | 10 | v3.47 | v3.56 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

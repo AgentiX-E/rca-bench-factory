@@ -248,8 +248,11 @@ describe('the two baskets are a partition of the calls, not a remainder', () => 
     // for every call -- and a round that added calls without moving them would be the
     // drift this assertion is for. 141/124 is v3.55's: `check-ci-budget.mjs` now refuses a
     // tree with no history of readings, which is one more exit and one more site.
-    expect(calls).toBe(142);
-    expect(sites).toBe(124);
+    // 144/126 is v3.56's reader: a `--file` with no value and a history that does not
+    // describe a transport, both of which end the process and neither of which existed
+    // before the channel kept a record of what it asked.
+    expect(calls).toBe(144);
+    expect(sites).toBe(126);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

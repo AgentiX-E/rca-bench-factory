@@ -363,6 +363,26 @@ const REGISTER: Record<string, Entry> = {
       'token, an unknown flag and a real push to a local remote.',
   },
 
+  'publish-readings.mjs': {
+    class: 'data',
+    why:
+      'It exits 1 for a file it cannot read and for a history whose rows do not describe a transport -- ' +
+      'two retries of one request that are not consecutive, a status and an error at once, a timestamp ' +
+      'that runs backwards -- so it is a gate by the inventory rule. Both exits are driven by ' +
+      '`publish-readings.test.ts`, which spawns it over a good file, an empty one, an absent one and a ' +
+      'flag with no value; and its two refusals are the reason a history cannot be half-written: an ' +
+      'append over a file it could not parse would replace the only day the socket closed.',
+  },
+
+  'publish-readings-cli.mjs': {
+    class: 'gate',
+    why:
+      'The verdict and the exit: which file to read, the summary, and the refusal when a row does not ' +
+      'describe a transport. The rules live in `publish-readings.mjs` because a gate is proved by being ' +
+      'emptied and a test that imported it would die in the worker before it could name a failing test; ' +
+      'this file is spawn-only, the same pair `publish.mjs` and `publish-cli.mjs` make.',
+  },
+
   'gate-receipt.mjs': {
     class: 'data',
     why:

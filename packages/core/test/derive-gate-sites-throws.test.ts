@@ -227,7 +227,12 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // every other failure through is a throw of its own. 74 is v3.54: a declared job that
     // has never run must not be answered by `--borrow`, and that refusal is a throw a test
     // reaches rather than a sentence in a comment.
-    expect(total).toBe(79);
+    //
+    // 81 is v3.56, which gave the publish channel a reading of its own: two refusals in
+    // `publish-readings.mjs` that stop an append from replacing a history it could not
+    // read. The round also removed a `catch` in `publish-cli.mjs` that only re-raised --
+    // a row the inventory had been carrying as a forward nothing could observe.
+    expect(total).toBe(81);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -267,8 +272,10 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // function with no enclosing `try`. 11 fatal is v3.55's addition of five to v3.54's
     // six, and all five are the same shape: `--seed` refuses at the top level, before any
     // file is written, because a seed that turned out to be the recording would have
-    // already replaced the day the bounds are argued from.
-    expect(counts).toEqual({ fatal: 11, unguarded: 60, guarded: 1, rethrow: 7 });
+    // already replaced the day the bounds are argued from. 62 unguarded is v3.56's two
+    // refusals in `publish-readings.mjs` -- a history that is not JSON, and one that is not
+    // a list -- both of which stop an append from replacing what it could not read.
+    expect(counts).toEqual({ fatal: 11, unguarded: 62, guarded: 1, rethrow: 7 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

@@ -209,11 +209,16 @@ export class ApiError extends Error {
  * JSON body, a programmer's error, a refusal to start) is let through unchanged: a retry
  * is for a connection, not for a mistake.
  */
-export function isNetworkFailure(error) {
-  if (error === null || typeof error !== 'object') return false;
+export function failureCode(error) {
+  if (error === null || typeof error !== 'object') return null;
   const cause = error.cause;
   const code = (cause !== null && typeof cause === 'object' && 'code' in cause ? cause.code : undefined) ?? error.code;
-  if (typeof code === 'string' && (code.startsWith('UND_ERR_') || code === 'ECONNRESET' || code === 'EPIPE')) {
+  return typeof code === 'string' ? code : null;
+}
+
+export function isNetworkFailure(error) {
+  const code = failureCode(error);
+  if (code !== null && (code.startsWith('UND_ERR_') || code === 'ECONNRESET' || code === 'EPIPE')) {
     return true;
   }
   return error instanceof TypeError && error.message === 'fetch failed';
@@ -251,16 +256,25 @@ export function githubTransport({
   fetchImpl = globalThis.fetch,
   sleep = sleepFor,
   retries = 4,
+  record = null,
 }) {
   if (typeof token !== 'string' || token === '') {
     throw new TypeError('the GitHub transport needs a token: it is read from the environment and never committed');
   }
   const base = `${api}/repos/${owner}/${repo}`;
+  // One row per attempt, handed to the caller rather than printed: this module decides
+  // nothing about a terminal, and the file a push leaves behind is the caller's to keep.
+  // Absent by default so the transport stays usable without a history -- the CLI is what
+  // asks for one.
+  const note = typeof record === 'function' ? record : null;
 
   async function call(method, path, body, attempt = 1) {
+    const startedAt = Date.now();
+    let payload;
     let response;
     let text;
     try {
+      payload = body === undefined ? undefined : JSON.stringify(body);
       response = await fetchImpl(`${base}${path}`, {
         method,
         headers: {
@@ -268,10 +282,29 @@ export function githubTransport({
           accept: 'application/vnd.github+json',
           ...(body === undefined ? {} : { 'content-type': 'application/json' }),
         },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        ...(payload === undefined ? {} : { body: payload }),
       });
       text = await response.text();
     } catch (error) {
+      if (note !== null) {
+        note({
+          at: startedAt,
+          method,
+          path,
+          attempt,
+          status: null,
+          ms: Date.now() - startedAt,
+          sent: payload === undefined ? 0 : Buffer.byteLength(payload),
+          received: 0,
+          error: {
+            // The same field `isNetworkFailure` reads, so a row cannot name a code the
+            // retry did not consider -- the two would be one instrument disagreeing with
+            // itself, which is finding 428's shape in a different file.
+            code: failureCode(error),
+            message: String(error instanceof Error ? error.message : error).slice(0, 200),
+          },
+        });
+      }
       // A closed socket is not a status: undici throws instead of answering, so the 5xx
       // retry below never sees it. Retry the same request with the same backoff; a failure
       // that is not a broken connection is let through as itself.
@@ -280,6 +313,23 @@ export function githubTransport({
         return call(method, path, body, attempt + 1);
       }
       throw error;
+    }
+    if (note !== null) {
+      const remaining = response.headers?.get?.('x-ratelimit-remaining') ?? null;
+      const budget = remaining === null ? null : Number(remaining);
+      note({
+        at: startedAt,
+        method,
+        path,
+        attempt,
+        status: response.status,
+        ms: Date.now() - startedAt,
+        sent: payload === undefined ? 0 : Buffer.byteLength(payload),
+        received: Buffer.byteLength(text),
+        // Only when the API said: a synthetic `0` would read as an exhausted quota on a
+        // server that never mentioned one, and that is the number an operator acts on.
+        ...(Number.isInteger(budget) ? { remaining: budget } : {}),
+      });
     }
     if (response.status >= 500 && attempt < retries) {
       await sleep(Math.min(2 * attempt, 10) * 1000);

@@ -1635,9 +1635,9 @@ hold the instrument's two repairs.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **238 files, 5890 tests passed** (as of this commit) |
+| `core` test suite | **238 files, 5890 tests passed** (at v3.55) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **242 files, 6077 tests passed** (as of this commit) |
+| repo test suite | **242 files, 6077 tests passed** (at v3.55) |
 | `core` suite | **238 files, 5890 tests passed**; **41** of them new this round -- 38 in `ci-readings.test.ts` (six for `--seed`), one for `outputTail`, two for the instrument's red-baseline report |
 | coverage | `core` **99.96 / 99.75 / 100 / 99.96**, `cli` **100 / 100 / 100 / 100** |
 | mutation | **11** substitutions, **11** red: eight on the new rules (restored green at 115 cases) and three on the instrument. The third of those **survived** on its first case -- the fixture held exactly three lines, so "the tail" and "the head" were the same three -- and the case was what needed fixing |
@@ -1683,3 +1683,110 @@ halves were needed: `R10` without `--seed` would have divided by an afternoon, a
 without `R10` would have recorded days nothing read. The next round's version of this
 question is the one on the open list -- a margin is a claim about the *next* day, and no
 maximum over recorded days can make it. Six runs is six runs.
+
+## v3.56 — the channel that carried every push left no reading of what it answered
+
+v3.55 closed with a sentence about a maximum taken over a sample of one, and the round after
+it found the same shape one layer out. Every repair to the publishing channel since v3.51 was
+argued from a single afternoon: finding 412's closed socket, v3.51's `500` with an empty body
+that cleared on the next attempt, v3.53's base64 body refused with `400 malformed request` and
+accepted as `utf-8`. Three sentences, all true, none of them a measurement -- the channel
+printed a plan and one verdict, and the twenty to forty requests underneath them left nothing.
+
+The open list's first entry had said what to do since v3.53: *keep a reading of what the API
+answered on every real push.* This round is that file, the recorder that writes it, and the
+reader that refuses it when it stops describing a transport.
+
+### One — the verdict and the plan, and nothing about the requests (finding 429)
+
+A push is not a unit the API sees. The unit is one request, and all three failures above
+arrived on one of them. So the row is one **attempt**: `at`, `method`, `path`, `attempt`,
+`status`, `ms`, `sent`, `received`, and `remaining` when the API reports a rate limit.
+
+`at` is the attempt's start rather than its end, because that is the order the requests were
+made in and the reader checks the file for exactly that. `sent` is the JSON body's byte length,
+which is the number v3.53's defect was about. `received` is the response text's length, so a
+`500` with an empty body (v3.51) is distinguishable from a `500` that explained itself.
+
+### Two — the error field is the one the retry already reads (finding 430)
+
+`fetch` answers a closed socket by throwing, so there is no status to record. The row keeps
+`status: null` and an `error` beside it, and the two are the halves of one fact: the reader
+refuses a row that has both, and refuses one that has neither, because an attempt that neither
+answered nor failed is not a thing that happens. `null` is required rather than permitted as an
+absence -- a writer that forgot the field would otherwise look the same as a request that got
+no answer.
+
+The error's `code` is read from `failureCode`, extracted from `isNetworkFailure` in this round
+so that one function serves both. Two expressions reading the same event would be two
+instruments disagreeing about one failure, which is finding 428's shape one file over: a row
+that named `UND_ERR_SOCKET` on an attempt the retry did not consider would be the record
+contradicting the decision it exists to explain.
+
+`remaining` is written only when `x-ratelimit-remaining` is present. A synthetic `0` would read
+as an exhausted quota on a server that never mentioned one, and that is the number an operator
+acts on.
+
+### Three — the reader, and the one inference it makes (finding 431)
+
+`scripts/publish-readings.mjs` holds the rules and `scripts/publish-readings-cli.mjs` holds the
+exit, the same pair `publish.mjs` and `publish-cli.mjs` make: a gate is proved by being emptied,
+so a test may not import one. The rules check shape, order and continuity, and the third is the
+only place they infer anything -- a row that says `attempt: 3` must follow attempt 2 of the same
+request, because a missing row makes the retry count a number the file cannot defend.
+
+What they cannot check is stated in the module rather than left to look like more than it is: a
+row that says `201` on an attempt that actually got `500` passes every one of them, and only
+the process that made the request knows otherwise.
+
+The file is required. A gate that skipped the comparison when the history was absent would
+print `OK` about a question it had not asked -- the silence `R10` removed from the budget one
+round earlier, in a different subject.
+
+### Four — the inventory published `OK` as the diagnostic of a refusal
+
+The first derivation attributed the new gate's failure site to the nearest `console.log` above
+its exit, and that line was `publish-readings: OK (...)` -- the passing sentence, recorded as
+the diagnostic of the failing branch. `process.exit(main(...))` is what makes that possible: a
+computed exit whose diagnostic lives inside the function it calls, which the deriver cannot
+follow.
+
+The repair is `check-open-list.mjs`'s shape, a literal `process.exit(1)` below the failure's
+own sentence, and the shape is worth naming because it reads tidy and publishes a lie. The same
+round removed a `catch` in `publish-cli.mjs` that only re-raised: nothing could reach it, and
+the row it left in the inventory claimed a forward that no test ever took.
+
+### Readings
+
+> Ledger for `v3.56`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **239 files, 5931 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **243 files, 6118 tests passed** (as of this commit) |
+| new tests | **41** in `publish-readings.test.ts`: 17 on the shape rules, 5 on the summary, 4 on appending, 7 on what the transport hands the recorder, 5 on the reader a gate runs, 3 on the command line |
+| coverage | `core` and `cli` unchanged in the dimensions the gate measures; `scripts/` is outside the coverage ceiling by construction -- its drivers are the site proofs |
+| mutation | **10** substitutions, **10** red: an unanswered attempt not recorded, every row claiming attempt 1, a row with neither status nor error accepted, a retry not following its own first attempt, an append that replaces, a rate limit invented as zero, a retry counted as a row, `--record` allowed on a transport that makes no request, an unreadable file reported as empty, and a file that cannot be read saying nothing about why |
+| failure sites | **126** across **59** of **84** scripts; throws **81** = 11 `fatal` + 62 `unguarded` + 1 `guarded` + 7 `rethrow` |
+| site proofs | **193** claims across **58** files, every one driven |
+| the history | `golden-master/publish-readings.json`, filled by the pushes that carried this round |
+
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P2** | the history is six runs, four of them one afternoon | unchanged | record every green run; a bound's worst day is only as good as the worst day recorded |
+| **P2** | P13: a mutation is one substitution | unchanged | a second mutation, or an assertion about mutations |
+| **P2** | `backend`'s 16-minute install bound has never met a slow day | unchanged, and `R10` divides it by the 648 s cold day | the history will answer it the first time a slow mirror is recorded |
+| **P3** | the shards are unbalanced by file cost, not by count | unchanged | time each claimant file once, cut where the seconds are |
+| **P3** | P2 / P5 / P7 / P8 / P9 / P14 | unchanged | unchanged |
+
+**The lesson, for the round after this one.** A reading is only a reading if something reads
+it, and the file that holds it must be written by the thing it describes. This round had to add
+a recorder to the transport, a file to the tree, and a gate to the document check before any of
+the three was worth having -- and the first version of the gate published its own `OK` line as
+the reason it refused. The next question this channel will have to answer is not in this file:
+it is whether a *push* can be told apart from the requests that carried it, and the rows have
+no field for that yet.

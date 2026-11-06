@@ -1,0 +1,35 @@
+[
+  {
+    "at": 1793973380762,
+    "method": "GET",
+    "path": "/git/ref/heads/master",
+    "attempt": 1,
+    "status": 200,
+    "ms": 3133,
+    "sent": 0,
+    "received": 359,
+    "remaining": 4940
+  },
+  {
+    "at": 1793973383895,
+    "method": "GET",
+    "path": "/git/commits/8d24204cd26b452dc356a2eaf443687be44bf201",
+    "attempt": 1,
+    "status": 200,
+    "ms": 482,
+    "sent": 0,
+    "received": 1837,
+    "remaining": 4939
+  },
+  {
+    "at": 1793973384377,
+    "method": "GET",
+    "path": "/git/trees/ed3b1c254aae04a45732d158be5b7f9d3b7f17bd?recursive=1",
+    "attempt": 1,
+    "status": 200,
+    "ms": 5044,
+    "sent": 0,
+    "received": 167588,
+    "remaining": 4938
+  }
+]

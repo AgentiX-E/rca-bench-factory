@@ -2497,3 +2497,67 @@ no report explaining nothing, and a tail that keeps the first lines instead of t
 third **survived** on its first case -- the fixture had exactly three lines, so "the tail" and
 "the head" were the same three lines -- which is the same defect the mutation is for, in the
 test rather than the code.
+
+## Finding 429 — the channel that carried every push could not say what the API answered
+
+Three repairs in three rounds were argued from one anecdote each. Finding 412 is the first
+real push losing a request to a closed socket; v3.51 is `POST /git/blobs` answering `500` with
+an empty body on a five-entry tree and accepting the same body on the next attempt; v3.53 is
+`docs/audit.md` at 1.1 MB refused as base64 with `400 malformed request` and accepted as
+`utf-8`. Every one of those sentences is true and none of them is a measurement: the channel
+printed its plan and one verdict, and the two to forty requests underneath them left nothing
+behind.
+
+So the next question -- *did this push retry, and what did the upstream say when it did* --
+had to be answered by reading a terminal at the time. The open list's first entry was the
+honest version of that: *keep a reading of what the API answered on every real push.* It had
+been open since v3.53 and no round could close it, because closing it is not a repair -- it is
+a file and a reader.
+
+## Finding 430 — the unit is the attempt, and the field the retry reads is the field the row keeps
+
+A record per push would have hidden every failure this channel has met. A push is one plan
+line per commit and one verdict; the failures arrive per *request*, and two of the three above
+were invisible in the verdict because the retry absorbed them. So the row is one attempt:
+`at`, `method`, `path`, `attempt`, `status`, `ms`, `sent`, `received`, and the optional
+`remaining` the API reports.
+
+Two fields are arguments rather than plumbing.
+
+`status: null` together with `error` is the shape of "the connection broke", and it exists
+because `fetch` answers a closed socket by throwing rather than by answering: there is no
+status to record, and a row that omitted the field would look the same as a row whose writer
+forgot it. The reader therefore requires the `null` explicitly and refuses a row that has
+neither a status nor an error -- an attempt that neither answered nor failed is not a thing
+that happens.
+
+The error's `code` is read from `failureCode`, the same function `isNetworkFailure` calls. The
+alternative -- one expression in the retry rule and another in the recorder -- is two
+instruments reading the same event, which is finding 428's shape one file over: a red the
+instrument could not describe. A row that named `UND_ERR_SOCKET` on an attempt the retry did
+not consider would be the recorder disagreeing with the decision it is supposed to explain.
+
+`remaining` is written only when the API sends `x-ratelimit-remaining`. A synthetic `0` would
+read as an exhausted quota on a server that never mentioned one, and an operator acts on that
+number.
+
+## Finding 431 — the inventory published `OK` as the diagnostic of a refusal
+
+The first derivation of the site table attributed the new gate's exit to the nearest
+`console.log` above it, and that line was
+`publish-readings: OK (${entries.length} row(s) of ${file})`. So the inventory recorded the
+passing sentence as the diagnostic of the failing branch -- the defect this repository has
+found in other people's gates three times, in its own table, on the first round that added a
+gate to it.
+
+The cause is the shape `process.exit(main(...))`: a computed exit whose diagnostic is
+somewhere inside the function it calls, which `derive-gate-sites.mjs` cannot follow. The
+repair is the one `check-open-list.mjs` already used -- read and judge in a function that
+returns, then a literal `process.exit(1)` below the failure's own sentence -- and it is
+recorded here because the shape is the kind that gets copied: `process.exit(fn())` reads
+tidy and publishes a lie.
+
+The same round removed a `catch` in `publish-cli.mjs` that only re-raised. Nothing could
+observe it: the failures it would have caught are thrown outside its `try`, and the row it
+left in the inventory said a forward existed that no test ever reached. A row nothing can
+reach is a row that says nothing about whether the code is live.

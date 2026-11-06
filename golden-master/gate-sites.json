@@ -1,6 +1,6 @@
 {
   "rule": "a process.exit(...) call whose argument is not a known zero -- no argument at all is zero; sites and zero partition every process.exit call, whatever position the call sits in; a reference to the exit family that is not a call is refused rather than counted; see scripts/derive-gate-sites.mjs",
-  "scanned": 83,
+  "scanned": 85,
   "excluded": {
     "zero": 18
   },
@@ -617,7 +617,7 @@
     },
     {
       "script": "scripts/publish-cli.mjs",
-      "line": 115,
+      "line": 151,
       "condition": "invokedDirectly",
       "verdict": "code",
       "status": "proved",
@@ -625,11 +625,27 @@
     },
     {
       "script": "scripts/publish-cli.mjs",
-      "line": 118,
+      "line": 154,
       "condition": "invokedDirectly",
       "diagnostic": "publish failed: ${String(error.message ?? error)}",
       "status": "proved",
       "provedBy": "packages/core/test/publish.test.ts"
+    },
+    {
+      "script": "scripts/publish-readings-cli.mjs",
+      "line": 43,
+      "condition": "'error' in parsed",
+      "diagnostic": "usage: publish-readings-cli.mjs [--file PATH] [--check]",
+      "status": "proved",
+      "provedBy": "packages/core/test/publish-readings.test.ts"
+    },
+    {
+      "script": "scripts/publish-readings-cli.mjs",
+      "line": 51,
+      "condition": "found.error !== null || found.problems.length > 0",
+      "diagnostic": "publish-readings: FAILED (${options.file})",
+      "status": "proved",
+      "provedBy": "packages/core/test/publish-readings.test.ts"
     },
     {
       "script": "scripts/read-remote-index.mjs",
@@ -973,7 +989,7 @@
     "rule": "every throw statement, partitioned four ways: `fatal` (no enclosing function, no enclosing try) ends the process and is proved like a site; `unguarded` (in a function, no enclosing try) hands control to its caller, which decides; `guarded` (in a try block) is caught here; `rethrow` (in a catch, rethrowing the caught binding) carries a decision made above. A try or a catch stops at a function boundary, because neither is on the stack when the function runs elsewhere. fatal + unguarded + guarded + rethrow is the number of throw statements; see scripts/derive-gate-sites.mjs",
     "counts": {
       "fatal": 11,
-      "unguarded": 60,
+      "unguarded": 62,
       "guarded": 1,
       "rethrow": 7
     },
@@ -1401,7 +1417,7 @@
       },
       {
         "script": "scripts/publish-cli.mjs",
-        "line": 68,
+        "line": 78,
         "disposition": "unguarded",
         "message": "--transport local needs --remote DIR: a bare repository to write",
         "status": "proved",
@@ -1409,7 +1425,7 @@
       },
       {
         "script": "scripts/publish-cli.mjs",
-        "line": 71,
+        "line": 81,
         "disposition": "unguarded",
         "message": "'${options.transport}' is not a transport this channel has",
         "status": "proved",
@@ -1417,7 +1433,7 @@
       },
       {
         "script": "scripts/publish-cli.mjs",
-        "line": 73,
+        "line": 83,
         "disposition": "unguarded",
         "message": "--repo OWNER/NAME is required for the GitHub transport",
         "status": "proved",
@@ -1504,6 +1520,22 @@
         "provedBy": "packages/core/test/publish-plan.test.ts"
       },
       {
+        "script": "scripts/publish-readings.mjs",
+        "line": 201,
+        "disposition": "unguarded",
+        "message": "the history at ${file} is not JSON, so appending would replace it: ${String(error.message)}",
+        "status": "proved",
+        "provedBy": "packages/core/test/publish-readings.test.ts"
+      },
+      {
+        "script": "scripts/publish-readings.mjs",
+        "line": 204,
+        "disposition": "unguarded",
+        "message": "the history at ${file} is not an array of rows, so appending would replace it",
+        "status": "proved",
+        "provedBy": "packages/core/test/publish-readings.test.ts"
+      },
+      {
         "script": "scripts/publish.mjs",
         "line": 83,
         "disposition": "unguarded",
@@ -1537,7 +1569,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 256,
+        "line": 262,
         "disposition": "unguarded",
         "message": "the GitHub transport needs a token: it is read from the environment and never committed",
         "status": "proved",
@@ -1545,7 +1577,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 282,
+        "line": 315,
         "disposition": "rethrow",
         "message": "error",
         "status": "proved",
@@ -1553,7 +1585,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 288,
+        "line": 338,
         "disposition": "unguarded",
         "message": "new ApiError(method, path, response.status, text)",
         "status": "proved",
@@ -1561,7 +1593,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 303,
+        "line": 353,
         "disposition": "rethrow",
         "message": "error",
         "status": "proved",
@@ -1569,7 +1601,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 306,
+        "line": 356,
         "disposition": "unguarded",
         "message": "the API refuses ${path} in every encoding: ${String(last?.message)}",
         "status": "proved",
@@ -1577,7 +1609,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 317,
+        "line": 367,
         "disposition": "rethrow",
         "message": "error",
         "status": "proved",
@@ -1585,7 +1617,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 340,
+        "line": 390,
         "disposition": "unguarded",
         "message": "the plan carries a blob for '${entry.path}' that the executor did not read",
         "status": "proved",
@@ -1593,7 +1625,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 363,
+        "line": 413,
         "disposition": "rethrow",
         "message": "error",
         "status": "proved",
@@ -1601,7 +1633,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 365,
+        "line": 415,
         "disposition": "unguarded",
         "message": "new TypeError( `the branch moved while the plan was being executed: it was ${String(expected).slice(0, 9)} and is ` + `$",
         "status": "proved",
@@ -1609,7 +1641,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 448,
+        "line": 498,
         "disposition": "unguarded",
         "message": "the plan carries a blob for '${entry.path}' that the executor did not read",
         "status": "proved",
@@ -1617,7 +1649,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 480,
+        "line": 530,
         "disposition": "unguarded",
         "message": "new TypeError( `the branch moved while the plan was being executed: it was ${String(expected).slice(0, 9)} and is ` + `$",
         "status": "proved",
@@ -1625,7 +1657,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 488,
+        "line": 538,
         "disposition": "unguarded",
         "message": "refusing to move ${branch} backwards: ${sha.slice(0, 9)} does not descend from ${now.slice(0, 9)}",
         "status": "proved",

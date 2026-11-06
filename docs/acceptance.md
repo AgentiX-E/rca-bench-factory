@@ -906,3 +906,32 @@ refused by 361 s against 720 after being sized from 347.
   Nor does the rule say anything about a bound's *absolute* size -- 2.1x of a 633-second
   command is 22 minutes, and a workflow whose commands grow will keep growing its bounds
   until somebody measures the commands rather than the bounds.
+
+## A push leaves a reading of what the API answered
+
+Every repair to the publishing channel before v3.56 was argued from one afternoon: a socket
+that closed, a `500` with an empty body that cleared on retry, a base64 body refused with `400`
+and accepted as `utf-8`. Each was true and none was a measurement, so the next round started
+from an anecdote again.
+
+- **What is claimed.** `golden-master/publish-readings.json` holds one row per **attempt**
+  made by the GitHub transport: `at`, `method`, `path`, `attempt`, `status`, `ms`, `sent`,
+  `received`, `remaining` when the API reported a rate limit, and `error` when the connection
+  broke. `--record FILE` asks the channel to append this push's rows, and the summary line
+  names the count, the retries, the unanswered attempts, the slowest request and the status
+  histogram.
+- **A retry is visible as two rows.** `publish-readings-cli.mjs` refuses a row that says
+  `attempt: 3` without attempt 2 of the same request above it, because a missing row makes the
+  retry count a number the file cannot defend. It also refuses a row with both a status and an
+  error, one with neither, a timestamp that runs backwards, and a file that holds no rows at
+  all -- a reading of nothing is not a reading.
+- **The error's code is the field the retry reads.** One function, `failureCode`, answers both
+  `isNetworkFailure` and the recorder, so a row cannot name a code the retry did not consider.
+- **The file is required rather than optional.** A gate that skipped the comparison when the
+  history was absent would print `OK` about a question it had not asked.
+- **What is not claimed.** The rows are not verified: a row that says `201` on an attempt that
+  got `500` passes every check, and only the process that made the request knows otherwise.
+  Nor can the file tell one push from another -- there is no push id, so a reader can count
+  requests and retries but not pushes. The history's depth is whatever this repository has
+  pushed since v3.56, which is the same limit the CI readings have: a worst day is only as
+  good as the worst day recorded.
