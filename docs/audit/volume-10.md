@@ -2684,3 +2684,11 @@ looking for the refused `PATCH` above the read, the retry by `attempt > 1`, sinc
 attempt always begins at attempt 1 of its own read. That last clause is what makes the exemption
 safe rather than convenient: an attempt that started at attempt 2 is refused outright, so no
 retry can be a second push in disguise.
+
+**And the sixth attempt, which named itself.** The push that carried this round is the first
+whose `rev` is not `null`: `e23e9e352`, three commits, 611 files per tree, `25 request(s), 0
+retried, 0 unanswered; slowest POST /git/blobs 1790 ms`. Attempts 2 and 5 of the same table
+each spent 28-29 seconds on one blob before the socket closed. So the reading the anecdote could
+not produce is now a comparison inside one file: the same work, on the same day, over the same
+branch, is **1 790 ms** when the connection holds. The twenty-eight seconds were the connection
+and not the body, which v3.56 could argue only from a retry that succeeded in 1 343 ms.

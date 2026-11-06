@@ -1952,6 +1952,25 @@ The open list's `P13` (*a mutation is one substitution*) got measured instead of
 battery has, not about the space of double edits -- but the entry no longer rests on a
 suspicion.
 
+### Six — the push, and the first attempt that names itself
+
+The push that carried this round is attempt 6, and it is the first one whose `rev` is not
+`null`:
+
+```
+push 6/6 master rev=e23e9e352: 25 request(s), 0 retried, 0 unanswered; slowest POST /git/blobs 1790 ms
+```
+
+Three commits, 611 files per tree, and **no retry and no unanswered attempt**. The two
+attempts that did have them (2 and 5, same channel, same branch, same afternoon) each spent
+28-29 seconds on one blob before the socket closed. The comparison is the first the file can
+make that the anecdote could not: the same work, on the same day, over the same branch, is
+**1 790 ms** when the connection holds -- so the twenty-eight seconds were the connection and
+not the body, which v3.56 could only argue from a retry that succeeded in 1 343 ms.
+
+It is also the reading that closes the question this round was opened for: the file says how
+many attempts it holds, which of them named a tip, and what each one cost.
+
 ### Readings
 
 > Ledger for `v3.57`.
@@ -1967,8 +1986,8 @@ suspicion.
 | mutation, pairwise | **78** two-edit mutants -- every pair of the thirteen -- **78 red, 0 survived**, tree restored green |
 | failure sites | **126** across **59** of **85** scripts; throws **82** = 11 `fatal` + 63 `unguarded` + 1 `guarded` + 7 `rethrow` |
 | site proofs | **193** claims across **58** files, every one driven |
-| the history | `golden-master/publish-readings.json`: **65 rows** in **5 attempts** -- 3 / 25 / 8 / 16 / 13 -- 62 answered, **3 unanswered**, 3 retried. Slowest request per attempt: 5 044 / **28 385** / 2 120 / 2 211 / **29 632** ms. All five carry `rev: null`; the file prints `0 with a named tip` |
-| the boundary | the five attempts begin at rows 0, 3, 28, 36 and 52, which are the five `GET /git/ref/heads/master` rows. The gaps at 30 s and 32 s are retries inside attempts 2 and 5, not boundaries: a 20-second threshold would have answered seven |
+| the history | `golden-master/publish-readings.json`: **90 rows** in **6 attempts** -- 3 / 25 / 8 / 16 / 13 / 25 -- 87 answered, **3 unanswered**, 3 retried. Slowest request per attempt: 5 044 / **28 385** / 2 120 / 2 211 / **29 632** / 1 790 ms. The first five carry `rev: null`; the sixth is `e23e9e352`, and the file prints `1 with a named tip` |
+| the boundary | the five migrated attempts begin at rows 0, 3, 28, 36 and 52, which are the five `GET /git/ref/heads/master` rows. The gaps at 30 s and 32 s are retries inside attempts 2 and 5, not boundaries: a 20-second threshold would have answered seven |
 
 
 
@@ -1976,7 +1995,7 @@ suspicion.
 
 | priority | item | state | next step |
 | --- | --- | --- | --- |
-| **P2** | the attempts recorded before v3.57 name no tip, and the file is one attempt behind | **new**, and stated by the gate itself: `0 with a named tip` | every attempt from this round on carries its commit; the lag is structural, because an attempt appends its rows after it has moved the ref |
+| **P2** | the five attempts recorded before v3.57 name no tip, and the file is one attempt behind | **new**, and stated by the gate itself: `1 with a named tip` of 6 | every attempt from this round on carries its commit; the lag is structural, because an attempt appends its rows after it has moved the ref |
 | **P2** | the history is six runs, four of them one afternoon | unchanged | record every green run; a bound's worst day is only as good as the worst day recorded |
 | **P2** | P13: a mutation is one substitution | **measured**: 78 pairs of this round's thirteen, 78 red | a pair composing two changes neither of which is in the battery; or a mutation of the assertion |
 | **P2** | a wrong `--branch` is read as an unborn branch | unchanged | refuse a `null` base on a non-empty repository unless `--new-branch` |

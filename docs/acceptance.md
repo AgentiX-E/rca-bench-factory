@@ -960,6 +960,7 @@ from an anecdote again.
   got `500` passes every check, and only the process that made the request knows otherwise.
   The boundary rule says where a push begins, not that the rows inside one are the rows the
   transport made. The history's depth is whatever this repository has pushed since v3.56 --
-  five pushes at v3.57, and the file in the tree is always one push behind, because a push
-  appends its rows after it has moved the ref. That is the same limit the CI readings have: a
+  six attempts at v3.57, the last of them (`e23e9e352`) the first to name its tip -- and the
+  file in the tree is always one attempt behind, because an attempt appends its rows after it
+  has moved the ref. That is the same limit the CI readings have: a
   worst day is only as good as the worst day recorded.
