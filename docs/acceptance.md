@@ -758,11 +758,19 @@ point, and the boundary between the first two is the whole of what makes the thi
   for a receipt keyed on the tip's tree and the push refuses without one; a repository without a
   gate is not asked, because a rule that refused every push there would be turned off rather than
   satisfied.
-- **What is not claimed.** The GitHub transport's network behaviour is exercised against a local
-  server that implements the four endpoints, not against `api.github.com`: the retry rule and the
-  utf-8 fallback are driven, and the possibility that the live API answers something this server
-  does not model remains. The repository cannot test the network it publishes to, and says so here
-  rather than in a comment.
+- **What is not claimed.** In v3.53's close-out the channel was pointed at the real
+  `api.github.com`: the read path answered 640 entries for this repository (598 files after 42
+  tree entries are skipped, `truncated: false`), and the write path published two commits to the
+  docs repository and four to this one, every tree equal and every commit present in order. A
+  third push met `UND_ERR_SOCKET (other side closed)` on `POST /git/blobs` -- no answer at all,
+  which no in-process server had produced -- and the retry now covers a broken connection as well
+  as a 5xx, with a test that destroys a socket to prove it. What remains unmodelled is any **other**
+  error shape the live API may return, and the retry budget: a connection that never answers is
+  refused after three attempts with the ref unmoved. Also not claimed: a real push's commit SHAs
+  equal the local ones. The remote is a lineage the old channel rebuilt with UTC author dates, so
+  the CLI reports `identical: false` and the gate's receipt, not a forged `VERIFIED`. The
+  line-for-line log equality is a claim about the test, where both sides are local git objects;
+  the real push claims that every commit arrived.
 
 ## Definition of Done (per change and per release)
 

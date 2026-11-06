@@ -2085,3 +2085,49 @@ The rule this leaves is the round's ruler turned on its own instruments: **for e
 the observable that would be absent if the code did nothing.** When the answer is "nothing", the
 assertion is measuring the harness. It is the same failure as finding 406 one level out -- a check
 whose two sides were not independent -- and it is the third round in a row with that shape.
+
+## Finding 412 — the first real push lost a request to a closed socket, and the retry could not see it
+
+The close-out of v3.53 pointed the new channel at `api.github.com` for the first time. The
+docs repository went first as the smallest possible subject -- ten files, two commits, no gate --
+and both commits arrived with the right trees, the right parents and the right messages. The
+main repository followed with four commits, all four present on the remote in order. So the
+channel worked. Then the third push, one commit changing two prose files, failed twice:
+
+```
+1/1 aaf954f8f on the remote tip: 2 changed, 0 removed, 10 file(s)
+publish failed: fetch failed
+```
+
+The cause was `UND_ERR_SOCKET: other side closed` on `POST /git/blobs`. A `curl` to the same
+endpoint with the same body answered 201 in under a second, and a Node `fetch` of the same
+2.2 MB base64 body answered 201 on its first attempt. The failure is a connection the peer
+closed, not a body it refused, and not a status: undici throws a `TypeError` instead of
+answering, so the transport's retry loop -- which compares `response.status >= 500` -- never
+sees it. The whole push fails on a transient event, with no mention of which request died.
+
+The defect is a shape, not a number. The in-process server in `publish.test.ts` answers every
+request it is given; it cannot disappear between the request and the answer, because the same
+process is both sides. A test written against that server can drive a 500, a 400, a 422 and a
+moved ref, and none of them is the failure the real network produced. The acceptance contract
+said as much one round earlier -- *the possibility that the live API answers something this
+server does not model remains* -- and then the live API produced something sharper: not an
+answer the server does not model, but **no answer at all**.
+
+The repair puts the connection in the same retry loop as the status. `isNetworkFailure` names
+only the codes a broken connection carries (`UND_ERR_*`, `ECONNRESET`, `EPIPE`) and the
+`TypeError('fetch failed')` undici raises; every other failure is thrown unchanged, because a
+retry is for a connection and not for a mistake. Four cases hold it: a server that destroys the
+socket answers on the retry and the push ends at the local tip; a server that destroys it every
+time spends exactly its budget and then refuses, with the ref unmoved; a `fetchImpl` that throws
+an ordinary error is called once and not retried; and the classifier is driven against both
+shapes. Removing the new branch from `call` turns the first two cases red.
+
+Two boundaries are now honest rather than merely humble. The read path was measured against the
+real API for both repositories (640 entries, 598 files after 42 tree entries are skipped,
+`truncated: false`), and the write path was measured by a real push; what remains unmodelled is
+any *other* error shape. And the real push's commit SHAs are not the local ones: the old
+channel rebuilt history with UTC author dates, so the remote is a different lineage with the
+same trees, and the CLI prints `identical: false` rather than a `VERIFIED` it cannot justify. The
+end-to-end log equality belongs to the test, where both sides are local git objects; the real
+push proves that every commit arrived. Neither claim stands in for the other.

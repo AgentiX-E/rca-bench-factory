@@ -1119,7 +1119,7 @@ carry:
 | file | what it is | how it is held |
 | --- | --- | --- |
 | `scripts/publish-plan.mjs` | the decision, as a function of data | `publish-plan.test.ts`, 26 cases against real repositories |
-| `scripts/publish.mjs` | executing a plan, and two transports | `publish.test.ts`, 32 cases, one of them end to end over HTTP |
+| `scripts/publish.mjs` | executing a plan, and two transports | `publish.test.ts`, 36 cases, one of them end to end over HTTP |
 | `scripts/publish-cli.mjs` | the entry point, and the only gate | spawned for both exits; hollowing it turns the suite red |
 
 The plan says everything except two fields, and the exception is the point. It is written before
@@ -1218,11 +1218,11 @@ assertion is measuring the harness.
 | instrument | what it says now |
 | --- | --- |
 | the channel | three modules, 1 100 lines of decision and execution where there were 362 lines outside the tree with none |
-| the suite | **58 new cases** in two files; `publish-plan.test.ts` 26, `publish.test.ts` 32 |
+| the suite | **62 new cases** in two files; `publish-plan.test.ts` 26, `publish.test.ts` 36 |
 | the end-to-end assertion | after a replay, `git -C remote rev-parse main` equals `git -C local rev-parse HEAD` and the two logs are equal line for line -- measured over HTTP against a server that writes real git objects, and against a bare repository directly |
-| the mutation | narrowing the window back to `[ancestry[0]]` -- the old behaviour -- turns **8 of the file's 32 cases** red, the first of them the log comparison |
-| `gate-sites.json` | **123 failure sites** across 58 of **83** scripts; **72 throws** -- 5 `fatal`, 60 `unguarded`, 1 `guarded`, 6 `rethrow`; 65 proved, 7 exempt |
-| the sensitivity batteries | `verify-sites-are-sensitive`: **181 claims / 55 files / 236 runs / 6.6 min**, 0 survivors; `verify-claims-are-sensitive`: **7 claims / 12 runs / 0.5 min**, 0 survivors -- both measured on this tree, not quoted from the previous round |
+| the mutation | narrowing the window back to `[ancestry[0]]` -- the old behaviour -- turns **8 of the file's 36 cases** red, the first of them the log comparison |
+| `gate-sites.json` | **123 failure sites** across 58 of **83** scripts; **73 throws** -- 5 `fatal`, 60 `unguarded`, 1 `guarded`, 7 `rethrow`; 66 proved, 7 exempt |
+| the sensitivity batteries | `verify-sites-are-sensitive`: **182 claims / 55 files / 237 runs / 4.8 min** (116 exits hollowed, 66 throws removed), 0 survivors; `verify-claims-are-sensitive`: **7 claims / 12 runs / 0.2 min**, 0 survivors -- both measured on this tree, not quoted from the previous round |
 | the register | three new entries: two `data`, one `gate`; the gate is the only one of the three that exits |
 
 ### Readings
@@ -1231,20 +1231,71 @@ assertion is measuring the harness.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **236 files, 5815 tests passed** (as of this commit) |
+| `core` test suite | **236 files, 5819 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **240 files, 6002 tests passed** (as of this commit) |
-| new tests | **58**: 26 in `publish-plan.test.ts` (base location, message bytes, the file table from both sources, the entries diff, six plan refusals, the symbols) and 32 in `publish.test.ts` (local transport end to end, dry run, unborn branch, receipt, four refusals a broken transport produces, six HTTP cases, five CLI cases) |
-| throw partition | **72 statements**: 5 `fatal`, 60 `unguarded`, 1 `guarded`, 6 `rethrow`; 65 proved; 7 exempt |
+| repo test suite | **240 files, 6006 tests passed** (as of this commit) |
+| new tests | **62**: 26 in `publish-plan.test.ts` (base location, message bytes, the file table from both sources, the entries diff, six plan refusals, the symbols) and 36 in `publish.test.ts` (local transport end to end, dry run, unborn branch, receipt, four refusals a broken transport produces, ten HTTP cases, five CLI cases, and the closed socket) |
+| throw partition | **73 statements**: 5 `fatal`, 60 `unguarded`, 1 `guarded`, 7 `rethrow`; 66 proved; 7 exempt |
 | failure sites | **123** across 58 of **83** scripts; `excluded` `{17 zero}` |
-| the new sites | 30, every one proved by the same two files: 28 throws and the CLI's two exits |
+| the new sites | 31, every one proved by the same two files: 29 throws, the CLI's two exits, and the close-out's rethrow |
 | the assertion that would have caught finding 404 | `expect(log(remote,'main')).toBe(log(source,'HEAD'))` -- the trees were equal on the day, and the logs were not |
+
+### Seven — the first real push, and the sixth finding
+
+After the chapter was written, the channel was pointed at `api.github.com` for the first time. The
+docs repository went first as the smallest subject there is -- ten files, two commits, no gate --
+and both commits arrived with the right trees, the right parents and the right messages. This
+repository followed with four commits, all four present on the remote in order, tip tree
+`9532bb83b` equal to `HEAD^{tree}`. The read path was measured too: 640 entries from
+`?recursive=1`, 598 files after 42 `tree` entries are skipped, `truncated: false`.
+
+Then a third push, one commit changing two prose files, failed twice with `publish failed: fetch
+failed`. The cause was `UND_ERR_SOCKET: other side closed` on `POST /git/blobs` -- **no answer at
+all**, not a status the 5xx retry could compare. `curl` to the same endpoint with the same body
+answered 201, and Node's own `fetch` of the same 2.2 MB body answered 201 on its first try. The
+in-process server in the suite answers every request it is given; it cannot disappear between the
+request and the answer, because the same process is both sides. The acceptance contract had said
+one round earlier that an unmodelled *answer* might exist. What arrived was sharper: no answer.
+
+`isNetworkFailure` now names only the codes a broken connection carries, and `call` retries such a
+failure with the same backoff as a 5xx. Four cases hold it: a destroyed socket answers on the retry
+and the push ends at the local tip; a socket destroyed every time spends exactly its budget and
+then refuses with the ref unmoved; an ordinary error is called once and not retried; and the
+classifier is driven against both shapes. Removing the branch turns the first two red. The
+round's own ruler -- *name the observable that would be absent if the code did nothing* -- had to
+be applied one level out again: a test whose two sides are the same process cannot produce the
+failure where one side is gone.
+
+| CI | run `42131836805` on `7484b1acc`: **7 of 7 jobs success** -- batteries-heavy **15.3**, batteries **12.0**, sensitivity **11.3**, build **7.0**, golden master **0.9**, backend **0.7**, cold tree **0.3** min; **15.3 min of wall clock**. The sites battery ran **626 s** against its 20-minute bound and the claims battery **24 s** against three |
+
+The recording was re-taken from that run, as `R7` requires. `R4` refused the reading first: 626 s
+needs 1252 s of bound, and the step had 1200. So the bound moved 20 -> 25 and the ceiling 21 -> 26
+by `R5`'s arithmetic (`ceil((1500 + 22) / 60)`), and the recording now says 26 minutes for both
+itself and the workflow -- a measurement from the run, a budget from the tree that cites it.
+`bounds total` reads **213 min** against **47 min measured**, and the tightest bound is now
+`batteries / Every gate can be shown to fail` at 2.1x.
+
+One state is worth naming because it looks like a failed end-to-end assertion and is not one. The
+real push reports `the tip's tree is the local one and its SHA is not (the history it hangs on is
+not the local history)`: the old channel rebuilt the remote lineage with UTC author dates, so its
+commit SHAs were never the local ones and each round appends to that lineage. The suite's
+line-for-line log equality holds where both sides are local git objects and the parent is the same
+object; the real push proves that every commit arrived and every tree is equal. Neither stands in
+for the other, and the CLI says which one it is claiming.
+
+One smaller repair belongs to the same refresh. `ci-budget.test.ts` named a "future" run
+(`41999999999`) to make `R7` refuse; the recording now says `42131836805` and overtook it, so the
+case that has to fail began to pass, and `verify-site-proofs` reported twelve unmeasured claims
+whose claimant was red. A red claimant is not a proof of anything -- the battery refuses to
+credit it, which is what made the defect visible in twelve places at once. The fixture now reads
+the shipped recording and adds one, because the refusal is about the *order* of two runs and not
+about either number. A test with a hard-coded date is a test the next recording breaks.
 
 ### Left open, in the order the goal is reached
 
 | priority | item | state | next step |
 | --- | --- | --- | --- |
-| **P3** | the sensitivity gate's cost grows linearly with claims | **181 claims, 236 runs, 6.6 min** locally this round (116 exits hollowed, 65 throws removed); the claims battery adds 7 claims and 12 runs in 0.5 min; the two batteries have separate bounds | shard by file when either battery approaches twice its measurement |
+| **P3** | the sensitivity gate's cost grows linearly with claims | **182 claims, 237 runs, 4.8 min** locally and **626 s on the runner**; the bound moved 20 -> 25 and the ceiling 21 -> 26 by `R4`/`R5` after the refresh, so the margin is bought by the rule again; the claims battery adds 7 claims and 12 runs in 0.2 min | shard by file when either battery approaches twice its measurement -- 626 s against 1200 s was 52 s short, which is the closest this has come |
 | **P17** | a job that has never run can only be recorded by `--borrow` | a new job's budget is part of `R6`'s comparison, so there is nothing to compare | a declaration for a job, which would have to state its budget and every step's bound |
 | **P13** | a mutation is one substitution | a claim can be false in ways the table does not name | unchanged |
 | **P14** | one of the seven notices is a refusal, not an assertion | unchanged | unchanged |
