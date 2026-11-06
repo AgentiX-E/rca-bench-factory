@@ -2156,6 +2156,8 @@ a job that does not exist, a duplicate promise, two promises about one job, the 
 shapes, the two empty-file shapes, the summary, the separation of the two maps, and the refusal
 to pretend a deadline exists. Each says which failure shape its fixture cannot produce.
 
+The promise was then published, and the run it was waiting for answered it. `42160224254` measured `sensitivity-shard` at **387 s**; the recorder reported that one declaration was now measured and could be deleted; the deletion is in the same round's last commit; and `check-ci-budget` reads **8 jobs / 82 steps / 54 bounded** with a 25-minute bound at **3.9x**. No part of that sentence could have been written by the file -- which is the difference between this finding and a rule that only looks right.
+
 ## Finding 414 — a promise carrying a measurement would forge the one number only CI can spend
 
 The previous round's ruler was about a file: name the fields its writer cannot know. This

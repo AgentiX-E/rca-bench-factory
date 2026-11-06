@@ -1398,7 +1398,10 @@ sentence for the round rather than erasing the only account of why the job exist
 | new tests | **27**: 19 for `R9` (the whitelist, the whole-step relation, the lifetime, the summary and the self-check) and 8 for the split (the grammar, the partition, the shipped workflow's plan, and the two refusals) |
 | throw partition | **74 statements**: 6 `fatal`, 60 `unguarded`, 1 `guarded`, 7 `rethrow` |
 | failure sites | **123** across 58 of **83** scripts; two re-annotated after their guard text changed |
-| the recording | run `42131836805`, **7 jobs / 75 steps**, and one declared job deliberately absent |
+| the recording | run `42160224254`, **8 jobs / 82 steps / 54 bounded**, 45 min measured; bounds total **256 min**, tightest `batteries / Every gate can be shown to fail` at **2.2x**. Before the settlement it was run `42131836805`, 7 jobs / 75 steps, with one declared job deliberately absent |
+| the split, measured | shard 1 **248 s**, shard 2 **387 s** -- **635 s** together against **626 s** unsharded; the wall clock is the slower shard, **7.0 of 12.5 min**, where the battery used to be the longest job at 11.3 |
+| the promise, settled | the first green run measured `sensitivity-shard` at **387 s** against a 25-minute bound: **3.9x**, `R4` green, `R5`'s sum inside a 26-minute ceiling. The promise was deleted in this commit, which is the lifetime it declared -- one real run, not a borrow |
+| CI | run `42160224254` on `b054d7f9a`: **8 of 8 jobs success** -- batteries-heavy **12.5**, batteries **11.7**, sensitivity-shard **7.0**, build **6.0**, sensitivity **4.9**, cold tree **2.2**, golden master **1.0**, backend **0.6** min; **12.5 min of wall clock** |
 
 ### Left open, in the order the goal is reached
 
@@ -1408,6 +1411,7 @@ sentence for the round rather than erasing the only account of why the job exist
 | **P2** | P13: a mutation is one substitution | unchanged | a second mutation, or an assertion about mutations |
 | **P2** | P2 / P5 / P7 / P8 | unchanged | unchanged |
 | **P3** | P9 / P14 | unchanged | unchanged |
+| **P3** | the split's bound is looser than `R4` would size it | 25 min against 387 s is **3.9x**, the loosest in the workflow | a run with a 13-minute bound (2.0x of 387 s), then `R4` settles it the way it settled this one |
 
 **The lesson, for the round after this one.** The previous ruler was about a test: name the
 failure shape it cannot produce. Applied to P17 it produced a whitelist rather than a
@@ -1416,3 +1420,29 @@ claims to have measured one. The honest boundary is therefore written into the r
 the tests instead of being discovered later: `R9` says nothing about a deadline, and the
 first CI run is where the numbers are settled. A mechanism that has never been used by a
 real job is a mechanism nobody has tested, so this round also gives it one.
+
+### The promise's whole life, in one round
+
+The tree was published with the promise in it -- `sensitivity-shard` declared, no run
+having measured it, `check-ci-budget` green in that state because `R9` reads the same
+promise and the same recording and the gap is a state both agree on. The run that followed
+was the first one that could answer it, and it answered with a number the promise was
+forbidden to write: the recorder measured the job at **387 s**, printed that one declaration
+was now measured and could be deleted, and the deletion is part of this round's last commit.
+`check-ci-budget` then read **8 jobs / 82 steps / 54 bounded**, and `R4` accepted 25 minutes
+against 387 s at **3.9x** -- a bound sized by a run of the command it enforces, which is the
+thing a declaration cannot do.
+
+What the round did **not** learn is whether 25 minutes is the right bound for the slower
+shard, only that it is inside `R4`: at 3.9x it is the loosest bound in the workflow, and the
+next round that touches this step should ask whether **13** minutes (2.0x of 387 s) would
+hold, which is what `R4` would size if the measurement were the only input. That question is
+left in the open list rather than answered by a guess, because answering it needs a run of a
+command with the tighter bound -- the same reason the split did not tighten it either.
+
+The split also moved the critical path. The sites battery was the longest job at 11.3 min in
+run `42131836805`; in `42160224254` it is **4.9** and **7.0** in parallel, and
+`batteries-heavy` at **12.5** now sets the wall clock. P3's subject -- a gate whose cost grows
+with its claims -- is therefore no longer the thing that lengthens a run, which is a
+different statement from "the shards are balanced": shard 2 is **1.6x** shard 1, exactly the
+imbalance the local reading predicted.

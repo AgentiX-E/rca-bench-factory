@@ -818,10 +818,17 @@ one round.
   measured zero or two times. The shipped script refuses an empty shard before spawning a child.
   In v3.54 the two shards measured **87 and 96 claims across 28 files each**, and their combined
   `--list` output is byte-for-byte the unsharded list.
-- **What is not claimed.** The promise does **not** establish that its budget is enough: only CI
-  can spend it, and no local apparatus can produce a job that timed out. Nor does the split
-  balance wall-clock time -- position-based sharding measured 1.6 and 3.4 minutes locally, so
-  the slower shard, not the sum, bounds the workflow; if that shard approaches twice its own
-  measurement the shards should be re-partitioned from a measurement rather than by position.
-  The 25-minute bound was deliberately not tightened in the round that split the command,
-  because `R4` has to size a bound from a run of the command it will enforce.
+- **The promise's lifetime, measured.** The tree was published with the promise in it and
+  `check-ci-budget` green, run `42160224254` measured `sensitivity-shard` at **387 s**, the
+  recorder said the declaration could be deleted, and the deletion is in the round's last
+  commit. The recording now reads **8 jobs / 82 steps / 54 bounded**, and `R4` accepted 25
+  minutes at **3.9x** -- a number only that run could supply.
+- **What is not claimed.** The promise did **not** establish that its budget was enough: it
+  named no seconds, and the bound was settled by the run rather than by the file. Nor does the
+  split balance wall-clock time -- position-based sharding measured **1.6 and 3.4** minutes
+  locally and **248 and 387** seconds on the runner, so the slower shard, not the sum, bounds
+  the workflow; if that shard approaches twice its own bound the shards should be
+  re-partitioned from a measurement rather than by position. The 25-minute bound was
+  deliberately not tightened in the round that split the command, because `R4` has to size a
+  bound from a run of the command it will enforce: at 3.9x it is now the loosest bound in the
+  workflow, and tightening it to 13 minutes is a change that needs its own run.
