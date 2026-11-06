@@ -1912,7 +1912,9 @@ describe('scripts/verify-local.mjs as a command', () => {
     // rather than a preference, which is why it moves when a run moves. 19 -> 20 and the
     // ceiling 20 -> 21 in v3.51's close-out: 578 s in run 41809961840 needs 1156 s of
     // bound, and the 19 s of setup in front of the step needs a ceiling above 1219 s.
-    expect(result.stdout).toContain("largest 20m of the job's 21m");
+    // 20 -> 25 and 21 -> 26 in v3.53's close-out: 626 s in run 42131836805 needs 1252 s,
+    // and 22 s of setup puts the 1500 s bound's deadline at 1522 s.
+    expect(result.stdout).toContain("largest 25m of the job's 26m");
     expect(result.stdout).toContain('batteries bounds all 14 of its step(s) on its own');
     expect(result.stdout).toContain("largest 9m of the job's 25m");
     expect(result.stdout).toContain('batteries-heavy bounds all 4 of its step(s) on its own');

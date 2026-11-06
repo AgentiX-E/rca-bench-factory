@@ -222,13 +222,14 @@ jobs:
     # little over twice the runner's measurement, and it is bounded so that a hang is
     # reported as a budget being spent rather than six hours later.
     #
-    # It is 21 rather than 20 as of v3.51's close-out, and the number is derived rather
-    # than chosen: the one expensive step measured 578 s, its bound is therefore 20
-    # minutes, and the 19 s of setup before it means the bound expires at 1219 s. A
-    # ceiling of 20 would kill the job 19 s before the step's own bound could fire, which
-    # is the defect step bounds exist to remove (`ci-budget.mjs`, `R5`). The ceiling is
-    # `ceil(1219 / 60)`.
-    timeout-minutes: 21
+    # It is 26 rather than 21 as of v3.53's close-out, and the number is derived rather
+    # than chosen: the sites battery measured 626 s in run 42131836805, so `R4` asks for
+    # 1252 s of bound and 20 minutes (1200 s) is 52 s short. 25 minutes is 1500 s -- 2.4
+    # times the measurement, the same margin this job had at 20 minutes against 482 s --
+    # and the 22 s of setup in front of the step puts its deadline at 1522 s. A ceiling
+    # of 25 would kill the job before the step's own bound could fire, which is the defect
+    # step bounds exist to remove (`ci-budget.mjs`, `R5`). The ceiling is `ceil(1522/60)`.
+    timeout-minutes: 26
     steps:
       - name: Check out
         timeout-minutes: 3
@@ -296,8 +297,11 @@ jobs:
       # which is why the refresh is the moment this bound is checked rather than merely
       # written -- and it was: run 41835348742 measured the step at **20 s**, nine times its
       # bound, and the declaration was deleted in the commit that recorded it.
+      # 20 -> 25 in v3.53's close-out: 182 claims and 237 runs measured 626 s on the
+      # runner, and twice that is 1252 s. The bound is a function of the measurement, so
+      # it moves when the measurement does; the ceiling above it moves by `R5`.
       - name: Every proved exit can disappear without a word
-        timeout-minutes: 20
+        timeout-minutes: 25
         run: node scripts/verify-sites-are-sensitive.mjs
 
       - name: Every exemption's claim can be made false
