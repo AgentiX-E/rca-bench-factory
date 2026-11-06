@@ -171,34 +171,55 @@ jobs:
     # The headroom is for the variable half -- an apt mirror having a bad day is not a
     # finding about this repository -- and it is bounded so that a hang is still reported
     # as a budget being spent.
-    timeout-minutes: 20
+    #
+    # 20 -> 34 on the round that finally had to bound the steps. `R4` refuses a job
+    # measured over three minutes whose steps declare no `timeout-minutes` at all, and
+    # this job had never crossed that line: 37 s in run 42160224254, 296 s in 42165763231,
+    # because `apt-get install prometheus` is a mirror having a good or a bad day. Once
+    # the line is crossed the floor applies to every step, and seven steps at three
+    # minutes are 21 -- one more than the ceiling it had, so the job could not be
+    # bounded at all. The ceiling is the floor's sum (15) plus the install's bound (16)
+    # plus the reader's (3): the install is sized by the 648 s measured on a cold runner
+    # rather than by the 37 s of a warm one, because a bound that fits the fast day is a
+    # bound that fires on the slow day.
+    timeout-minutes: 34
     steps:
       - name: Check out
         uses: actions/checkout@v4
+        timeout-minutes: 3
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
+        timeout-minutes: 3
         with:
           node-version: 22
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
+        timeout-minutes: 3
         with:
           version: 10
 
       - name: Install dependencies
+        timeout-minutes: 3
         run: pnpm install --frozen-lockfile
 
       - name: Build (core then cli; cli resolves core's dist)
+        timeout-minutes: 3
         run: pnpm build
 
       # The gate starts the server on a port of its own, reads it, reads it again with a label the
       # server does not set, and stops it. A missing binary fails the step with the package name
-      # rather than reading as a broken reader.
+      # rather than reading as a broken reader. 16 minutes is 1.5 times the 648 s this step
+      # measured on a cold runner and 3.5 times the 273 s of run 42165763231: the spread
+      # belongs to the mirror, and a bound sized on the fast day would report the slow day as
+      # a hang.
       - name: Install a backend this repository did not write
+        timeout-minutes: 16
         run: sudo apt-get update -qq && sudo apt-get install -y -qq prometheus
 
       - name: A reader, against that backend
+        timeout-minutes: 3
         run: node scripts/verify-reader-against-backend.mjs
 
   # The other half of a proof. `verify-site-proofs.mjs` asks whether a witness reaches

@@ -437,6 +437,27 @@ export function ledgerErrors(baseline, ledger) {
 }
 
 /**
+ * Whether `ci.yml` now promises the job *less* time than the run that measured it had.
+ *
+ * The asymmetry is the whole of `R6`. A ceiling is a container, and the bounds inside it
+ * are arithmetic against that container: shrink it and a bound that used to expire before
+ * the job now expires after it, so the seconds have to be re-spent under the new ceiling
+ * before anybody can say the bounds fit. Widen it and no step bound moves -- every
+ * `deadline = bound + before` only gains room -- which is why a reading taken inside the
+ * smaller ceiling is still a reading of the same commands.
+ *
+ * Three shapes, and `null` is not the same as zero. A job with no ceiling has no deadline
+ * arithmetic at all (`R5` skips it), so removing one is the widest change there is and
+ * adding one is the narrowest: the seconds were never spent against a deadline and now
+ * they have to be.
+ */
+export function narrowed(record, job) {
+  if (job.timeoutMinutes === null) return false;
+  if (record.timeoutMinutes === null) return true;
+  return record.timeoutMinutes > job.timeoutMinutes;
+}
+
+/**
  * Every way the budget can be wrong, given the workflow and the recording.
  *
  * Returns sentences rather than a boolean, because there are six different repairs
@@ -499,11 +520,25 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
     const record = recorded[job.id];
     if (record === undefined) continue;
 
-    // R6 -- the job's own budget is the recording's, or the arithmetic below is
-    // about a different job than the one that will enforce it.
-    if (record.timeoutMinutes !== job.timeoutMinutes) {
+    // R6 -- the job's own budget is the recording's, or the arithmetic below is about a
+    // different job than the one that will enforce it. Only a *narrower* budget breaks
+    // that: a step bound that fit inside the ceiling the run was spent under may expire
+    // after the job has already died at the tighter one, which is the defect the bound
+    // exists to remove. A *wider* ceiling changes no step bound and only gives `R5`'s
+    // deadline more room, so a reading taken inside 20 minutes still describes every
+    // command that will run inside 34.
+    //
+    // Refusing the wider direction was this rule's first form, and it closed the circle
+    // `R9` exists to open: a ceiling could then only be widened by a run, and a run
+    // happens after the push this gate has to pass. `narrowed` is the whole difference,
+    // and `budgetSummary` names every widening so a reader sees the exception taken.
+    if (narrowed(record, job)) {
+      const had =
+        record.timeoutMinutes === null
+          ? `${job.id}\` had no ceiling`
+          : `${job.id}\` had ${String(record.timeoutMinutes)} minutes`;
       errors.push(
-        `the recording was taken when \`${job.id}\` had ${String(record.timeoutMinutes)} minutes and ` +
+        `the recording was taken when \`${had} and ` +
           `ci.yml now declares ${job.timeoutMinutes === null ? 'none' : String(job.timeoutMinutes)}: ` +
           'the bounds are sized against the budget, so both have to be re-measured together',
       );
@@ -805,11 +840,18 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   let jobCount = 0;
   const excused = [];
   let tightest = { name: '', ratio: Infinity };
+  const widened = [];
 
   for (const job of jobsOf(workflow)) {
     const record = recorded[job.id];
     if (record === undefined) continue;
     jobCount += 1;
+    // `R6` accepts a wider budget than the reading was taken under, and a reader has to
+    // see that it did: a summary that said nothing would make the exception look like the
+    // recording's own number.
+    if (record.timeoutMinutes !== job.timeoutMinutes && !narrowed(record, job)) {
+      widened.push(`${job.id} ${String(record.timeoutMinutes ?? 'none')} -> ${String(job.timeoutMinutes ?? 'none')}`);
+    }
     const own = stepsOf(workflow, job.id);
     let jobSeconds = 0;
     for (const step of own) {
@@ -861,11 +903,16 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
       ? 'no job is declared unmeasured'
       : `${String(awaitingJobs.length)} job(s) declared and awaiting their first run: ` +
         awaitingJobs.join(', ');
+  const widenedText =
+    widened.length === 0
+      ? 'no job was given a wider budget than its reading'
+      : `budget(s) widened since the reading: ${widened.join(', ')} -- no step bound moves, ` +
+        "and `R5`'s deadline only gains room";
   return (
     `check-ci-budget: OK — ${String(jobCount)} job(s) recorded, ${String(bounded)} of ${String(steps)} ` +
     `step(s) bounded, ${String(Math.round(measured / 60))} min measured (as of run ` +
     `${String(baseline.run)}); bounds total ${String(Math.round(bounds / 60))} min; tightest ` +
     `${tightest.name} at ${Number.isFinite(tightest.ratio) ? tightest.ratio.toFixed(1) : 'unmeasured'}x; ` +
-    `${excusedText}; ${declaredText}; ${jobsText}; ${ledgerText(ledger, baseline)}`
+    `${excusedText}; ${declaredText}; ${jobsText}; ${widenedText}; ${ledgerText(ledger, baseline)}`
   );
 }

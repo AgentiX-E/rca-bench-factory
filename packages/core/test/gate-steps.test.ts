@@ -1893,11 +1893,16 @@ describe('scripts/verify-local.mjs as a command', () => {
     // number CI does not enforce.
     expect(result.stdout).toContain('`timeout-minutes:` on a job is a budget for the whole job, not for each step');
     // Which jobs are pools and which bound their own steps is now a split rather than an
-    // exception: v3.25 gave `batteries` a bound per step, and v3.48 gave them to `verify`
-    // and `sensitivity` too -- because a job that names no step when it hangs reports the
-    // same sentence the budget was written to replace. What is left as a pool is the three
-    // jobs whose steps are seconds long, where the floor would be the whole bound.
-    expect(result.stdout).toContain('backend 20m across 2 step(s)');
+    // exception: v3.25 gave `batteries` a bound per step, v3.48 gave them to `verify` and
+    // `sensitivity` too -- because a job that names no step when it hangs reports the same
+    // sentence the budget was written to replace. v3.54 gave them to `backend`, which had
+    // been a pool only because it never crossed the three-minute line: `apt-get install
+    // prometheus` measured 37 s in one run and 296 s in the next, and once a job is over
+    // the line the floor applies to every step. What is left as a pool is the two jobs
+    // whose steps are seconds long, where the floor would be the whole bound.
+    expect(result.stdout).toContain(
+      "backend bounds all 2 of its step(s) on its own (largest 3m of the job's 34m)",
+    );
     expect(result.stdout).toContain('artefacts 15m across 9 step(s)');
     expect(result.stdout).toContain('cold-tree 20m across 4 step(s)');
     expect(result.stdout).not.toContain('verify 15m across');

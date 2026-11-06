@@ -97,12 +97,19 @@ function inherited(name: string, command = 'node scripts/inject-x.mjs'): string[
  * arithmetic inside one job, and a job that was never measured cannot be argued about.
  */
 function recordingOf(
-  jobs: Record<string, { minutes?: number; steps: Record<string, number> }>,
+  jobs: Record<string, { minutes?: number | null; steps: Record<string, number> }>,
   over: Record<string, unknown> = {},
 ) {
   const recorded: Record<string, unknown> = {};
   for (const [id, job] of Object.entries(jobs)) {
-    recorded[id] = { name: id, timeoutMinutes: job.minutes ?? 30, steps: job.steps };
+    // `'minutes' in job` rather than `?? 30`: a job that declared no ceiling is a shape
+    // `R6` distinguishes from one that declared thirty, and `??` would turn the first
+    // into the second and let the case pass for the wrong reason.
+    recorded[id] = {
+      name: id,
+      timeoutMinutes: 'minutes' in job ? job.minutes ?? null : 30,
+      steps: job.steps,
+    };
   }
   return {
     run: 41637098008,
@@ -230,16 +237,60 @@ describe('the arithmetic of one job', () => {
     expect(noDate).toContain('no measurement date');
   });
 
-  it('refuses a recording taken against a different job budget', () => {
-    // The bounds are arithmetic against the job's budget, so a job that changed its
-    // budget has to be measured again rather than re-bounded.
-    const workflow = oneJob([...step('One battery', 3)], 45);
+  it('refuses a recording taken under a wider budget than the one it now has', () => {
+    // The bounds are arithmetic against the job's budget, so a job that *shrank* its
+    // budget has to be measured again rather than re-bounded: a step bound that fit 45
+    // minutes may expire after the job already died at 30. Cannot produce: a run of a
+    // workflow whose ceiling is 30 -- the recording is 45 minutes from a tree that no
+    // longer exists, so no local apparatus can show what the tighter job would do.
+    const workflow = oneJob([...step('One battery', 3)], 30);
     const errors = budgetErrors(
       workflow,
-      recordingOf({ batteries: { minutes: 30, steps: { 'One battery': 10 } } }),
+      recordingOf({ batteries: { minutes: 45, steps: { 'One battery': 10 } } }),
     ).join('\n');
-    expect(errors).toContain('had 30 minutes and ci.yml now declares 45');
+    expect(errors).toContain('had 45 minutes and ci.yml now declares 30');
     expect(errors).toContain('re-measured together');
+  });
+
+  it('refuses a recording with no budget when the workflow now declares one', () => {
+    // Wider in one direction and not the other: a job that had no ceiling had no
+    // arithmetic to fit inside, so its seconds were never spent against a deadline.
+    // Cannot produce: a job that had no `timeout-minutes` and a run that timed it --
+    // GitHub kills such a job only at its own six-hour limit.
+    const workflow = oneJob([...step('One battery', 3)], 30);
+    const errors = budgetErrors(
+      workflow,
+      recordingOf({ batteries: { minutes: null as unknown as number, steps: { 'One battery': 10 } } }),
+    ).join('\n');
+    expect(errors).toContain('had no ceiling and ci.yml now declares 30');
+  });
+
+  it('accepts a recording taken under a tighter budget, and says the budget was widened', () => {
+    // The other direction is safe and does not need a run: the step bounds are the same
+    // numbers, and `R5`'s deadline only gets more room, so a reading taken inside 20
+    // minutes still describes every command inside 34. Refusing it would close the same
+    // circle `R9` exists to open -- a ceiling can only be changed by a run, and a run
+    // happens after the push that this gate has to pass. Cannot produce: a job that
+    // actually spent 34 -- widening a ceiling changes nothing about what ran.
+    const workflow = oneJob([...step('One battery', 3)], 45);
+    const summary = budgetSummary(
+      workflow,
+      recordingOf({ batteries: { minutes: 30, steps: { 'One battery': 10 } } }),
+    );
+    expect(
+      budgetErrors(workflow, recordingOf({ batteries: { minutes: 30, steps: { 'One battery': 10 } } })),
+    ).toEqual([]);
+    expect(summary).toContain('widened');
+    expect(summary).toContain('batteries 30 -> 45');
+  });
+
+  it('accepts a budget that was removed, because no ceiling is the widest one', () => {
+    // Cannot produce: a run of a job with no ceiling at all -- the reader can only see
+    // that the workflow stopped declaring one, and every bound it kept is unchanged.
+    const workflow = oneJob([...step('One battery', 3)], null);
+    expect(
+      budgetErrors(workflow, recordingOf({ batteries: { minutes: 30, steps: { 'One battery': 10 } } })),
+    ).toEqual([]);
   });
 });
 
