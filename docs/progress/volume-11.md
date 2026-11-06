@@ -1756,6 +1756,29 @@ own sentence, and the shape is worth naming because it reads tidy and publishes 
 round removed a `catch` in `publish-cli.mjs` that only re-raised: nothing could reach it, and
 the row it left in the inventory claimed a forward that no test ever took.
 
+### Five — the push, and the two rows finding 412 was written for
+
+The first push that carried this round needed 25 requests for one commit of 611 files. Two of
+them are the reason the file exists:
+
+```
+POST /git/blobs  attempt 1  status null      28 385 ms  sent 63 102  UND_ERR_SOCKET
+POST /git/blobs  attempt 2  status null      10 289 ms  sent 63 102  UND_ERR_SOCKET
+POST /git/blobs  attempt 3  status 201        1 343 ms  sent 63 102
+```
+
+Three facts, none of which any earlier round could have stated. The failure is **not** an
+immediate refusal: the first attempt hung for twenty-eight seconds before the socket closed,
+so the channel's elapsed time would have read as "a slow upload" and not as "a broken
+connection" -- which is exactly the confusion `--max-time` and the elapsed-time diagnostic were
+added for. The retry carried the push: without finding 412's rule, the second row would not
+exist and the third would never have been made. And the third attempt took 1 343 ms for the
+same bytes, which is the measurement that says the failure was the connection rather than the
+body.
+
+Two rows out of twenty-five, and they are worth more than every prose description of the
+incident in this volume.
+
 ### Readings
 
 > Ledger for `v3.56`.
@@ -1770,7 +1793,8 @@ the row it left in the inventory claimed a forward that no test ever took.
 | mutation | **10** substitutions, **10** red: an unanswered attempt not recorded, every row claiming attempt 1, a row with neither status nor error accepted, a retry not following its own first attempt, an append that replaces, a rate limit invented as zero, a retry counted as a row, `--record` allowed on a transport that makes no request, an unreadable file reported as empty, and a file that cannot be read saying nothing about why |
 | failure sites | **126** across **59** of **84** scripts; throws **81** = 11 `fatal` + 62 `unguarded` + 1 `guarded` + 7 `rethrow` |
 | site proofs | **193** claims across **58** files, every one driven |
-| the history | `golden-master/publish-readings.json`, filled by the pushes that carried this round |
+| the history | `golden-master/publish-readings.json`: **28 rows** -- 26 answered, **2 unanswered**, 2 retried, slowest `POST /git/blobs` **28 385 ms** |
+| the push | 25 request(s) for one commit of 611 file(s): **17** changed, **0** removed, one `POST /git/blobs` of 63 102 bytes that closed twice -- **28 385 ms** then **10 289 ms** -- and was accepted on the third attempt in **1 343 ms**. The retry that finding 412 added is what carried the push, and the two rows that say so are the ones no earlier round could have produced |
 
 
 ### Left open, in the order the goal is reached
