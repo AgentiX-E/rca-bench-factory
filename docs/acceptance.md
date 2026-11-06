@@ -742,6 +742,25 @@ point, and the boundary between the first two is the whole of what makes the thi
   the tip alone is how finding 404 lost two of three commits: the tree arrives, the sentences do
   not, and every check about content is satisfied. A branch that does not exist is a different
   state -- there is nothing to locate, so the whole ancestry is the window -- and it is published.
+- **A `404` on the branch read is two states, and the channel asks which** (v3.58). The same status
+  answers for a branch that has never been created and for one whose name is wrong, and the plan
+  is identical for both. So the read is followed by one question -- what does the repository hold
+  -- and the answer decides the meaning: nothing listed means the branch is unborn; anything
+  listed means the name is wrong, and the push is refused unless the caller says `--new-branch`,
+  naming what it found. A `409` is read as the empty list rather than forwarded, because the
+  status carries the fact the decision turns on. A `403`, or a body that is not a list, is
+  forwarded: a listing this channel was not allowed to read is not a repository with no refs, and
+  the difference is a push onto a branch that may already exist. The listing is asked for **only**
+  on that path, and the case asserts it by the shape of an ordinary push's requests rather than by
+  the count.
+- **A branch is created, not moved into existence** (v3.58). The ref update is a `PATCH` on a
+  reference that has to exist, so an absent branch is created with `POST /git/refs`; before this,
+  every real push onto an unborn branch ended in a `422` described as *"the branch moved ... it
+  was null and is undefined"*. A name taken while the commits were being made is the creation's
+  own refusal, and it is built **without** re-reading the branch, unlike the moved-ref one: a SHA
+  can be compared and both halves printed, an absence cannot, and a second read would be a second
+  branch read inside one push -- which the readings gate refuses without an exemption it would
+  then have to grow.
 - **A tree listing that reports itself truncated cannot decide what is deleted.** A path missing
   from a partial listing and a path that was never there are the same absence; the refusal arrives
   before the first upload rather than after it.
@@ -770,7 +789,10 @@ point, and the boundary between the first two is the whole of what makes the thi
   equal the local ones. The remote is a lineage the old channel rebuilt with UTC author dates, so
   the CLI reports `identical: false` and the gate's receipt, not a forged `VERIFIED`. The
   line-for-line log equality is a claim about the test, where both sides are local git objects;
-  the real push claims that every commit arrived.
+  the real push claims that every commit arrived. Nor has the **creation** path met a real push:
+  nothing in this repository's history has ever created a branch, so `POST /git/refs` is proved by
+  the suite's server and by the local transport, which is a statement about two stand-ins. The
+  first push that creates a branch will be the first one.
 
 ## Definition of Done (per change and per release)
 

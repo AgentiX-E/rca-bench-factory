@@ -1295,6 +1295,28 @@ settle.
   time. The summary now names the attempts, each one's own slowest request, and how many named a
   tip -- and the two lines that showed the variance were enough to justify the unit: 2 120 ms on
   one attempt against 29 632 ms on another (finding 434).
+- ~~**A wrong `--branch` is read as an unborn branch.**~~ **Closed by finding 436**, which
+  found the entry naming the smaller half of the defect. A `404` on the branch read answers for a
+  branch that has never been created and for one whose name is wrong, and the plan is the same for
+  both -- so the channel now asks what the repository holds, and refuses a name that is wrong
+  unless the caller says `--new-branch`. The other half (finding 437) is that the branch could not
+  be created at all: the ref update is a `PATCH` on a reference that must exist, so every real push
+  onto an unborn branch ended in a `422` described as *"the branch moved ... it was null and is
+  undefined"*. The creation is `POST /git/refs` now, with its own refusal for a name taken while
+  the commits were being made.
+  `[open: the creation path has no real push behind it -- nothing in this repository's history has
+  created a branch -- so `POST /git/refs` is proved by the suite's server and by the local
+  transport, which is a claim about two stand-ins rather than about the API]`
+- **The listing that decides a `404` is one page of a hundred.** The decision needs one ref and
+  the sentence needs five names, so a repository with more refs is answered by the first page.
+  `[open: a refusal that had to name a branch past the hundredth would print a count and not the
+  name, and nothing here walks the `Link` header]`
+- **`--new-branch` permits an absent base and does not require one.** The flag says a branch the
+  remote does not have is meant to be new; on a branch that exists it is ignored, and the push
+  proceeds as an ordinary one.
+  `[open: the name states a permission rather than a requirement, and whether it should also
+  refuse an existing branch is a decision about the operator's intent that no instrument here can
+  make]`
 - **The attempts recorded before v3.57 name no tip, and the file is one attempt behind.** All five
   carry `rev: null`, because their rows never named a commit and a reader that filled one in would
   be inventing the fact the field exists to report. The attempt that carries this round's push is
@@ -1347,7 +1369,7 @@ and this table.
 | [volume-08.md](progress/volume-08.md) | 14 | v3.07 | v3.20 |
 | [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
-| [volume-11.md](progress/volume-11.md) | 11 | v3.47 | v3.57 |
+| [volume-11.md](progress/volume-11.md) | 12 | v3.47 | v3.58 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

@@ -1977,9 +1977,9 @@ many attempts it holds, which of them named a tip, and what each one cost.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **239 files, 5954 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **243 files, 6141 tests passed** (as of this commit) |
+| `core` test suite | **239 files, 5954 tests passed** (at v3.57) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.57) |
+| repo test suite | **243 files, 6141 tests passed** (at v3.57) |
 | new tests | **22** in `publish-readings.test.ts` (41 → 63): 5 on the file of attempts, 6 on one attempt, 5 on the row inside it, **8 on the boundary** -- a missing first read, a first read of another branch, a first read at attempt 2, a retry of that read accepted, two attempts folded into one, the `422` exemption, an out-of-order attempt, two attempts back to back -- and one each on the named-tip count, the per-attempt lines and the empty-append refusal |
 | coverage | `core` **99.96 / 99.75 / 100 / 99.96** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100**: both unchanged, because the subject is `scripts/` and its drivers are the site proofs |
 | mutation | **13** substitutions, **13** red at the named case, tree restored green: the boundary rule, the empty-attempt refusal, the SHA shape, the missing-`rev` refusal, cross-attempt order, the second-read rule, per-attempt retry continuity, the named-tip count, the per-attempt lines, the append refusal, the flat-list refusal, the revision the channel records, the attempt that made no request |
@@ -2015,3 +2015,130 @@ its rows after it has moved the ref, so the file that records a push is always o
 it, and the only way to close that is to record from the far side of the publish -- which is the
 next question this channel has to answer, and the first one whose answer cannot come from inside
 the push it describes.
+
+## v3.58 — a `404` that meant two things, and a branch that could not be created
+
+The open list's P2 was a sentence about a typo: *a mistyped `--branch` reads as an unborn
+branch*. It was two defects, and only one of them was about typos.
+
+### 一、A status that answers for two worlds (finding 436)
+
+`head()` turns a `404` into `null` and `publish()` read `null` as *unborn*. A branch read answers
+`404` in two different worlds -- one where the branch has never been created, one where its name
+is misspelt -- and the plan is identical for both: replay the whole ancestry as a chain of new
+commits. Only the write can tell them apart, and by then every blob is uploaded.
+
+Measured once by hand, against this repository: `--branch main` where the branch is `master`.
+The plan was "publish the whole history onto nothing". The merge refusal stopped it, and only
+because the two histories had diverged -- on a linear history the same command creates `main`,
+leaves `master` untouched, and exits with the code of a successful push.
+
+The repair asks the one question that separates the two: **what does the repository hold?** The
+listing is asked for only when the branch read answered `404`, so an ordinary push pays nothing
+for a question it does not ask -- asserted by the shape of a normal push's requests, not by a
+count. Four answers, four meanings:
+
+| the listing answers | the channel reads it as |
+| --- | --- |
+| an empty list | the branch is unborn; replaying the history is the only thing a push can mean |
+| any ref | the branch is **absent** -- a name that is wrong, not a branch that is new -- refused unless `--new-branch` |
+| `409` | the API's other way of saying there is nothing to list, so the same fact as the empty list |
+| `403`, or a body that is not a list | forwarded, because a listing this channel could not read is not a repository without refs |
+
+The refusal names what it found, five names then a count, with branches and tags told apart: a
+repository holding one tag and no branch is one where no push has ever landed, and "1 ref" would
+leave the operator to guess which.
+
+### 二、A branch cannot be moved into existence (finding 437)
+
+With the decision made, `--new-branch` had to be honest. It was not. `updateRef` issued
+`PATCH /git/refs/heads/<branch>`, which updates a reference that must already exist; on an absent
+branch the API answers `422`, the code re-read the branch, and the push ended with:
+
+```
+the branch moved while the plan was being executed: it was null and is undefined.
+Nothing was forced — re-read the branch and plan again
+```
+
+A sentence about a branch that never moved, carrying `undefined`, printed after every blob of a
+history that was never going to be published had crossed the wire. Everything the real channel
+could do with an unborn branch was build it, upload it, refuse it, and describe the refusal
+wrongly -- while the local transport did the whole thing, because `git update-ref` creates what
+is not there.
+
+The repair is `POST /git/refs`, the call the API has for the state, and its own `422` -- the name
+was taken while the commits were being made -- gets its own sentence. That sentence is built
+**without** re-reading the branch, and the moved-ref refusal beside it does re-read, because the
+two know different things: a SHA can be compared against what the branch is now and both halves
+printed, while `null` says only that the branch was absent. A second read would also be a second
+branch read inside one push, which the readings gate refuses without an exemption it would then
+have to grow -- so the shape of the reading file decided the shape of the sentence.
+
+### 三、The stand-in was kinder than the API (finding 438)
+
+The unborn path had an end-to-end proof and it was green, because the server that stands where
+the API stands created the branch on a `PATCH`: it passed `expected: null` to `local.updateRef`,
+`git update-ref` created the ref, and the fixture answered `200` to a request the API answers
+`422`. The suite's only proof of *publishes a whole history onto a branch that does not exist
+yet* was a proof of a call that cannot work, and the leaf that made it green was the fixture's
+permissiveness.
+
+That is the failure mode of a stand-in written from the same reading of the API as the code: it
+fails in the direction of yes, and the two agree about a world that does not exist. The repair is
+two branches of the fixture -- a `PATCH` whose ref is absent answers `422`, a `POST /git/refs`
+creates it -- and the order was kept: with the repaired fixture the old code fails the case and
+the new one passes, which is the only order in which the case is worth having.
+
+### 四、The survivor the battery reported (finding 439)
+
+Eighteen substitutions, seventeen red at the named case and **one survivor**: `<=` replaced by
+`<` in the sentence's cut. The case had two examples, three names and seven, chosen because they
+are *short* and *long* -- the two categories a reader can name -- and the code does not branch on
+those, it branches on a number. Three and seven answer identically under either comparison; the
+one length that differs is five.
+
+So the survivor was a statement about the case rather than about the code, which is what a
+survivor always is. Two more examples -- exactly five and exactly six -- and the same
+substitution dies. `R10`'s shape one subject out: a threshold described by two points chosen away
+from it.
+
+### Readings
+
+> Ledger for `v3.58`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **239 files, 5970 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **243 files, 6157 tests passed** (as of this commit) |
+| new tests | **16**: 3 on the sentence a refusal names refs with, 4 on the plan-level refusal (a mistyped branch, `--new-branch`, a branch that appeared, and a push that does not ask), 5 on the transport's shape (`404`+listing, `409`, `403` on the listing, a body that is not a list, a name taken first), 1 on the creation forwarding a status that is not its own, 2 on the command line, and 1 on the readings reader accepting the listing row |
+| coverage | `core` **99.96 / 99.75 / 100 / 99.96**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the subject is `scripts/` and its drivers are the site proofs |
+| mutation | **18** substitutions; first pass **17 red at the named case, 1 survivor** (the boundary of the cut, finding 439); after two cases at exactly five and six, **18 of 18 red**, tree restored green |
+| failure sites | **126** across **59** of **85** scripts; throws **87** = 11 `fatal` + 66 `unguarded` + 1 `guarded` + 9 `rethrow` |
+| site proofs | **199** claims across **58** files, every one reached by the file that names it |
+| the history | `golden-master/publish-readings.json`: **6 attempts**, 90 rows. This round's push is attempt 7 and carries no `/git/refs` row, because `master` exists -- the absence is the reading |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P2** | the creation path has no real push behind it | **new**: `POST /git/refs` is proved by the suite's server and by the local transport | the first real push that creates a branch; until then the claim is about two stand-ins |
+| **P2** | the listing is one page of a hundred | **new**: the decision needs one ref, the sentence needs five names | a repository with more than a hundred refs, and a `Link` header walk if a refusal ever has to name one past the page |
+| **P2** | `--new-branch` says nothing when the branch does exist | **new**: the flag permits an absent base and does not require one | decide whether the flag should also refuse an existing branch, or be named for what it permits |
+| **P2** | the five attempts recorded before v3.57 name no tip, and the file is one attempt behind | unchanged, and stated by the gate itself | every attempt from v3.57 on carries its commit; the lag is structural |
+| **P2** | the history is six runs, four of them one afternoon | unchanged | record every green run |
+| **P2** | P13: a mutation is one substitution | measured once: 78 pairs, 78 red | a pair composing two changes neither of which is in the battery |
+| **P2** | `backend`'s install bound has never met a slow day | unchanged | the history answers it the first time a slow mirror is recorded |
+| **P3** | the shards are unbalanced by file cost | unchanged | time each claimant file once, cut where the seconds are |
+
+**The lesson, for the round after this one.** The entry this round closed had been carried for two
+volumes as a sentence about a typo, and the typo was the smaller half: the same `404` that a
+mistyped name produces is the one a first push produces, so a channel that cannot tell them apart
+is one that cannot create a branch either. Two defects shared one status, and the list named only
+the embarrassing one.
+
+The other half is about the instrument. A stand-in that is written from the same reading of the
+API as the code will fail in the direction of yes, and a green end-to-end case against it proves
+that two files agree. What makes it a proof is the case the old code fails -- which means the
+fixture has to be repaired *before* the code, and the repair has to be argued from the API rather
+than from what the code needs to pass.

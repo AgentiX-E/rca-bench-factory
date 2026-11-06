@@ -2692,3 +2692,116 @@ each spent 28-29 seconds on one blob before the socket closed. So the reading th
 not produce is now a comparison inside one file: the same work, on the same day, over the same
 branch, is **1 790 ms** when the connection holds. The twenty-eight seconds were the connection
 and not the body, which v3.56 could argue only from a retry that succeeded in 1 343 ms.
+
+## Finding 436 — a 404 on a branch read is two states, and the channel had one
+
+`publish()` asked the remote for the branch, `head()` turned a `404` into `null`, and `null`
+was read as *unborn*. Two different worlds answer that status: a repository where the branch
+has never been created, and a repository where the branch is spelled differently. The plan is
+identical for both -- replay the whole ancestry as a chain of new commits -- and only the write
+can tell them apart, which is after every blob and every commit has been made.
+
+Measured by hand once: `publish-cli --branch main` against a repository whose branch is
+`master`. The plan was "publish the whole history onto nothing". The merge refusal stopped it,
+and only because the two histories had diverged; on a linear history the same command creates
+`main`, leaves `master` untouched and exits with the code of a successful push. A push that
+reports success and moved nothing anyone asked for is worse than one that fails, because
+nothing afterwards is wrong.
+
+The repair asks the one question that separates the two: what does the repository hold? On a
+`404` the channel asks for the refs, and the answer decides the meaning of the status:
+
+- **nothing listed** -- the branch is unborn, and replaying the history is the only thing a
+  push can mean;
+- **anything listed** -- the branch is *absent*, which is a name that is wrong rather than a
+  branch that is new, and the push is refused unless the caller says `--new-branch`;
+- **`409`** -- the API's other way of saying there is nothing to list, read as the empty list
+  rather than forwarded, because the status carries the fact the decision turns on;
+- **`403`, or a body that is not a list** -- forwarded, because a listing this channel was not
+  allowed to read is not a repository with no refs, and the difference is a push onto a branch
+  that may already exist.
+
+The listing is asked for only on that path, and the assertion is the shape of an ordinary
+push's requests: no `/git/refs` row appears in one. The refusal names what it found, cut at
+five names and counted past that, with branches and tags told apart -- a repository holding one
+tag and no branch is one where no push has ever landed, and a sentence that said "1 ref" would
+leave the operator to guess which.
+
+## Finding 437 — the channel could not create a branch, and described the failure as one that moved
+
+With the decision made, `--new-branch` had to be honest, and it was not. `updateRef` issued
+`PATCH /git/refs/heads/<branch>`, which updates a reference that must already exist. On an
+absent branch the API answers `422`, the code re-read the branch, and the refusal printed:
+
+```
+the branch moved while the plan was being executed: it was null and is undefined.
+Nothing was forced — re-read the branch and plan again
+```
+
+A sentence about a branch that never moved, carrying `undefined`, printed after the push had
+uploaded every blob of every commit it was never going to publish. Everything the real channel
+could do with an unborn branch was: build it, upload it, refuse it, and describe the refusal
+wrongly. The local transport could do the whole thing, because `git update-ref` creates a ref
+that is not there -- which is why the difference survived: every end-to-end proof of the path
+ran on the transport that can.
+
+The repair is the call the API has for the state, `POST /git/refs` with `{ref, sha}`, and its
+own `422` -- the name was taken while the commits were being made -- gets its own sentence:
+`the branch '<name>' was absent when the plan was made and is not now`. That sentence is built
+**without** re-reading the branch, and the moved-ref refusal beside it does re-read, because
+the two know different things: a SHA can be compared against what the branch is now and both
+halves printed, while `null` says only that the branch was absent. A second read would also be
+a second branch read inside one push, which the readings gate refuses without an exemption it
+would then have to grow -- so the shape of the reading file decided the shape of the sentence.
+
+## Finding 438 — the stand-in server was kinder than the API, so the suite proved a call that cannot work
+
+The unborn path had an end-to-end proof and the proof was green. It was green because the
+server that stands where the API stands created the branch on a `PATCH`: it passed
+`expected: null` to `local.updateRef`, `git update-ref` created the ref, and the fixture
+answered `200` to a request the API answers `422`.
+
+So the suite's only proof of *publishes a whole history onto a branch that does not exist yet*
+was a proof of a call that cannot work, and the leaf that made it green was the fixture's
+permissiveness rather than the channel's correctness. This is the failure mode of a stand-in
+that is written from the same reading of the API as the code it stands in for: it fails in the
+direction of yes, and the code and the fixture agree about a world that does not exist.
+
+The repair is one branch of the fixture: a `PATCH` whose ref is absent answers `422`, and a
+`POST /git/refs` creates it. The order matters and was kept -- with the repaired fixture the
+old code fails the case and the new code passes it, which is the only order in which the case
+is worth having. The general form applies to all nine endpoints that server speaks: each is a
+claim about the API, and a claim more permissive than the API is invisible until a real push
+meets the difference.
+
+**What this round does not claim.** The creation path has no real push behind it: nothing in
+this repository's history has ever created a branch, and the first one that does will be the
+first one. It is proved by the suite's server and by the local transport, and that is a
+statement about two stand-ins rather than about the API.
+
+## The reading this round leaves
+
+The refusal is two rows and no write -- the branch read, then the listing that decided it -- so
+the history gains a shape it has never held: an attempt that ends in a refusal, at a cost of
+two requests against the twenty-five of the push that followed it. A channel whose readings
+only ever contained successes would have had no way to see the difference.
+
+The round's own push is attempt 7. It carries no `/git/refs` row, because `master` exists and
+the probe is only asked for when a branch read answers `404` -- the absence is the reading, and
+it is worth stating in a file whose subject is what the API was asked.
+
+## Finding 439 — the mutation survived because the case tested both sides of the boundary and neither side was the boundary
+
+The battery's fourteenth substitution replaced `<=` with `<` in the sentence's cut and the
+file stayed **green**. The case it was aimed at had two examples, three names and seven, chosen
+because they are *short* and *long* -- the two categories the sentence reads as producing
+different output. The code does not branch on short and long; it branches on a number. Three
+and seven answer identically under either comparison, and the one length that differs is five.
+
+So a case written by naming the categories a reader can name leaves the number it cannot name
+unmeasured, and the mutation reports that gap rather than the defect it was meant to find: a
+survivor is a statement about the case, not about the code. The repair is two more examples --
+exactly five, and exactly six -- and the same substitution now dies.
+
+The shape is `R10`'s, one subject out: a threshold described by two points chosen away from it.
+A bound is not measured by a fast day and a slow day if neither of them is the bound.
