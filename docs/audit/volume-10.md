@@ -2939,6 +2939,9 @@ next one written on the default. Five suites in the file, `30 000` ms each, five
 reading, and the same number the two other files in the table carry -- a reader can check a
 consistency where they cannot check an invention.
 
+The push that carried the repair was **8 of 8 green**, with the coverage job at 9.8 of its
+18-minute budget -- so the same tree that spent 5 293 ms on one test spends it inside a bound now.
+
 What this round does not claim: that the file is now safe on any runner. It claims that the file's
 cost is above the default, that it says so, and that the number is a measured one. A table that
 cannot discover its own omissions will be extended by the next red, which is how this row arrived.

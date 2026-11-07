@@ -2278,7 +2278,8 @@ and cannot discover a row it does not*. `publish.test.ts` was not a row: measure
 **6.95 s** standalone (worst of three), so it had been running past the 5 000 ms default on every
 green run. The repair is the table's own prescription -- the budget on the **suite**, five suites
 at `30 000` ms, five times the worst reading and the same number the other rows carry -- and the
-row's `measured` sentence now carries the CI run that found it. Finding 445.
+row's `measured` sentence now carries the CI run that found it. The push that carried the repair was
+8 of 8 green. Finding 445.
 
 ### Readings
 
@@ -2294,7 +2295,7 @@ row's `measured` sentence now carries the CI run that found it. Finding 445.
 | mutation | **21** substitutions; first pass **17 red, 3 survivors, 1 inert**; the survivors were two redundant columns and a sentence the case asserted only half of, the inert one a `from` that had moved; after the repair **21 of 21 red, 0 inert**, tree restored green |
 | failure sites | **126** across **59** of **85** scripts; throws **89** = 11 `fatal` + 68 `unguarded` + 1 `guarded` + 9 `rethrow` |
 | site proofs | **199** claims across **58** files, every one reached by the file that names it |
-| the history | `golden-master/publish-readings.json`: **9 attempts**, 151 rows. Attempt 8 carried the round (24 requests, 0 retried, slowest `POST /git/blobs` 2 382 ms) and its verdict is the first computed one; attempt 9 carried the reading of it and cost **8 requests**, 0 retried, slowest `GET /git/trees` 1 908 ms -- a docs-only push against a tip the remote already had |
+| the history | `golden-master/publish-readings.json`: **10 attempts**, 163 rows. Attempt 8 carried the round (24 requests, 0 retried, slowest `POST /git/blobs` 2 382 ms) and its verdict is the first computed one; attempt 9 carried the reading of it (8 requests, alone on a docs-only tree); attempt 10 carried the timeout repair (12 requests, 0 retried) and was **8 of 8 green**, the coverage job at 9.8 of its 18-minute budget |
 
 ### Left open, in the order the goal is reached
 
