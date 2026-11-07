@@ -2108,9 +2108,9 @@ from it.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **239 files, 5970 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **243 files, 6157 tests passed** (as of this commit) |
+| `core` test suite | **239 files, 5970 tests passed** (at v3.58) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.58) |
+| repo test suite | **243 files, 6157 tests passed** (at v3.58) |
 | new tests | **16**: 3 on the sentence a refusal names refs with, 4 on the plan-level refusal (a mistyped branch, `--new-branch`, a branch that appeared, and a push that does not ask), 5 on the transport's shape (`404`+listing, `409`, `403` on the listing, a body that is not a list, a name taken first), 1 on the creation forwarding a status that is not its own, 2 on the command line, and 1 on the readings reader accepting the listing row |
 | coverage | `core` **99.96 / 99.75 / 100 / 99.96**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the subject is `scripts/` and its drivers are the site proofs |
 | mutation | **18** substitutions; first pass **17 red at the named case, 1 survivor** (the boundary of the cut, finding 439); after two cases at exactly five and six, **18 of 18 red**, tree restored green |
@@ -2142,3 +2142,145 @@ API as the code will fail in the direction of yes, and a green end-to-end case a
 that two files agree. What makes it a proof is the case the old code fails -- which means the
 fixture has to be repaired *before* the code, and the repair has to be argued from the API rather
 than from what the code needs to pass.
+
+## v3.59 — the assertion that could not hold, and the sentence that named a cause it had not measured
+
+The open list's P2s were about the creation path. This round did not start with them: it started
+with a line the channel has printed after every push for months -- *"the tip's tree is the local
+one and its SHA is not (the history it hangs on is not the local history)"* -- and asked the only
+question that line had never been asked, which is whether it was true.
+
+### 一、Two hundred and forty-six commits, and the two explanations that died
+
+Walking the remote's `master` and the local `HEAD` and pairing them by subject is one loop over
+two lists. It answers with numbers: of 483 commits on the remote, **236 share a name with the
+local one and 247 do not**, and the newest commit that still shares a name is **246 commits back**.
+So `identical` -- the flag the suite's strongest assertion is built on -- has been false for two
+hundred and forty-six commits, and the CLI has said so every time in a sentence that reads like an
+exception.
+
+Two causes were plausible enough to name, and both were measured instead. A commit message's
+trailing newline is the one byte `git log --format=%B` already destroys, and `git commit -m`
+always writes it, so the API might be dropping it. And every commit in this repository carries
+`+0800`, which the API might normalise to UTC. The measurement is one request per hypothesis:
+create a commit through `POST /git/commits` with the exact fields, then hash every candidate byte
+string with `git hash-object -t commit` and compare **the SHA the API returned** with each
+candidate's. Four message shapes -- none, one newline, two, and a space then a newline -- each
+matched the candidate containing the bytes that were sent, to the byte. The `+0800` candidate
+matched the returned SHA exactly. The API keeps both, and two explanations cost two requests to
+kill.
+
+What is left is the parent line. `git cat-file -p` of the local commit and of its rebuilt twin
+differ on one line: `parent cf6c575b…` against `parent dc9af862…`. A name is a hash over bytes
+that include the parents' names, so the plan grounded on a twin renames everything above it. The
+sentence was not wrong. It was an account of a cause that nothing in the repository had checked,
+which is indistinguishable, to a reader, from a rebuild that lost a file.
+
+### 二、The prediction, and the three things a rebuild can be
+
+`predictRebuild` is the measurement the sentence was missing. It takes the local commit object as
+git stores it, replaces its `parent` lines in order with the names the remote will use, and hashes
+the result. A rebuilt commit then stands in exactly one of three relations to its original: the
+same commit; the same commit with its parents renamed; or neither -- and only the third refuses.
+The verdict is computed per commit as the plan executes, and a `differs` stops the push before the
+ref moves, with a sentence that names what it can prove: the tree, the message, both identities and
+the parent count are the ones that left.
+
+Two properties make it a proof rather than a second opinion. It is its own oracle: given a commit's
+own parents it returns that commit's name, because it is reconstructing the very bytes git hashed,
+and the case that asserts the round trip includes the one commit shape with two parent lines -- a
+merge -- so a rewrite that used the first parent twice dies there rather than surviving every
+linear case. And it is held against an oracle it shares no line with: `git commit-tree` builds an
+object from a tree, a parent, a message and two dates, and its output name is the answer.
+
+### 三、Said before the first request, not after the last
+
+A push whose base is a twin will rename its commits whatever it does; that is arithmetic, not a
+decision. What is a decision is when the operator finds out. The plan announces it before the
+first write -- and therefore in a dry run, which is the only place it can change what somebody
+does -- and the result carries `identity: { state: 'parents', commits: n, base: 'tree' }`. The
+command line prints the surviving bytes and the renamed names in that order, because that is the
+order in which they matter: the tree, the message and both identities are local; the SHA cannot
+be, and no push can rename the remote's past.
+
+### 四、Two columns that could only hold `(n, 0)` and `(0, n)`
+
+The first version of the verdict counted the exact commits and the renamed ones. The battery's
+eleventh substitution -- `exact += 1` to `exact += 2` -- **survived**, and the reason was not a
+gap in the cases: a push above a twin renames all of its commits, a push onto the same commit
+renames none, so the pair could only ever be `(n, 0)` or `(0, n)`. Two columns shaped like
+measurements that restated the state and the length. They are gone; `commits` states the one
+number that can hold a third value.
+
+The same battery found the redundancy one layer up. `identical`, the identity state and the
+sentence were three independent re-derivations of `published.commit === tip`, while the per-commit
+verdict that had already answered the question was used only to choose a log line -- so a
+substitution of the verdict survived, because nothing a caller reads depended on it. The return
+value now reads the tip's verdict once.
+
+### 五、Eight proofs dropped by an edit in the middle of a file
+
+Adding one `throw` in the middle of `publish.mjs` moved every line below it, and re-deriving
+`golden-master/gate-sites.json` reported `throw annotations: 79 of 87 carried, 8 dropped`. The
+eight were six `rethrow error` statements and two identical refusals: their fingerprints collide,
+so the carry had nothing left but the line, and the line had moved. The gate then asked for eight
+proofs that already existed -- in the file whose header says the fingerprint exists so that an edit
+above a site does not lose the annotation. The accident had survived one degree down, in the
+fallback.
+
+The rule added is about what a fingerprint can carry: when every prior carrier of one fingerprint
+holds the same annotation, the annotation belongs to the fingerprint and not to a coordinate, and
+carrying it is not a guess. When two carriers disagree -- one proved, one exempt for its own
+reason -- no rule can choose, and the site keeps nothing. Both halves are cases; the second one
+already was.
+
+### 六、A stand-in less kind than the API
+
+`differs` is unreachable against an API that keeps what it is sent. A branch no case can reach is a
+sentence that has never been printed, so the server that stands where the API stands is given one
+behaviour it does not have: drop the message's final newline. The push must then refuse, naming the
+commit -- and the case is labelled as a counterfactual, because finding 440's probe measured four
+message shapes and the API stored every one. What it buys is the difference between a verdict that
+is computed and one that is asserted, and in the battery the substitution that removes the refusal
+turns it red.
+
+### Readings
+
+> Ledger for `v3.59`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **239 files, 5978 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **243 files, 6165 tests passed** (as of this commit) |
+| new tests | **8**: 4 on the prediction (the round trip over a history with a merge, the `commit-tree` oracle, a parent count the commit does not have, a parent that is not a name), 2 on the twin (the verdict and the report of what survived, the announcement before the first request), 1 on the refusal of a lost byte, and 1 on the carry of a shared fingerprint |
+| coverage | `core` **99.96 / 99.75 / 100 / 99.96**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the subject is `scripts/` and its drivers are the site proofs |
+| mutation | **21** substitutions; first pass **17 red, 3 survivors, 1 inert**; the survivors were two redundant columns and a sentence the case asserted only half of, the inert one a `from` that had moved; after the repair **21 of 21 red, 0 inert**, tree restored green |
+| failure sites | **126** across **59** of **85** scripts; throws **89** = 11 `fatal` + 68 `unguarded` + 1 `guarded` + 9 `rethrow` |
+| site proofs | **199** claims across **58** files, every one reached by the file that names it |
+| the history | `golden-master/publish-readings.json`: **7 attempts**, 119 rows. This round's push is attempt 8; the file as committed ends at attempt 7, which is the structural lag the list carries |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P1** | the remote's history shares no name with the local one above a boundary 246 commits old | **new**: measured, announced, and refused when a rebuild loses a byte | nothing converges it without rewriting the remote, which this channel refuses by design; the claim is now the isomorphism, and this entry stays open until the contract and the code agree on a name for it |
+| **P2** | the creation path has no real push behind it | unchanged: `POST /git/refs` is proved by two stand-ins | the first real push that creates a branch; until then the claim is about two stand-ins |
+| **P2** | a new branch replays the whole history even when the remote already holds the commit | **new**: the pointer path was designed and deferred to keep this round to one subject | `holds(sha)` on the transport and a single `POST /git/refs`, then the real creation push above becomes affordable |
+| **P2** | the listing is one page of a hundred | unchanged | a repository with more than a hundred refs |
+| **P2** | `--new-branch` says nothing when the branch does exist | unchanged | decide whether the flag should refuse an existing branch, or be named for what it permits |
+| **P2** | the five attempts recorded before v3.57 name no tip, and the file is one attempt behind | unchanged, and stated by the gate itself | every attempt from v3.57 on carries its commit; the lag is structural |
+| **P2** | P13: a mutation is one substitution | measured once: 78 pairs, 78 red | a pair composing two changes neither of which is in the battery |
+| **P2** | `backend`'s install bound has never met a slow day | unchanged | the history answers it the first time a slow mirror is recorded |
+| **P3** | the shards are unbalanced by file cost | unchanged | time each claimant file once, cut where the seconds are |
+
+**The lesson, for the round after this one.** The channel had been reporting a fact and a cause in
+one sentence, and only the fact was measured. That is the shape of every sentence in this
+repository that begins *because*: a conjunction of a number somebody read and a reason somebody
+believed, and the reader cannot tell which half is which. Two hypotheses died to two requests
+each, and the surviving explanation was one `diff` away from the first one anybody would have run.
+
+The other half is about redundancy. Three substitutions survived in one battery, and two of them
+described the same defect: a column that cannot hold a second value, and a fact derived three
+times from the same comparison. A survivor is a statement about the case, but a survivor that
+cannot be killed by any case is a statement about the code.

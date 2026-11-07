@@ -773,6 +773,30 @@ point, and the boundary between the first two is the whole of what makes the thi
   commits compares the thing the round wrote. This is proved against a bare repository and against
   a server that speaks the API's shapes over a socket and writes real git objects, with no token
   and no network.
+- **A rebuild is measured against the bytes that were sent** (v3.59). `predictRebuild` takes the
+  local commit's own bytes, replaces the `parent` lines with the names the remote will use, and
+  hashes the result. A rebuilt commit then has exactly three possible relations to its original:
+  the same commit, the same commit with its parents renamed, or neither -- and only the third is
+  refused, before the ref moves. The prediction is its own proof (given a commit's own parents it
+  returns that commit's name, over a history that includes the one shape with two parent lines),
+  and it is held against `git commit-tree`, an oracle it shares no line with.
+- **A push that will rename its commits says so before it asks anything** (v3.59). `locateBase`
+  falls back from a commit match to a tree match, which is the only comparison a rebuilt commit
+  allows, and the fallback means the base is a **twin**: a commit carrying the tree of a local
+  ancestor and not that commit. Every commit above it is then renamed by construction, because a
+  name is a hash over bytes that include the parent's name. The plan says so before the first
+  write, in a dry run as well, and the result says so as `identity: { state: 'parents' }` rather
+  than as a lost history.
+- **The verdict is one fact with one source** (v3.59). `identical`, the identity state and the
+  sentence the command line prints are all read from the tip's own verdict. There is no count of
+  exact against renamed: a push above a twin renames all of its commits and a push onto the same
+  commit renames none, so such a pair could only ever be `(n, 0)` or `(0, n)`, and a column that
+  cannot hold a third value restates the state beside it. `identity.commits` is the number.
+- **The refusal of a lost byte is reachable** (v3.59). The `differs` verdict cannot be produced by
+  an API that keeps what it is sent, so the suite's server is made *less* kind than the API for one
+  case -- it drops the message's final newline -- and the channel must refuse rather than describe.
+  The counterfactual is labelled: the API was measured, four message shapes, and it stored the
+  bytes it was given in every one.
 - **The receipt is checked where the push can see it.** A repository with a `verify:local` is asked
   for a receipt keyed on the tip's tree and the push refuses without one; a repository without a
   gate is not asked, because a rule that refused every push there would be turned off rather than
@@ -785,11 +809,17 @@ point, and the boundary between the first two is the whole of what makes the thi
   which no in-process server had produced -- and the retry now covers a broken connection as well
   as a 5xx, with a test that destroys a socket to prove it. What remains unmodelled is any **other**
   error shape the live API may return, and the retry budget: a connection that never answers is
-  refused after three attempts with the ref unmoved. Also not claimed: a real push's commit SHAs
-  equal the local ones. The remote is a lineage the old channel rebuilt with UTC author dates, so
-  the CLI reports `identical: false` and the gate's receipt, not a forged `VERIFIED`. The
-  line-for-line log equality is a claim about the test, where both sides are local git objects;
-  the real push claims that every commit arrived. Nor has the **creation** path met a real push:
+  refused after three attempts with the ref unmoved. Also not claimed, and measured in v3.59: a
+  real push's commit SHAs equal the local ones. Of the remote's 483 commits, 247 carry a name the
+  local history does not, and the newest one that still matches is 246 commits back -- so
+  `identical` has been false across that whole span and the CLI has said so every time. The cause
+  this paragraph used to name (UTC author dates written by the old channel) was tested and is
+  wrong: the API stores the `+0800` offset these commits carry and it stores a message's trailing
+  newline, both confirmed by hashing the candidate byte strings locally and comparing them with the
+  SHA the API returned. What differs is the parent line, and it differs because a plan grounded on
+  a twin must rename. The line-for-line log equality is a claim about the test, where both sides
+  are local git objects; the real push claims that every commit arrived, that its tree, message
+  and both identities are the local ones, and that the parent *lines* are the only difference. Nor has the **creation** path met a real push:
   nothing in this repository's history has ever created a branch, so `POST /git/refs` is proved by
   the suite's server and by the local transport, which is a statement about two stand-ins. The
   first push that creates a branch will be the first one.

@@ -2805,3 +2805,110 @@ exactly five, and exactly six -- and the same substitution now dies.
 
 The shape is `R10`'s, one subject out: a threshold described by two points chosen away from it.
 A bound is not measured by a fast day and a slow day if neither of them is the bound.
+
+## Finding 440 — the strongest assertion in the suite could not hold, and the channel had never said why
+
+The end-to-end cases assert that the remote's commit SHAs equal the local ones. The channel's
+own verdict on a real push is the same claim, printed as *"VERIFIED: ... byte for byte"*, and
+the sentence a push prints when it fails is *"the tip's tree is the local one and its SHA is
+not (the history it hangs on is not the local history)"*. Both of those had been read for
+several rounds as a description of an exceptional state. They were describing every push.
+
+The measurement is cheap and had never been made: walk the remote's `master` and the local
+`HEAD`, pair the commits by subject, compare the SHAs. Of 483 commits on the remote, **236
+share a name with their local twin and 247 do not**, and the newest commit that still shares
+one is 246 commits back. So the bound is a date: from that round on, every push has renamed
+every commit it carried, and `identical` -- the flag the whole assertion rests on -- has been
+false for two hundred and forty-six commits.
+
+Two explanations were plausible and both were measured rather than argued. The API might trim
+a commit message's trailing newline, and `git commit -m` always writes one; and it might
+normalise the author's `+0800` offset to UTC, which this repository's commits all carry. Both
+were tested by asking the API to create a commit and hashing every candidate byte string
+locally with `git hash-object`, then comparing the returned SHA with each candidate. `probe:
+one trailing newline`, `two trailing newlines`, `a space then a newline` and `no trailing
+newline` each matched the candidate **containing the bytes that were sent**, and the
+`+0800` candidate matched the returned SHA exactly. The API keeps both. Neither explanation
+survives, and the reading that killed them is worth more than the two would have been.
+
+What is left is the parent line. `git cat-file -p` of the local commit and of its rebuilt twin
+differ on **one line**: `parent cf6c575b…` against `parent dc9af862…`. A commit's name is a
+hash over its bytes and its bytes include its parents' names, so a push that hangs its first
+commit on a commit the remote holds -- one carrying the tree of a local ancestor and not that
+commit, which is what `locateBase` falls back to matching -- renames every commit above it.
+No correctness in the replay can prevent that, and the sentence the channel printed was not
+wrong. It was an *unverified* account of a cause, and a reader could not tell it from a rebuild
+that had lost a file.
+
+## Finding 441 — a cause is worth what the measurement behind it is worth
+
+The repair is a prediction rather than a better sentence. `predictRebuild` takes a local
+commit's own bytes, replaces the `parent` lines in order with the names the remote will use,
+and hashes the result: when the remote's answer equals that prediction, the replay carried the
+tree, the message, both identities and the parent *count*, and the name differs for the one
+reason the channel can name. When it does not, the rebuild lost a byte, and `publish` refuses
+rather than describing it.
+
+Two properties make it a proof rather than a second opinion. Given a commit's own parents it
+returns that commit's name -- it is reconstructing the very bytes git hashed, so a reader that
+mangled the message or the header order fails its own round trip before it can be believed.
+And the cases hold it against an oracle it shares no line with: `git commit-tree` builds an
+object from a tree, a parent, a message and two dates, and the prediction must equal what git
+writes, including the one commit shape with two parent lines.
+
+The verdict is three-valued -- the local commit, the local commit with its parents renamed, or
+neither -- and only the third refuses. The first two are announced *before the first request*
+when the base is a twin, because an operator who learns after the fact that the names will
+differ cannot tell a rename from a loss, and the dry run has to say the same thing as the push.
+
+## Finding 442 — two columns that could only ever hold (n, 0) and (0, n)
+
+The first version of the verdict counted the exact commits and the renamed ones, and the
+battery's eleventh substitution -- `exact += 1` to `exact += 2` -- **survived**. The reason is
+not a gap in the cases: a push above a twin renames every commit it carries and a push onto the
+same commit renames none, so the pair is always `(n, 0)` or `(0, n)` and doubling one of them
+changes nothing a reader could act on. The counters were two columns shaped like measurements
+that could only restate the state and the length.
+
+They are gone, and `commits` replaces them: the number of commits the push carried, which is
+the only one of the three that can hold more than two values.
+
+The same substitution also caught a second redundancy one layer up: `identical`, the identity
+state and the sentence were each derived from `published.commit === tip`, while the *verdict*
+that had already answered that question for each commit was used only to choose a log line. A
+mutation of the verdict survived because it changed nothing a caller reads. The return value
+now derives all three from the tip's verdict, so the fact has one source and a mutation of it
+is a mutation of everything that states it.
+
+## Finding 443 — eight proofs dropped by an edit in the middle of a file
+
+Adding one `throw` in the middle of `publish.mjs` moved every line below it, and re-deriving
+`golden-master/gate-sites.json` reported `throw annotations: 79 of 87 carried, 8 dropped`.
+The eight were not stale: six `rethrow error` statements and two identical `the plan carries a
+blob` refusals share their fingerprints, so the carry had nothing left but the line, and the
+line had moved. The gate then demanded eight proofs that already existed, in a file whose
+header says the fingerprint exists precisely so that an edit above a site does not lose it --
+the accident was surviving one degree down, in the fallback.
+
+The rule added is about what a fingerprint can carry. When *every* prior carrier of one
+fingerprint holds the same annotation, the annotation is a property of the fingerprint and not
+of a coordinate: whichever occurrence a site is, the proof written for it is the same proof.
+When two carriers disagree -- one proved, one exempt for its own reason -- no rule can choose,
+and the site keeps nothing, because a wrong proof is worse than a missing one. Both halves are
+tested; the second was already a case.
+
+## Finding 444 — a stand-in that loses a byte, so that the refusal is not a rubber stamp
+
+The `differs` verdict is unreachable against an API that keeps what it is sent, and against
+the suite's server, which writes through git. A branch no case can reach is a branch whose
+sentence has never been printed, and the fix here is a fixture that is *less* kind than the
+API: the server drops the message's final newline when the behaviour is asked for, the rebuild
+is then a commit nobody sent, and the channel must refuse it by naming the commit and the one
+thing it can prove -- that the tree, the message, the identities and the parent count are the
+ones that left.
+
+That is a counterfactual fixture and it is labelled as one. The API does not do this: the
+probe of finding 440 measured four message shapes and the returned SHA matched the bytes sent
+in every one. What the case buys is the difference between a verdict that is computed and a
+verdict that is asserted -- and, in the mutation battery, the substitution that removes the
+refusal turns it red.
