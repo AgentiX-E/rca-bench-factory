@@ -2244,6 +2244,27 @@ message shapes and the API stored every one. What it buys is the difference betw
 is computed and one that is asserted, and in the battery the substitution that removes the refusal
 turns it red.
 
+### 七、第一次对着真实 API 的判决
+
+The push is **attempt 8**, and it is the first one in this repository's history whose report is a
+measurement rather than an explanation.
+
+The announcement fired on the real channel before the first upload:
+
+> `the remote's tip 4ec0623a3 carries the tree of 958b23782 and is not that commit: this plan hangs
+> on the remote's names, so the commits above it will differ from the local ones in their parent
+> lines and in nothing else`
+
+and both commits came back as **`the same commit, hanging on the remote's name for its parent`**.
+The prediction -- written from the local object's own bytes, against an API that had never been
+asked the question -- held on the first attempt, which is the difference between a claim about two
+stand-ins and a claim about the channel. The closing sentence then named both halves: the tree, the
+message and both identities are the local ones; the names cannot be, and no push can rename the
+remote's past.
+
+24 requests, none retried, slowest `POST /git/blobs` 2 382 ms -- and CI **8 of 8 green on the
+first push**, no rerun.
+
 ### Readings
 
 > Ledger for `v3.59`.
@@ -2258,7 +2279,7 @@ turns it red.
 | mutation | **21** substitutions; first pass **17 red, 3 survivors, 1 inert**; the survivors were two redundant columns and a sentence the case asserted only half of, the inert one a `from` that had moved; after the repair **21 of 21 red, 0 inert**, tree restored green |
 | failure sites | **126** across **59** of **85** scripts; throws **89** = 11 `fatal` + 68 `unguarded` + 1 `guarded` + 9 `rethrow` |
 | site proofs | **199** claims across **58** files, every one reached by the file that names it |
-| the history | `golden-master/publish-readings.json`: **7 attempts**, 119 rows. This round's push is attempt 8; the file as committed ends at attempt 7, which is the structural lag the list carries |
+| the history | `golden-master/publish-readings.json`: **8 attempts**, 143 rows. This round's push is attempt 8 -- 24 requests, 0 retried, slowest `POST /git/blobs` 2 382 ms -- and its verdict is the first computed one |
 
 ### Left open, in the order the goal is reached
 
