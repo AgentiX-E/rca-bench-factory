@@ -760,7 +760,33 @@ point, and the boundary between the first two is the whole of what makes the thi
   own refusal, and it is built **without** re-reading the branch, unlike the moved-ref one: a SHA
   can be compared and both halves printed, an absence cannot, and a second read would be a second
   branch read inside one push -- which the readings gate refuses without an exemption it would
-  then have to grow.
+  then have to grow. The refusal names **both** states its `422` can carry (v3.60): the name was
+  taken while this push was being made, **or** the commit the ref was to name is not there after
+  all -- the pointer path makes the second reachable, and neither can be told from the other
+  without the second read the channel refuses to make.
+- **`--new-branch` is a claim about the remote, and a false claim is refused** (v3.60). The flag
+  exempts a `404` from the name-is-wrong refusal, and the same word also asserts *this branch does
+  not exist*. A push that passes it onto a branch that **is** there would otherwise publish onto it
+  and move a branch its author believes they are creating, so the existing branch is refused, with
+  the commit it was found at. The recovery is named in the sentence: drop the flag, or name the
+  branch that is meant to be new.
+- **A creation path asks whether the remote already holds the commit** (v3.60). A branch that does
+  not exist has nothing to locate a base against, so the window used to be the whole ancestry --
+  every commit rebuilt and every blob uploaded -- even when the remote held all of it. One question
+  settles it: a commit is closed, so `200` on `GET /git/commits/<tip>` means the history is there
+  and the push is one `POST /git/refs`. `holds(sha)` is that question on both transports, and on
+  the local one it asks for `^{commit}`, so a blob the remote holds is not an answer. It is asked
+  **only** where the branch read answered `404`, so the ordinary push pays nothing, and only after
+  the name-is-wrong refusal, so a typo is still refused first.
+- **A push that builds nothing says so, in three places** (v3.60). The plan is empty -- an empty
+  plan is a complete instruction when the ref does not exist yet, which is why `planPublish`'s
+  refusal of an empty window does not apply -- and the result carries `identity: { state: 'held',
+  commits: 0 }` with no base, because there was no window to locate. The command line prints
+  *"the remote already holds <sha>: naming it is the whole push, and no commit is created"*, and a
+  dry run prints *"nothing would be built; one request would create the branch"* rather than
+  *"0 commit(s) would be published"*, which is true of the plan and says the opposite of what would
+  happen. `--no-gate` announces itself, because a guard that is bypassed is a fact the transcript
+  owes the reader.
 - **A tree listing that reports itself truncated cannot decide what is deleted.** A path missing
   from a partial listing and a path that was never there are the same absence; the refusal arrives
   before the first upload rather than after it.

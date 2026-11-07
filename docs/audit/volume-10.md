@@ -2945,3 +2945,109 @@ The push that carried the repair was **8 of 8 green**, with the coverage job at 
 What this round does not claim: that the file is now safe on any runner. It claims that the file's
 cost is above the default, that it says so, and that the number is a measured one. A table that
 cannot discover its own omissions will be extended by the next red, which is how this row arrived.
+
+## Finding 446 — a flag that was read as permission while it was a statement
+
+`--new-branch` was added in v3.58 for one job: to exempt the branch read's `404` from the refusal
+that a missing branch on a repository with refs earns. That job is a permission, and the flag was
+implemented as one -- `if (remote.head === null && !newBranch)` -- so the code asked the flag only
+when the branch was absent. What the same word also says was never looked at: *this branch does not
+exist*. A push that passes `--new-branch` onto a branch that **is** there published onto it, exactly
+as a plain push would.
+
+That is the failure the v3.58 round was written about, one layer up. There, one `404` answered for
+two states; here, one flag carries two statements and the channel honours the half that lets it
+proceed. The half it ignored is the one the operator is wrong about: they believe the branch is new,
+the channel has just read that it is not, and the plan that follows moves a branch they meant to
+create. On a linear history nothing afterwards is wrong -- the ref moves, the push reports success,
+and the branch that was meant to be untouched now has somebody else's commits on it.
+
+The two halves are one statement, so a false one is refused rather than ignored:
+
+> `'main' already exists at 3c1f0ab7d and --new-branch says it does not: a push that was meant to
+> create a branch must not move one. Drop the flag to publish onto this branch, or name the branch
+> that is meant to be new`
+
+and the refusal names the commit it found, because that is the fact the caller was wrong about.
+
+## Finding 447 — the creation path paid for a history when all it needed was a name
+
+A branch that does not exist has nothing to locate a base against: `locateBase` compares the remote
+against the ancestry, and with `head: null` there is nothing to compare, so `publish` set
+`located = { kind: 'unborn', index: ancestry.length }` and the window became **the whole history**.
+That is right about content -- the remote has none of it -- and it is wrong about cost whenever the
+objects are already there, which is the ordinary case for a branch made from an existing one.
+
+The question that decides it had never been asked: *does the remote already hold this commit?* It is
+one request, and its answer decides the whole push, because a commit is closed -- a remote cannot
+hold a commit without holding its tree, its parents and every ancestor. So `200` on
+`GET /git/commits/<tip>` means the history arrived with it, and the push is one `POST /git/refs`.
+
+`holds(sha)` is that question on both transports (`cat-file -e <sha>^{commit}` on the local one, so a
+blob the remote happens to hold is not an answer to it). It is asked only where the branch read
+already answered `404`, so the ordinary push pays nothing, and only when the branch is absent, so the
+name-is-wrong refusal still fires first. The plan it produces is **empty** -- `pointerPlan` -- which
+`planPublish` refuses in the other sense: that refusal's premise is "a plan with no commits would
+move a ref to where it already is", and this plan's ref does not exist yet. Naming a commit that is
+there is a change, and it is the only change such a push makes.
+
+Two consequences are stated rather than papered over. The command line prints
+`the remote already holds 041ca04d1: naming it is the whole push, and no commit is created` and, for
+a dry run, `nothing would be built; one request would create the branch` -- because "0 commit(s)
+would be published" is true of that plan and tells the reader the opposite of what would happen.
+And the result state is a third identity, `held`, with `commits: 0` and no base: there is no window,
+because there was nothing to locate. The assertion the rebuild path has to make after the fact --
+that the tree the gate blessed is the tree the remote will hold -- is here an identity, since a
+commit's bytes contain its tree.
+
+## Finding 448 — one status, two states, at the creation
+
+`422` on `POST /git/refs` wears two states. The name was taken while the push was being made -- the
+race the creation refusal exists for -- **or** the commit the ref was to name is not there after all,
+which the pointer path makes reachable for the first time: the question answered `200` a moment
+before, and a remote is free to collect an unreachable object in between.
+
+The sentence named the first state only, and said *"while the commits were being created"*, which on
+a pointer push is work that never happened. Both states are named now, because the channel cannot
+tell them apart without a second read it refuses to make: a sentence that names one state and is
+sometimes wrong about it is worse than a sentence that names two.
+
+## Finding 449 — a stand-in that answered a question nobody had asked, and a fixture that withheld nothing
+
+Two fixtures, one defect, in opposite directions.
+
+The readings stand-in in `publish-readings.test.ts` answered every route it did not know with
+`201 {sha: 'ccc…'}`. That is a success for a question the fixture had never been asked about, and it
+became load-bearing the moment the channel started asking `GET /git/commits/<sha>`: the answer was
+`201`, `holds` read it as *the remote has this commit*, and the creation path created a branch
+naming a commit the stand-in did not hold. Both readings cases it drove then failed for a reason
+that had nothing to do with the channel. The catch-all now answers `404`, and the three routes it
+was silently covering (`POST /git/trees`, `POST /git/commits`, `GET /git/commits/…`) are explicit.
+
+The other direction is the fixture in `publish.test.ts` that was believed to withhold objects.
+`stage()` clones, and a clone carries **every** object the source can reach, so the docstring's
+*"none for the ones above it"* described a fidelity it had never had: every case that said the blobs
+have to be uploaded had the blobs already in the remote's store. The channel's end-to-end claim
+survives -- a wrong byte hashes to a different blob and the tree differs, which the last assertion
+catches -- but the fixture could not express the one state this round is about. `staged(name, upto)`
+pushes exactly the history it is given, so a commit above `upto` is absent from the object store and
+`upto: null` is a repository with no refs at all; and two cases that had been passing on a clone were
+moved onto it, where they now publish something.
+
+## Finding 450 — the shared names, asked as objects rather than as sentences
+
+v3.59 measured the boundary by pairing two logs by **subject**: 236 of 483 commits shared a name, and
+the newest shared one was 246 commits back. A subject is a string two different commits can carry,
+so that number counted sentences that looked alike.
+
+`holds` answers the question with one answer per commit, so the same boundary was re-measured object
+by object: **509** local commits, of which the remote holds **237** by name and **272** it does not.
+The newest shared commit is `041ca04d1`, **272 commits back**, and the missing ones begin at the very
+next commit in the local history. The shared set is exactly a **suffix** of the local log -- the
+oldest 237 -- which the pairing could not have established: it says the rename above the boundary is
+total, that every commit before it arrived byte-identical, and that no commit above it ever did.
+
+The boundary is also a moving point with a fixed coordinate: it grew from 246 to 272 while the local
+history grew from 483 to 509, so the 26 commits this span of rounds added are exactly the 26 the
+boundary moved by. That is the arithmetic of a rename that never stops, and it is why the contract
+in v3.59's close-out is *isomorphism* rather than equality.

@@ -1860,5 +1860,110 @@
         "remaining": 4953
       }
     ]
+  },
+  {
+    "rev": "b12996bfc16a2baf513c39b7a0b2916268d8f20b",
+    "branch": "master",
+    "rows": [
+      {
+        "at": 1794026689915,
+        "method": "GET",
+        "path": "/git/ref/heads/master",
+        "attempt": 1,
+        "status": 200,
+        "ms": 919,
+        "sent": 0,
+        "received": 359,
+        "remaining": 4975
+      },
+      {
+        "at": 1794026690834,
+        "method": "GET",
+        "path": "/git/commits/a0439fe2ad7ac2b03b0c3296c2f8485850f0cffa",
+        "attempt": 1,
+        "status": 200,
+        "ms": 448,
+        "sent": 0,
+        "received": 1900,
+        "remaining": 4974
+      },
+      {
+        "at": 1794026691282,
+        "method": "GET",
+        "path": "/git/trees/b9914b100a1e990e7a0bab22ca583c3dc7da1db3?recursive=1",
+        "attempt": 1,
+        "status": 200,
+        "ms": 1464,
+        "sent": 0,
+        "received": 168608,
+        "remaining": 4973
+      },
+      {
+        "at": 1794026692809,
+        "method": "POST",
+        "path": "/git/blobs",
+        "attempt": 1,
+        "status": 201,
+        "ms": 1903,
+        "sent": 248010,
+        "received": 166,
+        "remaining": 4978
+      },
+      {
+        "at": 1794026694713,
+        "method": "POST",
+        "path": "/git/blobs",
+        "attempt": 1,
+        "status": 201,
+        "ms": 1926,
+        "sent": 227830,
+        "received": 166,
+        "remaining": 4976
+      },
+      {
+        "at": 1794026696639,
+        "method": "POST",
+        "path": "/git/blobs",
+        "attempt": 1,
+        "status": 201,
+        "ms": 1159,
+        "sent": 55250,
+        "received": 166,
+        "remaining": 4975
+      },
+      {
+        "at": 1794026697798,
+        "method": "POST",
+        "path": "/git/trees",
+        "attempt": 1,
+        "status": 201,
+        "ms": 861,
+        "sent": 422,
+        "received": 4237,
+        "remaining": 4974
+      },
+      {
+        "at": 1794026698659,
+        "method": "POST",
+        "path": "/git/commits",
+        "attempt": 1,
+        "status": 201,
+        "ms": 1691,
+        "sent": 672,
+        "received": 1480,
+        "remaining": 4973
+      },
+      {
+        "at": 1794026700355,
+        "method": "PATCH",
+        "path": "/git/refs/heads/master",
+        "attempt": 1,
+        "status": 200,
+        "ms": 1641,
+        "sent": 64,
+        "received": 359,
+        "remaining": 4972
+      }
+    ]
   }
 ]
