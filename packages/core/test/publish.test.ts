@@ -371,7 +371,13 @@ describe('publishing to a repository through the local transport', { timeout: FI
     expect(git(remote, ['rev-parse', 'release']).trim()).toBe(tip);
   });
 
-  it('replays the history onto a new branch when the remote does not hold the commit', async () => {
+  it('replays only the window above a ref tip when the branch is created beside one', async () => {
+    // A branch that does not exist has no tip to locate a base against, and until v3.61 that
+    // made the window the whole ancestry: five commits built for a branch whose content was
+    // four of them already on the remote, and on this repository the push could not happen at
+    // all -- the history it insisted on replaying contains a merge, and a replayed merge is
+    // refused (finding 455). A repository with refs has tips, and `main` is one: the window is
+    // what is above it, and the branch is still created rather than moved.
     const { source, remote, shas } = staged('declared-new-replay', 2);
     const transport = localTransport({ remote });
     const lines: string[] = [];
@@ -384,10 +390,84 @@ describe('publishing to a repository through the local transport', { timeout: FI
       newBranch: true,
       log: (line: string) => lines.push(line),
     });
-    expect(result.identity).toEqual({ state: 'exact', commits: 5, base: 'unborn' });
+    expect(result.identity).toEqual({ state: 'exact', commits: 2, base: 'commit' });
     expect(lines.join('\n')).toContain(`the remote does not hold ${shas[4]!.slice(0, 9)}`);
     expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
     expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[2]!);
+  });
+
+  it('hangs a created branch on the nearest tip the remote has, not the first one it read', async () => {
+    // Two branches, two depths. The window is everything above the base, so the useful base is
+    // the one nearest the tip: `new` at the fourth commit is one commit from the tip and `main`
+    // at the second is four. A walk that kept the first match -- and `main` is first in ref
+    // order -- would replay four commits for a branch that needs one.
+    const { source, remote, shas } = staged('deepest-tip', 1);
+    git(source, ['push', '-q', remote, `${shas[3]}:refs/heads/new`]);
+    const transport = localTransport({ remote });
+
+    const result = await publish({ root: source, rev: 'HEAD', branch: 'release', transport, newBranch: true });
+    expect(result.identity).toEqual({ state: 'exact', commits: 1, base: 'commit' });
+    expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
+    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+    expect(git(remote, ['rev-parse', 'new']).trim()).toBe(shas[3]!);
+  });
+
+  it('creates a branch above a merge it does not have to replay, and refuses the same push onto nothing', async () => {
+    // The push that found this round's fifth finding, reduced to a fixture. The local history
+    // contains a merge three commits back; the remote holds the commit above it. A branch
+    // created beside that one replays the one commit above the tip it was given -- while the
+    // same branch created on an empty repository has to replay the merge, and is refused by
+    // the plan's own rule. Before v3.61 the creation path always took the second route, so this
+    // branch could not be created at all (finding 455).
+    const { source, shas } = history('merge-deep');
+    const identity = { ...process.env, ...IDENTITY };
+    const second = spawnSync('git', ['-C', source, 'commit-tree', `${shas[1]}^{tree}`, '-p', shas[1], '-m', 'a second parent'], {
+      encoding: 'utf8',
+      env: identity,
+    }).stdout.trim();
+    const merge = spawnSync('git', ['-C', source, 'commit-tree', `${shas[2]}^{tree}`, '-p', shas[2], '-p', second, '-m', 'a merge'], {
+      encoding: 'utf8',
+      env: identity,
+    }).stdout.trim();
+    git(source, ['reset', '-q', '--hard', merge]);
+    const above = commit(source, 'above the merge', { 'docs/a.md': 'a\n' });
+    const tip = commit(source, 'tip above that', { 'docs/b.md': 'b\n' });
+    const remote = join(SCRATCH, 'merge-deep-remote.git');
+    git(SCRATCH, ['init', '-q', '--bare', remote]);
+    git(source, ['push', '-q', remote, `${above}:refs/heads/main`]);
+
+    const transport = localTransport({ remote });
+    const result = await publish({ root: source, rev: 'HEAD', branch: 'release', transport, newBranch: true });
+    expect(result.identity).toEqual({ state: 'exact', commits: 1, base: 'commit' });
+    expect(git(remote, ['rev-parse', 'release']).trim()).toBe(tip);
+
+    // And the route the round removed, on a remote with no refs at all: the whole ancestry,
+    // which reaches the merge, which a replay cannot carry.
+    const bare = join(SCRATCH, 'merge-deep-empty.git');
+    git(SCRATCH, ['init', '-q', '--bare', bare]);
+    await expect(
+      publish({ root: source, rev: 'HEAD', branch: 'release', transport: localTransport({ remote: bare }), newBranch: true }),
+    ).rejects.toThrow(/has 2 parents, and a replayed commit is published on one/);
+  });
+
+  it('replays the whole history only when the remote has no ref to hang it on', async () => {
+    // The other side of the same decision: a repository with no refs has no base, and the
+    // first push is the one case where the window really is the ancestry.
+    const { source, remote, shas } = staged('declared-new-empty', null);
+    const transport = localTransport({ remote });
+    const lines: string[] = [];
+
+    const result = await publish({
+      root: source,
+      rev: 'HEAD',
+      branch: 'release',
+      transport,
+      newBranch: true,
+      log: (line: string) => lines.push(line),
+    });
+    expect(result.identity).toEqual({ state: 'exact', commits: 5, base: 'unborn' });
+    expect(lines.join('\n')).toContain('the remote holds no refs');
+    expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
   });
 
   it('refuses --new-branch for a branch that exists, because the flag is a claim about the remote', async () => {
@@ -713,15 +793,23 @@ async function api(remote: string) {
         // and a page walk is only observable to a test through the requests it makes.
         // `refsCount` fabricates a repository of that many branches, so a walk can be
         // exercised on a machine that has no such repository.
-        const names =
+        const tips =
           behaviour.refsCount === null
-            ? (await local.refs()).names
-            : Array.from({ length: behaviour.refsCount }, (_, index) => `refs/heads/b${String(index).padStart(4, '0')}`);
-        const shown = names.slice((page - 1) * perPage, page * perPage);
+            ? (await local.refs()).tips
+            : Array.from({ length: behaviour.refsCount }, (_, index) => ({
+                name: `refs/heads/b${String(index).padStart(4, '0')}`,
+                sha: '0'.repeat(40),
+              }));
+        const shown = tips.slice((page - 1) * perPage, page * perPage);
         // Two shapes, and only one of them is a list: `refsNotAList` produces the answer a
         // reader must refuse rather than read as "no refs", because an empty repository and
         // an answer this channel cannot parse are not the same fact.
-        return send(200, behaviour.refsNotAList ? { refs: shown } : shown.map((ref) => ({ ref, object: { sha: '0'.repeat(40) } })));
+        //
+        // The SHA is the one the ref really points at. It was a row of zeroes until v3.61,
+        // which was invisible while the listing was only counted and became a lie the moment
+        // a plan started hanging on a tip: a stand-in that answers "this name points at
+        // 0000…" is a stand-in whose answer no reader can use (finding 454).
+        return send(200, behaviour.refsNotAList ? { refs: shown.map((tip) => tip.name) } : shown.map((tip) => ({ ref: tip.name, object: { sha: tip.sha } })));
       }
       if (request.method === 'GET' && path.startsWith('/git/commits/')) {
         if (behaviour.commitStatus !== null) return fail(behaviour.commitStatus, 'this commit is not readable');
@@ -1072,6 +1160,31 @@ describe('publishing through the GitHub transport, against a server that writes 
         'GET /repos/owner/repo/git/refs?per_page=100&page=1',
         'GET /repos/owner/repo/git/refs?per_page=100&page=2',
       ]);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('hangs a created branch on a tip the listing named, and pays nothing to learn where it is', async () => {
+    // The creation path's base, over the real API's shapes. `main` points at a commit the
+    // local ancestry already carries, so the listing's SHA is enough to place it -- no commit
+    // read, no tree read until the base has been chosen -- and the window is what is above it.
+    const { source, remote, shas } = staged('http-creation-base', 2);
+    const server = await api(remote);
+    try {
+      const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
+      const result = await publish({ root: source, rev: 'HEAD', branch: 'release', transport, newBranch: true });
+      expect(result.identity).toEqual({ state: 'exact', commits: 2, base: 'commit' });
+      expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
+      const asked = server.behaviour.requests;
+      // The tip's name is in the ancestry, so the only read of it is the question about the
+      // tip itself -- answered `404`, because the commit above it is the one being published.
+      expect(asked.filter((key) => key.startsWith(`GET /repos/owner/repo/git/commits/`))).toEqual([
+        `GET /repos/owner/repo/git/commits/${shas[4]}`,
+      ]);
+      expect(asked).toContain('GET /repos/owner/repo/git/refs?per_page=100&page=1');
+      expect(asked).toContain('POST /repos/owner/repo/git/refs');
+      expect(asked.filter((key) => key.startsWith('PATCH'))).toEqual([]);
     } finally {
       await server.close();
     }
@@ -1587,7 +1700,9 @@ describe('the command line a push goes through', { timeout: FILE_TIMEOUT_MS }, (
     ]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('the remote does not hold');
-    expect(result.stdout).toContain('1/5');
+    // Two commits, not five: the tip of `main` gives the plan a base, so the branch is
+    // created from what is above it rather than from the root of the history (finding 455).
+    expect(result.stdout).toContain('1/2');
     expect(result.stdout).toContain('VERIFIED');
     expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
   });

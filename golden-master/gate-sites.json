@@ -1561,7 +1561,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 199,
+        "line": 252,
         "disposition": "unguarded",
         "message": "new TypeError( `'${branch}' already exists at ${remote.head.slice(0, 9)} and --new-branch says it does not: a push that ",
         "status": "proved",
@@ -1569,7 +1569,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 223,
+        "line": 276,
         "disposition": "unguarded",
         "message": "new TypeError( `'${branch}' does not exist and the remote is not empty: it holds ${refSentence(listing.names, listing.co",
         "status": "proved",
@@ -1577,23 +1577,23 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 286,
+        "line": 368,
         "disposition": "unguarded",
-        "message": "new TypeError( `the remote holds neither ${tip.slice(0, 9)} nor any tree of its ancestry: its tip is ` + `${String(remot",
+        "message": "new TypeError( `the remote holds neither ${tip.slice(0, 9)} nor any tree of its ancestry: its tip is ` + `${String(origi",
         "status": "proved",
         "provedBy": "packages/core/test/publish.test.ts"
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 301,
+        "line": 383,
         "disposition": "unguarded",
-        "message": "new TypeError( `the remote's tip (${String(remote.head).slice(0, 9)}) already carries the tree of ${tip.slice(0, 9)} ` +",
+        "message": "new TypeError( `the remote's tip (${String(origin.head).slice(0, 9)}) already carries the tree of ${tip.slice(0, 9)} ` +",
         "status": "proved",
         "provedBy": "packages/core/test/publish.test.ts"
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 358,
+        "line": 440,
         "disposition": "unguarded",
         "message": "new TypeError( `the rebuilt commit is not ${step.sha.slice(0, 9)} with its parents renamed: the API answered ` + `${comm",
         "status": "proved",
@@ -1601,7 +1601,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 379,
+        "line": 461,
         "disposition": "unguarded",
         "message": "new TypeError( `refusing to move the ref: the rebuilt tip has tree ${String(published?.tree).slice(0, 9)} and ` + `${tip",
         "status": "proved",
@@ -1609,7 +1609,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 476,
+        "line": 558,
         "disposition": "unguarded",
         "message": "the GitHub transport needs a token: it is read from the environment and never committed",
         "status": "proved",
@@ -1617,7 +1617,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 529,
+        "line": 611,
         "disposition": "rethrow",
         "message": "error",
         "status": "proved",
@@ -1625,49 +1625,9 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 552,
+        "line": 634,
         "disposition": "unguarded",
         "message": "new ApiError(method, path, response.status, text)",
-        "status": "proved",
-        "provedBy": "packages/core/test/publish.test.ts"
-      },
-      {
-        "script": "scripts/publish.mjs",
-        "line": 567,
-        "disposition": "rethrow",
-        "message": "error",
-        "status": "proved",
-        "provedBy": "packages/core/test/publish.test.ts"
-      },
-      {
-        "script": "scripts/publish.mjs",
-        "line": 570,
-        "disposition": "unguarded",
-        "message": "the API refuses ${path} in every encoding: ${String(last?.message)}",
-        "status": "proved",
-        "provedBy": "packages/core/test/publish.test.ts"
-      },
-      {
-        "script": "scripts/publish.mjs",
-        "line": 581,
-        "disposition": "rethrow",
-        "message": "error",
-        "status": "proved",
-        "provedBy": "packages/core/test/publish.test.ts"
-      },
-      {
-        "script": "scripts/publish.mjs",
-        "line": 616,
-        "disposition": "rethrow",
-        "message": "error",
-        "status": "proved",
-        "provedBy": "packages/core/test/publish.test.ts"
-      },
-      {
-        "script": "scripts/publish.mjs",
-        "line": 619,
-        "disposition": "unguarded",
-        "message": "new TypeError( `the API answered the ref listing with ${typeof listing}, which is not a list of refs: ` + 'reading it as",
         "status": "proved",
         "provedBy": "packages/core/test/publish.test.ts"
       },
@@ -1681,15 +1641,15 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 672,
+        "line": 652,
         "disposition": "unguarded",
-        "message": "the plan carries a blob for '${entry.path}' that the executor did not read",
+        "message": "the API refuses ${path} in every encoding: ${String(last?.message)}",
         "status": "proved",
         "provedBy": "packages/core/test/publish.test.ts"
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 715,
+        "line": 663,
         "disposition": "rethrow",
         "message": "error",
         "status": "proved",
@@ -1697,7 +1657,47 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 716,
+        "line": 699,
+        "disposition": "rethrow",
+        "message": "error",
+        "status": "proved",
+        "provedBy": "packages/core/test/publish.test.ts"
+      },
+      {
+        "script": "scripts/publish.mjs",
+        "line": 702,
+        "disposition": "unguarded",
+        "message": "new TypeError( `the API answered the ref listing with ${typeof listing}, which is not a list of refs: ` + 'reading it as",
+        "status": "proved",
+        "provedBy": "packages/core/test/publish.test.ts"
+      },
+      {
+        "script": "scripts/publish.mjs",
+        "line": 733,
+        "disposition": "rethrow",
+        "message": "error",
+        "status": "proved",
+        "provedBy": "packages/core/test/publish.test.ts"
+      },
+      {
+        "script": "scripts/publish.mjs",
+        "line": 756,
+        "disposition": "unguarded",
+        "message": "the plan carries a blob for '${entry.path}' that the executor did not read",
+        "status": "proved",
+        "provedBy": "packages/core/test/publish.test.ts"
+      },
+      {
+        "script": "scripts/publish.mjs",
+        "line": 799,
+        "disposition": "rethrow",
+        "message": "error",
+        "status": "proved",
+        "provedBy": "packages/core/test/publish.test.ts"
+      },
+      {
+        "script": "scripts/publish.mjs",
+        "line": 800,
         "disposition": "unguarded",
         "message": "new TypeError( `the branch '${branch}' was absent when the plan was made and is not now: the name was taken while ` + 't",
         "status": "proved",
@@ -1705,7 +1705,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 727,
+        "line": 811,
         "disposition": "rethrow",
         "message": "error",
         "status": "proved",
@@ -1713,7 +1713,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 729,
+        "line": 813,
         "disposition": "unguarded",
         "message": "new TypeError( `the branch moved while the plan was being executed: it was ${String(expected).slice(0, 9)} and is ` + `$",
         "status": "proved",
@@ -1721,7 +1721,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 824,
+        "line": 916,
         "disposition": "unguarded",
         "message": "the plan carries a blob for '${entry.path}' that the executor did not read",
         "status": "proved",
@@ -1729,7 +1729,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 860,
+        "line": 952,
         "disposition": "unguarded",
         "message": "new TypeError( expected === null ? `the branch '${branch}' was absent when the plan was made and is not now: it is ${Str",
         "status": "proved",
@@ -1737,7 +1737,7 @@
       },
       {
         "script": "scripts/publish.mjs",
-        "line": 871,
+        "line": 963,
         "disposition": "unguarded",
         "message": "refusing to move ${branch} backwards: ${sha.slice(0, 9)} does not descend from ${now.slice(0, 9)}",
         "status": "proved",

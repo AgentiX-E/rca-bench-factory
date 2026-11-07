@@ -2296,5 +2296,33 @@
         "remaining": 4974
       }
     ]
+  },
+  {
+    "rev": "031a7258464257771edea1836d9cc39e01804962",
+    "branch": "v3.61-tip",
+    "rows": [
+      {
+        "at": 1794043292945,
+        "method": "GET",
+        "path": "/git/ref/heads/v3.61-tip",
+        "attempt": 1,
+        "status": 404,
+        "ms": 1513,
+        "sent": 0,
+        "received": 114,
+        "remaining": 4859
+      },
+      {
+        "at": 1794043294458,
+        "method": "GET",
+        "path": "/git/commits/031a7258464257771edea1836d9cc39e01804962",
+        "attempt": 1,
+        "status": 404,
+        "ms": 1464,
+        "sent": 0,
+        "received": 121,
+        "remaining": 4858
+      }
+    ]
   }
 ]

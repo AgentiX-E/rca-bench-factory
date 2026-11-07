@@ -810,6 +810,16 @@ point, and the boundary between the first two is the whole of what makes the thi
   history and the question about the tip is not asked"*. The replay is correct whatever the object
   store holds, which is why this is the conservative direction: the shortcut would have named a
   commit the listing never mentioned, in a repository whose objects are unreachable.
+- **A created branch hangs on a tip the remote has, not on the whole history** (v3.61). A branch
+  that does not exist has no tip to locate against, and the window used to be the whole ancestry --
+  which on this repository made the branch **impossible** to create, because the history contains a
+  merge and a replayed merge is refused. The base is chosen from the refs the repository *does*
+  have: a tip whose SHA the ancestry already carries costs **no request** (and its tree is the local
+  commit's tree), a renamed tip costs one commit read and matches by tree, and the **nearest**
+  match wins because the window is everything above it. Only an empty listing still means the whole
+  ancestry, which is what a first push is. The branch is still created rather than moved, and the
+  choice is a bound rather than a rule: a base further back replays more and produces the same tip
+  tree, which the executor asserts.
 - **The receipt rule runs before the first request, on the pointer path too** (v3.61). v3.60
   described `--no-gate` on its real creation push as honest for *"a state in which the receipt rule
   has nothing to say"*. The rule had something to say and had already said it: `requireReceipt` runs

@@ -3147,3 +3147,43 @@ repository with a hundred and forty branches. The `409`-on-the-first-page state 
 counterpart too: `refsStatusAfter` answers a status on pages after the first, which is how the
 rule "a `409` after page one is not an empty repository" became testable — and it was not, until
 a mutation that read it as one survived the whole file.
+
+## Finding 455 — a branch that could not be created, because it insisted on the whole history
+
+The creation path's window was the whole ancestry, and v3.60 and v3.61 had each described that as
+a cost: `locateBase` needs a remote commit to compare against, a branch that does not exist has
+none, so there is nothing to locate and everything is replayed. The first real attempt to create a
+branch *with objects* -- the one path v3.60 left unproven -- did not fail slowly. It failed:
+
+> `50a8ce30c has 2 parents, and a replayed commit is published on one: a merge carries a history in
+> its second parent that the remote would not receive, so the SHA it receives would not be the SHA
+> that was written`
+
+The local history contains a merge. A replayed merge is refused by design, correctly. So on this
+repository a branch could not be created at all -- not expensively, *at all* -- and the defect was
+not the cost the last two rounds had been writing about but the reach of the window.
+
+The premise was wrong, and the sentence that carried it was wrong in a way that reads as an
+argument: "a branch that does not exist has nothing to locate a base against". The branch does not,
+but the repository does. A repository with refs has *tips*, and a tip is exactly what a comparison
+wants; the listing added in this same round already carries one name per ref and the SHA that name
+points at. The base is therefore chosen from what the remote has rather than from a branch it does
+not:
+
+- a tip whose SHA is in the local ancestry is a base with **no request at all** -- and its tree is
+  the local commit's tree, so even reading the base costs nothing beyond the listing;
+- a tip that is not (a renamed twin, which is every tip above this repository's boundary) costs
+  one commit read, and is matched by tree;
+- the **nearest** match wins, because the window is everything above it: an index of one is a
+  single commit to replay and an index of forty is thirty-nine the remote already holds.
+
+Only an empty listing still means the whole ancestry, which is what a first push is. And the
+branch is still *created* rather than moved: `expected: null` on the ref update, unchanged.
+
+The choice is also a bound rather than a rule, and the difference matters: a base further back
+replays more commits and produces the same tip tree, which the executor asserts after the fact. So
+the cost is what depends on the search, and correctness is not.
+
+The mutation that says this is a claim and not a comment is `const base = null` -- the old
+behaviour in one line -- and five cases go red on it, including the one that publishes a branch
+above a merge and the one that expects the same push onto an empty remote to be refused.

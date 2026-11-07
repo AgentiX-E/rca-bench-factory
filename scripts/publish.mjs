@@ -102,14 +102,67 @@ export function requireReceipt({ root, rev, tree }) {
 async function readRemote({ transport, branch }) {
   const head = await transport.head(branch);
   if (head === null) return { head: null, tree: null, files: {}, truncated: false };
-  const commit = await transport.commit(head.sha);
+  return readRemoteAt({ transport, sha: head.sha });
+}
+
+/**
+ * The same shape, for a commit the caller has already named.
+ *
+ * Two callers need it and they name different things: a branch read, and a ref tip chosen as
+ * a plan's base. The second is what lets a branch be created beside an existing one instead of
+ * on nothing (finding 455).
+ */
+async function readRemoteAt({ transport, sha, tree = null }) {
+  const commit = tree === null ? await transport.commit(sha) : { sha, tree };
   const listing = await transport.tree(commit.tree);
   return {
-    head: head.sha,
+    head: commit.sha,
     tree: commit.tree,
     files: filesFromEntries(listing.entries),
     truncated: listing.truncated === true,
   };
+}
+
+/**
+ * The shallowest local ancestor a plan can hang on, given the refs the remote has.
+ *
+ * A branch that does not exist has no tip to compare, so the comparison is made against the
+ * tips that do: a local ancestry position is a candidate whenever some ref points at that
+ * commit (no request: the ancestry already carries the SHAs) or at a commit with that tree
+ * (one request per branch, because a tree can only be learned by reading the commit).
+ *
+ * Branch tips only, and that is a fact rather than a convenience: an annotated tag points at
+ * a tag object, and `GET /git/commits/<sha>` on one is a `404` that would read as "the remote
+ * has no base" -- the wrong answer to a question this path cannot afford to get wrong.
+ *
+ * The nearest match wins, because the window is everything above it: an index of one is a
+ * single commit to replay and an index of forty is thirty-nine that the remote already has
+ * under another name. Cost is bounded by the number of branches, and correctness does not
+ * depend on the choice: a base further back replays more and produces the same tip tree,
+ * which the executor asserts.
+ */
+async function locateBaseAmongRefs({ ancestry, listing, transport }) {
+  const heads = listing.tips.filter((tip) => tip.name.startsWith('refs/heads/'));
+  const seen = new Set();
+  let best = null;
+  let unread = [];
+  for (const tip of heads) {
+    if (seen.has(tip.sha)) continue;
+    seen.add(tip.sha);
+    const at = ancestry.findIndex((commit) => commit.sha === tip.sha);
+    if (at === -1) unread.push(tip);
+    // The tree comes from the ancestry rather than from a read: the SHA *is* the local commit,
+    // so its tree is the one the local repository already has. A base found by name therefore
+    // costs the listing and nothing else.
+    else if (best === null || at < best.index) best = { kind: 'commit', index: at, sha: tip.sha, tree: ancestry[at].tree };
+  }
+  for (const tip of unread) {
+    const commit = await transport.commit(tip.sha);
+    const at = ancestry.findIndex((entry) => entry.tree === commit.tree);
+    if (at === -1) continue;
+    if (best === null || at < best.index) best = { kind: 'tree', index: at, sha: commit.sha, tree: commit.tree };
+  }
+  return best;
 }
 
 /**
@@ -246,12 +299,14 @@ export async function publish({
   // the shortcut would have relied on a commit the listing never mentioned -- in a repository
   // whose objects are unreachable and therefore collectable.
   if (remote.head === null) {
-    if (listing !== null && listing.names.length === 0) {
-      log(
-        'the remote holds no refs, so there is no name a shortcut could carry: this push replays the history and ' +
-          'the question about the tip is not asked',
-      );
-    } else if (await transport.holds(tip)) {
+    // A listing that was read for the wrong-name refusal is reused rather than taken again,
+    // and only an *empty* one suppresses the question: on that state the answer is known. The
+    // listing is otherwise asked for after the question, not before it, so the pointer path
+    // keeps its three requests -- a repository that has refs has tips, and a tip is what a
+    // plan needs to hang on when the branch being created has none of its own (finding 455),
+    // but that is only worth a request once the cheap answer has come back "no".
+    const empty = listing !== null && listing.names.length === 0;
+    if (!empty && (await transport.holds(tip))) {
       const plan = pointerPlan({ tree: tipTree });
       log(
         `the remote already holds ${tip.slice(0, 9)}: naming it is the whole push, and no commit is created -- ` +
@@ -273,19 +328,46 @@ export async function publish({
         identity: { state: 'held', commits: 0, base: null },
       };
     } else {
-      log(`the remote does not hold ${tip.slice(0, 9)}: this push will build the commits that lead to it`);
+      if (listing === null) listing = await transport.refs();
+      if (listing.names.length === 0) {
+        log(
+          'the remote holds no refs, so there is no name a shortcut could carry: this push replays the history and ' +
+            'the question about the tip is not asked',
+        );
+      } else {
+        log(`the remote does not hold ${tip.slice(0, 9)}: this push will build the commits that lead to it`);
+      }
     }
   }
   const ancestry = readAncestry({ root, rev: tip });
 
-  // An unborn branch has no content to locate, so the whole ancestry is the window. A
-  // first push is the only path here and it costs one read per commit in the history --
-  // every later push pays for its window and nothing else.
-  const located = remote.head === null ? { kind: 'unborn', index: ancestry.length } : locateBase({ ancestry, remote });
+  // Where a plan may hang, for a branch that does not exist yet.
+  //
+  // An unborn branch has no content of its own to locate a base against -- `locateBase`
+  // compares against *a* remote commit, and `head: null` is not one. Until v3.61 that made
+  // the window the whole ancestry, which is right for a repository with no refs and wrong
+  // for every other case: a branch created beside an existing one replayed five hundred
+  // commits, and on this repository it could not be created at all, because the history it
+  // insisted on replaying contains a merge and a replayed merge is refused (finding 455).
+  //
+  // A repository with refs has tips, and a tip is exactly what the comparison wants. The
+  // listing already carries one name per ref and the SHA that name points at, so the base is
+  // chosen from what the remote *has* rather than from a branch it does not: read each tip's
+  // commit, keep the shallowest local ancestor whose tree matches one of them, and plan the
+  // window above it. The branch is still created rather than moved, and every commit above
+  // the base still hangs on the remote's names.
+  const base = remote.head === null ? await locateBaseAmongRefs({ ancestry, listing, transport }) : null;
+  const located =
+    remote.head !== null
+      ? locateBase({ ancestry, remote })
+      : base === null
+        ? { kind: 'unborn', index: ancestry.length }
+        : { kind: base.kind, index: base.index };
+  const origin = base === null ? remote : await readRemoteAt({ transport, sha: base.sha, tree: base.tree });
   if (located === null) {
     throw new TypeError(
       `the remote holds neither ${tip.slice(0, 9)} nor any tree of its ancestry: its tip is ` +
-        `${String(remote.head).slice(0, 9)} (tree ${String(remote.tree).slice(0, 9)}) and no local commit has ` +
+        `${String(origin.head).slice(0, 9)} (tree ${String(origin.tree).slice(0, 9)}) and no local commit has ` +
         'that tree. Publishing the tip alone is how finding 404 lost two of three commits — the tree arrives ' +
         'and the sentences do not. Rebase onto the remote, or publish the branch that produced that tip',
     );
@@ -299,7 +381,7 @@ export async function publish({
     // and the history is not, and replaying the tip would add a second commit with the
     // same message on top of a commit that already carries that tree.
     throw new TypeError(
-      `the remote's tip (${String(remote.head).slice(0, 9)}) already carries the tree of ${tip.slice(0, 9)} ` +
+      `the remote's tip (${String(origin.head).slice(0, 9)}) already carries the tree of ${tip.slice(0, 9)} ` +
         'and is not that commit: replaying it would publish a second commit with the same message on top of ' +
         'a tree that is already there',
     );
@@ -308,7 +390,7 @@ export async function publish({
   const window = ancestry.slice(0, located.index).reverse();
   const commits = window.map((commit) => readCommit({ root, sha: commit.sha }));
   const localTrees = new Map(commits.map((commit) => [commit.sha, commit.tree]));
-  const plan = planPublish({ remote, commits });
+  const plan = planPublish({ remote: origin, commits });
   for (const line of summarisePlan(plan)) log(line);
   if (located.kind === 'tree') {
     // The remote's tip carries the tree of a local ancestor and is not that commit. Every
@@ -317,7 +399,7 @@ export async function publish({
     // It is said before the first request rather than after the last: an operator reading
     // "the tip's SHA is not the local one" after the fact cannot tell a rename from a loss.
     log(
-      `the remote's tip ${String(remote.head).slice(0, 9)} carries the tree of ` +
+      `the remote's tip ${String(origin.head).slice(0, 9)} carries the tree of ` +
         `${ancestry[located.index].sha.slice(0, 9)} and is not that commit: this plan hangs on the remote's ` +
         'names, so the commits above it will differ from the local ones in their parent lines and in nothing else',
     );
@@ -326,15 +408,15 @@ export async function publish({
 
   const built = new Map();
   for (const step of plan.commits) {
-    const base = resolveSymbol(step.base, { remote, built, field: 'tree' });
-    const parent = resolveSymbol(step.parent, { remote, built, field: 'commit' });
+    const treeBase = resolveSymbol(step.base, { remote: origin, built, field: 'tree' });
+    const parent = resolveSymbol(step.parent, { remote: origin, built, field: 'commit' });
     const blobs = new Map();
     for (const entry of step.entries) {
       if (entry.sha !== null && !blobs.has(entry.sha)) blobs.set(entry.sha, readBlob({ root, sha: entry.sha }));
     }
-    const tree = step.entries.length === 0 && base !== null
-      ? base
-      : await transport.createTree({ base, entries: step.entries, blobs });
+    const tree = step.entries.length === 0 && treeBase !== null
+      ? treeBase
+      : await transport.createTree({ base: treeBase, entries: step.entries, blobs });
     const commit = await transport.createCommit({
       message: step.message,
       tree,
@@ -600,6 +682,7 @@ export function githubTransport({
      */
     async refs() {
       const names = [];
+      const tips = [];
       for (let page = 1; ; page += 1) {
         let listing;
         try {
@@ -612,7 +695,7 @@ export function githubTransport({
           // push onto a branch that already exists. A `409` on a page after the first is
           // forwarded for the same reason: the first page of an empty repository is `[]`, so
           // a later page failing this way is an answer that cannot be read as "no refs".
-          if (error instanceof ApiError && error.status === 409 && page === 1) return { names, complete: true };
+          if (error instanceof ApiError && error.status === 409 && page === 1) return { names, tips, complete: true };
           throw error;
         }
         if (!Array.isArray(listing)) {
@@ -622,11 +705,12 @@ export function githubTransport({
           );
         }
         for (const ref of listing) names.push(String(ref.ref));
+        for (const ref of listing) tips.push({ name: String(ref.ref), sha: String(ref.object?.sha ?? '') });
         // A page shorter than the page size is the last page. A *full* page is not: a
         // hundred is both the page size and the size of a repository that has a hundred
         // refs, and only the next question can tell the two apart.
-        if (listing.length < REF_PAGE_SIZE) return { names, complete: true };
-        if (page >= REF_PAGES_MAX) return { names, complete: false };
+        if (listing.length < REF_PAGE_SIZE) return { names, tips, complete: true };
+        if (page >= REF_PAGES_MAX) return { names, tips, complete: false };
       }
     },
     /**
@@ -782,11 +866,19 @@ export function localTransport({ remote }) {
     },
     /** The same answer the API gives: full ref names, one per line, in `refs/` order. */
     async refs() {
-      const out = runGit(remote, ['for-each-ref', '--format=%(refname)'], { encoding: 'utf8' });
+      const out = runGit(remote, ['for-each-ref', '--format=%(refname) %(objectname)'], { encoding: 'utf8' });
       // One call and no paging: a directory listing has no page size, so `complete` is a
       // fact here rather than a bound -- which is what the interface promises and what the
-      // sentence needs in order to print an exact count.
-      return { names: out.split('\n').filter((name) => name !== ''), complete: true };
+      // sentence needs in order to print an exact count. The SHA comes with the name because
+      // a plan needs a tip to hang on, and asking for it separately would be a second walk.
+      const tips = out
+        .split('\n')
+        .filter((line) => line !== '')
+        .map((line) => {
+          const [name, sha] = line.split(' ');
+          return { name, sha };
+        });
+      return { names: tips.map((tip) => tip.name), tips, complete: true };
     },
     /** The same question of the object store: `cat-file -e` on the peel answers by status. */
     async holds(sha) {

@@ -71,6 +71,26 @@ it would put the id in the recording against seconds from a different job. The f
 that reports the job records it normally, says the promise can be deleted, and leaves the
 sentence for the round rather than erasing the only account of why the job exists.
 
+### 六、一个建不出来的分支，因为它坚持要整部历史
+
+创建路径的窗口是整部祖先，v3.60 与 v3.61 都把这件事描述成**成本**：`locateBase` 需要一个远端提交来比较，而不存在的分支没有，所以没有可定位的东西，只能全部重放。第一次真正尝试「带对象地创建分支」——v3.60 留下的那条未付账路径——不是慢，而是**失败**：
+
+> `50a8ce30c has 2 parents, and a replayed commit is published on one: a merge carries a history in its second parent that the remote would not receive, so the SHA it receives would not be the SHA that was written`
+
+本地历史里有一个合并提交，而重放合并是按设计被拒绝的——拒绝本身是对的。于是这个仓库上根本建不出分支：不是贵，是**不能**。缺陷不是前两轮一直在写的那个成本，而是窗口的**范围**。
+
+那个前提是错的，而承载它的句子错得像一段论证：「不存在的分支没有可定位的基座」。分支没有，但**仓库有**。一个有 ref 的仓库有 tip，而 tip 恰恰是比较想要的东西；本轮为别的原因加的 listing 已经带着每个 ref 的名字和它指向的 SHA。于是基座从「远端有什么」里选，而不是从「它没有的那个分支」里找：
+
+- tip 的 SHA 在本地祖先里 → **零请求**就能定位，连它的树都是本地那个提交的树，所以读它也不花钱；
+- 不在（改名孪生，也就是本仓边界之上的每一个 tip）→ 一次 commit 读取，按树匹配；
+- **最近的**匹配胜出，因为窗口是它之上的一切：index 1 是重放一个提交，index 40 是重放远端早就有的三十九个。
+
+只有空列表仍然意味着整部祖先，而那就是首次推送的定义。分支仍然是**创建**而不是移动：ref 更新的 `expected` 仍然是 `null`。
+
+这个选择是**上界**而不是规则，差别很重要：更靠后的基座会多重放几个提交、产出同一棵 tip 树，而执行器事后会断言那棵树。所以成本取决于搜索，正确性不取决于。
+
+把它从注释变成主张的那个变异是 `const base = null`——用一行写下旧行为——五个用例变红，包括「在一个合并之上创建分支」和「同一次推送打到空远端必须被拒绝」。
+
 ### Readings
 
 > Ledger for `v3.54`.
@@ -1225,12 +1245,12 @@ v3.60 的遗留表上有一条：*"在 tip 上创建分支且必须上传对象"
 
 | item | value |
 | --- | --- |
-| `core` test suite | **239 files, 5996 tests passed** (as of this commit) |
+| `core` test suite | **239 files, 6000 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **243 files, 6183 tests passed** (as of this commit) |
-| new tests | **8**: the page walk 4 (a hundred and forty refs, exactly a hundred, fourteen hundred, one short page), a `409` on a later page 1, an empty listing that answers the tip question 1, a gated pointer push 1, and the lower-bound sentence 1 |
+| repo test suite | **243 files, 6187 tests passed** (as of this commit) |
+| new tests | **12**: the page walk 4 (a hundred and forty refs, exactly a hundred, fourteen hundred, one short page), a `409` on a later page 1, an empty listing that answers the tip question 1, a gated pointer push 1, the lower-bound sentence 1, and the creation base 4 (the nearest of two tips, a merge below the base, the same push onto nothing refused, and an empty repository that still replays everything) |
 | coverage | `core` **99.96 / 99.75 / 100 / 99.96**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the subject is `scripts/` and its drivers are the site proofs |
-| mutation | **10** substitutions; first pass **8 red, 1 survivor, 1 skipped** -- the survivor was a rule with no test (a `409` on a later page read as "no refs") and the skip an anchor written with the wrong indentation. Both repaired: **10 of 10 red, 0 survivors, 0 inert**, tree restored |
+| mutation | **13** substitutions; first pass **8 red, 1 survivor, 1 skipped**, and after the creation base was added, 5 anchors went stale and were refreshed. Final: **13 of 13 red, 0 survivors, 0 inert**, tree restored -- the survivor was a rule with no test (a `409` on a later page read as "no refs") and the skip an anchor written with the wrong indentation |
 | failure sites | **126** across **59** of **85** scripts; throws **91** = 11 `fatal` + 69 `unguarded` + 1 `guarded` + 10 `rethrow`, and **91 of 91** carried annotations |
 | site proofs | **203** proved sites across **66** test files (`verify-site-proofs.mjs --list`) |
 
