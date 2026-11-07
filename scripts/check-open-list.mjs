@@ -144,6 +144,46 @@ const UNCITED = /(?:Closed without a finding|Closed in this pass)[\s\S]{40,}/;
 const OPEN = /\[open:\s*([^\]]*)\]/g;
 
 /**
+ * The last reason marker in an entry: the one that carries the entry's own claim.
+ *
+ * @param {string} item one bullet, continuation lines included
+ * @returns {RegExpMatchArray | null}
+ */
+function reasonOf(item) {
+  const all = [...item.matchAll(OPEN)];
+  return all.length === 0 ? null : all[all.length - 1];
+}
+
+/**
+ * Whether the reason a bullet was read from is itself struck through.
+ *
+ * ## The mirror finding 458's repair left open
+ *
+ * The closure test looks at the **headline**, and that was right: a strikethrough anywhere in
+ * an entry closed two live entries that merely quoted one. But the same narrowing made the
+ * reason invisible in the other direction -- a bullet whose own reason is struck, over a
+ * headline that is not, was read as an entry asking for work, and its reason was read for
+ * length and for being a copy of another one and for nothing else.
+ *
+ * Two entries in the shipped list were in that state, and both of them end with the finding
+ * that closed them, so the file said one thing twice -- closed -- while the guard and the
+ * count it defends said the other. The shape that would have been right is older than the
+ * defect: round v2.44 strikes the headline *and* the reason and puts the closure after them.
+ *
+ * Both spellings are read, because the shipped list writes the marker inside backticks and a
+ * fixture written by hand often does not.
+ *
+ * @param {string} item one bullet, continuation lines included
+ * @param {RegExpMatchArray} marker the reason `reasonOf` returned
+ */
+function struckReason(item, marker) {
+  const left = item.slice(Math.max(0, marker.index - 3), marker.index);
+  const start = marker.index + marker[0].length;
+  const right = item.slice(start, start + 3);
+  return /(?:~~|~~`)$/.test(left) && /^(?:~~|`~~)/.test(right);
+}
+
+/**
  * The live list's currency stamp: which round read it, and how many entries it found open.
  *
  * ## Why a stamp, and what it is not
@@ -172,6 +212,45 @@ const STAMP = /Checked at (v\d+\.\d+): \*\*(\d+)\*\* (?:entry|entries) open/g;
 const ROUND = /^## (v(\d+)\.(\d+))\b/;
 
 /**
+ * Which spelling of the two names a heading is, and why the exact string was not enough.
+ *
+ * `sections()` used to match the heading with `wanted.has(trimmed)`, so a heading that gained a
+ * suffix stopped being read -- silently, with the count unchanged and nothing in the output
+ * saying a list existed. That is finding 162's shape, one level down: the guard was fixed to
+ * read *every* section with the heading, and the document then changed the heading.
+ *
+ * It happened at v3.45. From that round on, a round's record is a **table**:
+ *
+ * ```
+ * ### Left open, in the order the goal is reached
+ * | priority | item | state | next step |
+ * ```
+ *
+ * Nineteen of them, in volumes 10, 11 and 12, and none had a reader: the guard matched
+ * `### Left open` exactly, so it read 163 bullet records and not one of the nineteen tables.
+ * The rows were not entries, so nothing was miscounted -- what was missing was the statement
+ * that they were not judged, and a refusal for any third spelling.
+ *
+ * So there are two known spellings and one refusal:
+ *
+ * - `## Open` -- the live list, read as entries;
+ * - `### Left open` -- a record, read as entries;
+ * - `### Left open, <anything>` -- a record in table form: its rows are counted, its shape is
+ *   checked, and the summary says its rows were not judged;
+ * - anything else beginning `## Open` or `### Left open` -- refused, because a document that
+ *   renames a list has moved it out of its reader's reach and must say so.
+ */
+function spellingOf(heading) {
+  if (heading === '## Open') return { kind: 'live', form: 'entries' };
+  if (heading === '### Left open') return { kind: 'record', form: 'entries' };
+  if (/^### Left open,/.test(heading)) return { kind: 'record', form: 'table' };
+  return null;
+}
+
+/** A heading that begins with one of the two names without being a spelling this guard reads. */
+const NEARLY = /^#{2,3} (?:Open|Left open)\b/;
+
+/**
  * Every section whose heading is one of `headings`, in document order, with its span.
  *
  * A deeper heading inside a section (`#### x`) stays in it; a heading of the same
@@ -190,8 +269,9 @@ function sections(doc, headings) {
   const heads = [];
   for (let index = 0; index < lines.length; index += 1) {
     const level = (/^#+/.exec(lines[index]) ?? [''])[0].length;
-    if (level > 0 && wanted.has(lines[index].trim())) {
-      heads.push({ index, level, heading: lines[index].trim() });
+    const trimmed = lines[index].trim();
+    if (level > 0 && (wanted.has(trimmed) || spellingOf(trimmed) !== null)) {
+      heads.push({ index, level, heading: trimmed });
     }
   }
   return heads.map((head) => {
@@ -317,6 +397,8 @@ function check() {
     let closed = 0;
     let sectionsSeen = 0;
     let headings = 0;
+    let tables = 0;
+    let tableRows = 0;
     let labelled = files[0].label;
     for (const from of files) {
     let text;
@@ -325,6 +407,19 @@ function check() {
     } catch (error) {
       problems.push(`cannot read ${from.label}: ${error.message}`);
       continue;
+    }
+    // A heading that begins with one of the two names and is neither of the two spellings this
+    // guard reads. Finding 463: the record's heading gained a suffix at v3.45 and nineteen
+    // records left the guard's reach without a word, because the match was an exact string.
+    // An unknown spelling is refused rather than ignored, so a third one cannot appear quietly.
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim();
+      if (NEARLY.test(trimmed) && spellingOf(trimmed) === null) {
+        problems.push(
+          `${from.label}: the \`${trimmed}\` heading begins with one of the two names this guard ` +
+            'reads and is neither of them, so a list written under it would have no reader',
+        );
+      }
     }
     const found = sections(text, doc.headings);
     // The rounds this corpus says happened. Read from every file, because a volume is
@@ -352,10 +447,31 @@ function check() {
       }
     }
     found.forEach((section, index) => {
-      // Which list this is. The index's `## Open` is the live one; a volume's `### Left open`
-      // is a record of one round. The distinction is used for one thing, below.
-      const kind = section.heading === '## Open' ? 'live' : 'record';
+      // Which list this is, and which spelling of it. The index's `## Open` is the live one; a
+      // volume's `### Left open` is a record of one round; `### Left open, <suffix>` is a record
+      // written as a table, which has rows rather than entries (finding 463).
+      const spelling = spellingOf(section.heading) ?? { kind: 'record', form: 'entries' };
+      const kind = spelling.kind;
       const items = entries(section.lines);
+      if (spelling.form === 'table') {
+        const rows = section.lines.filter((line) => /^\s*\|/.test(line)).length;
+        if (rows === 0) {
+          problems.push(
+            `${from.label}: the \`${section.heading}\` record is written in table form and holds no ` +
+              'table, so its rows are neither counted nor judged',
+          );
+          return;
+        }
+        if (items.length > 0) {
+          problems.push(
+            `${from.label}: the \`${section.heading}\` record is written in table form and carries ` +
+              `${items.length} entr(ies), so an entry sits under a heading this guard reads as rows`,
+          );
+        }
+        tables += 1;
+        tableRows += rows;
+        return;
+      }
       if (items.length === 0) {
         problems.push(
           `${from.label}: the \`${section.heading}\` section ${index + 1} of ${found.length} is empty, ` +
@@ -368,7 +484,18 @@ function check() {
       for (const item of items) {
         const headline = item.split('\n')[0];
         const first = headline.slice(2).trim();
+        // The entry's own reason, read once: the closed branch needs it to refuse a bullet
+        // that is history in its headline and work in its body, and the open branch needs it
+        // to refuse the mirror. Reading it in two places would let the two drift.
+        const marker = reasonOf(item);
         if (CLOSED.test(headline)) {
+          if (marker !== null && !struckReason(item, marker)) {
+            problems.push(
+              `${from.label}: a closed entry still carries an unstruck open reason, so it reads as ` +
+                `history in its headline and as work in its body: ${first.slice(0, 80)}`,
+            );
+            continue;
+          }
           if (CITED.test(item) || UNCITED.test(item)) {
             closed += 1;
             continue;
@@ -379,16 +506,28 @@ function check() {
           );
           continue;
         }
-        const markers = [...item.matchAll(OPEN)];
-        const open = markers.length === 0 ? null : markers[markers.length - 1];
-        if (!open) {
+        if (!marker) {
           problems.push(
             `${from.label}: an entry says neither that it is closed nor why it is open, so a reader ` +
               `cannot tell work from history: ${first.slice(0, 80)}`,
           );
           continue;
         }
+        // The mirror of the branch above, and the defect finding 461 was raised for: the
+        // headline is the claim, but a bullet whose own reason is struck says "closed" in the
+        // sentence a reader reads last, and this guard used to read that reason for its length
+        // and for nothing else. Two entries in the shipped list ended in `~~[open: ...]~~ Closed
+        // by finding N` and were counted as work.
+        if (struckReason(item, marker)) {
+          problems.push(
+            `${from.label}: the entry's own reason is struck through and its headline is not, so this ` +
+              `bullet says it is open and closed at once -- strike the headline if the entry is history, ` +
+              `and leave the reason alone if it is not: ${first.slice(0, 80)}`,
+          );
+          continue;
+        }
         openHere += 1;
+        const open = marker;
         const reason = open[1].trim();
         if (reason.length < 40) {
           problems.push(
@@ -427,7 +566,8 @@ function check() {
     // list cannot do it silently: the number of lists is part of the evidence.
     console.log(
       `check-open-list: OK (${total} entry(ies) across ${sectionsSeen} section(s) of ${files.length > 1 ? 'docs/progress.md and its volumes' : labelled}: ` +
-        `${total - closed} open with a reason, ${closed} closed by a finding)`,
+        `${total - closed} open with a reason, ${closed} closed by a finding, and ${tables} record(s) in table ` +
+        `form (${tableRows} row(s)) whose rows were not judged)`,
     );
     stampChecks({ live, rounds, problems });
   }

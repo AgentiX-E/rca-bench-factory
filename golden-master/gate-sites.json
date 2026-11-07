@@ -335,7 +335,7 @@
     },
     {
       "script": "scripts/check-open-list.mjs",
-      "line": 452,
+      "line": 592,
       "condition": "check() !== 0",
       "diagnostic": "check-open-list: FAILED",
       "status": "proved",

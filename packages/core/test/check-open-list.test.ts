@@ -125,7 +125,7 @@ describe('docs · the shipped list, as the guard reads it', () => {
     // instead held to the document's own headings, counted here from the file, and the
     // entry count to the two parts it is made of.
     const summary = shipped.stdout.match(
-      /check-open-list: OK \((\d+) entry\(ies\) across (\d+) section\(s\) of docs\/progress\.md(?: and its volumes)?: (\d+) open with a reason, (\d+) closed by a finding\)/,
+      /check-open-list: OK \((\d+) entry\(ies\) across (\d+) section\(s\) of docs\/progress\.md(?: and its volumes)?: (\d+) open with a reason, (\d+) closed by a finding, and (\d+) record\(s\) in table form \((\d+) row\(s\)\) whose rows were not judged\)/,
     );
     expect(summary, `the guard's summary changed shape: ${shipped.stdout}`).not.toBeNull();
     const numbers = (summary ?? []).slice(1).map(Number);
@@ -143,10 +143,17 @@ describe('docs · the shipped list, as the guard reads it', () => {
     // ignored the same twelve entries.
     const headings = progressCorpus()
       .flatMap((file) => file.text.split('\n'))
-      .filter((line) => ['## Open', '### Left open'].includes(line.trim())).length;
+      .filter((line) => {
+        const trimmed = line.trim();
+        // Three spellings, because the guard reads three: the live list, a record of entries,
+        // and a record written as a table (`### Left open, in the order the goal is reached`),
+        // which has had no reader since v3.45 -- finding 463. Counting only the first two here
+        // would make this test agree with the guard while both ignored nineteen records.
+        return trimmed === '## Open' || trimmed === '### Left open' || /^### Left open,/.test(trimmed);
+      }).length;
     expect(sections, 'the guard read a different number of lists than the document has').toBe(headings);
     expect(entries, 'the parts do not add up to the whole').toBe(open + closed);
-    expect(entries).toBeGreaterThanOrEqual(sections);
+    expect(entries).toBeGreaterThanOrEqual(headings - (numbers[4] ?? 0));
     // Non-vacuity in the other direction: the shipped document has at least one
     // closure, so "closed by a finding" is a reading rather than a constant zero.
     expect(closed).toBeGreaterThan(0);
@@ -374,5 +381,139 @@ describe('docs · the live list says when it was read, and how much it holds', (
     const r = runOn(indexOpen([quoted]));
     expect(r.code).toBe(1);
     expect(r.out).toContain('the open reason is 5 character(s)');
+  });
+});
+
+/**
+ * The two sentences in one bullet, and the round that read one of them.
+ *
+ * v3.62 fixed the direction it could see: a strikethrough *anywhere* in an entry closed it,
+ * so two live entries that quote a closed sub-item were counted as history. The repair was
+ * "the headline decides", and it left the mirror untouched -- an entry whose **own reason**
+ * is struck, with a headline that is not. Two entries in the shipped list are in exactly
+ * that state, and each of them ends by naming the finding that closed it:
+ *
+ * | entry | its last sentence | counted as |
+ * | --- | --- | --- |
+ * | the reading that was sharp for two thirds of the sites | `~~[open: ...]~~ Closed by finding 343` | **open** |
+ * | the RE3 slice's own fault categories | `~~[open: ...]~~ Closed by finding 344` | **open** |
+ *
+ * So the list said thirteen and the file said eleven, and the guard agreed with neither
+ * sentence: it read a struck reason as a live one, because a reason was only ever read for
+ * its length. The shape that would have been right is **older than the defect** -- round
+ * v2.44 in `volume-05.md` strikes the headline *and* the reason and puts the closure after
+ * them -- which is why the repair is to use the whole shape rather than to invent one.
+ *
+ * The rule is that the two sentences agree, in both directions: a closed entry may not
+ * carry a reason a reader would act on, and an open entry may not have its reason struck.
+ */
+describe('docs · the headline and the reason have to agree about whether an entry is closed', () => {
+  // The shipped defect, in fixture form: the reason struck, the closure named, the headline
+  // as it was published -- an unstruck claim.
+  const HALF_STRUCK = [
+    '- A residual whose caveat was settled a round later.',
+    '  ~~`[open: the enumeration gate and the skip paragraph disagree about whether a contract skip is a gap]`~~',
+    '  **Closed by finding 343**, which found that the runner could not produce a refusal at all.',
+  ].join('\n');
+
+  it('refuses an entry whose own reason is struck through and whose headline is not', () => {
+    const r = runOn(indexOpen([HALF_STRUCK, OPEN_ENTRY]));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('says it is open and closed at once');
+    expect(r.out).toContain('A residual whose caveat was settled a round later.');
+  });
+
+  it('accepts the same entry once its headline is struck too, which is the shape this log already used', () => {
+    // Non-vacuity for the rule above: the only change is the headline's `~~`, so a guard that
+    // refused the fixture for any other reason would fail here.
+    const whole = HALF_STRUCK.replace(
+      '- A residual whose caveat was settled a round later.',
+      '- ~~A residual whose caveat was settled a round later.~~',
+    );
+    const r = runOn(indexOpen([whole, OPEN_ENTRY]));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 open with a reason, 1 closed by a finding');
+  });
+
+  it('refuses a closed entry that still carries a reason a reader would act on', () => {
+    // The other direction, and it is not symmetry for its own sake: a struck headline over a
+    // live `[open: ...]` is the shape finding 458's four sites were in -- history in the
+    // headline, work in the body, and whichever sentence a reader reached first decided what
+    // they did.
+    const both = [
+      '- ~~A residual that was closed.~~ **Closed by finding 343**, which settled it.',
+      '  [open: and yet this sentence still asks a reader to do the work]',
+    ].join('\n');
+    const r = runOn(indexOpen([both]));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('history in its headline and as work in its body');
+  });
+
+  it('still reads a live entry that quotes a struck reason inside itself as open', () => {
+    // Finding 458's fixture, kept because the new rule reads the *last* marker: a guard that
+    // looked for a struck reason anywhere in the entry would refuse this one, which is the
+    // defect that started this family.
+    const quoted = [
+      '- A residual that quotes a closure inside itself.',
+      '  ~~[open: an old sub-item]~~ Closed by finding 343, which settled the sub-item only.',
+      '  [open: the entry itself is still open, and this is the sentence that says why it is]',
+    ].join('\n');
+    const r = runOn(indexOpen([quoted, CLOSED_ENTRY]));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 open with a reason, 1 closed by a finding');
+  });
+});
+
+/**
+ * The record's heading gained a suffix, and the reader kept matching the old string.
+ *
+ * v3.45 wrote a round's record as a table for the first time --
+ *
+ * ```
+ * ### Left open, in the order the goal is reached
+ * | priority | item | state | next step |
+ * ```
+ *
+ * -- and `sections()` matched the heading with `wanted.has(trimmed)`, so from that round on
+ * **nineteen** records in volumes 10, 11 and 12 had no reader at all. Nothing was miscounted,
+ * because a table has no entries: what was missing was the sentence saying the rows were not
+ * judged, and a refusal for any third spelling. That is finding 162's shape, one level down --
+ * the guard was fixed to read every section with that heading, and then the heading changed.
+ *
+ * The three fixtures below are the three ways it can go wrong now: rows that are read as
+ * entries (refused), a table-form heading over prose (refused), and a spelling nobody declared
+ * (refused). The first fixture is the shape the shipped log uses, so the arm is not a rule that
+ * only ever fires.
+ */
+describe('docs · a record written as a table is read as rows, and a third spelling is refused', () => {
+  const suffix = (body: string) => `### Left open, in the order the goal is reached\n\n${body}\n`;
+  // The record after the live list's own section, not inside it: a `###` heading under `## Open`
+  // is the nested-list refusal, which is a different rule and has its own test.
+  const page = (record: string) => `## Headline\n\ntext\n\n## Open\n\n${OPEN_ENTRY}\n\n## Pass log\n\nbody\n\n${record}`;
+
+  it('counts a suffix-form record whose body is a table, and says its rows were not judged', () => {
+    const r = runOn(page(suffix('| priority | item |\n| --- | --- |\n| P1 | a residual |')));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 record(s) in table form (3 row(s)) whose rows were not judged');
+  });
+
+  it('refuses an entry sitting under a record that is written as a table', () => {
+    // The entry would be read by nothing: the heading says rows, so the bullet has no judge.
+    const r = runOn(page(suffix('| priority | item |\n| --- | --- |\n| P1 | a residual |\n\n- An entry the heading does not describe.')));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('is written in table form and carries 1 entr(ies)');
+  });
+
+  it('refuses a suffix-form record that holds no table, rather than counting zero rows as a record', () => {
+    const r = runOn(page(suffix('Prose, and no table at all.')));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('is written in table form and holds no');
+  });
+
+  it('refuses a third spelling of either name, so a list cannot leave its reader quietly', () => {
+    const r = runOn(`## Headline\n\ntext\n\n## Open\n\n${OPEN_ENTRY}\n\n### Left open (unfinished)\n\n${OPEN_ENTRY.replace('- A residual.', '- Another.')}\n\n## Pass log\n\nbody\n`);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('begins with one of the two names this guard');
+    expect(r.out).toContain('would have no reader');
   });
 });
