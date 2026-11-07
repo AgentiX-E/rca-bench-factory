@@ -1761,6 +1761,9 @@ can do about prose is make it locatable.
 | the shape, now checked | nineteen headers, 147 rows, four arms, 0 violations in the shipped corpus |
 | mutation | **21** substitutions; **21 of 21 red, 0 survivors, 0 inert**, tree restored. Six new, one per arm: `tableShape` returning pipe lines (147 -> 185), the zero-row arm deleted, the cell-count arm deleted, the empty-`state` arm deleted, the four-name arm deleted, and the rule under the header made optional |
 | the open list | **11** open, **15** closed; one struck this round, closed as a measured decision by finding 466 |
+| the receipt | `verify:local` **OK** -- 34 command(s) covering 47 of 57 run steps, tree `188ca577c`; the ten that did not run need a runner, sudo or the run token, and each says which |
+| the history | `golden-master/publish-readings.json`: **21 attempts**, 362 requests. Attempt 21 carried this round's two commits: 23 requests, none retried, none unanswered, slowest `POST /git/blobs` 2 360 ms. The remote tip is `47f2f7612`, whose tree is `188ca577c` -- the receipt's tree, and the local `HEAD^{tree}` |
+| CI on that tree | `CI` **8/8** jobs and `Anchor round trip` **1/1**, both success (runs 468 and 394) |
 
 ### Left open, in the order the goal is reached
 
