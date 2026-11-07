@@ -32,6 +32,12 @@
  * all, because at that point the missing branch is a *name* that is wrong, and the push
  * that follows would create the wrong branch rather than fail.
  *
+ * The flag is a claim about the remote, so it is refused when the branch *is* there: a push
+ * that says "this branch is new" onto a branch that exists is a push whose author is wrong
+ * about the remote, and the plan it produces would move the branch they meant to create.
+ * The two halves are one statement, and a statement that is false in one half is not a
+ * permission in the other (finding 446).
+ *
  * ## What `--record` writes, and why it writes it here
  *
  * One **push** per invocation: `{ rev, branch, rows }`, where `rows` are the attempts the
@@ -124,6 +130,13 @@ async function main(argv, env, out) {
     return 2;
   }
   const { options } = parsed;
+  // A guard that is bypassed says so. `--no-gate` exists for the one push that publishes no
+  // content -- a branch created at a commit the remote already holds -- and for a repository
+  // with no gate to ask; both are states in which the receipt rule has nothing to say, and
+  // neither of them is "nobody looked". The transcript carries the difference.
+  if (!options.gate) {
+    out('--no-gate: the receipt rule was not asked, so nothing here certifies the tree this push names');
+  }
   const readings = options.record === null ? null : [];
   const transport = transportFor(options, env, readings);
   let code = 0;
@@ -140,7 +153,24 @@ async function main(argv, env, out) {
     });
     if (result.state === 'current') code = 0;
     else if (result.state === 'planned') {
-      out(`dry run: ${result.plan.commits.length} commit(s) would be published; nothing was created`);
+      // Two sentences, because the two plans differ in the one number this line carries: a
+      // plan with no commits is not a plan with nothing to do -- it is a plan that creates a
+      // name for a commit the remote already holds, and printing "0 commit(s) would be
+      // published" would leave the reader to conclude that nothing would happen.
+      out(
+        result.plan.commits.length === 0
+          ? 'dry run: nothing would be built; one request would create the branch, naming a commit the remote ' +
+              'already holds'
+          : `dry run: ${result.plan.commits.length} commit(s) would be published; nothing was created`,
+      );
+      code = 0;
+    } else if (result.identity.state === 'held') {
+      // Not `VERIFIED`: there was no round trip to certify. The branch names a commit the
+      // remote already had, so what this push did is one thing -- it created the name.
+      out(
+        `${options.branch} is at ${result.tip}, which is the local commit, byte for byte, and the remote already ` +
+          'held it: this push created the name and rebuilt nothing',
+      );
       code = 0;
     } else if (result.identity.state === 'parents') {
       // Two sentences, because there are two facts. Every byte of the commit arrived -- the

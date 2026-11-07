@@ -257,7 +257,14 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // commit nor the local commit with its parents renamed: one throw for a caller that
     // handed a function the wrong shape, one for a remote that answered with bytes nobody
     // sent. They sit at two boundaries that only meet through a hash.
-    expect(total).toBe(89);
+    //
+    // 91 is v3.60's two, and they are the two ends of one flag. A creation path that the
+    // remote can already satisfy is asked about the commit rather than trusted, and every
+    // status but the 404 that means "no" is forwarded -- so a `403` cannot become a replay
+    // of a history the remote has. The other end is `--new-branch` itself: the flag was read
+    // as permission, and a permission granted onto a branch that exists moves the branch its
+    // author meant to create. A statement that is false is now refused instead of ignored.
+    expect(total).toBe(91);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -306,7 +313,10 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // was taken first. 9 rethrow is its two -- a `403` on that listing is forwarded, because
     // a listing this channel was not allowed to read is not a repository with no refs, and
     // the creation forwards everything that is not the 422 of a taken name.
-    expect(counts).toEqual({ fatal: 11, unguarded: 68, guarded: 1, rethrow: 9 });
+    // 69 unguarded and 10 rethrow are v3.60's, one of each: the flag's claim, and the `403`
+    // on the question a creation asks -- a status that is not the 404 of an absent commit
+    // must not be read as one, or the channel replays a history the remote already has.
+    expect(counts).toEqual({ fatal: 11, unguarded: 69, guarded: 1, rethrow: 10 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

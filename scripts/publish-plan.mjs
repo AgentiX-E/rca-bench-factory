@@ -390,6 +390,23 @@ export function planPublish({ remote, commits }) {
 }
 
 /**
+ * The plan for a push that creates a name and builds nothing.
+ *
+ * `planPublish` refuses an empty window because a plan with nothing to publish would move a
+ * ref to where it already is. This plan moves no ref to where it is: the branch does not
+ * exist and the commit does, so naming it is a change -- one `POST /git/refs` and no object.
+ * The refusal's premise is exactly the fact that is false here, which is why the two cannot
+ * be one function: an empty list means "nothing to do" only when the ref already says so.
+ *
+ * `tipTree` is still carried, because every plan names the tree it publishes and this one
+ * publishes the tree of a commit the remote already holds -- the one case where the claim
+ * needs no assertion, since a commit's bytes contain its tree.
+ */
+export function pointerPlan({ tree }) {
+  return { commits: [], tipTree: requireSha(tree, 'the tree a pointer plan publishes') };
+}
+
+/**
  * The plan as lines, for `--dry-run` and for the log a push leaves behind.
  *
  * The parent is printed as the symbol it is -- `remote` or the short SHA of the local

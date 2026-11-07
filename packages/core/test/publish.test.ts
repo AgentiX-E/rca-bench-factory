@@ -107,13 +107,8 @@ function commit(root: string, message: string, files: Record<string, string | nu
   return git(root, ['rev-parse', 'HEAD']).trim();
 }
 
-/**
- * A source repository with five commits, and a bare remote cloned from it.
- *
- * The clone gives the remote real objects for the commits it is pointed at and none for
- * the ones above it, which is the state a push is in: the blobs have to be uploaded.
- */
-function stage(name: string) {
+/** Five commits, one of each shape the plan has to carry: a file, a deletion, a mode change. */
+function history(name: string) {
   const source = repository(`${name}-source`);
   const shas = [
     commit(source, 'first', { 'README.md': '# a\n' }),
@@ -122,8 +117,39 @@ function stage(name: string) {
     commit(source, 'fourth', { 'src/gone.ts': null }),
     commit(source, 'fifth', { 'docs/note.md': 'a note long enough that its base64 body is longer than the threshold\n' }),
   ];
+  return { source, shas };
+}
+
+/**
+ * A source repository with five commits, and a bare remote **cloned** from it.
+ *
+ * A clone carries every object the source can reach, so this remote already holds the
+ * commits above the branch it points at. That is the right fixture for the refusals -- every
+ * one of them is settled before an object would have to be written -- and it is the **wrong**
+ * one for a case that needs the remote to be without a commit, which is why `staged` exists.
+ * It said "none for the ones above it" until v3.60, which a clone does not do: the comment
+ * described a fidelity the fixture had never had (finding 449).
+ */
+function stage(name: string) {
+  const { source, shas } = history(name);
   const remote = join(SCRATCH, `${name}-remote.git`);
   git(SCRATCH, ['clone', '-q', '--bare', source, remote]);
+  return { source, remote, shas };
+}
+
+/**
+ * The same five commits, and a bare remote that holds exactly the history it was sent.
+ *
+ * Pushed rather than cloned, so a commit above `upto` is genuinely absent -- from the object
+ * store, not only from the branch graph -- and an upload that silently did nothing leaves a
+ * different tree. `upto: null` is a repository with no refs at all, which is the state a first
+ * push meets and the only one where the root commit has no parent.
+ */
+function staged(name: string, upto: number | null) {
+  const { source, shas } = history(name);
+  const remote = join(SCRATCH, `${name}-remote.git`);
+  git(SCRATCH, ['init', '-q', '--bare', remote]);
+  if (upto !== null) git(source, ['push', '-q', remote, `${shas[upto]}:refs/heads/main`]);
   return { source, remote, shas };
 }
 
@@ -171,8 +197,9 @@ describe('the sentence a refusal names the refs it found with', { timeout: FILE_
 
 describe('publishing to a repository through the local transport', { timeout: FILE_TIMEOUT_MS }, () => {
   it('replays every commit the remote does not have, and the remote log becomes the local log', () => {
-    const { source, remote, shas } = stage('replay');
-    at(remote, shas[1]!);
+    // Pushed rather than cloned: the commits above the branch are absent from the remote's
+    // object store, so the blobs this case uploads are the blobs that arrive.
+    const { source, remote, shas } = staged('replay', 1);
     const transport = localTransport({ remote });
 
     return publish({ root: source, rev: 'HEAD', branch: 'main', transport }).then((result) => {
@@ -231,13 +258,15 @@ describe('publishing to a repository through the local transport', { timeout: FI
     expect(lines.join('\n')).toContain('on the remote tip');
   });
 
-  it('publishes a whole history onto a branch that does not exist yet', async () => {
-    const { source, remote, shas } = stage('unborn');
-    git(remote, ['update-ref', '-d', 'refs/heads/main']);
+  it('publishes a whole history onto a branch on a repository with no refs at all', async () => {
+    const { source, remote, shas } = staged('unborn', null);
     const transport = localTransport({ remote });
     const result = await publish({ root: source, rev: 'HEAD', branch: 'main', transport });
 
     expect(result.identical).toBe(true);
+    // The root commit is published with no parent, which is the one step a plan can only
+    // carry onto a repository that holds nothing: the five commits are named unchanged.
+    expect(result.identity).toEqual({ state: 'exact', commits: 5, base: 'unborn' });
     expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
     expect(log(remote, 'main')).toBe(log(source, 'HEAD'));
   });
@@ -259,17 +288,66 @@ describe('publishing to a repository through the local transport', { timeout: FI
     expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
   });
 
-  it('publishes onto a branch that does not exist when the caller says it is new', async () => {
+  it('creates a name for a commit the remote already holds, and builds nothing', async () => {
+    // A clone carries every object the source has, so the remote holds the tip while no
+    // branch says so. Until v3.60 the creation path replayed the whole history anyway: the
+    // plan walked back from the absent branch and found nowhere to hang, so five commits
+    // were rebuilt as new objects for a name that needed one reference (finding 447).
     const { source, remote, shas } = stage('declared-new');
     at(remote, shas[1]!);
     const transport = localTransport({ remote });
+    const lines: string[] = [];
 
-    const result = await publish({ root: source, rev: 'HEAD', branch: 'release', transport, newBranch: true });
+    const result = await publish({
+      root: source,
+      rev: 'HEAD',
+      branch: 'release',
+      transport,
+      newBranch: true,
+      log: (line: string) => lines.push(line),
+    });
     expect(result.identical).toBe(true);
+    expect(result.tip).toBe(shas[4]!);
+    expect(result.identity).toEqual({ state: 'held', commits: 0, base: null });
+    expect(result.plan.commits).toEqual([]);
+    expect(lines.join('\n')).toContain(`the remote already holds ${shas[4]!.slice(0, 9)}`);
     expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
     // The branch that was there did not move: a new branch is a second name for the same
     // history, not a push that lands on the wrong one as well.
     expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+  });
+
+  it('replays the history onto a new branch when the remote does not hold the commit', async () => {
+    const { source, remote, shas } = staged('declared-new-replay', 2);
+    const transport = localTransport({ remote });
+    const lines: string[] = [];
+
+    const result = await publish({
+      root: source,
+      rev: 'HEAD',
+      branch: 'release',
+      transport,
+      newBranch: true,
+      log: (line: string) => lines.push(line),
+    });
+    expect(result.identity).toEqual({ state: 'exact', commits: 5, base: 'unborn' });
+    expect(lines.join('\n')).toContain(`the remote does not hold ${shas[4]!.slice(0, 9)}`);
+    expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
+    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[2]!);
+  });
+
+  it('refuses --new-branch for a branch that exists, because the flag is a claim about the remote', async () => {
+    // The flag was read as permission and not as a statement. A push that says "this branch
+    // is new" onto a branch that is there is a push whose author is wrong about the remote,
+    // and publishing it would move a branch they believe they are creating.
+    const { source, remote, shas } = stage('claim');
+    at(remote, shas[3]!);
+    const transport = localTransport({ remote });
+
+    await expect(publish({ root: source, rev: 'HEAD', branch: 'main', transport, newBranch: true })).rejects.toThrow(
+      /'main' already exists at [0-9a-f]{9} and --new-branch says it does not/,
+    );
+    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[3]!);
   });
 
   it('publishes onto a twin of a local ancestor, and says the names are the only difference', async () => {
@@ -328,6 +406,22 @@ describe('publishing to a repository through the local transport', { timeout: FI
       /the branch 'main' was absent when the plan was made and is not now: it is [0-9a-f]{9}/,
     );
     expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
+  });
+
+  it('answers whether the remote holds a commit, and a blob it holds is not one', async () => {
+    // The question the creation path turns on. A remote that holds a blob is not a remote
+    // that holds the history that blob appears in, so the answer is asked of `^{commit}`
+    // rather than of the object store at large.
+    const { source, remote, shas } = staged('holds', 2);
+    const transport = localTransport({ remote });
+    try {
+      expect(await transport.holds(shas[2]!)).toBe(true);
+      expect(await transport.holds(shas[3]!)).toBe(false);
+      const blob = git(source, ['rev-parse', `${shas[2]}:README.md`]).trim();
+      expect(await transport.holds(blob)).toBe(false);
+    } finally {
+      transport.dispose();
+    }
   });
 
   it('does not ask for a ref listing on the ordinary path, where the branch read answered', async () => {
@@ -432,6 +526,7 @@ interface Behaviour {
   refsStatus: number | null;
   refsNotAList: boolean;
   createStatus: number | null;
+  commitStatus: number | null;
   loseMessageTail: boolean;
 }
 
@@ -458,6 +553,7 @@ async function api(remote: string) {
     refsStatus: null,
     refsNotAList: false,
     createStatus: null,
+    commitStatus: null,
     loseMessageTail: false,
   };
   const local = localTransport({ remote });
@@ -512,7 +608,20 @@ async function api(remote: string) {
         return send(200, behaviour.refsNotAList ? { refs: names } : names.map((ref) => ({ ref, object: { sha: '0'.repeat(40) } })));
       }
       if (request.method === 'GET' && path.startsWith('/git/commits/')) {
-        const commit = await local.commit(path.slice('/git/commits/'.length));
+        if (behaviour.commitStatus !== null) return fail(behaviour.commitStatus, 'this commit is not readable');
+        const sha = path.slice('/git/commits/'.length);
+        // The API answers 404 for a commit it does not hold, and until v3.60 this route
+        // could not: `local.commit` throws on a missing object, the catch answered 500, and
+        // the one state the creation path has to tell apart -- "the remote already holds it"
+        // -- was inexpressible here. `holds` reads that status, so the stand-in owes it.
+        //
+        // Asked with `cat-file -e` directly rather than through the transport's own `holds`:
+        // a fixture that answers the question with the code being asked about it would agree
+        // with any answer that code gave.
+        if (spawnSync('git', ['-C', remote, 'cat-file', '-e', `${sha}^{commit}`]).status !== 0) {
+          return fail(404, 'Not Found');
+        }
+        const commit = await local.commit(sha);
         return send(200, { sha: commit.sha, tree: { sha: commit.tree } });
       }
       if (request.method === 'GET' && path.startsWith('/git/trees/')) {
@@ -773,8 +882,11 @@ describe('publishing through the GitHub transport, against a server that writes 
   });
 
   it('publishes the whole history when the branch does not exist yet', async () => {
-    const { source, remote, shas } = stage('http-unborn');
-    git(remote, ['update-ref', '-d', 'refs/heads/main']);
+    // A repository with no refs at all, and objects the remote has never seen: this is the
+    // state a first push meets, and the only one where the root commit is published on
+    // nothing. A clone would not do -- it carries every object, so the push would be a name
+    // for a commit that was already there.
+    const { source, remote, shas } = staged('http-unborn', null);
     const server = await api(remote);
     try {
       const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
@@ -790,6 +902,83 @@ describe('publishing through the GitHub transport, against a server that writes 
       // because the server here created the branch on the PATCH -- a call the API refuses.
       expect(server.behaviour.requests).toContain('POST /repos/owner/repo/git/refs');
       expect(server.behaviour.requests.filter((key) => key.startsWith('PATCH'))).toEqual([]);
+      // The question that decides whether the history has to be replayed at all: a commit
+      // the remote does not hold is a 404 here, and it is asked before the first upload
+      // rather than after it. Before v3.60 the creation path never asked, and answered
+      // "does not hold it" by rebuilding three hundred commits whatever the remote had.
+      const asked = server.behaviour.requests;
+      const question = asked.indexOf(`GET /repos/owner/repo/git/commits/${shas[4]}`);
+      expect(question).toBeGreaterThan(-1);
+      expect(question).toBeLessThan(asked.findIndex((key) => key.startsWith('POST')));
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('names a commit the remote already holds with three requests, and writes no object', async () => {
+    // The creation path's whole cost when the objects are there: the branch read, the
+    // question, the creation. The plan it prints is empty, because there is nothing to build.
+    const { source, remote, shas } = stage('http-pointer');
+    at(remote, shas[1]!);
+    const server = await api(remote);
+    try {
+      const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
+      const result = await publish({ root: source, rev: 'HEAD', branch: 'release', transport, newBranch: true });
+      expect(result.state).toBe('published');
+      expect(result.identical).toBe(true);
+      expect(result.identity).toEqual({ state: 'held', commits: 0, base: null });
+      expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
+      expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+      expect(server.behaviour.requests).toEqual([
+        'GET /repos/owner/repo/git/ref/heads/release',
+        `GET /repos/owner/repo/git/commits/${shas[4]}`,
+        'POST /repos/owner/repo/git/refs',
+      ]);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('says what a dry run would do rather than naming commits it would not build', async () => {
+    const { source, remote, shas } = stage('http-pointer-dry');
+    at(remote, shas[2]!);
+    const server = await api(remote);
+    try {
+      const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
+      const result = await publish({
+        root: source,
+        rev: 'HEAD',
+        branch: 'release',
+        transport,
+        newBranch: true,
+        dryRun: true,
+      });
+      expect(result.state).toBe('planned');
+      expect(result.plan.commits).toEqual([]);
+      // Still absent: a dry run reads the remote and creates nothing, including the name.
+      expect(spawnSync('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/release']).status).not.toBe(0);
+      expect(server.behaviour.requests.filter((key) => key.startsWith('POST'))).toEqual([]);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('forwards a refusal on the question rather than replaying a history it could not read', async () => {
+    // A `403` on the commit read is not a commit that is absent, and the two differ by a
+    // replay of a history the remote already has -- which for this channel is three hundred
+    // uploads. So the status is forwarded, and nothing is written.
+    const { source, remote, shas } = staged('http-pointer-refused', 1);
+    const server = await api(remote);
+    server.behaviour.commitStatus = 403;
+    try {
+      const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
+      const error = await publish({ root: source, rev: 'HEAD', branch: 'release', transport, newBranch: true }).catch(
+        (caught: unknown) => caught,
+      );
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as { status: number }).status).toBe(403);
+      expect(server.behaviour.requests.filter((key) => key.startsWith('POST'))).toEqual([]);
+      expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
     } finally {
       await server.close();
     }
@@ -805,9 +994,15 @@ describe('publishing through the GitHub transport, against a server that writes 
     server.behaviour.createStatus = 422;
     try {
       const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
-      await expect(publish({ root: source, rev: 'HEAD', branch: 'main', transport })).rejects.toThrow(
-        /the branch 'main' was absent when the plan was made and is not now/,
+      const error = await publish({ root: source, rev: 'HEAD', branch: 'main', transport }).catch(
+        (caught: unknown) => caught,
       );
+      // Two states wear this 422, and the sentence names both: the name was taken while the
+      // push was being made, or the commit the ref was to name is not there after all (a
+      // remote may collect an object between the question and the creation). The channel
+      // cannot tell them apart without a second read it refuses to make, so it says so.
+      expect(String((error as Error).message)).toMatch(/was absent when the plan was made and is not now/);
+      expect(String((error as Error).message)).toMatch(/or the commit it was to name is not there after all/);
       expect(spawnSync('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/main']).status).not.toBe(0);
     } finally {
       await server.close();
@@ -830,8 +1025,11 @@ describe('publishing through the GitHub transport, against a server that writes 
   });
 
   it('reads a 409 on the listing as an empty repository, which is what the status says', async () => {
-    const { source, remote, shas } = stage('http-empty-409');
-    git(remote, ['update-ref', '-d', 'refs/heads/main']);
+    // A repository with no refs at all: the API announces it with a status instead of a
+    // list, and what follows is a first push. Until v3.60 the fixture was a clone with its
+    // branch deleted -- objects and all -- so the push that followed was a name for a commit
+    // that was already there, and the case passed without ever publishing anything.
+    const { source, remote, shas } = staged('http-empty-409', null);
     const server = await api(remote);
     server.behaviour.refsStatus = 409;
     try {
@@ -926,7 +1124,11 @@ describe('publishing through the GitHub transport, against a server that writes 
       });
       const error = await transport.commit('f'.repeat(40)).catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(ApiError);
-      expect((error as { status: number }).status).toBe(500);
+      // The status a caller must tell from a `422` is the one the API actually answers for a
+      // commit it does not hold. This case asserted `500` until v3.60, because the stand-in
+      // read a missing object through git and forwarded the exception -- so the number here
+      // was the fixture's, not the API's (finding 449).
+      expect((error as { status: number }).status).toBe(404);
     } finally {
       await server.close();
     }
@@ -1137,7 +1339,7 @@ describe('the command line a push goes through', { timeout: FILE_TIMEOUT_MS }, (
     }
   });
 
-  it('publishes onto a new branch when the flag says the branch is meant to be new', () => {
+  it('creates a new branch on a commit the remote already holds, and says it built nothing', () => {
     const { source, remote, shas } = stage('cli-new-branch');
     at(remote, shas[1]!);
     // `--new-branch` is first on purpose: the argument loop advances by two for a flag that
@@ -1148,8 +1350,36 @@ describe('the command line a push goes through', { timeout: FILE_TIMEOUT_MS }, (
       '--transport', 'local', '--remote', remote,
     ]);
     expect(result.status).toBe(0);
+    // Not `VERIFIED`: nothing was rebuilt, so there is no round trip to certify. The sentence
+    // is the one this push earned -- the name was created, and the bytes were already there.
+    expect(result.stdout).toContain('this push created the name and rebuilt nothing');
+    expect(result.stdout).not.toContain('VERIFIED');
+    expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
+  });
+
+  it('publishes onto a new branch the remote does not hold, and certifies the bytes', () => {
+    const { source, remote, shas } = staged('cli-new-branch-replay', 2);
+    const result = run([
+      '--new-branch', '--rev', 'HEAD', '--branch', 'release', '--root', source,
+      '--transport', 'local', '--remote', remote,
+    ]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('the remote does not hold');
+    expect(result.stdout).toContain('1/5');
     expect(result.stdout).toContain('VERIFIED');
     expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
+  });
+
+  it('refuses --new-branch from the command line when the branch is already there', () => {
+    const { source, remote, shas } = stage('cli-new-branch-claim');
+    at(remote, shas[1]!);
+    const result = run([
+      '--new-branch', '--rev', 'HEAD', '--branch', 'main', '--root', source,
+      '--transport', 'local', '--remote', remote,
+    ]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("'main' already exists");
+    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
   });
 
   it('says a twin made the names differ, instead of calling the history foreign', () => {
@@ -1186,5 +1416,35 @@ describe('the command line a push goes through', { timeout: FILE_TIMEOUT_MS }, (
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('nothing was created');
     expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[3]!);
+  });
+
+  it('says when the receipt rule was not asked, rather than skipping it quietly', () => {
+    // `--no-gate` is used by the one push that publishes no content, so the difference
+    // between "the gate blessed this tree" and "nobody asked" has to be in the transcript.
+    const { source, remote, shas } = stage('cli-no-gate');
+    at(remote, shas[3]!);
+    const result = run([
+      '--rev', 'HEAD', '--branch', 'main', '--root', source, '--transport', 'local', '--remote', remote, '--no-gate',
+    ]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('--no-gate: the receipt rule was not asked');
+    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
+  });
+
+  it('says a dry run of the pointer path would create the name, not publish no commits', () => {
+    // "0 commit(s) would be published; nothing was created" is true of this plan and tells
+    // the reader the opposite of what would happen: the ref would move, and it is the only
+    // thing that would.
+    const { source, remote, shas } = stage('cli-dry-pointer');
+    at(remote, shas[1]!);
+    const result = run([
+      '--new-branch', '--rev', 'HEAD', '--branch', 'release', '--root', source,
+      '--transport', 'local', '--remote', remote, '--dry-run',
+    ]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('one request would create the branch');
+    expect(result.stdout).not.toContain('0 commit(s) would be published');
+    expect(spawnSync('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/release']).status).not.toBe(0);
+    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
   });
 });

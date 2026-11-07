@@ -26,20 +26,27 @@
  * had lost two thirds of its commits. Comparing commits compares the thing the round
  * wrote.
  *
- * ## What the transport interface is, and why it is four calls
+ * ## What the transport interface is, and why it is six calls
  *
- * A transport answers five questions and changes three things:
+ * A transport answers six questions and changes three things:
  *
  *   head(branch)        -> {sha} | null            (a branch that does not exist yet)
+ *   refs()              -> [name]                  (asked only when the branch read said 404)
+ *   holds(sha)          -> boolean                 (asked only on the creation path)
  *   commit(sha)         -> {sha, tree}
  *   tree(sha)           -> {entries, truncated}    (the whole listing, flat)
  *   createTree({base, entries, blobs}) -> tree sha
  *   createCommit({message, tree, parents, author, committer}) -> commit sha
  *   updateRef({branch, sha, expected}) -> void
  *
- * Six, and each is one of the Git Data API's own endpoints. A transport that had to know
- * what a plan is would be a second decision, and the two copies would disagree the first
- * time one of them learned something.
+ * Each is one of the Git Data API's own endpoints. A transport that had to know what a plan
+ * is would be a second decision, and the two copies would disagree the first time one of
+ * them learned something.
+ *
+ * `holds` is the sixth question and it exists for one state: a branch that does not exist
+ * on a remote that already has the commit. The channel replayed the whole history there
+ * until v3.60 -- a name for a commit the remote had held for two hundred and forty-six
+ * commits, paid for with three hundred uploads (finding 447).
  */
 
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
@@ -52,6 +59,7 @@ import {
   runGit,
   locateBase,
   planPublish,
+  pointerPlan,
   predictRebuild,
   readAncestry,
   readBlob,
@@ -166,6 +174,18 @@ export async function publish({
   if (gate) requireReceipt({ root, rev, tree: tipTree });
 
   const remote = await readRemote({ transport, branch });
+  if (newBranch && remote.head !== null) {
+    // The flag is a claim about the remote, not a permission slip. It was read as the second
+    // until v3.60: a push that said "this branch is new" onto a branch that was there
+    // published onto it, moving a branch its author believed they were creating -- and the
+    // next reader of that branch finds a history somebody meant to put elsewhere. The two
+    // halves of the flag are one statement, so a false one is refused rather than ignored.
+    throw new TypeError(
+      `'${branch}' already exists at ${remote.head.slice(0, 9)} and --new-branch says it does not: a push that was ` +
+        'meant to create a branch must not move one. Drop the flag to publish onto this branch, or name the branch ' +
+        'that is meant to be new',
+    );
+  }
   if (remote.head === null && !newBranch) {
     // A `404` on the branch read is two states wearing one status, and only one of them is
     // this channel's business. On an empty repository the branch is unborn and replaying
@@ -187,6 +207,41 @@ export async function publish({
           'Pass --new-branch to say the branch is meant to be new',
       );
     }
+  }
+  // The creation path, and the one case where it costs a request instead of a history.
+  //
+  // A branch that does not exist on a remote that already holds the tip needs one call and
+  // no object: a commit is closed, so a remote holding it holds its tree, its parents and
+  // every ancestor with it. The question is asked here rather than in `readRemote` because
+  // only this branch of the decision has anything to do with the answer, and the ordinary
+  // push -- a branch that exists -- pays nothing for a question it does not ask.
+  //
+  // It is one request either way: `404` is the answer "no", and it is asked before the
+  // ancestry is read, because a push that is going to build nothing has no window to compute.
+  if (remote.head === null) {
+    if (await transport.holds(tip)) {
+      const plan = pointerPlan({ tree: tipTree });
+      log(
+        `the remote already holds ${tip.slice(0, 9)}: naming it is the whole push, and no commit is created -- ` +
+          "the tree this gate blessed is that commit's own tree, because a commit's bytes contain it",
+      );
+      // A dry run has to say the same thing as the push, and here the difference is the one
+      // fact the plan cannot carry: the number of commits built is zero and the ref still moves.
+      if (dryRun) return { state: 'planned', remote, plan, tip: null, identical: false };
+      await transport.updateRef({ branch, sha: tip, expected: null });
+      return {
+        state: 'published',
+        remote,
+        plan,
+        tip,
+        // The strongest case of `identical` there is: no byte crossed the wire, so the
+        // branch names the commit the local repository holds and not a rebuild of it. The
+        // assertion the rebuild path has to make after the fact is here an identity.
+        identical: true,
+        identity: { state: 'held', commits: 0, base: null },
+      };
+    }
+    log(`the remote does not hold ${tip.slice(0, 9)}: this push will build the commits that lead to it`);
   }
   const ancestry = readAncestry({ root, rev: tip });
 
@@ -523,6 +578,26 @@ export function githubTransport({
       }
       return listing.map((ref) => String(ref.ref));
     },
+    /**
+     * Whether the remote holds a commit.
+     *
+     * The one question the creation path asks before it decides to replay a history, and it
+     * is asked once because a commit is closed: a remote that holds it holds its tree, its
+     * parents and every ancestor, so the tip is the only name that has to be checked.
+     *
+     * `404` is the answer that means "no". Every other status is forwarded, because a `403`
+     * on this read is not a commit that is absent -- and the two differ by a replay of a
+     * history the remote already has, which on this repository is three hundred uploads.
+     */
+    async holds(sha) {
+      try {
+        await call('GET', `/git/commits/${sha}`);
+        return true;
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) return false;
+        throw error;
+      }
+    },
     async commit(sha) {
       const commit = await call('GET', `/git/commits/${sha}`);
       return { sha: commit.sha, tree: commit.tree.sha };
@@ -589,7 +664,8 @@ export function githubTransport({
           if (!(error instanceof ApiError) || error.status !== 422) throw error;
           throw new TypeError(
             `the branch '${branch}' was absent when the plan was made and is not now: the name was taken while ` +
-              'the commits were being created, and nothing was forced — re-read the branch and plan again',
+              'this push was being made, or the commit it was to name is not there after all. Nothing was forced ' +
+              '— re-read the branch and plan again',
           );
         }
         return;
@@ -657,6 +733,10 @@ export function localTransport({ remote }) {
     async refs() {
       const out = runGit(remote, ['for-each-ref', '--format=%(refname)'], { encoding: 'utf8' });
       return out.split('\n').filter((name) => name !== '');
+    },
+    /** The same question of the object store: `cat-file -e` on the peel answers by status. */
+    async holds(sha) {
+      return spawnSync('git', ['-C', remote, 'cat-file', '-e', `${sha}^{commit}`]).status === 0;
     },
     async commit(sha) {
       const raw = runGit(remote, ['cat-file', 'commit', requireSha(sha, 'a commit to read')], { encoding: 'utf8' });

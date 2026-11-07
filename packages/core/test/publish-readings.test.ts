@@ -468,7 +468,23 @@ async function api() {
         if (behaviour.refuseBase64 && body.encoding === 'base64') return send(400, { message: 'malformed request' });
         return send(201, { sha: 'b'.repeat(40) });
       }
-      return send(201, { sha: 'c'.repeat(40) });
+      if (key === 'POST /repos/owner/repo/git/trees') {
+        return send(201, { sha: 'c'.repeat(40) });
+      }
+      if (key === 'POST /repos/owner/repo/git/commits') {
+        return send(201, { sha: 'c'.repeat(40) });
+      }
+      if (key.startsWith('GET /repos/owner/repo/git/commits/')) {
+        // This stand-in's world holds no objects, so every commit it is asked about is one
+        // it does not have. Until v3.60 the catch-all below answered `201` here -- a success
+        // for a question nobody had asked -- and the creation path read it as "the remote
+        // already holds the tip", which was true of no repository at all (finding 449).
+        return send(404, { message: 'Not Found' });
+      }
+      // The catch-all refuses rather than succeeds: a route this stand-in does not know is a
+      // route nobody has decided anything about, and answering it with a created object let
+      // one of those decisions be made by accident.
+      return send(404, { message: `no route for ${key}` });
     })();
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -661,17 +677,20 @@ describe('the command line that keeps the reading', () => {
     expect(result.stdout).toContain('nothing was created');
     expect(result.stdout).toContain('publish-readings: 1 push(es)');
     expect(result.stdout).toContain('1 with a named tip');
-    // Two requests, not one: the 404 on the branch read is followed by the listing that
-    // says whether the branch is new or the name is wrong, and the recording counts the
-    // question as well as the answer. A summary that said "1 request" here would be a
-    // number taken from before the channel learned to ask.
-    expect(result.stdout).toContain('2 request(s)');
+    // Three requests, not one: the 404 on the branch read is followed by the listing that
+    // says whether the branch is new or the name is wrong, and by the question this round
+    // added -- whether the remote already holds the tip, which decides between a replay of
+    // the whole history and one `POST /git/refs`. The recording counts the questions as well
+    // as the answers. A summary that said "1 request" here would be a number taken from
+    // before the channel learned to ask.
+    expect(result.stdout).toContain('3 request(s)');
     expect(result.stdout).toContain('(1 push(es) in');
     const pushes = JSON.parse(readFileSync(file, 'utf8'));
     expect(readingErrors(pushes)).toEqual([]);
     expect(pushes[0]).toMatchObject({ rev: revision, branch: 'main' });
     expect(pushes[0].rows[0]).toMatchObject({ method: 'GET', path: '/git/ref/heads/main', attempt: 1, status: 404 });
     expect(pushes[0].rows[1]).toMatchObject({ method: 'GET', path: '/git/refs?per_page=100', attempt: 1, status: 200 });
+    expect(pushes[0].rows[2]).toMatchObject({ method: 'GET', path: `/git/commits/${revision}`, attempt: 1, status: 404 });
   });
 
   it('appends to a history that already holds another push, and counts both', async () => {
