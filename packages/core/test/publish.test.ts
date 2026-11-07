@@ -33,6 +33,29 @@ import { ApiError, githubTransport, isNetworkFailure, localTransport, publish, r
 /** The gate this file spawns, declared so the two accounts of it agree. */
 export const DRIVES = ['scripts/publish-cli.mjs'];
 
+/**
+ * The budget every suite in this file carries, because the file is a sum of process starts.
+ *
+ * A push is executed by spawning `git`: a case that publishes four commits runs `rev-parse`,
+ * `cat-file`, `read-tree`, `update-index`, `write-tree` and `commit-tree` once per commit and
+ * once per blob, and the assertions after it run `ls-tree`, `log` and `rev-parse` again. No
+ * single call is slow; the file is.
+ *
+ * Measured: **6.95 s** of test time standalone, worst of three passes (6.23 / 6.57 / 6.95), so
+ * the file already costs more than vitest's 5 000 ms default before anything goes wrong. On CI
+ * run 42331765380 one case -- *carries a deletion and a mode change* -- was reported at
+ * `Test timed out in 5000ms` while every other test in the run passed, which is the shape
+ * `timeout-budget.test.ts` records for three other files: a test that costs half a second and
+ * is reported at five was not doing five seconds of work, the process it ran in was not being
+ * scheduled.
+ *
+ * On the suite rather than on the test, for the reason that file states: a budget applied where
+ * a stall happened to be noticed protects that test and leaves the next one written on the
+ * default. 30 000 ms is five times the worst reading, and it is the number the two other files
+ * in `SUITE_BUDGET_MS` carry.
+ */
+const FILE_TIMEOUT_MS = 30_000;
+
 const SCRATCH = mkdtempSync(join(tmpdir(), 'rca-publish-'));
 afterAll(() => rmSync(SCRATCH, { recursive: true, force: true }));
 
@@ -120,7 +143,7 @@ function log(root: string, rev: string) {
  * that do exist are the answer, and they are put in one sentence whose only judgement is
  * how much of a long list to print.
  */
-describe('the sentence a refusal names the refs it found with', () => {
+describe('the sentence a refusal names the refs it found with', { timeout: FILE_TIMEOUT_MS }, () => {
   it('names branches and tags separately, because they are different kinds of ref', () => {
     expect(refSentence(['refs/heads/main', 'refs/tags/v1.0'])).toBe('1 branch(es): main; 1 tag(s): v1.0');
   });
@@ -146,7 +169,7 @@ describe('the sentence a refusal names the refs it found with', () => {
   });
 });
 
-describe('publishing to a repository through the local transport', () => {
+describe('publishing to a repository through the local transport', { timeout: FILE_TIMEOUT_MS }, () => {
   it('replays every commit the remote does not have, and the remote log becomes the local log', () => {
     const { source, remote, shas } = stage('replay');
     at(remote, shas[1]!);
@@ -577,7 +600,7 @@ async function api(remote: string) {
   };
 }
 
-describe('publishing through the GitHub transport, against a server that writes real objects', () => {
+describe('publishing through the GitHub transport, against a server that writes real objects', { timeout: FILE_TIMEOUT_MS }, () => {
   it('reconstructs three commits byte for byte over HTTP', async () => {
     const { source, remote, shas } = stage('http');
     at(remote, shas[1]!);
@@ -910,7 +933,7 @@ describe('publishing through the GitHub transport, against a server that writes 
   });
 });
 
-describe('the refusals that a broken transport produces', () => {
+describe('the refusals that a broken transport produces', { timeout: FILE_TIMEOUT_MS }, () => {
   it('refuses a rebuilt tip whose tree is not the tree the gate blessed', async () => {
     const { source, remote, shas } = stage('lying-tree');
     at(remote, shas[3]!);
@@ -1028,7 +1051,7 @@ describe('the refusals that a broken transport produces', () => {
   });
 });
 
-describe('the command line a push goes through', () => {
+describe('the command line a push goes through', { timeout: FILE_TIMEOUT_MS }, () => {
   const CLI = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'scripts', 'publish-cli.mjs');
 
   function run(args: string[], env: Record<string, string> = {}) {

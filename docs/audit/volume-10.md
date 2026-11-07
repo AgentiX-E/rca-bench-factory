@@ -2912,3 +2912,33 @@ probe of finding 440 measured four message shapes and the returned SHA matched t
 in every one. What the case buys is the difference between a verdict that is computed and a
 verdict that is asserted -- and, in the mutation battery, the substitution that removes the
 refusal turns it red.
+
+## Finding 445 — a file whose cost reached the default was not in the table that looks for it
+
+The push of finding 440 was green: 8 of 8, first run, no rerun. The push after it -- two
+documentation lines and a readings file -- came back **red**, on `build / typecheck / lint /
+coverage / mutation`, at `Test with coverage`:
+
+> `publishing to a repository through the local transport > carries a deletion and a mode change,
+> because both are entries and not absences` -- `Test timed out in 5000ms` (5 293 ms)
+
+Every other test in the run passed. The commit changed no code at all, which is the fact that
+decides what kind of defect this is: the same tree passed an hour earlier, so what failed was not
+a decision the diff made.
+
+`timeout-budget.test.ts` exists for exactly this shape and its own comment says the honest thing
+about itself -- *it checks every row it has and cannot discover a row it does not*. `publish.test.ts`
+was not a row. Measured, it costs **6.95 s** of test time standalone (worst of three passes; 6.23
+and 6.57 the others), so the file had already been running past vitest's 5 000 ms default on every
+green run, and the default was being spent one test at a time: a single case reported at 5 293 ms
+is a case that costs half a second in a process that was not being scheduled.
+
+The repair is the one the table prescribes and not a new idea: the budget goes on the **suite**,
+because a budget applied where a stall happened to be noticed protects that test and leaves the
+next one written on the default. Five suites in the file, `30 000` ms each, five times the worst
+reading, and the same number the two other files in the table carry -- a reader can check a
+consistency where they cannot check an invention.
+
+What this round does not claim: that the file is now safe on any runner. It claims that the file's
+cost is above the default, that it says so, and that the number is a measured one. A table that
+cannot discover its own omissions will be extended by the next red, which is how this row arrived.

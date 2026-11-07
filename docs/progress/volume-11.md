@@ -2265,6 +2265,21 @@ remote's past.
 24 requests, none retried, slowest `POST /git/blobs` 2 382 ms -- and CI **8 of 8 green on the
 first push**, no rerun.
 
+### 八、收尾那一脚踩空的地方，正好是清单自己说它看不见的
+
+The close-out push -- two documentation lines and a readings file, no code -- came back red on
+`Test with coverage`, at `publishing to a repository through the local transport > carries a
+deletion and a mode change`, `Test timed out in 5000ms` (5 293 ms), with every other test in the
+run passing. The same tree had been green an hour earlier, so what failed was not a decision the
+diff made; it was the default being spent one test at a time.
+
+`timeout-budget.test.ts` exists for this shape and says of itself that it *checks every row it has
+and cannot discover a row it does not*. `publish.test.ts` was not a row: measured, it costs
+**6.95 s** standalone (worst of three), so it had been running past the 5 000 ms default on every
+green run. The repair is the table's own prescription -- the budget on the **suite**, five suites
+at `30 000` ms, five times the worst reading and the same number the other rows carry -- and the
+row's `measured` sentence now carries the CI run that found it. Finding 445.
+
 ### Readings
 
 > Ledger for `v3.59`.
@@ -2279,7 +2294,7 @@ first push**, no rerun.
 | mutation | **21** substitutions; first pass **17 red, 3 survivors, 1 inert**; the survivors were two redundant columns and a sentence the case asserted only half of, the inert one a `from` that had moved; after the repair **21 of 21 red, 0 inert**, tree restored green |
 | failure sites | **126** across **59** of **85** scripts; throws **89** = 11 `fatal` + 68 `unguarded` + 1 `guarded` + 9 `rethrow` |
 | site proofs | **199** claims across **58** files, every one reached by the file that names it |
-| the history | `golden-master/publish-readings.json`: **8 attempts**, 143 rows. This round's push is attempt 8 -- 24 requests, 0 retried, slowest `POST /git/blobs` 2 382 ms -- and its verdict is the first computed one |
+| the history | `golden-master/publish-readings.json`: **9 attempts**, 151 rows. Attempt 8 carried the round (24 requests, 0 retried, slowest `POST /git/blobs` 2 382 ms) and its verdict is the first computed one; attempt 9 carried the reading of it and cost **8 requests**, 0 retried, slowest `GET /git/trees` 1 908 ms -- a docs-only push against a tip the remote already had |
 
 ### Left open, in the order the goal is reached
 

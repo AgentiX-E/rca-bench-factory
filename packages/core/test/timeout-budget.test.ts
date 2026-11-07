@@ -149,6 +149,15 @@ const STANDALONE_MS: Readonly<Record<string, number>> = {
   // every other test in the run passing. Measured: **9.62 s** of test time
   // standalone, worst of three passes, largest single test 2 083 ms.
   'reader-against-backend.test.ts': 9_620,
+  // Found by a red run, which is how this table grows: it checks every row it has and
+  // cannot discover a row it does not. CI run 42331765380 reported
+  // `publishing to a repository through the local transport > carries a deletion and a
+  // mode change` at `Test timed out in 5000ms` -- 5 293 ms -- with every other test in the
+  // run passing, on a commit that changed documentation only. Measured here: **6.95 s** of
+  // test time standalone, worst of three passes (6.23 / 6.57 / 6.95). A push is executed by
+  // spawning `git` once per commit, per tree and per blob, so the file is a sum of process
+  // starts rather than one slow call.
+  'publish.test.ts': 6_950,
 };
 
 /**
@@ -486,6 +495,13 @@ const SUITE_BUDGET_MS: Readonly<Record<string, { measured: string }>> = {
       'two others at 1 676 ms; one test reported at 5000 ms in a full-suite run of 226 files ' +
       'on a four-CPU quota. Eleven tests, each starting a server and waiting for it to stop, ' +
       'so the file is a sum of waits rather than one slow call',
+  },
+  'publish.test.ts': {
+    measured:
+      '6 950 ms for the file standalone, worst of three passes (6 230 / 6 570 / 6 950); one ' +
+      'test reported at 5 293 ms on CI run 42331765380 with every other test in the run ' +
+      'passing, on a commit that changed documentation only. Every case spawns `git` once per ' +
+      'commit, per tree and per blob, so the file is a sum of process starts',
   },
 };
 
