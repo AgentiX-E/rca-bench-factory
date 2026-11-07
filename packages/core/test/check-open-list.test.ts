@@ -279,3 +279,100 @@ describe('docs · the guard reads its subject, not the first sample of it', () =
     expect(r.out).toContain('counted twice');
   });
 });
+
+/**
+ * The list's currency, and the count that exposed how it was being counted.
+ *
+ * v3.61 closed three of the shipped list's entries and struck none of them: the list went on
+ * saying "open" about a page that had been made a page (finding 451), about a flag whose other
+ * half had been read (finding 446), and about a creation path that a real push had paid for
+ * (finding 455). A fourth `[open: ...]` was parked *inside* an entry that had been struck
+ * through, where neither a reader nor this guard looks.
+ *
+ * The repair is not another sentence about reading the list. It is a line at the top of it:
+ * which round read it, and how many entries it found open. This guard recomputes the number
+ * from the entries below the line and refuses a round older than the newest round the corpus
+ * names -- so a round that writes itself up without opening this file turns the build red.
+ *
+ * What it still cannot do is check that a surviving entry is *true*. That takes the
+ * measurement the entry is about, and a line of arithmetic cannot take one. The tests below
+ * are about the arithmetic.
+ */
+describe('docs · the live list says when it was read, and how much it holds', () => {
+  const ROUND = '## v3.62 -- the round that read it';
+  const withStamp = (entries: string[], stamp: string | null) =>
+    `${ROUND}\n\nbody\n\n## Open\n\n${stamp === null ? '' : `${stamp}\n\n`}${entries.join('\n')}\n\n## Pass log\n\nbody\n`;
+
+  it('passes when the stamp names the newest round and counts the entries below it', () => {
+    const r = runOn(withStamp([OPEN_ENTRY, CLOSED_ENTRY], 'Checked at v3.62: **1** entry open.'));
+    expect(r.out).toContain('the live list was read at v3.62 and holds 1 open entr(ies)');
+    expect(r.out).toContain('the newest round this corpus names is v3.62');
+    expect(r.code).toBe(0);
+  });
+
+  it('refuses a number that is not the count of the entries below the line', () => {
+    // The number is the whole point: it is what a reader compares against their own count.
+    const second = '- Another residual. [open: and another reason, long enough to be one of these]';
+    const r = runOn(withStamp([OPEN_ENTRY, second], 'Checked at v3.62: **1** entry open.'));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('says 1 entr(ies) open and the section holds 2');
+    expect(r.out).toContain('not counted from the entries it stands for');
+  });
+
+  it('refuses a stamp older than the newest round in the corpus', () => {
+    // This is the mechanism the three stale entries needed: the round that closed them wrote
+    // itself up and left the list alone, and nothing anywhere noticed.
+    const r = runOn(withStamp([OPEN_ENTRY], 'Checked at v3.61: **1** entry open.'));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('was last read at v3.61');
+    expect(r.out).toContain('names a round at v3.62');
+    expect(r.out).toContain('without reading the list');
+  });
+
+  it('refuses a live list that carries no stamp, when the corpus names a round to check it against', () => {
+    const r = runOn(withStamp([OPEN_ENTRY], null));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('carries no currency stamp');
+    expect(r.out).toContain('Checked at v3.62');
+  });
+
+  it('refuses two stamps, because "when was this list read" would have two answers', () => {
+    const r = runOn(withStamp([OPEN_ENTRY], 'Checked at v3.62: **1** entry open.\n\nChecked at v3.61: **1** entry open.'));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('carries 2 currency stamps');
+  });
+
+  it('says it had nothing to compare against, rather than passing quietly over a list nobody was asked to read', () => {
+    // Every fixture above this block is this shape: no round heading anywhere. The rule cannot
+    // be enforced there, and the output says which rule was not enforced and why.
+    const r = runOn(indexOpen([OPEN_ENTRY]));
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('carries no currency stamp, and this corpus names no round to check it against');
+  });
+
+  it('counts an entry as open when only a sentence inside it is struck through', () => {
+    // Finding 458, and the count above is what found it: the closed test looked for a
+    // strikethrough *anywhere* in the entry, so an entry that quotes a sub-item another round
+    // closed was counted as history -- and its own reason was never read, for length or for
+    // being a copy of another one. Two entries in the shipped list were in exactly that state.
+    const quoted = [
+      '- A residual that quotes a closure inside itself.',
+      '  ~~[open: an old sub-item]~~ Closed by finding 343, which settled the sub-item only.',
+      '  [open: the entry itself is still open, and this is the sentence that says why it is]',
+    ].join('\n');
+    const r = runOn(indexOpen([quoted, CLOSED_ENTRY]));
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('1 open with a reason, 1 closed by a finding');
+  });
+
+  it('reads the reason of such an entry, so a placeholder inside one is still refused', () => {
+    const quoted = [
+      '- A residual that quotes a closure inside itself.',
+      '  ~~[open: an old sub-item]~~ Closed by finding 343.',
+      '  [open: short]',
+    ].join('\n');
+    const r = runOn(indexOpen([quoted]));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('the open reason is 5 character(s)');
+  });
+});

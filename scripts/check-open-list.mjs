@@ -114,11 +114,62 @@ function source(rel) {
  *
  * `[^.]{0,120}?` keeps the citation in the closure's own sentence: "Closed by the
  * workflow. Finding 170 later found something else." must not read as a citation.
+ *
+ * ## The headline, not the whole entry (finding 458)
+ *
+ * A strikethrough was looked for **anywhere** in an entry, and that is not what a closed
+ * entry is: two live entries quote a struck sentence *inside* themselves -- a sub-item
+ * that a later round closed while the entry around it stayed open -- and both of them
+ * were therefore counted as closed. Their own reasons were never read: not for length,
+ * not for being a copy of another one. The count the currency stamp has to state is what
+ * exposed it, because the stamp said thirteen and this guard said eleven, and the
+ * difference was two entries neither of them could have named.
+ *
+ * An entry is closed when its **headline** is struck, which is what "struck through"
+ * means of a bullet: the first line is the claim, and the rest of the bullet is what the
+ * claim is about.
  */
 const CLOSED = /~~/;
 const CITED = /(?:Closed|Narrowed|Retracted)\b[^.]{0,120}?\b(?:finding\s+\d+|Pass\s+\d+|v\d+\.\d+)/;
 const UNCITED = /(?:Closed without a finding|Closed in this pass)[\s\S]{40,}/;
-const OPEN = /\[open:\s*([^\]]*)\]/;
+/**
+ * The entry's own reason, and why it is the **last** marker rather than the first.
+ *
+ * An entry may quote a marker inside itself -- the shipped list has two whose bodies carry a
+ * sub-item's `~~[open: ...]~~ Closed by finding N` -- and the entry's own reason comes after
+ * it, because the quote is history and the reason is the claim. Reading the first marker gave
+ * the quoted sub-item's reason to the entry: fifteen characters of history judged as if it
+ * were the reason a reader is being asked to act on (finding 458).
+ */
+const OPEN = /\[open:\s*([^\]]*)\]/g;
+
+/**
+ * The live list's currency stamp: which round read it, and how many entries it found open.
+ *
+ * ## Why a stamp, and what it is not
+ *
+ * v3.61 closed three of this list's entries and struck none of them. The list then said
+ * "open" about a page that had been made a page (finding 451), about a flag whose second
+ * half had been read (finding 446), and about a creation path that had been paid for by a
+ * real push (finding 455) -- and one more `[open: ...]` sat *inside* an entry that had been
+ * struck through, where neither a reader nor this guard looks.
+ *
+ * That is the fourth time this list has carried a stale entry, and the earlier repairs all
+ * had the same shape: a sentence was written about the defect and no reader was given to the
+ * list. This one is not another sentence. It is an arithmetic obligation at the top of the
+ * list: the stamp names the round that read it and the number of entries it found open, this
+ * guard recomputes the number from the section, and the round must be the newest one in the
+ * corpus -- so a round that writes itself up without opening this file turns the gate red.
+ *
+ * It cannot check that a surviving entry is still *true*. Nothing in this tree can: that
+ * needs the measurement the entry is about. What it can check is that somebody stood in
+ * front of all of them this round and counted, and that is the difference between the three
+ * stale entries above and a list that is merely wrong.
+ */
+const STAMP = /Checked at (v\d+\.\d+): \*\*(\d+)\*\* (?:entry|entries) open/g;
+
+/** The heading that opens a round in the corpus: `## v3.62 -- ...`. */
+const ROUND = /^## (v(\d+)\.(\d+))\b/;
 
 /**
  * Every section whose heading is one of `headings`, in document order, with its span.
@@ -191,6 +242,65 @@ function filesOf(doc) {
   return progressCorpus().map((file) => ({ path: file.path, label: file.label }));
 }
 
+/**
+ * The live list's currency, checked against the corpus that says which rounds happened.
+ *
+ * Two arithmetic facts and one structural one: the stamp exists, it is one, its number is
+ * the count of the entries below it, and its round is the newest round the corpus names.
+ * The last one is what turns "somebody should reread the list" into a red build.
+ *
+ * A corpus with no round heading -- every fixture, and any document that is not this log --
+ * has nothing to compare against, and this prints that it had nothing rather than passing
+ * quietly over a list it did not check.
+ */
+function stampChecks({ live, rounds, problems }) {
+  if (live.length === 0) return;
+  const newest = rounds.reduce(
+    (best, one) => (best === null || one.major > best.major || (one.major === best.major && one.minor > best.minor) ? one : best),
+    null,
+  );
+  for (const section of live) {
+    const stamps = [...section.text.matchAll(STAMP)];
+    if (stamps.length === 0) {
+      if (newest === null) {
+        console.log('check-open-list: the live list carries no currency stamp, and this corpus names no round to check it against');
+        continue;
+      }
+      problems.push(
+        `${section.label}: the live list carries no currency stamp, so nothing in it says a round read it -- ` +
+          `it needs \`Checked at ${newest.round}: **N** entries open\`, with N counted from the entries below it`,
+      );
+      continue;
+    }
+    if (stamps.length > 1) {
+      problems.push(
+        `${section.label}: the live list carries ${stamps.length} currency stamps, so "when was this list read" ` +
+          'has more than one answer and a reader cannot tell which is current',
+      );
+      continue;
+    }
+    const [, round, count] = stamps[0];
+    const stated = Number(count);
+    console.log(
+      `check-open-list: the live list was read at ${round} and holds ${section.open} open entr(ies)${
+        newest === null ? '' : `, and the newest round this corpus names is ${newest.round}`
+      }`,
+    );
+    if (stated !== section.open) {
+      problems.push(
+        `${section.label}: the live list says ${stated} entr(ies) open and the section holds ${section.open}, ` +
+          'so the number was not counted from the entries it stands for',
+      );
+    }
+    if (newest !== null && round !== newest.round) {
+      problems.push(
+        `${section.label}: the live list was last read at ${round} and this corpus names a round at ${newest.round}, ` +
+          'so that round wrote itself up without reading the list -- the shape finding 457 was raised for',
+      );
+    }
+  }
+}
+
 function check() {
   const problems = [];
   for (const doc of DOCS) {
@@ -201,6 +311,8 @@ function check() {
     // means corpus-wide, because one round's list and another round's list are the
     // same list read at two times.
     const reasons = new Map();
+    const live = [];
+    const rounds = [];
     let total = 0;
     let closed = 0;
     let sectionsSeen = 0;
@@ -215,6 +327,12 @@ function check() {
       continue;
     }
     const found = sections(text, doc.headings);
+    // The rounds this corpus says happened. Read from every file, because a volume is
+    // where a round is written and the index is where the list is: the stamp has to be
+    // comparable with the newest of them, and `--doc` makes that one file.
+    for (const match of text.matchAll(/^## (v(\d+)\.(\d+))\b/gm)) {
+      rounds.push({ round: match[1], major: Number(match[2]), minor: Number(match[3]) });
+    }
     if (found.length === 0) continue;
     headings += 1;
     sectionsSeen += found.length;
@@ -246,9 +364,11 @@ function check() {
         return;
       }
       total += items.length;
+      let openHere = 0;
       for (const item of items) {
-        const first = item.split('\n')[0].slice(2).trim();
-        if (CLOSED.test(item)) {
+        const headline = item.split('\n')[0];
+        const first = headline.slice(2).trim();
+        if (CLOSED.test(headline)) {
           if (CITED.test(item) || UNCITED.test(item)) {
             closed += 1;
             continue;
@@ -259,7 +379,8 @@ function check() {
           );
           continue;
         }
-        const open = item.match(OPEN);
+        const markers = [...item.matchAll(OPEN)];
+        const open = markers.length === 0 ? null : markers[markers.length - 1];
         if (!open) {
           problems.push(
             `${from.label}: an entry says neither that it is closed nor why it is open, so a reader ` +
@@ -267,6 +388,7 @@ function check() {
           );
           continue;
         }
+        openHere += 1;
         const reason = open[1].trim();
         if (reason.length < 40) {
           problems.push(
@@ -291,6 +413,7 @@ function check() {
         }
         reasons.set(key, first);
       }
+      if (kind === 'live') live.push({ label: from.label, text: section.lines.join('\n'), open: openHere });
     });
     }
     if (headings === 0) {
@@ -306,6 +429,7 @@ function check() {
       `check-open-list: OK (${total} entry(ies) across ${sectionsSeen} section(s) of ${files.length > 1 ? 'docs/progress.md and its volumes' : labelled}: ` +
         `${total - closed} open with a reason, ${closed} closed by a finding)`,
     );
+    stampChecks({ live, rounds, problems });
   }
 
   if (problems.length > 0) {
