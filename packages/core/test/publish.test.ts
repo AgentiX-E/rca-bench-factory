@@ -193,6 +193,13 @@ describe('the sentence a refusal names the refs it found with', { timeout: FILE_
     expect(refSentence(['refs/pull/7/head', 'refs/notes/commits'])).toBe('2 other ref(s)');
     expect(refSentence(['refs/heads/main', 'refs/pull/7/head'])).toBe('1 branch(es): main; 1 other ref(s)');
   });
+
+  it('says the count is a lower bound when the walk stopped before the end of the list', () => {
+    // A page walk is bounded, so there is a repository whose size the channel knows only as
+    // "more than what it read". A number printed there would be a count of the part it saw,
+    // presented as a count of the whole -- which is the defect the walk was added to fix.
+    expect(refSentence(['refs/heads/a', 'refs/heads/b'], false)).toBe('at least 2 branch(es): a, b');
+  });
 });
 
 describe('publishing to a repository through the local transport', { timeout: FILE_TIMEOUT_MS }, () => {
@@ -317,6 +324,53 @@ describe('publishing to a repository through the local transport', { timeout: FI
     expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
   });
 
+  it('refuses to name a commit whose tree no gate blessed, because the name publishes that tree', async () => {
+    // v3.60's closing note said the receipt rule "has nothing to say" about a push that
+    // publishes no content, and bypassed it with `--no-gate` on the one real creation this
+    // channel ever made. The rule is asked before the branch is even read -- `requireReceipt`
+    // runs on the tip's tree -- so a pointer push is gated like every other push: what crosses
+    // the wire is a reference, and what the reference makes reachable is a tree. The bypass was
+    // honest about being a bypass; the sentence explaining it was wrong about why.
+    const { source, shas } = history('pointer-gate');
+    mkdirSync(join(source, 'scripts'), { recursive: true });
+    writeFileSync(join(source, 'scripts', 'verify-local.mjs'), '// a gate, in the only sense this test needs\n');
+    git(source, ['add', '--', 'scripts/verify-local.mjs']);
+    const tip = commit(source, 'a gate appears', {});
+    expect(tip).not.toBe(shas[4]);
+    const remote = join(SCRATCH, 'pointer-gate-remote.git');
+    git(SCRATCH, ['init', '-q', '--bare', remote]);
+    git(source, ['push', '-q', remote, `${tip}:refs/heads/main`]);
+    const tree = git(source, ['rev-parse', `${tip}^{tree}`]).trim();
+    const calls: string[] = [];
+    const inner = localTransport({ remote });
+    // Every method the executor calls is recorded, and the point of the case is that the
+    // list is empty: a gate that fired after the branch read would have learned something
+    // about the remote before asking whether the tree it is about to name was ever blessed.
+    const transport = new Proxy(inner, {
+      get(target, key) {
+        const value = Reflect.get(target, key);
+        if (typeof value !== 'function') return value;
+        return (...args: unknown[]) => {
+          calls.push(String(key));
+          return (value as (...rest: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    });
+
+    await expect(
+      publish({ root: source, rev: tip, branch: 'release', transport, newBranch: true }),
+    ).rejects.toThrow(/no verify:local receipt exists/);
+    expect(calls).toEqual([]);
+    // Refused before the name was made: a gate that fired after `POST /git/refs` would have
+    // published exactly what it was refusing.
+    expect(spawnSync('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/release']).status).not.toBe(0);
+
+    writeReceipt({ root: source, tree, note: 'this test' });
+    const result = await publish({ root: source, rev: tip, branch: 'release', transport, newBranch: true });
+    expect(result.identity).toEqual({ state: 'held', commits: 0, base: null });
+    expect(git(remote, ['rev-parse', 'release']).trim()).toBe(tip);
+  });
+
   it('replays the history onto a new branch when the remote does not hold the commit', async () => {
     const { source, remote, shas } = staged('declared-new-replay', 2);
     const transport = localTransport({ remote });
@@ -435,6 +489,41 @@ describe('publishing to a repository through the local transport', { timeout: FI
     expect(asked).toEqual([]);
   });
 
+  it('does not ask whether the remote holds the tip when the listing already said it holds nothing', async () => {
+    // Two questions, one answer. A repository with no refs cannot serve a commit by any name,
+    // so "does it hold this commit" has a known answer the moment the listing comes back
+    // empty -- and asking it anyway cost one request on every first push (finding 451). The
+    // saving is deliberately conservative: the replay that follows is correct whatever the
+    // object store contains, while naming a commit the listing never mentioned would rely on
+    // objects a repository with no refs is about to collect.
+    const { source, remote, shas } = staged('empty-listing', null);
+    const transport = localTransport({ remote });
+    const asked: string[] = [];
+    const lines: string[] = [];
+    const counted = {
+      ...transport,
+      holds: async (sha: string) => {
+        asked.push(sha);
+        return transport.holds(sha);
+      },
+    };
+
+    const result = await publish({
+      root: source,
+      rev: 'HEAD',
+      branch: 'main',
+      transport: counted,
+      log: (line: string) => lines.push(line),
+    });
+    expect(asked).toEqual([]);
+    expect(lines.join('\n')).toContain('the remote holds no refs');
+    // And the sentence the other branch prints is not printed. "the remote does not hold
+    // <sha>" is a claim about the object store, and this path never looked at it.
+    expect(lines.join('\n')).not.toContain('the remote does not hold');
+    expect(result.identical).toBe(true);
+    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
+  });
+
   it('refuses when the remote holds neither the revision nor any tree of its ancestry', async () => {
     const { source, remote } = stage('unrelated');
     const other = repository('unrelated-other');
@@ -525,6 +614,10 @@ interface Behaviour {
   dropAll: string | null;
   refsStatus: number | null;
   refsNotAList: boolean;
+  /** A synthetic repository of this many branches, so a page walk has something to walk. */
+  refsCount: number | null;
+  /** A status every page after the first answers with, so `409` can be asked about. */
+  refsStatusAfter: number | null;
   createStatus: number | null;
   commitStatus: number | null;
   loseMessageTail: boolean;
@@ -552,6 +645,8 @@ async function api(remote: string) {
     dropAll: null,
     refsStatus: null,
     refsNotAList: false,
+    refsCount: null,
+    refsStatusAfter: null,
     createStatus: null,
     commitStatus: null,
     loseMessageTail: false,
@@ -567,7 +662,10 @@ async function api(remote: string) {
       const fail = (status: number, message: string) => send(status, { message });
       try {
       const url = new URL(request.url ?? '/', 'http://127.0.0.1');
-      const key = `${request.method} ${url.pathname}`;
+      // The query is part of the key. A page walk asks the same path with a different `page`
+      // and the two are different questions; a key that dropped the query would record one
+      // request where the channel made two, which is the reading a pagination case turns on.
+      const key = `${request.method} ${url.pathname}${url.search}`;
       behaviour.requests.push(key);
 
       if (behaviour.dropOnce === key || behaviour.dropAll === key) {
@@ -601,11 +699,29 @@ async function api(remote: string) {
       }
       if (request.method === 'GET' && path === '/git/refs') {
         if (behaviour.refsStatus !== null) return fail(behaviour.refsStatus, 'the listing is not available');
-        const names = await local.refs();
+        const perPage = Number(url.searchParams.get('per_page') ?? '30');
+        const page = Number(url.searchParams.get('page') ?? '1');
+        // A `409` that only a *later* page answers. `409` on the first page is the API
+        // saying "this repository has no refs"; on a later page it cannot mean that, because
+        // the first page of an empty repository is `[]` -- so the channel owes the two
+        // different verdicts and this is how the difference becomes visible.
+        if (behaviour.refsStatusAfter !== null && page > 1) {
+          return fail(behaviour.refsStatusAfter, 'this page is not available');
+        }
+        // A listing that honours `per_page` and `page`, because a stand-in that answered
+        // every page with the whole list could never show that the channel asked twice --
+        // and a page walk is only observable to a test through the requests it makes.
+        // `refsCount` fabricates a repository of that many branches, so a walk can be
+        // exercised on a machine that has no such repository.
+        const names =
+          behaviour.refsCount === null
+            ? (await local.refs()).names
+            : Array.from({ length: behaviour.refsCount }, (_, index) => `refs/heads/b${String(index).padStart(4, '0')}`);
+        const shown = names.slice((page - 1) * perPage, page * perPage);
         // Two shapes, and only one of them is a list: `refsNotAList` produces the answer a
         // reader must refuse rather than read as "no refs", because an empty repository and
         // an answer this channel cannot parse are not the same fact.
-        return send(200, behaviour.refsNotAList ? { refs: names } : names.map((ref) => ({ ref, object: { sha: '0'.repeat(40) } })));
+        return send(200, behaviour.refsNotAList ? { refs: shown } : shown.map((ref) => ({ ref, object: { sha: '0'.repeat(40) } })));
       }
       if (request.method === 'GET' && path.startsWith('/git/commits/')) {
         if (behaviour.commitStatus !== null) return fail(behaviour.commitStatus, 'this commit is not readable');
@@ -895,21 +1011,21 @@ describe('publishing through the GitHub transport, against a server that writes 
       expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
       // The 404 is answered by asking what the repository does hold: one read, and it is
       // what tells an unborn branch on an empty repository from a name that is wrong.
-      expect(server.behaviour.requests.filter((key) => key === 'GET /repos/owner/repo/git/refs')).toHaveLength(1);
+      expect(server.behaviour.requests.filter((key) => key === 'GET /repos/owner/repo/git/refs?per_page=100&page=1')).toHaveLength(1);
       // And the branch is *created* rather than moved: the ref update is a PATCH on a
       // reference that has to exist, so a channel that can publish an unborn branch at all
       // is one that asks for `POST /git/refs`. Until v3.58 it did not, and this case passed
       // because the server here created the branch on the PATCH -- a call the API refuses.
       expect(server.behaviour.requests).toContain('POST /repos/owner/repo/git/refs');
       expect(server.behaviour.requests.filter((key) => key.startsWith('PATCH'))).toEqual([]);
-      // The question that decides whether the history has to be replayed at all: a commit
-      // the remote does not hold is a 404 here, and it is asked before the first upload
-      // rather than after it. Before v3.60 the creation path never asked, and answered
-      // "does not hold it" by rebuilding three hundred commits whatever the remote had.
+      // The listing answered "no refs", which is also the answer to "does it hold this
+      // commit" for every name a ref could carry, so the question is not asked: v3.60 asked
+      // it here and paid a request for an answer it already had (finding 451).
       const asked = server.behaviour.requests;
-      const question = asked.indexOf(`GET /repos/owner/repo/git/commits/${shas[4]}`);
-      expect(question).toBeGreaterThan(-1);
-      expect(question).toBeLessThan(asked.findIndex((key) => key.startsWith('POST')));
+      expect(asked.filter((key) => key.includes('/git/commits/'))).toEqual([]);
+      expect(asked.filter((key) => key.includes('/git/refs?'))).toEqual([
+        'GET /repos/owner/repo/git/refs?per_page=100&page=1',
+      ]);
     } finally {
       await server.close();
     }
@@ -934,6 +1050,106 @@ describe('publishing through the GitHub transport, against a server that writes 
         `GET /repos/owner/repo/git/commits/${shas[4]}`,
         'POST /repos/owner/repo/git/refs',
       ]);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('walks the listing past its first page, because a refusal that counted one page counted nothing', async () => {
+    // `/git/refs` answers a hundred refs at a time and the channel read one page as "every
+    // ref in the repository". The refusal that turns on that listing counts what it reads and
+    // prints a few names, so a repository with a hundred and forty branches was refused with
+    // "100 branch(es)" -- a number the reader is entitled to act on, off by forty.
+    const { source, remote } = staged('http-refs-pages', 1);
+    const server = await api(remote);
+    server.behaviour.refsCount = 140;
+    try {
+      const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
+      await expect(publish({ root: source, rev: 'HEAD', branch: 'relese', transport })).rejects.toThrow(
+        /it holds 140 branch\(es\)/,
+      );
+      expect(server.behaviour.requests.filter((key) => key.includes('/git/refs?'))).toEqual([
+        'GET /repos/owner/repo/git/refs?per_page=100&page=1',
+        'GET /repos/owner/repo/git/refs?per_page=100&page=2',
+      ]);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('asks a second time when the first page is exactly full, because full is not the same as last', async () => {
+    // The case a page walk gets wrong by assuming: a hundred is both "the page size" and "the
+    // size of a repository with a hundred refs". Only the next page can tell them apart, so
+    // the walk asks one more question than the obvious implementation and the count is exact.
+    const { source, remote } = staged('http-refs-exact', 1);
+    const server = await api(remote);
+    server.behaviour.refsCount = 100;
+    try {
+      const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
+      await expect(publish({ root: source, rev: 'HEAD', branch: 'relese', transport })).rejects.toThrow(
+        /it holds 100 branch\(es\)/,
+      );
+      expect(server.behaviour.requests.filter((key) => key.includes('/git/refs?'))).toHaveLength(2);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('stops at a thousand refs and says the count is a lower bound', async () => {
+    // A walk in a refusal path is a walk nobody asked for, so it is bounded: ten pages, and
+    // the sentence says "at least" rather than printing a number it did not finish counting.
+    // A refusal is read by somebody looking for their own branch, and the two facts it owes
+    // them are "this repository is not empty" and "here is roughly how much is in it".
+    const { source, remote } = staged('http-refs-bound', 1);
+    const server = await api(remote);
+    server.behaviour.refsCount = 1400;
+    try {
+      const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
+      await expect(publish({ root: source, rev: 'HEAD', branch: 'relese', transport })).rejects.toThrow(
+        /it holds at least 1000 branch\(es\)/,
+      );
+      expect(server.behaviour.requests.filter((key) => key.includes('/git/refs?'))).toHaveLength(10);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('asks for the listing once when the first page is short, which is every repository here', async () => {
+    // The cost claim: pagination is free on the repositories this channel actually pushes to.
+    // A short page is a complete listing, and the request after it would be a request that
+    // could only confirm a count it already has.
+    const { source, remote } = staged('http-refs-short', 1);
+    const server = await api(remote);
+    try {
+      const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
+      await expect(publish({ root: source, rev: 'HEAD', branch: 'relese', transport })).rejects.toThrow(
+        /it holds 1 branch\(es\): main/,
+      );
+      expect(server.behaviour.requests.filter((key) => key.includes('/git/refs?'))).toEqual([
+        'GET /repos/owner/repo/git/refs?per_page=100&page=1',
+      ]);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('forwards a refusal on a later page instead of reading it as a repository with no refs', async () => {
+    // `409` on the first page is the API saying "this repository has no refs". On a later
+    // page it cannot mean that -- the first page of an empty repository is `[]`, so a second
+    // page exists only because the first one was full. Reading the status as "no refs"
+    // anyway would turn the one listing that proves the repository is not empty into a
+    // licence to publish a whole history onto a name that is wrong.
+    const { source, remote } = staged('http-refs-late-409', 1);
+    const server = await api(remote);
+    server.behaviour.refsCount = 140;
+    server.behaviour.refsStatusAfter = 409;
+    try {
+      const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
+      await expect(publish({ root: source, rev: 'HEAD', branch: 'relese', transport })).rejects.toThrow(
+        /git\/refs\?per_page=100&page=2 -> 409/,
+      );
+      // And nothing was published: the refusal is the whole outcome of a mistyped branch.
+      expect(spawnSync('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/relese']).status).not.toBe(0);
     } finally {
       await server.close();
     }
@@ -1018,7 +1234,10 @@ describe('publishing through the GitHub transport, against a server that writes 
       await expect(publish({ root: source, rev: 'HEAD', branch: 'mian', transport })).rejects.toThrow(
         /'mian' does not exist and the remote is not empty/,
       );
-      expect(server.behaviour.requests).toEqual(['GET /repos/owner/repo/git/ref/heads/mian', 'GET /repos/owner/repo/git/refs']);
+      expect(server.behaviour.requests).toEqual([
+        'GET /repos/owner/repo/git/ref/heads/mian',
+        'GET /repos/owner/repo/git/refs?per_page=100&page=1',
+      ]);
     } finally {
       await server.close();
     }
@@ -1053,7 +1272,10 @@ describe('publishing through the GitHub transport, against a server that writes 
       const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
       await expect(publish({ root: source, rev: 'HEAD', branch: 'main', transport })).rejects.toThrow(/-> 403/);
       expect(server.behaviour.requests.filter((key) => key.startsWith('POST'))).toEqual([]);
-      expect(server.behaviour.requests).toEqual(['GET /repos/owner/repo/git/ref/heads/main', 'GET /repos/owner/repo/git/refs']);
+      expect(server.behaviour.requests).toEqual([
+        'GET /repos/owner/repo/git/ref/heads/main',
+        'GET /repos/owner/repo/git/refs?per_page=100&page=1',
+      ]);
     } finally {
       await server.close();
     }

@@ -31,7 +31,7 @@
  * A transport answers six questions and changes three things:
  *
  *   head(branch)        -> {sha} | null            (a branch that does not exist yet)
- *   refs()              -> [name]                  (asked only when the branch read said 404)
+ *   refs()              -> {names, complete}        (asked only when the branch read said 404)
  *   holds(sha)          -> boolean                 (asked only on the creation path)
  *   commit(sha)         -> {sha, tree}
  *   tree(sha)           -> {entries, truncated}    (the whole listing, flat)
@@ -122,6 +122,18 @@ async function readRemote({ transport, branch }) {
  */
 const NAMES_SHOWN = 5;
 
+/** How many refs one listing request asks for: the API's maximum, and its own default page. */
+const REF_PAGE_SIZE = 100;
+
+/**
+ * How many pages a refusal will walk before it stops counting.
+ *
+ * A ref listing inside a refusal is a read nobody asked for, so it is bounded: ten pages is
+ * a thousand refs, and a repository larger than that is one where the sentence says "at
+ * least" instead of walking a thousand branches to print a number no reader will finish.
+ */
+const REF_PAGES_MAX = 10;
+
 /**
  * What a repository holds, in the words a refusal uses.
  *
@@ -131,8 +143,12 @@ const NAMES_SHOWN = 5;
  * `refs/` -- `refs/pull/7/head`, `refs/notes/commits` -- is counted rather than named: it
  * makes the repository non-empty, which is the fact the refusal turns on, and this channel
  * has no opinion about its name.
+ *
+ * `complete` is false when the listing stopped at the walk's own bound, and then every count
+ * in the sentence is a floor: a number that counted the pages this channel read, printed as
+ * the number of refs the repository holds, is the defect the walk was added to fix.
  */
-export function refSentence(names) {
+export function refSentence(names, complete = true) {
   const branches = [];
   const tags = [];
   let other = 0;
@@ -149,7 +165,7 @@ export function refSentence(names) {
   if (branches.length > 0) parts.push(`${branches.length} branch(es): ${listing(branches)}`);
   if (tags.length > 0) parts.push(`${tags.length} tag(s): ${listing(tags)}`);
   if (other > 0) parts.push(`${other} other ref(s)`);
-  return parts.join('; ');
+  return (complete ? '' : 'at least ') + parts.join('; ');
 }
 
 /**
@@ -186,6 +202,10 @@ export async function publish({
         'that is meant to be new',
     );
   }
+  // Held across the next two decisions because they ask different things of one answer: the
+  // listing separates "a name that is wrong" from "a branch that is new", and an empty
+  // listing is also the answer to whether the remote can hold the tip by any name.
+  let listing = null;
   if (remote.head === null && !newBranch) {
     // A `404` on the branch read is two states wearing one status, and only one of them is
     // this channel's business. On an empty repository the branch is unborn and replaying
@@ -198,10 +218,10 @@ export async function publish({
     //
     // The listing is asked for here rather than in `readRemote` so that the ordinary path
     // -- a branch that exists -- pays nothing for a question it does not ask.
-    const held = await transport.refs();
-    if (held.length > 0) {
+    listing = await transport.refs();
+    if (listing.names.length > 0) {
       throw new TypeError(
-        `'${branch}' does not exist and the remote is not empty: it holds ${refSentence(held)}. ` +
+        `'${branch}' does not exist and the remote is not empty: it holds ${refSentence(listing.names, listing.complete)}. ` +
           'A branch that is absent on a repository that has refs is a name that is wrong, not a branch that is ' +
           'new: publishing this history there would create it and leave the branch that was meant untouched. ' +
           'Pass --new-branch to say the branch is meant to be new',
@@ -218,8 +238,20 @@ export async function publish({
   //
   // It is one request either way: `404` is the answer "no", and it is asked before the
   // ancestry is read, because a push that is going to build nothing has no window to compute.
+  //
+  // It is not asked at all when the listing has just come back empty. A repository with no
+  // refs is one where no name can serve a commit, so the question has a known answer; asking
+  // it spent a request on every first push to learn what the previous answer already said
+  // (finding 451). The replay that follows is correct whatever the object store holds, while
+  // the shortcut would have relied on a commit the listing never mentioned -- in a repository
+  // whose objects are unreachable and therefore collectable.
   if (remote.head === null) {
-    if (await transport.holds(tip)) {
+    if (listing !== null && listing.names.length === 0) {
+      log(
+        'the remote holds no refs, so there is no name a shortcut could carry: this push replays the history and ' +
+          'the question about the tip is not asked',
+      );
+    } else if (await transport.holds(tip)) {
       const plan = pointerPlan({ tree: tipTree });
       log(
         `the remote already holds ${tip.slice(0, 9)}: naming it is the whole push, and no commit is created -- ` +
@@ -240,8 +272,9 @@ export async function publish({
         identical: true,
         identity: { state: 'held', commits: 0, base: null },
       };
+    } else {
+      log(`the remote does not hold ${tip.slice(0, 9)}: this push will build the commits that lead to it`);
     }
-    log(`the remote does not hold ${tip.slice(0, 9)}: this push will build the commits that lead to it`);
   }
   const ancestry = readAncestry({ root, rev: tip });
 
@@ -549,34 +582,52 @@ export function githubTransport({
       }
     },
     /**
-     * Every ref in the repository, as names.
+     * Every ref in the repository, as names -- or as many pages of them as this channel is
+     * willing to read.
      *
      * Only asked for after a branch read answered 404, because that is the one moment the
-     * channel cannot tell "this branch is new" from "this branch is misspelled". A hundred
-     * is the page size: the decision needs one ref to exist and the sentence needs a few
-     * names to print, so a repository with more branches than that is answered by the
-     * first hundred rather than by a walk through the rest.
+     * channel cannot tell "this branch is new" from "this branch is misspelled".
+     *
+     * A hundred is the page size and one page is not a listing. Until v3.61 this read one
+     * page and called it "every ref in the repository", so a repository with a hundred and
+     * forty branches was refused with "100 branch(es)" -- a count the reader is entitled to
+     * act on, off by forty, and a name that lived on page two could not be printed at all.
+     *
+     * The walk is bounded because it runs inside a refusal: ten pages is a thousand refs,
+     * which is more than a repository that has an operator mistyping a branch name has
+     * branches, and the sentence then says "at least" rather than a number it did not finish
+     * counting. `complete` is how the sentence knows which of the two it was given.
      */
     async refs() {
-      let listing;
-      try {
-        listing = await call('GET', '/git/refs?per_page=100');
-      } catch (error) {
-        // An empty repository is the one state the API announces with a status instead of
-        // a list, and `409` here means exactly what an empty array means: there is no ref
-        // to report. Anything else is forwarded, because a listing this channel was not
-        // allowed to read is not a repository with no refs -- the two would differ by a
-        // push onto a branch that already exists.
-        if (error instanceof ApiError && error.status === 409) return [];
-        throw error;
+      const names = [];
+      for (let page = 1; ; page += 1) {
+        let listing;
+        try {
+          listing = await call('GET', `/git/refs?per_page=${REF_PAGE_SIZE}&page=${page}`);
+        } catch (error) {
+          // An empty repository is the one state the API announces with a status instead of
+          // a list, and `409` here means exactly what an empty array means: there is no ref
+          // to report. Anything else is forwarded, because a listing this channel was not
+          // allowed to read is not a repository with no refs -- the two would differ by a
+          // push onto a branch that already exists. A `409` on a page after the first is
+          // forwarded for the same reason: the first page of an empty repository is `[]`, so
+          // a later page failing this way is an answer that cannot be read as "no refs".
+          if (error instanceof ApiError && error.status === 409 && page === 1) return { names, complete: true };
+          throw error;
+        }
+        if (!Array.isArray(listing)) {
+          throw new TypeError(
+            `the API answered the ref listing with ${typeof listing}, which is not a list of refs: ` +
+              'reading it as an empty repository would publish a whole history onto a branch that may exist',
+          );
+        }
+        for (const ref of listing) names.push(String(ref.ref));
+        // A page shorter than the page size is the last page. A *full* page is not: a
+        // hundred is both the page size and the size of a repository that has a hundred
+        // refs, and only the next question can tell the two apart.
+        if (listing.length < REF_PAGE_SIZE) return { names, complete: true };
+        if (page >= REF_PAGES_MAX) return { names, complete: false };
       }
-      if (!Array.isArray(listing)) {
-        throw new TypeError(
-          `the API answered the ref listing with ${typeof listing}, which is not a list of refs: ` +
-            'reading it as an empty repository would publish a whole history onto a branch that may exist',
-        );
-      }
-      return listing.map((ref) => String(ref.ref));
     },
     /**
      * Whether the remote holds a commit.
@@ -732,7 +783,10 @@ export function localTransport({ remote }) {
     /** The same answer the API gives: full ref names, one per line, in `refs/` order. */
     async refs() {
       const out = runGit(remote, ['for-each-ref', '--format=%(refname)'], { encoding: 'utf8' });
-      return out.split('\n').filter((name) => name !== '');
+      // One call and no paging: a directory listing has no page size, so `complete` is a
+      // fact here rather than a bound -- which is what the interface promises and what the
+      // sentence needs in order to print an exact count.
+      return { names: out.split('\n').filter((name) => name !== ''), complete: true };
     },
     /** The same question of the object store: `cat-file -e` on the peel answers by status. */
     async holds(sha) {

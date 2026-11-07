@@ -677,20 +677,20 @@ describe('the command line that keeps the reading', () => {
     expect(result.stdout).toContain('nothing was created');
     expect(result.stdout).toContain('publish-readings: 1 push(es)');
     expect(result.stdout).toContain('1 with a named tip');
-    // Three requests, not one: the 404 on the branch read is followed by the listing that
-    // says whether the branch is new or the name is wrong, and by the question this round
-    // added -- whether the remote already holds the tip, which decides between a replay of
-    // the whole history and one `POST /git/refs`. The recording counts the questions as well
-    // as the answers. A summary that said "1 request" here would be a number taken from
-    // before the channel learned to ask.
-    expect(result.stdout).toContain('3 request(s)');
+    // Two requests, and the number is the round's own claim: the 404 on the branch read is
+    // followed by the listing that says whether the branch is new or the name is wrong -- and
+    // then by nothing, because that listing has already answered the next question. v3.60
+    // spent a third request here asking whether the remote held the tip of a repository it had
+    // just been told holds no refs (finding 452). The rows are the reading, so they are
+    // asserted rather than counted: a summary line would agree with any number it was given.
+    expect(result.stdout).toContain('2 request(s)');
     expect(result.stdout).toContain('(1 push(es) in');
     const pushes = JSON.parse(readFileSync(file, 'utf8'));
     expect(readingErrors(pushes)).toEqual([]);
     expect(pushes[0]).toMatchObject({ rev: revision, branch: 'main' });
+    expect(pushes[0].rows).toHaveLength(2);
     expect(pushes[0].rows[0]).toMatchObject({ method: 'GET', path: '/git/ref/heads/main', attempt: 1, status: 404 });
-    expect(pushes[0].rows[1]).toMatchObject({ method: 'GET', path: '/git/refs?per_page=100', attempt: 1, status: 200 });
-    expect(pushes[0].rows[2]).toMatchObject({ method: 'GET', path: `/git/commits/${revision}`, attempt: 1, status: 404 });
+    expect(pushes[0].rows[1]).toMatchObject({ method: 'GET', path: '/git/refs?per_page=100&page=1', attempt: 1, status: 200 });
   });
 
   it('appends to a history that already holds another push, and counts both', async () => {
