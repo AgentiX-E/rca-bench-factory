@@ -71,26 +71,6 @@ it would put the id in the recording against seconds from a different job. The f
 that reports the job records it normally, says the promise can be deleted, and leaves the
 sentence for the round rather than erasing the only account of why the job exists.
 
-### 六、一个建不出来的分支，因为它坚持要整部历史
-
-创建路径的窗口是整部祖先，v3.60 与 v3.61 都把这件事描述成**成本**：`locateBase` 需要一个远端提交来比较，而不存在的分支没有，所以没有可定位的东西，只能全部重放。第一次真正尝试「带对象地创建分支」——v3.60 留下的那条未付账路径——不是慢，而是**失败**：
-
-> `50a8ce30c has 2 parents, and a replayed commit is published on one: a merge carries a history in its second parent that the remote would not receive, so the SHA it receives would not be the SHA that was written`
-
-本地历史里有一个合并提交，而重放合并是按设计被拒绝的——拒绝本身是对的。于是这个仓库上根本建不出分支：不是贵，是**不能**。缺陷不是前两轮一直在写的那个成本，而是窗口的**范围**。
-
-那个前提是错的，而承载它的句子错得像一段论证：「不存在的分支没有可定位的基座」。分支没有，但**仓库有**。一个有 ref 的仓库有 tip，而 tip 恰恰是比较想要的东西；本轮为别的原因加的 listing 已经带着每个 ref 的名字和它指向的 SHA。于是基座从「远端有什么」里选，而不是从「它没有的那个分支」里找：
-
-- tip 的 SHA 在本地祖先里 → **零请求**就能定位，连它的树都是本地那个提交的树，所以读它也不花钱；
-- 不在（改名孪生，也就是本仓边界之上的每一个 tip）→ 一次 commit 读取，按树匹配；
-- **最近的**匹配胜出，因为窗口是它之上的一切：index 1 是重放一个提交，index 40 是重放远端早就有的三十九个。
-
-只有空列表仍然意味着整部祖先，而那就是首次推送的定义。分支仍然是**创建**而不是移动：ref 更新的 `expected` 仍然是 `null`。
-
-这个选择是**上界**而不是规则，差别很重要：更靠后的基座会多重放几个提交、产出同一棵 tip 树，而执行器事后会断言那棵树。所以成本取决于搜索，正确性不取决于。
-
-把它从注释变成主张的那个变异是 `const base = null`——用一行写下旧行为——五个用例变红，包括「在一个合并之上创建分支」和「同一次推送打到空远端必须被拒绝」。
-
 ### Readings
 
 > Ledger for `v3.54`.
@@ -670,7 +650,7 @@ the push it describes.
 The open list's P2 was a sentence about a typo: *a mistyped `--branch` reads as an unborn
 branch*. It was two defects, and only one of them was about typos.
 
-### 一、A status that answers for two worlds (finding 436)
+### One — A status that answers for two worlds (finding 436)
 
 `head()` turns a `404` into `null` and `publish()` read `null` as *unborn*. A branch read answers
 `404` in two different worlds -- one where the branch has never been created, one where its name
@@ -698,7 +678,7 @@ The refusal names what it found, five names then a count, with branches and tags
 repository holding one tag and no branch is one where no push has ever landed, and "1 ref" would
 leave the operator to guess which.
 
-### 二、A branch cannot be moved into existence (finding 437)
+### Two — A branch cannot be moved into existence (finding 437)
 
 With the decision made, `--new-branch` had to be honest. It was not. `updateRef` issued
 `PATCH /git/refs/heads/<branch>`, which updates a reference that must already exist; on an absent
@@ -723,7 +703,7 @@ printed, while `null` says only that the branch was absent. A second read would 
 branch read inside one push, which the readings gate refuses without an exemption it would then
 have to grow -- so the shape of the reading file decided the shape of the sentence.
 
-### 三、The stand-in was kinder than the API (finding 438)
+### Three — The stand-in was kinder than the API (finding 438)
 
 The unborn path had an end-to-end proof and it was green, because the server that stands where
 the API stands created the branch on a `PATCH`: it passed `expected: null` to `local.updateRef`,
@@ -738,7 +718,7 @@ two branches of the fixture -- a `PATCH` whose ref is absent answers `422`, a `P
 creates it -- and the order was kept: with the repaired fixture the old code fails the case and
 the new one passes, which is the only order in which the case is worth having.
 
-### 四、The survivor the battery reported (finding 439)
+### Four — The survivor the battery reported (finding 439)
 
 Eighteen substitutions, seventeen red at the named case and **one survivor**: `<=` replaced by
 `<` in the sentence's cut. The case had two examples, three names and seven, chosen because they
@@ -799,7 +779,7 @@ with a line the channel has printed after every push for months -- *"the tip's t
 one and its SHA is not (the history it hangs on is not the local history)"* -- and asked the only
 question that line had never been asked, which is whether it was true.
 
-### 一、Two hundred and forty-six commits, and the two explanations that died
+### One — Two hundred and forty-six commits, and the two explanations that died
 
 Walking the remote's `master` and the local `HEAD` and pairing them by subject is one loop over
 two lists. It answers with numbers: of 483 commits on the remote, **236 share a name with the
@@ -825,7 +805,7 @@ that include the parents' names, so the plan grounded on a twin renames everythi
 sentence was not wrong. It was an account of a cause that nothing in the repository had checked,
 which is indistinguishable, to a reader, from a rebuild that lost a file.
 
-### 二、The prediction, and the three things a rebuild can be
+### Two — The prediction, and the three things a rebuild can be
 
 `predictRebuild` is the measurement the sentence was missing. It takes the local commit object as
 git stores it, replaces its `parent` lines in order with the names the remote will use, and hashes
@@ -842,7 +822,7 @@ merge -- so a rewrite that used the first parent twice dies there rather than su
 linear case. And it is held against an oracle it shares no line with: `git commit-tree` builds an
 object from a tree, a parent, a message and two dates, and its output name is the answer.
 
-### 三、Said before the first request, not after the last
+### Three — Said before the first request, not after the last
 
 A push whose base is a twin will rename its commits whatever it does; that is arithmetic, not a
 decision. What is a decision is when the operator finds out. The plan announces it before the
@@ -852,7 +832,7 @@ command line prints the surviving bytes and the renamed names in that order, bec
 order in which they matter: the tree, the message and both identities are local; the SHA cannot
 be, and no push can rename the remote's past.
 
-### 四、Two columns that could only hold `(n, 0)` and `(0, n)`
+### Four — Two columns that could only hold `(n, 0)` and `(0, n)`
 
 The first version of the verdict counted the exact commits and the renamed ones. The battery's
 eleventh substitution -- `exact += 1` to `exact += 2` -- **survived**, and the reason was not a
@@ -867,7 +847,7 @@ verdict that had already answered the question was used only to choose a log lin
 substitution of the verdict survived, because nothing a caller reads depended on it. The return
 value now reads the tip's verdict once.
 
-### 五、Eight proofs dropped by an edit in the middle of a file
+### Five — Eight proofs dropped by an edit in the middle of a file
 
 Adding one `throw` in the middle of `publish.mjs` moved every line below it, and re-deriving
 `golden-master/gate-sites.json` reported `throw annotations: 79 of 87 carried, 8 dropped`. The
@@ -883,7 +863,7 @@ carrying it is not a guess. When two carriers disagree -- one proved, one exempt
 reason -- no rule can choose, and the site keeps nothing. Both halves are cases; the second one
 already was.
 
-### 六、A stand-in less kind than the API
+### Six — A stand-in less kind than the API
 
 `differs` is unreachable against an API that keeps what it is sent. A branch no case can reach is a
 sentence that has never been printed, so the server that stands where the API stands is given one
@@ -893,7 +873,7 @@ message shapes and the API stored every one. What it buys is the difference betw
 is computed and one that is asserted, and in the battery the substitution that removes the refusal
 turns it red.
 
-### 七、第一次对着真实 API 的判决
+### Seven — the first verdict taken against the real API
 
 The push is **attempt 8**, and it is the first one in this repository's history whose report is a
 measurement rather than an explanation.
@@ -914,7 +894,7 @@ remote's past.
 24 requests, none retried, slowest `POST /git/blobs` 2 382 ms -- and CI **8 of 8 green on the
 first push**, no rerun.
 
-### 八、收尾那一脚踩空的地方，正好是清单自己说它看不见的
+### Eight — the last step landed on nothing, exactly where the list says it cannot look
 
 The close-out push -- two documentation lines and a readings file, no code -- came back red on
 `Test with coverage`, at `publishing to a repository through the local transport > carries a
@@ -978,7 +958,7 @@ met a real push, and a new branch replayed the whole history even when the remot
 the commit. Both are about the one path in the channel that had never been paid for, and this
 round went there. It found a defect one step earlier than either entry named.
 
-### 一、A flag with two halves, and the channel asked one of them
+### One — A flag with two halves, and the channel asked one of them
 
 `--new-branch` exists to exempt a `404` on the branch read from the refusal that a missing
 branch on a repository with refs earns. That is a permission, and it was implemented as one:
@@ -994,7 +974,7 @@ answering for two states, then one flag carrying two statements -- and the repai
 the two halves are one statement, so a false one is refused, and the refusal names the commit
 it was found at, because that is the fact the caller was wrong about. Finding 446.
 
-### 二、A commit is closed, so one question decides the whole push
+### Two — A commit is closed, so one question decides the whole push
 
 `locateBase` compares the remote with the local ancestry, and an absent branch has nothing to
 compare: `remote.head` is `null`, so the window was set to the entire ancestry and every commit
@@ -1014,7 +994,7 @@ It is asked **only** where the branch read answered `404`, so the ordinary push 
 and only after the name-is-wrong refusal, so a typo is still refused before a commit is named.
 Finding 447.
 
-### 三、An empty plan that is a complete instruction
+### Three — An empty plan that is a complete instruction
 
 `planPublish` refuses an empty window: *"a plan with no commits would move a ref to where it
 already is; publish nothing instead"*. A pointer push is the case that refusal's premise does
@@ -1035,7 +1015,7 @@ was no window, so there was nothing to locate.
 transcript owes its reader, and this round's real creation push uses it for a state in which the
 receipt rule has nothing to say: the tree is already on the remote, so nothing is being published.
 
-### 四、One status, two states, at the creation
+### Four — One status, two states, at the creation
 
 `422` on `POST /git/refs` means the name was taken while the push was being made, **or** that
 the commit the ref was to name is not there after all -- and the pointer path makes the second
@@ -1046,7 +1026,7 @@ happened. Both states are named now: the channel cannot tell them apart without 
 refuses to make, and a sentence that names one state and is sometimes wrong about it is worse
 than one that names two. Finding 448.
 
-### 五、Two stand-ins that could not express the question
+### Five — Two stand-ins that could not express the question
 
 The new question needed a `404`, and neither fixture could produce one.
 
@@ -1067,7 +1047,7 @@ commit above `upto` is absent from the object store and `upto: null` is a reposi
 at all; the two cases that had been passing on a clone were moved onto it, where they now publish
 something. Finding 449.
 
-### 六、The boundary, asked as objects instead of as sentences
+### Six — The boundary, asked as objects instead of as sentences
 
 v3.59's boundary was measured by pairing two logs by **subject**: 236 of 483 commits shared a
 name. A subject is a string two different commits can carry, so that number counted sentences
@@ -1089,7 +1069,7 @@ from 483 to 509, so the 26 commits these rounds added are exactly the 26 the bou
 That is the arithmetic of a rename that never stops, and it is why the contract is isomorphism
 rather than equality. Finding 450.
 
-### 七、第一次创建的推送：三次请求，和一个活了十四秒的 ref
+### Seven — the first creation push: three requests, and a ref that lived fourteen seconds
 
 The entry that had been on the list since v3.58 -- *the creation path has no real push behind
 it* -- is closed. Attempt 12 is the first push in this repository's history that created a
@@ -1117,7 +1097,7 @@ The slowest request of the round is that `POST /git/refs`: **13 997 ms** for a c
 no object at all. A budget argued from "a ref write is cheap" would be wrong by an order of
 magnitude, and this is the record that says so.
 
-### 八、电池：一处锚点，和一次诚实的中止
+### Eight — the battery: one anchor, and one honest stop
 
 Eleven substitutions on the new rules, each one edit, each restored in a `finally`. The first pass
 reported **10 red and 1 SKIP**: the anchor for the `cat-file` mutation had been written against
@@ -1147,7 +1127,7 @@ publish, and the creation refusal naming one state where it carries two.
 | coverage | `core` **99.96 / 99.75 / 100 / 99.96**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the subject is `scripts/` and its drivers are the site proofs |
 | mutation | **11** substitutions; first pass **10 red, 1 skipped, 0 survivors** -- the skip was an anchor written against the wrong element of an argument list, corrected and re-run: **11 of 11 red, 0 survivors, 0 inert**, tree restored |
 | failure sites | **126** across **59** of **85** scripts; throws **91** = 11 `fatal` + 69 `unguarded` + 1 `guarded` + 10 `rethrow` -- two new, both proved by `publish.test.ts` |
-| site proofs | **203** proved sites across **66** test files (`verify-site-proofs.mjs --list`) |
+| site proofs | **203** proved sites across **58** test files (`verify-site-proofs.mjs --list`) |
 | the boundary, asked as objects | **509** local commits asked one at a time, **237** held by name, **272** not; the shared set is exactly the oldest 237; newest shared `041ca04d1`, 272 back |
 | the history | `golden-master/publish-readings.json`: **12 attempts**, 175 rows. Attempt 12 is the first creation path ever executed against the real API -- 3 requests, 0 retried, slowest `POST /git/refs` 13 997 ms -- and it built no object at all |
 
@@ -1184,99 +1164,174 @@ question was asked whose answer had just arrived; a gate was described as silent
 speaking. This round went at all three, and the mutation battery found a fourth rule with no test
 behind it at all.
 
-### 一、一页不是仓库
+### One — a page is not a repository
 
-`refs()` 请求 `GET /git/refs?per_page=100`，把回来的东西当成"这个仓库的每一个 ref"，注释也这么写。API 是分页的。一个有 140 个分支的仓库因此答 100，而建立在这份列表上的那句拒绝——用来分辨"分支名写错了"和"分支是新的"的那句——印出了 **"it holds 100 branch(es)"**：一个读者有权据以行动的数字，差了四十，出现在一句全部目的就是说明仓库里有什么的句子里。
+`refs()` asked for `GET /git/refs?per_page=100` and treated what came back as "every ref this
+repository holds", which is what its comment said too. The API pages. A repository with a hundred
+and forty branches therefore answered a hundred, and the refusal built on that list -- the one that
+separates "the name is wrong" from "the name is new" -- printed **"it holds 100 branch(es)"**: a
+number a reader may act on, short by forty, in a sentence whose only purpose is to say what the
+repository has.
 
-拒绝本身只需要"存在一个 ref"，所以这个计数对决策从来不是承重的——但它对**句子**是承重的，而句子正是人读的那部分。页走法是唯一一处"满"与"末"是两个事实的地方：100 既是页大小，也是"恰好有一百个 ref 的仓库"的大小，所以显而易见的实现（页不满就停）仍然要比显而易见的读法多问一次；一个在满页停下的走法，对在这里结束的仓库和没在这里结束的仓库都报 100。
+The decision never depended on the count, because the refusal needs one ref to exist. The **sentence**
+did, and the sentence is the part a person reads. A page walk is the one place where "full" and
+"last" are two facts: 100 is both the page size and the size of a repository with exactly a hundred
+refs, so the obvious implementation -- stop at a page that is not full -- still has to ask one more
+time than the obvious reading, and a walk that stopped on a full page would answer 100 for the
+repository that ends there and for the one that does not.
 
-走法在十页处封顶，因为它跑在一句拒绝里面，而拒绝不是读一千个分支的理由。碰到上界时句子说 **"at least"**：把读过的页数当成仓库持有的 ref 数印出来，正是这条走法要修的缺陷；把一个上界当成事实，只是同一个错误换了个更小的数字。
+The walk stops at ten pages, because it runs inside a refusal and a refusal is not a reason to read
+a thousand branches. When it reaches that bound the sentence says **"at least"**: printing the pages
+it read as the number the repository holds is the defect the walk exists to fix, and printing a
+bound as a count is the same defect with a smaller number.
 
-`refs()` 现在答 `{ names, complete }`，因为句子无法分辨"数完了"与"停在半路"，除非 transport 告诉它是哪一种。本地 transport 无条件答 `complete: true`——目录列举没有页大小——这是同一个接口的诚实形式，不是一个特例。
+`refs()` answers `{ names, tips, complete }` now, because a sentence cannot tell "counted" from
+"stopped counting" unless the transport says which it did. The local transport answers
+`complete: true` unconditionally -- a directory listing has no page size -- which is the honest form
+of the same interface rather than a special case. The cost is unchanged: a repository whose first
+page is short, which is every repository this channel has pushed to, still asks once, and the cases
+assert the exact request list rather than a count.
 
-### 二、上一个答案已经答过的问题
+### Two — a question whose answer had already arrived
 
-创建路径在决定要不要重放历史之前会问 `holds(tip)`。在一个空仓库上，通道在**一次调用之前**刚读过列表，刚被告知"一个 ref 都没有"——然后还是问了：*远端持不持有这个提交？* 一个没有 ref 的仓库无法用任何名字提供某个提交，所以这个问题有已知答案，而这次请求在每一次首推上都没买到任何东西。
+The creation path asks `holds(tip)` before deciding whether to replay history. On an empty
+repository it had just read the listing **one call earlier** and had been told there is not one ref
+-- and then asked anyway: *does the remote hold this commit?* A repository with no refs cannot offer
+a commit under any name, so the question had a known answer, and the request bought nothing on every
+first push.
 
-这件事的修法不是"列表为空就跳过这个问题"这种成本优化。它是：两个答案说的是不同的东西，而只有一个是关于对象库的——空列表是关于**名字**的陈述，而它所能许可的那条捷径，会是一个关于"没有任何名字可达的那个提交"的主张，在一个对象按构造即不可达、因而可被回收的仓库里。所以通道选了保守的那一侧，并且说出来：
+The repair is not a cost optimisation of the "skip the question when the list is empty" kind. It is
+that the two answers say different things and only one of them is about the object store: an empty
+listing is a statement about **names**, and the shortcut it licenses would be a claim about a commit
+no name can reach, in a repository where such objects are unreachable by construction and therefore
+collectable. So the channel took the conservative side, and said so:
 
-> `the remote holds no refs, so there is no name a shortcut could carry: this push replays the history and the question about the tip is not asked`
+> `the remote holds no refs, so there is no name a shortcut could carry: this push replays the
+> history and the question about the tip is not asked`
 
-接下来的重放无论对象库里有什么都是正确的。省下的是一次请求，位置在"列表已经付过账"的那条路径上——这也是为什么普通推送（分支存在）仍然什么都不问。
+The replay that follows is correct whatever the object store holds. The request saved sits on the
+path where the listing has already been paid for, which is also why an ordinary push -- one onto a
+branch that exists -- still asks nothing.
 
-这句话还必须挤掉另一句。落到下面那个分支会打印 *"the remote does not hold `<sha>`: this push will build the commits that lead to it"*，那是一句关于对象库的断言；一条从没看过对象库的路径会把它印在"我没看过"之后。有一条用例断言这句话**不出现**，因为一条说了两件事的日志，不会因为第一件是真的就变得诚实。
+That sentence also had to displace another one. Falling through to the next branch prints *"the
+remote does not hold `<sha>`: this push will build the commits that lead to it"*, which is an
+assertion about the object store, and a path that never looked at the object store would print it
+after saying it had not looked. One case asserts the sentence **does not appear**, because a log
+that says two things is not made honest by the first one being true.
 
-### 三、那个"无话可说"的规则，说在第一次请求之前
+### Three — the rule that had "nothing to say", said before the first request
 
-v3.60 用自己的句子收尾了它唯一一次真实创建推送：`--no-gate` 被描述成对*"回执规则无话可说的状态"*是诚实的——树已经在远端了，什么都没被发布。
+v3.60 closed its only real creation push with a sentence that described `--no-gate` as honest about
+*"a receipt rule that had nothing to say"*: the tree was already on the remote and nothing was
+published.
 
-规则有话可说，而且已经说了：门禁跑的是 `requireReceipt({ tree: tipTree })`，位置在**读远端之前**。所以指针推送和别的推送一样被门禁覆盖——过线的是一个引用，而引用让它可达的是一棵树。绕过是真实发生的；解释是错的，而差别很重要，因为读者正是靠那句解释判断这次绕过是否安全。
+The rule had something to say and had already said it: the gate runs `requireReceipt({ tree:
+tipTree })`, and it runs **before the remote is read**. A pointer push is covered like any other,
+because what crosses the wire is a reference and what a reference makes reachable is a tree. The
+bypass happened; the explanation was wrong, and the difference matters, because that explanation is
+what a reader uses to decide whether the bypass was safe.
 
-套件里没有任何东西能抓住那句话，因为没有用例把门禁和指针路径放在一起：`stage()` 造的仓库没有 `scripts/verify-local.mjs`，于是 `requireReceipt` 答 `absent`，指针用例全都穿过了一道不存在的门。新增的用例造一个带门禁、且远端已持有 tip 的仓库，一次断言三件事——拒绝、分支**没有**被创建、执行器**零次** transport 调用——因为顺序就是主张本身：一道在 `GET /git/ref/heads/<branch>` 之后才开火的门，已经在问"这棵树有没有被祝福"之前先知道了远端的一件事。
+Nothing in the suite could catch the sentence, because no case put the gate and the pointer path
+together: the repositories `stage()` builds have no `scripts/verify-local.mjs`, so `requireReceipt`
+answers `absent` and every pointer case walked through a gate that was not there. The new case
+builds a repository that has a gate and a remote that already holds the tip, and asserts three things
+at once -- the refusal, that the branch was **not** created, and that the executor made **zero**
+transport calls -- because the order is the claim: a gate that fires after
+`GET /git/ref/heads/<branch>` already knows something about the remote before it asks whether this
+tree was blessed.
 
-v3.60 的那次推送保持原样：一个在被误述的绕过之下创建的分支。改变的是，那句误述现在是一条有测量的、且有一条会反驳它的用例的事实。
+### Four — two pages, one key, and a stand-in that could not answer about pages
 
-### 四、两个页、一把 key，和一个答不了"页"的替身
+The HTTP stand-in in `publish.test.ts` recorded `key = method + pathname` and dropped the query, so
+every page of `/git/refs` shared one key: even if the channel had walked, the record would have said
+twice was once. The key carries the query now, which is also the shape the readings ledger records
+(`/git/refs?per_page=100&page=1`), so one walk looks the same in both accounts.
 
-`publish.test.ts` 的 HTTP 替身记录的是 `key = method + pathname`，把 query 丢了。于是 `/git/refs` 的每一页都是同一把 key——即使通道真的走了一趟，用例也看不出来：记录会说"两次"是"一次"。key 现在带上 query，这也正是读数账本记的形状（`/git/refs?per_page=100`），于是一趟页走法在两份账里是同一个样子。
+The route could not answer about pages either -- it returned the whole list for every request. That
+is finding 449's shape, in the same file, four rounds later: a stand-in answering a question nobody
+declared. It now honours `per_page` and `page`, and `refsCount` forges a repository of a given size,
+so a walk can be examined on a machine that does not have a hundred and forty branches.
 
-路由也答不了"页"——它对每个请求都回整份列表。这是 finding 449 的形状，同一个文件，四轮之后又来一次：一个替身回答了没人声明过的问题。它现在尊重 `per_page` 与 `page`，`refsCount` 伪造一个给定大小的仓库，于是一趟页走法可以在一台没有一百四十个分支的机器上被检验。
+The `409` on the first page got its control too: `refsStatusAfter` makes pages after the first answer
+a given status, which is how "a `409` after the first page is not an empty repository" became
+testable. Before that it was **not**: a mutation that read a `409` on any page as an empty repository
+(M10) survived the whole file.
 
-第一页的 `409` 也拿到了它的对照：`refsStatusAfter` 让第一页之后的页答一个给定状态码——这就是"第一页之后的 `409` 不是空仓库"这条规则变得可测的方式，而在那之前**不可测**：一个把它读成空仓库的变异（M10）活过了整个文件。
+### Five — a stand-in is a claim about the world
 
-### 五、mutation 电池：一个存活，一个跳过
+Both halves of this round's fixture work are the same statement from two directions. One stand-in
+answered a route nobody had declared, in the direction of "yes"; the other held objects it had copied
+rather than withheld, in the direction of "already there". Neither is caught by reading the stand-in,
+and both are caught the moment a stand-in starts answering a question it was never asked about.
 
-十处替换，第一次跑出 **8 红、1 存活、1 跳过**，而两个非红都是这一轮真正的收获：
+### Six — the first real creation push, carrying objects
 
-- **M10 存活**：把"页 1 之后的 `409`"改成"任何页的 `409` 都读成空仓库"，整个文件仍然全绿。规则在代码里，注释在代码里，测试里没有。补的用例让替身在第二页答 `409`，并把"`-> 409` 被转发"与"分支未被创建"一起断言。
-- **M8 跳过**：锚点写成八空格缩进，而那一行在 `if` 里面是四空格。电池把"锚点没匹配上"报成 skip 而不是 survivor，并打印它找到的命中数（0）——"没有东西守住这条规则"与"这一行根本没被问过"是两种失败。
+v3.60 left one item on the list: *the path that creates a branch at a tip and must upload objects has
+never been paid for*. The round's first act was to pay it, and the order is not arbitrary. The
+remote's `master` tip is a **twin** of the local commit one below the head -- the same tree under a
+different name -- so creating a branch at it is refused by the "same commit, renamed parent" verdict;
+and if `master` were pushed first, the new tip's tree would be on the remote and the creation would
+be stopped by the refusal that says the remote already carries this tree without being this commit.
 
-改正锚点、补上用例之后：**10/10 变红、0 存活、0 惰性**。
+So the order is: create `v3.61-tip` first, while the remote still has nothing from this round and the
+window is one commit, and push `master` after it. The first real creation carried objects, a gate and
+a receipt that covers it -- and it failed the first time, which is the next section.
 
-### 六、一次真实的创建推送，带对象
+### Seven — two pushes: one refused by its own plan, one that created the branch with objects
 
-v3.60 的遗留表上有一条：*"在 tip 上创建分支且必须上传对象"这条路径从未被真实付过账*。这一轮的第一件事是把它付掉——顺序不是随意的。远端 `master` 的 tip 是本地上一个提交的**改名孪生**（同一棵树、不同名字），所以在它上面创建分支会被"同一个提交改父名"的判决拒绝；而如果先推 `master`，新 tip 的树就到远端了，创建推送又会被"远端已经带有这棵树却不是你"的拒绝挡住。
-
-于是顺序是：先创建 `v3.61-tip`（远端还没有这一轮的提交，窗口只有 1 个提交），再推 `master`。第一次真实创建带着对象、带着门禁、带着一个合法回执。
-
-### 七、两次推送：一次被自己拒绝，一次带对象把分支建出来
-
-遗留清单上挂了四轮的那条——*「在 tip 上创建分支且必须上传对象」从未被真实付过账*——本轮了结，而它先**失败**了一次：
+The item had been on the list for four rounds, and the round settled it by **failing** at it first:
 
 > `publish failed: 50a8ce30c has 2 parents, and a replayed commit is published on one: a merge carries a history in its second parent that the remote would not receive, so the SHA it receives would not be the SHA that was written`
 
-两次请求就被自己的计划拒了（`GET /git/ref/heads/v3.61-tip` → `404`、`GET /git/commits/3a943836c` → `404`），一个对象都没写。这就是 finding 455 的证据：不是慢，是不能。
+Two requests and its own plan refused it (`GET /git/ref/heads/v3.61-tip` -> `404`,
+`GET /git/commits/3a943836c` -> `404`), with no object written. That is finding 455's evidence: not
+slow, impossible.
 
-修好基座之后，同一条命令成功了：
+Once the base was chosen from the remote's tips rather than from the branch it does not have, the
+same command succeeded:
 
 > `v3.61-tip is at faa9bdb2fac5f4c8b5f1d2df3d1418202b122aae: the tree, the message and both identities are the local ones, and the SHA is not, because every one of the 3 commit(s) this push carried hangs on the remote's name for its parent`
 
-**35 次请求、0 重试、0 未答**，对比一条重放整部历史的推送（本仓 509 个提交、数百个 blob）。拆开看就是本轮的整条论证：
+**Thirty-five requests, nothing retried, nothing unanswered**, against a push that replays the whole
+history -- 509 commits and their blobs in this repository. Taken apart it is the round's whole
+argument:
 
-| 请求 | 次数 | 为什么 |
+| request | count | why |
 | --- | --- | --- |
-| `GET /git/ref/heads/v3.61-tip` | 1 | `404` —— 分支不存在 |
-| `GET /git/commits/3a943836c` | 1 | `404` —— 远端不持有这个提交，捷径不可用 |
-| `GET /git/refs?per_page=100&page=1` | 1 | 仓库有 ref，就可能有基座 |
-| `GET /git/commits/<三个 tip>` | 3 | 三个分支 tip 都不在本地祖先里（改名孪生），各读一次 |
-| `GET /git/trees/b02eaf356…` | 1 | 选中基座的树清单 |
-| `POST /git/blobs` | 21 | 三个提交的实际内容 |
-| `POST /git/trees` / `commits` | 3 / 3 | 三个提交 |
-| `POST /git/refs` | 1 | **创建**，而不是移动 |
+| `GET /git/ref/heads/v3.61-tip` | 1 | `404` -- the branch does not exist |
+| `GET /git/commits/3a943836c` | 1 | `404` -- the remote does not hold this commit, so no shortcut |
+| `GET /git/refs?per_page=100&page=1` | 1 | a repository with refs may have a base |
+| `GET /git/commits/<three tips>` | 3 | three branch tips are not local commits (renamed twins), one read each |
+| `GET /git/trees/b02eaf356...` | 1 | the chosen base's tree listing |
+| `POST /git/blobs` | 21 | the real content of three commits |
+| `POST /git/trees` / `commits` | 3 / 3 | three commits, with their trees |
+| `POST /git/refs` | 1 | **created**, not moved |
 
-随后推 `master`（第 16 次尝试，31 次请求）：同一段窗口、同样的三个 `parents` 判决、一次 `PATCH`。两次推送共用同一批 blob，因为第二次面对的是同一段历史。
+`master` followed (attempt 16, 31 requests): the same window, the same three `parents` verdicts, one
+`PATCH`. The two pushes shared their blobs because the second faced the same history.
 
-这个分支指向 `faa9bdb2f`，树是 **`546b38da`**——正是 `verify:local` 在那棵树上开的回执；父是 `8de78aadc`，即远端对上一个提交的名字。也就是说：**被门禁量过的那棵树，就是远端现在服务的那棵树**，而这一点不是从日志里推断的，是分支的字节里含着的。
+The branch points at `faa9bdb2f` and its tree is **`546b38da`** -- the tree `verify:local` opened a
+receipt for; its parent is `8de78aadc`, the remote's name for the commit below. So **the tree the
+gate measured is the tree the remote now serves**, and that is not inferred from a log: it is
+contained in the branch's bytes.
 
-### 八、电池：一个存活，两个跳过，然后全红
+### Eight — the battery: one survivor, two skips, and then all red
 
-十五处替换。历史是这一轮最值得记的部分：
+Fifteen substitutions. The history is the part worth keeping:
 
-- 第一次跑：**8 红、1 存活、1 跳过**。存活的是 **M10**（把任何页的 `409` 读成空仓库）——规则在代码里、注释在代码里、测试里没有；跳过的是 **M8**，锚点写成八空格而那一行是四空格，电池把它报成 skip 并打印命中数 0。
-- 补上用例、改正锚点：**13/13**。但那时 `const base = null` 这一行（M11，整个基座定位的否定）也在里面，而它**逼出了 finding 455**：它让「在合并之上创建分支」的用例跑不起来，而那次真实推送第一次撞上了同一件事。
-- 加上基座的四条之后，五个锚点因为重构失效、被刷新；最终 **15/15 变红、0 存活、0 惰性**。
+- First pass: **8 red, 1 survivor, 1 skipped**. The survivor was **M10** -- read a `409` on any page
+  as an empty repository -- a rule in the code and in the comments with no test behind it. The skip
+  was **M8**, an anchor written with eight spaces of indentation where the line inside the `if` has
+  four; the battery reported it as a skip and printed its hit count (0).
+- With the case added and the anchor corrected: **13 of 13**. But `const base = null` (M11, the
+  negation of the whole base search) was still in it, and it **forced finding 455**: it made "create a
+  branch above a merge" fail, and the first real push met the same wall.
+- After the base and the twin cases were added, five anchors had gone stale and were refreshed.
+  Final: **15 of 15 red, 0 survivors, 0 inert**.
 
-电池这一轮抓到的不是「测试不够严」，而是**一条没有测试的规则**和**一个用旧锚点描述的世界**。前者会让一次推送把整部历史发布到一个写错的名字上；后者会让电池在最需要它的时候安静。
+What the battery caught this round was not "the tests are not strict enough". It was **a rule with no
+test** and **a world described by anchors that had moved**: the first would publish a whole history
+onto a wrong name, and the second would keep the battery quiet exactly when it was needed.
 
 ### Readings
 
@@ -1284,14 +1339,14 @@ v3.60 的遗留表上有一条：*"在 tip 上创建分支且必须上传对象"
 
 | item | value |
 | --- | --- |
-| `core` test suite | **239 files, 6001 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **243 files, 6188 tests passed** (as of this commit) |
+| `core` test suite | **239 files, 6001 tests passed** (at v3.61) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.61) |
+| repo test suite | **243 files, 6188 tests passed** (at v3.61) |
 | new tests | **13**: the page walk 4 (a hundred and forty refs, exactly a hundred, fourteen hundred, one short page), a `409` on a later page 1, an empty listing that answers the tip question 1, a gated pointer push 1, the lower-bound sentence 1, and the creation base 4 (the nearest of two tips, a merge below the base, the same push onto nothing refused, an empty repository that still replays everything, and a branch created at a tip the remote holds under another name) |
 | coverage | `core` **99.96 / 99.75 / 100 / 99.96**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the subject is `scripts/` and its drivers are the site proofs |
 | mutation | **15** substitutions; first pass **8 red, 1 survivor, 1 skipped**, and after the creation base was added, 5 anchors went stale and were refreshed. Final: **15 of 15 red, 0 survivors, 0 inert**, tree restored -- the survivor was a rule with no test (a `409` on a later page read as "no refs") and the skip an anchor written with the wrong indentation |
 | failure sites | **126** across **59** of **85** scripts; throws **91** = 11 `fatal` + 69 `unguarded` + 1 `guarded` + 10 `rethrow`, and **91 of 91** carried annotations |
-| site proofs | **203** proved sites across **66** test files (`verify-site-proofs.mjs --list`) |
+| site proofs | **203** proved sites across **58** test files (`verify-site-proofs.mjs --list`) |
 | the history | `golden-master/publish-readings.json`: **16 attempts**, 269 rows. Attempt 14 is the creation that was refused by its own plan (2 requests, no object), 15 the creation that succeeded (35 requests, three commits, `POST /git/refs`), 16 the `master` push onto the same window (31 requests, one `PATCH`) |
 
 The pushes this round made are described in §七. The row for the push that publishes *this*
@@ -1321,3 +1376,130 @@ A stand-in that answers a question nobody declared has now been found twice, fou
 in the same file. The rule that keeps producing these is worth stating once: **a fixture is a
 claim about the world, and a claim nobody has contradicted is not the same as a true one.** The
 day a fixture starts answering a new question is the day its old answers become load-bearing.
+
+## v3.62 — a list that said "open" about three things three rounds had closed
+
+The round started at the `## Open` list, because that list **is** the plan: every round reads its
+leftovers there, and the previous round had closed three items without opening the file. Three
+entries still said "open" about work that findings 446, 451 and 455 had finished, and a fourth
+reason was parked inside an entry that had been struck through.
+
+Counting them is what produced the round's second finding -- the count came out at thirteen and the
+guard said eleven, and the difference was two entries neither of us could name. The third came from
+reading one of the entries that survived: a cost that grows with the repository rather than with the
+push, described nowhere.
+
+### One — A list with a reader for its form, and none for its currency
+
+The list is well guarded. An entry has to say which it is -- struck through with the finding that
+closed it, or open with a reason long enough to be one -- and two entries may not share a reason. All
+of that is about **shape**. None of it is about whether a living entry is still true, and the guard's
+own docstring says so: *"It cannot check whether an entry is still true -- that needs the measurement
+the entry is about."*
+
+Three entries were in exactly that state. The page that decides a `404` had been made a page
+(finding 451); the flag that said a branch was new was refused on a branch that existed (finding 446);
+the creation path had been paid for by a real push of thirty-five requests, three commits and one
+`POST /git/refs` (finding 455). And a fourth `[open: ...]` sat *inside* the entry that had been struck
+when the branch could not be created at all -- the one place where neither a reader nor the guard
+looks, because the guard read a strikethrough as the end of the story.
+
+The repair is not another sentence about reading the list, which is what the previous three repairs
+amounted to. It is a line at the top of it:
+
+> `Checked at v3.62: **13** entries open.`
+
+`check-open-list.mjs` now recomputes that number from the entries below it, refuses a number that is
+not the count, and refuses a **round older than the newest round in the corpus**. A round that writes
+itself up without opening the file therefore turns the build red -- which is the only part of this
+that a gate can do, and it is the part that failed three times. What it still cannot do is read: a
+round can satisfy the line by counting without thinking, and the docstring says that too.
+
+### Two — A strikethrough anywhere made the whole entry history
+
+The stamp's arithmetic is what exposed this. The guard counted thirteen open entries where the file
+had fifteen, and the two it had lost were entries that quote a closure **inside themselves**: a
+sub-item another round had struck, followed by the entry's own reason. `CLOSED.test(item)` looked for
+a `~~` anywhere in the entry, so both were judged closed -- and their own reasons were never read, not
+for length and not for being a copy of someone else's.
+
+An entry is closed when its **headline** is struck. The first line is the claim; the rest of the
+bullet is what the claim is about.
+
+The same two entries then produced the second half. `item.match(OPEN)` takes the *first* marker, and
+in such an entry the first marker belongs to the quoted sub-item -- fifteen characters of history
+judged as if it were the reason a reader is being asked to act on. The entry's own reason comes after
+it, because the quote is history and the reason is the claim, so the rule is now the **last** marker.
+Both halves are covered by cases written against the shapes that exist in the shipped file, and the
+shipped file's own summary is asserted against its headings, so a count that drifts from the document
+is red rather than quiet.
+
+### Three — A search that could not stop, and never said how far it had gone
+
+The base search reads a commit per branch tip that is not a local commit, because a twin can only be
+recognised by its tree. It had no stopping condition and no report.
+
+No stopping condition is the sharper half, because the optimum is provable: a creation cannot replay
+**fewer than one commit**. Zero would be a pointer push, and that question has already been answered
+*no* -- it is what puts a push on this path at all. So index 0 (the remote's twin of this very tip)
+and index 1 (its parent) both produce exactly one rebuilt commit, and once either is in hand nothing
+can improve on it.
+
+The walk knew none of that, and it showed twice. It read every tip that was not a local commit even
+when `best` already held the optimum from the **free** pass -- a branch of the remote pointing at the
+parent, four twins, and four requests spent to confirm an answer that could not move. And when it did
+read, it never said how many tips that took, so the one number in this path that grows with the
+repository instead of with the push was invisible.
+
+Both are now facts in the log:
+
+| repository | read | sentence |
+| --- | --- | --- |
+| a tip that is already a local commit, one below the head, plus two twins | **0** | `the base is <sha>: 0 of the 2 remote tip(s) that are not local commits were read` |
+| the parent's twin first in ref order, then a twin that matches nothing | **1** | `… 1 of the 2 … were read, and the search stopped there because a creation cannot replay fewer than one commit` |
+| only twins, none of them matching | **all** | `none of the 2 remote tip(s) … carries a tree in this ancestry, and all 2 were read: this push replays the whole history` |
+
+The third row is the one that makes the other two honest: an optimisation nobody can see is
+indistinguishable from a search that stopped early and got lucky. The window is still whatever the
+base gives -- the early exit removes requests, not replays -- and correctness still does not depend on
+the choice, because the executor asserts the tip tree it was asked for.
+
+### Readings
+
+> Ledger for `v3.62`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **239 files, 6016 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **243 files, 6203 tests passed** (as of this commit) |
+| new tests | **15**: the base search 3 (a free optimum that must read nothing, a twin met first that must read one, a repository of twins that must read all), the currency stamp 8 (a correct stamp, a wrong count, a round that is old, no stamp, two stamps, a corpus with no round to compare against, a quoted closure counted as open, and its reason read from the last marker), and the per-call budget 4 (every measured file, a mixed fixture reported by line, a comment that does not count, a nested suite that is not required) |
+| coverage | `core` **99.96 / 99.75 / 100 / 99.96**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the subjects are `scripts/` and a test file whose drivers are the site proofs |
+| mutation | **11** substitutions; **11 of 11 red, 0 survivors, 0 inert**, tree restored. Two probes, because the round changed two subjects: five on the base search (`publish.test.ts`) and six on the open-list guard and the budget rule |
+| failure sites | **126** across **59** of **85** scripts; throws **91** = 11 `fatal` + 69 `unguarded` + 1 `guarded` + 10 `rethrow`, **91 of 91** carried annotations. The count did not move: what moved was every line number, which is why the derivation had to be refreshed |
+| site proofs | **203** proved sites across **58** test files (`verify-site-proofs.mjs --list`; the three rows above read **66** until this round re-ran the gate: 203 claims is what it reports, and 58 is how many files name them) |
+| the open list | **13** entries open, **12** closed, three of them struck this round with the findings that closed them; the currency line is recomputed by the guard |
+| the history | `golden-master/publish-readings.json`: **17 attempts**, 284 rows. Attempt 17 carried the previous round's commits: 15 requests, nothing retried, nothing unanswered |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P1** | the remote's history shares no name with the local one above a boundary 272 commits old | unchanged; re-measured by every creation push | nothing converges it without rewriting the remote, which this channel refuses by design; the contract is isomorphism |
+| **P2** | a bounded ref count is a floor, not a count | unchanged | a repository with more than a thousand refs |
+| **P2** | the base search is linear in the number of twin tips | **narrowed**: the common case is now one read and the count is printed, but a repository whose base is not among the tips it reads still pays per twin | take the first N tips by name or by time and print how many were looked at, or let the caller name the base |
+| **P2** | the currency line proves a round counted, not that it read | **new**, and it is the one thing the guard cannot do | nothing in a file can check that a sentence is still true; the round that closes an entry writes what closed it |
+| **P2** | P13: a mutation is one substitution | measured once: 78 pairs, 78 red | a pair composing two changes neither of which is in the battery |
+| **P2** | `backend`'s install bound has never met a slow day | unchanged | the history answers it the first time a slow mirror is recorded |
+| **P2** | the five attempts recorded before v3.57 name no tip, and the file is one attempt behind | unchanged, and stated by the gate itself | every attempt from v3.57 on carries its commit; the lag is structural |
+| **P3** | the shards are unbalanced by file cost | unchanged | time each claimant file once, cut where the seconds are |
+
+**The lesson, for the round after this one.** The plan is a document, and this round began by
+finding three of its entries describing work that three rounds had finished. The repair that held was
+not a fourth sentence about reading the list -- it was an arithmetic line the guard recomputes and a
+round it compares. The stamp cannot make anyone read; it can make a round that did not read leave a
+number behind.
+
+And the number found the second defect by itself. Counting the entries disagreed with the file by
+two, and the two were entries the guard had judged closed by a strikethrough in their bodies. A count
+that must be recomputed found, in one line, what four rounds of reading the rule had not.

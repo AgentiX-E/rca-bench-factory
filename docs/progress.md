@@ -889,6 +889,13 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
+Checked at v3.62: **13** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+below it, refuses a number that is not that count, and refuses a round older than the newest round in this
+corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
+about -- so what it buys is that a round stood in front of all thirteen and counted. v3.62 is the round
+that needed it: the list had said "open" about a page that had been made a page, about a flag whose other
+half had been read, and about a creation path a real push had already paid for.
+
 - ~~**The real-corpus runs are diagnosed, and the mechanism was named wrong twice
   before it was named right.**~~ **Closed without a finding: the third naming came from
   the run's own stack trace, quoted below, and that is what the entry was waiting for.**
@@ -1304,19 +1311,28 @@ settle.
   onto an unborn branch ended in a `422` described as *"the branch moved ... it was null and is
   undefined"*. The creation is `POST /git/refs` now, with its own refusal for a name taken while
   the commits were being made.
-  `[open: the creation path has no real push behind it -- nothing in this repository's history has
-  created a branch -- so `POST /git/refs` is proved by the suite's server and by the local
-  transport, which is a claim about two stand-ins rather than about the API]`
-- **The listing that decides a `404` is one page of a hundred.** The decision needs one ref and
-  the sentence needs five names, so a repository with more refs is answered by the first page.
-  `[open: a refusal that had to name a branch past the hundredth would print a count and not the
-  name, and nothing here walks the `Link` header]`
-- **`--new-branch` permits an absent base and does not require one.** The flag says a branch the
-  remote does not have is meant to be new; on a branch that exists it is ignored, and the push
-  proceeds as an ordinary one.
-  `[open: the name states a permission rather than a requirement, and whether it should also
-  refuse an existing branch is a decision about the operator's intent that no instrument here can
-  make]`
+  **The other half is closed by finding 455**, which paid for it: the push that created `v3.61-tip`
+  carried three commits and twenty-one blobs and ended in one `POST /git/refs`, and the branch's tree is
+  the one the gate had blessed (`546b38da`, read back from the branch's own bytes). What made it possible
+  was not a cheaper rebuild but a different question: a creation hangs on a **tip the remote already
+  has**, because a repository with refs has tips even when it does not have the branch. Before that the
+  window was the whole ancestry, and on this history that was not expensive but impossible -- the replay
+  reaches a merge, and a replayed merge is refused (finding 455's first attempt, two requests, no objects).
+- ~~**The listing that decides a `404` is one page of a hundred.**~~ **Closed by finding 451**, which made
+  the listing walk pages instead of assuming the first hundred were the repository: 100 is both the page
+  size and the size of a repository that holds exactly a hundred refs, so a full page is not a last page
+  and the walk asks one more time. It stops at ten pages because it runs inside a refusal, and a walk that
+  stopped at its bound says **"at least"** -- printing the pages it read as the number the repository holds
+  is the defect the walk was added to fix, and printing a bound as a count is the same error with a smaller
+  number. `refs()` answers `{ names, tips, complete }`, so the sentence a reader acts on can tell "counted"
+  from "stopped counting". The old reason's other half is gone with it: nothing here walks a `Link` header,
+  because the page size is a constant this channel sends.
+- ~~**`--new-branch` permits an absent base and does not require one.**~~ **Closed by finding 446**, which
+  read the flag's second half: it is a statement about the remote -- *this branch does not exist* -- so a
+  push carrying it onto a branch that does exist is refused and names the commit it found. What was open
+  was whether a permission should also be a requirement, and the answer is that the two halves are one
+  statement: the permission to create is not a licence to move the branch the caller said they were
+  creating.
 - **The attempts recorded before v3.57 name no tip, and the file is one attempt behind.** All five
   carry `rev: null`, because their rows never named a commit and a reader that filled one in would
   be inventing the fact the field exists to report. The attempt that carries this round's push is
@@ -1370,7 +1386,7 @@ and this table.
 | [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 7 | v3.47 | v3.53 |
-| [volume-12.md](progress/volume-12.md) | 8 | v3.54 | v3.61 |
+| [volume-12.md](progress/volume-12.md) | 9 | v3.54 | v3.62 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

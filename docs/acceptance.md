@@ -1095,3 +1095,39 @@ from an anecdote again.
   file in the tree is always one attempt behind, because an attempt appends its rows after it
   has moved the ref. That is the same limit the CI readings have: a
   worst day is only as good as the worst day recorded.
+
+### The open list (v3.62)
+
+- **The live list states when it was read, in a number the guard recomputes.** Its first line is
+  `Checked at <round>: **N** entries open`. `check-open-list.mjs` requires exactly one such line in
+  the `## Open` section, requires its `N` to equal the entries below it, and requires its round to be
+  the **newest round in the corpus** -- so a round that writes itself up without opening this file is
+  red. A corpus with no round heading (every fixture) enforces none of that, and the guard prints
+  which rule it did not enforce instead of passing quietly.
+- **An entry is closed when its headline is struck, not when it quotes a struck sentence.** Two
+  entries of the shipped list carry a sub-item's `~~[open: ...]~~ Closed by finding N` inside their
+  bodies; both are open, and both were counted as history until the stamp's arithmetic disagreed with
+  them by two (finding 458).
+- **An open entry's reason is its last marker.** In a quoting entry the first marker belongs to the
+  quote; the entry's own reason comes after it, because the quote is history and the reason is the
+  claim.
+- **What is not claimed.** The stamp proves a round stood in front of the entries and counted. It does
+  not prove the entries were read, and it cannot: whether an entry is still true needs the measurement
+  the entry is about. Every repair to this list before v3.62 was a sentence about reading it, and all
+  three of the entries this round struck were closed by rounds that had written themselves up.
+
+### The base of a created branch (v3.62)
+
+- **A creation cannot replay fewer than one commit, and the search stops there.** Zero would be a
+  pointer push, and `holds(tip)` has already answered `no` -- it is what puts a push on this path.
+  Index 0 (the remote's twin of this tip) and index 1 (its parent) both replay exactly one commit, so
+  a base found at either distance is final: no tip beyond it can improve on it and none is read.
+- **What the search cost is printed, because it is the only number here that grows with the
+  repository.** `the base is <sha>: k of the n remote tip(s) that are not local commits were read`,
+  and when the search ended because it could not be improved on, the sentence says that; when no tip
+  matched, `none of the n ... carries a tree in this ancestry, and all n were read: this push replays
+  the whole history`. Three cases hold the three shapes: **zero** reads when a local tip already sits
+  at the optimum, **one** when a twin supplies it, **all** when none can.
+- **What is not claimed.** Requests are still linear in the number of twin tips in the worst case. The
+  round removed the wasted reads and reported the rest; it did not remove the worst case, and a
+  repository with a hundred renamed branches is still a hundred reads when none of them is the parent.

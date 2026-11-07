@@ -3205,3 +3205,120 @@ The measurement that makes it a claim rather than a comment is the mutation that
 `remote.head !== null` half: the case that creates `copy` at a twin goes red, and the case that
 refuses to *move* a branch onto a twin stays green -- which is the pair that shows the condition is
 about which ref is being written and not about content.
+
+## Finding 457 — three entries, one list, and the count nobody recomputed
+
+The `## Open` list is the plan. Every round reads its leftovers there, which makes it the one
+document whose staleness compounds: an entry that says "open" about finished work sends the next
+round to read code that has already been changed.
+
+Three entries were in that state on the morning of v3.62. The listing that decides a `404` had been
+made to walk pages (finding 451); `--new-branch` had been read as a statement and refused on a branch
+that exists (finding 446); the creation path had been paid for by a real push -- thirty-five
+requests, three commits, one `POST /git/refs`, and a branch whose tree is the one the gate had
+blessed (finding 455). And a fourth reason, `[open: the creation path has no real push behind it]`,
+was parked *inside* the entry that had been struck when a branch could not be created at all: the one
+position where neither a reader nor the guard looks, because the guard treated a strikethrough as the
+end of the entry.
+
+The guard has been given a reader for its **form** four times now -- it refuses an entry that says
+neither which it is, it refuses a reason too short to be one, it refuses two entries that share a
+reason, it reads every list instead of the first. None of those can say that a living entry is still
+true, and the docstring says so rather than looking like more than it is. What was missing is
+narrower and cheaper: nothing made a round **contact** the file.
+
+So the contact is arithmetic. The list now begins with `Checked at v3.62: **13** entries open`, and
+`check-open-list.mjs` recomputes the number from the entries below the line, refuses a number that is
+not that count, refuses a second stamp, and refuses a round older than the newest round in the
+corpus. A round that writes itself up without opening this file is red. A round that opens it and
+lies is not, and cannot be: counting is not reading.
+
+The injection is the fixture set rather than the shipped file: a stamp one round old, a count off by
+one, two stamps, no stamp, and a corpus with no round in it -- where the guard does not enforce the
+rule and says which rule it did not enforce. The last one is the shape every older fixture in that
+file has, so the rule had to be conditional, and a conditional rule that skips silently is the shape
+this repository keeps finding in other people's gates.
+
+## Finding 458 — the strikethrough that closed an entry it was quoted inside
+
+The count found this one. The stamp says thirteen; the guard said eleven; the two entries in the
+difference were entries whose **bodies** quote a closure -- a sub-item another round struck and
+closed, followed by the entry's own `[open: ...]`. `CLOSED.test(item)` looked for a `~~` anywhere in
+the entry, so both were judged history, and their own reasons were never read: not for length, not
+for being a copy of another entry's.
+
+An entry is closed when its **headline** is struck. The first line is the claim and the rest of the
+bullet is what the claim is about, which is also how a reader reads it.
+
+The same two entries gave up a second half once they were admitted as open. `item.match(OPEN)` takes
+the first marker, and in a quoting entry the first marker belongs to the quoted sub-item: fifteen
+characters of history were judged as the reason a reader is being asked to act on. The entry's own
+reason comes last -- quote first, claim after -- so the rule is the last marker.
+
+Both halves were found by counting rather than by reading, which is the point worth keeping: the
+number the stamp forced was wrong by two, and the two it was wrong by were not entries anybody would
+have picked to look at. The guards that count are worth more than the guards that describe, and this
+file has spent four rounds learning that from the other direction.
+
+## Finding 459 — a search with no stopping condition, and no number
+
+A created branch hangs on a tip the remote already has (finding 455), and a tip can only be compared
+to the local ancestry by its tree when the two sides renamed the commit. That comparison costs one
+commit read per branch, and the walk read every one of them -- including when the answer was already
+in hand.
+
+The optimum is provable and was not used: a creation cannot replay **fewer than one commit**. Zero
+would be a pointer push, and `holds(tip)` has already answered *no* -- that is what put the push on
+this path. Index 0 (the remote's twin of this tip) and index 1 (its parent) both produce exactly one
+rebuilt commit, so a base found at either distance cannot be improved on, and the reads below it buy
+nothing.
+
+Two shapes followed from that. The free pass over refs that *are* local commits could already hold
+the optimum, and the walk then read every twin anyway: a repository whose own branch points at the
+parent pays one request per twin to confirm an answer that cannot move. And when it did read, it said
+nothing about how many, so the one number in this path that grows with the repository instead of with
+the push lived only in a request log nobody has.
+
+The walk now returns what it cost -- `candidates`, `reads`, `stopped` -- and the caller prints it.
+Three cases hold the three shapes: a free optimum with two twins present must read **zero**; a parent
+twin met first in ref order must read **one** and stop; a repository whose only refs are twins that
+match nothing must read **all** of them and say that the whole history is replayed. The third is what
+keeps the first two honest: an optimisation nobody can see is indistinguishable from a search that
+stopped early and got lucky.
+
+What it does not do is fix the cost. Requests are still linear in the number of twin tips in the worst
+case; the difference is that the worst case is now a sentence with a number in it, and the common case
+-- the remote's tip is the parent -- is one read instead of one per twin.
+
+## Finding 460 — a budget on one test out of forty-three
+
+The full-suite run that checked this round's changes reported `fetch-official.test.ts >
+does not unpack an asset that is not an archive` at `Test timed out in 5000ms`, with the
+file's other forty-two tests passing and nothing about that test changed. Nothing in the tree
+was wrong with the test: it spawns the script, and on a machine running 239 files it waited
+longer than five seconds for a process start.
+
+The file is in `STANDALONE_MS` at 13 212 ms, so the rule that exists for exactly this shape
+passed. It asks whether the file states **a** budget larger than the default, `largestBudget`
+answers from a `120_000` on one of its tests, and the rule stops asking. Two of that file's
+forty-three tests carry a budget of twenty; the rest inherit 5 000 ms.
+
+The quantity that times out belongs to a test, not to a file. A file states its budget on
+whichever call happens to carry one, so "the file has a budget" is an invariant that gets
+**weaker with every test written** -- the opposite of what a budget is for. Seven of the nine
+measured files were in that state; `publish.test.ts` and `reader-against-backend.test.ts`
+were the two that could not fail this way, because every one of their top-level suites states
+one.
+
+The third arm of `timeout-budget.test.ts` therefore reads call sites rather than numbers: for
+a file in the table above the default, **every top-level `describe` / `it` / `test` must carry
+a `timeout`**. A suite budget covers the tests nobody has written yet, which is the property
+that was missing; a per-test budget covers that test. The scan joins a head split across
+lines, ignores a budget in a comment or a string, and looks only at column zero, because a
+nested suite is covered by the budget above it.
+
+The seven files now state `{ timeout: FILE_TIMEOUT_MS }` on each top-level suite, at
+`30_000` -- the number `gate-sites-are-proven.test.ts` and `publish.test.ts` already use, so a
+reader can check consistency rather than take an invention on trust. The measurement that
+keeps the rule honest is the fixture that fails it: one budgeted suite, one budgeted test,
+and one bare test, which the scan must report by line.
