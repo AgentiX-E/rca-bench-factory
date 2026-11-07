@@ -1965,5 +1965,44 @@
         "remaining": 4972
       }
     ]
+  },
+  {
+    "rev": "041ca04d1196baf030546e019a6f1ef70bbf41a5",
+    "branch": "v3.60-pointer",
+    "rows": [
+      {
+        "at": 1794032050049,
+        "method": "GET",
+        "path": "/git/ref/heads/v3.60-pointer",
+        "attempt": 1,
+        "status": 404,
+        "ms": 1971,
+        "sent": 0,
+        "received": 114,
+        "remaining": 4420
+      },
+      {
+        "at": 1794032052020,
+        "method": "GET",
+        "path": "/git/commits/041ca04d1196baf030546e019a6f1ef70bbf41a5",
+        "attempt": 1,
+        "status": 200,
+        "ms": 13404,
+        "sent": 0,
+        "received": 3767,
+        "remaining": 4419
+      },
+      {
+        "at": 1794032065424,
+        "method": "POST",
+        "path": "/git/refs",
+        "attempt": 1,
+        "status": 201,
+        "ms": 13997,
+        "sent": 83,
+        "received": 382,
+        "remaining": 4942
+      }
+    ]
   }
 ]

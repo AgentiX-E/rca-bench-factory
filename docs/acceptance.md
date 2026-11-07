@@ -836,19 +836,25 @@ point, and the boundary between the first two is the whole of what makes the thi
   as a 5xx, with a test that destroys a socket to prove it. What remains unmodelled is any **other**
   error shape the live API may return, and the retry budget: a connection that never answers is
   refused after three attempts with the ref unmoved. Also not claimed, and measured in v3.59: a
-  real push's commit SHAs equal the local ones. Of the remote's 483 commits, 247 carry a name the
-  local history does not, and the newest one that still matches is 246 commits back -- so
-  `identical` has been false across that whole span and the CLI has said so every time. The cause
-  this paragraph used to name (UTC author dates written by the old channel) was tested and is
+  real push's commit SHAs equal the local ones. Re-measured in v3.60 by asking the API about each
+  commit -- a subject is a string two commits can share, so the pairing counted sentences -- the
+  remote holds **237 of 509** local commits by name and not the other **272**; the newest shared
+  commit is `041ca04d1`, **272 commits back**, and the shared set is exactly the oldest 237: a
+  suffix, so the rename above the boundary is total and every commit below it arrived byte for
+  byte. `identical` has been false across that whole span and the CLI has said so every time. The
+  cause this paragraph used to name (UTC author dates written by the old channel) was tested and is
   wrong: the API stores the `+0800` offset these commits carry and it stores a message's trailing
   newline, both confirmed by hashing the candidate byte strings locally and comparing them with the
   SHA the API returned. What differs is the parent line, and it differs because a plan grounded on
   a twin must rename. The line-for-line log equality is a claim about the test, where both sides
   are local git objects; the real push claims that every commit arrived, that its tree, message
-  and both identities are the local ones, and that the parent *lines* are the only difference. Nor has the **creation** path met a real push:
-  nothing in this repository's history has ever created a branch, so `POST /git/refs` is proved by
-  the suite's server and by the local transport, which is a statement about two stand-ins. The
-  first push that creates a branch will be the first one.
+  and both identities are the local ones, and that the parent *lines* are the only difference.
+  The **creation** path met its first real push in v3.60 -- attempt 12, three requests, no object
+  created -- and what it therefore does not claim is a creation that had to upload anything: the
+  branch it made names a commit the remote already held, which on this repository is any commit
+  older than the boundary. A creation of a branch at the *current* tip would replay the window
+  above the twin, because the remote's name for the tip is not the local one; that path is proved
+  by the stand-ins and has not been paid for on the real channel.
 
 ## Definition of Done (per change and per release)
 

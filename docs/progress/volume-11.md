@@ -2287,9 +2287,9 @@ row's `measured` sentence now carries the CI run that found it. The push that ca
 
 | item | value |
 | --- | --- |
-| `core` test suite | **239 files, 5978 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **243 files, 6165 tests passed** (as of this commit) |
+| `core` test suite | **239 files, 5978 tests passed** (at v3.59) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.59) |
+| repo test suite | **243 files, 6165 tests passed** (at v3.59) |
 | new tests | **8**: 4 on the prediction (the round trip over a history with a merge, the `commit-tree` oracle, a parent count the commit does not have, a parent that is not a name), 2 on the twin (the verdict and the report of what survived, the announcement before the first request), 1 on the refusal of a lost byte, and 1 on the carry of a shared fingerprint |
 | coverage | `core` **99.96 / 99.75 / 100 / 99.96**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the subject is `scripts/` and its drivers are the site proofs |
 | mutation | **21** substitutions; first pass **17 red, 3 survivors, 1 inert**; the survivors were two redundant columns and a sentence the case asserted only half of, the inert one a `from` that had moved; after the repair **21 of 21 red, 0 inert**, tree restored green |
@@ -2321,3 +2321,209 @@ The other half is about redundancy. Three substitutions survived in one battery,
 described the same defect: a column that cannot hold a second value, and a fact derived three
 times from the same comparison. A survivor is a statement about the case, but a survivor that
 cannot be killed by any case is a statement about the code.
+
+## v3.60 — the flag that was read as permission, and the request a history was paying for
+
+The left-open list had two entries that pointed at the same place: the creation path had never
+met a real push, and a new branch replayed the whole history even when the remote already held
+the commit. Both are about the one path in the channel that had never been paid for, and this
+round went there. It found a defect one step earlier than either entry named.
+
+### 一、A flag with two halves, and the channel asked one of them
+
+`--new-branch` exists to exempt a `404` on the branch read from the refusal that a missing
+branch on a repository with refs earns. That is a permission, and it was implemented as one:
+the flag is consulted only inside `if (remote.head === null && !newBranch)`. What the same word
+also says -- *this branch does not exist* -- was never read. A push passing the flag onto a
+branch that **is** there published onto it, exactly as a plain push would.
+
+The channel had, one call earlier, read the branch and learned that it exists. It then moved
+the branch its author had just said they were creating, and on a linear history nothing
+afterwards is wrong: the ref moves, the push reports success, and the branch that was meant to
+be untouched carries somebody else's commits. This is v3.58's shape one layer up -- one status
+answering for two states, then one flag carrying two statements -- and the repair is the same:
+the two halves are one statement, so a false one is refused, and the refusal names the commit
+it was found at, because that is the fact the caller was wrong about. Finding 446.
+
+### 二、A commit is closed, so one question decides the whole push
+
+`locateBase` compares the remote with the local ancestry, and an absent branch has nothing to
+compare: `remote.head` is `null`, so the window was set to the entire ancestry and every commit
+in it was rebuilt. That is right about content -- the remote has none of it -- and wrong about
+cost whenever the objects are already there, which is the ordinary case for a branch made from
+an existing one: **509 commits and their blobs, rebuilt to publish one reference**.
+
+The question the path never asked is whether the remote already holds the tip. It settles the
+whole push, and it is one request, because a commit is closed -- a remote cannot hold a commit
+without holding its tree, its parents and every ancestor. So `200` on `GET /git/commits/<tip>`
+means the history arrived with it and the push is one `POST /git/refs`. `holds(sha)` is that
+question: the endpoint on the real channel, `cat-file -e <sha>^{commit}` on the local one -- the
+peel matters, because a blob the remote happens to hold is not an answer to it, and the case
+that checks it asks about a blob the remote does hold and expects `false`.
+
+It is asked **only** where the branch read answered `404`, so the ordinary push pays nothing,
+and only after the name-is-wrong refusal, so a typo is still refused before a commit is named.
+Finding 447.
+
+### 三、An empty plan that is a complete instruction
+
+`planPublish` refuses an empty window: *"a plan with no commits would move a ref to where it
+already is; publish nothing instead"*. A pointer push is the case that refusal's premise does
+not cover -- the ref does not exist yet, so naming a commit that is there is a change, and it
+is the only change the push makes. `pointerPlan` is that plan: no steps, and the tree it
+publishes.
+
+Three sentences follow from it, and each is the difference between a number and its meaning.
+The plan's log line says *the remote already holds `<sha>`: naming it is the whole push, and no
+commit is created*, and it says why the gate's tree is that tree -- a commit's bytes contain it,
+so the assertion the rebuild path has to make after the fact is here an identity. A dry run
+prints *nothing would be built; one request would create the branch*, because *"0 commit(s)
+would be published"* is true of that plan and tells the reader the opposite of what would
+happen. And the result is a third identity state, `held`, with `commits: 0` and no base: there
+was no window, so there was nothing to locate.
+
+`--no-gate` now announces itself for the same reason. A guard that is bypassed is a fact the
+transcript owes its reader, and this round's real creation push uses it for a state in which the
+receipt rule has nothing to say: the tree is already on the remote, so nothing is being published.
+
+### 四、One status, two states, at the creation
+
+`422` on `POST /git/refs` means the name was taken while the push was being made, **or** that
+the commit the ref was to name is not there after all -- and the pointer path makes the second
+reachable for the first time, since the question answered `200` a moment before and a remote is
+free to collect an unreachable object in between. The sentence named the first state only, and
+said *"while the commits were being created"*, which on a pointer push is work that never
+happened. Both states are named now: the channel cannot tell them apart without a second read it
+refuses to make, and a sentence that names one state and is sometimes wrong about it is worse
+than one that names two. Finding 448.
+
+### 五、Two stand-ins that could not express the question
+
+The new question needed a `404`, and neither fixture could produce one.
+
+The readings stand-in answered every route it did not know with `201 {sha: 'ccc…'}`. That is a
+success for a question nobody had declared, and it became load-bearing the moment the channel
+asked `GET /git/commits/<sha>`: `holds` read the `201` as *the remote has this commit*, and the
+creation path created a branch naming a commit the stand-in did not hold -- so two readings cases
+failed for a reason that had nothing to do with the channel. The catch-all answers `404` now, and
+the three routes it had been silently covering are explicit.
+
+The other fixture was believed to withhold objects and did not. `stage()` clones, and a clone
+carries **every** object the source can reach, so *"none for the ones above it"* described a
+fidelity the fixture never had: every case that said the blobs have to be uploaded had the blobs
+already in the remote's store. The channel's end-to-end claim survives -- a wrong byte hashes to
+a different blob and the last assertion compares trees -- but the fixture could not express the
+state this round is about. `staged(name, upto)` pushes exactly the history it is given, so a
+commit above `upto` is absent from the object store and `upto: null` is a repository with no refs
+at all; the two cases that had been passing on a clone were moved onto it, where they now publish
+something. Finding 449.
+
+### 六、The boundary, asked as objects instead of as sentences
+
+v3.59's boundary was measured by pairing two logs by **subject**: 236 of 483 commits shared a
+name. A subject is a string two different commits can carry, so that number counted sentences
+that looked alike. `holds` gives one answer per commit, so the same boundary was re-measured
+object by object -- **509** local commits asked one at a time:
+
+| question | answer |
+| --- | --- |
+| commits the remote holds by name | **237** |
+| commits it does not | **272** |
+| newest shared commit | `041ca04d1`, **272 commits back** |
+| oldest missing | the very next commit in the local log |
+| is the shared set a suffix? | **yes** -- the oldest 237 and nothing above them |
+
+The suffix is what the pairing could not establish: the rename above the boundary is **total**,
+every commit before it arrived byte-identical, and no commit above it ever did. And the boundary
+is a moving point with a fixed coordinate -- it went from 246 to 272 while the local history went
+from 483 to 509, so the 26 commits these rounds added are exactly the 26 the boundary moved by.
+That is the arithmetic of a rename that never stops, and it is why the contract is isomorphism
+rather than equality. Finding 450.
+
+### 七、第一次创建的推送：三次请求，和一个活了十四秒的 ref
+
+The entry that had been on the list since v3.58 -- *the creation path has no real push behind
+it* -- is closed. Attempt 12 is the first push in this repository's history that created a
+branch, and it is also the first one whose path was chosen by a measurement:
+
+> `the remote already holds 041ca04d1: naming it is the whole push, and no commit is created --
+> the tree this gate blessed is that commit's own tree, because a commit's bytes contain it`
+
+> `v3.60-pointer is at 041ca04d1196baf030546e019a6f1ef70bbf41a5, which is the local commit, byte
+> for byte, and the remote already held it: this push created the name and rebuilt nothing`
+
+**Three requests, none retried, none unanswered** (`GET /git/ref/heads/v3.60-pointer` → `404`,
+`GET /git/commits/041ca04d1` → `200`, `POST /git/refs` → `201`), against a replay that would have
+been 509 commits and their blobs. The branch was then read back with an independent request,
+outside the ledger because it is not a push: `refs/heads/v3.60-pointer` names exactly
+`041ca04d1`, so the `201` is not the only evidence.
+
+The branch names a commit **272 commits old**, and that is not a choice: it is the newest commit
+the two histories agree on. A pointer push can only name a commit the local repository has and the
+remote holds, and on this repository that set is the oldest 237 -- so the first real creation this
+channel ever made had to hang off the far side of the rename boundary. The measurement of §六 and
+the artifact of §七 are the same fact, read two ways.
+
+The slowest request of the round is that `POST /git/refs`: **13 997 ms** for a call that carries
+no object at all. A budget argued from "a ref write is cheap" would be wrong by an order of
+magnitude, and this is the record that says so.
+
+### 八、电池：一处锚点，和一次诚实的中止
+
+Eleven substitutions on the new rules, each one edit, each restored in a `finally`. The first pass
+reported **10 red and 1 SKIP**: the anchor for the `cat-file` mutation had been written against
+`['cat-file', …]` while the argument list begins `['-C', remote, 'cat-file', …]`. The battery
+reports an anchor that does not match as a skip rather than as a survivor, which is the difference
+between "nothing holds this rule" and "this line was never asked", and the distinction is why the
+skip is printed with the count it found. With the anchor corrected the second pass is **11 of 11
+red, 0 survivors, 0 inert**.
+
+The substitutions are the round's claims in the negative: the creation path replaying what it was
+asked not to, a `404` read as a commit the remote holds, `--new-branch` ceasing to be a claim, a
+pointer push reporting a commit it did not carry, a dry run creating the branch, `identical` going
+false, the object store asked about an object rather than a commit, the not-held line dropped, the
+command line reporting a pointer push as a verified rebuild, an empty plan called nothing to
+publish, and the creation refusal naming one state where it carries two.
+
+### Readings
+
+> Ledger for `v3.60`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **239 files, 5988 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **243 files, 6175 tests passed** (as of this commit) |
+| new tests | **10**: the pointer path 5 (the creation that builds nothing, the replay when the remote does not hold it, the flag refused for an existing branch, `holds` answering about a blob the store holds, the three requests and no object), the questions read from the stand-in 3 (a dry run of the pointer path, a `403` on the question forwarded, the two states of the creation's `422`), and the command line 2 (`--no-gate` announcing itself, an empty plan described as a name rather than no commits) |
+| coverage | `core` **99.96 / 99.75 / 100 / 99.96**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the subject is `scripts/` and its drivers are the site proofs |
+| mutation | **11** substitutions; first pass **10 red, 1 skipped, 0 survivors** -- the skip was an anchor written against the wrong element of an argument list, corrected and re-run: **11 of 11 red, 0 survivors, 0 inert**, tree restored |
+| failure sites | **126** across **59** of **85** scripts; throws **91** = 11 `fatal` + 69 `unguarded` + 1 `guarded` + 10 `rethrow` -- two new, both proved by `publish.test.ts` |
+| site proofs | **203** proved sites across **66** test files (`verify-site-proofs.mjs --list`) |
+| the boundary, asked as objects | **509** local commits asked one at a time, **237** held by name, **272** not; the shared set is exactly the oldest 237; newest shared `041ca04d1`, 272 back |
+| the history | `golden-master/publish-readings.json`: **12 attempts**, 175 rows. Attempt 12 is the first creation path ever executed against the real API -- 3 requests, 0 retried, slowest `POST /git/refs` 13 997 ms -- and it built no object at all |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P1** | the remote's history shares no name with the local one above a boundary 272 commits old | **refined**: the boundary is now measured as objects rather than as paired subjects, and it is a suffix -- 237 held, 272 not | nothing converges it without rewriting the remote, which this channel refuses by design; the contract is isomorphism, and it stays open until code and contract use one name for it |
+| **P2** | the pointer path asks the gate for a receipt it does not need | **new**: a push that publishes no content cannot publish an unblessed tree, and today it says so by bypassing the rule with `--no-gate` | decide whether the gate should be asked after `holds` for this path -- the order "refuse before spending a request" is what keeps it where it is |
+| **P2** | an empty repository still costs the question | **new**: `refs()` already answered that the repository holds nothing, which is also the answer to "does it hold this commit" | one request saved on every first push, at the price of trusting a listing that a repository with unreachable objects would not answer |
+| **P2** | the listing is one page of a hundred | unchanged | a repository with more than a hundred refs |
+| **P2** | P13: a mutation is one substitution | measured once: 78 pairs, 78 red | a pair composing two changes neither of which is in the battery |
+| **P2** | `backend`'s install bound has never met a slow day | unchanged | the history answers it the first time a slow mirror is recorded |
+| **P2** | the five attempts recorded before v3.57 name no tip, and the file is one attempt behind | unchanged, and stated by the gate itself | every attempt from v3.57 on carries its commit; the lag is structural |
+| **P3** | the shards are unbalanced by file cost | unchanged | time each claimant file once, cut where the seconds are |
+| **P3** | `volume-11.md` is at 178 746 of 200 000 bytes | **new**: measured by `check-progress-volumes` | the next round opens `volume-12.md`, which is the rule the check already enforces |
+
+**The lesson, for the round after this one.** Two entries had sat on this list for two rounds
+because both were described as missing *evidence* -- no real push, no cheaper path -- and neither
+was. The first thing the round did was read the flag that guards the path, and the defect was in
+the half of it nobody had read: a permission that also asserts something, honoured for the half
+that lets the push proceed. One word, two statements, one of them false.
+
+The other half is about what a fixture can say. Two stand-ins had to be repaired before the new
+question could be asked at all, and both were repaired in the same direction: a fixture that
+answers a question nobody declared, and a fixture that was believed to withhold objects it had
+copied. A stand-in is a claim about the world, and an unexamined one is a claim the suite is
+making on nobody's authority.
