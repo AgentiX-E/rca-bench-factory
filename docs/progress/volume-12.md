@@ -1650,6 +1650,7 @@ the table-form records are counted and their rows are declared unjudged in every
 | failure sites | **126** across **59** of **85** scripts; throws **91** = 11 `fatal` + 69 `unguarded` + 1 `guarded` + 10 `rethrow`, **91 of 91** carried annotations. The count did not move: the new problems are raised at exits that already existed, and what moved was line numbers |
 | the open list | **12** entries open, **14** closed; two struck this round, both naming the finding that closed them, and one raised -- the record rows nothing judges |
 | the split, measured | shard 1 **439 s**, shard 2 **199 s** on run `466`; at v3.54 it was **248 s** and **387 s**, the other way round |
+| the history | `golden-master/publish-readings.json`: **20 attempts**, 339 requests. Attempt 19 carried this round's two commits: 20 requests, nothing retried, nothing unanswered, slowest `POST /git/blobs` 2 960 ms. Attempt 20 was this round's own re-run -- it found the remote already holding the tree, made **three reads**, and published nothing, which the file records because the unit it counts is a publish attempt rather than a push |
 
 ### Left open, in the order the goal is reached
 
