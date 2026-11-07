@@ -52,6 +52,7 @@ import {
   runGit,
   locateBase,
   planPublish,
+  predictRebuild,
   readAncestry,
   readBlob,
   readCommit,
@@ -218,8 +219,21 @@ export async function publish({
 
   const window = ancestry.slice(0, located.index).reverse();
   const commits = window.map((commit) => readCommit({ root, sha: commit.sha }));
+  const localTrees = new Map(commits.map((commit) => [commit.sha, commit.tree]));
   const plan = planPublish({ remote, commits });
   for (const line of summarisePlan(plan)) log(line);
+  if (located.kind === 'tree') {
+    // The remote's tip carries the tree of a local ancestor and is not that commit. Every
+    // commit above it will hang on the remote's name for its parent, and a commit's name is
+    // its bytes -- so the SHAs in this plan cannot come out equal, whatever the replay does.
+    // It is said before the first request rather than after the last: an operator reading
+    // "the tip's SHA is not the local one" after the fact cannot tell a rename from a loss.
+    log(
+      `the remote's tip ${String(remote.head).slice(0, 9)} carries the tree of ` +
+        `${ancestry[located.index].sha.slice(0, 9)} and is not that commit: this plan hangs on the remote's ` +
+        'names, so the commits above it will differ from the local ones in their parent lines and in nothing else',
+    );
+  }
   if (dryRun) return { state: 'planned', remote, plan, tip: null, identical: false };
 
   const built = new Map();
@@ -240,8 +254,32 @@ export async function publish({
       author: step.author,
       committer: step.committer,
     });
-    built.set(step.sha, { commit, tree });
-    log(`${step.sha.slice(0, 9)} -> ${commit.slice(0, 9)} (tree ${tree.slice(0, 9)})`);
+    // What the rebuild produced, against the three things it can be: the local commit (the
+    // only outcome a push that hangs on local names can have), the local commit with its
+    // parents renamed (the outcome every push above a twin has), or neither -- which is a
+    // byte that did not survive, and is refused rather than described.
+    const verdict =
+      commit === step.sha
+        ? 'exact'
+        : tree !== localTrees.get(step.sha)
+          ? 'tree'
+          : predictRebuild({ root, sha: step.sha, parents: parent === null ? [] : [parent] }) === commit
+            ? 'parents'
+            : 'differs';
+    if (verdict === 'differs') {
+      throw new TypeError(
+        `the rebuilt commit is not ${step.sha.slice(0, 9)} with its parents renamed: the API answered ` +
+          `${commit.slice(0, 9)} for a commit whose tree, message, identities and parent count are the ones it was ` +
+          'sent, so the bytes that arrived are not the bytes that left. Nothing was forced',
+      );
+    }
+    built.set(step.sha, { commit, tree, verdict });
+    log(
+      verdict === 'parents'
+        ? `${step.sha.slice(0, 9)} -> ${commit.slice(0, 9)} (tree ${tree.slice(0, 9)}): the same commit, hanging on ` +
+            "the remote's name for its parent"
+        : `${step.sha.slice(0, 9)} -> ${commit.slice(0, 9)} (tree ${tree.slice(0, 9)})`,
+    );
   }
 
   const published = built.get(tip);
@@ -256,7 +294,24 @@ export async function publish({
     );
   }
   await transport.updateRef({ branch, sha: published.commit, expected: remote.head });
-  return { state: 'published', remote, plan, tip: published.commit, identical: published.commit === tip };
+  // One answer, read from one place. The verdict on the tip *is* the question the caller
+  // asks -- did the rebuild reproduce the local commit -- and `identical`, the state and the
+  // sentence all read it rather than each re-deriving it from `published.commit === tip`.
+  // Two derivations of one fact disagree the first time one of them learns something.
+  //
+  // And no count of exact against renamed: a push above a twin renames *every* commit it
+  // carries, a push onto the same commit renames none, so the pair would always be (n, 0) or
+  // (0, n) -- two columns that look like measurements and can only say what the state
+  // already says. `commits` is the one number with content.
+  const exact = published.verdict === 'exact';
+  return {
+    state: 'published',
+    remote,
+    plan,
+    tip: published.commit,
+    identical: exact,
+    identity: { state: exact ? 'exact' : 'parents', commits: plan.commits.length, base: located.kind },
+  };
 }
 
 /* ------------------------------------------------------------------ github */

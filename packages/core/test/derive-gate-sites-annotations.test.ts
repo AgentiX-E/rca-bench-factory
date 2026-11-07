@@ -144,6 +144,24 @@ describe('an annotation is carried by what the guard says, not by where it sits'
     expect(ambiguous.carried).toBe(0);
   });
 
+  it('carries the annotation every carrier of a shared fingerprint agrees on', () => {
+    // Eight annotations were lost to a round that added one throw in the middle of
+    // `publish.mjs`: six `rethrow error` statements and two identical refusals share their
+    // fingerprints, the round moved every line below its insertion, and the line was the only
+    // evidence the carry had. When the carriers agree, the annotation belongs to the
+    // fingerprint and not to a coordinate -- and a proof that is the same proof at every
+    // occurrence cannot become a proof about a line it is not.
+    const prior: Site[] = [
+      { ...site('scripts/x.mjs', 10), status: 'proved', provedBy: 'test/x.test.ts' },
+      { ...site('scripts/x.mjs', 40), status: 'proved', provedBy: 'test/x.test.ts' },
+    ];
+    const moved = carryAnnotations([site('scripts/x.mjs', 77)], prior);
+    expect(moved.sites[0]!.status).toBe('proved');
+    expect(moved.sites[0]!.provedBy).toBe('test/x.test.ts');
+    expect(moved.carried).toBe(1);
+    expect(moved.strays).toEqual([]);
+  });
+
   it('carries nothing into a site that did not exist before', () => {
     const carried = carryAnnotations(
       [site('scripts/new.mjs', 5)],

@@ -981,6 +981,33 @@ export function carryThrowAnnotations(rows, priorRows) {
  * a proof: the failure this fixes -- a moved line dropping a proof from a row that
  * did not change -- was found once and would otherwise have to be found again.
  */
+/** The columns an annotation occupies, in the order a row carries them. */
+const ANNOTATION_COLUMNS = ['status', 'provedBy', 'statement', 'heldBy', 'mutant', 'reason'];
+
+/**
+ * The annotation every carrier of one fingerprint holds, when they all hold the same one.
+ *
+ * The fingerprint is silent for the six `rethrow error` statements in `publish.mjs` and for
+ * the two `the plan carries a blob` refusals in it: same script, same disposition, same
+ * message. The line was the only evidence left, and any edit above them erased it -- which
+ * is the accident the fingerprint was introduced to survive, still happening one degree
+ * down. Eight annotations were dropped by a round that added one throw in the middle of that
+ * file, and the gate then asked for eight proofs that already existed.
+ *
+ * When *every* prior carrier of a fingerprint holds the same annotation, the annotation is a
+ * property of the fingerprint rather than of a coordinate, and carrying it is not a guess:
+ * whichever occurrence this site is, the proof written for it is the same proof. When two
+ * carriers disagree -- one proved, one exempt for its own reason -- no rule can choose, and
+ * the site keeps nothing, because a wrong proof is worse than a missing one.
+ */
+function unanimous(candidates) {
+  const annotated = candidates.filter((row) => row.status !== undefined);
+  if (annotated.length === 0) return undefined;
+  const [first] = annotated;
+  const agrees = annotated.every((row) => ANNOTATION_COLUMNS.every((column) => row[column] === first[column]));
+  return agrees ? first : undefined;
+}
+
 function carryColumns(rows, priorRows, fingerprint) {
   const pending = new Map();
   for (const row of priorRows) {
@@ -995,14 +1022,14 @@ function carryColumns(rows, priorRows, fingerprint) {
     const candidates = pending.get(fingerprint(row)) ?? [];
     const before = candidates.length === 1
       ? candidates[0]
-      : candidates.find((c) => c.line === row.line);
+      : candidates.find((c) => c.line === row.line) ?? unanimous(candidates);
     if (before === undefined) {
       if (candidates.length > 0) strays.push(`${row.script}:${row.line}`);
       return row;
     }
     candidates.splice(candidates.indexOf(before), 1);
     const entry = { ...row };
-    for (const column of ['status', 'provedBy', 'statement', 'heldBy', 'mutant', 'reason']) {
+    for (const column of ANNOTATION_COLUMNS) {
       if (before[column] !== undefined) entry[column] = before[column];
     }
     if (entry.status !== undefined) carried += 1;

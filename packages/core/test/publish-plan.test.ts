@@ -10,6 +10,7 @@ import {
   locateBase,
   parseIdent,
   planPublish,
+  predictRebuild,
   readAncestry,
   readCommit,
   readFiles,
@@ -404,5 +405,81 @@ describe('the plan as a sentence, and the symbols it hands to an executor', () =
   it('names the empty tree git itself uses, so an unborn plan is expressible', () => {
     expect(EMPTY_TREE).toHaveLength(40);
     expect(EMPTY_TREE).toMatch(/^[0-9a-f]{40}$/);
+  });
+});
+
+/**
+ * The commit a replay will produce, predicted before the API is asked for it.
+ *
+ * A push that hangs on a remote tip carrying the tree of a local ancestor -- a twin -- can
+ * never reproduce the local SHAs: a commit's name is its content *and its parents' names*,
+ * so replaying onto a twin renames every commit above it. The channel used to report that
+ * as "the history it hangs on is not the local history" without ever checking the claim.
+ * These cases give it the means to check it: the prediction is the local commit's own bytes
+ * with the parent lines replaced, and `git hash-object` is the oracle.
+ */
+describe('the commit a replay will produce', () => {
+  const parentsOf = (root: string, sha: string) =>
+    git(root, ['rev-list', '--parents', '-n', '1', sha]).trim().split(' ').slice(1);
+
+  it('is the commit itself when it is given that commit\'s own parents', () => {
+    const root = repository('predict-identity');
+    commit(root, 'first', { 'a.txt': 'a\n' });
+    git(root, ['checkout', '-q', '-b', 'side']);
+    commit(root, 'side', { 'b.txt': 'b\n' });
+    git(root, ['checkout', '-q', 'main']);
+    commit(root, 'trunk', { 'c.txt': 'c\n' });
+    git(root, ['merge', '-q', '--no-ff', 'side', '-m', 'a merge']);
+    // A merge is in the list on purpose: it is the one commit with two parent lines, and the
+    // rewrite walks the lines in order. A prediction that used the first parent twice would
+    // pass every single-parent case in this file and be wrong for exactly this one -- the
+    // shape of a survivor, planted here rather than found by a battery.
+    const shas = git(root, ['rev-list', '--reverse', 'HEAD']).trim().split('\n');
+    expect(shas).toHaveLength(4);
+    for (const sha of shas) {
+      // The round trip is the whole proof of the reader: a function that reconstructed the
+      // bytes wrongly would have to be wrong in a way that cancelled out in `hash-object`.
+      expect(predictRebuild({ root, sha, parents: parentsOf(root, sha) })).toBe(sha);
+    }
+  });
+
+  it('is the commit git itself writes for the new parents', () => {
+    // An oracle the code does not share a line with: `commit-tree` builds the object from
+    // the tree, the parent, the message and the two identities, and its output name is the
+    // answer. Anything the prediction got wrong would show up as a different SHA.
+    const root = repository('predict-oracle');
+    const first = commit(root, 'first', { 'a.txt': 'a\n' });
+    commit(root, 'second', { 'b.txt': 'b\n' });
+    const third = commit(root, 'third', { 'c.txt': 'c\n' });
+    // `third` really hangs on `second`; the prediction below hangs it on `first` instead, so
+    // the two names must differ and `commit-tree` is asked to produce the second one.
+    const raw = git(root, ['cat-file', 'commit', third]);
+    const date = /^author .* (\d+ [+-]\d{4})$/m.exec(raw)?.[1] ?? '';
+    const tree = git(root, ['rev-parse', `${third}^{tree}`]).trim();
+
+    const rewritten = git(root, ['commit-tree', tree, '-p', first], {
+      input: 'third\n',
+      env: { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+    }).trim();
+    expect(predictRebuild({ root, sha: third, parents: [first] })).toBe(rewritten);
+    expect(rewritten).not.toBe(third);
+    expect(git(root, ['log', '-1', '--format=%s', rewritten]).trim()).toBe('third');
+  });
+
+  it('refuses a parent count the commit does not have, rather than guessing which to keep', () => {
+    const root = repository('predict-count');
+    const first = commit(root, 'first', { 'a.txt': 'a\n' });
+    const second = commit(root, 'second', { 'b.txt': 'b\n' });
+    expect(() => predictRebuild({ root, sha: second, parents: [] })).toThrow(/has 1 parent\(s\) and 0 were given/);
+    expect(() => predictRebuild({ root, sha: second, parents: [first, first] })).toThrow(
+      /has 1 parent\(s\) and 2 were given/,
+    );
+  });
+
+  it('refuses a parent that is not a commit name', () => {
+    const root = repository('predict-parent');
+    const first = commit(root, 'first', { 'a.txt': 'a\n' });
+    const second = commit(root, 'second', { 'b.txt': 'b\n' });
+    expect(() => predictRebuild({ root, sha: second, parents: ['not-a-sha'] })).toThrow(/a parent to hang on/);
   });
 });

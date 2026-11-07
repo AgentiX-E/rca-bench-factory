@@ -249,7 +249,15 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // own `throw error` for a failure that is not that refusal. The read asks whether the
     // branch is new; the write is the only place that can act on the answer, and the two
     // ends of one question are two statements because neither can see the other's state.
-    expect(total).toBe(87);
+    //
+    // 89 is v3.59, and both are about a commit that did not arrive whole. `predictRebuild`
+    // refuses a parent count the commit does not have -- a prediction with the wrong count
+    // is a different commit, and guessing which parent to drop would produce a name that is
+    // wrong in a way nobody checks. `publish` refuses a rebuild that is neither the local
+    // commit nor the local commit with its parents renamed: one throw for a caller that
+    // handed a function the wrong shape, one for a remote that answered with bytes nobody
+    // sent. They sit at two boundaries that only meet through a hash.
+    expect(total).toBe(89);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -298,7 +306,7 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // was taken first. 9 rethrow is its two -- a `403` on that listing is forwarded, because
     // a listing this channel was not allowed to read is not a repository with no refs, and
     // the creation forwards everything that is not the 422 of a taken name.
-    expect(counts).toEqual({ fatal: 11, unguarded: 66, guarded: 1, rethrow: 9 });
+    expect(counts).toEqual({ fatal: 11, unguarded: 68, guarded: 1, rethrow: 9 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

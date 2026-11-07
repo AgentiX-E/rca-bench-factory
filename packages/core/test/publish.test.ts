@@ -155,6 +155,9 @@ describe('publishing to a repository through the local transport', () => {
     return publish({ root: source, rev: 'HEAD', branch: 'main', transport }).then((result) => {
       expect(result.state).toBe('published');
       expect(result.identical).toBe(true);
+      // Every commit was reproduced from the bytes of its own object, so the names are the
+      // local names: the base was the same commit, not a twin wearing the same tree.
+      expect(result.identity).toEqual({ state: 'exact', commits: 3, base: 'commit' });
       // The assertion finding 404 would have failed: three commits went up and one
       // arrived, with every tree identical and the round's account of itself two thirds
       // shorter. A tree comparison is satisfied by that state; a log comparison is not.
@@ -244,6 +247,52 @@ describe('publishing to a repository through the local transport', () => {
     // The branch that was there did not move: a new branch is a second name for the same
     // history, not a push that lands on the wrong one as well.
     expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+  });
+
+  it('publishes onto a twin of a local ancestor, and says the names are the only difference', async () => {
+    // The state this repository has been in for two hundred and forty-six commits: the
+    // remote's tip carries the tree of a local ancestor and is not that commit -- a twin,
+    // produced by an earlier replay onto a twin. Every commit above it is renamed by the
+    // push that follows, because a commit's name is its content *and its parents' names*.
+    // The channel cannot undo that; what it can do is prove the replay lost nothing else.
+    const { source, remote, shas } = stage('twin');
+    const twin = git(remote, ['commit-tree', `${shas[1]}^{tree}`, '-m', 'a twin of the second']).trim();
+    expect(twin).not.toBe(shas[1]);
+    at(remote, twin);
+
+    const lines: string[] = [];
+    const result = await publish({
+      root: source,
+      rev: 'HEAD',
+      branch: 'main',
+      transport: localTransport({ remote }),
+      log: (line: string) => lines.push(line),
+    });
+    expect(result.identical).toBe(false);
+    expect(result.identity).toEqual({ state: 'parents', commits: 3, base: 'tree' });
+    // Said before the first request and again per commit: the announcement is what an operator
+    // reads in a dry run, and the per-commit line is what a reader of the transcript counts.
+    const announced = lines.findIndex((line) => line.includes('this plan hangs on the remote'));
+    const firstBuild = lines.findIndex((line) => line.includes(' -> '));
+    expect(announced).toBeGreaterThan(-1);
+    expect(announced).toBeLessThan(firstBuild);
+    expect(lines.filter((line) => line.includes('the same commit, hanging on'))).toHaveLength(3);
+    // The content is the local content: same tree, same message, same parent count.
+    expect(git(remote, ['rev-parse', 'main^{tree}']).trim()).toBe(git(source, ['rev-parse', 'HEAD^{tree}']).trim());
+    expect(git(remote, ['log', '-1', '--format=%B', 'main']).trim()).toBe(
+      git(source, ['log', '-1', '--format=%B', 'HEAD']).trim(),
+    );
+    // And the difference is exactly the parent lines: the remote's tip is the local tip's
+    // own bytes with its parents named after the commits the remote actually holds. Comparing
+    // the objects with their `parent` lines removed is the isomorphism, stated as a test.
+    const body = (root: string, rev: string) =>
+      git(root, ['cat-file', '-p', rev])
+        .split('\n')
+        .filter((line) => !line.startsWith('parent '))
+        .join('\n');
+    expect(body(remote, 'main')).toBe(body(source, 'HEAD'));
+    const oldest = git(remote, ['rev-list', '--max-count=3', 'main']).trim().split('\n').pop() ?? '';
+    expect(git(remote, ['rev-list', '--parents', '-n', '1', oldest]).trim().split(' ')[1]).toBe(twin);
   });
 
   it('refuses to create a branch that appeared between the plan and the ref', async () => {
@@ -360,6 +409,7 @@ interface Behaviour {
   refsStatus: number | null;
   refsNotAList: boolean;
   createStatus: number | null;
+  loseMessageTail: boolean;
 }
 
 /**
@@ -385,6 +435,7 @@ async function api(remote: string) {
     refsStatus: null,
     refsNotAList: false,
     createStatus: null,
+    loseMessageTail: false,
   };
   const local = localTransport({ remote });
 
@@ -467,7 +518,11 @@ async function api(remote: string) {
         return send(201, { sha: tree });
       }
       if (request.method === 'POST' && path === '/git/commits') {
-        const sha = await local.createCommit(body);
+        // A stand-in that drops a byte, which the API does not: the point is the channel's
+        // verdict, not the API's manners. A rebuild that lost a byte is a rebuild the
+        // channel must refuse rather than describe, and this is the only way to hand it one.
+        const stored = behaviour.loseMessageTail ? { ...body, message: String(body.message).replace(/\n$/, '') } : body;
+        const sha = await local.createCommit(stored);
         return send(201, { sha });
       }
       const refWrite = /^\/git\/refs\/heads\/(.+)$/.exec(path);
@@ -663,6 +718,31 @@ describe('publishing through the GitHub transport, against a server that writes 
       );
       expect(server.behaviour.requests.filter((key) => key.includes('/git/trees') && key.startsWith('POST'))).toEqual([]);
       expect(server.behaviour.requests.filter((key) => key.includes('/git/blobs'))).toEqual([]);
+      expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('refuses a rebuild that lost a byte, rather than describing it as a different history', async () => {
+    // Every other status the API can answer is the API's, but a commit whose body is not the
+    // body that was sent is the channel's own verdict failing. The stand-in drops the byte the
+    // API keeps, so the case can put the channel in front of a rebuild that is wrong by one
+    // byte -- and the refusal is the point: a channel that described this as "a different
+    // history" would be guessing at a cause it had never checked.
+    const { source, remote, shas } = stage('http-lost-byte');
+    at(remote, shas[1]!);
+    const server = await api(remote);
+    server.behaviour.loseMessageTail = true;
+    try {
+      const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
+      await expect(publish({ root: source, rev: 'HEAD', branch: 'main', transport })).rejects.toThrow(
+        new RegExp(
+          `the rebuilt commit is not ${shas[2]!.slice(0, 9)} with its parents renamed: the API answered ` +
+            '[0-9a-f]{9} for a commit whose tree, message, identities and parent count are the ones it was sent',
+        ),
+      );
+      // Nothing was forced: the ref is where it was when the push started.
       expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
     } finally {
       await server.close();
@@ -1047,6 +1127,21 @@ describe('the command line a push goes through', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('VERIFIED');
     expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
+  });
+
+  it('says a twin made the names differ, instead of calling the history foreign', () => {
+    // The sentence the channel used to print -- "the history it hangs on is not the local
+    // history" -- was true of the SHAs and silent about the contents, which are the same. The
+    // operator reading it cannot tell a rewritten parent from a lost commit, and that is the
+    // difference between a push that worked and one that has to be redone by hand.
+    const { source, remote, shas } = stage('cli-twin');
+    const twin = git(remote, ['commit-tree', `${shas[1]}^{tree}`, '-m', 'a twin of the second']).trim();
+    at(remote, twin);
+    const result = run(['--rev', 'HEAD', '--branch', 'main', '--root', source, '--transport', 'local', '--remote', remote]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('this plan hangs on the remote');
+    expect(result.stdout).toContain('every one of the 3 commit(s) this push carried');
+    expect(git(remote, ['rev-parse', 'main']).trim()).not.toBe(shas[4]!);
   });
 
   it('prints the plan a dry run would execute and moves nothing', () => {

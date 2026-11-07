@@ -142,6 +142,18 @@ async function main(argv, env, out) {
     else if (result.state === 'planned') {
       out(`dry run: ${result.plan.commits.length} commit(s) would be published; nothing was created`);
       code = 0;
+    } else if (result.identity.state === 'parents') {
+      // Two sentences, because there are two facts. Every byte of the commit arrived -- the
+      // tree, the message, both identities, the parent count -- and the name did not, because
+      // a name is a hash over the parent's name and the parent is the remote's. Said as a
+      // measurement of what survived, not as a hunch about why the SHAs differ.
+      out(
+        `${options.branch} is at ${result.tip}: the tree, the message and both identities are the local ones, and the ` +
+          `SHA is not, because every one of the ${result.identity.commits} commit(s) this push carried hangs on the ` +
+          "remote's name for its parent. The remote held a commit carrying the tree of a local ancestor and not that " +
+          'commit; from there the two histories share no name, and no push can rename the remote\'s past',
+      );
+      code = 0;
     } else {
       out(
         result.identical

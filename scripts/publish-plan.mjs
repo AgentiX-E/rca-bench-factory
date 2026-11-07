@@ -162,6 +162,55 @@ export function readCommit({ root, sha }) {
   };
 }
 
+/**
+ * The commit that will exist on the remote if it is given these parents.
+ *
+ * A commit's name is a hash of its own bytes, and bytes include the *names* of its parents.
+ * So a push that hangs on a remote tip carrying the tree of a local ancestor -- a twin,
+ * which is what `locateBase` matches when it falls back from commit to tree -- renames every
+ * commit above it, and no amount of correctness in the replay can prevent that. The channel
+ * said so in a sentence ("the history it hangs on is not the local history") that it had
+ * never checked, and a sentence about a cause is worth exactly as much as the measurement
+ * behind it: a rebuild that lost a file and a rebuild that only renamed a parent were
+ * indistinguishable to every reader of that line.
+ *
+ * This is the measurement. Take the commit object as git stores it, replace its `parent`
+ * lines in order with the names the remote will use, and hash the result. When a rebuilt
+ * commit equals this prediction, the replay carried every other byte -- the tree, the
+ * message, both identities, the parent *count* -- and the name differs for the one reason
+ * the channel can name. When it does not, the rebuild lost something, and `publish` refuses
+ * rather than describing it.
+ *
+ * It is also its own proof: given a commit's own parents it returns that commit's name,
+ * because it is reconstructing the very bytes git hashed. A reader that mangled the message
+ * or the header order would fail that round trip before it could be trusted with a verdict.
+ */
+export function predictRebuild({ root, sha, parents }) {
+  const raw = runGit(root, ['cat-file', 'commit', requireSha(sha, 'a commit to predict')], { encoding: 'utf8' });
+  const split = raw.indexOf('\n\n');
+  const header = split === -1 ? raw : raw.slice(0, split);
+  const message = split === -1 ? '' : raw.slice(split + 2);
+  const lines = header.split('\n');
+  const named = lines.filter((line) => line.startsWith('parent ')).length;
+  if (named !== parents.length) {
+    throw new TypeError(
+      `${sha.slice(0, 9)} has ${named} parent(s) and ${parents.length} were given: a prediction with the wrong ` +
+        'count is a different commit, not the same one renamed',
+    );
+  }
+  let next = 0;
+  const rewritten = lines.map((line) => {
+    if (!line.startsWith('parent ')) return line;
+    const parent = requireSha(parents[next], 'a parent to hang on');
+    next += 1;
+    return `parent ${parent}`;
+  });
+  return runGit(root, ['hash-object', '-t', 'commit', '--stdin'], {
+    input: `${rewritten.join('\n')}\n\n${message}`,
+    encoding: 'utf8',
+  }).trim();
+}
+
 /** Every blob of a tree, read from git and flattened by the one rule below. */
 export function readFiles({ root, tree }) {
   const entries = [];
