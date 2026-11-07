@@ -3591,5 +3591,270 @@
         "remaining": 4932
       }
     ]
+  },
+  {
+    "rev": "ffd111b3ae8e119a9aa9d5f772beda0418532b31",
+    "branch": "master",
+    "rows": [
+      {
+        "at": 1794062775316,
+        "method": "GET",
+        "path": "/git/ref/heads/master",
+        "attempt": 1,
+        "status": 200,
+        "ms": 797,
+        "sent": 0,
+        "received": 359,
+        "remaining": 4986
+      },
+      {
+        "at": 1794062776113,
+        "method": "GET",
+        "path": "/git/commits/ad266e2ba2cea8b2de2dc8358e3f19b6d6c6e57e",
+        "attempt": 1,
+        "status": 200,
+        "ms": 878,
+        "sent": 0,
+        "received": 1873,
+        "remaining": 4985
+      },
+      {
+        "at": 1794062776991,
+        "method": "GET",
+        "path": "/git/trees/9225481b690b27db170d7cf4d8f8c34afdf8ea9b?recursive=1",
+        "attempt": 1,
+        "status": 200,
+        "ms": 1941,
+        "sent": 0,
+        "received": 168854,
+        "remaining": 4984
+      },
+      {
+        "at": 1794062779089,
+        "method": "POST",
+        "path": "/git/blobs",
+        "attempt": 1,
+        "status": 201,
+        "ms": 1561,
+        "sent": 106726,
+        "received": 166,
+        "remaining": 4735
+      },
+      {
+        "at": 1794062780650,
+        "method": "POST",
+        "path": "/git/trees",
+        "attempt": 1,
+        "status": 201,
+        "ms": 960,
+        "sent": 191,
+        "received": 4237,
+        "remaining": 4734
+      },
+      {
+        "at": 1794062781610,
+        "method": "POST",
+        "path": "/git/commits",
+        "attempt": 1,
+        "status": 201,
+        "ms": 1676,
+        "sent": 401,
+        "received": 1209,
+        "remaining": 4733
+      },
+      {
+        "at": 1794062783303,
+        "method": "POST",
+        "path": "/git/blobs",
+        "attempt": 1,
+        "status": 201,
+        "ms": 1109,
+        "sent": 101462,
+        "received": 166,
+        "remaining": 4732
+      },
+      {
+        "at": 1794062784412,
+        "method": "POST",
+        "path": "/git/blobs",
+        "attempt": 1,
+        "status": 201,
+        "ms": 1045,
+        "sent": 37970,
+        "received": 166,
+        "remaining": 4731
+      },
+      {
+        "at": 1794062785457,
+        "method": "POST",
+        "path": "/git/blobs",
+        "attempt": 1,
+        "status": 201,
+        "ms": 2960,
+        "sent": 37986,
+        "received": 166,
+        "remaining": 4730
+      },
+      {
+        "at": 1794062788417,
+        "method": "POST",
+        "path": "/git/trees",
+        "attempt": 1,
+        "status": 201,
+        "ms": 1106,
+        "sent": 436,
+        "received": 4237,
+        "remaining": 4728
+      },
+      {
+        "at": 1794062789523,
+        "method": "POST",
+        "path": "/git/commits",
+        "attempt": 1,
+        "status": 201,
+        "ms": 922,
+        "sent": 419,
+        "received": 1227,
+        "remaining": 4726
+      },
+      {
+        "at": 1794062790474,
+        "method": "POST",
+        "path": "/git/blobs",
+        "attempt": 1,
+        "status": 201,
+        "ms": 1616,
+        "sent": 120294,
+        "received": 166,
+        "remaining": 4725
+      },
+      {
+        "at": 1794062792090,
+        "method": "POST",
+        "path": "/git/blobs",
+        "attempt": 1,
+        "status": 201,
+        "ms": 1277,
+        "sent": 78934,
+        "received": 166,
+        "remaining": 4723
+      },
+      {
+        "at": 1794062793368,
+        "method": "POST",
+        "path": "/git/blobs",
+        "attempt": 1,
+        "status": 201,
+        "ms": 1622,
+        "sent": 296866,
+        "received": 166,
+        "remaining": 4721
+      },
+      {
+        "at": 1794062794991,
+        "method": "POST",
+        "path": "/git/blobs",
+        "attempt": 1,
+        "status": 201,
+        "ms": 1172,
+        "sent": 120006,
+        "received": 166,
+        "remaining": 4720
+      },
+      {
+        "at": 1794062796163,
+        "method": "POST",
+        "path": "/git/blobs",
+        "attempt": 1,
+        "status": 201,
+        "ms": 1723,
+        "sent": 167510,
+        "received": 166,
+        "remaining": 4719
+      },
+      {
+        "at": 1794062797886,
+        "method": "POST",
+        "path": "/git/blobs",
+        "attempt": 1,
+        "status": 201,
+        "ms": 699,
+        "sent": 246,
+        "received": 166,
+        "remaining": 4716
+      },
+      {
+        "at": 1794062798585,
+        "method": "POST",
+        "path": "/git/trees",
+        "attempt": 1,
+        "status": 201,
+        "ms": 1160,
+        "sent": 736,
+        "received": 4237,
+        "remaining": 4715
+      },
+      {
+        "at": 1794062799745,
+        "method": "POST",
+        "path": "/git/commits",
+        "attempt": 1,
+        "status": 201,
+        "ms": 1472,
+        "sent": 430,
+        "received": 1238,
+        "remaining": 4714
+      },
+      {
+        "at": 1794062801222,
+        "method": "PATCH",
+        "path": "/git/refs/heads/master",
+        "attempt": 1,
+        "status": 200,
+        "ms": 1269,
+        "sent": 64,
+        "received": 359,
+        "remaining": 4713
+      }
+    ]
+  },
+  {
+    "rev": "ffd111b3ae8e119a9aa9d5f772beda0418532b31",
+    "branch": "master",
+    "rows": [
+      {
+        "at": 1794062865773,
+        "method": "GET",
+        "path": "/git/ref/heads/master",
+        "attempt": 1,
+        "status": 200,
+        "ms": 2642,
+        "sent": 0,
+        "received": 359,
+        "remaining": 4979
+      },
+      {
+        "at": 1794062868415,
+        "method": "GET",
+        "path": "/git/commits/81a0d4e8a5b349480a5f7b639633b08a50f1b8a5",
+        "attempt": 1,
+        "status": 200,
+        "ms": 1032,
+        "sent": 0,
+        "received": 1238,
+        "remaining": 4978
+      },
+      {
+        "at": 1794062869447,
+        "method": "GET",
+        "path": "/git/trees/ab7b3f76821f86810a1cfbdd9063d79fb864fbed?recursive=1",
+        "attempt": 1,
+        "status": 200,
+        "ms": 2397,
+        "sent": 0,
+        "received": 168854,
+        "remaining": 4977
+      }
+    ]
   }
 ]
