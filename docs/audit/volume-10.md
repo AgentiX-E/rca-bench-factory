@@ -3322,3 +3322,200 @@ The seven files now state `{ timeout: FILE_TIMEOUT_MS }` on each top-level suite
 reader can check consistency rather than take an invention on trust. The measurement that
 keeps the rule honest is the fixture that fails it: one budgeted suite, one budgeted test,
 and one bare test, which the scan must report by line.
+
+---
+
+## Finding 461 — an entry's own reason said "closed", and the count that defends the list read it as work
+
+v3.62 repaired this list in two halves and shipped them in one commit. The first was finding
+458: a strikethrough looked for **anywhere** in an entry had counted two live entries as
+history, because each of them quotes a sub-item a later round closed, and the rule became
+*the headline decides*. The second was finding 457: a currency stamp at the top of the list,
+naming the round that read it and the number of entries it found open.
+
+The stamp was written as **13**. The section holds **11**.
+
+### The measurement
+
+Three guards, one fixture: the two entries as they were published, unedited.
+
+| guard | rule | those two entries | verdict |
+| --- | --- | --- | --- |
+| v3.61 | a strikethrough anywhere in the entry closes it | `0 open, 2 closed` | **right by accident** — the same rule closed two *live* entries that quote a closure, which is finding 458 |
+| v3.62 | the headline decides | `2 open, 0 closed` | **wrong by two** — each entry's own last sentence names the finding that closed it |
+| v3.63 | the headline and the reason must agree | both refused, naming the sentence | the bullet is judged rather than guessed |
+
+The fixture is the shipped text, so this is not a hypothetical. Both entries end like this:
+
+```
+  ~~`[open: the enumeration gate and the skip paragraph disagree about whether a contract
+  skip is a gap, and deciding that needs a fixture whose target refuses a case]`~~
+  — Closed by finding 343, which found that the runner could not produce a refusal at all
+```
+
+The strike is on the **reason**, and the headline above it was never struck. The v3.62 rule
+reads the headline, finds no strike, and hands the bullet to the open branch, where the reason
+is judged for its length and for being a copy of another one — and for nothing else. So a
+bullet that says "closed" twice, in the two sentences a reader actually reads, was counted as
+work.
+
+### Why the count could not see it, which is the part worth keeping
+
+The count is computed **from the guard's own verdicts**: `open` is incremented on the branch
+that the guard takes. When the guard is wrong about an entry, the count is wrong about the
+same entry, and the two agree. The stamp said 13, the guard said 13, and the number that was
+added to catch a stale list could not catch a stale rule.
+
+What saw it was the thing finding 457 said could not be mechanised: a reader. The entries say
+in their own last sentence what closed them, and a reader who reaches that sentence has to
+decide whether the bullet above it is work or history. This round's reader had counted 13 by
+the guard's rule and been told the file held 11 by the file.
+
+### The shape that was already in the log
+
+The repair is not invented. Round v2.44, in `volume-05.md`, writes exactly this:
+
+```
+- ~~**M1's reading rests on 19 samples.**~~
+  ~~`[open: the quantum is 5.3 points ... ]`~~
+  **Closed by finding 216**, which grew the key to 30 samples and re-read every figure derived
+  from it.
+```
+
+A struck headline, a struck reason, and the closure after them. The two entries this round
+found used **half** of that shape, and half is what a rule keyed on one sentence cannot read.
+The repair strikes the two headlines and keeps the struck reasons, because the reason is the
+record of what was open and the strike is what makes it history.
+
+### The guard
+
+Two rules, one for each direction, because the failure is a disagreement and a disagreement
+has two ends:
+
+- a **closed** entry may not carry an unstruck reason — history in the headline and work in
+  the body is the shape finding 458's sites were in;
+- an **open** entry's reason may not be struck through — which is this finding.
+
+The reason is read **once** per entry, from the last marker, and both branches use that one
+reading, so the two rules cannot drift apart on which sentence is the entry's own. Four cases
+hold them: the half-struck bullet is refused by name, the same bullet with its headline struck
+passes, a closed entry with a live reason is refused, and a live entry that quotes a struck
+reason inside itself is still open — that last one is finding 458's fixture, kept because the
+new rule must not re-open the old defect.
+
+Two substitutions make the battery prove the rules rather than the lines: `struckReason` made
+to answer `false` puts both entries back on the count as work, and the closed branch's reason
+check deleted lets a closed bullet ask a reader to do the work.
+
+## Finding 462 — a split described as differing "by seconds", measured at four minutes
+
+The live list carries this:
+
+> **The sensitivity shards are cut by file count, not by cost.** Both hold the same number of
+> claimant files and their wall clocks differ by seconds.
+
+Every clause is true and the sentence cannot fail. "Differ by seconds" is true of a 1-second
+difference and of a 240-second one, so no run can contradict it — and the number a reader
+needs, the one the workflow's wall clock is set by, is exactly the number the phrase declines
+to give. The list's own entry for it, one line below, says the split is *unbalanced by
+duration*, which the phrase says cannot be so.
+
+### The measurement
+
+Run `466` on `ad266e2ba`, the two jobs, the step that does the work:
+
+| reading | shard 1 | shard 2 | difference | slower shard |
+| --- | --- | --- | --- | --- |
+| v3.54's own reading, the round that split it | **248 s** | **387 s** | 139 s | shard 2 |
+| run `466`, eight rounds later | **439 s** | **199 s** | 240 s | **shard 1** |
+
+So the difference has never been small, and the shard that is slower has **changed**. Two
+explanations a reader would try, and neither survives:
+
+| candidate | what it predicts | measured |
+| --- | --- | --- |
+| equal file counts | equal cost | 25 files each — and the two differ by 240 s |
+| equal claim counts | equal cost | 55 and 64 claims (16%) against 439 and 199 seconds (121%) |
+
+The cost is per-file suite cost: a file with five claims in a fast suite is cheaper than a file
+with three in a slow one, and neither count is a proxy for it. The battery knows the number --
+it runs every file and could print it -- but the number is only valid on the machine that paid
+it, and the split has to be checkable on a machine that did not.
+
+### What the round could fix, and what it could not
+
+The entry asks for a split by cost, and that needs three things this repository does not have:
+a per-file recording made **where the cost is paid** (a runner), a place to publish it (an
+artifact, then a golden), and a rule for when the golden is stale (the shard's own bound,
+which would fire when a shard grew past its ceiling). Position is deterministic and the bound
+is the backstop, so the split is not dangerous — it is expensive, by 240 seconds of every run,
+which is what the entry was recording.
+
+What this round could do is remove the unfalsifiable sentence. The entry now states the two
+measurements, the direction, and the two candidates that fail, so the next round starts from
+numbers a reader can argue with rather than from a phrase that cannot be wrong.
+
+## Finding 463 — nineteen records left the guard's reach at v3.45, because the heading gained a comma
+
+`check-open-list.mjs` reads two kinds of section: the index's live list and a round's record. It
+found them by comparing the heading with an exact string, and finding 162 had already taught this
+guard what that costs -- a second `### Open` section appeared, the guard read the first one, and the
+count it printed did not move.
+
+At v3.45 a round's record became a **table** for the first time:
+
+```
+### Left open, in the order the goal is reached
+| priority | item | state | next step |
+```
+
+The comma is enough. `wanted.has(trimmed)` answered no, `sections()` skipped the heading, and every
+record written that way since has had no reader.
+
+### The measurement
+
+```
+$ grep -c '^### Left open,' docs/progress/volume-*.md
+docs/progress/volume-10.md:2
+docs/progress/volume-11.md:7
+docs/progress/volume-12.md:10
+```
+
+**Nineteen** records -- nineteen rounds, v3.45 to v3.63 -- and the guard's summary said
+`164 section(s)` before this finding and `183` after it. The nineteen keep 184 rows between them
+and not one bullet entry, which is why nothing was *miscounted*: a table has no entries to count.
+What was missing was two things, and the second is the one that matters:
+
+- no sentence anywhere said that nineteen records were not judged;
+- no rule refused a spelling the guard does not know, so the format could change again and the
+  only evidence would be a number that did not move -- which is exactly the failure finding 162
+  was raised for, arriving the second time through a different door.
+
+### The repair
+
+Three spellings, and one refusal:
+
+| heading | how it is read |
+| --- | --- |
+| `## Open` | the live list, entries judged, currency stamp checked |
+| `### Left open` | a record of entries, each judged as an entry |
+| `### Left open, <suffix>` | a record in table form: the rows are counted, the shape is checked, and the summary says the rows were **not judged** |
+| anything else beginning `## Open` or `### Left open` | refused, naming the two spellings that are read |
+
+A table-form record that holds no table is refused, because counting zero rows would let an empty
+record pass as a record. A table-form record that carries a bullet is refused, because the heading
+tells this guard to read rows and the bullet would have no judge -- the two halves of the finding,
+one at each end.
+
+The summary line now states the number of table-form records and their rows beside the two entry
+counts, so a round that adds a twentieth cannot do it without the number moving:
+
+```
+check-open-list: OK (577 entry(ies) across 183 section(s) ...: 533 open with a reason,
+42 closed by a finding, and 19 record(s) in table form (185 row(s)) whose rows were not judged)
+```
+
+The limit is stated in the summary rather than left to the reader: the guard counts a row and
+refuses an entry, and it does not judge a row's `state` column. Judging that column is what the
+live list's bullet form is *for*, and a frozen record's rows are the round's own account of what it
+left undone -- a number that says "these were not judged" is the honest form of not judging them.

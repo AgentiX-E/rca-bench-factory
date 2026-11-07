@@ -1131,3 +1131,34 @@ from an anecdote again.
 - **What is not claimed.** Requests are still linear in the number of twin tips in the worst case. The
   round removed the wasted reads and reported the rest; it did not remove the worst case, and a
   repository with a hundred renamed branches is still a hundred reads when none of them is the parent.
+
+### The two sentences in one entry (v3.63)
+
+- **A bullet's headline and its own reason have to agree about whether it is closed.** A closed
+  entry may not carry an unstruck `[open: ...]` -- history in the headline, work in the body -- and an
+  open entry's reason may not be struck through. Both directions are refused by `check-open-list.mjs`,
+  and the two use **one** reading of the reason (the last marker), so they cannot drift apart on which
+  sentence is the entry's own.
+- **The shape is not new.** Round v2.44 writes it: a struck headline, a struck reason, the closure
+  after them. The two entries this round found used half of it, and half is what a rule keyed on one
+  sentence cannot read -- the guard counted them as work while the entry's own last sentence named the
+  finding that closed it.
+- **What is not claimed.** The count and the rule share a source: `N open` is computed from the
+  verdicts the guard takes, so a guard that is wrong about an entry produces a count that is wrong
+  about the same entry, and the two agree. v3.63 is the demonstration -- the stamp said 13, the guard
+  said 13, the file said 11 -- and the only thing that could disagree with both was a reader.
+
+### A record's spelling (v3.63)
+
+- **Three headings are read, and every other spelling beginning with either name is refused.**
+  `## Open` is the live list read as entries; `### Left open` is a record read as entries;
+  `### Left open, <suffix>` is a record read as **rows**. Anything else beginning `## Open` or
+  `### Left open` is a red build, because a document that renames a list must not be able to move it
+  out of its reader's reach in silence -- which is what happened at v3.45, when the record's heading
+  gained a comma and nineteen records stopped being read (finding 463).
+- **A table-form record is counted and declared unjudged.** Every summary line states how many such
+  records were read and how many rows they hold, and says the rows were not judged. A table-form
+  record that holds no table, or that carries an entry, is refused: zero rows would let an empty
+  record pass as a record, and an entry under a heading the guard reads as rows would have no judge.
+- **What is not claimed.** The rows are not judged. Their `state` column is the round's own account,
+  and there is no vocabulary it must come from; that is the entry v3.63 raised and did not close.

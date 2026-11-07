@@ -889,12 +889,17 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.62: **13** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.63: **12** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of all thirteen and counted. v3.62 is the round
 that needed it: the list had said "open" about a page that had been made a page, about a flag whose other
 half had been read, and about a creation path a real push had already paid for.
+
+v3.63 is the round that found the number itself was counting a **rule** that had gone wrong. Two entries
+below used half of a shape this log has used since v2.44 -- the reason struck through, the closure named
+after it -- and the headline, which the guard reads, was never struck. The guard counted them as work,
+and the stamp agreed, because the stamp is computed from the guard. Reading the list is what disagreed.
 
 - ~~**The real-corpus runs are diagnosed, and the mechanism was named wrong twice
   before it was named right.**~~ **Closed without a finding: the third naming came from
@@ -1191,8 +1196,8 @@ half had been read, and about a creation path a real push had already paid for.
   "doable and not done" exist under other names. What remains is not a gap in the
   gates but a limit of the measurement: it establishes the line ran, not that the
   test asserted what it prints.
-- **The reading that closed the caveat was sharp for only two thirds of the sites,
-  and four sites survive being turned into a success.** v3.32 asked whether the site's
+- ~~**The reading that closed the caveat was sharp for only two thirds of the sites,
+  and four sites survive being turned into a success.**~~ v3.32 asked whether the site's
   byte offset fell in a V8 range with a non-zero count; for **60** of the 93 proved
   sites that range is a branch block, and for **33** it is the module body -- a
   `process.exit(1)` inside a module-level `if` reads "reached" the moment the script
@@ -1212,8 +1217,8 @@ half had been read, and about a creation path a real push had already paid for.
   directory names now wins over the suite's default, the export's own `skipped` entry
   is what the gate reads, and `roundTripped + refused === declared` is printed on every
   run as `ROUNDTRIP ACCOUNTED`.
-- **The RE3 slice's own fault categories have now been counted, and the count was worse than
-  "uncounted".** v3.34 found that the round trip would score a resource fault at 1.00 inside the
+- ~~**The RE3 slice's own fault categories have now been counted, and the count was worse than
+  "uncounted".**~~ v3.34 found that the round trip would score a resource fault at 1.00 inside the
   one slice whose published rule admits code-level faults only, and fixed it by letting a
   directory's category win over the suite's default. The open item was that no reading here said
   what the cases' categories were. v3.35 took that reading over the nine published archives'
@@ -1351,10 +1356,21 @@ half had been read, and about a creation path a real push had already paid for.
   648-second cold runner and a 273-second ordinary one.
   `[open: no recorded run has installed prometheus from a mirror slower than 648 seconds, and
   the bound will be re-sized from the first one that does rather than guessed at now]`
-- **The sensitivity shards are cut by file count, not by cost.** Both hold the same number of
-  claimant files and their wall clocks differ by seconds.
-  `[open: the split is balanced by count and unbalanced by duration, and fixing it needs each
-  claimant file timed once -- which the battery does not record today]`
+- **The sensitivity shards are cut by file count, not by cost.** Both hold 25 claimant files, and
+  the step that does the work measured **439 s** in shard 1 against **199 s** in shard 2 on run
+  `466` -- and **248 s** against **387 s**, the other way round, on the run that split them
+  (v3.54). Near-equal claim counts (55 and 64) predict neither number, so the cost is per-file
+  suite cost, which only the battery can measure, on the machine that pays it. See finding 462.
+  `[open: a split by cost needs a per-file recording made where the cost is paid -- on a runner --
+  published where a plan can read it, and a rule for when that recording is stale; the shard's own
+  bound is the backstop, so the split is expensive rather than unsafe, by 240 s of every run]`
+- **A record written as a table is counted, not judged.** Since v3.45 a round's record is a table
+  with a `state` column, and the nineteen of them hold 185 rows no gate reads: the guard counts
+  the rows, refuses an entry under that heading, and says in every summary that the rows were not
+  judged. See finding 463.
+  `[open: judging a row needs a closed vocabulary for the state column, and the nineteen records
+  predate one -- a gate that read the column today would have to accept whatever the last nineteen
+  rounds happened to write, which is not a rule]`
 
 
 
@@ -1386,7 +1402,7 @@ and this table.
 | [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 7 | v3.47 | v3.53 |
-| [volume-12.md](progress/volume-12.md) | 9 | v3.54 | v3.62 |
+| [volume-12.md](progress/volume-12.md) | 10 | v3.54 | v3.63 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
