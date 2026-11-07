@@ -9,6 +9,16 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 /**
+ * The budget every suite in this file states.
+ *
+ * This file is in `STANDALONE_MS` at `timeout-budget.test.ts` because its cost reaches
+ * vitest's 5 000 ms default, and a budget on one test of it says nothing about the others:
+ * a test added later inherits the default, which is the file that times out on a loaded
+ * machine. A suite budget covers the ones nobody has written yet.
+ */
+const FILE_TIMEOUT_MS = 30_000;
+
+/**
  * The scripts this file executes.
  *
  * Rule 7 of `gate-sites-are-proven.test.ts` reconciles this declaration against
@@ -600,7 +610,7 @@ function writeFixtureRegistry(dir: string, overrides: Record<string, unknown> = 
   return path;
 }
 
-describe('scripts/fetch-official.mjs · the guardrails of the fixture itself', () => {
+describe('scripts/fetch-official.mjs · the guardrails of the fixture itself', { timeout: FILE_TIMEOUT_MS }, () => {
   // Without this the archive fixture can be wrong in a way that reads as a bug
   // in the script under test: a malformed header still downloads, still
   // verifies, and still lets the script print EXTRACTED, while the entry lands
@@ -617,7 +627,7 @@ describe('scripts/fetch-official.mjs · the guardrails of the fixture itself', (
   });
 });
 
-describe('scripts/fetch-official.mjs · the guards', () => {
+describe('scripts/fetch-official.mjs · the guards', { timeout: FILE_TIMEOUT_MS }, () => {
   // The destination guard. Absolute and relative spellings both have to be
   // refused, because `--out golden-master/tmp` is the one a hurried operator
   // actually types.
@@ -686,7 +696,7 @@ describe('scripts/fetch-official.mjs · the guards', () => {
   });
 });
 
-describe('scripts/fetch-official.mjs · the digest pin', () => {
+describe('scripts/fetch-official.mjs · the digest pin', { timeout: FILE_TIMEOUT_MS }, () => {
   const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-fetch-'));
   afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -1238,7 +1248,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
  * these tests also assert that extraction was *not* attempted, rather than
  * trusting the exit code to mean that.
  */
-describe('scripts/fetch-official.mjs · the destination', () => {
+describe('scripts/fetch-official.mjs · the destination', { timeout: FILE_TIMEOUT_MS }, () => {
   const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-room-'));
   afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -1392,7 +1402,7 @@ describe('scripts/fetch-official.mjs · the destination', () => {
  * An exit code alone would be satisfied by a script that never retried and got
  * lucky, or by one that retried three times when once would have done.
  */
-describe('scripts/fetch-official.mjs · the retry layer', () => {
+describe('scripts/fetch-official.mjs · the retry layer', { timeout: FILE_TIMEOUT_MS }, () => {
   const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-retry-'));
   afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -1535,7 +1545,7 @@ describe('scripts/fetch-official.mjs · the retry layer', () => {
  * header of every request so the test can say **which byte each attempt started
  * at** -- the fact the production log could not express.
  */
-describe('scripts/fetch-official.mjs · the resume layer', () => {
+describe('scripts/fetch-official.mjs · the resume layer', { timeout: FILE_TIMEOUT_MS }, () => {
   const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-resume-'));
   afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 

@@ -137,9 +137,26 @@ async function readRemoteAt({ transport, sha, tree = null }) {
  *
  * The nearest match wins, because the window is everything above it: an index of one is a
  * single commit to replay and an index of forty is thirty-nine that the remote already has
- * under another name. Cost is bounded by the number of branches, and correctness does not
- * depend on the choice: a base further back replays more and produces the same tip tree,
- * which the executor asserts.
+ * under another name. Correctness does not depend on the choice: a base further back replays
+ * more and produces the same tip tree, which the executor asserts.
+ *
+ * ## Why the search can stop at a window of one (finding 459)
+ *
+ * A creation cannot replay fewer than one commit. Zero would be a pointer push, and the
+ * question that decides it -- does the remote hold this tip -- has already been answered
+ * *no*, which is why this path was entered at all. So index 0 (the remote's twin of this very
+ * tip) and index 1 (its parent) both produce exactly one rebuilt commit, and once either is in
+ * hand nothing else can improve it.
+ *
+ * The walk did not know that, and it showed in two ways. It read every tip that was not a
+ * local commit even when the answer was already sitting in `best` from the free pass -- a
+ * repository whose own branch pointed at the parent paid one request per twin for nothing --
+ * and when it did read, it never said how many tips that took. The count is reported now, so a
+ * cost that grows with the number of branches is a number in the log rather than a silence.
+ *
+ * `reads` counts commits asked of the transport, `candidates` counts the tips that had to be
+ * read to be compared at all, and `stopped` says whether the walk ended because it could not
+ * be improved on rather than because it had run out of tips.
  */
 async function locateBaseAmongRefs({ ancestry, listing, transport }) {
   const heads = listing.tips.filter((tip) => tip.name.startsWith('refs/heads/'));
@@ -156,13 +173,18 @@ async function locateBaseAmongRefs({ ancestry, listing, transport }) {
     // costs the listing and nothing else.
     else if (best === null || at < best.index) best = { kind: 'commit', index: at, sha: tip.sha, tree: ancestry[at].tree };
   }
+  const candidates = unread.length;
+  if (best !== null && best.index <= 1) return { base: best, candidates, reads: 0, stopped: true };
+  let reads = 0;
   for (const tip of unread) {
     const commit = await transport.commit(tip.sha);
+    reads += 1;
     const at = ancestry.findIndex((entry) => entry.tree === commit.tree);
     if (at === -1) continue;
     if (best === null || at < best.index) best = { kind: 'tree', index: at, sha: commit.sha, tree: commit.tree };
+    if (best.index <= 1) return { base: best, candidates, reads, stopped: true };
   }
-  return best;
+  return { base: best, candidates, reads, stopped: false };
 }
 
 /**
@@ -356,13 +378,31 @@ export async function publish({
   // commit, keep the shallowest local ancestor whose tree matches one of them, and plan the
   // window above it. The branch is still created rather than moved, and every commit above
   // the base still hangs on the remote's names.
-  const base = remote.head === null ? await locateBaseAmongRefs({ ancestry, listing, transport }) : null;
+  const searched = remote.head === null ? await locateBaseAmongRefs({ ancestry, listing, transport }) : null;
+  const base = searched === null ? null : searched.base;
   const located =
     remote.head !== null
       ? locateBase({ ancestry, remote })
       : base === null
         ? { kind: 'unborn', index: ancestry.length }
         : { kind: base.kind, index: base.index };
+  // What the search cost, said out loud, because it is the one number in this path that grows
+  // with the repository instead of with the push. A read that is not reported is a cost a
+  // reader can only discover by counting requests in a log they do not have.
+  if (searched !== null && searched.candidates > 0) {
+    if (base === null) {
+      log(
+        `none of the ${searched.candidates} remote tip(s) that are not local commits carries a tree in this ` +
+          `ancestry, and all ${searched.reads} were read: this push replays the whole history`,
+      );
+    } else {
+      log(
+        `the base is ${base.sha.slice(0, 9)}: ${searched.reads} of the ${searched.candidates} remote tip(s) that are ` +
+          'not local commits were read' +
+          (searched.stopped ? ', and the search stopped there because a creation cannot replay fewer than one commit' : ''),
+      );
+    }
+  }
   const origin = base === null ? remote : await readRemoteAt({ transport, sha: base.sha, tree: base.tree });
   if (located === null) {
     throw new TypeError(

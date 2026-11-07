@@ -6,6 +6,16 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 /**
+ * The budget every suite in this file states.
+ *
+ * This file is in `STANDALONE_MS` at `timeout-budget.test.ts` because its cost reaches
+ * vitest's 5 000 ms default, and a budget on one test of it says nothing about the others:
+ * a test added later inherits the default, which is the file that times out on a loaded
+ * machine. A suite budget covers the ones nobody has written yet.
+ */
+const FILE_TIMEOUT_MS = 30_000;
+
+/**
  * The scripts this file executes.
  *
  * Rule 7 of `gate-sites-are-proven.test.ts` reconciles this declaration against
@@ -265,7 +275,7 @@ beforeAll(() => {
   liveRun = { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 }, GUIDE_RUN_TIMEOUT_MS);
 
-describe('scripts/check-user-guide.mjs · the walkthrough is executed', () => {
+describe('scripts/check-user-guide.mjs · the walkthrough is executed', { timeout: FILE_TIMEOUT_MS }, () => {
   it('runs every bash block in the shipped guide, and the guide passes', () => {
     // The live assertion. It is the gate's own job, run here so a failure names
     // this file rather than appearing only inside `docs:check`.
@@ -483,7 +493,7 @@ describe('scripts/check-user-guide.mjs · the walkthrough is executed', () => {
   });
 });
 
-describe('scripts/check-user-guide.mjs · a block is checked before it is run', () => {
+describe('scripts/check-user-guide.mjs · a block is checked before it is run', { timeout: FILE_TIMEOUT_MS }, () => {
   it('refuses a block a shell would expand before the program inside it starts', () => {
     // The defect this closes is one this campaign already recorded from the
     // operator's side: three tool calls interrupted by `Bad substitution`,

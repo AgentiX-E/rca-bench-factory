@@ -757,3 +757,94 @@ describe('the reader · it finds every spelling of a budget and only those', () 
     expect(spawnsAChild("import { spawnSync } from 'node:child_process';")).toBe(false);
   });
 });
+
+/**
+ * The third arm: a budget stated on one test says nothing about the other forty-two.
+ *
+ * ## What broke, and why the first two arms could not see it
+ *
+ * A full-suite run of 239 files on this machine reported
+ * `fetch-official.test.ts > does not unpack an asset that is not an archive` at
+ * `Test timed out in 5000ms`, with the file's other forty-two tests passing. The file is
+ * in `STANDALONE_MS` at 13 212 ms, and the first arm passed: `largestBudget` found a
+ * `120_000` on one of its tests and stopped asking.
+ *
+ * That is the arm's own subject, read one level too coarsely. Its rule is "a file whose
+ * cost reaches the default states a budget larger than it" -- but the quantity that times
+ * out belongs to a **test**, and a file states its budget on whichever call happens to
+ * carry one. `fetch-official.test.ts` states seventeen budgets on forty-three tests and
+ * every added test inherits the default: an invariant that gets weaker with each test
+ * written, which is the opposite of what a budget is for.
+ *
+ * Seven of the nine measured files were in that state, and none of them had been seen to
+ * fail: the rule was satisfied by one budgeted test in each. `publish.test.ts` and
+ * `reader-against-backend.test.ts` state a budget on every top-level suite and were the
+ * two that could not produce this failure at all.
+ *
+ * ## What the arm requires
+ *
+ * For a file in `STANDALONE_MS` above the default, **every top-level `describe` / `it` /
+ * `test` carries a `timeout`**. A suite budget covers every test inside it, including the
+ * ones not written yet; a per-test budget covers that test. A file with neither is exactly
+ * the file that will time out on a loaded machine, and the measurement needed to notice it
+ * is already in the table.
+ *
+ * The scan is by call site, not by budget count, because the two quantities differ in the
+ * direction that failed. A budget anywhere is a number; a budget on **each** call is a
+ * promise.
+ */
+function unbudgetedTopLevel(source: string): string[] {
+  const code = stripCommentsAndStrings(source);
+  const lines = code.split('\n');
+  const out: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    // Top-level only: a nested call is indented, and its budget is the suite's business.
+    const call = /^(describe|it|test)\(/.exec(lines[index] ?? '');
+    if (call === null) continue;
+    // The head runs to the arrow. A head split across lines is joined, because a spelling
+    // this reader cannot follow is a spelling it would report as missing.
+    let head = lines[index] ?? '';
+    for (let more = index; !head.includes('=>') && more - index < 5 && more + 1 < lines.length; more += 1) {
+      head += ` ${lines[more + 1] ?? ''}`;
+    }
+    if (!/\btimeout:/.test(head)) out.push(`${call[1]} at line ${String(index + 1)}`);
+  }
+  return out;
+}
+
+describe('the per-call budget · a file over the default states one on every top-level call', () => {
+  it('every measured file above the default budgets each of its top-level suites', () => {
+    const offenders: string[] = [];
+    for (const [file, cost] of Object.entries(STANDALONE_MS)) {
+      if (cost <= VITEST_DEFAULT_MS) continue;
+      const bare = unbudgetedTopLevel(testSource(file));
+      if (bare.length > 0) offenders.push(`${file} (${cost} ms): ${bare.join(', ')}`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('reads a suite budget and an inline test budget alike, and names the calls that have neither', () => {
+    // Non-vacuity in both directions: the shape that failed, and the two shapes that pass.
+    const mixed = [
+      "describe('a', { timeout: T }, () => {",
+      "  it('one', () => {});",
+      '});',
+      "describe('b', { timeout: T }, () => {});",
+      "it('two', { timeout: 30_000 }, () => {});",
+      "it('three', () => {});",
+    ].join('\n');
+    expect(unbudgetedTopLevel(mixed)).toEqual(["it at line 6"]);
+    expect(unbudgetedTopLevel("describe('a', { timeout: 30_000 }, () => {});")).toEqual([]);
+  });
+
+  it('does not read a budget out of a comment, and joins a head split across lines', () => {
+    expect(unbudgetedTopLevel("// it('x', { timeout: 30_000 }, () => {});\nit('x', () => {});")).toEqual(['it at line 2']);
+    expect(unbudgetedTopLevel("describe(\n  'x',\n  { timeout: 30_000 },\n  () => {}\n);")).toEqual([]);
+  });
+
+  it('does not look at a nested suite, whose budget belongs to the file', () => {
+    // The nested call is indented, and a file that budgets its top-level suites has
+    // covered this one: requiring a budget at every depth would be a rule about spelling.
+    expect(unbudgetedTopLevel("describe('a', { timeout: T }, () => {\n  describe('b', () => {});\n});")).toEqual([]);
+  });
+});

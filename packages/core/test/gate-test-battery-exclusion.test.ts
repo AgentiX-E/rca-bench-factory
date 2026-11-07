@@ -72,6 +72,16 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const BATTERY = resolve(ROOT, 'scripts', 'injection', 'gate-tests-battery.py');
 const SOURCE = readFileSync(BATTERY, 'utf8');
 
+/**
+ * The budget every suite in this file states.
+ *
+ * This file is in `STANDALONE_MS` at `timeout-budget.test.ts` because its cost reaches
+ * vitest's 5 000 ms default, and a budget on one test of it says nothing about the others:
+ * a test added later inherits the default, which is the file that times out on a loaded
+ * machine. A suite budget covers the ones nobody has written yet.
+ */
+const FILE_TIMEOUT_MS = 30_000;
+
 const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-gatetest-exclusion-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -155,6 +165,7 @@ const FAKE = `
 import os
 import sys
 import time
+
 from pathlib import Path
 
 WORK = Path(sys.argv[1])
@@ -208,7 +219,7 @@ function start(work: string, seconds: string): { done: Promise<number>; output: 
   return { done, output: () => buffer };
 }
 
-describe('scripts · the gate-test battery refuses a second concurrent run', () => {
+describe('scripts · the gate-test battery refuses a second concurrent run', { timeout: FILE_TIMEOUT_MS }, () => {
   it('the shipped battery takes an exclusive lock before it mutates anything', () => {
     // Acquisition has to happen *before* the first mutation, not at import and
     // not inside the loop: a lock taken after the first `write_text(mutated)`
@@ -331,7 +342,7 @@ describe('scripts · the gate-test battery refuses a second concurrent run', () 
   });
 });
 
-describe('scripts · the gate-test battery writes a report that survives a blocked log', () => {
+describe('scripts · the gate-test battery writes a report that survives a blocked log', { timeout: FILE_TIMEOUT_MS }, () => {
   it('the shipped battery writes a machine-readable report', () => {
     // **Why a file and not a step summary.** This repository's CI job log cannot
     // be read from the development environment: the download redirects to a host

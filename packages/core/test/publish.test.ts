@@ -412,6 +412,107 @@ describe('publishing to a repository through the local transport', { timeout: FI
     expect(git(remote, ['rev-parse', 'new']).trim()).toBe(shas[3]!);
   });
 
+  /**
+   * A branch that points at a commit this repository does not have, and at the same tree.
+   *
+   * That is a *twin*: the name on the far side differs from the local one because the remote
+   * rebuilt the commit above a different parent, so the SHA cannot be compared and the tree
+   * has to be. It is the shape every branch above the rename boundary has (finding 450), and
+   * it is the only shape in which choosing a base costs a request -- which is why the three
+   * cases below are about counting them.
+   */
+  function twinOf({ source, remote, from, name, message }: { source: string; remote: string; from: string; name: string; message: string }) {
+    const identity = { ...process.env, ...IDENTITY };
+    const tree = git(source, ['rev-parse', `${from}^{tree}`]).trim();
+    const twin = spawnSync('git', ['-C', source, 'commit-tree', tree, '-p', from, '-m', message], { encoding: 'utf8', env: identity }).stdout.trim();
+    git(source, ['push', '-q', remote, `${twin}:refs/heads/${name}`]);
+    return twin;
+  }
+
+  /** A branch pointing at a commit whose tree no commit in this history has. */
+  function foreignTwin({ source, remote, name }: { source: string; remote: string; name: string }) {
+    const identity = { ...process.env, ...IDENTITY };
+    const empty = spawnSync('git', ['-C', source, 'mktree'], { encoding: 'utf8', env: identity, input: '' }).stdout.trim();
+    const twin = spawnSync('git', ['-C', source, 'commit-tree', empty, '-m', `nothing under ${name}`], {
+      encoding: 'utf8',
+      env: identity,
+    }).stdout.trim();
+    git(source, ['push', '-q', remote, `${twin}:refs/heads/${name}`]);
+    return twin;
+  }
+
+  /** The requests a push makes, by name, so a count is a count and not an impression. */
+  function counted(inner: ReturnType<typeof localTransport>) {
+    const calls: string[] = [];
+    const transport = new Proxy(inner, {
+      get(target, key) {
+        const value = Reflect.get(target, key);
+        if (typeof value !== 'function') return value;
+        return (...args: unknown[]) => {
+          calls.push(String(key));
+          return (value as (...rest: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    });
+    return { transport, calls, reads: () => calls.filter((one) => one === 'commit').length };
+  }
+
+  it('stops reading twin tips when the base it already has cannot be improved on', async () => {
+    // A creation cannot replay fewer than one commit: zero would be a pointer push, and that
+    // question has already been answered `no` -- it is what put this path here. So a base at
+    // index 1 is as good as this search can get, and the two twin branches below cannot make
+    // it better. They were read anyway: the walk compared every tip that was not a local
+    // commit, whether or not `best` already held the optimum (finding 459).
+    const { source, remote, shas } = staged('free-base', 3);
+    twinOf({ source, remote, from: shas[0]!, name: 'a-twin', message: 'the same tree, a different name' });
+    twinOf({ source, remote, from: shas[0]!, name: 'z-twin', message: 'the same tree, a third name' });
+    const { transport, reads } = counted(localTransport({ remote }));
+    const lines: string[] = [];
+
+    const result = await publish({ root: source, rev: 'HEAD', branch: 'release', transport, newBranch: true, log: (line: string) => lines.push(line) });
+    expect(result.identity).toEqual({ state: 'exact', commits: 1, base: 'commit' });
+    expect(reads()).toBe(0);
+    expect(lines.join('\n')).toContain('the base is ' + shas[3]!.slice(0, 9));
+    expect(lines.join('\n')).toContain('0 of the 2 remote tip(s) that are not local commits were read');
+  });
+
+  it('stops at the first twin that gives a one-commit window, and says how many it read', async () => {
+    // `main` is a local commit four below the tip; `a-twin` carries the tree of the commit one
+    // below it. Reading `a-twin` answers the question and nothing above it can improve on the
+    // answer, so `z-twin` is not read -- and the count is printed, because it is the one number
+    // in this path that grows with the repository rather than with the push.
+    const { source, remote, shas } = staged('twin-window', 0);
+    twinOf({ source, remote, from: shas[3]!, name: 'a-twin', message: 'the parent, rebuilt' });
+    foreignTwin({ source, remote, name: 'z-twin' });
+    const { transport, reads } = counted(localTransport({ remote }));
+    const lines: string[] = [];
+
+    const result = await publish({ root: source, rev: 'HEAD', branch: 'release', transport, newBranch: true, log: (line: string) => lines.push(line) });
+    // The base is a twin, so the one replayed commit hangs on the remote's name for its parent
+    // and its SHA cannot be the local one -- which is exactly what `parents` means.
+    expect(result.identity).toEqual({ state: 'parents', commits: 1, base: 'tree' });
+    expect(reads()).toBe(1);
+    expect(lines.join('\n')).toContain('1 of the 2 remote tip(s) that are not local commits were read');
+    expect(lines.join('\n')).toContain('cannot replay fewer than one commit');
+  });
+
+  it('reads every twin when none of them can improve on the base, and says the search came up empty', async () => {
+    // The other end: the only refs are twins whose trees this history does not have, so no
+    // base is found at all and the whole ancestry is replayed. Both candidates are read, and
+    // the sentence says so -- a reader would otherwise infer it from a five-commit plan.
+    const { source, remote } = staged('twin-none', null);
+    foreignTwin({ source, remote, name: 'a-twin' });
+    foreignTwin({ source, remote, name: 'z-twin' });
+    const { transport, reads } = counted(localTransport({ remote }));
+    const lines: string[] = [];
+
+    const result = await publish({ root: source, rev: 'HEAD', branch: 'release', transport, newBranch: true, log: (line: string) => lines.push(line) });
+    expect(result.identity).toEqual({ state: 'exact', commits: 5, base: 'unborn' });
+    expect(reads()).toBe(2);
+    expect(lines.join('\n')).toContain('none of the 2 remote tip(s) that are not local commits carries a tree');
+    expect(lines.join('\n')).toContain('all 2 were read');
+  });
+
   it('creates a branch above a merge it does not have to replay, and refuses the same push onto nothing', async () => {
     // The push that found this round's fifth finding, reduced to a fixture. The local history
     // contains a merge three commits back; the remote holds the commit above it. A branch

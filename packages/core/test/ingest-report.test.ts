@@ -4,6 +4,16 @@ import { ingestPrimeDataset } from '../src/ingest/prime.js';
 import { validBundle } from './fixtures.js';
 
 /**
+ * The budget every suite in this file states.
+ *
+ * This file is in `STANDALONE_MS` at `timeout-budget.test.ts` because its cost reaches
+ * vitest's 5 000 ms default, and a budget on one test of it says nothing about the others:
+ * a test added later inherits the default, which is the file that times out on a loaded
+ * machine. A suite budget covers the ones nobody has written yet.
+ */
+const FILE_TIMEOUT_MS = 30_000;
+
+/**
  * The ingest report is the only record of what was rejected.
  *
  * `ingestPrimeDataset` upholds a "zero silent loss" invariant: every source
@@ -39,7 +49,7 @@ function ingestOne(files: Record<string, string>) {
   });
 }
 
-describe('ingestPrimeDataset · every rejected row is accounted for', () => {  it('reports a rejected row with its file, line and reason', () => {
+describe('ingestPrimeDataset · every rejected row is accounted for', { timeout: FILE_TIMEOUT_MS }, () => {  it('reports a rejected row with its file, line and reason', () => {
     // The ordinary partial-loss case: one row is fine, one is not. The bundle
     // keeps one signal — and the report must carry the other row, because that
     // is the only place it still exists.
@@ -145,7 +155,7 @@ describe('ingestPrimeDataset · every rejected row is accounted for', () => {  i
   });
 });
 
-describe('ingestPrimeDataset · a faithful ingest is unchanged', () => {
+describe('ingestPrimeDataset · a faithful ingest is unchanged', { timeout: FILE_TIMEOUT_MS }, () => {
   it('still produces a bundle the exporter accepts', () => {
     // Guard against the report being "fixed" by changing what is ingested.
     const result = ingestOne(metricFile(GOOD_ROW));
@@ -163,7 +173,7 @@ describe('ingestPrimeDataset · a faithful ingest is unchanged', () => {
   });
 });
 
-describe('ingestPrimeDataset · a source larger than the argument limit', () => {
+describe('ingestPrimeDataset · a source larger than the argument limit', { timeout: FILE_TIMEOUT_MS }, () => {
   /**
    * A single file carrying more rows than `push(...)` can spread.
    *
@@ -261,7 +271,7 @@ describe('ingestPrimeDataset · a source larger than the argument limit', () => 
   }, ROWS_TIMEOUT_MS);
 });
 
-describe('ingestPrimeDataset · a declared missing value is not an unreadable one', () => {
+describe('ingestPrimeDataset · a declared missing value is not an unreadable one', { timeout: FILE_TIMEOUT_MS }, () => {
   /**
    * RE1-TT ships the literal text `NaN` in eight `_istio-*` percentile columns
    * of one service, from one row to the end. Finding 120 measured the shape from

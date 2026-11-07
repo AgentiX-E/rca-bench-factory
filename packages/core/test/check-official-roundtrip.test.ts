@@ -8,6 +8,16 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { SCORE_TARGET_IDS } from '../src/score/score.js';
 
 /**
+ * The budget every suite in this file states.
+ *
+ * This file is in `STANDALONE_MS` at `timeout-budget.test.ts` because its cost reaches
+ * vitest's 5 000 ms default, and a budget on one test of it says nothing about the others:
+ * a test added later inherits the default, which is the file that times out on a loaded
+ * machine. A suite budget covers the ones nobody has written yet.
+ */
+const FILE_TIMEOUT_MS = 30_000;
+
+/**
  * The scripts this file executes.
  *
  * Rule 7 of `gate-sites-are-proven.test.ts` reconciles this declaration against
@@ -303,7 +313,7 @@ function writeBulkCorpus(
   return { cases, bytes };
 }
 
-describe('scripts/check-official.mjs · the round trip leaves the default verdict intact', () => {
+describe('scripts/check-official.mjs · the round trip leaves the default verdict intact', { timeout: FILE_TIMEOUT_MS }, () => {
   // The default mode's nine lines are a contract read line by line elsewhere.
   // This branch adds lines; if it changed or reordered them, the readers would
   // break and the round trip would have cost us the anchor it depends on.
@@ -349,7 +359,7 @@ describe('scripts/check-official.mjs · the round trip leaves the default verdic
   });
 });
 
-describe('scripts/check-official.mjs · what the round trip refuses to pass', () => {
+describe('scripts/check-official.mjs · what the round trip refuses to pass', { timeout: FILE_TIMEOUT_MS }, () => {
   it('passes a corpus whose one case round-trips', async () => {
     const root = freshRoot();
     writeCase(root, 'RE2-ob-cpu_1');
@@ -457,7 +467,7 @@ describe('scripts/check-official.mjs · what the round trip refuses to pass', ()
   });
 });
 
-describe('scripts/check-official.mjs · the corpus reader', () => {
+describe('scripts/check-official.mjs · the corpus reader', { timeout: FILE_TIMEOUT_MS }, () => {
   it('ignores binary files rather than decoding them into the corpus', async () => {
     // A decoded binary would hand every scorer a body of replacement characters
     // to search, and a case could then appear to have telemetry it does not.
@@ -517,7 +527,7 @@ describe('scripts/check-official.mjs · the corpus reader', () => {
   });
 });
 
-describe('scripts/check-official.mjs · the branch reads its own inputs', () => {
+describe('scripts/check-official.mjs · the branch reads its own inputs', { timeout: FILE_TIMEOUT_MS }, () => {
   it('defaults to the committed descriptor path, and says how to make one', async () => {
     // `--official-dir` alone has to be enough in CI, where the descriptor is the
     // committed one.
@@ -547,7 +557,7 @@ describe('scripts/check-official.mjs · the branch reads its own inputs', () => 
   });
 });
 
-describe('scripts/check-official.mjs · memory does not scale with the size of the corpus', () => {
+describe('scripts/check-official.mjs · memory does not scale with the size of the corpus', { timeout: FILE_TIMEOUT_MS }, () => {
   // The real run died here, and it died at the *last* step:
   //
   //   ok  Derive the case descriptors from what was downloaded
@@ -674,7 +684,7 @@ describe('scripts/check-official.mjs · memory does not scale with the size of t
  * the run says *what is wrong with the corpus*, and never dies with a stack trace
  * from `openSync`.
  */
-describe('scripts/check-official.mjs · a declared case with no readable payload', () => {
+describe('scripts/check-official.mjs · a declared case with no readable payload', { timeout: FILE_TIMEOUT_MS }, () => {
   /**
    * A case directory with an `inject_time.txt` and a *readable* `data.csv`.
    *
@@ -922,7 +932,7 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
  * reader with a payload that violates exactly one of its rules, so the rule is
  * shown to be a rule and not a comment.
  */
-describe('scripts/check-official.mjs · a delimited payload that must be refused', () => {
+describe('scripts/check-official.mjs · a delimited payload that must be refused', { timeout: FILE_TIMEOUT_MS }, () => {
   /** Write a case whose `data.csv` holds `body`, plus a valid `inject_time.txt`. */
   function writeCsvBody(root: string, caseId: string, body: string): void {
     const dir = join(root, caseId);
@@ -1091,7 +1101,7 @@ describe('scripts/check-official.mjs · a delimited payload that must be refused
  * declared and counted figures are reported as separate numbers, so a gate that
  * fails every run cannot pass them either.
  */
-describe('scripts/check-official.mjs · the round trip counts what it declares', () => {
+describe('scripts/check-official.mjs · the round trip counts what it declares', { timeout: FILE_TIMEOUT_MS }, () => {
   it('accepts a corpus in which every declared case was counted', async () => {
     // The accepting half, and the reason this block is not simply "the gate
     // fires": a gate that failed every run would satisfy a test that only ever
@@ -1165,7 +1175,7 @@ describe('scripts/check-official.mjs · the round trip counts what it declares',
  * here: the property is "the table agrees with the vocabulary", and both sides
  * of that comparison are available statically.
  */
-describe('scripts/check-official.mjs · the skip table and the failure exit', () => {
+describe('scripts/check-official.mjs · the skip table and the failure exit', { timeout: FILE_TIMEOUT_MS }, () => {
   const source = readFileSync(SCRIPT, 'utf8');
 
   /**
@@ -1301,7 +1311,7 @@ describe('scripts/check-official.mjs · the skip table and the failure exit', ()
  * rather than beside them, the report exists on a *failing* run too, and an empty
  * score set is `null` rather than `0`.
  */
-describe('scripts/check-official.mjs · the score report', () => {
+describe('scripts/check-official.mjs · the score report', { timeout: FILE_TIMEOUT_MS }, () => {
   function report(path: string): Record<string, unknown> {
     return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
   }
@@ -1424,7 +1434,7 @@ describe('scripts/check-official.mjs · the score report', () => {
  *    exactly the path they took before, because RE1 round-trips 375 of 375 through
  *    it and no fix may move that number without evidence.
  */
-describe('scripts/check-official.mjs · the corpus that names its entities in the columns', () => {
+describe('scripts/check-official.mjs · the corpus that names its entities in the columns', { timeout: FILE_TIMEOUT_MS }, () => {
   /** A wide table whose header is `time` plus `entity_metric` columns. */
   function table(columns: string[], rows = 10): string {
     const lines = [`time,${columns.join(',')}`];
@@ -1610,7 +1620,7 @@ describe('scripts/check-official.mjs · the corpus that names its entities in th
  * This test is the observation that it arrives: the same corpus, with one line of
  * descriptor, goes from skipped to scored.
  */
-describe('scripts/check-official.mjs · the RE3 slice, whose fault label is an index', () => {
+describe('scripts/check-official.mjs · the RE3 slice, whose fault label is an index', { timeout: FILE_TIMEOUT_MS }, () => {
   /** The corpus's own RE3 shape: `RE3-{system}/{service}_f{n}/{run}/`. */
   function writeRe3Case(root: string, caseId: string): void {
     const dir = join(root, caseId);

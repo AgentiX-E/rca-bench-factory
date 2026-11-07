@@ -7,6 +7,16 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { carryUncommitted } from './uncommitted-carry.js';
 
 /**
+ * The budget every suite in this file states.
+ *
+ * This file is in `STANDALONE_MS` at `timeout-budget.test.ts` because its cost reaches
+ * vitest's 5 000 ms default, and a budget on one test of it says nothing about the others:
+ * a test added later inherits the default, which is the file that times out on a loaded
+ * machine. A suite budget covers the ones nobody has written yet.
+ */
+const FILE_TIMEOUT_MS = 30_000;
+
+/**
  * The contract the root typecheck script publishes to a human who runs it.
  *
  * ## The defect this test exists for
@@ -439,7 +449,7 @@ function typecheckOnce(): Outcome {
   return typecheckOutcome;
 }
 
-describe('the root typecheck script · a cold check-out', () => {
+describe('the root typecheck script · a cold check-out', { timeout: FILE_TIMEOUT_MS }, () => {
   it('starts from a tree with no build output, so the precondition is the one under test', () => {
     for (const output of BUILD_OUTPUTS) {
       expect(existsSync(join(cold, output))).toBe(false);

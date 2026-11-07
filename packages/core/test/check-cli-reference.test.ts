@@ -6,6 +6,16 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 
 /**
+ * The budget every suite in this file states.
+ *
+ * This file is in `STANDALONE_MS` at `timeout-budget.test.ts` because its cost reaches
+ * vitest's 5 000 ms default, and a budget on one test of it says nothing about the others:
+ * a test added later inherits the default, which is the file that times out on a loaded
+ * machine. A suite budget covers the ones nobody has written yet.
+ */
+const FILE_TIMEOUT_MS = 30_000;
+
+/**
  * The scripts this file executes.
  *
  * Rule 7 of `gate-sites-are-proven.test.ts` reconciles this declaration against
@@ -140,7 +150,7 @@ async function advertisedTopics(): Promise<string[]> {
     .filter((c) => c !== 'help' && c !== 'version');
 }
 
-describe('scripts/check-cli-reference.mjs · the drift report', () => {
+describe('scripts/check-cli-reference.mjs · the drift report', { timeout: FILE_TIMEOUT_MS }, () => {
   it('passes against the committed reference, so the negatives are not the only reachable state', { timeout: 30_000 }, async () => {
     // The precondition, and the reason the fixture below can be trusted to be
     // measuring the drift rather than the fixture: the real document satisfies
@@ -282,7 +292,7 @@ describe('scripts/check-cli-reference.mjs · the drift report', () => {
  * finding 153's shape -- the guard's subject was the document where it said
  * "section" -- and both are exhibited below rather than described.
  */
-describe('scripts/check-cli-reference.mjs · the section, not the document', () => {
+describe('scripts/check-cli-reference.mjs · the section, not the document', { timeout: FILE_TIMEOUT_MS }, () => {
   it('refuses a flag documented under a command that does not accept it', { timeout: 30_000 }, async () => {
     // The fixture moves a real flag out of the section of the command that
     // advertises it and into the section of a command that does not. The
@@ -328,7 +338,7 @@ A reader may also pass \`--not-a-real-flag <x>\`.\n`;
   });
 });
 
-describe('scripts/check-cli-reference.mjs · a command with no section of its own', () => {
+describe('scripts/check-cli-reference.mjs · a command with no section of its own', { timeout: FILE_TIMEOUT_MS }, () => {
   it('refuses a command the binary implements, listed, and left without a section', { timeout: 30_000 }, async () => {
     // A third state, and one the section-scoped check made new: the command is in
     // the reference's table, so a reader knows it exists, and its `--help` works,
