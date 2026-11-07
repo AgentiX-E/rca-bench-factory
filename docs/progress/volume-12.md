@@ -1470,9 +1470,9 @@ the choice, because the executor asserts the tip tree it was asked for.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **239 files, 6024 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **243 files, 6211 tests passed** (as of this commit) |
+| `core` test suite | **239 files, 6024 tests passed** (at v3.62) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.62) |
+| repo test suite | **243 files, 6211 tests passed** (at v3.62) |
 | new tests | **15**: the base search 3 (a free optimum that must read nothing, a twin met first that must read one, a repository of twins that must read all), the currency stamp 8 (a correct stamp, a wrong count, a round that is old, no stamp, two stamps, a corpus with no round to compare against, a quoted closure counted as open, and its reason read from the last marker), and the per-call budget 4 (every measured file, a mixed fixture reported by line, a comment that does not count, a nested suite that is not required) |
 | coverage | `core` **99.96 / 99.75 / 100 / 99.96**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the subjects are `scripts/` and a test file whose drivers are the site proofs |
 | mutation | **11** substitutions; **11 of 11 red, 0 survivors, 0 inert**, tree restored. Two probes, because the round changed two subjects: five on the base search (`publish.test.ts`) and six on the open-list guard and the budget rule |
@@ -1619,6 +1619,9 @@ number beside the two entry counts:
 whose rows were not judged
 ```
 
+`185` is not the number of rows. It is the number of pipe lines -- the header and the rule of each
+record counted as rows -- and the 147 that are rows is finding 464's measurement, one round later.
+
 That last clause is the honest half. The guard counts a row and refuses an entry; it does not judge a
 row's `state` column, and it says so every run rather than passing over nineteen records in silence.
 
@@ -1641,9 +1644,9 @@ the table-form records are counted and their rows are declared unjudged in every
 
 | item | value |
 | --- | --- |
-| `core` test suite | **239 files, 6024 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **243 files, 6211 tests passed** (as of this commit) |
+| `core` test suite | **239 files, 6024 tests passed** (at v3.63) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.63) |
+| repo test suite | **243 files, 6211 tests passed** (at v3.63) |
 | new tests | **8**: the half-struck bullet refused by name, the same bullet accepted once its headline is struck, a closed entry refused for carrying a live reason, finding 458's fixture kept so the new rule cannot re-open the old defect, and four for the record spellings (a table-form record counted and declared unjudged, an entry under one refused, a suffix-form heading over prose refused, a third spelling refused) |
 | sections read | **183** of 183 headings that begin with either name: 163 records of entries, 19 records in table form, and the live list. Before this round the guard read 164 and said so |
 | mutation | **15** substitutions; **15 of 15 red, 0 survivors, 0 inert**, tree restored. Four new ones: `struckReason` made to answer `false` (both entries return to being counted as work), the closed branch's reason check deleted, `spellingOf` made to answer `null` for the table form (nineteen records vanish from the count), and the unknown-spelling refusal removed |
@@ -1671,3 +1674,114 @@ only thing that made the reader's disagreement cheap was that the entries said "
 
 So the next thing to mechanise is not another count. It is the sentence the entry writes about itself
 when a round closes it.
+
+## v3.64 — three defects in the sentence that was written to be honest, and the corpus the stale readings were in
+
+v3.63 ended with a rule: *the next thing to mechanise is the sentence the entry writes about itself
+when a round closes it*. This round began there and found that the sentence it had just shipped --
+`19 record(s) in table form (185 row(s)) whose rows were not judged` -- was the third defect in three
+rounds of the same family: a number printed as evidence that is not the number it claims to be.
+
+### 一、The rows nobody judged were counted as pipe lines
+
+```js
+const rows = section.lines.filter((line) => /^\s*\|/.test(line)).length;
+```
+
+A markdown table has two lines that are not rows -- the header and the rule -- so nineteen records of
+**147** rows were reported as **185**. The 147 is derivable from the content (a record's first cell is
+a bold priority) and the guard now arrives at it from the structure:
+
+| reading | before | after |
+| --- | --- | --- |
+| rows reported for the nineteen records | **185** | **147** |
+| what 185 is | 147 + 2 x 19 | the number of pipe lines |
+| a record naming its columns and stopping | `OK`, `2 row(s)` | refused: `holds a header and no row` |
+
+Worse than the arithmetic is what the number was also for. `rows === 0` was the test for `holds no
+table`, and two pipe lines are never zero, so the refusal was **unreachable** for any table a person
+would write -- a `=== 0` against a number that cannot be `1`, whose only case was the one it was
+written for. And the test beside it asserted `3 row(s)` for a one-row table and passed: a test written
+to match an output inherits the output's mistake.
+
+### 二、The shape was said to be checked, and nothing about the shape was checked
+
+The comment above the third spelling says *its rows are counted, its shape is checked*. The code
+counted and checked nothing: not the header, not its names, not the rule, not one row's cells --
+nineteen headers, 147 rows, zero checks, and zero is not the same as nothing to check.
+
+The four names are the record's promise: priority, what the residual was, what became of it, the next
+step. A record that renames `state` to `note` still parses, still counts, and moves the only column a
+reader greps for out of reach -- finding 463's argument applied one level down, to a column instead of
+a heading. So there are four arms now, and three of them are the ones an honest future record would
+break by accident:
+
+| arm | refused when |
+| --- | --- |
+| a rule under the header | the first row is indistinguishable from a second header |
+| the four names | `names priority, item, note and next step, and not state` |
+| cell count per row | `has 3 cell(s) under a header that names 4` |
+| a non-empty `state` cell | the column exists and says nothing about the residual |
+
+The last is the only judgement on a cell the guard says it does not judge, and locating a column is
+not reading a value. Not one of the 147 is empty, so it is a floor stated as a floor.
+
+### 三、The column is not a state, and the entry's premise was refuted by measuring it
+
+The live list asked for a closed vocabulary for the `state` column. The measurement says there is
+nothing to close:
+
+| reading | value |
+| --- | --- |
+| rows | **147** |
+| distinct values | **78** |
+| most common | `unchanged`, **38** rows (26%) |
+| median cell | **75** characters |
+| longest | **251** |
+| empty | **0** |
+
+A column whose median cell is a sentence is a **reading**, written once per residual by the round that
+paid for it -- `measured once: 78 pairs, 78 red`; `**248/387** then **189/440**, ratio 1.56 -> 2.33`.
+No vocabulary accepts those and means anything, and requiring one would force nineteen frozen records
+to be rewritten. So the entry is **closed as a measured decision**, the shape this log already uses
+for a premise a measurement refutes: the rows are not judged because they are prose, and what a gate
+can do about prose is make it locatable.
+
+### Readings
+
+> Ledger for `v3.64`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **239 files, 6032 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **243 files, 6219 tests passed** (as of this commit) |
+| new tests | **8**: the row count read off the record (1 and 5 rows), a header-only record refused, a renamed column refused, a header with no rule refused, a short row refused, an empty `state` cell refused, and the shipped corpus held to 147 by an independent count |
+| the count, corrected | **185 -> 147**; the `holds no table` refusal went from unreachable to reached |
+| the shape, now checked | nineteen headers, 147 rows, four arms, 0 violations in the shipped corpus |
+| mutation | **21** substitutions; **21 of 21 red, 0 survivors, 0 inert**, tree restored. Six new, one per arm: `tableShape` returning pipe lines (147 -> 185), the zero-row arm deleted, the cell-count arm deleted, the empty-`state` arm deleted, the four-name arm deleted, and the rule under the header made optional |
+| the open list | **11** open, **15** closed; one struck this round, closed as a measured decision by finding 466 |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P1** | the remote's history shares no name with the local one above a boundary 272 commits old | unchanged | nothing converges it without rewriting the remote, which this channel refuses by design |
+| **P2** | the currency line proves a round counted, not that it read | **sharpened again**: v3.63's own sentence was the first thing it could not see | the round that closes an entry writes what closed it, in the headline, where the guard reads |
+| **P2** | the base search is linear in the number of twin tips | unchanged | take the first N tips by name or by time and print how many were looked at |
+| **P2** | the split is expensive by 240 s of every run | unchanged since it was measured | a per-file recording made on a runner, published where a plan can read it, and a staleness rule |
+| **P2** | a table-form record's rows are prose | **closed as a measured decision** (finding 466): 78 values over 147 rows, a 75-character median | nothing; a vocabulary would mean rewriting nineteen frozen records |
+| **P2** | P13: a mutation is one substitution | unchanged | a pair composing two changes neither of which is in the battery |
+| **P3** | a bounded ref count is a floor, not a count | unchanged | a repository with more than a thousand refs |
+
+**The lesson, for the round after this one.** The last three rounds each found the same defect one
+level deeper, and each time in the sentence the previous round had written to be safe: a stamp that
+counted what the guard said, a guard that read the headline and not the reason, a sentence that said
+"these rows were not judged" and named a number that was not the number of rows. The pattern is not
+carelessness. It is that **a sentence about a number is checked by the number's own source**, so the
+only sentences that can fail are the ones whose subject is somewhere else -- the record, the reader,
+the pipe line that is not a row. What found all three was reading the sentence against its subject
+rather than against the code that printed it.
+
+So the next thing to mechanise is still not a count. It is the habit of asking, of every number a
+round prints, **what would have to be true for this number to be wrong**, and then looking there.

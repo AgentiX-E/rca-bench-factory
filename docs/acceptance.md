@@ -1162,3 +1162,23 @@ from an anecdote again.
   record pass as a record, and an entry under a heading the guard reads as rows would have no judge.
 - **What is not claimed.** The rows are not judged. Their `state` column is the round's own account,
   and there is no vocabulary it must come from; that is the entry v3.63 raised and did not close.
+
+### The rows of a table-form record (v3.64)
+
+- **A row is a row, not a pipe line.** A record's number of rows is what remains after the header --
+  which names the columns -- and the rule under it. The nineteen shipped records hold **147** rows;
+  v3.63 printed **185**, which is 147 plus two per record, and the sentence that printed it was the
+  one claiming those rows were not judged (finding 464).
+- **The refusal for an empty record is reachable.** `holds no table` was a `=== 0` against a count
+  that could not be `1`: a header and a rule are two pipe lines, so a record that named its columns
+  and stopped passed. It is now refused by name, and a record whose header draws no rule is refused
+  too, because without the rule the first row is indistinguishable from a second header.
+- **The shape is what the comment said it was.** Four arms: a rule under the header, the four column
+  names `priority` / `item` / `state` / `next step`, one cell count per row, and a non-empty `state`
+  cell. Nineteen headers and 147 rows violate none of them; the arms exist for the twentieth record.
+- **The number is derived twice.** `147` is computed here from the content (a record's first cell is a
+  bold priority) and the guard computes it from the structure, and the test holds the two together --
+  which is the check that would have caught 185 on the day it was printed.
+- **What is not claimed.** The `state` column is not judged: 78 distinct values over 147 rows, a median
+  of 75 characters. That is a reading, not a state, and a vocabulary for it would mean rewriting
+  nineteen frozen records. Capturing a column is not judging a value.

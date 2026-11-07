@@ -3512,10 +3512,169 @@ counts, so a round that adds a twentieth cannot do it without the number moving:
 
 ```
 check-open-list: OK (577 entry(ies) across 183 section(s) ...: 533 open with a reason,
-42 closed by a finding, and 19 record(s) in table form (185 row(s)) whose rows were not judged)
+42 closed by a finding, and 19 record(s) in table form (147 row(s)) whose rows were not judged)
 ```
 
 The limit is stated in the summary rather than left to the reader: the guard counts a row and
 refuses an entry, and it does not judge a row's `state` column. Judging that column is what the
 live list's bullet form is *for*, and a frozen record's rows are the round's own account of what it
 left undone -- a number that says "these were not judged" is the honest form of not judging them.
+
+**Correction, v3.64.** That line read `185 row(s)` when this finding was written. It is 147: the
+count was `lines.filter(/^\s*\|/)`, so it counted the header and the rule of each of the nineteen
+records as rows -- 147 + 2 x 19. Finding 464 has the measurement, and it is the same finding this
+one is about, one line further in: a number printed as evidence is only evidence if it is the
+number it claims to be.
+
+---
+
+## Finding 464 — the rows nobody judged were counted as pipe lines, and the refusal for an empty record could not fire
+
+v3.63 gave the table-form record a reader and a sentence:
+
+```
+check-open-list: OK (...: 534 open with a reason, 44 closed by a finding, and 19 record(s) in
+table form (185 row(s)) whose rows were not judged)
+```
+
+Two numbers in that clause are wrong or unreachable, and both come from one line:
+
+```js
+const rows = section.lines.filter((line) => /^\s*\|/.test(line)).length;
+```
+
+A markdown table carries two lines that are **not** rows: the header, which names the columns, and
+the rule, which draws the line under it. Nineteen records, two lines each, so the sentence that was
+added to be honest about what the round had not read overstated its subject by 38.
+
+### The measurement
+
+`147` is derived here from the content of the rows -- the first cell of a record's row is a bold
+priority -- and the guard must arrive at the same number from the structure:
+
+```
+$ grep -c '^| \*\*P' docs/progress/volume-1*.md
+147
+$ node scripts/check-open-list.mjs        # before this finding
+... 19 record(s) in table form (185 row(s)) whose rows were not judged
+$ node scripts/check-open-list.mjs        # after
+... 19 record(s) in table form (147 row(s)) whose rows were not judged
+147 + 2 x 19 = 185
+```
+
+### The half that is worse than arithmetic
+
+That count was also the test for `holds no table`:
+
+```js
+if (rows === 0) { problems.push('... holds no table ...'); return; }
+```
+
+A header and a rule are two pipe lines, so `rows === 0` is **unreachable** for any table a person
+would write, and a record that names its columns and stops passes the refusal written for exactly
+that record -- reported, in the same breath, as `2 row(s)`:
+
+```
+$ printf '...\n| priority | item | state | next step |\n| --- | --- | --- | --- |\n' \
+    | node scripts/check-open-list.mjs --doc /dev/stdin
+check-open-list: OK (... 1 record(s) in table form (2 row(s)) whose rows were not judged)
+exit=0
+```
+
+The refusal was reachable on the day it was written. It is a `=== 0` against a number that cannot
+be `1`, and the missing `1` was the only case it existed for.
+
+### The test that shipped beside it
+
+`counts a suffix-form record whose body is a table` asserted `3 row(s)` for a one-row table, and
+passed, because a test written to match an output inherits the output's own mistake. The repair is
+not to change the `3` to a `1`: it is to count from the record and to derive the shipped number a
+second way, which is why the corpus test counts rows by their first cell (147) and holds the guard
+to it, and why the fixtures below carry the header and the rule as a constant rather than as
+prose each test repeats.
+
+### The repair
+
+`tableShape()` returns `{ rows, problem }` and reads the record in four steps, each of which is a
+refusal rather than a count:
+
+| step | refused when | why it is a refusal |
+| --- | --- | --- |
+| no pipe line at all | `holds no table` | unchanged, and still the case a prose record is |
+| no rule under the header | `draws no rule under them` | without it the first row is indistinguishable from a second header |
+| a row whose cell count differs from the header's | `has 3 cell(s) under a header that names 4` | a reader splitting on the pipe shifts a column, and the shifted cell is the one this guard does not judge |
+| a header and no row | `holds a header and no row` | the case the old `=== 0` could not reach |
+
+Two substitutions hold the battery: `tableShape` returning `pipes.length` puts 185 back, and
+deleting the `rows.length === 0` arm lets the header-only record pass again.
+
+## Finding 465 — the guard said its subject's shape was checked, and nothing about the shape was checked
+
+The comment above `spellingOf` states what the third spelling means:
+
+> `### Left open, <anything>` -- a record in table form: its rows are **counted**, its **shape is
+> checked**, and the summary says its rows were not judged
+
+The code counted pipe lines and checked nothing. Not the header, not its names, not the rule, not
+one row's cells:
+
+```
+$ python3 - <<'PY'   # the nineteen records, as they stand
+records 19   headers 19   data rows 147   cell mismatches 0
+headers: | priority | item | state | next step |   x 19
+PY
+```
+
+Nineteen headers and 147 rows, zero checks -- and zero is not the same as nothing to check. The
+four names are the record's promise to a reader: what priority a residual had, what it was, what
+became of it, and what the next step is. A record that renames `state` to `note` still parses, still
+counts, and moves the one column a reader greps for out of reach -- which is finding 463's argument,
+applied one level down, to a column instead of a heading.
+
+So the shape check now has four arms, and the first three are the ones a future record would break
+by accident:
+
+- the header must draw a rule under itself (finding 464's second half);
+- the header must name all four of `priority`, `item`, `state`, `next step`, in any order;
+- every row must have exactly as many cells as the header names;
+- the `state` cell must not be empty.
+
+The last one is the only judgement this guard makes on a cell it says it does not judge, and the
+two sentences are not in conflict: locating a column is not reading a value. Not one of the 147 is
+empty, so it is a floor rather than a repair -- stated as a floor, because a rule that has never
+fired is a rule whose reach nobody has measured.
+
+## Finding 466 — the column is not a state, and the plan to give it a vocabulary had the wrong premise
+
+The live list carried this, raised by v3.63 and left open:
+
+> A record written as a table is counted, not judged. ... the nineteen of them hold 147 rows no gate
+> reads. `[open: judging a row needs a closed vocabulary for the state column, and the nineteen
+> records predate one -- a gate that read the column today would have to accept whatever the last
+> nineteen rounds happened to write, which is not a rule]`
+
+The entry asks for a vocabulary. The measurement says there is nothing to close:
+
+| reading | value |
+| --- | --- |
+| rows | **147** |
+| distinct `state` values | **78** |
+| the most common value | `unchanged`, **38** rows (26%) |
+| median length | **75** characters |
+| longest | **251** characters |
+| empty cells | **0** |
+
+A column whose median cell is a 75-character sentence is not a state with a wide vocabulary; it is
+a **reading**, written once per residual, by the round that paid for it. Examples from the shipped
+records: `measured once: 78 pairs, 78 red`; `a script loaded without NODE_OPTIONS is not rewritten,
+and a wrapper that does not inherit hides its child`; `**248/387** then **189/440**, ratio 1.56 ->
+2.33 while the counts differ by ten`. No vocabulary can accept those and mean anything, and
+requiring one would force nineteen frozen records to be rewritten -- which is the one thing a frozen
+record must not be.
+
+So the entry is closed as a **measured decision**, the shape this log already uses for a question
+whose premise a measurement refutes: the rows are not judged because they are prose, and what a gate
+can do about prose is make it locatable. That is what findings 464 and 465 built -- a header whose
+names are checked, a rule that separates them from the rows, a cell count that says which column a
+value is in, and a non-empty state cell. The word in the heading is still `state`; nineteen records
+are worth more than the word.

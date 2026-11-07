@@ -889,10 +889,10 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.63: **12** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.64: **11** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
-about -- so what it buys is that a round stood in front of all thirteen and counted. v3.62 is the round
+about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
 that needed it: the list had said "open" about a page that had been made a page, about a flag whose other
 half had been read, and about a creation path a real push had already paid for.
 
@@ -900,6 +900,12 @@ v3.63 is the round that found the number itself was counting a **rule** that had
 below used half of a shape this log has used since v2.44 -- the reason struck through, the closure named
 after it -- and the headline, which the guard reads, was never struck. The guard counted them as work,
 and the stamp agreed, because the stamp is computed from the guard. Reading the list is what disagreed.
+
+v3.64 read the same list and found its own sentence in the previous round's write-up: `19 record(s) in
+table form (185 row(s)) whose rows were not judged`, where 147 are rows and 185 is the number of pipe
+lines. The entry that asked for a vocabulary for the `state` column was closed by measuring the column
+instead -- 78 values over 147 rows, a median cell of 75 characters -- so the list is one shorter and the
+numbers in it are the numbers their subjects have.
 
 - ~~**The real-corpus runs are diagnosed, and the mechanism was named wrong twice
   before it was named right.**~~ **Closed without a finding: the third naming came from
@@ -1364,13 +1370,17 @@ and the stamp agreed, because the stamp is computed from the guard. Reading the 
   `[open: a split by cost needs a per-file recording made where the cost is paid -- on a runner --
   published where a plan can read it, and a rule for when that recording is stale; the shard's own
   bound is the backstop, so the split is expensive rather than unsafe, by 240 s of every run]`
-- **A record written as a table is counted, not judged.** Since v3.45 a round's record is a table
-  with a `state` column, and the nineteen of them hold 185 rows no gate reads: the guard counts
-  the rows, refuses an entry under that heading, and says in every summary that the rows were not
-  judged. See finding 463.
-  `[open: judging a row needs a closed vocabulary for the state column, and the nineteen records
+- ~~**A record written as a table is counted, not judged.**~~ Since v3.45 a round's record is a
+  table with a `state` column, and the nineteen of them hold **147** rows no gate reads: v3.64 made
+  the guard check the header's four names, the rule under it, every row's cell count and a
+  non-empty state cell, and corrected the count it printed from 185 to 147. See findings 464, 465.
+  ~~`[open: judging a row needs a closed vocabulary for the state column, and the nineteen records
   predate one -- a gate that read the column today would have to accept whatever the last nineteen
-  rounds happened to write, which is not a rule]`
+  rounds happened to write, which is not a rule]`~~
+  **Closed as a measured decision by finding 466**, which measured the column instead of planning a
+  vocabulary for it: 147 readings, 78 distinct values, `unchanged` 38 times, a median of 75
+  characters and a longest of 251. There is no vocabulary to close, because the column is prose --
+  so what a gate can do about it is locate it, and that is now what the guard does.
 
 
 
@@ -1402,7 +1412,7 @@ and this table.
 | [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 7 | v3.47 | v3.53 |
-| [volume-12.md](progress/volume-12.md) | 10 | v3.54 | v3.63 |
+| [volume-12.md](progress/volume-12.md) | 11 | v3.54 | v3.64 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
