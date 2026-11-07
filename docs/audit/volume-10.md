@@ -3187,3 +3187,21 @@ the cost is what depends on the search, and correctness is not.
 The mutation that says this is a claim and not a comment is `const base = null` -- the old
 behaviour in one line -- and five cases go red on it, including the one that publishes a branch
 above a merge and the one that expects the same push onto an empty remote to be refused.
+
+## Finding 456 — the refusal that protected a branch that did not exist
+
+Every push leaves the remote's tip carrying the tree of the local tip and not being that commit.
+The channel refuses the next push in that state, and the reason is sound: replaying the tip would
+put a second commit with the same message on top of a tree that is already there.
+
+A branch being created is not that case. There is no second commit, because there is no first one
+under that name -- the branch does not exist. The refusal fired anyway, on `located.index === 0`
+with no regard for which of the two states asked, so a new branch could not be created at a tip the
+remote already held under another name. The condition now names the branch as well as the index,
+and the window for the creation is the tip itself: one commit, its parent the remote's name for the
+twin, no blob at all because the tree is already there.
+
+The measurement that makes it a claim rather than a comment is the mutation that removes the
+`remote.head !== null` half: the case that creates `copy` at a twin goes red, and the case that
+refuses to *move* a branch onto a twin stays green -- which is the pair that shows the condition is
+about which ref is being written and not about content.

@@ -820,6 +820,13 @@ point, and the boundary between the first two is the whole of what makes the thi
   ancestry, which is what a first push is. The branch is still created rather than moved, and the
   choice is a bound rather than a rule: a base further back replays more and produces the same tip
   tree, which the executor asserts.
+- **A branch is created at a twin, because a branch that does not exist has no first commit**
+  (v3.61). Every push leaves the remote's tip carrying the tree of the local tip without being that
+  commit, and the channel refuses to replay in that state -- correctly, for a branch that exists,
+  since it would put a second commit with the same message on top of a tree that is already there.
+  A branch being created is the other case: there is no second commit because there is no first one
+  under that name. The condition names the ref as well as the index, and the window is the tip
+  itself -- one commit, its parent the remote's name for the twin, no blob at all.
 - **The receipt rule runs before the first request, on the pointer path too** (v3.61). v3.60
   described `--no-gate` on its real creation push as honest for *"a state in which the receipt rule
   has nothing to say"*. The rule had something to say and had already said it: `requireReceipt` runs

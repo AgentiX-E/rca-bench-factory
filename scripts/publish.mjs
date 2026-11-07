@@ -376,10 +376,16 @@ export async function publish({
     log(`already up to date at ${tip.slice(0, 9)}`);
     return { state: 'current', remote, plan: null, tip, identical: true };
   }
-  if (located.index === 0) {
+  if (located.index === 0 && remote.head !== null) {
     // The remote holds this revision's tree on a different commit. The content is there
     // and the history is not, and replaying the tip would add a second commit with the
     // same message on top of a commit that already carries that tree.
+    //
+    // That is the right answer for a branch that exists, and the wrong one for a branch
+    // being created: there is no second commit with the same message, because there is no
+    // first one under this name. The window is then the tip itself -- one commit, whose
+    // parent is the remote's name for the twin -- which is the only way to create a branch
+    // at a tip the remote already holds under another name (finding 456).
     throw new TypeError(
       `the remote's tip (${String(origin.head).slice(0, 9)}) already carries the tree of ${tip.slice(0, 9)} ` +
         'and is not that commit: replaying it would publish a second commit with the same message on top of ' +
@@ -387,7 +393,7 @@ export async function publish({
     );
   }
 
-  const window = ancestry.slice(0, located.index).reverse();
+  const window = ancestry.slice(0, located.index === 0 ? 1 : located.index).reverse();
   const commits = window.map((commit) => readCommit({ root, sha: commit.sha }));
   const localTrees = new Map(commits.map((commit) => [commit.sha, commit.tree]));
   const plan = planPublish({ remote: origin, commits });

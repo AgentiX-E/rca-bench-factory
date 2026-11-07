@@ -620,6 +620,37 @@ describe('publishing to a repository through the local transport', { timeout: FI
     expect(git(remote, ['rev-list', '--count', 'main']).trim()).toBe('5');
   });
 
+  it('creates a branch at a tip the remote holds under another name, one commit and no blob', async () => {
+    // The state every push leaves behind: the remote's tip carries the tree of the local tip
+    // and is not that commit. For a branch that exists that is a refusal -- replaying would put
+    // a second commit with the same message on top of a tree that is already there -- but a
+    // branch being created has no first commit under its name, so the window is the tip itself
+    // and its parent is the remote's name for the twin (finding 456).
+    // `staged` with the history pushed up to the fourth commit, then a twin of the fifth made
+    // in the source and pushed: the remote holds the twin's tree and blobs and *not* the local
+    // commit, which is the state a push leaves behind and the one `holds` answers `false` to.
+    const { source, remote, shas } = staged('twin-creation', 3);
+    const twin = spawnSync(
+      'git',
+      ['-C', source, 'commit-tree', `${shas[4]}^{tree}`, '-p', shas[3]!, '-m', 'a twin of the fifth'],
+      { encoding: 'utf8', env: { ...process.env, ...IDENTITY } },
+    ).stdout.trim();
+    git(source, ['push', '-q', remote, `${twin}:refs/heads/main`]);
+    const transport = localTransport({ remote });
+
+    const result = await publish({ root: source, rev: 'HEAD', branch: 'copy', transport, newBranch: true });
+    expect(result.identity).toEqual({ state: 'parents', commits: 1, base: 'tree' });
+    expect(result.plan.commits).toHaveLength(1);
+    const made = git(remote, ['rev-parse', 'copy']).trim();
+    expect(made).not.toBe(shas[4]);
+    expect(git(remote, ['rev-parse', `${made}^{tree}`]).trim()).toBe(git(source, ['rev-parse', 'HEAD^{tree}']).trim());
+    // The parent is the twin, so the branch is one commit above what the remote had -- not a
+    // second root, and not a history the branch was never asked to carry.
+    expect(git(remote, ['rev-parse', `${made}^`]).trim()).toBe(twin);
+    // And the branch that was there did not move.
+    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(twin);
+  });
+
   it('refuses when the remote already carries this tree on a commit that is not this one', async () => {
     const { source, remote, shas } = stage('sametree');
     const tree = git(source, ['rev-parse', 'HEAD^{tree}']).trim();

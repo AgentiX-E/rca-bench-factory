@@ -1239,23 +1239,64 @@ v3.60 的遗留表上有一条：*"在 tip 上创建分支且必须上传对象"
 
 于是顺序是：先创建 `v3.61-tip`（远端还没有这一轮的提交，窗口只有 1 个提交），再推 `master`。第一次真实创建带着对象、带着门禁、带着一个合法回执。
 
+### 七、两次推送：一次被自己拒绝，一次带对象把分支建出来
+
+遗留清单上挂了四轮的那条——*「在 tip 上创建分支且必须上传对象」从未被真实付过账*——本轮了结，而它先**失败**了一次：
+
+> `publish failed: 50a8ce30c has 2 parents, and a replayed commit is published on one: a merge carries a history in its second parent that the remote would not receive, so the SHA it receives would not be the SHA that was written`
+
+两次请求就被自己的计划拒了（`GET /git/ref/heads/v3.61-tip` → `404`、`GET /git/commits/3a943836c` → `404`），一个对象都没写。这就是 finding 455 的证据：不是慢，是不能。
+
+修好基座之后，同一条命令成功了：
+
+> `v3.61-tip is at faa9bdb2fac5f4c8b5f1d2df3d1418202b122aae: the tree, the message and both identities are the local ones, and the SHA is not, because every one of the 3 commit(s) this push carried hangs on the remote's name for its parent`
+
+**35 次请求、0 重试、0 未答**，对比一条重放整部历史的推送（本仓 509 个提交、数百个 blob）。拆开看就是本轮的整条论证：
+
+| 请求 | 次数 | 为什么 |
+| --- | --- | --- |
+| `GET /git/ref/heads/v3.61-tip` | 1 | `404` —— 分支不存在 |
+| `GET /git/commits/3a943836c` | 1 | `404` —— 远端不持有这个提交，捷径不可用 |
+| `GET /git/refs?per_page=100&page=1` | 1 | 仓库有 ref，就可能有基座 |
+| `GET /git/commits/<三个 tip>` | 3 | 三个分支 tip 都不在本地祖先里（改名孪生），各读一次 |
+| `GET /git/trees/b02eaf356…` | 1 | 选中基座的树清单 |
+| `POST /git/blobs` | 21 | 三个提交的实际内容 |
+| `POST /git/trees` / `commits` | 3 / 3 | 三个提交 |
+| `POST /git/refs` | 1 | **创建**，而不是移动 |
+
+随后推 `master`（第 16 次尝试，31 次请求）：同一段窗口、同样的三个 `parents` 判决、一次 `PATCH`。两次推送共用同一批 blob，因为第二次面对的是同一段历史。
+
+这个分支指向 `faa9bdb2f`，树是 **`546b38da`**——正是 `verify:local` 在那棵树上开的回执；父是 `8de78aadc`，即远端对上一个提交的名字。也就是说：**被门禁量过的那棵树，就是远端现在服务的那棵树**，而这一点不是从日志里推断的，是分支的字节里含着的。
+
+### 八、电池：一个存活，两个跳过，然后全红
+
+十五处替换。历史是这一轮最值得记的部分：
+
+- 第一次跑：**8 红、1 存活、1 跳过**。存活的是 **M10**（把任何页的 `409` 读成空仓库）——规则在代码里、注释在代码里、测试里没有；跳过的是 **M8**，锚点写成八空格而那一行是四空格，电池把它报成 skip 并打印命中数 0。
+- 补上用例、改正锚点：**13/13**。但那时 `const base = null` 这一行（M11，整个基座定位的否定）也在里面，而它**逼出了 finding 455**：它让「在合并之上创建分支」的用例跑不起来，而那次真实推送第一次撞上了同一件事。
+- 加上基座的四条之后，五个锚点因为重构失效、被刷新；最终 **15/15 变红、0 存活、0 惰性**。
+
+电池这一轮抓到的不是「测试不够严」，而是**一条没有测试的规则**和**一个用旧锚点描述的世界**。前者会让一次推送把整部历史发布到一个写错的名字上；后者会让电池在最需要它的时候安静。
+
 ### Readings
 
 > Ledger for `v3.61`.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **239 files, 6000 tests passed** (as of this commit) |
+| `core` test suite | **239 files, 6001 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **243 files, 6187 tests passed** (as of this commit) |
-| new tests | **12**: the page walk 4 (a hundred and forty refs, exactly a hundred, fourteen hundred, one short page), a `409` on a later page 1, an empty listing that answers the tip question 1, a gated pointer push 1, the lower-bound sentence 1, and the creation base 4 (the nearest of two tips, a merge below the base, the same push onto nothing refused, and an empty repository that still replays everything) |
+| repo test suite | **243 files, 6188 tests passed** (as of this commit) |
+| new tests | **13**: the page walk 4 (a hundred and forty refs, exactly a hundred, fourteen hundred, one short page), a `409` on a later page 1, an empty listing that answers the tip question 1, a gated pointer push 1, the lower-bound sentence 1, and the creation base 4 (the nearest of two tips, a merge below the base, the same push onto nothing refused, an empty repository that still replays everything, and a branch created at a tip the remote holds under another name) |
 | coverage | `core` **99.96 / 99.75 / 100 / 99.96**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the subject is `scripts/` and its drivers are the site proofs |
-| mutation | **13** substitutions; first pass **8 red, 1 survivor, 1 skipped**, and after the creation base was added, 5 anchors went stale and were refreshed. Final: **13 of 13 red, 0 survivors, 0 inert**, tree restored -- the survivor was a rule with no test (a `409` on a later page read as "no refs") and the skip an anchor written with the wrong indentation |
+| mutation | **15** substitutions; first pass **8 red, 1 survivor, 1 skipped**, and after the creation base was added, 5 anchors went stale and were refreshed. Final: **15 of 15 red, 0 survivors, 0 inert**, tree restored -- the survivor was a rule with no test (a `409` on a later page read as "no refs") and the skip an anchor written with the wrong indentation |
 | failure sites | **126** across **59** of **85** scripts; throws **91** = 11 `fatal` + 69 `unguarded` + 1 `guarded` + 10 `rethrow`, and **91 of 91** carried annotations |
 | site proofs | **203** proved sites across **66** test files (`verify-site-proofs.mjs --list`) |
+| the history | `golden-master/publish-readings.json`: **16 attempts**, 269 rows. Attempt 14 is the creation that was refused by its own plan (2 requests, no object), 15 the creation that succeeded (35 requests, three commits, `POST /git/refs`), 16 the `master` push onto the same window (31 requests, one `PATCH`) |
 
-The two pushes this round made are described in the next commit, which is also where their rows
-enter `golden-master/publish-readings.json`: a push cannot record itself inside itself.
+The pushes this round made are described in §七. The row for the push that publishes *this*
+commit cannot be in it -- a push cannot record itself inside itself -- so the ledger below is one
+attempt behind by construction, which is the lag the gate prints rather than one it hides.
 
 ### Left open, in the order the goal is reached
 
