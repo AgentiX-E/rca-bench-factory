@@ -3051,3 +3051,99 @@ The boundary is also a moving point with a fixed coordinate: it grew from 246 to
 history grew from 483 to 509, so the 26 commits this span of rounds added are exactly the 26 the
 boundary moved by. That is the arithmetic of a rename that never stops, and it is why the contract
 in v3.59's close-out is *isomorphism* rather than equality.
+
+## Finding 451 — a page called "every ref in the repository"
+
+`refs()` asked `GET /git/refs?per_page=100` and returned what came back, and the comment above
+it said "every ref in the repository". The API pages. A repository with a hundred and forty
+branches therefore answered with a hundred, and the refusal built on that listing — the one
+that tells a mistyped branch from a new one — printed **"it holds 100 branch(es)"**: a number
+the reader is entitled to act on, off by forty, in a sentence whose whole purpose is to say what
+the repository contains.
+
+The decision the listing serves only needs *one* ref to exist, so the count was never
+load-bearing for the refusal — but it is load-bearing for the sentence, which is the part a
+person reads. And the page walk is the one place where "full" and "last" are different facts: a
+hundred is both the page size and the size of a repository that has a hundred refs, so the
+obvious implementation (stop when the page is short) still needs one more question than the
+obvious reading suggests, and a walk that stops at a full page reports 100 for a repository that
+ended there and 100 for one that did not.
+
+The walk is bounded at ten pages, because it runs inside a refusal and a refusal is not a
+reason to read a thousand branches. When the bound is hit the sentence says **"at least"**:
+a count of the pages this channel read, printed as the count of refs the repository holds, is
+precisely the defect the walk exists to fix, and a bound turned into a fact would be the same
+mistake with a smaller number.
+
+`refs()` now answers `{ names, complete }`, because the sentence cannot tell a finished count
+from a stopped one unless the transport says which it gave. The local transport answers
+`complete: true` unconditionally — a directory listing has no page size — which is the honest
+form of the same interface, not a special case.
+
+## Finding 452 — a question the previous answer had already answered
+
+The creation path asks `holds(tip)` before deciding to replay a history. On an empty repository
+the channel had, one call earlier, read the listing and been told there are no refs at all — and
+then asked anyway: *does the remote hold this commit?* A repository with no refs cannot serve a
+commit by any name, so the question had a known answer, and the request bought nothing on every
+first push this channel will ever make.
+
+The fix is not "skip the question when the listing is empty" as a cost optimisation. It is that
+the two answers mean different things and only one of them is about the object store: an empty
+listing is a statement about **names**, and the shortcut it licenses would be a claim about a
+commit that no name reaches — in a repository whose objects are, by construction, unreachable
+and therefore collectable. So the channel does the conservative thing and says so:
+
+> `the remote holds no refs, so there is no name a shortcut could carry: this push replays the
+> history and the question about the tip is not asked`
+
+The replay that follows is correct whatever the object store holds. The saving is one request,
+and it is on the path where the listing was already paid for, which is why the ordinary push —
+a branch that exists — still asks nothing.
+
+The sentence also had to displace another one. The falling-through branch logs *"the remote does
+not hold `<sha>`: this push will build the commits that lead to it"*, which is a claim about the
+object store; a path that never looked would have printed it after saying it had not looked.
+One test asserts the absence of that line, because a log that says two things is not made
+honest by the first one being true.
+
+## Finding 453 — the rule that had "nothing to say", and the three requests it was missing from
+
+v3.60 closed with a sentence about its own real creation push: `--no-gate` was described as
+honest for *"a state in which the receipt rule has nothing to say: the tree is already on the
+remote, so nothing is being published."* The rule had something to say, and it said it — the
+gate runs `requireReceipt({ tree: tipTree })` **before** the remote is read at all, so a pointer
+push is gated like every other push: what crosses the wire is a reference, and what the
+reference makes reachable is a tree. The bypass was real; the explanation was wrong, and the
+difference matters because the explanation is what a reader would use to decide whether the
+bypass was safe.
+
+Nothing in the suite could have caught that sentence, because no case combined a gate with the
+pointer path: `stage()` builds repositories with no `scripts/verify-local.mjs`, so `requireReceipt`
+answers `absent` and the pointer cases pass through a gate that is not there. The case added
+here builds a repository with a gate and a tip the remote already holds, and asserts three
+things at once — the refusal, that the branch was **not** created, and that the executor made
+**zero** transport calls, because the ordering is the claim: a gate that fired after
+`GET /git/ref/heads/<branch>` would already have learned something about the remote before
+asking whether the tree it is about to name was ever blessed.
+
+The v3.60 push remains as it was: a branch created under a bypass whose justification was
+misstated. What changes is that the misstatement is now a measured fact with a test that would
+have contradicted it.
+
+## Finding 454 — two pages, one key, and a stand-in that could not answer about pages
+
+The HTTP stand-in in `publish.test.ts` recorded `key = method + pathname` and dropped the query.
+Every page of `/git/refs` was therefore the same key, so a case could not have shown a walk even
+if the channel had made one: the recording would have said *one request* about two. The key
+carries the query now, which is also what the readings ledger records (`/git/refs?per_page=100`),
+so a page walk appears in both accounts in the same shape.
+
+The route could not answer a page either — it returned the whole list for every request — which
+is finding 449's shape a second time, in the same file, four rounds later: a stand-in that
+answers a question nobody declared. It now honours `per_page` and `page`, and `refsCount`
+fabricates a repository of a given size so a walk can be exercised on a machine that has no
+repository with a hundred and forty branches. The `409`-on-the-first-page state got its
+counterpart too: `refsStatusAfter` answers a status on pages after the first, which is how the
+rule "a `409` after page one is not an empty repository" became testable — and it was not, until
+a mutation that read it as one survived the whole file.

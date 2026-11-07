@@ -747,8 +747,10 @@ point, and the boundary between the first two is the whole of what makes the thi
   is identical for both. So the read is followed by one question -- what does the repository hold
   -- and the answer decides the meaning: nothing listed means the branch is unborn; anything
   listed means the name is wrong, and the push is refused unless the caller says `--new-branch`,
-  naming what it found. A `409` is read as the empty list rather than forwarded, because the
-  status carries the fact the decision turns on. A `403`, or a body that is not a list, is
+  naming what it found. A `409` **on the first page** is read as the empty list rather than
+  forwarded, because there the status carries the fact the decision turns on; on any later page it
+  is forwarded (v3.61), since the first page of an empty repository is `[]` and a second page
+  exists only because the first one was full. A `403`, or a body that is not a list, is
   forwarded: a listing this channel was not allowed to read is not a repository with no refs, and
   the difference is a push onto a branch that may already exist. The listing is asked for **only**
   on that path, and the case asserts it by the shape of an ordinary push's requests rather than by
@@ -787,6 +789,34 @@ point, and the boundary between the first two is the whole of what makes the thi
   *"0 commit(s) would be published"*, which is true of the plan and says the opposite of what would
   happen. `--no-gate` announces itself, because a guard that is bypassed is a fact the transcript
   owes the reader.
+- **A ref listing is pages, and the count in a refusal is a count** (v3.61). `/git/refs` answers a
+  hundred refs at a time; one page was read as *every ref in the repository*, so a repository with a
+  hundred and forty branches was refused with *"100 branch(es)"* -- a number the reader is entitled
+  to act on. The channel walks pages until one comes back short, and it asks **once more than the
+  obvious implementation**: a full page is not the last page, because a hundred is both the page
+  size and the size of a repository that has a hundred refs. The walk is bounded at ten pages
+  because it runs inside a refusal, and when the bound is reached the sentence says **"at least"**:
+  a count of the pages read, printed as the count of refs that exist, is the defect the walk fixes.
+  `refs()` answers `{ names, complete }` so the sentence can tell a finished count from a stopped
+  one; the local transport answers `complete: true` unconditionally, which is the honest form of the
+  same interface. Cost: a repository whose first page is short -- every repository this channel
+  pushes to -- is one request, asserted by the exact request list rather than by a count.
+- **An empty listing answers the tip question as well** (v3.61). The creation path asks whether the
+  remote holds the tip before deciding to replay; when the listing has just said the repository has
+  no refs, that question has a known answer and asking it spent a request on every first push. It
+  is not asked then, and the channel says which answer it is acting on rather than printing the
+  sentence reserved for a push that looked:
+  *"the remote holds no refs, so there is no name a shortcut could carry: this push replays the
+  history and the question about the tip is not asked"*. The replay is correct whatever the object
+  store holds, which is why this is the conservative direction: the shortcut would have named a
+  commit the listing never mentioned, in a repository whose objects are unreachable.
+- **The receipt rule runs before the first request, on the pointer path too** (v3.61). v3.60
+  described `--no-gate` on its real creation push as honest for *"a state in which the receipt rule
+  has nothing to say"*. The rule had something to say and had already said it: `requireReceipt` runs
+  on the tip's tree **before** the remote is read, so a push that publishes no content is still
+  gated, because what the reference makes reachable is a tree. The bypass was real and remains in
+  the record; the explanation was wrong. The case asserts the refusal, that the branch was not
+  created, and that the executor made **zero** transport calls -- the ordering is the claim.
 - **A tree listing that reports itself truncated cannot decide what is deleted.** A path missing
   from a partial listing and a path that was never there are the same absence; the refusal arrives
   before the first upload rather than after it.
