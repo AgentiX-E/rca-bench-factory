@@ -251,6 +251,112 @@ function spellingOf(heading) {
 const NEARLY = /^#{2,3} (?:Open|Left open)\b/;
 
 /**
+ * The four columns a table-form record names, and the reason each one has to be there.
+ *
+ * The heading makes a promise -- `Left open, in the order the goal is reached` -- and the
+ * summary makes a second one: that these rows were **not judged**. A reader who wants to judge
+ * them, or to check what a round left undone, needs the same four cells for every row: what
+ * priority the residual had, what it was, what the round's own account of it is, and what the
+ * next step is. Nineteen records use exactly these four, in this order, and 147 rows fill them.
+ *
+ * So the names are required rather than assumed. Finding 463 is the argument: a heading that
+ * gained a comma moved nineteen records out of this guard's reach, and a column that stops
+ * being called `state` moves the same records out of a reader's grep -- while the count of
+ * "rows nobody judged" goes up by nothing. The check costs one `includes` per column.
+ */
+const COLUMNS = ['priority', 'item', 'state', 'next step'];
+
+/** The cells of one pipe line, with the outer pipes removed and each cell trimmed. */
+function cellsOf(line) {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/(?<!\\)\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim());
+}
+
+/**
+ * How many rows a table-form record holds, or the shape defect that stops the count meaning
+ * anything.
+ *
+ * v3.63 counted `lines.filter(/^\s*\|/)`, which is every pipe line -- and a markdown table
+ * carries two lines that are not rows: the header, which names the columns, and the rule,
+ * which draws the line under it. Nineteen records of 147 rows were reported as 185, and the
+ * sentence that said those rows were not judged overstated its subject by 38 (finding 464).
+ *
+ * Worse than the arithmetic: that number was also the test for `holds no table`. A header and
+ * a rule are two pipe lines, so `rows === 0` was unreachable for any table a person would
+ * write, and a record that names its columns and stops was accepted and reported as `2 row(s)`.
+ *
+ * The count is therefore taken from the record -- header, rule, then rows -- and each of the
+ * three is checked, because a count of rows in a table whose columns do not line up is a count
+ * of lines. The `state` cell is still **not** judged: it is prose, and the nineteen records
+ * predate any vocabulary. That limit is stated in the summary rather than implied here.
+ */
+function tableShape(lines) {
+  const pipes = lines.filter((line) => /^\s*\|/.test(line));
+  if (pipes.length === 0) {
+    return {
+      rows: 0,
+      problem: 'is written in table form and holds no table, so its rows are neither counted nor judged',
+    };
+  }
+  const header = cellsOf(pipes[0]);
+  if (pipes.length < 2 || !/^\s*\|[\s:|-]+\|\s*$/.test(pipes[1])) {
+    return {
+      rows: 0,
+      problem:
+        `names ${String(header.length)} column(s) and draws no rule under them, so its header is a ` +
+        'line a reader cannot tell from a row',
+    };
+  }
+  const missing = COLUMNS.filter((column) => !header.includes(column));
+  if (missing.length > 0) {
+    return {
+      rows: 0,
+      problem:
+        `names ${header.join(' | ')} and not ${missing.join(', ')}, so a reader who looks for the ` +
+        'column a record of residuals has kept since v3.45 finds nothing',
+    };
+  }
+  const rows = pipes.slice(2);
+  if (rows.length === 0) {
+    return {
+      rows: 0,
+      problem:
+        'holds a header and no row, so there is nothing for a reader to be told was not judged',
+    };
+  }
+  const stateAt = header.indexOf('state');
+  for (const row of rows) {
+    const cells = cellsOf(row);
+    if (cells.length !== header.length) {
+      return {
+        rows: 0,
+        problem:
+          `has ${String(cells.length)} cell(s) under a header that names ${String(header.length)}, ` +
+          `so every cell after the short one sits in the wrong column: ${row.trim().slice(0, 70)}`,
+      };
+    }
+    // The one thing about the state cell that is mechanical. Its content is prose -- 147 readings
+    // from 78 distinct values, a median of 75 characters (finding 466) -- so a gate that judged
+    // it would be judging prose. An **empty** cell is different: the column exists, the record
+    // promised a state for every residual, and a reader who finds nothing there has to derive
+    // what the round thought. Not one of the 147 is empty, so this is a floor and not a repair.
+    if (cells[stateAt] === '') {
+      return {
+        rows: 0,
+        problem:
+          'has a row whose `state` cell is empty, so the one column that says what became of a ' +
+          `residual says nothing: ${row.trim().slice(0, 70)}`,
+      };
+    }
+  }
+  return { rows: rows.length, problem: null };
+}
+
+/**
  * Every section whose heading is one of `headings`, in document order, with its span.
  *
  * A deeper heading inside a section (`#### x`) stays in it; a heading of the same
@@ -454,12 +560,9 @@ function check() {
       const kind = spelling.kind;
       const items = entries(section.lines);
       if (spelling.form === 'table') {
-        const rows = section.lines.filter((line) => /^\s*\|/.test(line)).length;
-        if (rows === 0) {
-          problems.push(
-            `${from.label}: the \`${section.heading}\` record is written in table form and holds no ` +
-              'table, so its rows are neither counted nor judged',
-          );
+        const shape = tableShape(section.lines);
+        if (shape.problem !== null) {
+          problems.push(`${from.label}: the \`${section.heading}\` record ${shape.problem}`);
           return;
         }
         if (items.length > 0) {
@@ -469,7 +572,7 @@ function check() {
           );
         }
         tables += 1;
-        tableRows += rows;
+        tableRows += shape.rows;
         return;
       }
       if (items.length === 0) {

@@ -95,6 +95,14 @@ function indexOpen(entries: string[]): string {
 }
 
 const CLOSED_ENTRY = '- ~~An old item.~~ **Closed by finding 150**: the consumer arrived.';
+
+/**
+ * The header the nineteen shipped table-form records use, in the shape markdown needs: the
+ * column names, then the rule that draws the line under them. Two lines that are not rows --
+ * which is finding 464, and which every fixture below has to supply for the row count to mean
+ * what it says.
+ */
+const TABLE_HEAD = '| priority | item | state | next step |\n| --- | --- | --- | --- |';
 const OPEN_ENTRY =
   '- A residual. [open: it needs the measurement the entry is about, and that measurement does not exist yet]';
 const BARE_ENTRY = '- A residual with no marker at all.';
@@ -492,14 +500,18 @@ describe('docs · a record written as a table is read as rows, and a third spell
   const page = (record: string) => `## Headline\n\ntext\n\n## Open\n\n${OPEN_ENTRY}\n\n## Pass log\n\nbody\n\n${record}`;
 
   it('counts a suffix-form record whose body is a table, and says its rows were not judged', () => {
-    const r = runOn(page(suffix('| priority | item |\n| --- | --- |\n| P1 | a residual |')));
+    // Four columns, because that is the shape the nineteen shipped records use and the guard
+    // now checks the names (finding 465). The count is `1`, not `3`: v3.63 shipped this fixture
+    // with `3` because the guard reported every pipe line -- header and rule included -- and a
+    // test written against an output inherits the output's mistake (finding 464).
+    const r = runOn(page(suffix('| priority | item | state | next step |\n| --- | --- | --- | --- |\n| **P1** | a residual | unchanged | nothing |')));
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('1 record(s) in table form (3 row(s)) whose rows were not judged');
+    expect(r.out).toContain('1 record(s) in table form (1 row(s)) whose rows were not judged');
   });
 
   it('refuses an entry sitting under a record that is written as a table', () => {
     // The entry would be read by nothing: the heading says rows, so the bullet has no judge.
-    const r = runOn(page(suffix('| priority | item |\n| --- | --- |\n| P1 | a residual |\n\n- An entry the heading does not describe.')));
+    const r = runOn(page(suffix(`${TABLE_HEAD}\n| **P1** | a residual | unchanged | nothing |\n\n- An entry the heading does not describe.`)));
     expect(r.code).toBe(1);
     expect(r.out).toContain('is written in table form and carries 1 entr(ies)');
   });
@@ -515,5 +527,122 @@ describe('docs · a record written as a table is read as rows, and a third spell
     expect(r.code).toBe(1);
     expect(r.out).toContain('begins with one of the two names this guard');
     expect(r.out).toContain('would have no reader');
+  });
+});
+
+/**
+ * The rows the guard said it did not judge, and how many of them there were.
+ *
+ * v3.63 gave the table-form record a reader and a sentence: `19 record(s) in table form
+ * (185 row(s)) whose rows were not judged`. The number is wrong, and it is wrong in the
+ * direction that matters -- the nineteen records hold **147** rows, and 185 is what you get
+ * by counting every line that begins with a pipe:
+ *
+ * ```
+ * const rows = section.lines.filter((line) => /^\s*\|/.test(line)).length;
+ * ```
+ *
+ * A markdown table carries two lines that are not rows: the header, which names the columns,
+ * and the rule, which draws the line under it. Two lines per record, nineteen records, thirty-
+ * eight rows that do not exist. The sentence the round added to be honest about what it had
+ * not read overstated what it had not read by a third.
+ *
+ * The second half of the same line is worse than the arithmetic. That count is also the test
+ * for "holds no table":
+ *
+ * ```
+ * if (rows === 0) { problems.push('... holds no table ...'); return; }
+ * ```
+ *
+ * A header and a rule are two pipe-lines, so a record that names its columns and stops passes
+ * the refusal that was written for exactly that record, and the summary reports `2 row(s)`
+ * for a table with no rows at all. The refusal was reachable on the day it was written; it is
+ * a `=== 0` against a number that cannot be 1.
+ *
+ * And the test that shipped beside it asserted `3 row(s)` for a one-row table, because a test
+ * written to match an output inherits the output's mistake -- which is why the fixtures below
+ * count from the record rather than from the pipe.
+ */
+describe('docs · the rows a table-form record holds, counted from the record', () => {
+  const suffix = (body: string) => `### Left open, in the order the goal is reached\n\n${body}\n`;
+  const page = (record: string) => `## Headline\n\ntext\n\n## Open\n\n${OPEN_ENTRY}\n\n## Pass log\n\nbody\n\n${record}`;
+  const HEAD = TABLE_HEAD;
+  const row = (n: number) => `| **P${String(n % 9)}** | residual ${String(n)} | unchanged | nothing |`;
+
+  it('counts a one-row record as one row, not as three lines', () => {
+    // The shipped shape, and the number is read off the record: one row. While the count was
+    // `filter(/^\s*\|/)`, this reported 3 -- and so did the test that shipped with it.
+    const r = runOn(page(suffix(`${HEAD}\n| **P1** | a residual | unchanged | nothing |`)));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 record(s) in table form (1 row(s)) whose rows were not judged');
+  });
+
+  it('counts five rows in a five-row record, so the number is the record and not the file', () => {
+    const rows = Array.from({ length: 5 }, (_, i) => row(i + 1)).join('\n');
+    const r = runOn(page(suffix(`${HEAD}\n${rows}`)));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('(5 row(s))');
+  });
+
+  it('refuses a record whose header is the whole table', () => {
+    // The fixture is the hole: a header and a rule are two pipe-lines, so `rows === 0` was
+    // never true for a table anyone would write. The record names its columns, holds nothing,
+    // and was reported as `2 row(s)`.
+    const r = runOn(page(suffix(HEAD)));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('holds a header and no row');
+  });
+
+  it('refuses a record that renames one of the four columns', () => {
+    // `state` renamed to `note` is a record whose residuals still have a state, in a column a
+    // reader grepping for the state cannot find -- and the count of rows nobody judged goes up
+    // by nothing. That is finding 463's argument applied to a column instead of a heading.
+    const renamed = '| priority | item | note | next step |\n| --- | --- | --- | --- |\n| **P2** | residual | unchanged | nothing |';
+    const r = runOn(page(suffix(renamed)));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('and not state');
+  });
+
+  it('refuses a header with a row directly under it, because the rule is what separates them', () => {
+    // Without the rule the first row is indistinguishable from a second header line, so a
+    // reader splitting the block has no way to say which line names the columns.
+    const noRule = '| priority | item | state | next step |\n| **P2** | residual | unchanged | nothing |';
+    const r = runOn(page(suffix(noRule)));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('draws no rule under them');
+  });
+
+  it('refuses a row whose cells do not match its header', () => {
+    // A reader who splits on the pipe shifts a column, and the shifted cell is the *state* --
+    // the one column this guard says it does not judge. Refusing the shape is what makes that
+    // sentence honest: the guard cannot read the state, and it can at least say which column
+    // it is in.
+    const r = runOn(page(suffix(`${HEAD}\n| **P2** | residual | unchanged |`)));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('has 3 cell(s) under a header that names 4');
+  });
+
+  it('refuses a row whose state cell is empty, and only for the emptiness', () => {
+    // The one mechanical thing about a column of prose. 147 shipped rows, not one empty cell, so
+    // this is a floor rather than a repair -- and it is the only judgement the guard makes on a
+    // cell it says it does not judge: a locatable column is not a judged value.
+    const blank = `${TABLE_HEAD}\n| **P2** | residual |  | nothing |`;
+    const r = runOn(page(suffix(blank)));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('`state` cell is empty');
+  });
+
+  it('reads the shipped corpus as 147 rows, which is a number no pipe-line count produces', () => {
+    // The third opinion. 147 is derived here from the *content* of the rows -- a record's first
+    // cell is a bold priority -- and the guard must arrive at the same number from the
+    // structure. 185, the number v3.63 printed, is 147 + 2 x 19.
+    const shipped = spawnSync('node', [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
+    expect(shipped.status, shipped.stdout + shipped.stderr).toBe(0);
+    const rows = progressCorpus()
+      .flatMap((file) => file.text.split('\n'))
+      .filter((line) => /^\|\s*\*\*P\d+/.test(line.trim())).length;
+    expect(rows, 'the corpus holds no priority rows, so this arm is vacuous').toBeGreaterThan(100);
+    expect(shipped.stdout).toContain(`(${String(rows)} row(s))`);
+    expect(shipped.stdout).not.toContain('(185 row(s))');
   });
 });
