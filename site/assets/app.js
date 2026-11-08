@@ -286,8 +286,11 @@
       el('div', { class: 'card', style: 'margin-bottom:16px' }, [
         el('div', { style: 'display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px' }, [
           el('h4', { style: 'margin:0', text: spec.name }),
-          el('span', { class: 'badge', text: spec.vendor }),
-          el('span', { class: 'badge', text: spec.venue }),
+          // A null vendor or venue prints as the gap it is. The specification says `null` rather
+          // than naming something adjacent, and a badge reading "null" would hide that on the page
+          // that exists to show a visitor what each format is.
+          el('span', { class: 'badge', text: spec.vendor || 'vendor not established' }),
+          el('span', { class: 'badge', text: spec.venue || 'venue not established' }),
           el('span', { class: 'badge ok', text: 'contract ' + spec.contractVersion }),
         ].concat(
           spec.modalities.map(function (m) {

@@ -254,8 +254,12 @@ describe('the two baskets are a partition of the calls, not a remainder', () => 
     // 145/127 is v3.66's: `check-fault-cases.mjs` refuses an index that does not declare what
     // the set is for, which is one more call and one more failure site -- and it is the same
     // pair moving together, which is what this assertion is about.
-    expect(calls).toBe(145);
-    expect(sites).toBe(127);
+    // 146/128 is v3.67's: `gen-examples.mjs` refuses a `--check` whose generated document blocks
+    // disagree with the specification. The three throws this round added do not appear here --
+    // they are throws, counted in the partition below, and a round that added only throws would
+    // leave both numbers still.
+    expect(calls).toBe(146);
+    expect(sites).toBe(128);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

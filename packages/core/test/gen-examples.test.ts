@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { FORMAT_SPECS } from '../../../scripts/format-spec.mjs';
+import { OPENRCA2_CONTRACT_VERSION } from '../src/export/openrca2.js';
 
 /**
  * The scripts this file executes.
@@ -69,17 +71,24 @@ let counter = 0;
  * from its own directory; `packages/` and `node_modules/` are linked so the
  * gate loads the shipped build (`zod` included) rather than a stub.
  */
-function treeWith(docs: Record<string, string> = {}): string {
+function treeWith(docs: Record<string, string> = {}, specEdits: Array<[string, string]> = []): string {
   counter += 1;
   const tree = join(scratch, `tree-${counter}`);
   mkdirSync(join(tree, 'scripts'), { recursive: true });
   mkdirSync(join(tree, 'site', 'assets'), { recursive: true });
   mkdirSync(join(tree, 'docs', 'targets'), { recursive: true });
   writeFileSync(join(tree, 'scripts', SCRIPT), readFileSync(resolve(ROOT, 'scripts', SCRIPT), 'utf8'));
-  writeFileSync(
-    join(tree, 'scripts', 'format-spec.mjs'),
-    readFileSync(resolve(ROOT, 'scripts', 'format-spec.mjs'), 'utf8'),
-  );
+  // The specification is copied rather than linked so a fixture can *change* it: the two refusals
+  // a specification can earn -- a modality code with no prose, a constant the package does not
+  // export -- are about a specification that is wrong, and no shape of the shipped file reaches
+  // them. Editing the copy is the only way to observe them; editing the real one would be editing
+  // the thing under test.
+  let spec = readFileSync(resolve(ROOT, 'scripts', 'format-spec.mjs'), 'utf8');
+  for (const [from, to] of specEdits) {
+    if (!spec.includes(from)) throw new Error(`fixture spec edit does not apply: ${from}`);
+    spec = spec.replace(from, to);
+  }
+  writeFileSync(join(tree, 'scripts', 'format-spec.mjs'), spec);
   cpSync(REAL_EXAMPLES, join(tree, 'examples', 'order-prod'), { recursive: true });
   symlinkSync(resolve(ROOT, 'packages'), join(tree, 'packages'), 'dir');
   symlinkSync(resolve(ROOT, 'node_modules'), join(tree, 'node_modules'), 'dir');
@@ -400,25 +409,20 @@ describe('scripts/gen-examples.mjs · the field tables, and what is not checked'
     expect(result.stderr).toContain('does not match any documented file');
   });
 
-  it('has no --check path for the doc blocks, so a stale table fails nothing', () => {
-    // **A gap stated as a test rather than as a comment.**
+  it('refuses --check when a doc block disagrees with the export behind it', () => {
+    // **The gap this test used to pin, now closed.**
     //
-    // `--check` compares `site/assets/data.js` and nothing else. The example
-    // blocks and the field tables are rewritten only on a *writer* run, so a
-    // tree whose `docs/targets/*.md` had drifted from the specification passes
-    // `--check` cleanly. This test pins that, because the alternative is to
-    // leave the gap to be discovered by someone whose doc went stale silently
-    // -- which is exactly what `audit.md` finding 66 records happening to
-    // three counts in one pass.
+    // Until v3.67 `--check` compared `site/assets/data.js` and nothing else, so a tree whose
+    // `docs/targets/*.md` had drifted from the specification passed the gate that exists to hold
+    // the docs. The previous version of this test asserted exactly that -- green on a document it
+    // had just made wrong on purpose -- and its comment called the gap `audit.md`'s P2-4. A test
+    // that states a defect is worth more than a comment about one, and a test that stops stating
+    // it is how the defect gets closed: the assertion inverts, and the day the check path is
+    // removed again this test goes red instead of green.
     //
-    // The fixture writes the **stale data file**, not a stale doc. `--check`
-    // would otherwise fail on `data.js` first and this test would be measuring
-    // staleness in general rather than the doc-block gap -- which is what its
-    // first run did: the writer run above had already refreshed both files, so
-    // the block it then asserted as "stale" was the freshly generated one and
-    // the assertion on `STALE,CONTENT,…` could not hold. To isolate the gap,
-    // the payload is written first and the stale marker is installed *after*
-    // it, so `data.js` is current and only the doc disagrees.
+    // The fixture installs the stale marker *after* the writer run, so `data.js` is current and
+    // the doc is the only disagreement. Otherwise the stale payload would be the first failure and
+    // this would be measuring staleness in general rather than the doc path.
     const tree = treeWith();
     expect(run(tree).status).toBe(0);
     writeFileSync(join(tree, 'docs', 'targets', 'openrca-1.0.md'), exampleMarker());
@@ -427,12 +431,40 @@ describe('scripts/gen-examples.mjs · the field tables, and what is not checked'
 
     const result = run(tree, ['--check']);
 
-    // Green, on a tree whose doc block is plainly wrong.
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain('examples data is up to date');
-    // And the stale text is still there, which is what makes the pass a gap
-    // rather than a proof: `--check` never read the file.
+    expect(result.status).toBe(1);
+    // The diagnostic names the file, so the next reader does not have to bisect seven pages.
+    expect(result.stderr).toContain('docs/targets/openrca-1.0.md');
+    expect(result.stderr).toContain('pnpm examples:gen');
+    // A check that repaired what it found would make `--check` and `gen` the same command, and the
+    // committed file would no longer say whether anyone had run it.
     expect(readFileSync(join(tree, 'docs', 'targets', 'openrca-1.0.md'), 'utf8')).toBe(stale);
+  });
+
+  it('refuses --check when a field table disagrees with the specification', () => {
+    // The same guarantee for the second marker kind. This one had no check path either, and it is
+    // the table a reader trusts most: one row per field the exporter emits.
+    const tree = treeWith();
+    // A writer run first, so the failure under test is the table and not a missing payload -- the
+    // same ordering mistake this file has already made once, recorded in the doc-block test above.
+    expect(run(tree).status).toBe(0);
+    writeFileSync(
+      join(tree, 'docs', 'targets', 'openrca-1.0.md'),
+      [
+        '# openrca-1.0',
+        '',
+        '<!-- fields: openrca-1.0/{system}/query.csv -->',
+        '| Field | Type | Required | Source (IR) | Notes |',
+        '| --- | --- | --- | --- | --- |',
+        '| `invented` | string | yes | `x` | a field this exporter does not emit |',
+        '<!-- /fields -->',
+        '',
+      ].join('\n'),
+    );
+
+    const result = run(tree, ['--check']);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('docs/targets/openrca-1.0.md');
   });
 
   it('leaves a document with no markers untouched', () => {
@@ -444,5 +476,184 @@ describe('scripts/gen-examples.mjs · the field tables, and what is not checked'
     expect(run(tree).status).toBe(0);
 
     expect(readFileSync(join(tree, 'docs', 'targets', 'openrca-1.0.md'), 'utf8')).toBe(body);
+  });
+});
+
+/**
+ * The metadata table at the top of each contract page.
+ *
+ * It used to be hand-written above all seven pages: a restatement of `format-spec.mjs` in slightly
+ * different words (`metrics, logs, traces` on the page against `['M','L','T']` in the specification)
+ * that nothing compared. Two things it cost are worth naming, because they are what the tests below
+ * are about:
+ *
+ *  - `openrca-2.0`'s Vendor read `Microsoft` from the day the page was written. That is 1.0's
+ *    vendor, the name in the line above it; the PAVE paper's author block says The Chinese
+ *    University of Hong Kong, Shenzhen. Written 2026-09-10, corrected 2026-11-08, seven pages,
+ *    no gate between them.
+ *  - The two targets whose publisher this repository never established said `Reference` where the
+ *    other five said `Vendor / venue` -- because the field held an arXiv id and no label fit it.
+ *    Renaming the row is cheaper than answering it, and it left both pages with a row that means
+ *    something different from the row of the same position on every other page.
+ */
+describe('scripts/gen-examples.mjs · the metadata table', () => {
+  /** A page with a target block holding values no spec contains. */
+  function tableWith(id: string, rows: string[]): string {
+    return [
+      `# ${id}`,
+      '',
+      `<!-- target: ${id} -->`,
+      '| | |',
+      '| --- | --- |',
+      ...rows,
+      '<!-- /target -->',
+      '',
+    ].join('\n');
+  }
+
+  function rendered(tree: string, id: string): string {
+    const body = readFileSync(join(tree, 'docs', 'targets', `${id}.md`), 'utf8');
+    return body.slice(body.indexOf(`<!-- target: ${id} -->`), body.indexOf('<!-- /target -->'));
+  }
+
+  it('replaces every row with a field of the specification', () => {
+    // The whole table, not one cell. A generated row beside a hand-written one is the defect this
+    // repair is about: the reader cannot tell which rows are checked.
+    const tree = treeWith({
+      'openrca-2.0.md': tableWith('openrca-2.0', [
+        '| Vendor | Microsoft |',
+        '| Venue | arXiv 2606.27154 |',
+        '| Contract version | `pave-v0` (`OPENRCA2_CONTRACT_VERSION`) |',
+        '| Emitter | `nowhere` |',
+        '| CLI target id | `openrca-9` |',
+        '| Modalities | everything |',
+        '| Timezone | local time |',
+      ]),
+    });
+
+    expect(run(tree).status).toBe(0);
+    const table = rendered(tree, 'openrca-2.0');
+
+    expect(table).toContain('| Vendor | The Chinese University of Hong Kong, Shenzhen |');
+    expect(table).toContain('| Venue | arXiv preprint |');
+    expect(table).toContain('| Reference | arXiv 2606.27154 |');
+    expect(table).toContain('| CLI target id | `openrca-2.0` |');
+    expect(table).toContain('| Modalities | metrics, logs, traces |');
+    expect(table).toContain('| Timezone | inherits the UTC+8 telemetry layout of 1.0;');
+    expect(table).toContain(
+      '| Emitter | [`src/export/openrca2.ts`](../../packages/core/src/export/openrca2.ts) |',
+    );
+    expect(table).not.toContain('pave-v0');
+    expect(table).not.toContain('openrca-9');
+    // The markers survive, so a second run rewrites the same block instead of consuming it.
+    expect(table).toContain('<!-- target: openrca-2.0 -->');
+  });
+
+  it('prints the version the exporter stamps, and names the constant it came from', () => {
+    // The version used to exist three times: this table, `format-spec.mjs`, and the constant in
+    // `packages/core/src/export/*.ts`. The constant is the only writer -- it is what the exporter
+    // puts in the payload -- so the table is a rendering of it, and the cell names it so a reader
+    // can check the claim without knowing this generator exists.
+    const tree = treeWith({ 'openrca-2.0.md': tableWith('openrca-2.0', ['| Vendor | x |']) });
+    expect(run(tree).status).toBe(0);
+
+    const cell = rendered(tree, 'openrca-2.0')
+      .split('\n')
+      .find((line) => line.startsWith('| Contract version |'));
+
+    expect(cell).toBe('| Contract version | `pave-v1` (`OPENRCA2_CONTRACT_VERSION`) |');
+    // The value is what `packages/core` exports under the name the same cell prints.
+    expect(OPENRCA2_CONTRACT_VERSION).toBe('pave-v1');
+  });
+
+  it('says a vendor is not established rather than naming something adjacent', () => {
+    // Cloud-OpsBench's vendor has never been recorded in this repository. The field held
+    // `arXiv 2603.00468` -- the paper's address, standing in for its author -- and the page renamed
+    // the row to `Reference` so the value would fit its label. Both are ways of answering a
+    // question nobody had answered, and the cell now says so in words.
+    const tree = treeWith({ 'cloud-opsbench.md': tableWith('cloud-opsbench', ['| Vendor | arXiv 2603.00468 |']) });
+    expect(run(tree).status).toBe(0);
+
+    const table = rendered(tree, 'cloud-opsbench');
+    expect(table).toContain('| Vendor | *not established* |');
+    expect(table).toContain('| Venue | *not established* |');
+    // The citation is kept -- as a citation, in the row that means citations.
+    expect(table).toContain('| Reference | arXiv 2603.00468 |');
+  });
+
+  it('omits the reference row when the specification has no reference', () => {
+    // A row of "not established" for every target without a paper id would be noise, and noise in
+    // a table is what makes a reader stop reading the rows that matter. The reference is an
+    // identifier, not a state: absent is the normal case for six of the seven.
+    const tree = treeWith({ 'openrca-1.0.md': tableWith('openrca-1.0', ['| Reference | arXiv 0000.00000 |']) });
+    expect(run(tree).status).toBe(0);
+
+    expect(rendered(tree, 'openrca-1.0')).not.toContain('| Reference |');
+  });
+
+  it('renders the declared extra rows in the order the specification gives them', () => {
+    // rcaeval and itbench carry a row no other target has. Declaring them in the specification is
+    // what keeps them checkable: the alternative was free text on the page, and free text on the
+    // page is what the whole repair is about.
+    const tree = treeWith({ 'rcaeval.md': tableWith('rcaeval', ['| Persona | nobody |']) });
+    expect(run(tree).status).toBe(0);
+
+    const table = rendered(tree, 'rcaeval');
+    expect(table).toContain('| Score target ids | `rcaeval-re1`, `rcaeval-re2`, `rcaeval-re3` |');
+    expect(table).not.toContain('Persona');
+    // The suite flag is part of the CLI row, and its pipes are escaped: an unescaped `|` inside a
+    // table splits the row into cells, which is how this line read before it was generated.
+    expect(table).toContain('| CLI target id | `rcaeval` with `--suite RE1\\|RE2\\|RE3` |');
+  });
+
+  it('refuses a specification naming a constant the package does not export', () => {
+    // The generator reads the version out of the built package by name. A rename in the exporter
+    // that nobody carried into the specification would otherwise render `undefined` into seven
+    // cells -- a table that looks generated and says nothing.
+    const tree = treeWith(
+      { 'openrca-1.0.md': tableWith('openrca-1.0', ['| Vendor | x |']) },
+      [["contractConstant: 'OPENRCA_CONTRACT_VERSION'", "contractConstant: 'OPENRCA_VERSION_TYPO'"]],
+    );
+
+    const result = run(tree);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('OPENRCA_VERSION_TYPO');
+    expect(result.stderr).toContain('does not');
+  });
+
+  it('refuses a modality code the specification has no word for', () => {
+    // The page prints the expansion and the site prints the code, from one array. A code with no
+    // entry would print the code itself on the page -- `M` where every other page says `metrics` --
+    // and a reader would have no way to tell a vocabulary from a typo.
+    const tree = treeWith(
+      { 'openrca-1.0.md': tableWith('openrca-1.0', ['| Vendor | x |']) },
+      [['modalities: [\'M\', \'L\', \'T\'],\n  cliTarget: \'openrca-1.0\'', "modalities: ['M', 'L', 'Q'],\n  cliTarget: 'openrca-1.0'"]],
+    );
+
+    const result = run(tree);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("modality 'Q'");
+    expect(result.stderr).toContain('MODALITY_LABELS');
+  });
+});
+
+describe('the shipped contract pages', () => {
+  it('carry one generated table and one field table per documented file', () => {
+    // The half `--check` cannot see: it compares the blocks that are *there*, so deleting a marker
+    // would take its block out of the check and leave every page green. This is the enumeration
+    // that makes absence visible -- and it is why the generator's silence about a missing block is
+    // a silence the suite covers.
+    for (const spec of FORMAT_SPECS) {
+      const page = readFileSync(resolve(ROOT, 'docs', 'targets', `${spec.id}.md`), 'utf8');
+      const blocks = page.split(`<!-- target: ${spec.id} -->`).length - 1;
+      expect(blocks, `${spec.id}.md must open exactly one target block`).toBe(1);
+      expect(page.split('<!-- /target -->').length - 1, `${spec.id}.md must close it`).toBe(1);
+      for (const file of spec.files) {
+        const marker = `<!-- fields: ${spec.id}/${file.path} -->`;
+        expect(page, `${spec.id}.md must document ${file.path}`).toContain(marker);
+      }
+    }
   });
 });

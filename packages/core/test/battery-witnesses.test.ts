@@ -179,7 +179,12 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
   // The six batteries, as shipped. Each reconciliation is driven from here so a
   // rename fails locally instead of on the runner.
   const batteries: [string, string, number][] = [
-    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 28],
+    // 28 -> 33 in v3.67: three injections for the three things the generator now refuses -- a
+    // `--check` that would have passed a stale page, a metadata table nobody rewrites, and a
+    // version that is not a string being printed instead of refused -- plus the three witnesses
+    // the retargeted stale-block injection now names, because planning a rewrite is one decision
+    // for all three marker kinds.
+    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 33],
     ['scripts/injection/fault-extraction-scoring.py', 'fault-extraction-scoring', 12],
     ['scripts/injection/fetch-official-retry.py', 'fetch-official-retry', 6],
     ['scripts/injection/fault-extraction-workflow.py', 'fault-extraction-workflow', 9],

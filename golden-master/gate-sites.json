@@ -203,7 +203,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1453,
       "condition": "invalid.length > 0",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(invalid.length)} case(s) could not be read as a FaultCase",
+      "diagnostic": "check-fault-cases: FAILED — ${String(invalid.length)} case(s) could not be read as a FaultCase",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -211,7 +211,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1850,
       "condition": "problems.length > 0",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
+      "diagnostic": "check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -219,7 +219,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1859,
       "condition": "unnamed.length > 0",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
+      "diagnostic": "check-fault-cases: FAILED — ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -227,7 +227,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1867,
       "condition": "index.cases.length < floor",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(index.cases.length)} four-layer case(s), below the floor of",
+      "diagnostic": "check-fault-cases: FAILED — ${String(index.cases.length)} four-layer case(s), below the floor of",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -487,7 +487,7 @@
     },
     {
       "script": "scripts/gen-examples.mjs",
-      "line": 205,
+      "line": 262,
       "condition": "catch",
       "diagnostic": "${DATA_PATH} is missing - run \\",
       "status": "proved",
@@ -495,9 +495,17 @@
     },
     {
       "script": "scripts/gen-examples.mjs",
-      "line": 209,
+      "line": 266,
       "condition": "current !== rendered",
       "diagnostic": "${DATA_PATH} is stale - run \\",
+      "status": "proved",
+      "provedBy": "packages/core/test/gen-examples.test.ts"
+    },
+    {
+      "script": "scripts/gen-examples.mjs",
+      "line": 275,
+      "condition": "planned.size > 0",
+      "diagnostic": "${[...planned.keys()].map((file) => file.replace(",
       "status": "proved",
       "provedBy": "packages/core/test/gen-examples.test.ts"
     },
@@ -543,7 +551,7 @@
       "script": "scripts/install-git-hooks.mjs",
       "line": 41,
       "condition": "result.state === 'missing-hook' || result.state === 'unset'",
-      "diagnostic": "install-git-hooks: FAILED (${result.state}) \u2014 ${result.message}\\n",
+      "diagnostic": "install-git-hooks: FAILED (${result.state}) — ${result.message}\\n",
       "status": "proved",
       "provedBy": "packages/core/test/git-hooks.test.ts"
     },
@@ -551,7 +559,7 @@
       "script": "scripts/measure-ci-baseline.mjs",
       "line": 163,
       "condition": "TOKEN === '' || !/^\\d+$/.test(RUN)",
-      "diagnostic": "usage: GITHUB_TOKEN=\u2026 node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>] [--seed]\\n",
+      "diagnostic": "usage: GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>] [--seed]\\n",
       "status": "proved",
       "provedBy": "packages/core/test/ci-budget.test.ts"
     },
@@ -997,7 +1005,7 @@
     "rule": "every throw statement, partitioned four ways: `fatal` (no enclosing function, no enclosing try) ends the process and is proved like a site; `unguarded` (in a function, no enclosing try) hands control to its caller, which decides; `guarded` (in a try block) is caught here; `rethrow` (in a catch, rethrowing the caught binding) carries a decision made above. A try or a catch stops at a function boundary, because neither is on the stack when the function runs elsewhere. fatal + unguarded + guarded + rethrow is the number of throw statements; see scripts/derive-gate-sites.mjs",
     "counts": {
       "fatal": 11,
-      "unguarded": 69,
+      "unguarded": 71,
       "guarded": 1,
       "rethrow": 10
     },
@@ -1181,7 +1189,15 @@
       },
       {
         "script": "scripts/format-spec.mjs",
-        "line": 669,
+        "line": 66,
+        "disposition": "unguarded",
+        "message": "new Error( `modality '${code}' has no entry in MODALITY_LABELS: the contract table would print the code ` + 'itself, whi",
+        "status": "proved",
+        "provedBy": "packages/core/test/gen-examples.test.ts"
+      },
+      {
+        "script": "scripts/format-spec.mjs",
+        "line": 758,
         "disposition": "unguarded",
         "message": "unknown format id '${id}'",
         "status": "proved",
@@ -1197,15 +1213,23 @@
       },
       {
         "script": "scripts/gen-examples.mjs",
-        "line": 121,
+        "line": 133,
         "disposition": "unguarded",
-        "message": "unknown example target '${targetKey}' in ${spec.id}.md",
+        "message": "new Error( `${spec.id} names \\`${spec.contractConstant}\\` as its contract version, and packages/core does not ` + 'expor",
         "status": "proved",
         "provedBy": "packages/core/test/gen-examples.test.ts"
       },
       {
         "script": "scripts/gen-examples.mjs",
-        "line": 123,
+        "line": 204,
+        "disposition": "unguarded",
+        "message": "unknown example target '${targetKey}' in ${id}.md",
+        "status": "proved",
+        "provedBy": "packages/core/test/gen-examples.test.ts"
+      },
+      {
+        "script": "scripts/gen-examples.mjs",
+        "line": 206,
         "disposition": "unguarded",
         "message": "example path '${relativePath}' not exported by ${targetKey}",
         "status": "proved",
@@ -1213,7 +1237,7 @@
       },
       {
         "script": "scripts/gen-examples.mjs",
-        "line": 182,
+        "line": 246,
         "disposition": "unguarded",
         "message": "fields marker '${ref}' does not match any documented file in ${spec.id}.md",
         "status": "proved",

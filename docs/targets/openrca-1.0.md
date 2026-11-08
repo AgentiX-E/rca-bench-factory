@@ -4,14 +4,17 @@
 > `prediction` JSON per case. The agent sees `query.csv` + telemetry; the grader
 > holds `record.csv`.
 
+<!-- target: openrca-1.0 -->
 | | |
 | --- | --- |
-| Vendor / venue | Microsoft, ICLR'25 |
+| Vendor | Microsoft |
+| Venue | ICLR'25 |
 | Contract version | `ICLR2025` (`OPENRCA_CONTRACT_VERSION`) |
 | Emitter | [`src/export/openrca.ts`](../../packages/core/src/export/openrca.ts) |
 | CLI target id | `openrca-1.0` |
 | Modalities | metrics, logs, traces |
-| Timezone | **UTC+8** (`OPENRCA_OFFSET_MINUTES = 480`) |
+| Timezone | UTC+8 (`OPENRCA_OFFSET_MINUTES = 480`); every emitted timestamp is shifted from canonical UTC. |
+<!-- /target -->
 
 ## What makes this contract distinctive
 

@@ -4,14 +4,19 @@
 > the entities in the propagation chain, the chain itself, and the fault conditions — which
 > map one-to-one onto the IR `GroundTruth` triple.
 
+<!-- target: itbench -->
 | | |
 | --- | --- |
-| Reference | IBM Research, arXiv 2502.05352 |
+| Vendor | IBM Research |
+| Venue | arXiv preprint |
+| Reference | arXiv 2502.05352 |
 | Contract version | `v1` (`ITBENCH_CONTRACT_VERSION`) |
 | Emitter | [`src/export/itbench.ts`](../../packages/core/src/export/itbench.ts) |
 | CLI target id | `itbench` |
-| Modalities | metrics, logs, traces, events, change / deploy events |
 | Persona | `SRE` only (CISO and FinOps are out of scope) |
+| Modalities | metrics, logs, traces, events, change / deploy events |
+| Timezone | Not applicable - scenario.json carries no timestamps. |
+<!-- /target -->
 
 ## Mapping
 

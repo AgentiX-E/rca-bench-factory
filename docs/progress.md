@@ -526,7 +526,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.66: **22** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.67: **22** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1049,15 +1049,19 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: only a repository of more than a thousand refs would make the walk stop early, and this one holds five -- the floor is stated as a floor, and the sentence that reads it is the only thing that could turn it into a count]`
 
 
-- **The seven target contracts carry three copies of one version and no equation.**
+~~**The seven target contracts carry three copies of one version and no equation.**
   `*_CONTRACT_VERSION` constants, a `Contract version` line in each `docs/targets/*.md`, and a
   field in `scripts/format-spec.mjs` are written separately. They agree today and nothing
   requires them to, which is the shape of finding 462 -- one fact in three places is three
   facts the first time one is edited.
   `[open: equality across the three needs a guard that reads a constant, a markdown cell and a
   generator's field as one claim, and the vendor row in the same table is a fourth field with
-  no reader at all -- it has said "Microsoft" about a paper from another institution for six
-  months, so the repair is to give the table a guard before giving it a fourth equal sign]`
+  no reader at all -- it has said "Microsoft" about a paper from another institution since
+  2026-09-10, so the repair is to give the table a guard before giving it a fourth equal sign]`~~
+  **Closed by finding 477**, which is the reason this entry named a fourth field: the vendor was
+  not a fifth thing to equate, it was the proof that the table was a paraphrase. `contractVersion`
+  left the specification (the constant is the only writer), the whole table is generated, and
+  `gen-examples.mjs --check` refuses a page that disagrees (finding 478).
 - **G5 has no near-duplicate and no window-overlap arm.** The fingerprint is a six-tuple hashed
   with FNV, so it catches an exact copy and nothing else: two cases built from the same incident
   with a minute moved are two cases as far as this gate is concerned.
@@ -1090,7 +1094,7 @@ is a row about rather than paraphrase one that no `grep` will find.
   per-round clauses are 139 lines and 11,139 bytes of history sitting in a specification, and
   moving them needs the measurement of how many sections match that shape before the index
   relation is re-checked]`
-- **The newest round's ledger is not required to carry a coverage row.** Of the **54** `### Readings`
+~~**The newest round's ledger is not required to carry a coverage row.** Of the **54** `### Readings`
   blocks this log holds, **24** carry one and **30** do not, v3.64's and v3.65's among them. The row is
   what a later reader looks for when asking what a round cost, and v3.66 answered it only after
   measuring its own two new arms at **six** uncovered branches -- none of them red, because the coverage
@@ -1098,7 +1102,23 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: the rule is failable and narrow -- the newest round's Readings table must carry a coverage
   row, the way the size budget is judged only on the last volume -- and the asymmetry is why it was not
   written in the round that found it: 30 of 54 sections have no row, so the rule can only be judged on
-  the one section a round is still writing]`
+  the one section a round is still writing]`~~
+  **Closed by finding 475**, which is that rule now: `readVolumes` refuses a newest round whose ledger
+  carries no `| coverage |` row reporting four dimensions for `core` and four for `cli`, and the
+  asymmetry is asserted rather than described -- a closed round is a record and is not judged, so the
+  thirty that never carried the row stay as they were. The finding is the defect; this is the rule it
+  asked for, written in the round after it.
+- **Cloud-OpsBench has no established vendor.** The field held `arXiv 2603.00468`, which is a citation,
+  and the contract page answered the mismatch by renaming its row to `Reference`; the value is `null`
+  now and the page prints `*not established*`. The other six formats name an institution.
+  `[open: the paper's author block has to be read and quoted, the way `openrca-2.0`'s was this round,
+  and until it is the field stays empty -- a near-miss is what the row was doing before]`
+- **Two prose targets cite a paper no digest pins.** `itbench` and `cloud-opsbench` print an arXiv id
+  beside the one the oracle corpus pins (`openrca-2.0`, 962,086 bytes, sha256 recorded), so the
+  identifier is a claim no transfer measured.
+  `[open: each needs a sha256 and a byte count, or a declaration saying the identifier is all this
+  repository read -- `official-assets.json` already has both states for data assets and neither for a
+  paper]`
 
 
 ## Pass log
@@ -1129,7 +1149,7 @@ and this table.
 | [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 7 | v3.47 | v3.53 |
-| [volume-12.md](progress/volume-12.md) | 13 | v3.54 | v3.66 |
+| [volume-12.md](progress/volume-12.md) | 14 | v3.54 | v3.67 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

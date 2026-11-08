@@ -264,7 +264,10 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // of a history the remote has. The other end is `--new-branch` itself: the flag was read
     // as permission, and a permission granted onto a branch that exists moves the branch its
     // author meant to create. A statement that is false is now refused instead of ignored.
-    expect(total).toBe(91);
+    // 93 is v3.67's two: `modalitiesProse` refuses a modality code the specification has no word
+    // for, and `contractVersionOf` refuses a contract constant the package does not export. Both
+    // are `unguarded` -- they hand control to the generator, which is where the exit is.
+    expect(total).toBe(93);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -316,7 +319,9 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // 69 unguarded and 10 rethrow are v3.60's, one of each: the flag's claim, and the `403`
     // on the question a creation asks -- a status that is not the 404 of an absent commit
     // must not be read as one, or the channel replays a history the remote already has.
-    expect(counts).toEqual({ fatal: 11, unguarded: 69, guarded: 1, rethrow: 10 });
+    // 71 unguarded is v3.67's two, beside the 69 argued above: the two refusals that keep a
+    // contract table from printing a code nobody can read and a version no exporter wrote.
+    expect(counts).toEqual({ fatal: 11, unguarded: 71, guarded: 1, rethrow: 10 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

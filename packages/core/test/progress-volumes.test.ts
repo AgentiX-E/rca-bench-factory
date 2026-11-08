@@ -60,6 +60,16 @@ function volumesOf(files: Record<string, string>): string {
   return dir;
 }
 
+/**
+ * The row the newest round owes: four dimensions for each of the two packages.
+ *
+ * It is a constant here because every fixture that closes a round with a ledger now carries it --
+ * the rule `readVolumes` gained in v3.67 judges the round that can still be written, and in a
+ * fixture that round is the last one in the file. Writing it once keeps the four fixtures that
+ * are about *other* rules from each spelling a different row.
+ */
+const COVERAGE = '| coverage | `core` **99.97 / 99.80 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** |';
+
 /** An index whose table rows hold the given numbers, in the shape the guard reads. */
 function indexFor(rows: [string, number, string, string][]): string {
   return [
@@ -450,6 +460,7 @@ describe('the closing sections a round owns', () => {
         '> Ledger for `v3.01`.',
         '',
         '| what | this round |',
+        COVERAGE,
         '',
       ].join('\n'),
     });
@@ -472,6 +483,75 @@ describe('the closing sections a round owns', () => {
  * accident finding 309 describes. It does not stop a forger who edits the name as well,
  * and the guard is not pretending otherwise -- the subject is the accident.
  */
+/**
+ * The reading this repository takes on every run, and the round that owes it.
+ *
+ * v3.66 added two gate arms and four repairs, listed its tests and its mutations, and carried no
+ * coverage row -- so nothing in the log said its own code had lost six branches. Thirty of the
+ * log's first fifty-four ledgers are the same shape, which is why the rule is about the round that
+ * can still be written rather than about history: a rule over all fifty-four would have been red
+ * from the day it existed, and a rule that is always red is a rule every reader skips.
+ */
+describe('the coverage row the newest round owes', () => {
+  /** One round closing with a ledger built from the given rows. */
+  function round(label: string, rows: string[]): string {
+    return [`## ${label} — a round`, '', '### Readings', '', `> Ledger for \`${label}\`.`, '', ...rows, ''].join('\n');
+  }
+
+  it('refuses the newest round when its ledger reports no coverage at all', () => {
+    const dir = volumesOf({ 'volume-01.md': round('v3.01', ['| what | this round |']) });
+
+    const errors = check(indexFor([['volume-01.md', 1, 'v3.01', 'v3.01']]), dir).errors.join('\n');
+
+    expect(errors).toContain('carries no `| coverage |` row');
+    // The diagnostic says why this row and not some other: it is the one reading taken every run.
+    expect(errors).toContain('finding 475');
+    expect(errors).toContain('the round that can still be written');
+  });
+
+  it('refuses a row that reports one package instead of two', () => {
+    // The row has to be *comparable* with the table `pnpm test:coverage` prints, and that table has
+    // two packages. A row naming one of them is not a shorter version of the reading; it is a
+    // different one, and the reader has no way to tell which.
+    const dir = volumesOf({
+      'volume-01.md': round('v3.01', ['| coverage | `core` **99.97 / 99.80 / 100 / 99.97** |']),
+    });
+
+    const errors = check(indexFor([['volume-01.md', 1, 'v3.01', 'v3.01']]), dir).errors.join('\n');
+
+    expect(errors).toContain('does not report four numbers for `core` and four for `cli`');
+    expect(errors).toContain('`core` **99.97 / 99.80 / 100 / 99.97**');
+  });
+
+  it('accepts a row with four dimensions for each package, in either spelling of the label', () => {
+    const dir = volumesOf({
+      'volume-01.md': round('v3.01', [
+        '| what | this round |',
+        '| coverage | `core` **99.97 / 99.80 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** |',
+      ]),
+    });
+    expect(check(indexFor([['volume-01.md', 1, 'v3.01', 'v3.01']]), dir).errors).toEqual([]);
+  });
+
+  it('leaves a closed round alone, so the thirty that never carried the row stay records', () => {
+    // The asymmetry, asserted rather than described. v3.02 is the newest and owes the row; v3.01 is
+    // a closed record and owes nothing -- and if the rule judged it, the log would have been red
+    // thirty times over before the rule existed. Rewriting those rounds to satisfy a rule invented
+    // afterwards would be editing the log to test the log.
+    const dir = volumesOf({
+      'volume-01.md': [
+        round('v3.01', ['| what | this round |']),
+        round('v3.02', [
+          '| what | this round |',
+          '| coverage | `core` **99.97 / 99.80 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** |',
+        ]),
+      ].join('\n'),
+    });
+
+    expect(check(indexFor([['volume-01.md', 2, 'v3.01', 'v3.02']]), dir).errors).toEqual([]);
+  });
+});
+
 describe('the round a ledger says it measured', () => {
   it('accepts a ledger that names the round above it', () => {
     const dir = volumesOf({
@@ -483,6 +563,7 @@ describe('the round a ledger says it measured', () => {
         '> Ledger for `v3.01`.',
         '',
         '| what | this round |',
+        COVERAGE,
         '',
       ].join('\n'),
     });
@@ -553,6 +634,7 @@ describe('the round a ledger says it measured', () => {
         '> Ledger for `v3.01`.',
         '',
         '| what | this round |',
+        COVERAGE,
         '',
       ].join('\n'),
     });
@@ -611,6 +693,7 @@ describe('the round a ledger says it measured', () => {
         '',
         '| `core` test suite | **209 files** (as of `7b5d792`) |',
         '| `cli` test suite | **4 files** (as of `7b5d792`) |',
+        COVERAGE,
         '',
       ].join('\n'),
     });
@@ -628,6 +711,7 @@ describe('the round a ledger says it measured', () => {
         '> Ledger for `v3.01`.',
         '',
         '| suite | **seven more tests than the round before** |',
+        COVERAGE,
         '',
       ].join('\n'),
     });

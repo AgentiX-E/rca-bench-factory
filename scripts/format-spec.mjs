@@ -2,12 +2,29 @@
  * Authoritative field-contract specification for every export target.
  *
  * This module is the single source of truth shared by:
- *   - `scripts/gen-examples.mjs`  -> site/assets/data.js (interactive site)
- *   - `scripts/gen-docs-fields.mjs` -> the field tables inside docs/targets/*.md
+ *   - `scripts/gen-examples.mjs` -> site/assets/data.js (interactive site), and
+ *     the metadata table and field tables at the top of docs/targets/*.md
  *
  * Every field listed here is emitted by a real exporter function in
  * `packages/core/src/export`; the `emitter` key names that function so a reader
  * can jump straight from the contract to the code that produces it.
+ *
+ * ## What this file deliberately does not hold
+ *
+ * `contractVersion` is not a field here. The version is a constant in
+ * `packages/core/src/export/*.ts` -- the exporters stamp it into the payload, so
+ * the constant is the producer and any copy here would be a second writer of the
+ * same string. `contractConstant` names which constant, and the generator reads
+ * its value out of the built package.
+ *
+ * ## What a `null` means
+ *
+ * `vendor`, `venue` and `reference` are `null` when this repository has not
+ * established them, and the rendered table says so in words. Filling one of them
+ * with whatever was nearest -- `vendor: 'arXiv 2603.00468'` was the shape this
+ * file shipped until v3.67 -- makes an unanswered question indistinguishable
+ * from an answered one, which is the state `official-assets.json` refuses to
+ * leave an unfetchable asset in.
  */
 
 /** @typedef {{name: string, type: string, required: boolean, source: string, notes: string}} FieldSpec */
@@ -21,21 +38,60 @@ const T = {
   arr: 'array',
 };
 
+/**
+ * What one modality code means, spelled out.
+ *
+ * The site prints the codes (they fit a badge) and the contract table prints this
+ * expansion, so the two are one array rendered twice rather than two statements
+ * held in step by hand. A code with no entry here is a code nobody can read, and
+ * `modalitiesProse` refuses it instead of printing the letter.
+ */
+export const MODALITY_LABELS = {
+  M: 'metrics',
+  L: 'logs',
+  T: 'traces',
+  E: 'events',
+  A: 'alerts',
+  Topo: 'topology',
+  Conf: 'config / state snapshot',
+  CD: 'change / deploy events',
+};
+
+/** The reader-facing expansion of a modality list, in the order the list gives. */
+export function modalitiesProse(modalities) {
+  return modalities
+    .map((code) => {
+      const label = MODALITY_LABELS[code];
+      if (label === undefined) {
+        throw new Error(
+          `modality '${code}' has no entry in MODALITY_LABELS: the contract table would print the code ` +
+            'itself, which is a badge the site understands and a word the document does not',
+        );
+      }
+      return label;
+    })
+    .join(', ');
+}
+
 /** OpenRCA 1.0 (Microsoft, ICLR 2025). */
 const openrca1 = {
   id: 'openrca-1.0',
   name: 'OpenRCA 1.0',
   vendor: 'Microsoft',
   venue: "ICLR'25",
-  contractVersion: 'ICLR2025',
+  reference: null,
+  contractConstant: 'OPENRCA_CONTRACT_VERSION',
   emitter: 'src/export/openrca.ts',
   modalities: ['M', 'L', 'T'],
+  cliTarget: 'openrca-1.0',
+  cliSuffix: '',
+  extraRows: [],
   tagline: 'Metric / log / trace telemetry plus an outcome-only answer key.',
   summary:
     'The canonical outcome-labelled benchmark: one telemetry directory tree per system-day and a ' +
     'single `prediction` JSON carrying the root-cause datetime, component and reason. All timestamps ' +
     'are recorded in UTC+8 (`OPENRCA_OFFSET_MINUTES = 480`).',
-  timezone: 'UTC+8 (480 minutes); every emitted timestamp is shifted from canonical UTC.',
+  timezone: 'UTC+8 (`OPENRCA_OFFSET_MINUTES = 480`); every emitted timestamp is shifted from canonical UTC.',
   scoringNote:
     'The official scorer matches the predicted ⟨component, reason, datetime⟩ triple against ' +
     '`record.csv`; the factory verifies the layout, the CSV headers and answer-key isolation.',
@@ -212,11 +268,21 @@ const openrca1 = {
 const openrca2 = {
   id: 'openrca-2.0',
   name: 'OpenRCA 2.0 (PAVE)',
-  vendor: 'Microsoft',
-  venue: 'arXiv 2606.27154',
-  contractVersion: 'pave-v1',
+  // The paper's own author block, verbatim: "Affiliation: The Chinese University of Hong Kong,
+  // Shenzhen". The value was `Microsoft` here and in the contract table from 2026-09-10 -- the day
+  // the page was written -- until v3.67: carried
+  // over from 1.0 -- which *is* Microsoft's. Nothing compared the two, so nothing noticed that
+  // 2.0's provenance had been invented by adjacency. The quote lives in
+  // `golden-master/openrca2-evaluator.json` under `upstream.affiliation`.
+  vendor: 'The Chinese University of Hong Kong, Shenzhen',
+  venue: 'arXiv preprint',
+  reference: 'arXiv 2606.27154',
+  contractConstant: 'OPENRCA2_CONTRACT_VERSION',
   emitter: 'src/export/openrca2.ts',
   modalities: ['M', 'L', 'T'],
+  cliTarget: 'openrca-2.0',
+  cliSuffix: '',
+  extraRows: [],
   tagline: 'Step-wise causal-path annotation with three conjunctive verification gates.',
   summary:
     'OpenRCA 2.0 replaces outcome-only labels with process supervision: the PAVE protocol annotates the ' +
@@ -269,9 +335,13 @@ const rcaeval = {
   name: 'RCAEval (RE1 / RE2 / RE3)',
   vendor: 'RMIT',
   venue: "ASE'24 / WWW'25",
-  contractVersion: 'www25',
+  reference: null,
+  contractConstant: 'RCAEVAL_CONTRACT_VERSION',
   emitter: 'src/export/rcaeval.ts',
   modalities: ['M', 'L', 'T'],
+  cliTarget: 'rcaeval',
+  cliSuffix: ' with `--suite RE1|RE2|RE3`',
+  extraRows: [['Score target ids', '`rcaeval-re1`, `rcaeval-re2`, `rcaeval-re3`']],
   tagline: 'Per-case directory with metric vectors, injection timestamp and optional log/trace tables.',
   summary:
     'Three suites with an identical layout and different modality sets: RE1 is metrics-only (375 cases ' +
@@ -352,9 +422,13 @@ const rca100 = {
   name: 'RCA100 / AgenticOpsEval',
   vendor: 'Alibaba Cloud Tianchi',
   venue: '2025',
-  contractVersion: 'v1.1',
+  reference: null,
+  contractConstant: 'RCA100_CONTRACT_VERSION',
   emitter: 'src/export/rca100.ts',
   modalities: ['M', 'L', 'T', 'E', 'A', 'Topo'],
+  cliTarget: 'rca100',
+  cliSuffix: '',
+  extraRows: [],
   tagline: 'Six modalities plus a UModel topology and a four-layer answer key.',
   summary:
     'The richest contract the factory targets: five modality tables (metrics, logs, traces, events, ' +
@@ -512,11 +586,15 @@ const rca100 = {
 const aiops2025 = {
   id: 'aiops2025',
   name: 'AIOps2025',
-  vendor: 'CCF AIOps Challenge',
-  venue: '2025',
-  contractVersion: 'ccf2025',
+  vendor: 'CCF',
+  venue: 'AIOps Challenge 2025',
+  reference: null,
+  contractConstant: 'AIOPS2025_CONTRACT_VERSION',
   emitter: 'src/export/aiops2025.ts',
   modalities: ['M', 'L', 'T', 'E', 'A'],
+  cliTarget: 'aiops2025',
+  cliSuffix: '',
+  extraRows: [],
   tagline: 'Two metadata artefacts: task inputs plus a per-modality key-evidence ground truth.',
   summary:
     'The benchmark ships 18 daily Parquet telemetry archives shared across cases; the per-case contract ' +
@@ -574,11 +652,18 @@ const aiops2025 = {
 const cloudOpsBench = {
   id: 'cloud-opsbench',
   name: 'Cloud-OpsBench',
-  vendor: 'arXiv 2603.00468',
-  venue: '2026',
-  contractVersion: 'v1',
+  // Not established. The field used to hold the arXiv id, which is a citation rather than a
+  // publisher -- answering a question with the question's own address. `null` here prints as
+  // "not established" in the contract table, so the gap is visible instead of filled.
+  vendor: null,
+  venue: null,
+  reference: 'arXiv 2603.00468',
+  contractConstant: 'CLOUD_OPSBENCH_CONTRACT_VERSION',
   emitter: 'src/export/cloudopsbench.ts',
   modalities: ['M', 'L', 'T', 'Conf'],
+  cliTarget: 'cloud-opsbench',
+  cliSuffix: '',
+  extraRows: [],
   tagline: 'Agentic State-Snapshot benchmark with an outcome ground-truth triple.',
   summary:
     'Each case is an agent-facing State Snapshot (tool cache, k8s states, logs, metrics, trimmed source). ' +
@@ -614,10 +699,14 @@ const itbench = {
   id: 'itbench',
   name: 'ITBench (SRE Diagnosis)',
   vendor: 'IBM Research',
-  venue: 'arXiv 2502.05352',
-  contractVersion: 'v1',
+  venue: 'arXiv preprint',
+  reference: 'arXiv 2502.05352',
+  contractConstant: 'ITBENCH_CONTRACT_VERSION',
   emitter: 'src/export/itbench.ts',
   modalities: ['M', 'L', 'T', 'E', 'CD'],
+  cliTarget: 'itbench',
+  cliSuffix: '',
+  extraRows: [['Persona', '`SRE` only (CISO and FinOps are out of scope)']],
   tagline: 'Scenario specification with a diagnosis ground truth: entities, propagation chain, fault conditions.',
   summary:
     'ITBench evaluates agents on live IT automation tasks. For the SRE Diagnosis task the ground truth ' +

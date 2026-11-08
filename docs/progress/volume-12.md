@@ -2102,9 +2102,9 @@ stood at 99.4.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **239 files, 6067 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **243 files, 6254 tests passed** (as of this commit) |
+| `core` test suite | **239 files, 6067 tests passed** (at v3.66) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.66) |
+| repo test suite | **243 files, 6254 tests passed** (at v3.66) |
 | coverage | `core` **99.97 / 99.80 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** (statements / branches / functions / lines) -- the round's two arms first cost six branches and the receipt bought them back; `gates/gates.ts` and `fault/corpus-census.ts` are 100 in all four |
 | new tests | **31** (6,036 -> 6,067): 16 in `gates.test.ts` (12 for the two arms -- 8 saturation, 4 leakage -- and 4 that close the branches the receipt found dark), 5 through `check-fault-cases`, 4 for rule 5 and its dated exemption, 4 in `mutation.test.ts` (the matrix's two column assertions, and MT-19/MT-20), and 2 for the census renderings |
 | new mutations | **20** in `mutation.test.ts` (MT-19 the prompt leak, MT-20 the saturated benchmark set) and **14** in the `doc-counts-shapes` battery (a rule that accepts every gate-site count, and one that judges a dated sentence) |
@@ -2134,3 +2134,131 @@ that was wrong in the safe direction (**3 of 30** for **19 of 30**). Every one w
 sentence what a *reader* would do with it -- not what its source says. The review that started the
 round found the first one by quoting it, which is the cost of a document nobody re-reads: it does not
 decay, it gets cited.
+
+## v3.67 — seven tables that restated a specification, and the gate that checked the site instead
+
+The previous round ended with a list of four defects and a note that the next one was P1: seven
+contract pages carried three copies of one version and no equation. Reading that entry closely, the
+version was the least of it.
+
+### 一、Six rows, seven pages, and nothing compared a row with the field it restated
+
+Each page under `docs/targets/` opens with a table: vendor, venue, contract version, emitter, CLI
+target id, modalities, timezone. Every row is a projection of `scripts/format-spec.mjs`. Measured
+against the tree this round inherited, **41 rows across seven pages, and not one comparison**:
+
+| row | what the page said | what the specification said |
+| --- | --- | --- |
+| `Vendor / venue` | `Microsoft, ICLR'25` on five pages; `Reference` on the other two | `vendor` and `venue`, two fields |
+| `Contract version` | `` `pave-v1` (`OPENRCA2_CONTRACT_VERSION`) `` | a field **and** the exported constant |
+| `Modalities` | `metrics, logs, traces (+ causal path)` | `['M','L','T']` |
+| `Timezone` | `**UTC+8** (`OPENRCA_OFFSET_MINUTES = 480`)`, on five of seven pages | a sentence, on all seven |
+
+Three different failures came out of the one missing equation.
+
+**One value was false.** `openrca-2.0`'s vendor read `Microsoft`, which is 1.0's -- the line above it
+in the same table -- and the PAVE paper's author block says `Affiliation: The Chinese University of
+Hong Kong, Shenzhen`. Written 2026-09-10, corrected 2026-11-08. The same string sat in
+`format-spec.mjs`, which the site renders as a badge: one unchecked sentence, published twice.
+
+**Two rows were renamed to fit their values.** `cloud-opsbench` and `itbench` said `Reference` where
+the others said `Vendor / venue`, because cloud-opsbench's `vendor` field held an arXiv id. That is a
+citation standing where a publisher goes -- the question answered with the address of the question --
+and the row was renamed rather than the field emptied, which is cheaper and leaves two pages whose row
+means something different from the row in the same position on the other five.
+
+**Thirteen cells were missing or said it differently.** Two pages had no `Timezone` row although the
+specification has a sentence for all seven; rcaeval had no `Modalities` row. Of the five timezone cells
+that existed, three differed from the specification's own sentence. The prose was not wrong. It was
+unwitnessed, which is how `metrics, logs, traces` and `['M','L','T']` mean the same thing on Tuesday
+and not on Wednesday.
+
+The table is generated now, between `<!-- target: id -->` and `<!-- /target -->`, from the
+specification and from the constant the exporters stamp. Four changes made it renderable:
+`contractVersion` **left** `format-spec.mjs` (the constant is the only writer, and the generator reads
+it out of the built package by the name `contractConstant` holds); `vendor`/`venue`/`reference` are
+three fields, `null` printing as `*not established*`; `MODALITY_LABELS` turns the codes into the prose
+the page prints, so one array is rendered twice; and the two rows no other page has (rcaeval's score
+targets, itbench's persona) are declared instead of typed. The seven pages went from 41 rows to 54 --
+thirteen of them rows the specification had and the page had dropped, or folded into a neighbour.
+
+The vendor is the one claim here no gate can derive, so it is quoted: `golden-master/openrca2-evaluator.json`
+gains `upstream.affiliation` with the paper's own line, the URL it was read from and the date, and a
+test asserts the published vendor is a substring of it. An edit to either side is refused.
+
+### 二、The generator wrote the documents; the gate checked the site
+
+`gen-examples.mjs` owns three artefacts and, under `--check`, compared exactly one: `site/assets/data.js`.
+`syncDocExamples` and `syncDocFields` ran only in write mode, so a hand-edited field table or a stale
+example block passed `examples:check` -- the step CI runs in the docs job, named after the generator,
+proving the site and saying nothing about the documents.
+
+This was not unknown. It had been pinned as a test since 2026-09-27, asserting **green** on a document it
+had just made wrong, under a comment calling it `audit.md`'s P2-4. A test that states a defect is worth
+more than a comment about one; a test that stops stating it is how the defect gets closed, and this
+round inverted that assertion rather than deleting it.
+
+The repair is one code path for both modes: `planDocRewrites` computes all three rewrites in memory and
+returns what would change, so `--check` is the *same* computation as the write instead of a second
+opinion about it. It refuses on a non-empty plan and names the files. The first version of this
+repair generated the metadata table and left the other two blocks alone -- half the artefacts checked
+and the other half written, with no sentence saying which is which, which is finding 471 one level up.
+
+`--check` still cannot see a **deleted** marker: a block that is not there is not compared. So the
+enumeration is separate and explicit -- for every spec the page carries exactly one target block and one
+field marker per documented file, thirty markers checked against the specification's own list.
+
+### 三、The ledger owes the coverage row, and the rule is judged on the round being written
+
+v3.66 found that 30 of the log's first 54 `### Readings` blocks carry no coverage row, and left the
+rule in the list because a rule over history would have been red from the day it existed. This round
+writes it: `readVolumes` refuses a newest round whose ledger carries no `| coverage |` row reporting
+four numbers for `core` and four for `cli`. The asymmetry is asserted rather than described -- a test
+builds a two-round volume where the older round has no row and the newest does, and requires silence --
+because 30 of 54 is exactly the population that argument is about.
+
+### 四、What the gates cost to retarget
+
+Six injections in `gate-tests-battery.py` anchored on lines this round moved. All six were retargeted,
+none deleted, and three were added for the guarantees that did not exist before (a `--check` that would
+have passed a stale page, a metadata table nobody rewrites, a version printed instead of refused).
+**25 injections became 28, witnesses 28 became 33, and the throws the reading partitions went from 91
+to 93** -- the two new ones are `modalitiesProse` refusing a code it has no word for, and
+`contractVersionOf` refusing a constant the package does not export.
+
+### Readings
+
+> Ledger for `v3.67`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **239 files, 6082 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **243 files, 6269 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.80 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** (statements / branches / functions / lines) -- unmoved from v3.66, because this round's code is in `scripts/`, which the coverage gate does not measure; what measures it is the injection battery |
+| new tests | **15** (6,067 -> 6,082): 9 in `gen-examples.test.ts` (the two refusals that replaced the pinning test, six for the metadata table including its two refusals, one enumerating the thirty markers), 4 for the coverage-row rule, 2 for the affiliation equation |
+| new mutations | **3** injections in `gate-tests-battery.py` (EXAMPLES 8, 9, 10) and **6 retargeted**, because planning a rewrite is one decision for all three marker kinds |
+| the table | **41 -> 54** rows across seven pages, generated; **41** of the old ones restated a field and **0** were compared |
+| the vendor | `Microsoft` -> `The Chinese University of Hong Kong, Shenzhen`, quoted from the paper's author block; the same string was on the site badge |
+| the gap | `--check` compared **1 of 3** artefacts; it compares 3 now, and the test that pinned the gap asserts the refusal |
+| the claims | **204 -> 207** claim(s) across **58** file(s), **128** failure site(s), from `gate-sites.json` |
+| the list | **22 -> 20** open: this round closed the two it was written for, and added two it found |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P1** | G5 has no near-duplicate and no window-overlap arm | unchanged: measured, 0 of 435 pairs overlap and the maximum task-text Jaccard is 0.308 | two fixtures, because the shipped corpus offers no witness |
+| **P2** | G3's two thresholds have no grid | unchanged: the defaults are a judgement nothing has defended | a 4x4 grid and a rule that refuses a default on a slope |
+| **P2** | `rulegen` has no refusal count and no agreement reading | unchanged: the thirty human annotations already exist and nothing compares against them | agreement with a fixed answer set, and the absence of kappa stated as a choice |
+| **P2** | `score` divides by a different denominator per target | unchanged: the sentence needs a measurement under it | a test asserting two targets' check counts differ |
+| **P2** | `docs/acceptance.md` is 96 KB and grows by clause per round | unchanged: L3 and L4 are 284 and 405 lines, the other four layers 14, 7, 7 and 6 | move the per-round clauses to a volume, after measuring how many sections match that shape |
+| **P2** | Cloud-OpsBench has no established vendor | new this round: the field held an arXiv id, the page renamed the row to `Reference`, and the field is `null` now | read the paper's author block, as `openrca-2.0`'s was read, and record the line the value comes from |
+| **P2** | two prose targets cite a paper no digest pins | new this round: `itbench` and `cloud-opsbench` print an arXiv id beside the one the corpus pins | a sha256 and a byte count per paper, or a declaration saying the id is all this repository read |
+
+**The lesson.** Both defects are the same sentence at two levels: *every cell in a table is either a
+projection of something or a claim with one reader.* The metadata table had six cells that were
+paraphrases, and the one that mattered was not the version everybody kept in step -- it was the vendor
+nobody did, and it was wrong for two months while three copies of the version agreed perfectly. The
+generator had a check for one of the three things it wrote, which is finding 471's 105-and-204 one level
+down: the gate existed, was named after the work, and measured the artifact that never drifts.

@@ -92,7 +92,7 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   the `sensitivity` job runs `verify-sites-are-sensitive.mjs`, which asks whether that
   file **notices** the exit's absence -- one run per claim with that site's code
   replaced by success, and a baseline run per file so a red claimant cannot be
-  credited with catching anything. Measured at **204 of 204** claim(s) across 58 file(s).
+  credited with catching anything. Measured at **207 of 207** claim(s) across 58 file(s).
   The figure was 105 of 105 in both halves at v3.41, and it drifted for twenty-four rounds
   because nothing read the sentence -- an external reviewer quoted the 105 as the current
   state, which is what a number with no reader costs. `check-doc-counts` reads it now:
@@ -1258,9 +1258,9 @@ from an anecdote again.
 - **A gate-site count in a present-tense document must equal the inventory.** `check-doc-counts` reads
   three shapes -- `N of N claim(s)`, `N claim(s) across M file(s)`, `N failure site(s)` -- from
   `docs/acceptance.md` and `README.md`, and compares each with `golden-master/gate-sites.json` through
-  the same `claimedSites` the two proof gates run. Measured at the revision that added the rule:
-  **204 claim(s) across 58 file(s), 127 failure site(s)**. The sentence it replaced said **105 of 105**
-  and had said so for twenty-four rounds (finding 471).
+  the same `claimedSites` the two proof gates run. The sentence this rule replaced said 105 of 105 and
+  had said so for twenty-four rounds (finding 471); the count above this list is the one derived now,
+  and this paragraph does not restate it -- restating it is the drift the rule exists to stop.
 - **The number is read from the artefact, not copied into a second one.** `derive-gate-sites.mjs
   --check` already holds the inventory to the tree, and `claimedSites` already decides what the proof
   gates run. A copy in `doc-counts.json` would have been a second account of one fact, and the copy is
@@ -1324,3 +1324,52 @@ from an anecdote again.
   SOTA; a set can be unsaturated here and still be easy. And a name shorter than six characters is
   not judged, because a two-letter service name is also an English word -- the count that is skipped
   is printed rather than hidden.
+
+### A table is a projection of a field, or it is a claim with one reader (v3.67)
+
+- **Every row of a contract page's metadata table is generated.** The seven tables at the top of
+  `docs/targets/*.md` are rendered by `gen-examples.mjs` from `scripts/format-spec.mjs` and from the
+  `*_CONTRACT_VERSION` constant the exporters stamp, between `<!-- target: id -->` and `<!-- /target -->`.
+  `pnpm examples:check` refuses a page that disagrees with either. Measured at the revision that added
+  it: **41 rows across seven pages, and not one had ever been compared** with the field it restated; the
+  table is **54 rows** now, thirteen of them rows the specification carried and the page had dropped or
+  folded into a neighbour (finding 477).
+- **The version has one writer.** `contractVersion` left `format-spec.mjs`; the cell prints the constant's
+  value and the constant's name, both read out of the built package through `contractConstant`. A
+  specification naming a constant the package does not export stops the generator instead of rendering
+  `undefined` into seven cells.
+- **A field this repository has not established is `null`, and it prints as `*not established*`.**
+  `cloud-opsbench`'s vendor was `arXiv 2603.00468` -- a citation where a publisher goes -- and its page
+  answered the mismatch by renaming the row to `Reference`. `vendor`, `venue` and `reference` are three
+  rows now, and `reference` is omitted when there is none rather than printed empty.
+- **A claim about an external paper is a quotation with a URL and a date.** `openrca-2.0`'s vendor read
+  `Microsoft` from 2026-09-10 to v3.67 -- 1.0's vendor, the line above it in the same table -- and the
+  same string was rendered as a badge on the site. The value is
+  `The Chinese University of Hong Kong, Shenzhen`, quoted from the paper's author block in
+  `golden-master/openrca2-evaluator.json` under `upstream.affiliation`, and a test asserts the published
+  vendor is a substring of that line. This is the one statement in the tree no gate can derive.
+- **The generator's check covers everything the generator writes.** `planDocRewrites` computes the three
+  rewrites in memory and both modes consume it, so `--check` is the same computation as the write rather
+  than a second opinion about it. Until v3.67 it compared `site/assets/data.js` and nothing else, which
+  meant a hand-edited field table passed the step CI runs in the docs job (finding 478).
+- **A block that has been deleted is not a block that agrees.** `--check` compares the blocks that are
+  present, so the enumeration is separate: for every specification the page carries exactly one target
+  block and one field marker per documented file -- thirty markers, checked against the specification's
+  own list rather than against the page.
+
+### The round that can still be written owes the coverage row (v3.67)
+
+- **The newest round's `### Readings` carries a `| coverage |` row, four dimensions for `core` and four
+  for `cli`.** `readVolumes` refuses the newest round when the row is absent or reports fewer numbers
+  than that, and quotes the cell it found. The row is what a later reader looks for when asking what a
+  round cost; v3.66 answered it only after measuring its own two new arms at six uncovered branches.
+- **The rule is judged on the round being written, and only there.** Thirty of the log's first fifty-four
+  ledgers carry no coverage row, spread in runs across volumes 05 to 07; a rule over history would have
+  been red from the day it existed, and a rule that is always red is one every reader skips. The
+  asymmetry is asserted: a test builds a two-round volume where the older round has no row and the newest
+  does, and requires silence. Same shape as the volume budget, which is judged only on the volume that
+  can still grow.
+- **What this rule can see is that the row is there and well formed.** It cannot see that the numbers are
+  true: the coverage report is a build artefact and `docs:check` runs without one. What makes the number
+  true is that it is written by the round that measured it, in the commit that measured it -- which is
+  the difference between this row and the gate-site count above, where an artefact exists to derive from.

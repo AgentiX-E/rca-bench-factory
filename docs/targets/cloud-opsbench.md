@@ -4,13 +4,18 @@
 > `result` triple is the outcome ground truth
 > **⟨Stage, Component, Root Cause⟩ = ⟨fault_taxonomy, fault_object, root_cause⟩**.
 
+<!-- target: cloud-opsbench -->
 | | |
 | --- | --- |
+| Vendor | *not established* |
+| Venue | *not established* |
 | Reference | arXiv 2603.00468 |
 | Contract version | `v1` (`CLOUD_OPSBENCH_CONTRACT_VERSION`) |
 | Emitter | [`src/export/cloudopsbench.ts`](../../packages/core/src/export/cloudopsbench.ts) |
 | CLI target id | `cloud-opsbench` |
 | Modalities | metrics, logs, traces, config / state snapshot |
+| Timezone | Not applicable - metadata.json carries no timestamps. |
+<!-- /target -->
 
 ## Full upstream layout vs. what the factory emits
 

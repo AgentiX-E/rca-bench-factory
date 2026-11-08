@@ -14,17 +14,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import {
-  exportAioPs2025,
-  exportCloudOpsBench,
-  exportItBench,
-  exportOpenRca,
-  exportOpenRca2,
-  exportRca100,
-  exportRcaEval,
-  scoreExport,
-} from '../packages/core/dist/index.js';
-import { FORMAT_SPECS } from './format-spec.mjs';
+import * as core from '../packages/core/dist/index.js';
+import { FORMAT_SPECS, modalitiesProse } from './format-spec.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -34,15 +25,15 @@ const DOCS_DIR = resolve(ROOT, 'docs/targets');
 
 /** Export targets, including the three RCAEval suites scored as separate targets. */
 const TARGETS = [
-  { key: 'openrca-1.0', specs: ['openrca-1.0'], run: (b) => exportOpenRca(b) },
-  { key: 'openrca-2.0', specs: ['openrca-2.0'], run: (b) => exportOpenRca2(b) },
-  { key: 'rcaeval-re1', specs: ['rcaeval'], run: (b) => exportRcaEval(b, 'RE1') },
-  { key: 'rcaeval-re2', specs: ['rcaeval'], run: (b) => exportRcaEval(b, 'RE2') },
-  { key: 'rcaeval-re3', specs: ['rcaeval'], run: (b) => exportRcaEval(b, 'RE3') },
-  { key: 'rca100', specs: ['rca100'], run: (b) => exportRca100(b) },
-  { key: 'aiops2025', specs: ['aiops2025'], run: (b) => exportAioPs2025(b) },
-  { key: 'cloud-opsbench', specs: ['cloud-opsbench'], run: (b) => exportCloudOpsBench(b) },
-  { key: 'itbench', specs: ['itbench'], run: (b) => exportItBench(b) },
+  { key: 'openrca-1.0', specs: ['openrca-1.0'], run: (b) => core.exportOpenRca(b) },
+  { key: 'openrca-2.0', specs: ['openrca-2.0'], run: (b) => core.exportOpenRca2(b) },
+  { key: 'rcaeval-re1', specs: ['rcaeval'], run: (b) => core.exportRcaEval(b, 'RE1') },
+  { key: 'rcaeval-re2', specs: ['rcaeval'], run: (b) => core.exportRcaEval(b, 'RE2') },
+  { key: 'rcaeval-re3', specs: ['rcaeval'], run: (b) => core.exportRcaEval(b, 'RE3') },
+  { key: 'rca100', specs: ['rca100'], run: (b) => core.exportRca100(b) },
+  { key: 'aiops2025', specs: ['aiops2025'], run: (b) => core.exportAioPs2025(b) },
+  { key: 'cloud-opsbench', specs: ['cloud-opsbench'], run: (b) => core.exportCloudOpsBench(b) },
+  { key: 'itbench', specs: ['itbench'], run: (b) => core.exportItBench(b) },
 ];
 
 function loadBundle() {
@@ -58,7 +49,7 @@ export function buildData() {
     const result = target.run(bundle);
     const files = result.files;
     const skipped = result.skipped;
-    const report = scoreExport(target.key, files);
+    const report = core.scoreExport(target.key, files);
     targets[target.key] = {
       id: target.key,
       files,
@@ -71,7 +62,10 @@ export function buildData() {
     generatedBy: 'scripts/gen-examples.mjs',
     bundlePath: 'examples/order-prod/bundle.json',
     bundle,
-    formats: FORMAT_SPECS,
+    // The site prints a `contract <version>` badge per format. The value comes from the constant
+    // the exporters stamp, not from the specification, so the payload carries a *rendering* of that
+    // constant rather than a second writer of it.
+    formats: FORMAT_SPECS.map((spec) => ({ ...spec, contractVersion: contractVersionOf(spec) })),
     targets,
   };
 }
@@ -88,20 +82,27 @@ function renderDataFile(data) {
 }
 
 /**
- * Replace the verified example blocks inside the target docs.
+ * Every doc rewrite this generator owns, computed in memory.
  *
- * A block is declared as:
- *   <!-- example: openrca-1.0/order-prod/query.csv -->
- *   ```csv
- *   ...
- *   ```
- * The fenced content is rewritten from the real export on every run, so a
- * documented example can never drift away from the code that produces it.
+ * Three marker kinds live in `docs/targets/*.md`, and all three are projections
+ * of something this file can compute:
+ *
+ *   <!-- target: openrca-1.0 -->   the metadata table at the top of the page
+ *   <!-- fields: id/{path} -->     one field table per documented file
+ *   <!-- example: id/{path} -->    one fenced sample per documented file
+ *
+ * ## Why this returns text instead of writing it
+ *
+ * `--check` used to compare `site/assets/data.js` and nothing else: the two doc
+ * rewrites ran only on a *writer* run, so a contract table that had drifted from
+ * `format-spec.mjs` was corrected by the next `examples:gen` and noticed by
+ * nothing in between. A tree whose docs disagreed with its own specification
+ * passed the gate that exists to hold the docs. Returning the rewrite rather than
+ * performing it is what lets one code path serve both modes -- and what makes the
+ * check the *same* computation as the write rather than a second opinion about it.
  */
-function syncDocExamples(data) {
-  const targets = data.targets;
-  const touched = [];
-
+function planDocRewrites(data) {
+  const planned = new Map();
   for (const spec of FORMAT_SPECS) {
     const file = resolve(DOCS_DIR, `${spec.id}.md`);
     let markdown;
@@ -110,33 +111,107 @@ function syncDocExamples(data) {
     } catch {
       continue;
     }
-
-    const pattern =
-      /<!-- example: ([^\s]+?)(?: truncate=(\d+))? -->\n```([a-zA-Z0-9]*)\n([\s\S]*?)```/g;
-
-    const updated = markdown.replace(pattern, (_match, ref, truncate, lang, previous) => {
-      const [targetKey, ...pathParts] = ref.split('/');
-      const relativePath = pathParts.join('/');
-      const target = targets[targetKey];
-      if (target === undefined) throw new Error(`unknown example target '${targetKey}' in ${spec.id}.md`);
-      const path = Object.keys(target.files).find((p) => p.endsWith(relativePath));
-      if (path === undefined) throw new Error(`example path '${relativePath}' not exported by ${targetKey}`);
-      let content = target.files[path];
-      if (truncate !== undefined) {
-        const lines = content.replace(/\n$/, '').split('\n');
-        const keep = Number(truncate);
-        if (lines.length > keep) content = `${lines.slice(0, keep).join('\n')}\n… ${lines.length - keep} more lines\n`;
-      }
-      return `<!-- example: ${ref}${truncate === undefined ? '' : ` truncate=${truncate}`} -->\n\`\`\`${lang}\n${content}\`\`\``;
-    });
-
-    if (updated !== markdown) {
-      writeFileSync(file, updated);
-      touched.push(`${spec.id}.md`);
-    }
+    let next = rewriteExamples(markdown, data.targets, spec.id);
+    next = rewriteFields(next, spec);
+    next = rewriteTarget(next, spec);
+    if (next !== markdown) planned.set(file, next);
   }
+  return planned;
+}
 
-  return touched;
+/**
+ * The version a contract table prints, read from the code that stamps it.
+ *
+ * The constant is the producer: every exporter writes this string into the payload.
+ * A copy in `format-spec.mjs` would be a second writer, which is what the file used
+ * to hold from 2026-09-10 -- the day this file was written -- while the document restated it by
+ * hand a third time.
+ */
+function contractVersionOf(spec) {
+  const value = core[spec.contractConstant];
+  if (typeof value !== 'string') {
+    throw new Error(
+      `${spec.id} names \`${spec.contractConstant}\` as its contract version, and packages/core does not ` +
+        'export a string under that name: the table would print a version no exporter has ever written',
+    );
+  }
+  return value;
+}
+
+/**
+ * The metadata table: one cell per field, every one of them a field.
+ *
+ * This table used to be hand-written above each page, restating `format-spec.mjs`
+ * in slightly different words -- "metrics, logs, traces" here against `['M','L','T']`
+ * there -- and nothing compared the two. What it cost: `openrca-2.0`'s vendor read
+ * `Microsoft` from the day the page was written, carried over from 1.0, whose vendor
+ * that is; the PAVE paper's author block says The Chinese University of Hong Kong,
+ * Shenzhen. And the two targets whose vendor this repository never established said
+ * `Reference` where the others said `Vendor / venue`, because renaming the row was
+ * easier than answering it -- which is how a table's own vocabulary stops meaning
+ * anything.
+ *
+ * `vendor: null` now prints "not established" rather than a nearby fact, and the
+ * venue is its own row instead of the second half of one.
+ */
+function renderTargetTable(spec) {
+  const version = contractVersionOf(spec);
+  const unset = '*not established*';
+  const rows = [
+    ['Vendor', spec.vendor ?? unset],
+    ['Venue', spec.venue ?? unset],
+  ];
+  if (spec.reference !== null) rows.push(['Reference', spec.reference]);
+  rows.push(
+    ['Contract version', `\`${version}\` (\`${spec.contractConstant}\`)`],
+    ['Emitter', `[\`${spec.emitter}\`](../../packages/core/${spec.emitter})`],
+    ['CLI target id', `\`${spec.cliTarget}\`${spec.cliSuffix}`],
+    ...spec.extraRows,
+    ['Modalities', modalitiesProse(spec.modalities)],
+    ['Timezone', spec.timezone],
+  );
+  const body = rows.map(([label, value]) => `| ${label} | ${mdCell(value)} |`).join('\n');
+  return ['| | |', '| --- | --- |', body].join('\n');
+}
+
+/** Rewrite the metadata table between its two markers. */
+function rewriteTarget(markdown, spec) {
+  return markdown.replace(/<!-- target: ([^\s]+) -->\n([\s\S]*?)<!-- \/target -->/g, (match, id) => {
+    if (id !== spec.id) return match;
+    return `<!-- target: ${id} -->\n${renderTargetTable(spec)}\n<!-- /target -->`;
+  });
+}
+
+/**
+ * Replace the verified example blocks inside the target docs.
+ *
+ * A block is declared as:
+ *   <!-- example: openrca-1.0/order-prod/query.csv -->
+ *   ```csv
+ *   ...
+ *   ```
+ * The fenced content is rewritten from the real export, so a documented example
+ * can never drift away from the code that produces it.
+ */
+function rewriteExamples(markdown, targets, id) {
+  const pattern =
+    /<!-- example: ([^\s]+?)(?: truncate=(\d+))? -->\n```([a-zA-Z0-9]*)\n([\s\S]*?)```/g;
+
+  return markdown.replace(pattern, (match, ref, truncate, lang) => {
+    const [targetKey, ...pathParts] = ref.split('/');
+    const relativePath = pathParts.join('/');
+    const target = targets[targetKey];
+    if (target === undefined) throw new Error(`unknown example target '${targetKey}' in ${id}.md`);
+    const path = Object.keys(target.files).find((p) => p.endsWith(relativePath));
+    if (path === undefined) throw new Error(`example path '${relativePath}' not exported by ${targetKey}`);
+    let content = target.files[path];
+    if (truncate !== undefined) {
+      const lines = content.replace(/\n$/, '').split('\n');
+      const keep = Number(truncate);
+      if (lines.length > keep) content = `${lines.slice(0, keep).join('\n')}\n… ${lines.length - keep} more lines\n`;
+    }
+    return `<!-- example: ${ref}${truncate === undefined ? '' : ` truncate=${truncate}`} -->\n\`\`\`${lang}\n${content}\`\`\``;
+  });
 }
 
 /** Escape characters that would otherwise break a Markdown table cell. */
@@ -163,33 +238,15 @@ function renderFieldTable(fields) {
  *   ...generated...
  *   <!-- /fields -->
  */
-function syncDocFields() {
-  const touched = [];
-  for (const spec of FORMAT_SPECS) {
-    const file = resolve(DOCS_DIR, `${spec.id}.md`);
-    let markdown;
-    try {
-      markdown = readFileSync(file, 'utf8');
-    } catch {
-      continue;
+function rewriteFields(markdown, spec) {
+  return markdown.replace(/<!-- fields: ([^\s]+) -->\n([\s\S]*?)<!-- \/fields -->/g, (match, ref) => {
+    const dotted = ref.slice(ref.indexOf('/') + 1);
+    const documented = spec.files.find((f) => f.path === dotted);
+    if (documented === undefined) {
+      throw new Error(`fields marker '${ref}' does not match any documented file in ${spec.id}.md`);
     }
-
-    const pattern = /<!-- fields: ([^\s]+) -->\n([\s\S]*?)<!-- \/fields -->/g;
-    const updated = markdown.replace(pattern, (match, ref) => {
-      const dotted = ref.slice(ref.indexOf('/') + 1);
-      const documented = spec.files.find((f) => f.path === dotted);
-      if (documented === undefined) {
-        throw new Error(`fields marker '${ref}' does not match any documented file in ${spec.id}.md`);
-      }
-      return `<!-- fields: ${ref} -->\n${renderFieldTable(documented.fields)}\n<!-- /fields -->`;
-    });
-
-    if (updated !== markdown) {
-      writeFileSync(file, updated);
-      touched.push(`${spec.id}.md`);
-    }
-  }
-  return touched;
+    return `<!-- fields: ${ref} -->\n${renderFieldTable(documented.fields)}\n<!-- /fields -->`;
+  });
 }
 
 const checkOnly = process.argv.includes('--check');
@@ -208,13 +265,24 @@ if (checkOnly) {
     console.error(`${DATA_PATH} is stale - run \`pnpm examples:gen\` and commit the result.`);
     process.exit(1);
   }
-  console.log('examples data is up to date');
+  const planned = planDocRewrites(data);
+  if (planned.size > 0) {
+    console.error(
+      `${[...planned.keys()].map((file) => file.replace(`${ROOT}/`, '')).join(', ')} ` +
+        `carry ${String(planned.size)} generated block(s) that disagree with format-spec.mjs - ` +
+        'run `pnpm examples:gen` and commit the result. The page is the projection; the specification is not.',
+    );
+    process.exit(1);
+  }
+  console.log(`examples data is up to date; ${String(FORMAT_SPECS.length)} contract table(s) agree with the specification`);
 } else {
   writeFileSync(DATA_PATH, rendered);
-  const touched = [...new Set([...syncDocExamples(data), ...syncDocFields()])];
+  const planned = planDocRewrites(data);
+  for (const [file, next] of planned) writeFileSync(file, next);
+  const touched = [...planned.keys()].map((file) => file.replace(`${DOCS_DIR}/`, ''));
   const fileCount = Object.values(data.targets).reduce((n, t) => n + Object.keys(t.files).length, 0);
   console.log(
     `wrote ${DATA_PATH} (${Object.keys(data.targets).length} targets, ${fileCount} files)` +
-      (touched.length > 0 ? `; synced examples in ${touched.join(', ')}` : ''),
+      (touched.length > 0 ? `; synced ${touched.join(', ')}` : ''),
   );
 }

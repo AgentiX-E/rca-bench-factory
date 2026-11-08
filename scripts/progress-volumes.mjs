@@ -159,6 +159,17 @@ export const LEDGER_LINE = /^> Ledger for `([^`]+)`\.$/;
 const AS_OF = /as of `([0-9a-f]{7,40})`/g;
 
 /**
+ * `| coverage | core 99.97 / 99.80 / 100 / 99.97, cli 100 / 100 / 100 / 100 |`.
+ *
+ * The label is all the pattern insists on; how many four-number groups follow is a
+ * separate question, asked of the newest round only (see `readVolumes`).
+ */
+const COVERAGE_ROW = /^\|\s*coverage\s*\|\s*(.*?)\s*\|\s*$/;
+
+/** One `a / b / c / d` group: statements, branches, functions, lines. */
+const QUAD = /\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?/g;
+
+/**
  * What one ledger says about itself: the round it names, and the trees it was measured on.
  *
  * `anchor` is `null` when the first non-blank line is not the ledger line, and `first`
@@ -169,12 +180,15 @@ export function ledgerOf(lines, from, to) {
   let fenced = false;
   let first = null;
   const shas = [];
+  const coverage = [];
   for (const raw of lines.slice(from, to)) {
     if (/^\s*(```|~~~)/.test(raw)) {
       fenced = !fenced;
       continue;
     }
     if (fenced) continue;
+    const row = COVERAGE_ROW.exec(raw.trim());
+    if (row !== null) coverage.push({ cell: row[1], quads: (row[1].match(QUAD) ?? []).length });
     if (first === null) {
       if (raw.trim() === '') continue;
       first = raw.trim();
@@ -184,7 +198,7 @@ export function ledgerOf(lines, from, to) {
     for (const match of raw.matchAll(AS_OF)) if (!shas.includes(match[1])) shas.push(match[1]);
   }
   const anchor = LEDGER_LINE.exec(first ?? '');
-  return { first, anchor: anchor === null ? null : anchor[1], shas };
+  return { first, anchor: anchor === null ? null : anchor[1], shas, coverage };
 }
 
 /** The line index of a closing section inside one round, or `null` when it holds none. */
@@ -374,6 +388,37 @@ export function readVolumes(dir = VOLUMES) {
         `\`${after.heading.trim()}\` follows \`${before.heading.trim()}\`, which closes with \`### Readings\`, and ` +
           'carries none: a round after the ledger began states its own readings, and a missing one means the ' +
           'section ended up past the heading of the round that follows it (finding 309)',
+      );
+    }
+  }
+
+  // The ledger owes a coverage row, and the rule is judged on the round that can still be
+  // written.
+  //
+  // Why not the chain, the way `### Readings` is: **30 of the log's first 54 ledgers carry no
+  // coverage row**, spread in runs across volumes 05 to 07. A rule over history would be red on
+  // every run from the moment it existed, and a rule that is always red is a rule every reader
+  // learns to skip -- the argument the volume budget already makes for judging only the volume
+  // that can still grow. What the newest round owes is what the next one inherits, so the
+  // convention propagates without reddening a single closed record.
+  //
+  // Two packages and four dimensions, because that is the table `pnpm test:coverage` prints and
+  // the reason the row exists: a reader compares it against that table. Extra sentences beside
+  // the numbers are read as prose and not judged.
+  const newest = order.at(-1);
+  if (newest !== undefined && (newest.sections?.get('### Readings') ?? 0) > 0) {
+    const quads = (newest.ledger?.coverage ?? []).reduce((n, row) => (row.quads >= 2 ? n + 1 : n), 0);
+    if (quads === 0) {
+      const cell = newest.ledger?.coverage?.[0]?.cell;
+      errors.push(
+        `\`${newest.heading.trim()}\` is the round that can still be written, and its \`### Readings\` ` +
+          (cell === undefined
+            ? 'carries no `| coverage |` row: the four dimensions per package are the one reading this ' +
+              'repository takes on every run, and the round that measures them is the only place their cost ' +
+              'is recorded (finding 475)'
+            : `carries \`${cell.slice(0, 80)}\`, which does not report four numbers for \`core\` and four ` +
+              'for `cli`: a reader compares that row against the table `pnpm test:coverage` prints, and a row ' +
+              'that reports fewer dimensions cannot be compared with it (finding 475)'),
       );
     }
   }

@@ -3,14 +3,18 @@
 > **Per-case directory benchmark.** One directory per fault instance, with metric vectors
 > keyed by name, a Unix-second injection timestamp, and — for RE2/RE3 — log and trace tables.
 
+<!-- target: rcaeval -->
 | | |
 | --- | --- |
-| Vendor / venue | RMIT, ASE'24 / WWW'25 |
+| Vendor | RMIT |
+| Venue | ASE'24 / WWW'25 |
 | Contract version | `www25` (`RCAEVAL_CONTRACT_VERSION`) |
 | Emitter | [`src/export/rcaeval.ts`](../../packages/core/src/export/rcaeval.ts) |
-| CLI target id | `rcaeval` with `--suite RE1|RE2|RE3` |
+| CLI target id | `rcaeval` with `--suite RE1\|RE2\|RE3` |
 | Score target ids | `rcaeval-re1`, `rcaeval-re2`, `rcaeval-re3` |
-| Timezone | canonical UTC ISO-8601 in CSVs; Unix seconds in `inject_time.txt` |
+| Modalities | metrics, logs, traces |
+| Timezone | Canonical UTC ISO-8601 in the CSVs; `inject_time.txt` is Unix seconds. |
+<!-- /target -->
 
 ## Suites
 

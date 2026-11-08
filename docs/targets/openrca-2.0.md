@@ -4,14 +4,18 @@
 > (*Path Annotation via Verified Effects*) annotates the verified propagation path from
 > the intervention to the symptom, and every causal edge must satisfy three conjunctive gates.
 
+<!-- target: openrca-2.0 -->
 | | |
 | --- | --- |
-| Vendor / venue | Microsoft, arXiv 2606.27154 |
+| Vendor | The Chinese University of Hong Kong, Shenzhen |
+| Venue | arXiv preprint |
+| Reference | arXiv 2606.27154 |
 | Contract version | `pave-v1` (`OPENRCA2_CONTRACT_VERSION`) |
 | Emitter | [`src/export/openrca2.ts`](../../packages/core/src/export/openrca2.ts) |
 | CLI target id | `openrca-2.0` |
-| Modalities | metrics, logs, traces (+ causal path) |
-| Timezone | UTC+8 telemetry layout of 1.0; `causal_path.json` itself is canonical UTC |
+| Modalities | metrics, logs, traces |
+| Timezone | inherits the UTC+8 telemetry layout of 1.0; causal_path.json itself uses canonical UTC ISO-8601. |
+<!-- /target -->
 
 ## The three gates
 

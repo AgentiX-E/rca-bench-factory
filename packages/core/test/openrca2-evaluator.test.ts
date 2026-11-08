@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { specById } from '../../../scripts/format-spec.mjs';
 import {
   OFFICIAL_METRICS,
   readOfficialGroundTruth,
@@ -63,6 +64,7 @@ interface Corpus {
     retrievedAt: string;
     extraction: string;
     releasedCode: string;
+    affiliation: { quote: string; why: string; readFrom: string; retrievedAt: string; note: string };
   };
   clauses: Array<{ id: string; quote: string; why: string }>;
   metricSet: string[];
@@ -309,5 +311,30 @@ describe('the ten cases replay, and the layers are reported apart', () => {
     // has no denominator rather than a free point.
     expect(scored.terms).toEqual({ em: 0, anySvc: 0 });
     expect(scored.score).toBe(0);
+  });
+});
+
+/**
+ * Who published PAVE.
+ *
+ * The one statement in this repository about an external paper that no gate can derive. It is
+ * therefore held to the cheapest equation available: the value the contract page and the site
+ * badge publish has to appear in the paper's own affiliation line, quoted here and read on the
+ * date below. The page said `Microsoft` from 2026-09-10 until v3.67 -- 1.0's vendor, and the OpenRCA
+ * repository's -- and nothing compared it with anything.
+ */
+describe('the affiliation the contract page publishes', () => {
+  it("is the one the paper's author block names", () => {
+    const { quote } = CORPUS.upstream.affiliation;
+    expect(quote.startsWith('Affiliation: ')).toBe(true);
+    // The field is a substring of the quotation, so an edit to either side is refused: naming a
+    // different institution fails here, and so does rewriting the quote to fit a new value.
+    expect(quote).toContain(specById('openrca-2.0').vendor);
+  });
+
+  it('is not the vendor of 1.0, which is where it came from', () => {
+    // The defect, asserted as a negative. Both targets exist, both carry a vendor, and the two
+    // are different institutions -- which is the fact the old value denied.
+    expect(specById('openrca-2.0').vendor).not.toBe(specById('openrca-1.0').vendor);
   });
 });

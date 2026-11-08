@@ -4220,3 +4220,137 @@ That is a deliberate floor -- a set whose methods were run at different cut-offs
 the strictest one -- but the sentence prints `top-3` without saying whose 3. When a case's outcomes
 carry two cut-offs the reading should name both, and that is a change to the sentence rather than to
 the arithmetic.
+
+## Finding 477 — six rows, seven pages, and not one comparison with the field it restated
+
+Every page under `docs/targets/` opens with the same table: what the format is, which version of the
+contract it implements, which file emits it, what the CLI calls it, which modalities it carries, in
+what timezone. Every one of those rows is a projection of a field in `scripts/format-spec.mjs`. None of
+them was compared with it.
+
+Measured against the tree before this round, row by row:
+
+| row | what the page said | what the specification said |
+| --- | --- | --- |
+| `Vendor / venue`, 5 pages | `Microsoft, ICLR'25` / `RMIT, ASE'24 / WWW'25` / `Alibaba Cloud Tianchi, 2025` / `2025 CCF AIOps Challenge` / `Microsoft, arXiv 2606.27154` | `vendor` and `venue` as two separate fields |
+| `Reference`, 2 pages | `arXiv 2603.00468` / `IBM Research, arXiv 2502.05352` | `vendor: 'arXiv 2603.00468'`, `vendor: 'IBM Research'` |
+| `Contract version`, 7 pages | `` `pave-v1` (`OPENRCA2_CONTRACT_VERSION`) `` | `contractVersion: 'pave-v1'` **and** the exported constant |
+| `Modalities`, 6 pages | `metrics, logs, traces (+ causal path)`, `metrics, logs, traces, **events**, **alerts**, topology` | `['M','L','T']`, `['M','L','T','E','A','Topo']` |
+| `Timezone`, 5 pages | `**UTC+8** (`OPENRCA_OFFSET_MINUTES = 480`)` | `UTC+8 (`OPENRCA_OFFSET_MINUTES = 480`); every emitted timestamp is shifted from canonical UTC.` |
+
+Three things were wrong, and each is a different failure of the same missing equation.
+
+**One value was simply false.** `openrca-2.0`'s vendor read `Microsoft`. That is 1.0's vendor -- the
+line above it in the same table -- and the OpenRCA 1.0 repository is Microsoft's. The PAVE paper's
+author block says:
+
+> Affiliation: The Chinese University of Hong Kong, Shenzhen
+
+The value was written on 2026-09-10, when the page was created, and corrected on 2026-11-08. The same
+string sat in `format-spec.mjs`, which the site renders as a badge, so one unchecked sentence was
+published twice -- on the contract page and on the site card for the same format. Nothing in the tree
+compared either copy with anything, and a claim about an external paper's publisher is the one
+statement here that no gate can derive; it can only be quoted.
+
+**Two rows were renamed to fit their values.** `cloud-opsbench` and `itbench` said `Reference` where the
+other five said `Vendor / venue`, because `cloud-opsbench`'s `vendor` field held an arXiv id -- which is
+a citation, not a publisher -- and no label fits a value that answers the question it was asked with
+the address of the question. Renaming the row is cheaper than answering it, and it left two pages whose
+row means something different from the row in the same position on the other five.
+`official-assets.json` already refuses this state for a different question: an asset that is neither
+pinned nor declared unfetchable is a state a contributor will not know they can be in, so the third
+state is named `pending` rather than left as absence. Here the absence was filled with a near-miss.
+
+**Eight cells were missing and five restated their field in other words.** Two pages had no `Timezone`
+row although the specification carries a string for all seven; one had no `Modalities` row. Of the five
+`Timezone` cells that existed, three differed from the specification's own sentence, and two of the six
+`Modalities` cells carried content the codes cannot produce (`(+ causal path)`, and bold on `events` and
+`alerts` marking which modalities the factory adds). The prose was not wrong; it was unwitnessed, which
+is how `metrics, logs, traces` and `['M','L','T']` can mean the same thing on Tuesday and not on
+Wednesday.
+
+### The repair, and what it costs
+
+The table is now generated from the specification by `gen-examples.mjs`, between `<!-- target: id -->`
+and `<!-- /target -->`, and `--check` refuses a page that disagrees (finding 478). Four changes made
+that possible:
+
+- **`contractVersion` is gone from `format-spec.mjs`.** The version is a constant in
+  `packages/core/src/export/*.ts`; the exporter stamps it into the payload, so the constant is the
+  producer. A field in the specification was a second writer of one string, and the page was a third.
+  The generator reads the constant named by `contractConstant` out of the built package, so the cell
+  prints both the value and the name it came from.
+- **`vendor`, `venue` and `reference` are three fields.** `null` prints as `*not established*`; the
+  reference row is omitted when there is none, because an identifier's absence is the normal case for
+  four of the seven and a table full of "not established" is a table nobody reads.
+- **Modalities are a legend.** `MODALITY_LABELS` maps `M` to `metrics` and `Conf` to
+  `config / state snapshot`; the page prints the expansion, the site prints the code, and one array is
+  rendered twice. A code with no entry throws rather than printing the letter.
+- **The two rows no other page has are declared.** rcaeval's `Score target ids` and itbench's `Persona`
+  are `extraRows` in the specification, in the order they are rendered.
+
+The cost is real: the seven pages gained 13 rows (41 to 54), because rows the specification had and the page had
+dropped (two timezones, one modality list) and rows that were folded into a neighbour (venue, reference)
+are now printed. A table that is longer and derived is worth more than a table that is shorter and
+invented, and the length is what makes the seven pages comparable at a glance.
+
+### What this does not settle
+
+The vendor value itself cannot be checked by any rule in this repository. What can be checked is that
+the value the page publishes appears in the paper's own affiliation line, so
+`golden-master/openrca2-evaluator.json` now carries that line verbatim under `upstream.affiliation`,
+with the URL it was read from and the date, and a test asserts the published vendor is a substring of
+it. An edit to either side is refused. What is left is the judgement that the quote is the right
+sentence -- which is the same residue every prose corpus here carries.
+
+## Finding 478 — the generator wrote the documents, and the gate only checked the site
+
+`scripts/gen-examples.mjs` has owned three artefacts for as long as it has existed: the site payload, the
+example blocks inside `docs/targets/*.md`, and the field tables beside them. Under `--check` it compared
+exactly one of them:
+
+```js
+if (checkOnly) {
+  if (current !== rendered) { /* data.js is stale */ }
+  console.log('examples data is up to date');
+} else {
+  writeFileSync(DATA_PATH, rendered);
+  syncDocExamples(data);   // write mode only
+  syncDocFields();         // write mode only
+}
+```
+
+So a hand-edited field table, a stale example block, or (after this round) a metadata table that
+contradicted the specification all passed `examples:check`, which is the step CI runs in the docs job.
+The gate named after the generator proved the site and said nothing about the documents the generator
+exists to write.
+
+The gap was not unknown. It had been pinned as a test since 2026-09-27:
+
+```ts
+it('has no --check path for the doc blocks, so a stale table fails nothing', () => {
+  ...
+  // Green, on a tree whose doc block is plainly wrong.
+  expect(result.status).toBe(0);
+```
+
+That is the repository's idiom for a defect it has decided not to fix yet -- state it, assert it, so the
+assertion inverts on the day it is fixed. Called `audit.md`'s P2-4, it stayed P2-4 because nothing read
+it except a reader.
+
+### Why it was not fixed in the round that found it
+
+The first version of this round's repair generated the metadata table and left the other two blocks
+alone. That is the shape finding 471 records one level up: half the artefacts checked, the other half
+written, and no sentence anywhere saying which is which. Planning the rewrite in memory made one code
+path serve both modes, and the check became the *same computation* as the write instead of a second
+opinion about it.
+
+### The half a check cannot see
+
+`--check` compares the blocks that are **there**. Deleting a marker takes its block out of the check and
+leaves every page green -- the generator would skip a file it cannot find a marker in, and say nothing.
+So the enumeration is separate and explicit: for every spec, the page carries exactly one
+`<!-- target: id -->` block and one `<!-- fields: id/<path> -->` marker per documented file. Sixty-five
+markers -- seven target blocks and twenty-three field tables -- checked against the specification's own
+list rather than against the page.

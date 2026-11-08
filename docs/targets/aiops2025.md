@@ -3,14 +3,17 @@
 > **Two metadata artefacts.** `input.json` carries the tasks, `groundtruth.jsonl` carries
 > the fault label *and* the per-modality key-evidence reasoning label.
 
+<!-- target: aiops2025 -->
 | | |
 | --- | --- |
-| Vendor / venue | 2025 CCF AIOps Challenge |
+| Vendor | CCF |
+| Venue | AIOps Challenge 2025 |
 | Contract version | `ccf2025` (`AIOPS2025_CONTRACT_VERSION`) |
 | Emitter | [`src/export/aiops2025.ts`](../../packages/core/src/export/aiops2025.ts) |
 | CLI target id | `aiops2025` |
 | Modalities | metrics, logs, traces, events, alerts |
-| Timezone | canonical UTC ISO-8601 in `start_time` / `end_time` |
+| Timezone | Canonical UTC ISO-8601 in `start_time` / `end_time`. |
+<!-- /target -->
 
 ## What is — and is not — produced
 

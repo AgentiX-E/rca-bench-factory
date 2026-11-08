@@ -433,16 +433,20 @@ window.RBF_DATA = {
       "name": "OpenRCA 1.0",
       "vendor": "Microsoft",
       "venue": "ICLR'25",
-      "contractVersion": "ICLR2025",
+      "reference": null,
+      "contractConstant": "OPENRCA_CONTRACT_VERSION",
       "emitter": "src/export/openrca.ts",
       "modalities": [
         "M",
         "L",
         "T"
       ],
+      "cliTarget": "openrca-1.0",
+      "cliSuffix": "",
+      "extraRows": [],
       "tagline": "Metric / log / trace telemetry plus an outcome-only answer key.",
       "summary": "The canonical outcome-labelled benchmark: one telemetry directory tree per system-day and a single `prediction` JSON carrying the root-cause datetime, component and reason. All timestamps are recorded in UTC+8 (`OPENRCA_OFFSET_MINUTES = 480`).",
-      "timezone": "UTC+8 (480 minutes); every emitted timestamp is shifted from canonical UTC.",
+      "timezone": "UTC+8 (`OPENRCA_OFFSET_MINUTES = 480`); every emitted timestamp is shifted from canonical UTC.",
       "scoringNote": "The official scorer matches the predicted ⟨component, reason, datetime⟩ triple against `record.csv`; the factory verifies the layout, the CSV headers and answer-key isolation.",
       "boundaries": [
         "Telecom subsystem ships metrics and traces but no logs: an empty `log/` file is legitimate and still created.",
@@ -687,20 +691,25 @@ window.RBF_DATA = {
             }
           ]
         }
-      ]
+      ],
+      "contractVersion": "ICLR2025"
     },
     {
       "id": "openrca-2.0",
       "name": "OpenRCA 2.0 (PAVE)",
-      "vendor": "Microsoft",
-      "venue": "arXiv 2606.27154",
-      "contractVersion": "pave-v1",
+      "vendor": "The Chinese University of Hong Kong, Shenzhen",
+      "venue": "arXiv preprint",
+      "reference": "arXiv 2606.27154",
+      "contractConstant": "OPENRCA2_CONTRACT_VERSION",
       "emitter": "src/export/openrca2.ts",
       "modalities": [
         "M",
         "L",
         "T"
       ],
+      "cliTarget": "openrca-2.0",
+      "cliSuffix": "",
+      "extraRows": [],
       "tagline": "Step-wise causal-path annotation with three conjunctive verification gates.",
       "summary": "OpenRCA 2.0 replaces outcome-only labels with process supervision: the PAVE protocol annotates the verified propagation path from intervention to symptom, and every causal edge must satisfy three conjunctive gates - structural, statistical and temporal.",
       "timezone": "inherits the UTC+8 telemetry layout of 1.0; causal_path.json itself uses canonical UTC ISO-8601.",
@@ -872,19 +881,29 @@ window.RBF_DATA = {
             }
           ]
         }
-      ]
+      ],
+      "contractVersion": "pave-v1"
     },
     {
       "id": "rcaeval",
       "name": "RCAEval (RE1 / RE2 / RE3)",
       "vendor": "RMIT",
       "venue": "ASE'24 / WWW'25",
-      "contractVersion": "www25",
+      "reference": null,
+      "contractConstant": "RCAEVAL_CONTRACT_VERSION",
       "emitter": "src/export/rcaeval.ts",
       "modalities": [
         "M",
         "L",
         "T"
+      ],
+      "cliTarget": "rcaeval",
+      "cliSuffix": " with `--suite RE1|RE2|RE3`",
+      "extraRows": [
+        [
+          "Score target ids",
+          "`rcaeval-re1`, `rcaeval-re2`, `rcaeval-re3`"
+        ]
       ],
       "tagline": "Per-case directory with metric vectors, injection timestamp and optional log/trace tables.",
       "summary": "Three suites with an identical layout and different modality sets: RE1 is metrics-only (375 cases upstream), RE2 adds logs and traces (270), RE3 targets code-level faults (90).",
@@ -1111,14 +1130,16 @@ window.RBF_DATA = {
             }
           ]
         }
-      ]
+      ],
+      "contractVersion": "www25"
     },
     {
       "id": "rca100",
       "name": "RCA100 / AgenticOpsEval",
       "vendor": "Alibaba Cloud Tianchi",
       "venue": "2025",
-      "contractVersion": "v1.1",
+      "reference": null,
+      "contractConstant": "RCA100_CONTRACT_VERSION",
       "emitter": "src/export/rca100.ts",
       "modalities": [
         "M",
@@ -1128,6 +1149,9 @@ window.RBF_DATA = {
         "A",
         "Topo"
       ],
+      "cliTarget": "rca100",
+      "cliSuffix": "",
+      "extraRows": [],
       "tagline": "Six modalities plus a UModel topology and a four-layer answer key.",
       "summary": "The richest contract the factory targets: five modality tables (metrics, logs, traces, events, alerts) plus an explicit UModel entity-relation topology, with every reference required to resolve. 19.4% of upstream root causes are observable only in the Event modality.",
       "timezone": "Canonical UTC ISO-8601 everywhere.",
@@ -1699,14 +1723,16 @@ window.RBF_DATA = {
             }
           ]
         }
-      ]
+      ],
+      "contractVersion": "v1.1"
     },
     {
       "id": "aiops2025",
       "name": "AIOps2025",
-      "vendor": "CCF AIOps Challenge",
-      "venue": "2025",
-      "contractVersion": "ccf2025",
+      "vendor": "CCF",
+      "venue": "AIOps Challenge 2025",
+      "reference": null,
+      "contractConstant": "AIOPS2025_CONTRACT_VERSION",
       "emitter": "src/export/aiops2025.ts",
       "modalities": [
         "M",
@@ -1715,6 +1741,9 @@ window.RBF_DATA = {
         "E",
         "A"
       ],
+      "cliTarget": "aiops2025",
+      "cliSuffix": "",
+      "extraRows": [],
       "tagline": "Two metadata artefacts: task inputs plus a per-modality key-evidence ground truth.",
       "summary": "The benchmark ships 18 daily Parquet telemetry archives shared across cases; the per-case contract is `input.json` (task) and `groundtruth.jsonl` (fault label + key observations split by modality).",
       "timezone": "Canonical UTC ISO-8601 in `start_time` / `end_time`.",
@@ -1875,14 +1904,16 @@ window.RBF_DATA = {
             }
           ]
         }
-      ]
+      ],
+      "contractVersion": "ccf2025"
     },
     {
       "id": "cloud-opsbench",
       "name": "Cloud-OpsBench",
-      "vendor": "arXiv 2603.00468",
-      "venue": "2026",
-      "contractVersion": "v1",
+      "vendor": null,
+      "venue": null,
+      "reference": "arXiv 2603.00468",
+      "contractConstant": "CLOUD_OPSBENCH_CONTRACT_VERSION",
       "emitter": "src/export/cloudopsbench.ts",
       "modalities": [
         "M",
@@ -1890,6 +1921,9 @@ window.RBF_DATA = {
         "T",
         "Conf"
       ],
+      "cliTarget": "cloud-opsbench",
+      "cliSuffix": "",
+      "extraRows": [],
       "tagline": "Agentic State-Snapshot benchmark with an outcome ground-truth triple.",
       "summary": "Each case is an agent-facing State Snapshot (tool cache, k8s states, logs, metrics, trimmed source). The scored artefact is `metadata.json`, whose `result` triple is ⟨Stage, Component, Root Cause⟩ = ⟨fault_taxonomy, fault_object, root_cause⟩.",
       "timezone": "Not applicable - metadata.json carries no timestamps.",
@@ -1950,14 +1984,16 @@ window.RBF_DATA = {
             }
           ]
         }
-      ]
+      ],
+      "contractVersion": "v1"
     },
     {
       "id": "itbench",
       "name": "ITBench (SRE Diagnosis)",
       "vendor": "IBM Research",
-      "venue": "arXiv 2502.05352",
-      "contractVersion": "v1",
+      "venue": "arXiv preprint",
+      "reference": "arXiv 2502.05352",
+      "contractConstant": "ITBENCH_CONTRACT_VERSION",
       "emitter": "src/export/itbench.ts",
       "modalities": [
         "M",
@@ -1965,6 +2001,14 @@ window.RBF_DATA = {
         "T",
         "E",
         "CD"
+      ],
+      "cliTarget": "itbench",
+      "cliSuffix": "",
+      "extraRows": [
+        [
+          "Persona",
+          "`SRE` only (CISO and FinOps are out of scope)"
+        ]
       ],
       "tagline": "Scenario specification with a diagnosis ground truth: entities, propagation chain, fault conditions.",
       "summary": "ITBench evaluates agents on live IT automation tasks. For the SRE Diagnosis task the ground truth records the entities in the propagation chain, the chain itself and the fault conditions - a one-to-one match with the IR GroundTruth triple.",
@@ -2124,7 +2168,8 @@ window.RBF_DATA = {
             }
           ]
         }
-      ]
+      ],
+      "contractVersion": "v1"
     }
   ],
   "targets": {

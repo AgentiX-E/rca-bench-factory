@@ -271,8 +271,10 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
 
   it('covers every injection, which is the only thing that makes the rest non-vacuous', () => {
     // Every check above is about a table, and a table with two rows would satisfy
-    // all of them.
-    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(25);
+    // all of them. 25 -> 28 in v3.67, when the generator's `--check` gained a refusal and the
+    // metadata table gained a rewrite: the three new injections are the three ways this round's
+    // guarantees can be withdrawn.
+    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(28);
     expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(
       pythonJson(`print(json.dumps(len(module.INJECTIONS)))`),
     );

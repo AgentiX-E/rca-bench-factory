@@ -774,10 +774,14 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         "the missing-file test",
     ),
     (
-        "EXAMPLES 3. an example block is left stale instead of rewritten",
+        # Retargeted in v3.67: the rewrite is planned in memory now (`planDocRewrites`), so the
+        # line that used to write one file per marker is the one that records a plan. The guard
+        # under test is the same one -- a doc block that disagrees with the export is rewritten --
+        # and so is the witness.
+        "EXAMPLES 3. a generated block is left stale instead of planned for rewrite",
         "scripts/gen-examples.mjs",
         "gen-examples.test.ts",
-        lambda t: rename(t, "    if (updated !== markdown) {\n      writeFileSync(file, updated);", "    if (false) {\n      writeFileSync(file, updated);"),
+        lambda t: rename(t, "    if (next !== markdown) planned.set(file, next);", "    if (false) planned.set(file, next);"),
         "the rewrite test, the idempotence test and the truncation test",
     ),
     (
@@ -786,8 +790,8 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         "gen-examples.test.ts",
         lambda t: rename(
             t,
-            "      if (target === undefined) throw new Error(`unknown example target '${targetKey}' in ${spec.id}.md`);",
-            "      if (target === undefined) return _match;",
+            "    if (target === undefined) throw new Error(`unknown example target '${targetKey}' in ${id}.md`);",
+            "    if (target === undefined) return match;",
         ),
         "the unknown-target test",
     ),
@@ -797,8 +801,8 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         "gen-examples.test.ts",
         lambda t: rename(
             t,
-            "      if (path === undefined) throw new Error(`example path '${relativePath}' not exported by ${targetKey}`);",
-            "      if (path === undefined) return _match;",
+            "    if (path === undefined) throw new Error(`example path '${relativePath}' not exported by ${targetKey}`);",
+            "    if (path === undefined) return match;",
         ),
         "the unexported-path test",
     ),
@@ -808,8 +812,8 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         "gen-examples.test.ts",
         lambda t: rename(
             t,
-            "        throw new Error(`fields marker '${ref}' does not match any documented file in ${spec.id}.md`);",
-            "        return match;",
+            "      throw new Error(`fields marker '${ref}' does not match any documented file in ${spec.id}.md`);",
+            "      return match;",
         ),
         "the field-marker test",
     ),
@@ -817,8 +821,36 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         "EXAMPLES 7. the truncate modifier is ignored",
         "scripts/gen-examples.mjs",
         "gen-examples.test.ts",
-        lambda t: rename(t, "      if (truncate !== undefined) {", "      if (false) {"),
+        lambda t: rename(t, "    if (truncate !== undefined) {", "    if (false) {"),
         "the truncation test, which needs the `… N more lines` marker",
+    ),
+    (
+        # The gap this repository pinned as P2-4 for six rounds: `--check` compared
+        # `site/assets/data.js` and nothing else, so a contract page that disagreed with the
+        # specification passed the gate that exists to hold the docs. The injection restores the
+        # gap, and the witness is the test that used to assert the gap was there.
+        "EXAMPLES 8. --check stops refusing a generated block that disagrees",
+        "scripts/gen-examples.mjs",
+        "gen-examples.test.ts",
+        lambda t: rename(t, "  if (planned.size > 0) {", "  if (false) {"),
+        "the doc-block refusal, the field-table refusal and every metadata-table test",
+    ),
+    (
+        "EXAMPLES 9. the metadata table is never rewritten",
+        "scripts/gen-examples.mjs",
+        "gen-examples.test.ts",
+        lambda t: rename(t, "    if (id !== spec.id) return match;", "    return match;"),
+        "the table-is-a-projection test, which is the only assertion about the top of the page",
+    ),
+    (
+        # A specification naming a constant the package does not export used to render
+        # `undefined` into the Contract version cell of seven pages. The throw is the guard; the
+        # injection makes the lookup answer instead of refusing.
+        "EXAMPLES 10. a version that is not a string is printed instead of refused",
+        "scripts/gen-examples.mjs",
+        "gen-examples.test.ts",
+        lambda t: rename(t, "  if (typeof value !== 'string') {", "  if (false) {"),
+        "the test that names a constant the package does not export",
     ),
     # ------------------------------------------------------------ cli-reference
     (
@@ -1031,10 +1063,6 @@ EXPECTATIONS: dict[str, tuple[str, ...]] = {
     'EXAMPLES 2. a missing data file stops being reported': (
         'refuses --check when the data file does not exist at all',
     ),
-    'EXAMPLES 3. an example block is left stale instead of rewritten': (
-        'replaces a stale example block with the real export',
-        'honours the truncate modifier rather than writing the whole export',
-    ),
     'EXAMPLES 4. a marker naming an unknown target stops throwing': (
         'refuses an example that names a target the exporters do not produce',
     ),
@@ -1046,6 +1074,21 @@ EXPECTATIONS: dict[str, tuple[str, ...]] = {
     ),
     'EXAMPLES 7. the truncate modifier is ignored': (
         'honours the truncate modifier rather than writing the whole export',
+    ),
+    'EXAMPLES 3. a generated block is left stale instead of planned for rewrite': (
+        'replaces a stale example block with the real export',
+        'regenerates a field table from the specification',
+        'replaces every row with a field of the specification',
+    ),
+    'EXAMPLES 8. --check stops refusing a generated block that disagrees': (
+        'refuses --check when a doc block disagrees with the export behind it',
+        'refuses --check when a field table disagrees with the specification',
+    ),
+    'EXAMPLES 9. the metadata table is never rewritten': (
+        'replaces every row with a field of the specification',
+    ),
+    'EXAMPLES 10. a version that is not a string is printed instead of refused': (
+        'refuses a specification naming a constant the package does not export',
     ),
     'CLIREF 1. the flag lookup loses its word boundary': (
         'does not accept a longer flag as documentation of a shorter one',

@@ -12,6 +12,13 @@
     "sha256": "2c8388aaf732b94cffd2b1f9dd6169e555ed0f8d33a051d91a2a93e2063ec3ea",
     "retrievedAt": "2026-10-18",
     "extraction": "pdftotext in reading order, without -layout; each quote checked verbatim against the flattened text of that extraction. The formulas are in Appendix G, which this corpus does not quote -- the definitions it does quote are the ones a reader can hold a rule to without the appendix.",
+    "affiliation": {
+      "quote": "Affiliation: The Chinese University of Hong Kong, Shenzhen",
+      "why": "Who published PAVE, quoted rather than named. The contract page said `Microsoft` from the day it was written -- 1.0's vendor, whose the OpenRCA repository is -- and the specification carried the same value into the site badge, so one unchecked sentence was published twice. `format-spec.mjs` now holds this affiliation as a field the page and the site both render; this record is where the value comes from, because a claim about an external paper is the one statement in the tree no gate can derive.",
+      "readFrom": "https://arxiv.org/html/2606.27154v2, author block above the abstract",
+      "retrievedAt": "2026-11-08",
+      "note": "Two of the ten authors write from non-CUHK-Shenzhen addresses (xjtu.edu.cn and lero.ie) and the paper states no affiliation for them; the affiliation line itself names one institution, and attributing the benchmark to it is a claim about the paper, not about each author."
+    },
     "releasedCode": "none found. The microsoft/OpenRCA repository at the pinned commit of the 1.0 evaluator carries evaluate.py for 1.0 only: its README does not mention 2.0 or PAVE at all, and the string 'open-sourced' appears nowhere in the paper or that README."
   },
   "clauses": [
