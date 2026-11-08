@@ -223,6 +223,24 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "if (scope === null || phrases.length === 0) return;",
         "refuses a scope-named row whose count is in a shape it cannot read",
     ),
+    (
+        # Rule 5's comparison. The mutation makes every published gate-site count agree, which is
+        # the state the guard was in before it existed: `docs/acceptance.md` said 105 of 105 for
+        # twenty-four rounds while the inventory held 203 claims, and nothing read the sentence.
+        "accept every gate-site count as agreeing",
+        "    if (wrong === undefined) continue;",
+        "    if (true) continue;",
+        "refuses a sentence that publishes a count the tree does not hold",
+    ),
+    (
+        # The other half of rule 5: the distinction between a claim and a record. Without it the
+        # corpus's volumes -- which carry these numbers a dozen times, each true when measured --
+        # would all be failures, and the rule would be deleted within a round.
+        "judge a sentence that dates itself",
+        "      if (DATED.test(line)) return;",
+        "      if (false) return;",
+        "leaves a dated sentence alone, because a record is not a stale claim",
+    ),
 ]
 
 

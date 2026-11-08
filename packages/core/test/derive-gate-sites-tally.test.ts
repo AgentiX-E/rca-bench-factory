@@ -251,8 +251,11 @@ describe('the two baskets are a partition of the calls, not a remainder', () => 
     // 144/126 is v3.56's reader: a `--file` with no value and a history that does not
     // describe a transport, both of which end the process and neither of which existed
     // before the channel kept a record of what it asked.
-    expect(calls).toBe(144);
-    expect(sites).toBe(126);
+    // 145/127 is v3.66's: `check-fault-cases.mjs` refuses an index that does not declare what
+    // the set is for, which is one more call and one more failure site -- and it is the same
+    // pair moving together, which is what this assertion is about.
+    expect(calls).toBe(145);
+    expect(sites).toBe(127);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

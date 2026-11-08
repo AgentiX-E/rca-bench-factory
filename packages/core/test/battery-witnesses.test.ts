@@ -186,7 +186,7 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // These two were missing from this list while they were missing the mode as
     // well: `--verify-expectations` was ignored and their whole mutation loop ran
     // instead. Finding 163 measures what that cost.
-    ['scripts/injection/doc-counts-shapes.py', 'doc-counts-shapes', 12],
+    ['scripts/injection/doc-counts-shapes.py', 'doc-counts-shapes', 14],
     ['scripts/injection/roundtrip-record.py', 'roundtrip-record', 25],
   ];
 

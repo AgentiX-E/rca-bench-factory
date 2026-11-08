@@ -526,7 +526,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.65: **15** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.66: **22** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1049,6 +1049,57 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: only a repository of more than a thousand refs would make the walk stop early, and this one holds five -- the floor is stated as a floor, and the sentence that reads it is the only thing that could turn it into a count]`
 
 
+- **The seven target contracts carry three copies of one version and no equation.**
+  `*_CONTRACT_VERSION` constants, a `Contract version` line in each `docs/targets/*.md`, and a
+  field in `scripts/format-spec.mjs` are written separately. They agree today and nothing
+  requires them to, which is the shape of finding 462 -- one fact in three places is three
+  facts the first time one is edited.
+  `[open: equality across the three needs a guard that reads a constant, a markdown cell and a
+  generator's field as one claim, and the vendor row in the same table is a fourth field with
+  no reader at all -- it has said "Microsoft" about a paper from another institution for six
+  months, so the repair is to give the table a guard before giving it a fourth equal sign]`
+- **G5 has no near-duplicate and no window-overlap arm.** The fingerprint is a six-tuple hashed
+  with FNV, so it catches an exact copy and nothing else: two cases built from the same incident
+  with a minute moved are two cases as far as this gate is concerned.
+  `[open: the shipped corpus offers no witness -- 435 same-system pairs, 0 with a window IoU above
+  0.8, 0 fingerprint collisions, and a maximum task-text Jaccard of 0.308 -- so the only evidence
+  a new arm could have is a fixture, and a rule whose only failure is synthetic is a rule this
+  list has learned to distrust]`
+- **G3's two thresholds have no grid.** `minAbsZ` (2.0) and `minSustainedSamples` (3) are
+  parameters with no sensitivity reading, and `probe-z-floor` measures epsilon rather than either
+  of them.
+  `[open: a 4x4 grid would say which cell the defaults sit in and whether the admission rate
+  moves with them; nothing here has measured that, so the defaults are a judgement the repository
+  has never had to defend]`
+- **`rulegen` has no refusal count and no agreement reading.** The module extracts a structured
+  rule from an incident and validates it; it does not report how often validation refused, and
+  nothing compares its output with the thirty human annotations that already exist.
+  `[open: Cohen's kappa was the obvious measure and it is not available -- two independent
+  annotators are required and this repository has one -- so the reading has to be agreement with
+  a fixed set of answers, which is a weaker claim and has to say so]`
+- **`score` divides by a different denominator per target, and the documents did not say so.**
+  `scoreExport` returns a pass-rate times 100 over the checks that target has: seven targets,
+  seven denominators, and a 100 that is not one quantity.
+  `[open: the sentence "different targets are not comparable" needs a measurement under it,
+  which is a test asserting that two targets' check counts differ -- and that test does not exist,
+  so the sentence would be the same kind of claim as the 105]`
+- **`docs/acceptance.md` is 96 KB and grows by clause per round.** L3 is 284 lines and L4 is 405;
+  L0, L1, L2 and L5 are 14, 7, 7 and 6, so the obvious split by layer would produce four files
+  of a dozen lines.
+  `[open: the axis is "current rule" against "how it was reached", not the layer -- the
+  per-round clauses are 139 lines and 11,139 bytes of history sitting in a specification, and
+  moving them needs the measurement of how many sections match that shape before the index
+  relation is re-checked]`
+- **The newest round's ledger is not required to carry a coverage row.** Of the **54** `### Readings`
+  blocks this log holds, **24** carry one and **30** do not, v3.64's and v3.65's among them. The row is
+  what a later reader looks for when asking what a round cost, and v3.66 answered it only after
+  measuring its own two new arms at **six** uncovered branches -- none of them red, because the coverage
+  gate is per-file at 95 / 95 / 100 / 95 (finding 475).
+  `[open: the rule is failable and narrow -- the newest round's Readings table must carry a coverage
+  row, the way the size budget is judged only on the last volume -- and the asymmetry is why it was not
+  written in the round that found it: 30 of 54 sections have no row, so the rule can only be judged on
+  the one section a round is still writing]`
+
 
 ## Pass log
 
@@ -1078,7 +1129,7 @@ and this table.
 | [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 7 | v3.47 | v3.53 |
-| [volume-12.md](progress/volume-12.md) | 12 | v3.54 | v3.65 |
+| [volume-12.md](progress/volume-12.md) | 13 | v3.54 | v3.66 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

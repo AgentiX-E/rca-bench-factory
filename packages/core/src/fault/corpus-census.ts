@@ -75,10 +75,16 @@ export interface CorpusCensus {
   readonly notCases: readonly string[];
 }
 
-/** Where a category sits in the vocabulary, used only to break ties between equal counts. */
+/**
+ * Where a category sits in the vocabulary, used only to break ties between equal counts.
+ *
+ * Every category reaching this function came from `describeCorpusFault`, which reads the
+ * vocabulary, so there is no "not in the list" case to answer -- the `-1` fallback an earlier
+ * version carried was a branch no corpus could reach, and a bound nothing can violate is a bound
+ * a reader learns to trust for the wrong reason.
+ */
 function vocabularyOrder(category: FaultCategory): number {
-  const at = FAULT_CATEGORIES.indexOf(category);
-  return at === -1 ? FAULT_CATEGORIES.length : at;
+  return FAULT_CATEGORIES.indexOf(category);
 }
 
 /**

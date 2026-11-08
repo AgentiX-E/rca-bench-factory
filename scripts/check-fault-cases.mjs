@@ -46,7 +46,23 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const DEFAULT_CASES = resolve(REPO, 'golden-master', 'fault-cases');
 const DEFAULT_SAMPLES = resolve(REPO, 'golden-master', 'fault-extraction', 'samples.json');
-const INDEX_SCHEMA = 'rca-bench-fault-cases/2';
+const INDEX_SCHEMA = 'rca-bench-fault-cases/3';
+
+/**
+ * What the index may say it is for.
+ *
+ * The two words are the two things a corpus can be. A **conformance** set exists
+ * to exercise the converter and the gates: its cases must be locatable by the
+ * baselines, because a case no method can find cannot be scored, and it is not a
+ * defect that the same baselines find all of them. A **benchmark** set exists to
+ * separate methods, and there saturation is the defect.
+ *
+ * The distinction is declared rather than inferred, because inferring it -- "this
+ * corpus is small, so it must be a fixture" -- would be the guard deciding its own
+ * subject. The vocabulary is closed here so a typo is a refusal and not a silent
+ * 'conformance'.
+ */
+const PURPOSES = new Set(['conformance', 'benchmark']);
 
 function parseArgs(argv) {
   const out = { cases: DEFAULT_CASES, samples: DEFAULT_SAMPLES };
@@ -91,6 +107,18 @@ if (index.schema !== INDEX_SCHEMA) {
 }
 if (!Array.isArray(index.cases)) {
   console.error("check-fault-cases: the index has no 'cases' array");
+  process.exit(1);
+}
+// The purpose is required rather than defaulted: the two answers produce opposite verdicts on the
+// same reading, so an index that does not say which one it means has to be asked rather than guessed.
+// A default would pick one of them for every corpus that forgot, and the one it picked would be the
+// one nobody sees.
+if (!PURPOSES.has(index.purpose)) {
+  console.error(
+    `check-fault-cases: the index declares purpose ${JSON.stringify(index.purpose)}, which is not one of ` +
+      `${[...PURPOSES].map((one) => `'${one}'`).join(' or ')}. A set that does not say what it is for ` +
+      `cannot be told apart from one that is failing at the other thing.`,
+  );
   process.exit(1);
 }
 const samples = readJson(args.samples, 'extraction key');
@@ -363,6 +391,10 @@ const citedEvidence = { total: 0, cited: 0 };
 const gradedCases = [];
 /** The spread of declared levels, once the corpus has been read. Null when the rule does not apply. */
 let difficultySpread = null;
+/** G4's saturation reading, taken once over the whole corpus. Null until the corpus is read. */
+let saturationReading = null;
+/** The prompt-leakage reading, taken over every case rather than only the ones with telemetry. */
+let promptLeakReading = null;
 /**
  * Where each baseline placed the answer, and how wide the ranking it placed it in was.
  *
@@ -374,6 +406,14 @@ let difficultySpread = null;
 const localisation = [];
 /** Every baseline run, for the corpus-level question about whether any of them can be wrong. */
 const localisationRuns = [];
+/**
+ * Every baseline outcome, in the shape G4's third arm reads.
+ *
+ * The per-case pass above already builds these to ask whether *a* case is locatable; the arm added
+ * at v3.66 asks the dual question -- whether the baselines locate *all* of them -- and that is a
+ * property of the set, so the same outcomes are kept rather than rebuilt.
+ */
+const corpusOutcomes = [];
 /**
  * One entry per case for the pool question: both rankings with the kind of every candidate.
  *
@@ -1275,6 +1315,7 @@ for (const entry of index.cases) {
       displacements: displacements.map((one) => one.kind),
     });
     for (const one of displacements) localisationRuns.push(one);
+    for (const one of outcomes) corpusOutcomes.push(one);
     // The pool question, per case: both rankings, and what kind each candidate is. It is asked of
     // every case that ranked at all -- a case whose answer is not a service belongs here precisely
     // because it is the one a services-only pool cannot score.
@@ -1361,6 +1402,36 @@ if (firstGraph !== null && allCases.length > 0) {
 // reports a 100% score as a measurement of localisation.
 for (const violation of core.checkDiscrimination(localisationRuns).violations) {
   problems.push(`the corpus fails G4: ${violation.message}`);
+}
+
+// G4's third arm, and the one this corpus was failing without anyone reading it: the same two
+// baselines that the success line says place every case in their top-K are the reason the set cannot
+// separate methods. `checkSaturation` is a no-op for a set that declares `conformance`, which is what
+// this corpus declares -- so what this block buys is not a verdict but the reading, printed on both
+// exits by `logSaturation` below, and the guarantee that a corpus which declares `benchmark` is held
+// to the rule here rather than in a second implementation.
+const saturationOptions = { setPurpose: index.purpose };
+for (const violation of core.checkSaturation(
+  { irVersion: '1.0.0', graph: firstGraph ?? { entities: [], edges: [] }, cases: telemetryCases, signals: {} },
+  corpusOutcomes,
+  saturationOptions,
+).violations) {
+  problems.push(`the corpus fails G4: ${violation.message}`);
+}
+saturationReading = core.readSaturation(
+  { irVersion: '1.0.0', graph: firstGraph ?? { entities: [], edges: [] }, cases: telemetryCases, signals: {} },
+  corpusOutcomes,
+  saturationOptions,
+);
+promptLeakReading = core.readPromptLeaks(
+  { irVersion: '1.0.0', graph: firstGraph ?? { entities: [], edges: [] }, cases: allCases, signals: {} },
+  {},
+);
+for (const leak of promptLeakReading.leaks) {
+  problems.push(
+    `'${leak.caseId}' names its root-cause component ('${leak.component}') in the task text, so a solver ` +
+      `that extracts the only named component is right without diagnosing anything`,
+  );
 }
 
 // A file in the directory that the index does not name is a case nobody will run.
@@ -1513,6 +1584,33 @@ function logLocalisationReading() {
       `${String(localisation.length * 2)} baseline run(s) -- ${kinds}; strictly displaced in ` +
       `${String(displaced.length)} case(s) (${displaced.map((one) => one.caseId).join(', ') || 'none'})`,
   );
+}
+
+/**
+ * How separable the corpus is, in the sentence the gate's own arithmetic produced.
+ *
+ * Printed on both exits, and printed for a `conformance` corpus as well as a `benchmark` one: the
+ * number is the corpus's strongest claim and its strongest objection at the same time, and it was
+ * previously available only as the clause "which both the peak-z and the median-shift baselines place
+ * in their top-K" inside the success line -- that is, only on a green run, and only to a reader who
+ * already knew what it meant.
+ */
+function logSaturation() {
+  if (saturationReading === null) return;
+  console.log(`check-fault-cases: ${core.describeSaturation(saturationReading)}`);
+}
+
+/**
+ * Whether any task text names its own answer.
+ *
+ * Separate from the paragraph above because it is about a different field: saturation is a property
+ * of the baselines against the cases, leakage is a property of the cases alone. Merging them would
+ * produce one sentence that reads as one finding, and the two are repaired by opposite actions --
+ * one by adding cases a baseline fails, the other by rewriting a prompt.
+ */
+function logPromptLeaks() {
+  if (promptLeakReading === null) return;
+  console.log(`check-fault-cases: ${core.describePromptLeaks(promptLeakReading)}`);
 }
 
 function logCheckpointCounts() {
@@ -1743,6 +1841,8 @@ if (problems.length > 0) {
   logLoaderRead();
   logPoolNarrowing();
   logLocalisationReading();
+  logSaturation();
+  logPromptLeaks();
   logCheckpointCounts();
   console.error(
     `check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)`,
@@ -1858,6 +1958,8 @@ logExportReading();
 logLoaderRead();
 logPoolNarrowing();
 logLocalisationReading();
+logSaturation();
+logPromptLeaks();
 logCheckpointCounts();
 
 console.log(

@@ -25,8 +25,10 @@ import { verifyFaultValidity, type ValidityOptions } from './validity.js';
  * G1 structural  - does the export satisfy the target contract? (deterministic, 100%)
  * G2 semantic    - are references resolvable, times monotonic, units consistent?
  * G3 validity    - did the declared fault actually happen, and is it strong and time-aligned?
- * G4 solvability - can a baseline method solve it, and is the difficulty distribution sane?
- * G5 anti-pollution - no PII, no answer leakage, no duplication against public sets.
+ * G4 solvability - can a baseline method solve it, is the difficulty distribution sane, and can
+ *                  the best baseline already solve the whole set?
+ * G5 anti-pollution - no PII, no duplication against public sets, and no prompt that names the
+ *                  answer.
  *
  * A gate never throws. It returns violations so the whole batch can be graded.
  *
@@ -649,9 +651,212 @@ export interface G4Options {
    * are exempt rather than reported as skewed.
    */
   distributionMinCases?: number;
+  /**
+   * What the set says it is *for*.
+   *
+   * The corpus in this repository is a **conformance** fixture: thirty cases whose
+   * job is to exercise the converter, the gates and the exporters, and which is
+   * scored by two baselines that solve all thirty. A `benchmark` set is the other
+   * thing -- a set published so that methods can be separated -- and saturation is
+   * a defect there and a fact of life here.
+   *
+   * The declaration exists because of what the alternative costs. Without it, the
+   * saturation rule below fires on every run of a corpus that is doing its job,
+   * and a rule that is always red is a rule everyone learns to skip. With it, the
+   * rule can be violated (a set that declares `benchmark` and saturates fails) and
+   * the reading is still printed for the set that declares `conformance`.
+   */
+  setPurpose?: SetPurpose;
+  /** Share of the asked cases the strongest baseline may solve before a benchmark set is saturated. */
+  saturationCeiling?: number;
+  /** Minimum number of cases with an outcome before saturation is judged at all. */
+  saturationMinCases?: number;
 }
 
 /**
+ * What a set is for, as the set declares it.
+ *
+ * `benchmark` is the default because it is the answer that judges: a caller who
+ * has not thought about the question gets the stricter of the two behaviours, and
+ * the escape from it is a sentence in a file rather than an absent option.
+ */
+export type SetPurpose = 'benchmark' | 'conformance';
+
+export interface SaturationReading {
+  purpose: SetPurpose;
+  /** Cases the baselines were actually asked about: the denominator, not the set size. */
+  asked: number;
+  /** The narrowest top-K among the outcomes read, or null when nothing was asked. */
+  topK: number | null;
+  methods: Array<{ method: string; hits: number; rate: number }>;
+  strongest: { method: string; hits: number; rate: number } | null;
+  ceiling: number;
+  saturated: boolean;
+  /** False when too few cases carry an outcome for a rate to mean anything. */
+  judged: boolean;
+  /** The floor below which nothing was judged. */
+  minCases: number;
+}
+
+/**
+ * How much of the set the best baseline can already solve.
+ *
+ * ## Why this arm is here rather than in a sixth gate
+ *
+ * The property is about the same subject G4 already owns -- whether the set can
+ * separate methods -- and G4's input already holds it: `BaselineOutcome[]` is
+ * exactly the table this arithmetic reads. A `G6` would be a second name for one
+ * property, and the two names would drift the first time one of them was extended.
+ *
+ * ## Why the denominator is the cases that were *asked*, not the cases in the set
+ *
+ * A method run on three cases of thirty that solves all three is not saturated at
+ * 1.000; it was asked three questions. Counting the set instead would let a sparse
+ * baseline report a rate it never earned, and would make the reading move when
+ * cases were added that no method had been run against. The denominator is
+ * therefore the intersection of the set and the outcomes, and the two counts are
+ * both printed by `describeSaturation` so a reader can see which one is which.
+ *
+ * ## Why the strongest method decides
+ *
+ * Saturation is about the *best available* separation. A set where one baseline
+ * solves everything cannot rank methods, whatever the other baselines do -- and
+ * averaging across baselines would let a second, weaker method hide exactly the
+ * reading the rule exists to surface.
+ */
+export function readSaturation(
+  bundle: IrBundle,
+  outcomes: BaselineOutcome[],
+  options: G4Options = {},
+): SaturationReading {
+  const ceiling = options.saturationCeiling ?? 0.95;
+  const minCases = options.saturationMinCases ?? options.distributionMinCases ?? 10;
+  const purpose = options.setPurpose ?? 'benchmark';
+
+  const byCase = new Map<string, BaselineOutcome[]>();
+  for (const o of outcomes) {
+    const rows = byCase.get(o.caseId);
+    if (rows === undefined) byCase.set(o.caseId, [o]);
+    else rows.push(o);
+  }
+
+  // The questions the baselines were actually asked, resolved once. Two consequences follow from
+  // reading the bundle rather than the outcome list here: an outcome that names a case the set
+  // does not contain is not a question about anything, so it neither joins the denominator nor
+  // narrows the top-K the set is reported at -- an earlier version read `topK` off every outcome
+  // and a single stray row could narrow the whole set's reading.
+  const askedRows = bundle.cases
+    .map((c) => byCase.get(c.caseId))
+    .filter((rows): rows is BaselineOutcome[] => rows !== undefined);
+  const methodNames = [...new Set(outcomes.map((o) => o.method))].sort((a, b) => a.localeCompare(b));
+  const methods = methodNames.map((method) => {
+    let hits = 0;
+    for (const rows of askedRows) {
+      const solved = rows.some(
+        (o) => o.method === method && o.rankOfTruth !== null && o.rankOfTruth >= 1 && o.rankOfTruth <= o.topK,
+      );
+      if (solved) hits += 1;
+    }
+    return { method, hits, rate: askedRows.length === 0 ? 0 : hits / askedRows.length };
+  });
+
+  // Sorted above, so `rate` ties resolve on the name and the reported strongest method does not
+  // depend on the order the outcomes arrived in.
+  const strongest = methods.reduce<{ method: string; hits: number; rate: number } | null>(
+    (best, one) => (best === null || one.rate > best.rate ? one : best),
+    null,
+  );
+  const asked = askedRows.length;
+  const judged = asked >= minCases;
+  const topKs = askedRows.flatMap((rows) => rows.map((o) => o.topK));
+
+  return {
+    purpose,
+    asked,
+    topK: topKs.length === 0 ? null : Math.min(...topKs),
+    methods,
+    strongest,
+    ceiling,
+    saturated: judged && strongest !== null && strongest.rate >= ceiling,
+    judged,
+    minCases,
+  };
+}
+
+/**
+ * The saturation reading as one sentence, with the purpose that decided what it is.
+ *
+ * A reading and not a verdict, so it is printed whether or not the gate fired --
+ * the number that says how separable a set is is worth reading exactly when it is
+ * bad, and a line that only appears on failure is a line nobody has seen before.
+ */
+export function describeSaturation(reading: SaturationReading): string {
+  if (!reading.judged) {
+    return (
+      `set saturation: not judged -- ${String(reading.asked)} case(s) carry an outcome and the floor is ` +
+      `${String(reading.minCases)}`
+    );
+  }
+  const strongest = reading.strongest;
+  if (strongest === null) return 'set saturation: not judged -- no baseline outcome was supplied';
+  const verdict =
+    reading.purpose === 'conformance'
+      ? `purpose 'conformance', so this is a reading and not a verdict`
+      : reading.saturated
+        ? `purpose 'benchmark', so this set is saturated`
+        : `purpose 'benchmark', ceiling ${reading.ceiling.toFixed(3)}`;
+  return (
+    `set saturation: the strongest baseline ('${strongest.method}') locates ${String(strongest.hits)} of ` +
+    `${String(reading.asked)} case(s) within top-${String(reading.topK)} (rate ${strongest.rate.toFixed(3)}); ` +
+    verdict
+  );
+}
+
+/**
+ * Whether a declared benchmark set is separable at all.
+ *
+ * The rule this adds to G4 is the one the corpus has been printing without naming:
+ * *both baselines place all thirty cases in their top-K*. That sentence has been
+ * in the success line of `check-fault-cases.mjs` for as long as the corpus has had
+ * telemetry, and it is simultaneously the strongest evidence the corpus works and
+ * the strongest evidence it cannot separate anything. It was read as the first.
+ *
+ * Below `saturationMinCases` nothing is judged: a rate over three cases is not a
+ * rate, which is the same exemption `checkDifficultyDistribution` makes and for the
+ * same reason. The caller prints the reading either way, so "not judged" is
+ * visible rather than silent.
+ */
+export function checkSaturation(
+  bundle: IrBundle,
+  outcomes: BaselineOutcome[],
+  options: G4Options = {},
+): GateResult {
+  const reading = readSaturation(bundle, outcomes, options);
+  if (reading.purpose !== 'benchmark' || !reading.judged) return gate('G4', []);
+  // Recomputed from `methods` rather than read off `reading.strongest`, so that the branch below is
+  // a decision about the set instead of a null check on a value the caller can already see: the two
+  // ways out -- nothing over the ceiling, and a method over it -- are both reachable, and both are
+  // driven by inputs a test can construct.
+  const overCeiling = reading.methods
+    .filter((one) => one.rate >= reading.ceiling)
+    .sort((left, right) => right.rate - left.rate || left.method.localeCompare(right.method));
+  const strongest = overCeiling[0];
+  if (strongest === undefined) return gate('G4', []);
+  return gate('G4', [
+    {
+      code: 'SATURATED_SET',
+      message:
+        `the strongest baseline ('${strongest.method}') locates ${String(strongest.hits)} of ` +
+        `${String(reading.asked)} case(s) within top-${String(reading.topK)} (rate ` +
+        `${strongest.rate.toFixed(3)} against a ceiling of ${reading.ceiling.toFixed(3)}), so this set ` +
+        'cannot separate methods',
+      fieldPath: 'cases',
+    },
+  ]);
+}
+
+/**
+ * Whether the corpus can fail a method that returns the loudest component.
  * Whether the baselines can locate each case's root cause. A property of one case.
  *
  * Split out of `checkG4Solvability` because the two halves of G4 have different subjects and
@@ -788,10 +993,12 @@ export function checkDiscrimination(readings: DisplacementReading[]): GateResult
 }
 
 /**
- * G4 as one gate: can the baselines locate each case, and are the graded cases spread out?
+ * G4 as one gate: can the baselines locate each case, are the graded cases spread out, and is the
+ * set separable at all?
  *
  * Solvability first, because a set whose cases no baseline can locate has a problem the
- * distribution of their labels cannot describe.
+ * distribution of their labels cannot describe. Saturation last, because it is the only one of the
+ * three whose verdict depends on what the set says it is for.
  */
 export function checkG4Solvability(
   bundle: IrBundle,
@@ -801,6 +1008,7 @@ export function checkG4Solvability(
   const v: GateViolation[] = [
     ...checkSolvability(bundle, outcomes, options).violations,
     ...checkDifficultyDistribution(bundle, options).violations,
+    ...checkSaturation(bundle, outcomes, options).violations,
   ];
   return gate('G4', v);
 }
@@ -814,6 +1022,140 @@ export interface G5Options {
   publicFingerprints?: Set<string>;
   /** When true, the answer key must be physically separated from the task payload. */
   requireAnswerKeyIsolation?: boolean;
+  /**
+   * Shortest normalised component name this gate will look for in a prompt.
+   *
+   * A name below it is not judged, because a two- or three-letter service name is
+   * also an ordinary English word and matching it would accuse every prompt that
+   * says "the api returned 500" of leaking. The count that is *not* judged is
+   * printed by the caller (`describePromptLeaks`), because a rule that silently
+   * skips part of its subject is the shape this repository keeps removing.
+   */
+  minNameLength?: number;
+}
+
+/**
+ * The name a prompt must not contain, in one spelling.
+ *
+ * ## Why separators are normalised, and why that is the whole rule
+ *
+ * The answer this gate protects is `groundTruth.rootCauseComponent`, and the field
+ * next to it is a sentence a human wrote. Nothing makes them agree on punctuation:
+ * the corpus says `checkout-api` in the field and `checkout-api p99 latency rose`
+ * in the prompt, which a substring test finds, and says `billing-service` in the
+ * field against `The billing service began throwing` in the prompt, which it does
+ * not. Measured on the shipped corpus, the substring form of this rule reported
+ * **3 of 30** and this form reports **19 of 30** -- the difference is entirely
+ * hyphen against space, and the seventeen cases in that gap were reported as
+ * clean by the test that was supposed to find them.
+ *
+ * Case is folded for the same reason and with the same evidence: `Media
+ * Transcoder` and `media-transcoder` are one name.
+ *
+ * ## Why the boundaries are non-alphanumeric rather than `\\b`
+ *
+ * `\\b` treats a hyphen as a boundary, so `\\bapi\\b` matches inside `checkout-api`
+ * -- which would make every name that ends in `api` match every prompt that
+ * mentions a different one. The lookbehind here is "not a letter or digit", and a
+ * hyphen is neither, so a **normalised** prompt has no hyphens left in the first
+ * place: `checkout-api` became `checkout api` before the search.
+ */
+export function promptNamePattern(component: string): RegExp | null {
+  const name = normaliseName(component);
+  if (name === '') return null;
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`);
+}
+
+/** A component name with its punctuation, case and spacing flattened. */
+export function normaliseName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[-_./]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export interface PromptLeakReading {
+  /** Cases whose prompt could be searched: the name was long enough to mean one thing. */
+  judged: number;
+  /** Cases whose prompt names the answer component. */
+  leaks: Array<{ caseId: string; component: string }>;
+  /** Cases this rule did not judge, and the name that was too short to judge them by. */
+  skipped: Array<{ caseId: string; component: string }>;
+  /** The boundary the rule applied. */
+  minNameLength: number;
+}
+
+/**
+ * Whether each prompt names the answer, measured rather than declared.
+ *
+ * ## Why this is a rule and not a property of the exporter
+ *
+ * `score.ts` runs a check of its own called `answer-key-isolated`, and it compares
+ * **whole cells**: no cell of `query.csv` may *be* a value the answer key scores.
+ * That is the right rule for the artefact it reads -- it catches a field that
+ * holds the answer -- and it is deliberately blind to a sentence that mentions the
+ * component, because a human writing an incident report names the thing that
+ * broke. This reading is about the other side of that line: the task text is the
+ * *prompt a solver is given*, and a prompt that names the component makes
+ * localisation a reading exercise rather than an inference. Both statements are
+ * true of the same corpus; they are about different artefacts, which is why this
+ * is a second **measurement** and not a second verdict on the same file.
+ *
+ * ## Why `answerKeyIsolated` could not stand in for it
+ *
+ * That field is a boolean the case asserts about itself, and until this arm
+ * existed nothing read it beyond checking that it was `true`: a case could claim
+ * isolation while its prompt opened with its own answer, and the gate would pass
+ * it. A claim is not a measurement -- the corpus is where that difference is
+ * cheapest to see, since it holds both.
+ */
+export function readPromptLeaks(bundle: IrBundle, options: G5Options = {}): PromptLeakReading {
+  const minNameLength = options.minNameLength ?? 6;
+  const reading: PromptLeakReading = { judged: 0, leaks: [], skipped: [], minNameLength };
+  for (const c of bundle.cases) {
+    // `rootCauseComponent` is required by the IR, and a case that fails that requirement is refused
+    // by the schema rather than by this arm -- so there is no absent-name branch here to guard. A
+    // name that is present but empty is a different thing: it is spelled '' in the vocabulary, and
+    // the length floor below is what declines to judge it.
+    const component = c.groundTruth.rootCauseComponent;
+    const name = normaliseName(component);
+    if (name.length < minNameLength) {
+      reading.skipped.push({ caseId: c.caseId, component });
+      continue;
+    }
+    reading.judged += 1;
+    const pattern = promptNamePattern(component);
+    // `promptNamePattern` returns non-null for every name at or above the floor above, so a
+    // null here would mean the floor and the normaliser disagree about what a name is. It is
+    // written as a guard rather than an assertion so the gate can never throw on a case.
+    if (pattern !== null && pattern.test(normaliseName(c.query ?? ''))) {
+      reading.leaks.push({ caseId: c.caseId, component });
+    }
+  }
+  return reading;
+}
+
+/**
+ * The leak reading in the sentence a reader can check.
+ *
+ * Printed by the caller that owns a corpus, in the same shape as the other
+ * readings there: a number, its denominator, and the boundary it applied.
+ */
+export function describePromptLeaks(reading: PromptLeakReading): string {
+  let sentence =
+    `prompt leakage: ${String(reading.leaks.length)} of ${String(reading.judged)} case(s) name their ` +
+    'root-cause component in the task text';
+  if (reading.leaks.length > 0) {
+    sentence += ` (${reading.leaks.map((one) => `${one.caseId} -> ${one.component}`).join(', ')})`;
+  }
+  if (reading.skipped.length > 0) {
+    sentence +=
+      `; ${String(reading.skipped.length)} case(s) not judged because their component name is shorter ` +
+      `than ${String(reading.minNameLength)} characters`;
+  }
+  return sentence;
 }
 
 export const DEFAULT_SENSITIVE_PATTERNS: RegExp[] = [
@@ -847,6 +1189,21 @@ export function checkG5AntiPollution(bundle: IrBundle, options: G5Options = {}):
   const v: GateViolation[] = [];
   const patterns = options.sensitivePatterns ?? DEFAULT_SENSITIVE_PATTERNS;
   const requireIsolation = options.requireAnswerKeyIsolation ?? true;
+
+  // The two arms below answer two different questions about the same case, and the difference is
+  // the reason both exist. `ANSWER_KEY_NOT_ISOLATED` reads a declaration: the case says the key is
+  // stored apart from the payload. `LEAK_IN_QUERY` measures the prompt. A case can pass the first
+  // and fail the second -- the corpus does, nineteen times -- and a gate that only asked the
+  // declaration would report the corpus clean.
+  for (const leak of readPromptLeaks(bundle, options).leaks) {
+    v.push({
+      code: 'LEAK_IN_QUERY',
+      message:
+        `case '${leak.caseId}' names its root-cause component ('${leak.component}') in the task text, ` +
+        'so locating it is a reading exercise rather than a diagnosis',
+      fieldPath: `${leak.caseId}.query`,
+    });
+  }
 
   const seen = new Map<string, string>();
   for (const c of bundle.cases) {

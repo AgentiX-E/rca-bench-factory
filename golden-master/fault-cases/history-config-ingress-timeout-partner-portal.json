@@ -112,7 +112,7 @@
     "service": "partner-portal",
     "metric": "upload_handler_seconds"
   },
-  "query": "Partner portal uploads fail with 504 for files over 5MB after an ingress change. Which component is the root cause, and what about it changed?",
+  "query": "Uploads over 5MB fail with 504 on one externally facing host after an ingress change, and smaller uploads through the same host are fine. Which component is the root cause, and what about it changed?",
   "difficulty": "L2",
   "answerKeyIsolated": true
 }

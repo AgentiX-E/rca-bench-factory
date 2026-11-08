@@ -3858,3 +3858,365 @@ rounds, because the rounds go to volumes and the index only keeps what a reader 
 The next section to grow will hit the same relation. It is not a problem to solve once: it is a rule
 that fires, and the answer it demands -- *is this a record or a lookup* -- is the one this round had to
 answer for one section.
+
+## Finding 471 — the only gate-site count with a reader said 105, and the inventory held 203
+
+`docs/acceptance.md:95` read:
+
+> Measured at 105 of 105 in both halves, and both are mutation rather than reading.
+
+The tree it described held **203 proved claims across 58 files** and **126 failure sites**. The
+sentence had been wrong for twenty-four rounds. Nothing in the repository read it.
+
+### How it was found, which is the point
+
+Not by a gate and not by a reading. An **external review** of this repository quoted the 105 as the
+current figure on its own first page. That is what a number with no reader costs: it does not degrade
+quietly, it gets *cited*, and the citation is what makes it a claim about the present rather than a
+line in a document.
+
+The review's brief was the evaluation system, and it read the sentence because it was in the
+acceptance document, where a reader goes to find out what is checked. Of everything the review got
+wrong, this was the one wrongness that was ours in the narrowest sense: it read what we wrote.
+
+### Why the guard could not see it
+
+`check-doc-counts` exists for exactly this class of defect and reads four rules over the progress
+corpus. All four are about *table rows carrying `N files, M tests`* -- the size of the suite:
+
+| rule | subject | why the 105 was outside it |
+| --- | --- | --- |
+| 1 | a row that publishes a file/test count names its scope | not a file/test count |
+| 2 | counts are internally consistent and monotone | no pair to compare |
+| 3 | a row marked current equals the live measurement | not a row, not a suite count |
+| 4 | a scope-named row's count must be readable | not a row at all |
+
+And the file is not in the corpus. `progressCorpus()` is `docs/progress.md` plus its volumes; the
+acceptance document is not one of them. So the sentence was not skipped by a rule -- it was never in
+front of a reader.
+
+### The repair, and why it is a projection
+
+The rule added at v3.66 reads three shapes from the documents that speak in the present
+(`docs/acceptance.md`, `README.md`):
+
+| shape | what it publishes |
+| --- | --- |
+| `N of N claim(s)` | that all N claims are proved |
+| `N claim(s) across M file(s)` | the claim count and the spread of the files that make them |
+| `N failure site(s)` | the inventory's size |
+
+and compares each with `golden-master/gate-sites.json`, through `claimedSites` -- the same function
+the two proof gates use to decide what to run. There is no second copy of the numbers anywhere: the
+inventory is derived from the tree by `derive-gate-sites.mjs --check`, and the counts are computed
+from it at the moment they are compared. A copy in `doc-counts.json` would have been the shape this
+whole list is about, and the copy is always the one that goes stale.
+
+### The distinction the rule had to make first
+
+The corpus's volumes carry these numbers a dozen times:
+
+```
+docs/progress/volume-10.md:879:| claims reached | **105 of 105**, 45 files, 1 min 58 s |
+docs/progress/volume-11.md:151:| proof plan | `verify-site-proofs`: **139 claim(s)** across **52** files ...
+```
+
+Every one of those was true when it was written. A rule that judged them would fail every round and
+would be deleted within one -- which is how checks stop being checks. So the subject is the documents
+that speak in the present, and a line that dates itself (`at v3.41`, `as of v3.65`) is a record and is
+not judged. The vocabulary already existed; the open list's currency stamp has used it for sixty
+rounds. **The missing thing was never the vocabulary. It was the decision that a specification is also
+a document that goes stale.**
+
+### What this does not settle
+
+The rule does not require a present-tense document to carry such a count. A specification may stop
+publishing one, and that is an edit a reader can see. What it refuses is publishing one that is
+wrong -- which is the narrowest form of the property, and the only one that can be held without
+telling an author what to write.
+
+## Finding 472 — the mutation matrix named eighteen ids and described thirteen of them wrongly
+
+`docs/acceptance.md`'s L3 section carries the matrix of the mutation suite. `test/mutation.test.ts`
+read the table back and compared **the ids**, under a comment that said why that was all it did:
+
+> It deliberately does *not* try to check the "Caught by" column. Prose cannot be validated
+> mechanically, and a check that pretended to would be theatre.
+
+Measured against the arrays at v3.66, **thirteen of the eighteen rows described a mutation other than
+the one their id runs**:
+
+| id | the document said | the code runs |
+| --- | --- | --- |
+| MT-01 | Drop required field | shift every timestamp by one hour |
+| MT-02 | `signal` ≠ `payload.kind` | declare a bogus unit on a numeric checkpoint |
+| MT-05 | Unit mismatch on metric | fail to isolate the answer key |
+| MT-08 | Broken causal hop (unreachable) | move the injection time outside the observation window |
+| MT-13 | PII in log body | duplicate a case inside the set |
+| MT-15 | Inferred field backing ground truth | blank out the root cause entity |
+
+The five that survived are MT-03, MT-12, MT-16, MT-17 and MT-18. The other thirteen had been
+paraphrased from an earlier set and never re-read -- and the "Caught by" column had drifted with
+them, because it is prose about a mutation that no longer existed.
+
+### Why "prose cannot be validated" was the wrong conclusion
+
+The sentence was true of the table an author would write by hand. It was false of the table that
+existed, because that table had a **field** behind it: every mutation carries a `description`, and
+every gate mutation carries an `expected` list of codes. The column was not prose about the code; it
+was a hand-copied projection of two fields, which is the one kind of prose that *can* be checked and
+therefore the kind whose drift is nobody's job to notice.
+
+v3.66 makes both columns projections and compares them:
+
+```ts
+const byId = new Map([...MUTATIONS, ...EXPORT_MUTATIONS].map((m) => [m.id, m.description]));
+const drifted = documentedRows().filter((row) => byId.get(row.id) !== row.mutation);
+expect(drifted, drifted.join('\n')).toEqual([]);
+```
+
+The table now reproduces `description` and `expected` exactly, or the suite fails. Nothing was lost:
+a reader who wants to know *why* a mutation is caught still reads the gate, and the "Caught by"
+column now says which codes the assertion is about rather than which gate the author remembered.
+
+### What this does not settle
+
+The matrix is still not the evidence. `test/mutation.test.ts` is; the table is an index into it, and a
+row whose codes are right can still be a mutation that no longer intercepts -- which the suite's own
+100% assertion is what refuses.
+
+## Finding 473 — G4 could not ask whether the set is separable at all, and the corpus answered 30 of 30
+
+G4 asks three questions: can a baseline locate each case, are the graded cases spread across the
+levels, and can the corpus fail a method that returns the loudest component. There is no fourth
+question, so nothing noticed what the success line had been printing for as long as the corpus has
+had telemetry:
+
+```
+check-fault-cases: localisation over 30 case(s) at top-3, rankings 35-37 candidate(s) wide --
+  rank 1: 48, rank 2: 8, rank 3: 4 of 60 baseline run(s)
+check-fault-cases: OK (... 30 of 30 also carry telemetry ... which both the peak-z and the
+  median-shift baselines place in their top-K ...)
+```
+
+**Thirty of thirty, for both baselines.** That sentence is the corpus's strongest evidence -- every
+case is locatable, which is what makes it scoreable -- and its strongest objection, since a set both
+baselines solve completely cannot separate methods. It was read as the first and never as the second.
+It is the same defect as finding 471 in a different medium: a reading that is correct about its
+subject and silent about what a reader would do with it.
+
+### The arm
+
+`readSaturation` takes the `BaselineOutcome[]` G4 already receives and computes, per method, the share
+of the **asked** cases it locates within top-K. `checkSaturation` refuses a set whose strongest
+baseline is at or above `saturationCeiling` (0.95), once at least `saturationMinCases` (10) cases carry
+an outcome.
+
+Three decisions carry the rule:
+
+- **The denominator is the cases that were asked, not the cases in the set.** A method run on three
+  cases of thirty that solves all three is not saturated at 1.000; it was asked three questions.
+  Counting the set would let a sparse baseline report a rate it never earned, and would move the
+  reading whenever cases were added that no method had been run against.
+- **The strongest method decides, not the mean.** Saturation is about the best available separation.
+  Averaging across baselines would let a second, weaker method hide the reading the rule exists for.
+- **Nothing is judged below ten cases.** A rate over three cases is not a rate -- the same exemption
+  `checkDifficultyDistribution` makes, for the same reason, and printed by the caller so that "the
+  rule did not apply" is visible rather than inferred from silence.
+
+### The declaration, which is what makes the rule survive
+
+Applied to the shipped corpus, the arm fires on every run: 30 of 30, rate 1.000. A rule that is red
+every time is a rule that gets skipped, and the corpus is not wrong -- it is a **conformance fixture**,
+thirty cases whose job is to exercise the converter and the gates. So the index declares it:
+
+```json
+{ "schema": "rca-bench-fault-cases/3", "purpose": "conformance", ... }
+```
+
+`check-fault-cases` refuses an index that declares neither word, and `golden-master`'s corpus prints
+the reading on both exits:
+
+```
+check-fault-cases: set saturation: the strongest baseline ('median-shift-by-service') locates
+  30 of 30 case(s) within top-3 (rate 1.000); purpose 'conformance', so this is a reading and
+  not a verdict
+```
+
+Flip the one word to `benchmark` and the same run refuses, with the same numbers in the sentence. That
+pair of runs is the evidence that the rule can be violated -- and it is a test, not a demonstration:
+`refuses the same corpus when it declares that it is a benchmark` copies the shipped corpus, changes
+the declaration, and asserts the refusal.
+
+### What this does not settle
+
+Saturation is a reading against the baselines that were run. A set can be unsaturated here and still
+be easy, and a set can be saturated here and separable by a method nobody ran. What is claimed is
+narrower and, unlike the sentence it replaced, checkable: **the corpus can say how separable it is
+from the baselines it has, and a set that claims to be a benchmark is held to it.**
+
+## Finding 474 — the leak count was 3 of 30 because the comparison could not see a hyphen
+
+Before v3.66 the only thing G5 knew about answer leakage was `answerKeyIsolated`, a boolean each case
+asserts about itself, read as `c.answerKeyIsolated !== true`. All thirty cases declare `true`. The
+question "does the task text name the answer?" had no reader, and the file's own header said the gate
+covered *"no answer leakage"*.
+
+The review that found finding 471 also reported **3 of 30** cases naming their root-cause component in
+the query. That number came from a substring comparison, and it was wrong in the direction that
+matters -- it was too small:
+
+| comparison | reading |
+| --- | --- |
+| `query.includes(rootCauseComponent)` | **3 of 30** |
+| case folded, `-`/`_`/`.`/`/` folded to spaces, word boundaries | **19 of 30** |
+
+The sixteen-case gap is one character: the corpus writes `checkout-api` in the field and
+`The billing service began throwing` in the prompt, `media-transcoder` against `The media-transcoder
+container`, `user-profile` against `The user-profile pod`. A hyphen is not a word boundary to a
+substring test, and it is not a difference to a reader. **The measurement was as broken as the thing
+it was measuring, and it was broken in the safe direction, which is why it survived.**
+
+### The rule
+
+`LEAK_IN_QUERY` fires when the component's name appears in `query` after that normalisation, compared
+on non-alphanumeric boundaries -- so `checkout-api` does not match `checkout-apis`, and `api` does not
+match inside `checkout-api`. A name shorter than six characters is not judged and is **counted as not
+judged**, because a two-letter service name is also an English word: the default test fixture's
+component is `order` and its prompt says "The order service became slow", which is how every incident
+report a human writes is phrased.
+
+### The repair, and the number after it
+
+Nineteen task texts were rewritten. Every replacement keeps the symptom, the window and the distractor
+the question pointed at, and drops only the component's name:
+
+| before | after |
+| --- | --- |
+| `checkout-api p99 latency rose from 180ms to 4.3s over eleven minutes ...` | `p99 latency on the checkout path rose from 180ms to 4.3s over eleven minutes ...` |
+| `The media-transcoder container has restarted 178 times ...` | `One container has restarted 178 times in twelve hours while its replacement kept accepting work.` |
+| `Partner portal uploads fail with 504 for files over 5MB ...` | `Uploads over 5MB fail with 504 on one externally facing host after an ingress change ...` |
+
+The reading is now **0 of 30**, printed on both exits:
+
+```
+check-fault-cases: prompt leakage: 0 of 30 case(s) name their root-cause component in the task text
+```
+
+### Why this is not the export's `answer-key-isolated` check, again
+
+`score.ts` compares **whole cells** of the exported `query.csv` against the answer key, and documents
+that it deliberately does not flag a sentence that mentions the component -- *"that is how every
+incident report a human writes is phrased"*. That is right about the artefact it reads. The arm here
+reads the IR case's prompt, and the claim is different: a prompt that names the component makes
+localisation an extraction rather than a diagnosis. The two rules are about two artefacts, both are
+kept, and neither is a second opinion on the other's subject -- which is the distinction finding 469
+was about.
+
+### What this does not settle
+
+The rule reads the **component**. A `query` can still state the `rootCauseReason` almost verbatim --
+and most of these do, because a task text is a summary of the incident and the reason is what the
+incident shows. That is deliberate: the reason is graded as prose by a judge, and a prompt that states
+the evidence is the premise of the task rather than a leak. If a future target scores the reason by
+exact match, this arm will need a second half and the corpus will need rewriting again.
+
+## Finding 475 — the round that published a reading published no coverage row
+
+v3.66 added two arms, a `purpose` vocabulary and a four-shape rule, and its ledger listed the tests,
+the mutations and the claims it changed. It carried **no coverage row**, and the gate that would have
+noticed is the one this round had just finished making honest about its own subject: a row nothing
+reads is a row nothing measures.
+
+The omission is not a lapse of this round. Of the **54** `### Readings` blocks this log holds, **24**
+carry a coverage row and **30** do not -- including v3.64's and v3.65's, the two rounds immediately
+before this one. So the number that CI prints on every run has been absent from the place a later
+reader looks for what a round cost for thirty of fifty-four rounds, and the two rounds that most
+needed it are the ones that wrote code and left it out.
+
+Measured against the tree the four repairs produced, the package reading had fallen:
+
+| dimension | v3.65 | v3.66 before the receipt | after the receipt |
+| --- | --- | --- | --- |
+| statements | 99.96 | **99.95** | **99.97** |
+| branches | 99.75 | **99.65** | **99.80** |
+| functions | 100 | 100 | 100 |
+| lines | 99.96 | **99.95** | **99.97** |
+
+Six branch sites in the new code had no test. The gate is per-file at 95 / 95 / 100 / 95, so not one
+of them was red, and the file that was lowest in the package -- `fault/corpus-census.ts` at 96.2 --
+was not the file this round had touched:
+
+| site | why no test reached it | repair |
+| --- | --- | --- |
+| `describeSaturation`'s saturated-benchmark sentence | the refusal test asserted the violation's message, which is a *second* rendering of the same reading; the log line was never read | the refusal test asserts both renderings |
+| the reduce's *beats the best so far* arm | every fixture has one method, or has the stronger one sorting first -- the shipped corpus is the second shape, because `median-shift` precedes `peak-z` | a fixture whose stronger method sorts last, plus an order-independence assertion |
+| the reduce's *keep what it has* arm | the fixtures that have two methods all ascend | a fixture whose stronger method sorts first |
+| `promptNamePattern('')` | reachable only through the export: the arm's six-character floor refuses an empty name before the call | call the export: `''` and `' -._/ '` build no pattern, because `new RegExp('')` matches every prompt in the set |
+| a case with no `query` | `query` is optional in the IR and no fixture omitted it | delete the field, assert the case is judged and leaks nothing |
+| `rootCauseComponent ?? ''` | **dead**: `GroundTruth.rootCauseComponent` is required, so the fallback answered a shape the schema refuses | delete the fallback |
+
+Two further dead branches went with the same reasoning. `vocabularyOrder` in `fault/corpus-census.ts`
+carried `at === -1 ? FAULT_CATEGORIES.length : at` for a category that cannot arrive, because every
+category reaching it comes from `describeCorpusFault`, which reads the vocabulary; the fallback was a
+bound nothing could violate. And the census had two renderings no test had printed -- the duplicate
+line and the empty-totals sentence -- which are the two lines a reader uses to check that the totals
+are honest.
+
+### Why this is the same defect as finding 471
+
+The 105 had a reader and no producer. This had a producer and no reader: `pnpm test:coverage` prints
+the table on every CI run, and the round's ledger -- the one place a later reader looks for what a
+round cost -- did not carry the number. Recording it after the fact is what makes the two repairs
+above possible to state as a delta rather than as a claim.
+
+The rule that would require it is left open rather than written, and the measurement is why: 30 of 54
+ledgers have no row, so a rule over all of them is red on history and a rule that nobody can satisfy
+is a rule everyone learns to skip. The shape that works is the one the volume budget already uses --
+judged on the newest section only, because that is the only section a round is still writing -- and
+saying so is the next round's job.
+
+## Finding 476 — a filter that could not fail let one stray row narrow a whole set's top-K
+
+Cleaning up the six dark branches above meant reading the saturation arm line by line, and one line
+was a predicate that is true for every input it can receive:
+
+```ts
+const topKs = outcomes.filter((o) => byCase.has(o.caseId)).map((o) => o.topK);
+```
+
+`byCase` is built *from* `outcomes` three lines above, so `byCase.has(o.caseId)` is true for every
+element of the array it filters. The filter said "the outcomes that are about this set" and did
+nothing. `topK` is the minimum of that list, and the minimum is what the arm is read against: the
+denominator and every per-method rate already excluded outcomes naming cases the set does not
+contain, so a single stray row with `topK: 1` would have reported the set as a top-1 set while the
+rates beside it were computed as though the row were not there.
+
+The two numbers are printed in one sentence, which is what made the shape possible:
+
+```
+set saturation: the strongest baseline ('peak-z') locates 30 of 30 case(s) within top-1 (rate 1.000)
+```
+
+Nothing in that sentence is false about the rates and the top-K is wrong, and the reader has no way to
+tell which half they should trust. The repair reads the questions off the bundle rather than off the
+outcome list:
+
+```ts
+const askedRows = bundle.cases
+  .map((c) => byCase.get(c.caseId))
+  .filter((rows): rows is BaselineOutcome[] => rows !== undefined);
+```
+
+so the denominator, the rates and `topK` are three readings of one list. The test that holds it asserts
+both directions: a stray row with `topK: 1` leaves the shipped reading at top-3, and a corpus of stray
+rows only is asked nothing -- `topK: null`, every rate `0` rather than `NaN`.
+
+### What this does not settle
+
+A set can still be described at a top-K that no method was run at, if the methods disagree: the reading
+reports the **narrowest** top-K among the outcomes, and says nothing about how many methods used it.
+That is a deliberate floor -- a set whose methods were run at different cut-offs is only separable at
+the strictest one -- but the sentence prints `top-3` without saying whose 3. When a case's outcomes
+carry two cut-offs the reading should name both, and that is a change to the sentence rather than to
+the arithmetic.

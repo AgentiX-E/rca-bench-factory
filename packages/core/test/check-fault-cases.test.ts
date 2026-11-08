@@ -158,7 +158,8 @@ function corpus(options: {
   writeFileSync(join(dir, 'case.json'), `${JSON.stringify(faultCase, null, 2)}\n`);
   writeFileSync(join(dir, 'graph.json'), `${JSON.stringify(graph, null, 2)}\n`);
   const index = options.index ?? {
-    schema: 'rca-bench-fault-cases/2',
+    schema: 'rca-bench-fault-cases/3',
+    purpose: 'conformance',
     min: options.min ?? 1,
     cases: [
       {
@@ -286,7 +287,7 @@ function corpusOf(count: number, difficulty?: 'L1' | 'L2' | 'L3' | 'L4'): string
   }
   writeFileSync(
     join(dir, 'index.json'),
-    `${JSON.stringify({ schema: 'rca-bench-fault-cases/2', min: count, cases }, null, 2)}\n`,
+    `${JSON.stringify({ schema: 'rca-bench-fault-cases/3', purpose: 'conformance', min: count, cases }, null, 2)}\n`,
   );
   // A key of its own, with one sample per copy. The shipped key has thirty ids for thirty real
   // samples, so ten copies pointing at one of its ids is ten annotations of one sample -- which is
@@ -604,10 +605,30 @@ describe('check-fault-cases · inputs it will not guess at', { timeout: SUITE_BU
   });
 
   it('refuses an index with no cases array', async () => {
-    const dir = corpus({ index: { schema: 'rca-bench-fault-cases/2' } });
+    const dir = corpus({ index: { schema: 'rca-bench-fault-cases/3', purpose: 'conformance' } });
     const result = await run(['--cases', dir]);
     expect(result.status, result.out).toBe(1);
     expect(result.out).toContain("has no 'cases' array");
+  });
+
+  it('refuses an index that does not say what the set is for', async () => {
+    // The two answers this field can take produce opposite verdicts on the same saturation reading,
+    // so an index without it is refused rather than defaulted. A default would pick an answer for
+    // every corpus that forgot, and the one it picked is the one nobody would look at.
+    const dir = corpus({ index: { schema: 'rca-bench-fault-cases/3', min: 1, cases: [] } });
+    const result = await run(['--cases', dir]);
+    expect(result.status, result.out).toBe(1);
+    expect(result.out).toContain('declares purpose undefined');
+    expect(result.out).toContain("'conformance' or 'benchmark'");
+  });
+
+  it('refuses a purpose outside the closed vocabulary', async () => {
+    const dir = corpus({
+      index: { schema: 'rca-bench-fault-cases/3', purpose: 'fixture', min: 1, cases: [] },
+    });
+    const result = await run(['--cases', dir]);
+    expect(result.status, result.out).toBe(1);
+    expect(result.out).toContain('declares purpose "fixture"');
   });
 
   it('refuses a missing index and a missing key by name', async () => {
@@ -799,6 +820,47 @@ describe('check-fault-cases · derived telemetry is a claim G3 can refuse', { ti
     expect(result.out).toContain(
       '1 of 1 also carry telemetry whose origin is declared, which passes G3, and which both the peak-z and the median-shift baselines place in their top-K',
     );
+  });
+
+  it('reads the saturation of the shipped corpus against the purpose it declares', async () => {
+    // The set declares `conformance`, and the reading is printed on a green run: both baselines
+    // locate all thirty cases, which is what a fixture is for and what a benchmark set must not be.
+    const result = await run(['--cases', CASES]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain('locates 30 of 30 case(s) within top-');
+    expect(result.out).toContain("purpose 'conformance', so this is a reading and not a verdict");
+    expect(result.out).toContain('prompt leakage: 0 of 30 case(s) name their root-cause component');
+  });
+
+  it('refuses the same corpus when it declares that it is a benchmark', async () => {
+    // One word in the index, and a green run becomes a refused one. This is the arm's only reachable
+    // failure on real data, and it is worth a copy of the corpus rather than a synthetic fixture:
+    // the numbers in the message are the shipped corpus's own, so a reader can check them against
+    // the line the previous test asserts.
+    const dir = workspace();
+    cpSync(CASES, dir, { recursive: true });
+    const index = JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8')) as Record<string, unknown>;
+    writeFileSync(join(dir, 'index.json'), `${JSON.stringify({ ...index, purpose: 'benchmark' }, null, 2)}\n`);
+    const result = await run(['--cases', dir]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain('cannot separate methods');
+    expect(result.out).toContain("purpose 'benchmark', so this set is saturated");
+  });
+
+  it('refuses a corpus whose task text names its own answer', async () => {
+    // The real annotation says `p99 latency on the checkout path ...` and its component is
+    // `checkout-api`; this edit spells the component into the prompt, which is what nineteen of the
+    // thirty shipped cases did until the arm existed. No telemetry is needed: the rule reads the
+    // prompt and the label, and it is asked of every case rather than of the ones with signals.
+    const dir = corpus({
+      mutate: (faultCase) => {
+        faultCase.query = 'checkout-api p99 latency rose from 180ms to 4.3s over eleven minutes. What failed?';
+      },
+    });
+    const result = await run(['--cases', dir]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain("names its root-cause component ('checkout-api') in the task text");
+    expect(result.out).toContain('prompt leakage: 1 of 1 case(s)');
   });
 
   it('refuses a series with no anomaly in it', async () => {

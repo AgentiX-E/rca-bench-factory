@@ -80,7 +80,7 @@ sentence for the round rather than erasing the only account of why the job exist
 | `core` test suite | **237 files, 5849 tests passed** (at v3.54) |
 | `cli` test suite | **4 files, 187 tests passed** (at v3.54) |
 | repo test suite | **241 files, 6036 tests passed** (at v3.54) |
-| new tests | **30**: 19 for `R9` (the whitelist, the whole-step relation, the lifetime, the summary and the self-check), 8 for the split (the grammar, the partition, the shipped workflow's plan, and the two refusals), and 4 for `R6`'s asymmetry (a narrower budget refused, a missing one refused, a wider one accepted and named, a removed one accepted) with one existing case rewritten from the wider direction to the narrower |
+| new tests | **25** in `core` (6,036 -> 6,061): eight for the two gate arms, four for rule 5 and its dated exemption, five through `check-fault-cases`, four for the matrix's two columns, and four more across the enumeration and the witness table |
 | throw partition | **74 statements**: 6 `fatal`, 60 `unguarded`, 1 `guarded`, 7 `rethrow` |
 | failure sites | **123** across 58 of **83** scripts; two re-annotated after their guard text changed |
 | the recording | run `42172498744`, **8 jobs / 82 steps / 61 bounded**, 45 min measured; bounds total **292 min**, tightest `verify / Test with coverage` at **2.3x**. Before the settlement it was run `42131836805`, 7 jobs / 75 steps, with one declared job deliberately absent |
@@ -1918,9 +1918,9 @@ Nothing in it was rewritten.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **239 files, 6036 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **243 files, 6223 tests passed** (as of this commit) |
+| `core` test suite | **239 files, 6036 tests passed** (at v3.65) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.65) |
+| repo test suite | **243 files, 6223 tests passed** (at v3.65) |
 | new tests | **4**: a row that quotes an entry accepted, a row that names nothing refused, a row too short to name anything refused, and an older record left alone because a frozen record cannot be repaired |
 | the list | **11 -> 15** open, and the four added are the four that lived only in records |
 | the record arm | v3.64's seven rows: **1** quotation, **2** paraphrases of real entries, **4** residuals with no entry at all |
@@ -1949,3 +1949,188 @@ None of them is a lie. Each is a sentence that is true about its own source and 
 reader uses it for. What found all three was the same move: take the sentence a reader acts on, and
 **ask what its subject is** -- not what produced it. That is the move v3.64 asked for, one level out, and
 the reason it keeps paying is that every document here is written to be checked against its own source.
+
+## v3.66 — a number with a reader said 105, a set both baselines solve, and a hyphen that hid sixteen leaks
+
+v3.65 ended with an instruction: *take the sentence a reader acts on, and ask what its subject is*. This
+round pointed that at the sentences that **have** readers -- the ones an outside party quotes -- and at
+two claims the gates made about their own coverage. All four defects are one defect at four distances: a
+sentence that is true about its own source and silent about what a reader does with it.
+
+The round began as a review of an external evaluation proposal. The proposal's coordinate system was
+right -- this repository proves *export conformance* and has never proved *task effectiveness* -- and
+its fact layer was wrong five times, twice by quoting our own documents. That is why the first repair is
+about documents rather than gates.
+
+### 一、The count that had a reader
+
+`docs/acceptance.md` said `Measured at 105 of 105 in both halves`. The inventory held **204 proved
+claims across 58 files** and **127 failure sites**, and had done for twenty-four rounds. Nothing read
+the sentence; an **external review** did, and quoted the 105 as the current figure.
+
+`check-doc-counts` exists for exactly this class and could not see it. Its four rules read table rows
+carrying `N files, M tests` -- the suite's size -- and `docs/acceptance.md` is not in the progress
+corpus at all. So the sentence was not skipped by a rule; it was never in front of a reader.
+
+The rule added here reads three shapes (`N of N claim(s)`, `N claim(s) across M file(s)`, `N failure
+site(s)`) from the documents that speak in the present, and compares them with
+`golden-master/gate-sites.json` through the same `claimedSites` the two proof gates run. No second copy
+of the numbers exists: the inventory is derived from the tree, and the counts are computed at the moment
+they are compared.
+
+The distinction it had to make first is the one the corpus already had a vocabulary for. The volumes
+carry these numbers a dozen times and every one of them was true when written, so the subject is the
+documents that speak in the present, and a line that dates itself (`at v3.41`) is a record. **The
+missing thing was never the vocabulary; it was the decision that a specification is also a document that
+goes stale** (finding 471).
+
+### 二、A table that named the ids and described other mutations
+
+The L3 matrix had been read back by `test/mutation.test.ts` for its **ids** only, under a comment
+explaining that prose could not be validated mechanically. Measured, **thirteen of the eighteen rows
+described a mutation other than the one their id runs** -- `MT-02` said "signal ≠ payload.kind" against
+a code row that declares a bogus unit; `MT-05` said "unit mismatch on metric" against the answer-key
+isolation mutation. The "Caught by" column had drifted with them.
+
+The comment was true of a table written by hand and false of the table that existed, because that table
+had a **field** behind it: every mutation carries a `description`, and every gate mutation an `expected`
+list. The column was a hand-copied projection, which is the one kind of prose that can be checked and
+therefore the kind whose drift is nobody's job to notice. Both columns are projections now, and both are
+compared (finding 472).
+
+### 三、Thirty of thirty, printed as evidence of health
+
+G4 asks three questions and none of them is *is this set separable at all*. The corpus's success line
+had been answering it for as long as the corpus has had telemetry:
+
+```
+check-fault-cases: OK (... 30 of 30 also carry telemetry ... which both the peak-z and the
+  median-shift baselines place in their top-K ...)
+```
+
+Thirty of thirty, for both baselines. That sentence is the corpus's strongest evidence -- every case is
+locatable, which is what makes it scoreable -- and its strongest objection, because a set both baselines
+solve completely cannot separate methods. It was read as the first and never as the second.
+
+`checkSaturation` reads the `BaselineOutcome[]` G4 already receives: per method, the share of the
+**asked** cases located within top-K; the strongest method decides, not the mean; nothing is judged
+below ten cases. And the set declares what it is for, because the rule would otherwise be red on every
+run of a corpus doing its job:
+
+```
+check-fault-cases: set saturation: the strongest baseline ('median-shift-by-service') locates
+  30 of 30 case(s) within top-3 (rate 1.000); purpose 'conformance', so this is a reading and
+  not a verdict
+```
+
+Flip the one word in `index.json` to `benchmark` and the same run refuses, with the same numbers in the
+sentence. That pair is a test, not a demonstration: the corpus is copied, the declaration changed, and
+the refusal asserted. It is the only form of "the rule can be violated" that survives the round that
+writes it (finding 473).
+
+### 四、Three of thirty was a hyphen
+
+The same review reported **3 of 30** task texts naming their own root-cause component. That number came
+from `query.includes(component)` and was wrong in the safe direction:
+
+| comparison | reading |
+| --- | --- |
+| substring, as reported | **3 of 30** |
+| case + separator folded, word boundaries | **19 of 30** |
+
+The sixteen-case gap is one character. The corpus writes `billing-service` in the field and `The billing
+service began throwing` in the prompt, `media-transcoder` against `The media-transcoder container`. A
+hyphen is not a boundary to a substring test and not a difference to a reader.
+
+Nineteen task texts were rewritten -- the symptom, the window and the distractor stay; only the name
+goes -- and the reading is **0 of 30**. The arm is `LEAK_IN_QUERY`, and it makes the case's
+`answerKeyIsolated: true` an earned claim rather than an asserted one: all nineteen cases declared
+themselves isolated while their prompts opened with their own answer (finding 474).
+
+### 五、The ledger for the round had no coverage row
+
+The four repairs above added two gate arms, one `purpose` vocabulary and a rule with four shapes. The
+round's own ledger listed its tests, its mutations and its claims -- and carried **no coverage row at
+all**. That is the same defect as 一、 one level up: a reading nobody publishes is a reading nobody
+measures, and the thing it would have measured was this round's own code.
+
+The omission is not this round's invention. Of the **54** `### Readings` blocks in this log, **24**
+carry a coverage row and **30** do not, v3.64's and v3.65's among them -- so the row has been absent
+from the place a reader looks for a round's cost for thirty rounds, and the two most recent are the
+two that wrote the most code without it.
+
+Measured after the four repairs and before the receipt:
+
+| dimension | v3.65 | v3.66 as first written | after this section |
+| --- | --- | --- | --- |
+| statements | 99.96 | **99.95** | **99.97** |
+| branches | 99.75 | **99.65** | **99.80** |
+| functions | 100 | 100 | 100 |
+| lines | 99.96 | **99.95** | **99.97** |
+
+Nothing was red: the gate is per-file at 95 / 95 / 100 / 95, and the lowest file was 96.2. Six branch
+sites in the new arms had no test, and two were branches no input could reach:
+
+| site | why it was uncovered | repair |
+| --- | --- | --- |
+| `describeSaturation`'s benchmark-and-saturated sentence | the refusal asserted the violation's message; the log line that prints the same number was never read | assert the sentence in the refusal test |
+| the reduce's *beats the best so far* arm | every fixture had one method or had the strongest first | a fixture whose stronger method sorts later, asserted order-independent |
+| the reduce's *keep what it has* arm | the shipped corpus' stronger baseline sorts **first**, so it took the other arm | a fixture whose stronger method sorts first |
+| `promptNamePattern('')` | only reachable through the public export, because the arm's floor refuses an empty name | call it: empty and punctuation-only names build no pattern |
+| a case with no `query` | `query` is optional in the IR and no fixture omitted it | delete the field and assert the case is judged with no leak |
+| `rootCauseComponent ?? ''` | **dead**: the IR requires the field, so the fallback answered a shape the schema refuses | delete the fallback rather than test it |
+
+Two more branches were deleted on the same reasoning in `fault/corpus-census.ts`: `vocabularyOrder`
+carried a `-1` fallback for a category that cannot arrive (every category comes from the vocabulary),
+and the census renderings for a duplicate id and for empty totals were covered by their own tests
+instead of being left as the file's only dark spots.
+
+One **bug** came out of the restructure. `topK` was read as
+`outcomes.filter((o) => byCase.has(o.caseId))`, and `byCase` is built *from* `outcomes`, so the
+predicate was always true: a single outcome naming a case the set does not contain would enter the
+minimum and narrow the whole set's reported top-K. The denominator already excluded it -- the rate
+was right and the top-K beside it was wrong (finding 476).
+
+The receipt is six tests and two deletions, and the ledger has the row it should have had first. Both
+files it touched -- `gates/gates.ts` and `fault/corpus-census.ts` -- now read **100 in all four
+dimensions**: `corpus-census.ts` was the package's lowest at 96.2 before this section, and `gates.ts`
+stood at 99.4.
+
+### Readings
+
+> Ledger for `v3.66`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **239 files, 6067 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **243 files, 6254 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.80 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** (statements / branches / functions / lines) -- the round's two arms first cost six branches and the receipt bought them back; `gates/gates.ts` and `fault/corpus-census.ts` are 100 in all four |
+| new tests | **31** (6,036 -> 6,067): 16 in `gates.test.ts` (12 for the two arms -- 8 saturation, 4 leakage -- and 4 that close the branches the receipt found dark), 5 through `check-fault-cases`, 4 for rule 5 and its dated exemption, 4 in `mutation.test.ts` (the matrix's two column assertions, and MT-19/MT-20), and 2 for the census renderings |
+| new mutations | **20** in `mutation.test.ts` (MT-19 the prompt leak, MT-20 the saturated benchmark set) and **14** in the `doc-counts-shapes` battery (a rule that accepts every gate-site count, and one that judges a dated sentence) |
+| the count that had a reader | **105 -> 204** claim(s) across **58** file(s), **127** failure site(s), computed from `gate-sites.json` on every `docs:check` |
+| the matrix | **13 of 18** rows named a different mutation than their id ran; both columns are projections now |
+| the leak | **19 -> 0** of 30 task texts, measured after folding case and `-`/`_`/`.`/`/` |
+| the set | **30 of 30** at rate 1.000, declared `conformance`; the same corpus declared `benchmark` is refused |
+| the list | **15 -> 22** open: six the review left and one the coverage receipt left |
+| the receipt | `verify:local` **OK**, and the two CI workflows on the pushed tree |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P1** | the seven target contracts carry three copies of one version and no equation | new this round: the vendors row is the fourth field, and it has been wrong for six months | a guard that reads a constant, a markdown cell and a generator's field as one claim |
+| **P1** | the newest round's ledger is not required to carry a coverage row | new this round: **30 of 54** `### Readings` blocks have none, and this round's arms left six branches dark | a rule over the newest section only, the way the size budget is judged only on the last volume |
+| **P1** | G5 has no near-duplicate and no window-overlap arm | new this round: measured, 0 of 435 pairs overlap and the maximum task-text Jaccard is 0.308 | two fixtures, because the shipped corpus offers no witness |
+| **P2** | G3's two thresholds have no grid | new this round: the defaults are a judgement nothing has defended | a 4x4 grid and a rule that refuses a default on a slope |
+| **P2** | `rulegen` has no refusal count and no agreement reading | new this round: the thirty human annotations already exist and nothing compares against them | agreement with a fixed answer set, and the absence of kappa stated as a choice |
+| **P2** | `score` divides by a different denominator per target | new this round: the sentence needs a measurement under it | a test asserting two targets' check counts differ |
+| **P2** | `docs/acceptance.md` is 96 KB and grows by clause per round | new this round: L3 and L4 are 284 and 405 lines, the other four layers 14, 7, 7 and 6 | move the per-round clauses to a volume, after measuring how many sections match that shape |
+
+**The lesson.** The four defects are one defect at four distances, and the distances are what changed:
+a number no gate read (**105** against **203**), a table that read as prose because it had a field
+behind it (**13 of 18**), a reading printed as evidence of health (**30 of 30**), and a measurement
+that was wrong in the safe direction (**3 of 30** for **19 of 30**). Every one was found by asking a
+sentence what a *reader* would do with it -- not what its source says. The review that started the
+round found the first one by quoting it, which is the cost of a document nobody re-reads: it does not
+decay, it gets cited.

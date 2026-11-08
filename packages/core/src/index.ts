@@ -171,10 +171,17 @@ export {
   checkG3Validity,
   checkG4Solvability,
   checkGraphContract,
+  checkSaturation,
   checkSolvability,
   checkG5AntiPollution,
+  describePromptLeaks,
+  describeSaturation,
   locatedRank,
   mean,
+  normaliseName,
+  promptNamePattern,
+  readPromptLeaks,
+  readSaturation,
   runAllGates,
   stddev,
   sustainedAnomalySamples,
@@ -187,6 +194,9 @@ export type {
   G3Options,
   G4Options,
   G5Options,
+  PromptLeakReading,
+  SaturationReading,
+  SetPurpose,
 } from './gates/gates.js';
 
 /**

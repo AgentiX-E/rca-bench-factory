@@ -145,4 +145,21 @@ describe('describeCensus', () => {
     const clean = describeCensus(censusCorpus({ cases: [one('RE1-OB/a_cpu/1', 'cpu')] }));
     expect(clean).toContain('CENSUS not a case 0');
   });
+
+  it('states the duplicate ids it counted once', () => {
+    // The census drops the repeat to keep the totals honest, and says which id it dropped. A count
+    // that is quietly corrected is a count whose correction nobody can check.
+    const twice = describeCensus(
+      censusCorpus({ cases: [one('RE1-OB/a_cpu/1', 'cpu'), one('RE1-OB/a_cpu/1', 'cpu')] }),
+    );
+    expect(twice).toContain('CENSUS duplicate 1 case id(s), counted once: RE1-OB/a_cpu/1');
+    expect(twice).not.toContain('CENSUS duplicate 1 case id(s), counted once: RE1-OB/a_cpu/1, ');
+  });
+
+  it('says the category totals are none rather than printing an empty list', () => {
+    // An empty corpus still opens with the line a reader diffs between runs, and the space after
+    // the colon has to say something: a trailing `: ` reads as a truncation.
+    const empty = describeCensus(censusCorpus({ cases: [] }));
+    expect(empty[0]).toBe('CENSUS 0 case(s) in 0 suite(s), 0 fault type(s): none');
+  });
 });

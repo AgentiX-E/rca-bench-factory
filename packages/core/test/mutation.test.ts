@@ -8,6 +8,7 @@ import {
   checkG4Solvability,
   checkG5AntiPollution,
   type BaselineOutcome,
+  type G4Options,
 } from '../src/gates/gates.js';
 import type { IrBundle } from '../src/ir/types.js';
 import { exportAioPs2025 } from '../src/export/aiops2025.js';
@@ -31,13 +32,25 @@ import { validBundle, validCase } from './fixtures.js';
 const G1 = { requiredSignals: ['metric', 'log', 'trace', 'event', 'alert'], requiresQuery: true };
 const SOLVED: BaselineOutcome[] = [{ caseId: 'case-001', method: 'baro', rankOfTruth: 1, topK: 5, candidateCount: 12 }];
 
-function allViolations(bundle: IrBundle, publicFingerprints?: Set<string>): Set<string> {
+function allViolations(
+  bundle: IrBundle,
+  publicFingerprints?: Set<string>,
+  /**
+   * The baseline outcomes G4 is asked about, when a mutation is about the *set* rather than a case.
+   *
+   * Defaults to `SOLVED`, which is one method on one case: enough for every per-case rule and below
+   * the floor of the two set-level ones, so a mutation that does not name its own outcomes is judged
+   * exactly as it was before this parameter existed.
+   */
+  outcomes: BaselineOutcome[] = SOLVED,
+  g4: G4Options = {},
+): Set<string> {
   const codes = new Set<string>();
   for (const r of [
     checkG1Structural(bundle, G1),
     checkG2Semantic(bundle),
     checkG3Validity(bundle),
-    checkG4Solvability(bundle, SOLVED),
+    checkG4Solvability(bundle, outcomes, g4),
     checkG5AntiPollution(bundle, publicFingerprints ? { publicFingerprints } : {}),
   ]) {
     for (const v of r.violations) codes.add(v.code);
@@ -53,6 +66,10 @@ interface Mutation {
   expected: string[];
   /** When true, the public fingerprint set is seeded with the mutated case itself. */
   seedFingerprint?: boolean;
+  /** The outcomes G4 reads, when the mutation is about the set rather than a single case. */
+  outcomes?: BaselineOutcome[];
+  /** G4 options the mutation needs, such as the purpose the set declares. */
+  g4?: G4Options;
 }
 
 const MUTATIONS: Mutation[] = [
@@ -228,6 +245,42 @@ const MUTATIONS: Mutation[] = [
     },
     expected: ['EMPTY_ROOT_CAUSE', 'UNRESOLVED_ROOT_CAUSE'],
   },
+  {
+    id: 'MT-19',
+    description: 'spell the root cause component into the task text',
+    // G5's second arm. `answerKeyIsolated` is `true` on this case, so the isolation rule passes it:
+    // the key *is* stored apart from the payload. What is wrong is the prompt, and a rule that only
+    // read the declaration would report the case clean -- which is what the corpus did in nineteen
+    // of thirty cases until the arm existed.
+    apply: () => {
+      const fc = validCase({ query: 'checkout-api p99 latency rose from 180ms to 4.3s. What failed?' });
+      fc.groundTruth.rootCauseComponent = 'checkout-api';
+      return validBundle({ cases: [fc] });
+    },
+    expected: ['LEAK_IN_QUERY'],
+  },
+  {
+    id: 'MT-20',
+    description: 'publish a benchmark set both baselines already solve',
+    // G4's third arm, and the only mutation here about the *set*: ten cases, each located at rank 1
+    // by one method, and a set that says it is a benchmark. The same bundle declared `conformance`
+    // is accepted, which is the pair of assertions MT-20 exists to be checked against.
+    apply: () => {
+      const cases = Array.from({ length: 10 }, (_, i) =>
+        validCase({ caseId: `solved-${String(i)}`, answerKeyIsolated: true }),
+      );
+      return validBundle({ cases });
+    },
+    outcomes: Array.from({ length: 10 }, (_, i) => ({
+      caseId: `solved-${String(i)}`,
+      method: 'peak-z',
+      rankOfTruth: 1,
+      topK: 3,
+      candidateCount: 12,
+    })),
+    g4: { setPurpose: 'benchmark' },
+    expected: ['SATURATED_SET'],
+  },
 ];
 
 function runMutation(m: Mutation): Set<string> {
@@ -235,7 +288,7 @@ function runMutation(m: Mutation): Set<string> {
   const fingerprints = m.seedFingerprint
     ? new Set(bundle.cases.map((c) => caseFingerprint(c)))
     : undefined;
-  return allViolations(bundle, fingerprints);
+  return allViolations(bundle, fingerprints, m.outcomes, m.g4);
 }
 
 describe('mutation suite', () => {
@@ -260,6 +313,8 @@ describe('mutation suite', () => {
       'MT-13',
       'MT-14',
       'MT-15',
+      'MT-19',
+      'MT-20',
     ]);
   });
 
@@ -378,10 +433,13 @@ describe('export mutation suite', () => {
  * guarantee that was never exercised. This guard reads the doc and the two
  * mutation tables and fails on any disagreement in either direction.
  *
- * It deliberately does *not* try to check the "Caught by" column. Prose cannot be
- * validated mechanically, and a check that pretended to would be theatre. The set
- * of ids is the part that can be made true by construction, so that is the part
- * asserted here.
+ * It compared only the **ids** until v3.66, with a paragraph here explaining that prose
+ * could not be validated mechanically. The paragraph was true of a table written by
+ * hand and false of the table that existed: thirteen of eighteen rows described a
+ * different mutation than the one their id ran, and "cannot be checked" was the
+ * reason nobody found out. Both columns are projections of fields now -- the
+ * mutation is `description`, the verdict is `expected` -- so both can be, and are,
+ * compared.
  */
 describe('mutation matrix documentation', () => {
   const DOC = readFileSync(new URL('../../../docs/acceptance.md', import.meta.url), 'utf8');
@@ -392,9 +450,53 @@ describe('mutation matrix documentation', () => {
     return [...section.matchAll(/^\|\s*(MT-\d+)\s*\|/gm)].map((m) => m[1] as string);
   }
 
+  /**
+   * Every `| MT-nn | mutation | caught by |` row, as its three cells.
+   *
+   * The matrix is a **projection** of the arrays above rather than prose about them: the mutation
+   * cell is `description` and the verdict cell is `expected` (or, for an export mutation, the
+   * official target). Both are compared below, and the reason is measured: this table compared ids
+   * only until v3.66, and by then thirteen of its eighteen rows named a mutation other than the one
+   * their id ran -- `MT-02` read "signal ≠ payload.kind" against a code row that declares a bogus
+   * unit, and `MT-05` read "unit mismatch" against the answer-key isolation mutation. A reader had
+   * no way to tell, because nothing read the column.
+   */
+  function documentedRows(): Array<{ id: string; mutation: string; caught: string }> {
+    const section = DOC.split('## L3')[1]?.split('## L4')[0] ?? '';
+    return [...section.matchAll(/^\|\s*(MT-\d+)\s*\|(.+?)\|(.+?)\|\s*$/gm)].map((m) => ({
+      id: m[1] as string,
+      mutation: (m[2] as string).trim(),
+      caught: (m[3] as string).trim(),
+    }));
+  }
+
   it('documents exactly the mutations that the suite executes', () => {
     const executed = [...MUTATIONS.map((m) => m.id), ...EXPORT_MUTATIONS.map((m) => m.id)];
     expect(documentedIds().toSorted()).toEqual(executed.toSorted());
+  });
+
+  it('names each mutation the way the code names it', () => {
+    const byId = new Map<string, string>([
+      ...MUTATIONS.map((m) => [m.id, m.description] as [string, string]),
+      ...EXPORT_MUTATIONS.map((m) => [m.id, m.description] as [string, string]),
+    ]);
+    const drifted = documentedRows()
+      .filter((row) => byId.get(row.id) !== row.mutation)
+      .map((row) => `${row.id}: document says "${row.mutation}", code says "${byId.get(row.id) ?? '(none)'}"`);
+    expect(drifted, drifted.join('\n')).toEqual([]);
+  });
+
+  it('names the verdict the code asserts, for every row', () => {
+    const expectedById = new Map<string, string>([
+      ...MUTATIONS.map((m) => [m.id, m.expected.map((code) => `\`${code}\``).join(', ')] as [string, string]),
+      ...EXPORT_MUTATIONS.map(
+        (m) => [m.id, `official regression on \`${m.target}\``] as [string, string],
+      ),
+    ]);
+    const drifted = documentedRows()
+      .filter((row) => expectedById.get(row.id) !== row.caught)
+      .map((row) => `${row.id}: document says "${row.caught}", code expects "${expectedById.get(row.id) ?? '(none)'}"`);
+    expect(drifted, drifted.join('\n')).toEqual([]);
   });
 
   it('documents no duplicate mutation id', () => {

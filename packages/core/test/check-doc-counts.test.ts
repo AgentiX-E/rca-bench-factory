@@ -100,13 +100,17 @@ afterAll(() => {
  * whose own exemption list cannot be driven from outside can only be shown to
  * accept the list it ships with.
  */
-function run(body: string, unmeasured?: unknown, measured = MEASURED) {
+function run(body: string, unmeasured?: unknown, measured = MEASURED, present?: 'self') {
   const dir = mkdtempSync(join(tmpdir(), 'doc-counts-'));
   dirs.push(dir);
   const doc = join(dir, 'progress.md');
   writeFileSync(doc, body);
   const argv = [SCRIPT, '--doc', doc, '--measured', measured];
   if (unmeasured !== undefined) argv.push('--unmeasured', JSON.stringify(unmeasured));
+  // Rule 5 reads documents that speak in the present, which are two real files by default. A test
+  // that wants to drive it passes its own fixture as that document; without this, the only way to
+  // reach the rule would be to break `docs/acceptance.md`.
+  if (present === 'self') argv.push('--present', doc);
 
   // A spawn that never ran is not a verdict about the guard.
   //
@@ -545,5 +549,92 @@ describe('check-doc-counts -- the shapes it can read, and the ones it refuses', 
   it('reads a "passed" phrase through the bare shape, so the census never has to', () => {
     const r = run(`${HEADER}| core | 2512 passed of a possible 2600 |\n`, NO_EXCUSES);
     expect(r.code).toBe(0);
+  });
+});
+
+/**
+ * Rule 5: a gate-site count names the present, and equals the inventory.
+ *
+ * The numbers are read from `golden-master/gate-sites.json` here for the same reason `MEASURED` is
+ * read from the committed file: a fixture that hard-coded today's `203` would fail the day a guard
+ * was added, and would then be repaired by editing the expectation rather than by reading the rule.
+ */
+describe('check-doc-counts -- the gate-site counts it holds to the inventory', () => {
+  const inventory = JSON.parse(
+    readFileSync(resolve(ROOT, 'golden-master', 'gate-sites.json'), 'utf8'),
+  ) as { sites: Array<Record<string, unknown>>; throws?: { rows?: Array<Record<string, unknown>> } };
+  const claims = [
+    ...inventory.sites.filter((one) => one['status'] === 'proved' && typeof one['provedBy'] === 'string'),
+    ...(inventory.throws?.rows ?? []).filter(
+      (one) => one['status'] === 'proved' && typeof one['provedBy'] === 'string',
+    ),
+  ];
+  const CLAIMS = claims.length;
+  const FILES = new Set(claims.map((one) => String(one['provedBy']))).size;
+  const SITES = inventory.sites.length;
+  /**
+   * A row every run of this guard needs before it will look at anything else.
+   *
+   * The corpus must publish at least one file/test count or the guard refuses -- finding none means
+   * the reader went blind -- so a fixture about a different shape still has to carry one. It names
+   * the scope and equals the committed measurement, so it satisfies rules 1 to 3 without asking the
+   * test to think about them.
+   */
+  const counted = JSON.parse(MEASURED) as { core: { files: number; tests: number } };
+  const COUNT_ROW = `${HEADER}| core test suite | **${String(counted.core.files)} files, ${String(counted.core.tests)} tests passed** |\n`;
+
+  it('accepts a present-tense sentence that agrees with the inventory', () => {
+    const r = run(
+      `${COUNT_ROW}The proof halves are measured at ${CLAIMS} of ${CLAIMS} claim(s) across ${FILES} file(s).\n`,
+      undefined,
+      MEASURED,
+      'self',
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('gate-site claim(s) agreeing with');
+  });
+
+  it('refuses a sentence that publishes a count the tree does not hold', () => {
+    // The defect this rule exists for: `docs/acceptance.md` said 105 of 105 while the inventory
+    // held 203 claims, and an external review quoted the 105 as the current figure.
+    const stale = CLAIMS - 1;
+    const r = run(
+      `${COUNT_ROW}Measured at ${stale} of ${stale} claim(s) across ${FILES} file(s).\n`,
+      undefined,
+      MEASURED,
+      'self',
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain(`publishes "${stale} of ${stale} claim(s)"`);
+    expect(r.out).toContain(`the inventory holds ${CLAIMS} claim(s) across ${FILES} file(s)`);
+    // Once per line, not once per shape: the sentence matches two of the three shapes and a second
+    // verdict on the same sentence is a second repair the reader has to make.
+    expect(r.out.match(/publishes "/g)?.length).toBe(1);
+  });
+
+  it('refuses a failure-site count that disagrees, on the third shape', () => {
+    const r = run(
+      `${COUNT_ROW}derive-gate-sites reports ${SITES + 1} failure site(s) across the tree.\n`,
+      undefined,
+      MEASURED,
+      'self',
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain(`publishes "${SITES + 1} failure site(s)"`);
+    expect(r.out).toContain(`${SITES} failure site(s)`);
+  });
+
+  it('leaves a dated sentence alone, because a record is not a stale claim', () => {
+    // The corpus's volumes carry these numbers a dozen times, each true when it was measured. The
+    // date is the whole distinction, and it is the vocabulary the open list already uses.
+    const stale = CLAIMS - 1;
+    const r = run(
+      `${COUNT_ROW}Measured at ${stale} of ${stale} claim(s) across ${FILES} file(s) at v3.41.\n`,
+      undefined,
+      MEASURED,
+      'self',
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('0 gate-site claim(s) agreeing with');
   });
 });

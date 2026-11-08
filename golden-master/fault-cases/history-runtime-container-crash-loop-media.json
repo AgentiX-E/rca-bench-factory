@@ -17,7 +17,10 @@
     "injectionMethod": "historical",
     "parameters": {
       "container": "media-transcoder-app",
-      "restarts": { "value": 178, "unit": "count" },
+      "restarts": {
+        "value": 178,
+        "unit": "count"
+      },
       "windowHours": {
         "value": 12,
         "unit": "h"
@@ -107,7 +110,7 @@
   "sli": {
     "none": "a crash loop is read as how many times the container restarted and what share of liveness probes passed, and neither is a time the harness could rank by."
   },
-  "query": "The media-transcoder container has restarted 178 times in twelve hours. What is the root cause, and why are the liveness probes not it?",
+  "query": "One container has restarted 178 times in twelve hours while its replacement kept accepting work. What is the root cause, and why are the liveness probes not it?",
   "difficulty": "L3",
   "answerKeyIsolated": true
 }

@@ -103,6 +103,7 @@ import { fileURLToPath } from 'node:url';
 import { CURRENT_MARKERS, scopeOf } from './doc-counts-vocabulary.mjs';
 import { checkCountAdditivity } from './doc-count-additivity.mjs';
 import { progressCorpus } from './docs-corpus.mjs';
+import { claimedSites } from './site-proofs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -216,6 +217,108 @@ const UNMEASURED = [
 ];
 
 const MIN_REASON = 40;
+
+/**
+ * The shapes that publish a count from the gate-site inventory.
+ *
+ * `docs/acceptance.md` published "Measured at 105 of 105 in both halves" about an inventory that
+ * held 203 claims, and no rule above could see it: those rules read *table rows* and file/test
+ * counts, and this is a sentence about failure sites. It is the same defect the guard was written
+ * for, one unit over, and it had a reader -- an external review quoted the 105 as the current
+ * figure, which is how it was found.
+ *
+ * `fields` names what each captured number is, in order, so one reader can serve all three
+ * sentences and the comparison stays about the inventory rather than about the wording.
+ */
+const GATE_SITE_CLAIMS = [
+  { name: 'N of N claim(s)', re: /(\d+)\s+of\s+(\d+)\s+claim\(s\)/g, fields: ['claims', 'claims'] },
+  {
+    name: 'N claim(s) across M file(s)',
+    re: /(\d+)\s+claim\(s\)\s+across\s+(\d+)\s+file\(s\)/g,
+    fields: ['claims', 'files'],
+  },
+  { name: 'N failure site(s)', re: /(\d+)\s+failure\s+site\(s\)/g, fields: ['sites'] },
+];
+
+/**
+ * A sentence that says which round it is about.
+ *
+ * The corpus's volumes are records: `105 of 105` was true in the round that measured it, and the
+ * same shape appears there a dozen times across a dozen rounds. A record is not a stale claim --
+ * it is a dated one -- so the subject of rule 5 is the documents that speak in the present, and a
+ * line that carries an explicit round is read as what it is.
+ */
+const DATED = /\b(?:at|as of)\s+v\d+\.\d+\b/;
+
+/**
+ * Documents that describe the present rather than a round.
+ *
+ * Not added to the progress corpus: rules 1 to 4 demand a *scope* word from every row they read,
+ * and a spec's prose is not a status table. Reading these two files here, for one shape, keeps
+ * each rule's subject as narrow as the thing it measures.
+ */
+function presentTenseDocuments() {
+  const single = argValue('--present');
+  if (single !== undefined) {
+    return [{ label: relative(ROOT, single), text: readFileSync(single, 'utf8') }];
+  }
+  return [resolve(ROOT, 'docs', 'acceptance.md'), resolve(ROOT, 'README.md')]
+    .filter((path) => existsSync(path))
+    .map((path) => ({ label: relative(ROOT, path), text: readFileSync(path, 'utf8') }));
+}
+
+/**
+ * The inventory's own counts, read from the artefact rather than copied into a second one.
+ *
+ * `golden-master/gate-sites.json` is derived from the tree by `derive-gate-sites.mjs --check`, and
+ * `claimedSites` is the same function the two proof gates use to decide what to run. Reading it here
+ * is one artefact and one implementation; a copy in `doc-counts.json` would be a second of each,
+ * and the copy would be the one that went stale.
+ */
+function gateSiteReading() {
+  const inventory = JSON.parse(readFileSync(resolve(ROOT, 'golden-master', 'gate-sites.json'), 'utf8'));
+  const claimed = claimedSites(inventory);
+  return {
+    sites: Array.isArray(inventory.sites) ? inventory.sites.length : 0,
+    claims: claimed.length,
+    files: new Set(claimed.map((claim) => claim.file)).size,
+  };
+}
+
+/**
+ * Every gate-site count published in a document that speaks in the present.
+ *
+ * A line carrying a date is skipped, and the skip is the rule rather than an exemption: a record
+ * whose number was right when it was written is not an error, and the vocabulary for saying so
+ * already exists in the corpus (`(at v3.65)`).
+ */
+function readGateSiteClaims() {
+  const out = [];
+  for (const doc of presentTenseDocuments()) {
+    doc.text.split('\n').forEach((raw, i) => {
+      // Emphasis is stripped before matching because a count is bolded the moment it matters:
+      // `**203 of 203** claim(s)` is the same sentence as `203 of 203 claim(s)` to a reader, and a
+      // rule that answered differently depending on the asterisks would be reading the markup
+      // instead of the claim.
+      const line = raw.replace(/\*\*/g, '').replace(/`/g, '');
+      if (DATED.test(line)) return;
+      for (const shape of GATE_SITE_CLAIMS) {
+        shape.re.lastIndex = 0;
+        for (const match of line.matchAll(shape.re)) {
+          out.push({
+            where: doc.label,
+            line: i + 1,
+            text: match[0],
+            shape: shape.name,
+            fields: shape.fields,
+            values: shape.fields.map((_, index) => Number(match[index + 1])),
+          });
+        }
+      }
+    });
+  }
+  return out;
+}
 
 /**
  * Print and exit, synchronously.
@@ -530,13 +633,46 @@ function main() {
     }
   }
 
+  // 5. A published gate-site count names the *present*, and equals the inventory.
+  //
+  //    This is the count that drifted furthest without anyone noticing: `docs/acceptance.md`
+  //    said "Measured at 105 of 105" while the inventory held 203 claims, and nothing read
+  //    the sentence. The corpus's volumes carry the same shapes legitimately -- they are
+  //    records, and `105 of 105` was true on the day it was measured -- so the subject here
+  //    is the documents that describe the present, and a line that dates itself is a record.
+  let siteClaims = 0;
+  // One refusal per line, not one per shape. `203 of 203 claim(s) across 58 file(s)` matches two of
+  // the three shapes, so a wrong figure would be reported twice for one sentence -- and a reader who
+  // fixes the first line and re-runs learns the repair did not work, which is what a duplicate
+  // verdict costs.
+  const reported = new Set();
+  for (const claim of readGateSiteClaims()) {
+    siteClaims += 1;
+    const derived = gateSiteReading();
+    const wrong = claim.values.find((value, i) => value !== derived[claim.fields[i]]);
+    if (wrong === undefined) continue;
+    const key = `${claim.where}:${String(claim.line)}`;
+    if (reported.has(key)) continue;
+    reported.add(key);
+    problems.push(
+      `${key}: publishes "${claim.text}", but the inventory holds ` +
+        `${String(derived.claims)} claim(s) across ${String(derived.files)} file(s) and ` +
+        `${String(derived.sites)} failure site(s). The numbers come from golden-master/gate-sites.json, ` +
+        `which derive-gate-sites.mjs --check holds to the tree; if this sentence is a record of an older ` +
+        `tree, date it ("(at v3.40)") so a reader can tell it from the current state.`,
+    );
+  }
+
   if (problems.length) fail(problems);
 
   const scopes = [...lastByScope.keys()].join(', ');
+  const sites = gateSiteReading();
   verdict(
     1,
     `check-doc-counts: OK (${read.length} published count(s), each naming its scope; ` +
-      `scope(s) covered: ${scopes}; ${excused} unread phrase(s) excused in writing)`,
+      `scope(s) covered: ${scopes}; ${excused} unread phrase(s) excused in writing; ` +
+      `${siteClaims} gate-site claim(s) agreeing with ${String(sites.claims)} claim(s) across ` +
+      `${String(sites.files)} file(s))`,
   );
 }
 

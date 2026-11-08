@@ -730,6 +730,17 @@ const TESTED = [
   'locatedRank',
   'checkG4Solvability',
   'checkG5AntiPollution',
+  // finding 473 -- G4's third arm. Reached by `gates.test.ts` (`set saturation`) and by
+  // `check-fault-cases.mjs` through `describeSaturation`, which is what makes the corpus's
+  // separability a number on both exits rather than a clause in its success line.
+  'checkSaturation',
+  'readSaturation',
+  'describeSaturation',
+  // finding 474 -- G5's second arm, and the two functions the reading is built from.
+  'readPromptLeaks',
+  'describePromptLeaks',
+  'promptNamePattern',
+  'normaliseName',
   'runAllGates',
   'zScore',
   'mean',

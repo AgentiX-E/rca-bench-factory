@@ -34,39 +34,52 @@ before the layer above it is meaningful.
 
 ## L3 — Gate and export soundness (mutation testing)
 
-An 18-mutation suite of two halves: **MT-01…MT-15** corrupt a known-good case and
-assert the gates intercept **100%** of them, and **MT-16…MT-18** corrupt the
-*exported artefacts* and assert the official-metric regression intercepts them.
-The current matrix:
+A 20-mutation suite of two halves: **MT-01…MT-15** and **MT-19…MT-20** corrupt a
+known-good case or set and assert the gates intercept **100%** of them, and
+**MT-16…MT-18** corrupt the *exported artefacts* and assert the official-metric
+regression intercepts them.
 
-> **18 is the count of mutations, not of assertions.** `pnpm mutation` reports 26
-> passing tests, because each mutation is asserted from both directions — the
-> mutated input must be intercepted, and the unmutated input must still pass, so
+> **20 is the count of mutations, not of assertions.** The file reports more passing
+> tests than there are mutations, because each one is asserted from both directions --
+> the mutated input must be intercepted, and the unmutated input must still pass, so
 > that a suite that is red on everything is distinguishable from one that is
 > sensitive. The two numbers describe the same suite at different resolutions and
-> neither is a drift; a status line that quotes one while the other is expected
-> is reading the runner's line count as the matrix's size.
+> neither is a drift; a status line that quotes one while the other is expected is
+> reading the runner's line count as the matrix's size.
+
+The two columns below are **projections of the code, not prose about it**: the
+mutation cell is `Mutation.description` and the verdict cell is `expected` (or, for
+an export mutation, the target the official regression runs against). A test reads
+this table out of this file and compares both columns with the arrays in
+`test/mutation.test.ts`, so a row that stops describing what it names fails the
+suite. Before v3.66 only the **ids** were compared, and measured at that revision
+**thirteen of the eighteen rows named a mutation other than the one their id now
+runs** -- the five that survived are MT-03, MT-12, MT-16, MT-17 and MT-18, and the
+other thirteen had been paraphrased from an earlier set and never re-read, which is
+what a document with no reader does.
 
 | Id | Mutation | Caught by |
 | --- | --- | --- |
-| MT-01 | Drop required field | G1 |
-| MT-02 | `signal` ≠ `payload.kind` | schema / G1 |
-| MT-03 | Rename/remove `service.name` | G1 `MISSING_SERVICE_NAME` |
-| MT-04 | Non-UTC timestamp | time parser / G1 |
-| MT-05 | Unit mismatch on metric | unit converter / G2 |
-| MT-06 | Unresolved entity reference | G2 |
-| MT-07 | Ambiguous entity alias | G2 |
-| MT-08 | Broken causal hop (unreachable) | G2 `CAUSAL_HOP_NOT_IN_TOPOLOGY` |
-| MT-09 | Flat baseline (no anomaly) | G3 (Z-score < 2.0) |
-| MT-10 | Unsustained spike | G3 (sustained < 3) |
-| MT-11 | Trivially solvable case | G4 |
-| MT-12 | Remove topology edge | G2 `CAUSAL_HOP_NOT_IN_TOPOLOGY` |
-| MT-13 | PII in log body | G5 |
-| MT-14 | Duplicate case | G5 (fingerprint) |
-| MT-15 | Inferred field backing ground truth | provenance guard / G5 |
-| MT-16 | Reword the OpenRCA `scoring_points` template | official regression (oracle cannot score 1.0) |
-| MT-17 | Drop the instance index from an RCAEval directory | official regression (no ground truth read) |
-| MT-18 | Corrupt every AIOps2025 ground-truth record | official regression (no ground truth read) |
+| MT-01 | shift every timestamp by one hour | `SIGNAL_OUT_OF_WINDOW`, `WEAK_ANOMALY_SIGNAL` |
+| MT-02 | declare a bogus unit on a numeric checkpoint | `UNKNOWN_UNIT` |
+| MT-03 | rename service.name to serviceName | `SIGNAL_OUT_OF_WINDOW`, `WEAK_ANOMALY_SIGNAL`, `MISSING_SERVICE_NAME` |
+| MT-04 | point the root cause at a non-existent entity | `UNRESOLVED_ROOT_CAUSE` |
+| MT-05 | fail to isolate the answer key | `ANSWER_KEY_NOT_ISOLATED` |
+| MT-06 | leave a raw IP and an email in the payload | `SENSITIVE_DATA_PRESENT` |
+| MT-07 | delete the middle step of the causal chain | `CAUSAL_CHAIN_BREAK` |
+| MT-08 | move the injection time outside the observation window | `INJECT_TIME_OUT_OF_WINDOW` |
+| MT-09 | drop the metric series so the anomaly disappears | `MISSING_SIGNAL` |
+| MT-10 | label every case as the easiest difficulty | `DIFFICULTY_SKEWED_EASY` |
+| MT-11 | attach a numeric checkpoint with no unit at all | `NUMERIC_CHECKPOINT_WITHOUT_UNIT` |
+| MT-12 | remove the topology edge that reaches the root cause | `CAUSAL_CHAIN_BREAK`, `UNRESOLVED_ROOT_CAUSE`, `CAUSAL_HOP_NOT_IN_TOPOLOGY` |
+| MT-13 | duplicate a case inside the set | `DUPLICATE_CASE` |
+| MT-14 | import a public benchmark case verbatim | `PUBLIC_SET_CONTAMINATION` |
+| MT-15 | blank out the root cause entity | `EMPTY_ROOT_CAUSE`, `UNRESOLVED_ROOT_CAUSE` |
+| MT-16 | reword the OpenRCA scoring_points so the official regexes recover nothing | official regression on `openrca-1.0` |
+| MT-17 | drop the instance level from the RCAEval case path | official regression on `rcaeval-re2` |
+| MT-18 | corrupt every AIOps2025 ground truth record so none of them parse | official regression on `aiops2025` |
+| MT-19 | spell the root cause component into the task text | `LEAK_IN_QUERY` |
+| MT-20 | publish a benchmark set both baselines already solve | `SATURATED_SET` |
 
 If **any** mutation slips through, the gates are broken and must be fixed before any
 export is trusted. `test/mutation.test.ts` asserts the suite results directly; the
@@ -79,7 +92,12 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   the `sensitivity` job runs `verify-sites-are-sensitive.mjs`, which asks whether that
   file **notices** the exit's absence -- one run per claim with that site's code
   replaced by success, and a baseline run per file so a red claimant cannot be
-  credited with catching anything. Measured at 105 of 105 in both halves, and both
+  credited with catching anything. Measured at **204 of 204** claim(s) across 58 file(s).
+  The figure was 105 of 105 in both halves at v3.41, and it drifted for twenty-four rounds
+  because nothing read the sentence -- an external reviewer quoted the 105 as the current
+  state, which is what a number with no reader costs. `check-doc-counts` reads it now:
+  it takes the counts from `golden-master/gate-sites.json` and refuses a present-tense
+  claim that disagrees, so the only way to write an old figure is to date it. Both halves
   are mutation rather than reading, which is the only form this claim can take.
 - **Every failure site publishes the guard that actually holds at it** (v3.42). Each
   entry carries a `condition`, and until v3.42 that column was read by scanning
@@ -1234,3 +1252,75 @@ from an anecdote again.
   nothing in the index looks up.
 - **What is not claimed.** The next section to grow will hit the same relation. It is a gate that fires
   and an answer that has to be given again, not a defect repaired once.
+
+### A number that speaks in the present is derived, not remembered (v3.66)
+
+- **A gate-site count in a present-tense document must equal the inventory.** `check-doc-counts` reads
+  three shapes -- `N of N claim(s)`, `N claim(s) across M file(s)`, `N failure site(s)` -- from
+  `docs/acceptance.md` and `README.md`, and compares each with `golden-master/gate-sites.json` through
+  the same `claimedSites` the two proof gates run. Measured at the revision that added the rule:
+  **204 claim(s) across 58 file(s), 127 failure site(s)**. The sentence it replaced said **105 of 105**
+  and had said so for twenty-four rounds (finding 471).
+- **The number is read from the artefact, not copied into a second one.** `derive-gate-sites.mjs
+  --check` already holds the inventory to the tree, and `claimedSites` already decides what the proof
+  gates run. A copy in `doc-counts.json` would have been a second account of one fact, and the copy is
+  always the one that goes stale -- which is the shape of every defect in this list.
+- **A dated sentence is a record and is not judged.** The corpus's volumes carry these numbers a dozen
+  times, each true when it was measured; a rule that read them would fail every round and be deleted
+  within one. The vocabulary already exists: a line that says `at v3.41` is a record. This is why the
+  sentence in `docs/acceptance.md` dates its own history rather than hiding it.
+- **Why the existing rules could not see it.** Rules 1 to 4 read table rows carrying `N files, M
+  tests`: they are about the *suite*'s size. This was a sentence about *failure sites*, in a document
+  that is not in the progress corpus at all. A number with no reader is not a number the guard is
+  failing to check -- it is a number the guard's subject never contained.
+- **What is not claimed.** The rule does not check that a present-tense document *carries* such a
+  count; a specification may stop publishing one. What it refuses is publishing one that is wrong.
+
+### A table about a suite is a projection of it (v3.66)
+
+- **The mutation matrix's two columns now come from the code.** The mutation cell is
+  `Mutation.description` and the verdict cell is `expected` (or, for an export mutation, the official
+  target). `test/mutation.test.ts` parses the table out of `docs/acceptance.md` and compares both
+  columns, so a row that stops describing what it names fails the suite (finding 472).
+- **The measurement that motivated it.** Until v3.66 only the *ids* were compared, with a paragraph
+  explaining that prose could not be validated mechanically. The paragraph was true of a table written
+  by hand and false of the one that existed: **thirteen of eighteen rows named a mutation other than
+  the one their id ran.** `MT-02` read *"signal ≠ payload.kind"* against a code row that declares a
+  bogus unit; `MT-05` read *"unit mismatch on metric"* against the answer-key isolation mutation.
+- **The rule is about the column, not about the prose.** A reader who wants *why* a mutation is
+  caught still reads the gate. What the table may not do is paraphrase the one field it claims to
+  reproduce -- and the way to make that impossible is to make it a projection, which is how
+  `<!-- fields: -->` blocks in `docs/target-formats.md` already work.
+- **What is not claimed.** The matrix is not complete on its own: `test/mutation.test.ts` is the
+  evidence, and the table is the index into it.
+
+### A set declares what it is for, and a prompt does not name its answer (v3.66)
+
+- **G4 has a third arm: saturation.** `checkSaturation` reads the `BaselineOutcome[]` G4 already
+  receives, takes the share of the *asked* cases the strongest baseline locates within top-K, and
+  refuses a set above `saturationCeiling` (0.95) once at least `saturationMinCases` (10) carry an
+  outcome. Measured on the shipped corpus: **30 of 30 at rate 1.000**, for both baselines, which is
+  the number its success line had been printing as evidence of health (finding 473).
+- **The corpus declares `purpose`.** `golden-master/fault-cases/index.json` carries
+  `"purpose": "conformance"` at schema `/3`, and `check-fault-cases` refuses an index that declares
+  neither word. A `conformance` set prints the reading and passes -- exercising a converter and being
+  separable are different jobs -- and a `benchmark` set is held to the ceiling. Without the
+  declaration the rule would be red on every run of a corpus doing its job, and a rule that is always
+  red is a rule everyone learns to skip.
+- **G5 has a second arm: the prompt.** `LEAK_IN_QUERY` fires when `groundTruth.rootCauseComponent`
+  appears in `query`, compared after folding case and the separators `-`, `_`, `.`, `/` to spaces.
+  Measured at the revision that added it: **19 of 30** cases named their own answer, not the 3 a
+  substring comparison had reported -- the gap is entirely `checkout-api` against `checkout api`
+  (finding 474). All nineteen task texts were rewritten; the reading is **0 of 30**.
+- **Why the declaration could not stand in for the measurement.** `answerKeyIsolated` is a boolean a
+  case asserts about itself, and it was `true` on all nineteen. A claim is not a measurement, and the
+  case that says so most clearly is one whose prompt opens with its own answer.
+- **Why this is not the same rule as `score.ts`'s `answer-key-isolated`.** That check compares
+  **whole cells** of the exported `query.csv` against the answer key, which catches a field holding
+  the answer and deliberately does not flag a sentence that mentions the component. This arm judges
+  the IR case's prompt, where a named component makes localisation a reading exercise. Different
+  artefacts, different claims; the export rule is unchanged.
+- **What is not claimed.** Saturation is a reading against the baselines that were run, not against
+  SOTA; a set can be unsaturated here and still be easy. And a name shorter than six characters is
+  not judged, because a two-letter service name is also an English word -- the count that is skipped
+  is printed rather than hidden.

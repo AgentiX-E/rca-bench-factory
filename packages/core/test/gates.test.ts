@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   caseFingerprint,
   checkG1Structural,
+  checkSaturation,
+  describePromptLeaks,
+  describeSaturation,
+  normaliseName,
+  promptNamePattern,
+  readPromptLeaks,
+  readSaturation,
   checkG2Semantic,
   checkG3Validity,
   checkG4Solvability,
@@ -729,5 +736,251 @@ describe('runAllGates', () => {
     );
     // With no outcome to rank, G4 cannot prove the case is solvable.
     expect(report.results).toContainEqual(expect.objectContaining({ gateId: 'G4', status: 'failed' }));
+  });
+});
+
+/**
+ * Whether a set can separate methods, and whether a prompt hands over its own answer.
+ *
+ * Both arms were added at v3.66, and both exist because the same number was being read as
+ * evidence of health: `check-fault-cases` printed "both baselines place them in their top-K" in
+ * its success line, and the corpus's `answerKeyIsolated` flag was `true` on thirty cases whose
+ * task text named the answer in nineteen of them.
+ */
+describe('set saturation', () => {
+  /** `count` distinct cases, each solved at rank 1 by every named method. */
+  function setOf(count: number, methods: string[], rank = 1): IrBundle {
+    const cases = Array.from({ length: count }, (_, i) => validCase({ caseId: `case-${String(i)}` }));
+    return validBundle({ cases });
+  }
+
+  /** `count` outcomes starting at case `from`, so two calls can describe disjoint slices of a set. */
+  function outcomesFor(
+    count: number,
+    methods: string[],
+    rank: number | null,
+    from = 0,
+  ): BaselineOutcome[] {
+    const out: BaselineOutcome[] = [];
+    for (let i = from; i < from + count; i += 1) {
+      for (const method of methods) {
+        out.push({ caseId: `case-${String(i)}`, method, rankOfTruth: rank, topK: 3, candidateCount: 12 });
+      }
+    }
+    return out;
+  }
+
+  it('flattens the spelling a name is written in', () => {
+    expect(normaliseName('checkout-api')).toBe('checkout api');
+    expect(normaliseName('  Checkout_API.Primary ')).toBe('checkout api primary');
+    expect(normaliseName('a---b__c/d')).toBe('a b c d');
+  });
+
+  it('matches a name on word boundaries rather than inside a longer word', () => {
+    expect(promptNamePattern('checkout-api')?.test('the checkout api p99 rose')).toBe(true);
+    // The boundary is "not a letter or digit", so a longer token that merely starts with the name
+    // does not match. `\b` would have said yes here, because a hyphen is a boundary to it.
+    expect(promptNamePattern('checkout-api')?.test('the checkout apis p99 rose')).toBe(false);
+    expect(promptNamePattern('checkout-api')?.test('checkout-apix rose')).toBe(false);
+  });
+
+  it('builds no pattern for a name that normalises to nothing', () => {
+    // A caller asking for a pattern is asking to search text for a name. Empty and punctuation-only
+    // names have no name to search for, and `new RegExp('')` would match every prompt in the set --
+    // the widest possible leak reading from the emptiest possible input.
+    expect(promptNamePattern('')).toBeNull();
+    expect(promptNamePattern(' -._/ ')).toBeNull();
+    expect(promptNamePattern('checkout-api')).not.toBeNull();
+  });
+
+  it('names the strongest baseline and its rate over the cases it was asked about', () => {
+    const bundle = setOf(10, ['peak-z', 'median-shift']);
+    const outcomes = [
+      ...outcomesFor(10, ['peak-z'], 1),
+      // The second method is right on half of them: the reading reports the strongest, not the mean,
+      // because a set is separable only as far as its best available method is separable.
+      ...outcomesFor(5, ['median-shift'], 1),
+      ...outcomesFor(5, ['median-shift'], null),
+    ];
+    const reading = readSaturation(bundle, outcomes, {});
+    expect(reading.asked).toBe(10);
+    expect(reading.methods).toEqual([
+      { method: 'median-shift', hits: 5, rate: 0.5 },
+      { method: 'peak-z', hits: 10, rate: 1 },
+    ]);
+    expect(reading.strongest).toEqual({ method: 'peak-z', hits: 10, rate: 1 });
+    expect(reading.saturated).toBe(true);
+  });
+
+  it('counts the cases it was asked about, not the ones in the set', () => {
+    // Three of thirty cases carry an outcome. The rate is 3 of 3, not 3 of 30 -- and the set is not
+    // judged, because three is below the floor.
+    const bundle = setOf(30, ['peak-z']);
+    const reading = readSaturation(bundle, outcomesFor(3, ['peak-z'], 1), {});
+    expect(reading.asked).toBe(3);
+    expect(reading.strongest).toEqual({ method: 'peak-z', hits: 3, rate: 1 });
+    expect(reading.judged).toBe(false);
+    expect(reading.saturated).toBe(false);
+    expect(describeSaturation(reading)).toBe(
+      'set saturation: not judged -- 3 case(s) carry an outcome and the floor is 10',
+    );
+  });
+
+  it('refuses a benchmark set the strongest baseline already solves', () => {
+    const bundle = setOf(10, ['peak-z']);
+    const outcomes = outcomesFor(10, ['peak-z'], 1);
+    const violations = checkSaturation(bundle, outcomes, {}).violations;
+    expect(violations).toContainEqual(
+      expect.objectContaining({
+        code: 'SATURATED_SET',
+        message:
+          "the strongest baseline ('peak-z') locates 10 of 10 case(s) within top-3 (rate 1.000 against a " +
+          'ceiling of 0.950), so this set cannot separate methods',
+      }),
+    );
+    // The same number in the sentence the run prints, so the reading and the refusal cannot drift:
+    // the log line and the violation are two renderings of one `SaturationReading`.
+    expect(describeSaturation(readSaturation(bundle, outcomes, {}))).toBe(
+      "set saturation: the strongest baseline ('peak-z') locates 10 of 10 case(s) within top-3 (rate " +
+        "1.000); purpose 'benchmark', so this set is saturated",
+    );
+  });
+
+  it('reads the strongest method by its rate, not by the order the outcomes arrived in', () => {
+    // Both directions of the reduce, because each one alone would let a wrong comparison pass. The
+    // fixtures elsewhere in this block have either one method or the strongest first, so "this one
+    // beats the best so far" was never taken until this case existed -- and `peak-z` against
+    // `median-shift` in the shipped corpus is exactly that shape, because the stronger baseline
+    // sorts first there.
+    const bundle = setOf(10, []);
+    const weak = outcomesFor(10, ['a-weak'], 9);
+    const strong = outcomesFor(10, ['b-strong'], 1);
+    // The stronger method sorts last: the reduce keeps replacing its best, and must end on `b-strong`
+    // whatever order the rows arrived in.
+    const later = readSaturation(bundle, [...weak, ...strong], {});
+    expect(later.strongest).toEqual({ method: 'b-strong', hits: 10, rate: 1 });
+    expect(readSaturation(bundle, [...strong, ...weak], {})).toEqual(later);
+    // The stronger method sorts first: the reduce must keep what it has, which is the arm a `<`
+    // written in place of `>` would silently reverse.
+    const earlier = readSaturation(bundle, [...outcomesFor(10, ['a-strong'], 1), ...outcomesFor(10, ['b-weak'], 9)], {});
+    expect(earlier.strongest).toEqual({ method: 'a-strong', hits: 10, rate: 1 });
+  });
+
+  it('ignores an outcome that names a case the set does not contain', () => {
+    // A stray row is not a question about anything. It must not narrow the top-K the set is
+    // reported at -- the earlier version read `topK` across every outcome, so one row with
+    // `topK: 1` would have reported the whole set as a top-1 set -- and it must not enter the
+    // denominator either, because that is what "the cases it was asked about" means.
+    const bundle = setOf(10, ['peak-z']);
+    const stray: BaselineOutcome = { caseId: 'case-absent', method: 'peak-z', rankOfTruth: 1, topK: 1, candidateCount: 12 };
+    const reading = readSaturation(bundle, [...outcomesFor(10, ['peak-z'], 1), stray], {});
+    expect(reading.asked).toBe(10);
+    expect(reading.topK).toBe(3);
+    expect(reading.strongest).toEqual({ method: 'peak-z', hits: 10, rate: 1 });
+    // A set with no overlap at all is asked nothing, so every method's rate is 0 rather than NaN.
+    const disjoint = readSaturation(bundle, [stray], {});
+    expect(disjoint.asked).toBe(0);
+    expect(disjoint.topK).toBeNull();
+    expect(disjoint.methods).toEqual([{ method: 'peak-z', hits: 0, rate: 0 }]);
+    expect(disjoint.saturated).toBe(false);
+  });
+
+  it('passes the same set when it declares itself a conformance fixture', () => {
+    const bundle = setOf(10, ['peak-z']);
+    const outcomes = outcomesFor(10, ['peak-z'], 1);
+    expect(checkSaturation(bundle, outcomes, { setPurpose: 'conformance' }).status).toBe('passed');
+    // The reading is the same number; only the verdict differs, which is what the declaration buys.
+    expect(describeSaturation(readSaturation(bundle, outcomes, { setPurpose: 'conformance' }))).toContain(
+      "purpose 'conformance', so this is a reading and not a verdict",
+    );
+  });
+
+  it('passes a benchmark set the baselines cannot solve outright', () => {
+    const bundle = setOf(10, ['peak-z']);
+    // Six of ten: below the ceiling, above the floor, and the gate stays quiet.
+    const outcomes = [...outcomesFor(6, ['peak-z'], 1, 0), ...outcomesFor(4, ['peak-z'], 9, 6)];
+    const reading = readSaturation(bundle, outcomes, {});
+    expect(reading.saturated).toBe(false);
+    expect(describeSaturation(reading)).toContain("purpose 'benchmark', ceiling 0.950");
+    expect(checkSaturation(bundle, outcomes, {}).status).toBe('passed');
+  });
+
+  it('says so when no outcome was supplied at all', () => {
+    const reading = readSaturation(setOf(1, []), [], { saturationMinCases: 0 });
+    expect(reading.topK).toBeNull();
+    expect(reading.strongest).toBeNull();
+    expect(describeSaturation(reading)).toBe('set saturation: not judged -- no baseline outcome was supplied');
+  });
+});
+
+describe('a prompt that names its own answer', () => {
+  it('flags the component when the task text spells it', () => {
+    const cases = [validCase({ query: 'checkout-api p99 rose from 180ms to 4.3s. What failed?' })];
+    const fc = cases[0] as FaultCase;
+    fc.groundTruth.rootCauseComponent = 'checkout-api';
+    const violations = checkG5AntiPollution(validBundle({ cases })).violations;
+    expect(violations).toContainEqual(
+      expect.objectContaining({
+        code: 'LEAK_IN_QUERY',
+        message:
+          "case 'case-001' names its root-cause component ('checkout-api') in the task text, so locating " +
+          'it is a reading exercise rather than a diagnosis',
+      }),
+    );
+  });
+
+  it('accepts the same name in the telemetry, which is where the evidence belongs', () => {
+    // The answer has to appear in the signals or the case cannot be scored at all; what the rule
+    // forbids is the same word in the prompt. The two differ by one field, which is why the arm
+    // reads one field rather than the whole bundle.
+    const cases = [validCase({ query: 'A checkout path got slower. What failed?' })];
+    const fc = cases[0] as FaultCase;
+    fc.groundTruth.rootCauseComponent = 'checkout-api';
+    const bundle = validBundle({ cases });
+    expect(bundle.signals['case-001']?.length).toBeGreaterThan(0);
+    expect(checkG5AntiPollution(bundle).status).toBe('passed');
+  });
+
+  it('does not judge a name too short to mean one thing', () => {
+    // The default fixture's component is `order`, and its prompt says "The order service became slow".
+    // That is how an incident is written; a rule that read it as a leak would fire on every case
+    // whose name is also an English word, and the repair would be to stop reading the rule.
+    const bundle = validBundle();
+    const reading = readPromptLeaks(bundle);
+    expect(reading.judged).toBe(0);
+    expect(reading.skipped).toEqual([{ caseId: 'case-001', component: 'order' }]);
+    expect(describePromptLeaks(reading)).toBe(
+      'prompt leakage: 0 of 0 case(s) name their root-cause component in the task text; 1 case(s) not ' +
+        'judged because their component name is shorter than 6 characters',
+    );
+    expect(checkG5AntiPollution(bundle).status).toBe('passed');
+  });
+
+  it('reads a case that carries no task text at all', () => {
+    // `query` is optional in the IR, so a case can reach this arm with nothing to leak into. It is
+    // judged -- its name is long enough to search for -- and it has no leak, rather than the absent
+    // field becoming the string 'undefined' and that being searched for.
+    const cases = [validCase({ caseId: 'quiet' })];
+    const fc = cases[0] as FaultCase;
+    fc.groundTruth.rootCauseComponent = 'media-transcoder';
+    delete fc.query;
+    const reading = readPromptLeaks(validBundle({ cases }));
+    expect(reading.judged).toBe(1);
+    expect(reading.leaks).toEqual([]);
+    expect(describePromptLeaks(reading)).toBe(
+      'prompt leakage: 0 of 1 case(s) name their root-cause component in the task text',
+    );
+  });
+
+  it('prints the leaks it found, by case', () => {
+    const cases = [validCase({ caseId: 'a' }), validCase({ caseId: 'b' })];
+    for (const one of cases) one.groundTruth.rootCauseComponent = 'media-transcoder';
+    (cases[1] as FaultCase).query = 'The media transcoder restarted 178 times. What failed?';
+    const reading = readPromptLeaks(validBundle({ cases }));
+    expect(reading.judged).toBe(2);
+    expect(reading.leaks).toEqual([{ caseId: 'b', component: 'media-transcoder' }]);
+    expect(describePromptLeaks(reading)).toBe(
+      'prompt leakage: 1 of 2 case(s) name their root-cause component in the task text (b -> media-transcoder)',
+    );
   });
 });
