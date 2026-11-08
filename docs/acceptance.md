@@ -1182,3 +1182,55 @@ from an anecdote again.
 - **What is not claimed.** The `state` column is not judged: 78 distinct values over 147 rows, a median
   of 75 characters. That is a reading, not a state, and a vocabulary for it would mean rewriting
   nineteen frozen records. Capturing a column is not judging a value.
+
+### A record may not be the only place a residual lives (v3.65)
+
+- **The newest round's record is read against the live list.** Every row's `item` cell must quote an
+  entry: after emphasis, quote and dash normalisation, twenty characters of the row have to appear
+  inside an entry that the live list holds. A row that names nothing is refused -- it is a residual a
+  reader of the list is not told about -- and so is a row that names an entry in other words, because
+  then the row's words and the entry's words are each reachable only in their own document (finding 468).
+- **Why the count did not find it.** The currency stamp is arithmetic over the entries below it, so a
+  residual that is not an entry is not a residual to the number. Four residuals, one of them the log's
+  only **P1**, lived in six rounds' records and in no entry (finding 467). The list grew from 11 to 15
+  rather than shrinking, which is the direction an under-reporting list should move.
+- **Only the newest record is judged.** A record is frozen: nothing appends to it, and a round that has
+  been written up cannot be repaired. The rule therefore reads the one record that can still be edited,
+  which is the same scope, and the same argument, as the stamp's comparison with the newest round.
+- **A row too short to name anything is refused as such.** `see above` would fail the quotation arm by
+  coincidence; refusing it by name keeps the diagnostic about the rule rather than about the odds.
+- **What is not claimed.** The record's rows are still not judged for content, and the older twenty are
+  not read for their company at all. What is claimed is that no residual can live only in a record.
+
+### A new rule is justified against the rules that exist (v3.65)
+
+- **`Closed by finding N` was already resolved, by `check-citations.mjs`.** That gate covers both
+  documents, their indices and every volume of each, and refuses a citation of a number with no heading
+  -- 1835 citations of 466 numbers, all resolving. The arm v3.65 added for the same property was a
+  second ruler and was deleted in the round that added it, with its three tests and three mutations
+  (finding 469).
+- **What refuted it was the corpus, not a review.** The round's own write-up cited a number with no
+  heading as the illustration of the defect, and the existing gate refused the paragraph. A claim about
+  what this repository does or does not check is checkable by reading what it does.
+- **What is still not claimed.** A citation of the right number for the wrong claim passes: both numbers
+  have headings and the sentence is prose. That is the limit `audit-citations.mjs` states for itself.
+- **What the round kept.** The four mutations that test the record arm, and the reading the deleted arm
+  produced on its way past: 39 closure citations in the open list, 39 resolving.
+
+### The index is smaller than the smallest volume it indexes (v3.65)
+
+- **The relation is printed every run, and it fired.** `check-progress-volumes.mjs` prints
+  `index N of smallest volume M`. At v3.65 the index reached **93,828** against a smallest volume of
+  **92,355** -- the first time in eighty-nine rounds -- and the gate refused with the sentence it was
+  built to say: *either the section that grew is a record and belongs in a volume, or the index is no
+  longer an index* (finding 470).
+- **The answer is a classification, not a trim.** `## Audit passes` is a record with no lookup in it,
+  and it is the only copy: v2.35 measured that of 79 prose sentences longer than 60 characters in it,
+  none appear in `docs/audit/`. It moved to `docs/audit/passes.md` with its heading promoted one level.
+  Nothing in it was rewritten, and the reading after the move is **74,295** -- 18,060 bytes of headroom.
+- **A record is not judged by its size but by its reader.** The rule does not say what to delete; it
+  says how much room is left. Cutting the index by trimming three paragraphs would have satisfied the
+  number and left the next round in the same place, which is why the section that moved is the one
+  nothing in the index looks up.
+- **What is not claimed.** The next section to grow will hit the same relation. It is a gate that fires
+  and an answer that has to be given again, not a defect repaired once.

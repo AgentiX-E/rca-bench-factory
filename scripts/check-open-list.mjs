@@ -33,6 +33,28 @@
  * refuse a placeholder, and it cannot refuse a wrong-but-fluent sentence. Stated
  * here rather than left to look like more than it is.
  *
+ * ## Two populations, and the round that found them apart (finding 467)
+ *
+ * A round's record has an `item` column, and a residual can live there with **no entry
+ * behind it** -- four did, the only P1 in the log among them, for six rounds. The stamp
+ * could not see it: its number is arithmetic over the entries below it, computed by this
+ * guard, so a residual that is not an entry is not a residual to the number. The newest
+ * record's rows must now quote an entry (twenty characters of the row, marks removed,
+ * appear inside one), because a paraphrase is a sentence with one reader and the entry is
+ * the other (finding 468).
+ *
+ * Older records are not judged: a record is frozen and nothing appends to it, so a rule
+ * that judged them would demand a repair the corpus forbids.
+ *
+ * ## The rule that was already here
+ *
+ * v3.65 also added an arm resolving a closure's `Closed by finding N` against the audit,
+ * on the reading that the citation had only ever been checked for its shape. It had not:
+ * `check-citations.mjs` resolves every `finding N` in the documentation and refuses one
+ * that names nothing, and it has done since finding 205. The arm was removed in the same
+ * round, and the only reason the round noticed is that its own write-up cited a number
+ * with no heading as an example of the defect (finding 469).
+ *
  * ## Subject
  *
  * The section is located by its **heading**, not by any line that mentions the word
@@ -51,7 +73,7 @@
  * for the two judges could not have answered this question.
  */
 
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { progressCorpus } from './docs-corpus.mjs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -132,6 +154,7 @@ function source(rel) {
 const CLOSED = /~~/;
 const CITED = /(?:Closed|Narrowed|Retracted)\b[^.]{0,120}?\b(?:finding\s+\d+|Pass\s+\d+|v\d+\.\d+)/;
 const UNCITED = /(?:Closed without a finding|Closed in this pass)[\s\S]{40,}/;
+
 /**
  * The entry's own reason, and why it is the **last** marker rather than the first.
  *
@@ -181,6 +204,31 @@ function struckReason(item, marker) {
   const start = marker.index + marker[0].length;
   const right = item.slice(start, start + 3);
   return /(?:~~|~~`)$/.test(left) && /^(?:~~|`~~)/.test(right);
+}
+
+/**
+ * Text with the marks taken out, so a quotation can be compared with the thing it quotes.
+ *
+ * A record's `item` cell is the only handle a reader has on a residual: the entry above is in
+ * another document, and the row is a sentence about it. When the row is the entry's own words,
+ * `grep` finds both; when it is a paraphrase, the row is the only place those words exist --
+ * which is finding 463's argument (a title is an exact string) applied to a cell instead of a
+ * heading.
+ *
+ * Emphasis, code ticks and quotes are formatting rather than words, so they are removed;
+ * whitespace is collapsed and the case is dropped, for the same reason. What is left is what a
+ * person comparing the two side by side would call the same sentence.
+ */
+function plain(text) {
+  return text
+    .replace(/\*\*|~~|`/g, '')
+    .replace(/[’‘]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[–—]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.…]+$/, '')
+    .toLowerCase();
 }
 
 /**
@@ -353,7 +401,7 @@ function tableShape(lines) {
       };
     }
   }
-  return { rows: rows.length, problem: null };
+  return { rows: rows.length, problem: null, rowLines: rows };
 }
 
 /**
@@ -499,6 +547,13 @@ function check() {
     const reasons = new Map();
     const live = [];
     const rounds = [];
+    // Every entry of the live list, as text, so a record's row can be compared with the thing
+    // it is a row about. Both states: a record may name a residual the live list has just
+    // closed, and that row is still pointing at an entry that exists.
+    const listed = [];
+    // Every table-form record that sits under a round heading, with the round that wrote it.
+    // `rowLines` are the rows; the header and the rule are not rows (finding 464).
+    const records = [];
     let total = 0;
     let closed = 0;
     let sectionsSeen = 0;
@@ -531,9 +586,17 @@ function check() {
     // The rounds this corpus says happened. Read from every file, because a volume is
     // where a round is written and the index is where the list is: the stamp has to be
     // comparable with the newest of them, and `--doc` makes that one file.
-    for (const match of text.matchAll(/^## (v(\d+)\.(\d+))\b/gm)) {
-      rounds.push({ round: match[1], major: Number(match[2]), minor: Number(match[3]) });
-    }
+    //
+    // The line number is kept as well, because a record belongs to the round **above** it and
+    // "which round wrote this table" is a question about position rather than about text.
+    const roundAt = [];
+    text.split('\n').forEach((line, index) => {
+      const match = ROUND.exec(line);
+      if (match === null) return;
+      const one = { line: index, round: match[1], major: Number(match[2]), minor: Number(match[3]) };
+      rounds.push(one);
+      roundAt.push(one);
+    });
     if (found.length === 0) continue;
     headings += 1;
     sectionsSeen += found.length;
@@ -573,6 +636,17 @@ function check() {
         }
         tables += 1;
         tableRows += shape.rows;
+        // Which round wrote this record: the nearest round heading above it. A record with no
+        // round above it is a fixture, or a document from before rounds had headings, and it is
+        // read for its shape and not for the company its rows keep.
+        const owner = roundAt.filter((one) => one.line < section.index).at(-1) ?? null;
+        if (owner !== null) {
+          records.push({
+            label: from.label,
+            owner,
+            items: (shape.rowLines ?? []).map((row) => cellsOf(row)[COLUMNS.indexOf('item')] ?? ''),
+          });
+        }
         return;
       }
       if (items.length === 0) {
@@ -587,6 +661,7 @@ function check() {
       for (const item of items) {
         const headline = item.split('\n')[0];
         const first = headline.slice(2).trim();
+        listed.push(item);
         // The entry's own reason, read once: the closed branch needs it to refuse a bullet
         // that is history in its headline and work in its body, and the open branch needs it
         // to refuse the mirror. Reading it in two places would let the two drift.
@@ -665,12 +740,70 @@ function check() {
       );
       continue;
     }
+    // The newest round's record, matched against the live list.
+    //
+    // ## What this arm is for
+    //
+    // A record's `item` column is a place a residual can live with **no entry behind it**, and
+    // four of them did: the only P1 in this log -- the remote's history sharing no name with the
+    // local one -- spent six rounds in records and never appeared in the list that calls itself
+    // the only live list. A reader who greps for what is open, which is the reader the live list
+    // exists for, was not told about the largest thing outstanding.
+    //
+    // The count could not see it. The stamp is arithmetic over the entries below it, so a
+    // residual that is not an entry is not a residual as far as the stamp is concerned -- and
+    // the guard printed both numbers (eleven open, seven rows judged in the newest record)
+    // without ever asking whether they were talking about the same set.
+    //
+    // ## Why only the newest round's record
+    //
+    // Older records are frozen: nothing appends to them, and a round that has been written up
+    // cannot be repaired. Their rows are history and their paraphrases are how the log was kept.
+    // The newest record is the one that can still be edited, so it is the one this arm reads --
+    // the same scope, and for the same reason, as the currency stamp's round comparison.
+    const newestRecord = records.reduce(
+      (best, one) =>
+        best === null ||
+        one.owner.major > best.owner.major ||
+        (one.owner.major === best.owner.major && one.owner.minor > best.owner.minor)
+          ? one
+          : best,
+      null,
+    );
+    let quotedRows = 0;
+    if (newestRecord !== null) {
+      const entries = listed.map((one) => plain(one));
+      for (const item of newestRecord.items) {
+        const row = plain(item);
+        if (row.length < 20) {
+          problems.push(
+            `${newestRecord.label}: the ${newestRecord.owner.round} record has a row whose item is ` +
+              `${row.length} character(s), too short to name an entry: ${item.slice(0, 60)}`,
+          );
+          continue;
+        }
+        if (entries.some((one) => one.includes(row))) {
+          quotedRows += 1;
+          continue;
+        }
+        problems.push(
+          `${newestRecord.label}: the ${newestRecord.owner.round} record names a residual the live list ` +
+            `does not hold -- "${item.slice(0, 60)}" appears in no entry -- so it is a residual a reader of ` +
+            'the list is not told about; add the entry, or quote the entry the row is about',
+        );
+      }
+    }
     // The section count is printed beside the entry count, so a document that gains a
     // list cannot do it silently: the number of lists is part of the evidence.
+    const judged =
+      newestRecord === null
+        ? `${tables} record(s) in table form (${tableRows} row(s)) whose rows were not judged, and no ` +
+          'round heading to attach one to'
+        : `${tables} record(s) in table form (${tableRows} row(s)) whose rows were not judged, except the ` +
+          `${newestRecord.owner.round} record's ${quotedRows} row(s), every one of which quotes an entry`;
     console.log(
       `check-open-list: OK (${total} entry(ies) across ${sectionsSeen} section(s) of ${files.length > 1 ? 'docs/progress.md and its volumes' : labelled}: ` +
-        `${total - closed} open with a reason, ${closed} closed by a finding, and ${tables} record(s) in table ` +
-        `form (${tableRows} row(s)) whose rows were not judged)`,
+        `${total - closed} open with a reason, ${closed} closed by a finding, and ${judged})`,
     );
     stampChecks({ live, rounds, problems });
   }

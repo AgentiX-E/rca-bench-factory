@@ -133,7 +133,7 @@ describe('docs · the shipped list, as the guard reads it', () => {
     // instead held to the document's own headings, counted here from the file, and the
     // entry count to the two parts it is made of.
     const summary = shipped.stdout.match(
-      /check-open-list: OK \((\d+) entry\(ies\) across (\d+) section\(s\) of docs\/progress\.md(?: and its volumes)?: (\d+) open with a reason, (\d+) closed by a finding, and (\d+) record\(s\) in table form \((\d+) row\(s\)\) whose rows were not judged\)/,
+      /check-open-list: OK \((\d+) entry\(ies\) across (\d+) section\(s\) of docs\/progress\.md(?: and its volumes)?: (\d+) open with a reason, (\d+) closed by a finding, and (\d+) record\(s\) in table form \((\d+) row\(s\)\)/,
     );
     expect(summary, `the guard's summary changed shape: ${shipped.stdout}`).not.toBeNull();
     const numbers = (summary ?? []).slice(1).map(Number);
@@ -644,5 +644,73 @@ describe('docs · the rows a table-form record holds, counted from the record', 
     expect(rows, 'the corpus holds no priority rows, so this arm is vacuous').toBeGreaterThan(100);
     expect(shipped.stdout).toContain(`(${String(rows)} row(s))`);
     expect(shipped.stdout).not.toContain('(185 row(s))');
+  });
+});
+
+/**
+ * The residual that lives in a record and nowhere else.
+ *
+ * A round's record has four columns and the `item` column is a sentence about a residual. Until
+ * v3.65 nothing compared that sentence with the live list, and four residuals were in records and
+ * in no entry at all -- the only **P1** in this log among them, six rounds old. A reader who greps
+ * the list for what is open, which is the reader the list exists for, was not told about the
+ * largest thing outstanding, and the currency stamp could not say so: its number is arithmetic over
+ * the entries below it, and a residual that is not an entry is not counted.
+ *
+ * The arm reads the **newest** record only. Older records are frozen -- nothing appends to them --
+ * so a rule that judged them would be a rule demanding a repair the corpus forbids. The newest one
+ * is the one that can still be edited, which is the same scope, and the same reason, as the
+ * currency stamp's round comparison.
+ *
+ * Two outcomes, and the second is the one that matters for a reader: a row that names nothing is
+ * refused, and a row that is a **paraphrase** of an entry is refused too -- because then the row's
+ * words exist in one place and the entry's words in another, and `grep` finds neither both ways.
+ * That is finding 463's argument (a title is an exact string) applied to a cell.
+ */
+describe('docs · a record may not be the only place a residual lives', () => {
+  const QUOTED = 'A residual the live list also carries';
+  const LIVE = `- ${QUOTED}. [open: the reason this is still work, long enough to be a reason a reader acts on]`;
+  const ROUND = 'v9.9';
+
+  /** One round whose record is `body`, over a live list holding exactly one entry. */
+  const page = (body: string) =>
+    `## ${ROUND} — a round\n\n### Left open, in the order the goal is reached\n\n${TABLE_HEAD}\n${body}\n\n` +
+    `## Open\n\n${LIVE}\n\nChecked at ${ROUND}: **1** entries open\n\n## Pass log\n\nbody\n`;
+
+  it('accepts a row whose item quotes an entry the live list holds', () => {
+    const r = runOn(page(`| **P1** | ${QUOTED} | unchanged | nothing |`));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain(`the ${ROUND} record's 1 row(s), every one of which quotes an entry`);
+  });
+
+  it('refuses a row that names a residual no entry in the live list holds', () => {
+    // The shipped defect in fixture form: this is v3.64's own first row, seven rounds after the
+    // residual it names was raised, and the list it was raised against has never mentioned it.
+    const r = runOn(page('| **P1** | the split is expensive by 240 s of every run | unchanged | nothing |'));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('names a residual the live list does not hold');
+    expect(r.out).toContain('add the entry, or quote the entry the row is about');
+  });
+
+  it('leaves an older record alone, because a frozen record cannot be repaired', () => {
+    // The scope is the newest record, and the reason is in the corpus rather than in taste:
+    // a record is frozen, nothing appends to it, and its rows are how the log was kept before
+    // the rule existed. A rule over the older twenty would demand a repair the corpus forbids
+    // -- so the newest record is judged and the one before it is history.
+    const older = `## v9.8 — the round before\n\n### Left open, in the order the goal is reached\n\n${TABLE_HEAD}\n` +
+      '| **P1** | a residual the list does not hold, written before the rule | unchanged | nothing |\n\n';
+    const newer = `## ${ROUND} — a round\n\n### Left open, in the order the goal is reached\n\n${TABLE_HEAD}\n` +
+      `| **P1** | ${QUOTED} | unchanged | nothing |\n\n`;
+    const r = runOn(`${older}${newer}## Open\n\n${LIVE}\n\nChecked at ${ROUND}: **1** entries open\n\n## Pass log\n\nbody\n`);
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain(`the ${ROUND} record's 1 row(s), every one of which quotes an entry`);
+  });
+
+  it('refuses a row whose item is too short to name anything at all', () => {
+    // `see above` is 9 characters and matches no entry, so it would be refused anyway -- but by
+    // the wrong arm, and a sentence about a coincidence is not a sentence about a rule.
+    const r = runOn(page('| **P1** | see above | unchanged | nothing |'));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('too short to name an entry');
   });
 });

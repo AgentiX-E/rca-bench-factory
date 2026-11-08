@@ -3678,3 +3678,183 @@ can do about prose is make it locatable. That is what findings 464 and 465 built
 names are checked, a rule that separates them from the rows, a cell count that says which column a
 value is in, and a non-empty state cell. The word in the heading is still `state`; nineteen records
 are worth more than the word.
+
+## Finding 467 — the only P1 in the log lived in a round's record, and the list that exists so nobody has to read the round never held it
+
+`docs/progress.md`'s `## Open` section calls itself *"the only live list"*, and a round's `### Left open`
+record is what that round left undone. The two were never compared. The guard printed both counts on
+one line -- **11** open entries, **7** rows in the newest record -- and a line that prints two numbers
+without asking whether they are about the same set is a line that reports a disagreement as two facts.
+
+### The measurement
+
+The seven rows of v3.64's record, read against the twenty-six entries of the live list:
+
+| row | what it is |
+| --- | --- |
+| `the remote's history shares no name with the local one above` | **no entry anywhere**, raised at v3.59 and carried in six records |
+| `the currency line proves a round counted, not that it read` | **no entry anywhere** |
+| `the base search is linear in the number of twin tips` | **no entry anywhere** |
+| `a bounded ref count is a floor, not a count` | **no entry anywhere** |
+| `the split is expensive by 240 s of every run` | the entry *"The sensitivity shards are cut by file count, not by cost"* |
+| `a table-form record's rows are prose` | the entry *"A record written as a table is counted, not judged"* |
+| `P13: a mutation is one substitution` | the entry, quoted |
+
+Four residuals, one of them the log's only **P1**, were reachable only through the round that raised
+them. A reader who greps the live list -- which is the reader the list exists for -- was not told about
+the largest thing outstanding.
+
+### Why the count could not say so
+
+The currency stamp is `Checked at v3.64: **11** entries open`, and 11 is right: the guard counts the
+entries below the line and refuses a number that is not that count. That is the whole of its reach. A
+residual that is not an entry is not counted, so the stamp was **exact and about the wrong population**
+-- finding 465's shape (a number that agrees with the rule it defends) in a third document, and the
+reason the arithmetic was never going to find this.
+
+The number that would have found it is not a count either: it is the question *which rows of this record
+have an entry behind them*, which needs the two lists compared rather than each counted.
+
+### The fix
+
+The four are entries now -- the list grows from 11 to 15, which is what a list that has been
+under-reporting should do -- and the guard has an arm: the newest round's record may not name a residual
+the live list does not hold. The scope is the newest record, because a record is frozen and nothing
+appends to it; a rule over the older twenty would demand a repair the corpus forbids.
+
+## Finding 468 — a record's row is a paraphrase, so the row and the entry have one reader each
+
+Of the seven rows in v3.64's record, **one** quotes an entry. Two more describe entries that exist, in
+words that appear exactly once in this corpus -- in the record:
+
+| the row | the entry it is about |
+| --- | --- |
+| `the split is expensive by 240 s of every run` | *"The sensitivity shards are cut by file count, not by cost."* |
+| `a table-form record's rows are prose` | *"A record written as a table is counted, not judged."* |
+
+Neither is wrong. Both are unreadable in the way that matters: `grep` for the row finds the record, and
+`grep` for the entry finds the entry, and the two strings share no run of words long enough to be a
+search term. This is finding 463's argument -- *a title is an exact string, and a document that re-spells
+it has no reader* -- applied to a cell instead of a heading, and it is the same defect the table
+headings had before v3.45 made them exact.
+
+### The measurement, and the ruler it needed
+
+The comparison cannot be `===` on the two strings, because markdown puts emphasis, code ticks and curly
+quotes in one and not always in the other. It is: strip `**`, `~~` and backticks, normalise the quote
+and dash forms, collapse whitespace, drop the case and the trailing full stop -- and then require twenty
+characters of the row to appear inside an entry. Under that ruler the shipped record scores **1 of 7**,
+and the six failures split into the four of finding 467 and the two above.
+
+Twenty is a floor chosen from the corpus rather than from principle: the shortest row that names
+something is 25 characters, and a rule that accepted `see above` would accept a coincidence.
+
+### The fix
+
+The newest record's `item` cells are quotations now, and the guard refuses one that is too short to name
+anything, one that names nothing, and one that names an entry in other words. The v3.65 record quotes
+all six of its rows.
+
+## Finding 469 — the rule v3.65 added for a third defect had existed since finding 205, and the corpus said so through the round's own prose
+
+The round's third claim was that a closure's citation had only ever been checked for its **shape**:
+`(?:Closed|Narrowed|Retracted)\b[^.]{0,120}?\b(?:finding\s+\d+|Pass\s+\d+|v\d+\.\d+)` answers *does this
+sentence say what closed it*, never *what does it say*, and a number is the one part of the sentence a
+typo moves without disturbing the prose. An arm was written for it -- read the audit's headings, extract
+the number, refuse a citation that names nothing -- and it passed its own tests and the shipped corpus.
+
+### The measurement that refuted it
+
+The refutation came from the round's own write-up. The sentence written to illustrate the defect cited a
+number with no heading, and `check-citations.mjs` -- which is part of `docs:check` and has been since
+finding 205 -- refused the paragraph:
+
+```
+  docs/progress/volume-12.md:1852: cites finding <n>, which has no heading
+check-citations: FAILED -- 1 citation(s) of 1 number(s)
+```
+
+That gate resolves every `finding N` written in `docs/audit.md`, `docs/progress.md` and every volume of
+both, and refuses a dangling one: **1836 citations of 466 numbers across 24 files**, all resolving, with
+the three absent numbers (118, 132, 133) printed rather than refused. The premise was false, and the
+round's arm was a second ruler for a property that already had one -- the duplication this repository has
+paid for before, and the reason `audit-citations.mjs` splits its reading from its verdict.
+
+### What the round did about it
+
+The arm is deleted in the round that added it, with its three tests and its three mutations. What remains
+is the reading it took on the way: **39** closure citations in the open list, **39** resolving.
+
+Two things are worth keeping, and neither is about citations. A rule is not missing because the sentence
+describing its absence is convincing -- **the audit is a corpus, and a claim about it can be refuted by
+reading it**, which is cheaper than writing a guard. And a new guard has to be justified against the
+guards that exist; this round performed that search only by accident, by breaking its own prose, which is
+not a procedure any later round should have to rely on.
+
+### What `check-citations` still cannot do, in its own words
+
+A citation of the *right* number for the *wrong* claim passes forever: both numbers have headings, and the
+sentence's claim about either is prose. That is the same limit the open list states about a fluent reason
+it cannot refuse, and it is not closed by anything here.
+
+## Finding 470 — the twenty kilobytes of headroom v2.35 bought ran out, and the instruction it left behind was to split the index
+
+v2.35 added a relation rather than a rule: `check-progress-volumes.mjs` prints `index N of smallest
+volume M`, and 89 rounds ago the numbers were `index 72,217 of smallest volume 92,309`. The round wrote
+what the relation was for:
+
+> Twenty kilobytes of headroom, about six rounds, and then the split becomes an instruction instead of
+> an opinion.
+
+The headroom lasted far longer than six rounds, because most rounds append to a volume and not to the
+index. v3.65 is the round that spent it.
+
+### The measurement
+
+The round added four entries and one paragraph to `## Open`, and the gate refused:
+
+```
+check-progress-volumes: FAILED -- 12 volume(s), 213 round(s)
+  docs/progress.md is 94092 bytes and the smallest volume is 92355: the index has outgrown
+  something it indexes, so either the section that grew is a record and belongs in a volume,
+  or the index is no longer an index
+```
+
+| section of `docs/progress.md` | bytes | what it is |
+| --- | --- | --- |
+| `## Open` | 40,456 | the live list, and the rounds' commentary about it |
+| `## Audit passes` | **20,447** | a table of the passes, each pass's account of why it was chosen, and its injection matrix |
+| `## L4 anchor status` | 8,970 | status |
+| `## Coverage` | 7,479 | how coverage is measured |
+| everything else | 16,476 | headline, round trip, repository, test strategy, index |
+
+`## Audit passes` is the only section in that table that is a **record** with no reader in the index:
+the list is live, the status sections are looked up, and the passes are history. It is also the one
+section whose subject is another document's -- and the audit's own index says so, since it opens with
+`## Scope`, a list of passes.
+
+### Why it could not simply be deleted
+
+v2.35 already tried that and measured the objection: of **79** prose sentences longer than 60
+characters in `## Audit passes`, **zero** appear in `docs/audit/`. The section is unique synthesis --
+why each pass was chosen and what it was chosen against -- so deleting it would delete the only copy.
+That is why the section moved instead, to `docs/audit/passes.md`, with the heading promoted one level
+because it is now a document's title rather than another document's section.
+
+### The reading after the move
+
+| reading | before | after |
+| --- | --- | --- |
+| `docs/progress.md` | **93,828** bytes | **74,295** |
+| the smallest volume it indexes | 92,355 | 92,355 |
+| headroom | **-1,473** (over) | **+18,060** |
+| the passes | a section of the index | `docs/audit/passes.md`, 21,288 bytes, reachable from both indexes |
+
+The index is 34 bytes smaller than the size v2.35 recorded (`74,295` against `72,217`) and holds 89 more
+rounds, because the rounds go to volumes and the index only keeps what a reader looks up.
+
+### What this does not settle
+
+The next section to grow will hit the same relation. It is not a problem to solve once: it is a rule
+that fires, and the answer it demands -- *is this a record or a lookup* -- is the one this round had to
+answer for one section.

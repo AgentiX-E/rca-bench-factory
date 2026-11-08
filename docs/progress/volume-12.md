@@ -1753,9 +1753,9 @@ can do about prose is make it locatable.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **239 files, 6032 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **243 files, 6219 tests passed** (as of this commit) |
+| `core` test suite | **239 files, 6032 tests passed** (at v3.64) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.64) |
+| repo test suite | **243 files, 6219 tests passed** (at v3.64) |
 | new tests | **8**: the row count read off the record (1 and 5 rows), a header-only record refused, a renamed column refused, a header with no rule refused, a short row refused, an empty `state` cell refused, and the shipped corpus held to 147 by an independent count |
 | the count, corrected | **185 -> 147**; the `holds no table` refusal went from unreachable to reached |
 | the shape, now checked | nineteen headers, 147 rows, four arms, 0 violations in the shipped corpus |
@@ -1788,3 +1788,164 @@ rather than against the code that printed it.
 
 So the next thing to mechanise is still not a count. It is the habit of asking, of every number a
 round prints, **what would have to be true for this number to be wrong**, and then looking there.
+
+## v3.65 — the only P1 that was not in the list, and two rulers that had never been laid against each other
+
+v3.64 ended with an instruction rather than a count: *of every number a round prints, ask what would
+have to be true for this number to be wrong, and then look there*. This round pointed that at the one
+number it had printed without looking -- `Checked at v3.64: **11** entries open` -- and the number was
+right about its own section and wrong about the log.
+
+### 一、The only P1 in this document lived in a record, and the list never held it
+
+The guard printed two counts in one line and had never compared them: **11** entries open, and **7
+row(s)** in the newest round's record. They are not supposed to be the same set -- a record carries what
+a round left undone, the list carries what is undone -- but they were not disjoint either, and nothing
+said which rows had an entry behind them and which did not.
+
+Measured by reading the seven rows of v3.64's record against the twenty-six entries of the list:
+
+| row | what it was |
+| --- | --- |
+| `the remote's history shares no name with the local one above` | **no entry anywhere** -- the only **P1** in this log, carried for six rounds |
+| `the currency line proves a round counted, not that it read` | **no entry anywhere** |
+| `the base search is linear in the number of twin tips` | **no entry anywhere** |
+| `a bounded ref count is a floor, not a count` | **no entry anywhere** |
+| `the split is expensive by 240 s of every run` | the entry *"The sensitivity shards are cut by file count, not by cost"*, in other words |
+| `a table-form record's rows are prose` | the entry *"A record written as a table is counted, not judged"*, in other words |
+| `P13: a mutation is one substitution` | the entry, quoted |
+
+So four residuals -- including the largest one outstanding -- were reachable only by a reader who read
+the round that raised them, and the list that exists so a reader does not have to do that did not carry
+them. **The stamp could not say so, and this is the part worth keeping**: its number is arithmetic over
+the entries below it, computed by the guard that also counts them. A residual that is not an entry is
+not a residual as far as the stamp is concerned, so the sentence "eleven open" was true, exact, and
+about the wrong population -- finding 465's defect (a number that agrees with the rule it defends) one
+document further out.
+
+**Fixed** by adding the four as entries -- the list grows from 11 to 15, which is what a list that has
+been under-reporting should do -- and by an arm that refuses the shape: the newest round's record may
+not name a residual the live list does not hold.
+
+### 二、A row is a paraphrase, and a paraphrase is a sentence with no second reader
+
+The four rows above are why the arm exists; the two in italics are why it is a **quotation** rule rather
+than a "does this resemble an entry" rule. Both describe entries that exist, in words that appear in
+exactly one place in this corpus: the record. A reader who greps a row's text finds the row; a reader who
+greps the entry finds the entry; neither finds the other, and the two are the same residual.
+
+That is finding 463's argument -- *a title is an exact string, and a document that re-spells it has no
+reader* -- applied to a cell instead of a heading. So a row's `item` must be the entry's own words:
+after emphasis, quotes and whitespace are normalised away, at least twenty characters of the row have to
+appear inside an entry. One of the seven rows satisfies that today.
+
+The scope is the **newest record only**, for a reason the corpus states itself: a record is frozen, and
+nothing appends to it. A rule that judged the older twenty would be a rule demanding a repair the corpus
+forbids, so the arm reads the one record that can still be edited -- the same scope, and the same
+argument, as the currency stamp's comparison with the newest round.
+
+### 三、The rule this round added for a third defect was already there, and the corpus is what said so
+
+The round also went looking for a fourth defect, on a reading that looked airtight: the guard requires
+a closure to name what closed it, the requirement is a **pattern** -- `Closed|Narrowed|Retracted` within
+one sentence of `finding <n>` -- and a pattern answers *does this say what closed it*, never *what does
+it say*. A number is the one thing in that sentence a typo moves without disturbing the prose.
+
+So an arm was written: read the audit's headings, extract the number, refuse a citation that names
+nothing. It passed its own tests and the shipped corpus, and the round moved on to the write-up -- which
+is where it died. The sentence written to illustrate the defect cited a number that does not exist, and
+**`check-citations.mjs` refused the round's own paragraph**:
+
+```
+  docs/progress/volume-12.md:1852: cites finding <n>, which has no heading
+check-citations: FAILED -- 1 citation(s) of 1 number(s)
+```
+
+That gate has resolved every `finding N` in this documentation since finding 205 -- both documents,
+their indices, and every volume of each -- and it refuses a dangling one. The entry's premise was false,
+the arm was a second ruler for a property that already had one, and the only reason the round found out
+is that it wrote a wrong number into the prose it was using to describe wrong numbers.
+
+The arm is **deleted in the same round**, with its three tests and its three mutations; what survives is
+the reading it took on the way:
+
+| reading | value |
+| --- | --- |
+| closure citations in the shipped open list | **39** |
+| of those, naming a finding the audit holds | **39** |
+| the guard that already held that | `check-citations.mjs`, since finding 205 |
+| what it cannot do, in its own words | a citation of the *right* number for the *wrong* claim -- both numbers exist and the sentence is prose |
+
+Two lessons, and the second is the one worth carrying. A rule is not missing because the sentence
+describing its absence is convincing: **the audit is a corpus, and a claim about it can be refuted by
+reading it**. And a new guard has to be justified against the guards that exist, which is a search this
+round performed only by accident -- by breaking its own prose.
+
+### 四、The twenty kilobytes of headroom ran out, and the instruction was to split the index
+
+The four entries and the paragraph above are what pushed `docs/progress.md` from 90,886 to 93,828 bytes,
+and `check-progress-volumes.mjs` has printed the relation since v2.35: `index N of smallest volume M`.
+Eighty-nine rounds ago it printed `index 72,217 of smallest volume 92,309`, and the round wrote down what
+the number was for -- *twenty kilobytes of headroom, about six rounds, and then the split becomes an
+instruction instead of an opinion*. It survived far longer than six rounds because most rounds append to
+a volume rather than to the index. This is the round that spent it.
+
+| section of the index | bytes | what it is |
+| --- | --- | --- |
+| `## Open` | 40,456 | the live list and the rounds' commentary about it |
+| `## Audit passes` | **20,447** | a table of passes, why each was chosen, and its injection matrix |
+| `## L4 anchor status` | 8,970 | status |
+| `## Coverage` | 7,479 | how coverage is measured |
+| everything else | 16,476 | headline, round trip, repository, test strategy, the volume index |
+
+`## Audit passes` is the only section there that is a **record** with no lookup in it, and the only one
+whose subject belongs to another document -- the audit's own index opens with `## Scope`, a list of
+passes. It could not be deleted: v2.35 measured that of **79** prose sentences longer than 60 characters
+in it, **zero** appear in `docs/audit/`, so it is the only copy of why each pass was chosen. So it moved,
+to `docs/audit/passes.md`, with the heading promoted one level because it is a document's title now.
+Nothing in it was rewritten.
+
+| reading | before | after |
+| --- | --- | --- |
+| the index | **93,828** bytes | **74,295** |
+| the smallest volume it indexes | 92,355 | 92,355 |
+| headroom | **-1,473** | **+18,060** |
+| the passes | a section of the index | `docs/audit/passes.md`, 21,288 bytes, reachable from both indexes |
+
+### Readings
+
+> Ledger for `v3.65`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **239 files, 6036 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **243 files, 6223 tests passed** (as of this commit) |
+| new tests | **4**: a row that quotes an entry accepted, a row that names nothing refused, a row too short to name anything refused, and an older record left alone because a frozen record cannot be repaired |
+| the list | **11 -> 15** open, and the four added are the four that lived only in records |
+| the record arm | v3.64's seven rows: **1** quotation, **2** paraphrases of real entries, **4** residuals with no entry at all |
+| the arm that was deleted | **39** closure citations in the open list, **39** resolving -- by `check-citations.mjs`, which had done it since finding 205; the round's own arm and three tests removed |
+| the index | **93,828 -> 74,295** bytes, against a smallest volume of 92,355: the relation v2.35 bought headroom with fired, and `## Audit passes` moved to `docs/audit/passes.md` (finding 470) |
+| mutation | **24** substitutions; **24 of 24 red, 0 survivors, 0 inert**, tree restored. Three new: the record collector, the twenty-character floor, and the case fold. Three written for the citation arm left with it |
+| the receipt | **pending**, and the reason is structural: a row that names the tree it is in cannot be written in that tree. It is `verify:local` over the commit this table ships in, and the reading lands in the next push -- the same lag the ledger records about itself |
+| the history | **pending** for the same reason; the twenty-third attempt carries this round's commits and is written after the ref moves |
+| CI on that tree | **pending**: the workflows run on the pushed commit, so their conclusion cannot be in it |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P1** | the remote's history and the local one share no name above a boundary 272 commits old | **listed at last**: six rounds in records, one round in the list | nothing converges it without rewriting the remote, which this channel refuses by design |
+| **P2** | the currency line proves a round counted the list, not that it read it | unchanged, and sharpened: the count was right about a population that was not the whole | the round that closes an entry writes what closed it in the headline, where the guard reads |
+| **P2** | the base search reads one remote tip per branch this checkout does not have | **listed at last** | bounded by a reading of how many twin tips a real push meets; five refs here is not that reading |
+| **P2** | the sensitivity shards are cut by file count, not by cost | unchanged since it was measured, and its row now has to quote it | a per-file recording made on a runner, published where a plan can read it, and a staleness rule |
+| **P2** | P13: a mutation is one substitution | unchanged | a pair composing two changes neither of which is in the battery |
+| **P3** | a bounded ref count is a floor, not a count | **listed at last**: five refs, and the walk has never stopped | a repository with more than a thousand refs |
+
+**The lesson.** The three defects this round found were one defect read at three distances: a count over
+a population that was not the one a reader cares about (**11** entries, and the only P1 outside them), a
+cell that restates an entry in words no `grep` shares, and a citation that names a number nothing holds.
+None of them is a lie. Each is a sentence that is true about its own source and silent about the thing a
+reader uses it for. What found all three was the same move: take the sentence a reader acts on, and
+**ask what its subject is** -- not what produced it. That is the move v3.64 asked for, one level out, and
+the reason it keeps paying is that every document here is written to be checked against its own source.
