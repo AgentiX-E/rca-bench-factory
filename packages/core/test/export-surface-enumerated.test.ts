@@ -615,6 +615,9 @@ const TESTED = [
   'checkOpenRca2Structure',
   'verifyChecksums',
   'scoreExport',
+  // The sentence a score is printed as: nine targets reach 100 over five different check
+  // counts, so the number is never rendered without the count it was computed over.
+  'describeScore',
   'sha256',
   // score/targets.ts
   'SCORE_TARGET_IDS',

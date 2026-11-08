@@ -49,9 +49,10 @@ const scoreReport = (): ScoredExport => ({
     passed: true,
     checks: [
       { id: 'case-present', passed: true, detail: 'found 1 case topology.json' },
-      { id: 'gt-structure', passed: false, detail: 'missing four layers' },
+      { id: 'gt-structure', passed: true, detail: 'four layers filled' },
     ],
   },
+  terms: { structure: { passed: 2, total: 2 }, checksum: { passed: 2, total: 2 } },
   checksum: { passed: true, matched: 2, mismatched: [], missing: [], extra: [] },
   scope: { total: 1, skipped: [] },
 });
@@ -125,15 +126,51 @@ describe('renderScore', () => {
     expect(html).toContain('matched 2');
   });
 
+  it('prints the percentage with the checks it was computed over', () => {
+    // Fifteen of the corpus's targets reach 100 over denominators as different as
+    // two and fourteen, so the page must not present the number alone.
+    const html = renderScore(scoreReport());
+    expect(html).toContain('score 100 of 100 over 2 structure check(s)');
+    expect(html).toContain('with 2 of 2 file(s) matching their anchors');
+  });
+
+  it('states the structure denominator and nothing about files when no anchors were supplied', () => {
+    const { checksum: _checksum, terms, ...rest } = scoreReport();
+    const html = renderScore({ ...rest, terms: { structure: terms.structure } });
+    expect(html).toContain('over 2 structure check(s)');
+    expect(html).not.toContain('matching their anchors');
+  });
+
   it('omits the checksum block when absent', () => {
-    const { checksum: _checksum, ...rest } = scoreReport();
-    const html = renderScore(rest);
+    const { checksum: _checksum, terms, ...rest } = scoreReport();
+    const html = renderScore({ ...rest, terms: { structure: terms.structure } });
     expect(html).not.toContain('checksum:');
+  });
+
+  it('paints a failed check as bad, in the row rather than only in the score', () => {
+    // The row's own class. This assertion is why the fixture above carries two passing
+    // checks instead of one failing one: the failing row is a state of its own, and while
+    // it lived inside the default fixture the branch was covered by accident and nothing
+    // said what the page is supposed to look like when a check fails.
+    const report = scoreReport();
+    report.structure.checks = [
+      { id: 'case-present', passed: true, detail: 'found 1 case topology.json' },
+      { id: 'gt-structure', passed: false, detail: 'missing four layers' },
+    ];
+    report.structure.passed = false;
+    report.passed = false;
+    report.score = 50;
+    report.terms = { structure: { passed: 1, total: 2 }, checksum: { passed: 2, total: 2 } };
+    const html = renderScore(report);
+    expect(html).toContain('<tr class="ok"><td>case-present</td><td>pass</td>');
+    expect(html).toContain('<tr class="bad"><td>gt-structure</td><td>fail</td>');
+    expect(html).toContain('missing four layers');
   });
 
   it('renders an empty table body for an empty check list', () => {
     const report = scoreReport();
     report.structure = { target: 'rca100', passed: true, checks: [] };
+    report.terms = { structure: { passed: 0, total: 0 }, checksum: { passed: 2, total: 2 } };
     const html = renderScore(report);
     expect(html).toContain('colspan="3">—</td>');
   });
@@ -141,16 +178,20 @@ describe('renderScore', () => {
   it('renders a failing checksum', () => {
     const report = scoreReport();
     report.checksum = { passed: false, matched: 1, mismatched: ['a'], missing: ['b'], extra: ['c'] };
+    report.terms = { structure: { passed: 2, total: 2 }, checksum: { passed: 1, total: 4 } };
     const html = renderScore(report);
     expect(html).toContain('fail');
+    expect(html).toContain('with 1 of 4 file(s) matching their anchors');
   });
 
   it('renders a failing score with the bad class', () => {
     const report = scoreReport();
     report.passed = false;
     report.score = 50;
+    report.terms = { structure: { passed: 1, total: 2 }, checksum: { passed: 2, total: 2 } };
     const html = renderScore(report);
     expect(html).toContain('class="bad"');
+    expect(html).toContain('over 2 structure check(s)');
   });
 });
 

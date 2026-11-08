@@ -17,7 +17,7 @@ import { describe, expect, it } from 'vitest';
  * two separate grounds, and this file is the record so the next person starts from the
  * numbers rather than from the idea.
  *
- * ## Ground one: a candidate list caps the ceiling at 25/30
+ * ## Ground one: a candidate list caps the ceiling at 26/31
  *
  * The strongest form of "constrain the answer" is to hand the model the candidates the text
  * supports. The natural extraction is *runs of adjacent words joined by a hyphen*, which is
@@ -70,8 +70,20 @@ interface Reading {
 }
 
 const samples = (JSON.parse(readFileSync(KEY, 'utf8')) as { samples: Sample[] }).samples;
+/**
+ * The recorded runs, kept when every sample they answered is still in the key.
+ *
+ * The filter used to be `reading.key.size === samples.length`, which said "these readings were
+ * taken against the set as it stands". That was true while the set never grew, and false the
+ * moment it did: v3.70 added a thirty-first sample, no recorded run covers it, and the size
+ * comparison silently emptied the list -- every measurement below then read zero, and the two
+ * assertions that demand a populated reading failed for a reason that had nothing to do with
+ * the answers. Membership is the property the measurements actually need: a reading is
+ * comparable when the texts it answered are the texts in the file.
+ */
+const ids = new Set(samples.map((sample) => sample.id));
 const readings = (JSON.parse(readFileSync(READINGS, 'utf8')) as { readings: Reading[] }).readings.filter(
-  (reading) => reading.key.size === samples.length,
+  (reading) => reading.samples.every((sample) => ids.has(sample.id)),
 );
 
 /** Every hyphen-joined run of one to four adjacent words in the text. */
@@ -92,7 +104,7 @@ function wordsOf(text: string): Set<string> {
 }
 
 describe('the component answer space a mechanism could offer', () => {
-  it('recovers 25 of 30 expected components as adjacent-word runs, and names the five it cannot', () => {
+  it('recovers 26 of 31 expected components as adjacent-word runs, and names the five it cannot', () => {
     // The ceiling of a candidate-list prompt, pinned. If the corpus grows, this number moves
     // and the claim in the header has to be re-read rather than quietly falsified.
     const unrecoverable = samples
@@ -106,7 +118,7 @@ describe('the component answer space a mechanism could offer', () => {
       'middleware-redis-latency-cache',
       'network-delay-cart-to-inventory',
     ]);
-    expect(samples.length - unrecoverable.length).toBe(25);
+    expect(samples.length - unrecoverable.length).toBe(26);
   });
 
   it('offers a median of more than two hundred candidates per text, which is why the list is not an option', () => {

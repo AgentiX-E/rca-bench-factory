@@ -249,6 +249,25 @@ function parseRulegenResponseShape(
  * never produce. It was reachable in practice -- a source whose sample window
  * contained only blank rows yields no samples -- and it read as a layout that
  * had been verified.
+ *
+ * ## What a replay can claim, and what it cannot
+ *
+ * This is a check on *names and populations*, not on meaning. A layout passes when
+ * each required field points at a column that exists and has a value in every sample,
+ * which is exactly the class of answer a model gets wrong by inventing -- and it is
+ * silent about the class it gets wrong by choosing. `metricValue` mapped to `limit`
+ * instead of `usage` is accepted here whenever both columns are populated, because from
+ * a replay's point of view the two mappings are indistinguishable: the column is real,
+ * it is not empty, and nothing in the samples says which number the field was supposed
+ * to hold.
+ *
+ * So `valid: true` means "no field names a column that is not there", and a caller that
+ * needs "the right column" needs a second reader -- a specification of what each field
+ * means, which the corpus does not carry. The size of the gap is measured rather than
+ * asserted: `llm/rulegen-agreement.ts` counts the answers this function accepts while
+ * pointing a field at the wrong populated column (`misreads`), and
+ * `rulegen.test.ts` pins the acceptance itself so the limit stays a fact with a test
+ * instead of a caveat in a comment.
  */
 export function validateGeneratedLayout(
   layout: FileLayout,

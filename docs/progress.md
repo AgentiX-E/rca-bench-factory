@@ -532,7 +532,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.69: **22** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.70: **21** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1116,27 +1116,42 @@ is a row about rather than paraphrase one that no `grep` will find.
   Kappa is absent and the absence is stated where the figure is printed. The defect worth the round
   was neither of those: `REQUIRED_FIELDS` was written twice, byte for byte, and is now one constant
   in `ingest/file.ts` imported by both readers.
-- **The corpus cannot move the z-score axis.** Every one of the thirty cases stops sustaining three
-  samples only above `|Z| >= 126.85`, so a grid over 1 to 100 has one answer in all sixteen cells.
-  The gate's threshold is therefore unexamined by the corpus rather than defended by it: any line in
-  that range classifies this set identically (finding 482).
-  `[open: the fix is a case whose separation sits near 2-4 sigma -- a fault that is real and quiet
-  rather than a step from 180ms to 4.3s -- and the flip-point reading is what a reviewer checks it
-  against, because a case added to move the grid is a case added to move a number]`
-- **The layout validator cannot see a wrong-but-valid mapping.** `validateGeneratedLayout` replays a
-  layout against the samples, so it refuses a column that is absent or empty. A mapping to a real,
-  populated column that means the wrong thing passes: the answer set carries one
-  (`metricValue` at `limit` where the specification says `usage`) and it is accepted, correctly, for
-  the contract the validator enforces (finding 483).
-  `[open: the statement "a replay checks structure, not semantics" needs either a second reader when
-  the model-side channel gets a caller, or a sentence in the module saying what a replay can claim
-  -- today the module documents the rule and not its limit]`
-- **`score` divides by a different denominator per target, and the documents did not say so.**
-  `scoreExport` returns a pass-rate times 100 over the checks that target has: seven targets,
-  seven denominators, and a 100 that is not one quantity.
-  `[open: the sentence "different targets are not comparable" needs a measurement under it,
-  which is a test asserting that two targets' check counts differ -- and that test does not exist,
-  so the sentence would be the same kind of claim as the 105]`
+~~**The corpus cannot move the z-score axis.**~~ Every one of the then-thirty cases stopped
+  sustaining three samples only above `|Z| >= 126.85`, so a grid over 1 to 100 had one answer in all
+  sixteen cells (finding 482). The reason turned out to be arithmetic rather than annotation: the
+  fixed ±2 % jitter cycle fixes every sampled series' spread at about 1.34 % of its mean, so a
+  stepped series' z is `(post / baseline - 1) / 0.0133` and every authored incident moved by at
+  least 2.7×. v3.70 added the corpus's first faint case -- a 284-second TTL where the runbook says
+  300, 1100 to 1164 refreshes per second, p99 240ms to 254ms, nothing failed -- and the grid now
+  reports `31 of 31 and 1 of its 4 neighbour(s) change that`, with the weakest flip point at
+  `|Z| >= 3.38`, `1.69x` the default (finding 486).
+~~**The layout validator cannot see a wrong-but-valid mapping.**~~ `validateGeneratedLayout` replays
+  a layout against the samples, so it refuses a column that is absent or empty and accepts a mapping
+  to a real, populated column that means the wrong thing (finding 483). The limit is now stated in
+  the module that enforces the rule rather than only in the module that reads it, and it is pinned
+  by a test: `rulegen.test.ts` plants `metricValue` at a populated `limit` column, asserts the
+  layout is accepted, and asserts that the correct mapping to `usage` is accepted by the same
+  check -- one verdict, two meanings, so the pair cannot be told apart by a replay (finding 487).
+~~**`score` divides by a different denominator per target, and the documents did not say so.**~~
+  Measured: nine targets over **five** check counts (14, 9, 8, 7, 2), and without anchors the
+  number takes exactly **two** values (`0`, `100`) because the structure term is all-or-nothing --
+  so `0-100` was a ceiling printed as a scale. `ScoreReport` now carries `terms` (the counts each
+  half was computed over) and `describeScore` renders `score 100 of 100 over 14 structure check(s)`;
+  every surface prints the sentence, and the site takes it from the payload rather than composing
+  one (finding 485).
+- **The accuracy figure behind `M1_STRICT_THRESHOLD` is now over 30 of 31 samples.** The corpus grew
+  by one case, and its incident text had to go into the extraction key, so the recorded run --
+  which predates the sample -- is a statement about the thirty it answered.
+  `[open: either a run over the thirty-first sample, or a published figure that says which set it is
+  over; today `m1-reading-is-reproducible.test.ts` names the one unanswered sample, so the gap is
+  measured and the number is honest, but a reader comparing 4/31 to the reading's 4/30 has two
+  denominators and no sentence]`
+- **The grid's sample axis is still constant.** The faint case moved the `|Z|` axis -- `|Z| >= 10`
+  now refuses it -- and left the sample line untouched: 1, 3, 5 and 8 all admit all thirty-one,
+  because every case offers eight post-onset samples and the strongest three are never in doubt.
+  `[open: a case whose anomaly is three consecutive samples inside a longer quiet window would move
+  the sample axis the way the faint case moved the z axis, and `SERIES_POINTS` is what makes that
+  expressible -- the derivation has no shape that produces it today]`
 - **`docs/acceptance.md` is 96 KB and grows by clause per round.** L3 is 284 lines and L4 is 405;
   L0, L1, L2 and L5 are 14, 7, 7 and 6, so the obvious split by layer would produce four files
   of a dozen lines.
@@ -1199,7 +1214,7 @@ and this table.
 | [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 7 | v3.47 | v3.53 |
-| [volume-12.md](progress/volume-12.md) | 16 | v3.54 | v3.69 |
+| [volume-12.md](progress/volume-12.md) | 17 | v3.54 | v3.70 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

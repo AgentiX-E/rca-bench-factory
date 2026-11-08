@@ -1708,7 +1708,8 @@ describe('report', () => {
     // paint the score green while the gates report it as held back, and it must
     // say what each number covers so they cannot read as a contradiction.
     const gate = /final: <span class="(\w+)">(\w+)<\/span>/.exec(html);
-    const score = /score <span class="(\w+)">(\d+)<\/span>/.exec(html);
+    // The sentence, not the bare number: the page prints `score N of 100 over M check(s)`.
+    const score = /<span class="(\w+)">score (\d+) of 100 over (\d+) structure check\(s\)<\/span>/.exec(html);
     expect(gate).not.toBeNull();
     expect(score).not.toBeNull();
 

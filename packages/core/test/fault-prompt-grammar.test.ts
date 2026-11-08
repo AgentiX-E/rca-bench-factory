@@ -151,9 +151,21 @@ describe('the golden type labels obey the shape the prompt now states', () => {
     expect(copyable.map((s) => s.id)).toEqual([]);
   });
 
-  it('the expected types are distinct, so the field is not a small closed set in disguise', () => {
+  it('states a vocabulary and a set size, so the field is not a small closed set in disguise', () => {
+    // This used to assert that the types were *distinct* (`Set(types).size === types.length`),
+    // which held only because the set had been authored one sample per type. v3.70 added a
+    // thirty-first sample that deliberately reuses `config-mismatch`: the G3 grid needed an
+    // incident whose telemetry separates by a few baseline standard deviations, and a fault
+    // type is not chosen to keep a set injective. Two incidents of one kind is what a corpus
+    // of incidents looks like.
+    //
+    // So the fact worth pinning is the one the old assertion was a proxy for: how many types
+    // the vocabulary has, and how many samples there are. Both are stated, so a vocabulary
+    // that shrank to a handful of labels fails here (`size` would fall) and a sample that was
+    // dropped without its type fails too (the counts move together).
     const types = goldenSamples().map((s) => s.expected.type);
-    expect(new Set(types).size).toBe(types.length);
+    expect(new Set(types).size, 'the vocabulary').toBe(30);
+    expect(types.length, 'the set').toBe(31);
   });
 });
 
@@ -474,7 +486,16 @@ describe('the component field had no stated rule, and the ground truth proved it
     // The figures below are the re-measured ones; the wrong-answer rate fell from
     // 0.67 to 0.60 as a result and remains above the threshold that makes the
     // rule unusable as a grader, which is the claim this test exists to make.
-    const readable = samples.filter((s) => s.incidentText.includes(s.expected.component));
+    // Restricted to the samples the recorded run answered. A sample added to the corpus
+    // after the run was transcribed was never put to the model, so counting it as
+    // "readable and on the wrong side" would add a member to a set whose membership is
+    // the explanation for the wrong-answer rate -- and the explanation would be wrong
+    // about a sample nothing asked. v3.70 added one such sample, and this filter is the
+    // difference between "the run read two names and still missed them" and "the corpus
+    // has three readable names in it".
+    const readable = samples.filter(
+      (s) => ANSWERED[s.id] !== undefined && s.incidentText.includes(s.expected.component),
+    );
     const readableOnWrongSide = readable.filter((s) => RIGHT_ANSWERS[s.id] === undefined);
     expect(
       readableOnWrongSide.map((s) => s.id),
@@ -529,7 +550,7 @@ describe('the component field had no stated rule, and the ground truth proved it
       expect(answer, `${id}: the recorded right answer must equal the ground truth`).toBe(sample.expected.component);
       expect(sample.incidentText, `${id}: the right answer must be readable from the text`).toContain(answer);
     }
-    // And the set itself, named: six samples now have a component that is
+    // And the set itself, named: seven samples now have a component that is
     // readable verbatim from the text, and four were answered correctly. This
     // states the *membership* of the readable set; the contrast test above states
     // the *consequence* (that the two-sample gap is what leaves the wrong-answer
@@ -537,11 +558,16 @@ describe('the component field had no stated rule, and the ground truth proved it
     // data, which is why both are here -- an earlier pair that stated the same
     // claim twice could both be deleted with the suite green, and the injection
     // battery caught that.
+    //
+    // The seventh member is v3.70's faint case, whose text names its own component
+    // and which the recorded run never saw. It is here rather than filtered out
+    // because this assertion is about the *corpus*, and the corpus is now seven; the
+    // contrast above filters to the run and therefore still reads six.
     const readable = goldenSamples().filter((s) => s.incidentText.includes(s.expected.component));
     expect(
       readable.map((s) => s.id).sort(),
-      'the readable set is the four right answers plus the two the model mis-levelled',
-    ).toEqual(['config-datasource-url-orders', 'config-feature-flag-checkout', 'dependency-upstream-5xx-pricing', 'resource-cpu-saturation-checkout', 'runtime-container-crash-loop-media', 'runtime-pod-kill-user-profile']);
+      'the readable set is the four right answers plus the three with no recorded answer',
+    ).toEqual(['config-datasource-url-orders', 'config-feature-flag-checkout', 'config-rate-cache-ttl-pricing', 'dependency-upstream-5xx-pricing', 'resource-cpu-saturation-checkout', 'runtime-container-crash-loop-media', 'runtime-pod-kill-user-profile']);
     // And every member of the set that was not answered correctly is on the wrong
     // side of the recorded run, so the set is not accidentally admitting a sample
     // the run got right by a different route.

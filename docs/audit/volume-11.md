@@ -268,3 +268,115 @@ published-refusals.test.ts spells '../../scripts/format-spec.mjs', which resolve
 | `scripts/*.mjs` specifiers in the test tree | **42** |
 | that land on a file, resolved from the writing file | **42** after the repair, **41** before |
 | the directory the wrong one named | `packages/scripts/` -- absent from every commit |
+
+## Finding 485 — five denominators behind one percentage, and no reader told which
+
+`scoreExport` returned `score: number` and nothing else about how it was computed. The number
+is `creditFor(structure) × 100` over `structure.checks`, and the seven checkers that produce
+those checks declare between two and fourteen of them:
+
+| target | checks | score on the shipped example |
+| --- | --- | --- |
+| `openrca-1.0` | 14 | 100 |
+| `rca100` | 9 | 100 |
+| `rcaeval-re1` / `re2` / `re3` | 8 | 100 / 100 / 0 |
+| `aiops2025` | 7 | 100 |
+| `openrca-2.0`, `cloud-opsbench`, `itbench` | 2 | 100 |
+
+Nine targets, five denominators, and eight of the nine print `100` on the site and in the CLI
+docs. Three consequences, none of them visible to a reader of the number:
+
+1. **`100` is not one quantity.** Fourteen checks passing is a different amount of evidence
+   from two, and the percentage is blind to the difference by construction.
+2. **The structure term is all-or-nothing**, because `creditFor` is `structure.passed ? rate : 0`
+   and `structure.passed` is `checks.every(...)`, so `rate` could only ever be 1 or 0. Without
+   anchors the score therefore takes exactly two values. `docs/user-guide.md` said `0-100`,
+   which is a promise about a scale that does not exist, and the division it advertised was
+   dead arithmetic: `passed / length` where the numerator is either zero or the denominator.
+3. **The docs' own claim was unpinned.** The open item said "different targets are not
+   comparable" and asked for a test asserting that two targets' check counts differ. That test
+   did not exist, so the sentence was the same kind of claim as the 105 the log had already
+   refused.
+
+The repair is in two parts, and the second is the one that matters. `ScoreReport` now carries
+`terms: { structure: {passed, total}, checksum?: {passed, total} }` -- the counts each half of
+the score was computed over -- and `describeScore(report)` renders `score 100 of 100 over 14
+structure check(s)`. Every surface that printed the number now prints that sentence: the HTML
+page, the CLI reference's example, the user guide, and the site, which takes the sentence from
+the payload rather than composing one of its own. `creditFor` reads the counts instead of
+dividing them, so the all-or-nothing rule is stated where it is applied rather than implied by
+an identity.
+
+| reading | value |
+| --- | --- |
+| score targets | **9** |
+| distinct check counts | **5** (14, 9, 8, 7, 2) |
+| `score` values without anchors | **2** (`0`, `100`) |
+| the measurement the open item asked for | `score-denominators.test.ts`, nine tests over the shipped bundle |
+
+## Finding 486 — a corpus that could not see its own threshold
+
+v3.69 added a 4×4 grid over G3's two thresholds and the reading came back constant: thirty
+cases, sixteen cells, 30 of 30 admitted in every one. The round recorded that as "the corpus
+cannot see the threshold" and left the reason unexamined.
+
+The reason is arithmetic. Every declared series is expanded by `expandSeries` with a fixed
+jitter cycle of ±2 %, so the baseline's standard deviation is a **constant fraction of its
+mean** -- about 1.34 % -- for every sampled series in the corpus. A stepped series therefore
+has `z ≈ (post / baseline − 1) / 0.0133`, and the weakest case in the set still moved by 2.7×.
+The flip point is not a property of the incidents; it is a property of the noise model. The
+corpus could not move the axis because no case had ever been authored *near* the line.
+
+A benchmark whose faults are all loud cannot test a detector: it can only confirm that one
+runs. So this round added a case whose anomaly separates by about three baseline standard
+deviations -- a quote-cache TTL written as 284 seconds where the runbook says 300, a refresh
+rate from 1100 to 1164 calls per second, and a p99 from 240ms to 254ms that sat inside the
+alert's noise band. Nothing failed, nothing restarted, and the traffic did not move; the only
+signals are the two rates the shorter TTL changed and the control that says nothing else did.
+
+The grid now moves for the first time:
+
+```
+31 case(s) judged over 4x4 cells (|Z| 1/2/10/100 x samples 1/3/5/8); the default
+(|Z| >= 2, 3 samples) admits 31 of 31 and 1 of its 4 neighbour(s) change that, by up to 1;
+the weakest case 'history-config-rate-cache-ttl-pricing' stops sustaining 3 sample(s) at
+|Z| >= 3.38, 1.69x the default
+```
+
+That sentence is the difference between "the threshold was defended" and "the threshold was
+never asked", and it took a case with a 1.69× margin to produce it.
+
+**Growing the corpus has a price, and it is measured rather than paid silently.** The new case
+needs an incident text (every case quotes its source), so the extraction key grew from 30
+samples to 31. Two consequences the round had to face:
+
+- **One sample no recorded run has answered.** `M1`'s current reading was taken over thirty
+  samples, so the accuracy figure behind `M1_STRICT_THRESHOLD` is now a statement about 30 of
+  31. `m1-reading-is-reproducible.test.ts` used to assert `key.size === samples.length`; it now
+  pins `30` and names the one sample no run has answered, so a second unanswered sample cannot
+  arrive in silence.
+- **The type vocabulary stopped being injective.** The set had been authored one sample per
+  type, and the assertion that the types are *distinct* was a proxy for "the vocabulary is not
+  a small closed set". The new sample reuses `config-mismatch`, which is what the fault is, so
+  the proxy broke while the property held. The assertion now states both numbers -- 30 types,
+  31 samples -- rather than an equality that only a 1:1 set satisfies.
+
+## Finding 487 — the limit of a check was documented in the reading and not in the check
+
+`validateGeneratedLayout` replays a layout against samples: a field is refused when its column
+is absent or empty in some sample. That is a structural contract, and it cannot refuse a mapping
+to a real, populated column that means the wrong thing -- `metricValue` at `limit` when the
+specification says `usage`.
+
+v3.69 measured that gap (`misreads`, one answer in sixteen) and described it in
+`llm/rulegen-agreement.ts`, which is the module that *reads* the two channels. The module that
+*enforces* the rule said nothing about its reach, so a caller reading the guard's own doc
+comment would have taken `valid: true` for "the mapping is right", which is the reading the
+corpus's one misread answer disproves.
+
+The limit is now stated where the rule lives, and -- because a caveat in a comment is a
+sentence with no test -- the acceptance is pinned: `rulegen.test.ts` plants a layout pointing
+`metricValue` at a populated `limit` column, asserts it is accepted, and asserts that the
+correct mapping to `usage` is accepted by the same check, so the pair reads as "one verdict, two
+meanings". If a later round adds a semantic reader, that test is the one that must be replaced
+by its refusal.

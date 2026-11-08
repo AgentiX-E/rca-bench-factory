@@ -55,6 +55,11 @@ export function buildData() {
       files,
       skipped,
       report,
+      // The score as a sentence, rendered by the module that computed the number. The
+      // site prints this rather than `report.score`, because nine targets reach 100 over
+      // four different check counts and a page that printed the percentage alone would
+      // present the weakest and the strongest as the same amount of evidence.
+      scoreLine: core.describeScore(report),
     };
   }
 

@@ -203,7 +203,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1508,
       "condition": "invalid.length > 0",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(invalid.length)} case(s) could not be read as a FaultCase",
+      "diagnostic": "check-fault-cases: FAILED — ${String(invalid.length)} case(s) could not be read as a FaultCase",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -211,7 +211,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1944,
       "condition": "problems.length > 0",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
+      "diagnostic": "check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -219,7 +219,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1953,
       "condition": "unnamed.length > 0",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
+      "diagnostic": "check-fault-cases: FAILED — ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -227,7 +227,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1961,
       "condition": "index.cases.length < floor",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(index.cases.length)} four-layer case(s), below the floor of",
+      "diagnostic": "check-fault-cases: FAILED — ${String(index.cases.length)} four-layer case(s), below the floor of",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -392,7 +392,7 @@
       "script": "scripts/check-rulegen-agreement.mjs",
       "line": 77,
       "condition": "catch",
-      "diagnostic": "check-rulegen-agreement: FAILED \u2014 ${String(error.message)}",
+      "diagnostic": "check-rulegen-agreement: FAILED — ${String(error.message)}",
       "status": "proved",
       "provedBy": "packages/core/test/rulegen-agreement.test.ts"
     },
@@ -400,7 +400,7 @@
       "script": "scripts/check-rulegen-agreement.mjs",
       "line": 94,
       "condition": "reading.verdicts.disagreements.length > 0",
-      "diagnostic": "check-rulegen-agreement: FAILED \u2014 ${String(reading.verdicts.disagreements.length)} of",
+      "diagnostic": "check-rulegen-agreement: FAILED — ${String(reading.verdicts.disagreements.length)} of",
       "status": "proved",
       "provedBy": "packages/core/test/rulegen-agreement.test.ts"
     },
@@ -408,7 +408,7 @@
       "script": "scripts/check-rulegen-agreement.mjs",
       "line": 107,
       "condition": "reading.reasons.agreements !== reading.reasons.checked",
-      "diagnostic": "check-rulegen-agreement: FAILED \u2014 '${row.id}' was refused for a reason the answer set does",
+      "diagnostic": "check-rulegen-agreement: FAILED — '${row.id}' was refused for a reason the answer set does",
       "status": "proved",
       "provedBy": "packages/core/test/rulegen-agreement.test.ts"
     },
@@ -519,7 +519,7 @@
     },
     {
       "script": "scripts/gen-examples.mjs",
-      "line": 262,
+      "line": 267,
       "condition": "catch",
       "diagnostic": "${DATA_PATH} is missing - run \\",
       "status": "proved",
@@ -527,7 +527,7 @@
     },
     {
       "script": "scripts/gen-examples.mjs",
-      "line": 266,
+      "line": 271,
       "condition": "current !== rendered",
       "diagnostic": "${DATA_PATH} is stale - run \\",
       "status": "proved",
@@ -535,7 +535,7 @@
     },
     {
       "script": "scripts/gen-examples.mjs",
-      "line": 275,
+      "line": 280,
       "condition": "planned.size > 0",
       "diagnostic": "${[...planned.keys()].map((file) => file.replace(",
       "status": "proved",
@@ -583,7 +583,7 @@
       "script": "scripts/install-git-hooks.mjs",
       "line": 41,
       "condition": "result.state === 'missing-hook' || result.state === 'unset'",
-      "diagnostic": "install-git-hooks: FAILED (${result.state}) \u2014 ${result.message}\\n",
+      "diagnostic": "install-git-hooks: FAILED (${result.state}) — ${result.message}\\n",
       "status": "proved",
       "provedBy": "packages/core/test/git-hooks.test.ts"
     },
@@ -591,7 +591,7 @@
       "script": "scripts/measure-ci-baseline.mjs",
       "line": 163,
       "condition": "TOKEN === '' || !/^\\d+$/.test(RUN)",
-      "diagnostic": "usage: GITHUB_TOKEN=\u2026 node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>] [--seed]\\n",
+      "diagnostic": "usage: GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>] [--seed]\\n",
       "status": "proved",
       "provedBy": "packages/core/test/ci-budget.test.ts"
     },
@@ -1261,7 +1261,7 @@
       },
       {
         "script": "scripts/gen-examples.mjs",
-        "line": 133,
+        "line": 138,
         "disposition": "unguarded",
         "message": "new Error( `${spec.id} names \\`${spec.contractConstant}\\` as its contract version, and packages/core does not ` + 'expor",
         "status": "proved",
@@ -1269,7 +1269,7 @@
       },
       {
         "script": "scripts/gen-examples.mjs",
-        "line": 204,
+        "line": 209,
         "disposition": "unguarded",
         "message": "unknown example target '${targetKey}' in ${id}.md",
         "status": "proved",
@@ -1277,7 +1277,7 @@
       },
       {
         "script": "scripts/gen-examples.mjs",
-        "line": 206,
+        "line": 211,
         "disposition": "unguarded",
         "message": "example path '${relativePath}' not exported by ${targetKey}",
         "status": "proved",
@@ -1285,7 +1285,7 @@
       },
       {
         "script": "scripts/gen-examples.mjs",
-        "line": 246,
+        "line": 251,
         "disposition": "unguarded",
         "message": "fields marker '${ref}' does not match any documented file in ${spec.id}.md",
         "status": "proved",

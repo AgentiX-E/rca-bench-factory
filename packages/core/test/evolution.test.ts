@@ -201,7 +201,12 @@ describe('triggerFromScoreReport', () => {
       target: 'aiops2025',
       passed: true,
       score: 92,
-      structure: { target: 'aiops2025', passed: true, checks: [] },
+      structure: {
+        target: 'aiops2025',
+        passed: true,
+        checks: [{ id: 'anomaly-type', passed: true, detail: 'seven of seven carry a type' }],
+      },
+      terms: { structure: { passed: 1, total: 1 } },
     };
     expect(triggerFromScoreReport(report, 80)).toEqual({ source: 'score', scoreDelta: 12 });
   });
@@ -211,7 +216,12 @@ describe('triggerFromScoreReport', () => {
       target: 'rca100',
       passed: false,
       score: 70,
-      structure: { target: 'rca100', passed: false, checks: [] },
+      structure: {
+        target: 'rca100',
+        passed: false,
+        checks: [{ id: 'case-present', passed: false, detail: 'found 0 case topology.json' }],
+      },
+      terms: { structure: { passed: 0, total: 1 } },
     };
     expect(triggerFromScoreReport(report, 80)).toEqual({ source: 'score', scoreDelta: -10 });
   });

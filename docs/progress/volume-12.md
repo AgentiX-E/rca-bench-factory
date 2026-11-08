@@ -2501,9 +2501,9 @@ needs a second reader, and the copy that has one is the copy that stays true.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **242 files, 6160 tests passed** (as of this commit) |
+| `core` test suite | **243 files, 6174 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **246 files, 6347 tests passed** (as of this commit) |
+| repo test suite | **247 files, 6361 tests passed** (as of this commit) |
 | coverage | `core` **99.97 / 99.80 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100**; `gates/gates.ts` and `llm/rulegen-agreement.ts` are **100 / 100 / 100 / 100** |
 | new tests | **56** (6,104 -> 6,160): **20** in the new `gate-threshold-grid.test.ts`, **27** in the new `rulegen-agreement.test.ts`, **2** in `check-fault-cases.test.ts` (the corpus reading and its refusal), **3** in `rulegen.test.ts` (the one-writer table), **1** in `scripts-are-classified.test.ts` (the depth guard over every script specifier), and **3** produced by the `it.each` tables that read the registers this round extended -- `export-surface-enumerated.test.ts` alone accounts for two, measured by running its previous revision beside it |
 | new mutations | **7** injections in `gate-tests-battery.py` (GRID 1-3, LAYOUT 1-4); **35 -> 42** injections, **41 -> 51** witnesses. Two of the ten new witnesses are second tests on one injection: withdrawing the grid's inclusive boundary is seen by the sixteen-cell agreement test as well as by the boundary case, and withdrawing the wrong-column comparison is seen by the shipped reading as well as by the planted one. All 41 reachable rows CAUGHT, 1 redundant as declared, 0 survived, 0 inert, 0 unattributed |
@@ -2527,3 +2527,40 @@ needs a second reader, and the copy that has one is the copy that stays true.
 | **P3** | the coverage figure has no reader that computes it | unchanged | a `docs:check` step that reads a coverage report when one exists, or a sentence saying the ledger is the only copy |
 
 **The lesson.** Both items this round were a number with nothing under it, and both times the repair was to compute what the number was *of*. The thresholds had no grid, so nobody could say whether 2.0 was defended or merely unexamined; the answer is that the corpus is silent about it, and only a flip point can say which. The channel had no rate, so the entry said the rate was missing; the answer is that the channel has no caller and the annotations belonged to a neighbour, and the thing actually worth repairing was one table written twice. **A default is a claim about a distribution, and a claim about a distribution needs the distribution to be able to disagree with it.**
+
+## v3.70 — five denominators behind one percentage, and a corpus that could not see its own threshold
+
+The score is a percentage over the checks a target declares: nine targets over **five** counts
+(14, 9, 8, 7, 2), eight of them printing `100`, and without anchors only **two** values are
+reachable because `creditFor` was `passed ? rate : 0` and `rate` could only be 0 or 1.
+`ScoreReport.terms` carries the counts and `describeScore` prints
+`score 100 of 100 over 14 structure check(s)` everywhere (finding 485).
+
+The constant grid was arithmetic: the fixed ±2 % jitter fixes every sampled spread at about
+1.34 % of its mean, so no authored incident could sit near the line. A faint case (TTL 284 where
+the runbook says 300; **1100 -> 1164** rps; **240 -> 254** ms; no errors) separates by about
+**3 sigma**, and a neighbour of the default now refuses it: flip **3.38**, `1.69x`, against
+`126.85` / `63.42x` last round (finding 486).
+
+Growing the corpus had a price, measured: the key is **31** samples over **30** types, **1** sample
+has no recorded run (named by `m1-reading-is-reproducible.test.ts`), and the M1 ceiling moved from
+25 of 30 to **26 of 31**. `validateGeneratedLayout`'s reach is stated where the rule lives and
+pinned by an accepted misread the correct mapping also passes (finding 487).
+
+### Readings
+
+> Ledger for `v3.70`.
+
+| item | value |
+| --- | --- |
+| suites | `core` **243 / 6174**, `cli` 4 / 187, repo **247 / 6361**, all green |
+| coverage | `core` **99.97 / 99.82 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100**; `score/score.ts` and `report/html.ts` **100** in all four |
+| new tests | **14**: 9 `score-denominators`, 1 `rulegen`, 2 `html`, 1 `score`, and the count guards |
+| mutations | **42 -> 45** injections, **51 -> 54** witnesses; 44 caught, 1 redundant, 0 survived / inert / unattributed |
+| grid | **31 of 31** at default, **1 of 4** neighbours changes it, worst flip **3.38** (`1.69x`) |
+| corpus | **31** cases / **31** samples / **30** types; **1** sample with no recorded run |
+| list | **22 -> 21**: three closed, two opened |
+
+**The lesson.** A number without its denominator is a label: a percentage over five populations, a
+grid over a corpus that could not reach the line, and a validator's verdict read as meaning. Each
+repair made the number *arguable* rather than different.

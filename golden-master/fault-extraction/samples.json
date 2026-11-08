@@ -1,11 +1,11 @@
 {
   "schema": "rca-bench-fault-golden/2",
   "provenance": {
-    "note": "Hand-written ground truth for the historical-fault extraction channel (M13 channel B). Each incidentText is written to sound like a real support ticket or post-mortem while naming exactly one fault, so the expected record is decidable from the text alone. No incident text here is copied from any corpus: this file is authored, reviewable, and small. It exists so the M1 exit condition has a denominator that does not move when the model changes. The key grew from 19 to 30 samples in v2.45: at 19 the strict rate moved in 5.3-point steps, which is coarse against a 70% threshold, and the margin over it was one sample.",
+    "note": "Hand-written ground truth for the historical-fault extraction channel (M13 channel B). Each incidentText is written to sound like a real support ticket or post-mortem while naming exactly one fault, so the expected record is decidable from the text alone. No incident text here is copied from any corpus: this file is authored, reviewable, and small. It exists so the M1 exit condition has a denominator that does not move when the model changes. The key grew from 19 to 30 samples in v2.45: at 19 the strict rate moved in 5.3-point steps, which is coarse against a 70% threshold, and the margin over it was one sample. It grew again in v3.70, from 30 to 31, for a reason that is not accuracy: the fault-case corpus needed an incident whose telemetry separates by two to four baseline standard deviations, because every case then in the set sat tens to billions of times the detection threshold away from its own baseline and left the G3 grid with sixteen settings and one verdict. The new sample reuses the `config-mismatch` type, so the vocabulary is still thirty types over thirty-one samples, and the distinctness the type assertions rely on is stated as a floor rather than an equality.",
     "reviewGate": "H3",
     "authoringRule": "The expected.type must be derivable from the incident text by a careful human reader. A sample whose answer needs context the text does not carry is a bad sample, not a hard one.",
     "annotationRule": "The expected.component must be the deployed workload that owns the fault, and it must be recoverable from the incident text under the token rule the extraction prompt states -- every hyphen-delimited token of the name appears in the text, case-insensitively. This is asserted over the whole file in fault-prompt-grammar.test.ts, so an annotation that names something its text does not carry fails a test. One sample was re-annotated under this rule: config-feature-flag-checkout named `checkout-ui`, which its text never carries; see its annotationNote.",
-    "categoryRule": "The expected.category must be the value inferFaultCategory (packages/core/src/fault/category.ts) returns for the sample's own expected.type. The rule is stated here because it was true of the whole file and written down nowhere: the category was authored by reading the type, so the derivation reproduces it exactly in every sample -- 30 of 30 in fault/category-derivation.test.ts, which asserts it over the whole file and asserts that every one of them lands on a member of FAULT_CATEGORIES, so an expected.type added without a derivable category fails a test rather than being counted as a miss. The same module measures the rule's discriminating power and records that it is below the floor, so this concordance is self-consistency and not a result: see finding 102. Whether the extraction prompt should state the rule is a product decision, deliberately not taken here."
+    "categoryRule": "The expected.category must be the value inferFaultCategory (packages/core/src/fault/category.ts) returns for the sample's own expected.type. The rule is stated here because it was true of the whole file and written down nowhere: the category was authored by reading the type, so the derivation reproduces it exactly in every sample -- 31 of 31 in fault/category-derivation.test.ts, which asserts it over the whole file and asserts that every one of them lands on a member of FAULT_CATEGORIES, so an expected.type added without a derivable category fails a test rather than being counted as a miss. The same module measures the rule's discriminating power and records that it is below the floor, so this concordance is self-consistency and not a result: see finding 102. Whether the extraction prompt should state the rule is a product decision, deliberately not taken here."
   },
   "types": [
     "cache-shard-unassigned",
@@ -309,6 +309,15 @@
         "type": "upstream-schema-change",
         "category": "dependency",
         "component": "currency-feed"
+      }
+    },
+    {
+      "id": "config-rate-cache-ttl-pricing",
+      "incidentText": "The Monday config rollout shortened the quote cache on pricing-service without anyone noticing. The quote cache TTL was written as 284 seconds where the runbook says 300, so cached quotes expired sooner and the table was re-priced from the tax service more often: the refresh rate went from 1100 to 1164 calls per second. The visible effect was small - quote latency p99 rose from 240ms to 254ms - and it sat inside the alert's noise band, so nothing paged. No request failed, no instance restarted and the arrival rate did not move; the only signals that changed were the refresh rate and the latency that followed it. Which component was misconfigured, and why did no alert fire?",
+      "expected": {
+        "type": "config-mismatch",
+        "category": "config",
+        "component": "pricing-service"
       }
     }
   ]

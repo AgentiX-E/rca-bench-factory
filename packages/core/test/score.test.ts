@@ -481,6 +481,19 @@ describe('RCA100 projects one UModel table onto four fields', () => {
     expect(checkById(files, 'edge-types-in-vocabulary')).toBe(false);
   });
 
+  it('skips a non-object edge instead of reporting a type it could not read', () => {
+    // The `!isRecord(edge)` guard above the two endpoint clauses. A topology whose
+    // `edges` array carries a `null` is malformed, and the export contract refuses it
+    // before a score is taken -- so what this pins is that the vocabulary check does
+    // not read `.src_type` off `null` and report a *type* violation for a shape fault.
+    // The two are different findings and the message is what a reader acts on.
+    const files = withEdgeType('k8s.pod', 'src');
+    const topo = JSON.parse(files['cases/case-001/topology.json']!);
+    topo.edges = [null, ...topo.edges];
+    files['cases/case-001/topology.json'] = JSON.stringify(topo);
+    expect(checkById(files, 'edge-types-in-vocabulary')).toBe(true);
+  });
+
   it('rejects an entity_set outside the vocabulary', () => {
     // The field with no consumer at all. This is the assertion that did not exist.
     expect(checkById(withEntitySet('GhostType'), 'entity-set-in-vocabulary')).toBe(false);

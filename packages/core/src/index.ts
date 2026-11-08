@@ -553,9 +553,17 @@ export {
   checkRca100Structure,
   checkRcaEvalStructure,
   scoreExport,
+  describeScore,
   verifyChecksums,
 } from './score/score.js';
-export type { ChecksumReport, ScoreCheck, ScoreReport, StructureReport } from './score/score.js';
+export type {
+  ChecksumReport,
+  ScoreCheck,
+  ScoreReport,
+  ScoreTerm,
+  ScoreTerms,
+  StructureReport,
+} from './score/score.js';
 export { SCORE_TARGET_IDS } from './score/targets.js';
 export type { ScoreTargetId } from './score/targets.js';
 export { accountRoundTrip } from './score/roundtrip-account.js';

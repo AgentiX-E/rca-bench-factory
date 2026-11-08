@@ -2263,8 +2263,15 @@ window.RBF_DATA = {
               "detail": "groundtruth rows=1 record rows=1"
             }
           ]
+        },
+        "terms": {
+          "structure": {
+            "passed": 14,
+            "total": 14
+          }
         }
-      }
+      },
+      "scoreLine": "score 100 of 100 over 14 structure check(s)"
     },
     "openrca-2.0": {
       "id": "openrca-2.0",
@@ -2291,8 +2298,15 @@ window.RBF_DATA = {
               "detail": "root_cause + ordered causal path with three-gate verification"
             }
           ]
+        },
+        "terms": {
+          "structure": {
+            "passed": 2,
+            "total": 2
+          }
         }
-      }
+      },
+      "scoreLine": "score 100 of 100 over 2 structure check(s)"
     },
     "rcaeval-re1": {
       "id": "rcaeval-re1",
@@ -2350,8 +2364,15 @@ window.RBF_DATA = {
               "detail": "expected ''"
             }
           ]
+        },
+        "terms": {
+          "structure": {
+            "passed": 8,
+            "total": 8
+          }
         }
-      }
+      },
+      "scoreLine": "score 100 of 100 over 8 structure check(s)"
     },
     "rcaeval-re2": {
       "id": "rcaeval-re2",
@@ -2411,8 +2432,15 @@ window.RBF_DATA = {
               "detail": "expected 'time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID'"
             }
           ]
+        },
+        "terms": {
+          "structure": {
+            "passed": 8,
+            "total": 8
+          }
         }
-      }
+      },
+      "scoreLine": "score 100 of 100 over 8 structure check(s)"
     },
     "rcaeval-re3": {
       "id": "rcaeval-re3",
@@ -2472,8 +2500,15 @@ window.RBF_DATA = {
               "detail": "expected 'time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID'"
             }
           ]
+        },
+        "terms": {
+          "structure": {
+            "passed": 0,
+            "total": 8
+          }
         }
-      }
+      },
+      "scoreLine": "score 0 of 100 over 8 structure check(s)"
     },
     "rca100": {
       "id": "rca100",
@@ -2542,8 +2577,15 @@ window.RBF_DATA = {
               "detail": "every modality row with an entity_id carries one of 7 UModel words in entity_set"
             }
           ]
+        },
+        "terms": {
+          "structure": {
+            "passed": 9,
+            "total": 9
+          }
         }
-      }
+      },
+      "scoreLine": "score 100 of 100 over 9 structure check(s)"
     },
     "aiops2025": {
       "id": "aiops2025",
@@ -2596,8 +2638,15 @@ window.RBF_DATA = {
               "detail": "input and groundtruth uuid sets match"
             }
           ]
+        },
+        "terms": {
+          "structure": {
+            "passed": 7,
+            "total": 7
+          }
         }
-      }
+      },
+      "scoreLine": "score 100 of 100 over 7 structure check(s)"
     },
     "cloud-opsbench": {
       "id": "cloud-opsbench",
@@ -2624,8 +2673,15 @@ window.RBF_DATA = {
               "detail": "namespace/query/difficulty + result triple strings, difficulty and fault_taxonomy in their vocabularies"
             }
           ]
+        },
+        "terms": {
+          "structure": {
+            "passed": 2,
+            "total": 2
+          }
         }
-      }
+      },
+      "scoreLine": "score 100 of 100 over 2 structure check(s)"
     },
     "itbench": {
       "id": "itbench",
@@ -2652,8 +2708,15 @@ window.RBF_DATA = {
               "detail": "scenario metadata + diagnosis ground truth shape, with domain/class/complexity in their vocabularies"
             }
           ]
+        },
+        "terms": {
+          "structure": {
+            "passed": 2,
+            "total": 2
+          }
         }
-      }
+      },
+      "scoreLine": "score 100 of 100 over 2 structure check(s)"
     }
   }
 };

@@ -213,7 +213,18 @@ describe('M1’s readings are re-derivable from the repository', () => {
     // so each reading carries a status, and the assertions are on that.
     const current = file.readings.filter((reading) => reading.status === 'current');
     expect(current).toHaveLength(1);
-    expect(current[0]?.key.size).toBe(key.samples.length);
+    // The current reading was taken over **30** of the 31 samples, and the difference is stated
+    // rather than smoothed: v3.70 added a sample that no recorded run has ever answered, so the
+    // reading behind `M1_STRICT_THRESHOLD` is now a statement about the thirty it did answer.
+    // The assertion used to be `key.size === key.samples.length`, which was true while the set
+    // only ever grew by re-running it; it is now pinned to the number, and the absence is
+    // measured below so a later round cannot add a second unanswered sample in silence.
+    expect(current[0]?.key.size).toBe(30);
+    const answered = new Set(current[0]?.samples.map((sample) => sample.id) ?? []);
+    expect(
+      key.samples.filter((sample) => !answered.has(sample.id)).map((sample) => sample.id),
+      'the samples no recorded run has answered -- the price of growing the corpus',
+    ).toEqual(['config-rate-cache-ttl-pricing']);
     expect(file.readings.filter((reading) => reading.status === 'old-key')).toHaveLength(4);
     const reverted = file.readings.filter((reading) => reading.status === 'reverted');
     expect(reverted, 'the record must carry both experiments that lost').toHaveLength(2);

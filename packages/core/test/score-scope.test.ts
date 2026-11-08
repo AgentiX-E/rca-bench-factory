@@ -29,6 +29,7 @@ const score = (overrides: Partial<ScoreReport> = {}): ScoreReport => ({
     passed: true,
     checks: [{ id: 'metrics-json', passed: true, detail: 'found 1 metrics.json' }],
   },
+  terms: { structure: { passed: 1, total: 1 } },
   ...overrides,
 });
 
@@ -69,7 +70,7 @@ describe('a score states how many cases it covers', () => {
   it('still renders the number itself', () => {
     // Regression guard: the scope must not displace the score, which is what
     // the page exists to report.
-    expect(renderScore(scoped(3))).toMatch(/score <span class="\w+">100<\/span>/);
+    expect(renderScore(scoped(3))).toMatch(/<span class="\w+">score 100 of 100 over 1 structure check\(s\)<\/span>/);
   });
 
   it('escapes a hostile case id and skip reason', () => {

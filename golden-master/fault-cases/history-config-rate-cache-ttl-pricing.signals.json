@@ -1,0 +1,38 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-config-rate-cache-ttl-pricing",
+  "why": "Telemetry for the corpus's faintest case, and the reason it exists: every other case in the set sits at least 63 times the detection line away from its own baseline, so the G3 grid had a constant in it -- sixteen threshold settings, one verdict, because the corpus could not see the threshold. This case moves by about three baseline standard deviations, which is inside the band an alert treats as noise and outside the band a detector is asked to measure. The two moving series are one mechanism stated twice: a shorter quote TTL expires cached entries sooner, so the table is re-priced more often and each re-price sits on the quote path. The third series is the control -- nothing failed -- and it is the reason the case is hard rather than ambiguous: an explanation that needs an error has nothing to stand on.",
+  "series": [
+    {
+      "service": "pricing-service",
+      "metric": "rate_table_refresh_rate",
+      "unit": "rps",
+      "baseline": 1100,
+      "post": 1164,
+      "quote": "1100 to 1164",
+      "why": "the checkpoint `cp-refresh-rate` holds the post-onset value; the text states both ends, so the baseline is not invented, and a rate that rises while the arrival rate does not is work the service chose to do more of"
+    },
+    {
+      "service": "pricing-service",
+      "metric": "quote_duration_p99_ms",
+      "unit": "ms",
+      "baseline": 240,
+      "post": 254,
+      "quote": "240ms to 254ms",
+      "why": "the checkpoint `cp-p99` holds the post-onset value: the effect a caller sees, about three baseline standard deviations from where it started, which is the separation the threshold grid had never been asked to judge"
+    },
+    {
+      "service": "pricing-service",
+      "metric": "quote_error_ratio",
+      "unit": "1",
+      "baseline": 0,
+      "post": 0,
+      "noise": "none",
+      "quote": "No request failed",
+      "why": "the checkpoint `cp-no-errors` holds the zero, and `noise: 'none'` says what the text says: a share of zero is exact rather than sampled, so a jitter of plus or minus two per cent on it would be a reading no system can produce"
+    }
+  ],
+  "noLogs": "the text says nothing failed and nothing restarted: a shorter TTL produces more work and no error, so no component had a reason to write a line, and inventing one would be inventing evidence the incident does not carry.",
+  "noTraces": "the refresh and the quote path are the same call at two different rates, so a span would show the p99 rise the metric already holds and nothing about the TTL that caused it."
+}

@@ -324,13 +324,16 @@ describe('G5 · the shipped corpus, read rather than assumed', () => {
 
   it('compares every pair the set contains', () => {
     const reading = readPairSimilarity(bundleOf(corpus));
-    expect(reading.cases).toBe(30);
-    expect(reading.pairs).toBe(435);
+    expect(reading.cases).toBe(31);
+    // 31 * 30 / 2. The formula is written in the comment rather than derived in the assertion,
+    // because the number is the thing being pinned: a set that lost a case would compare 406
+    // pairs and this would say so.
+    expect(reading.pairs).toBe(465);
     expect(reading.skippedCrossSystem).toBe(0);
     expect(reading.skippedNoQuery).toBe(0);
     expect(reading.skippedMalformedWindow).toBe(0);
-    expect(reading.judgedTaskText).toBe(435);
-    expect(reading.judgedWindows).toBe(435);
+    expect(reading.judgedTaskText).toBe(465);
+    expect(reading.judgedWindows).toBe(465);
   });
 
   it('finds no duplicate and no overlap, and publishes the margin to the thresholds', () => {

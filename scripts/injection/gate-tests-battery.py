@@ -1158,6 +1158,53 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         ),
         "the test that refuses one missing required field at a time",
     ),
+    # ------------------------------------------------------------ the score's denominator
+    #
+    # `score` is a percentage over a per-target count, and `describeScore` is the only
+    # sentence any surface prints it as. The three mutations below are the three ways the
+    # number can reach a reader without the thing that makes it a quantity.
+    (
+        # The sentence without its denominator is the defect the round exists for: nine
+        # targets reach 100 over five different check counts, and a bare `100` presents the
+        # weakest and the strongest as the same amount of evidence.
+        "SCORE 1. the sentence prints the percentage without the count",
+        "packages/core/src/score/score.ts",
+        "score-denominators.test.ts",
+        lambda t: rename(
+            t,
+            "  const structure = `over ${report.terms.structure.total} structure check(s)`;",
+            "  const structure = 'over its checks';",
+        ),
+        "the test that refuses a percentage printed without the count it was computed over",
+    ),
+    (
+        # With anchors the score is the mean of two terms, and the second one has its own
+        # denominator (the export's files). Dropping that clause leaves a 50 reading as
+        # though the whole number came from the structure checks.
+        "SCORE 2. the checksum clause is dropped from the sentence",
+        "packages/core/src/score/score.ts",
+        "score-denominators.test.ts",
+        lambda t: rename(
+            t,
+            "      : [structure, `with ${checksum.passed} of ${checksum.total} file(s) matching their anchors`];",
+            "      : [structure];",
+        ),
+        "the test that names both denominators once anchors are supplied",
+    ),
+    (
+        # `creditFor` reads the counts. Handing credit to a partial pass turns a failed
+        # contract into a fractional score, and the number stops taking the two values the
+        # structure term can actually produce.
+        "SCORE 3. a partial pass earns credit",
+        "packages/core/src/score/score.ts",
+        "score-denominators.test.ts",
+        lambda t: rename(
+            t,
+            "  return term.total > 0 && term.passed === term.total ? 1 : 0;",
+            "  return term.total > 0 ? term.passed / term.total : 0;",
+        ),
+        "the test that reads the score as one of two values without anchors",
+    ),
 ]
 
 
@@ -1282,6 +1329,19 @@ EXPECTATIONS: dict[str, tuple[str, ...]] = {
     'LAYOUT 1. a misspelled field is dropped instead of refused': (
         'refuses the four shapes a model gets wrong, each for its own stated reason',
         'prints the two channels, the refusal reasons and the absence of kappa',
+    ),
+    'SCORE 1. the sentence prints the percentage without the count': (
+        'never prints the percentage without the count it was computed over',
+    ),
+    'SCORE 2. the checksum clause is dropped from the sentence': (
+        'names both denominators once anchors are supplied',
+    ),
+    # The witness is the empty export, not the two-value claim: the corpus's nine targets are
+    # all-pass or all-fail, so partial credit leaves every one of their scores where it was. What
+    # the mutation moves is a report whose checks are *vacuously* true -- an export that does not
+    # exist passes four of rca100's nine checks, and a rate would pay it for the four.
+    'SCORE 3. a partial pass earns credit': (
+        'gives an empty check list no credit rather than a NaN',
     ),
     'LAYOUT 2. a mapping to the wrong column counts as agreement': (
         'counts an answer that points a field at a real but different column as a contradiction',

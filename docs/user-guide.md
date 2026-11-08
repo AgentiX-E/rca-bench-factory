@@ -169,20 +169,35 @@ node packages/cli/dist/main.js score --target rca100 --dir ./out
   "passed": true,
   "score": 100,
   "structure": {
+    "target": "rca100",
+    "passed": true,
     "checks": [
       { "id": "case-present", "passed": true, "detail": "found 1 case topology.json" },
+      { "id": "case-files-complete", "passed": true, "detail": "all 1 case(s) complete" },
       { "id": "topology-shape", "passed": true, "detail": "entities (non-empty) and edges arrays with consistent stats" },
       { "id": "entity-refs-resolve", "passed": true, "detail": "every entity_id resolves into the topology" },
       { "id": "root-cause-resolves", "passed": true, "detail": "every root-cause entity name resolves into the topology" },
-      { "id": "gt-structure", "passed": true, "detail": "four-layer answer key (root_cause_entities/types + raw_ground_truth)" }
+      { "id": "gt-structure", "passed": true, "detail": "four-layer answer key (root_cause_entities/types + raw_ground_truth)" },
+      { "id": "entity-types-in-vocabulary", "passed": true, "detail": "every entities[].type is one of 7 UModel words" },
+      { "id": "edge-types-in-vocabulary", "passed": true, "detail": "every edges[].src_type and dst_type is one of 7 UModel words" },
+      { "id": "entity-set-in-vocabulary", "passed": true, "detail": "every modality row with an entity_id carries one of 7 UModel words in entity_set" }
     ]
-  }
+  },
+  "terms": { "structure": { "passed": 9, "total": 9 } }
 }
 ```
 
-- **Without `--anchors`** the score is the structural pass rate.
-- **With `--anchors '{"path":"sha256"}'`** it is the mean of the structural pass rate and the
-  Golden-Master checksum match rate — external grounding, not self-certification.
+- **`terms` is the denominator.** `score` is a percentage over the checks *that target
+  declares*, and the nine targets declare five different counts (14, 9, 8, 7 and 2). A
+  `100` over nine checks and a `100` over two are different amounts of evidence, so every
+  surface prints the number with its count — `describeScore(report)` renders the sentence
+  the CLI docs, the HTML page and the site all show.
+- **Without `--anchors`** every check has to pass for the structure term to carry any
+  credit, so `score` takes exactly **two** values: `0` and `100`. `0-100` is the ceiling
+  both terms are scaled onto, not a scale the structure half can move along.
+- **With `--anchors '{"path":"sha256"}'`** it is the mean of the structure term and the
+  Golden-Master checksum match rate — external grounding, not self-certification — and
+  `terms.checksum` carries the file count that rate was computed over.
 - Exit code `1` on failure, so CI can gate on it.
 
 ## 7. Render a report
@@ -306,6 +321,7 @@ The CLI is a thin wrapper; everything is available as a library:
 ```ts
 import {
   assembleBundle,
+  describeScore,
   exportRca100,
   runAllGates,
   scoreExport,
@@ -316,7 +332,8 @@ const assembled = assembleBundle(draft);              // { ok: true, bundle } | 
 if (!assembled.ok) throw new Error(assembled.error);
 
 const { files, skipped } = exportRca100(assembled.bundle);
-const report = scoreExport('rca100', files);          // 0-100, plus the per-check detail
+const report = scoreExport('rca100', files);          // score + terms (9 of 9 checks) + per-check detail
+const line = describeScore(report);                   // 'score 100 of 100 over 9 structure check(s)'
 ```
 
 Note that exporters take the **bundle**, not `(case, signals)` — the topology and the
@@ -330,4 +347,5 @@ case-level signals are both needed to enforce reference integrity.
 | `root-cause entity does not resolve into topology` | `rootCauseEntityId` is not in `graph.entities` | align the id, or add the name to `Entity.aliases` |
 | G4 fails with `UNSOLVABLE_CASE` | too few candidate entities / no baseline signal | enrich the case, or accept quarantine under H5 |
 | `answer-key-isolated` fails | the authored `query` quotes the root cause | keep the label in `groundTruth` only |
-| Score is below 100 but `passed` is true | anchors were omitted | add `--anchors` for the checksum half of the score |
+| Score is 0 or 100 and never anything between | no `--anchors`, so only the all-or-nothing structure term was scored | supply anchors, or read the failing check in `structure.checks` |
+| `score: 100` for two targets, but one ran twice the checks | the denominators differ per target — five counts across nine | read `terms.structure` (or `describeScore`) rather than the percentage |

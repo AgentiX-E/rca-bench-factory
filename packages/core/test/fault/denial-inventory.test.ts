@@ -64,7 +64,7 @@ function goldenDocument(): { samples: GoldenSample[]; provenance: Record<string,
     samples: GoldenSample[];
     provenance: Record<string, string>;
   };
-  expect(parsed.samples.length).toBe(30);
+  expect(parsed.samples.length).toBe(31);
   return parsed;
 }
 
@@ -313,8 +313,8 @@ describe('the inventory is built over the whole corpus', () => {
     const inventory = buildDenialInventory(
       goldenSamples().map((s) => ({ sampleId: s.id, text: s.incidentText, category: s.expected.category })),
     );
-    expect(inventory.graded).toBe(30);
-    expect(inventory.deniedOnly + inventory.alsoAsserted + inventory.absent).toBe(30);
+    expect(inventory.graded).toBe(31);
+    expect(inventory.deniedOnly + inventory.alsoAsserted + inventory.absent).toBe(31);
   });
 
   it('counts a sample with no text as not-assessable rather than absent', () => {

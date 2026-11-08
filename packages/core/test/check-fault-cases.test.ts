@@ -406,7 +406,7 @@ describe('check-fault-cases · the corpus as it stands', { timeout: SUITE_BUDGET
     expect(result.status, result.out).toBe(0);
     // One, because the scratch corpus holds the one case the helper writes -- which is also what
     // proves the count is read from the directory it was given rather than from the repository.
-    expect(result.out).toContain('1 of 30');
+    expect(result.out).toContain('1 of 31');
   });
 
   it('states no neighbour count in the background file, because nothing re-derives one', async () => {
@@ -840,9 +840,9 @@ describe('check-fault-cases · derived telemetry is a claim G3 can refuse', { ti
     // locate all thirty cases, which is what a fixture is for and what a benchmark set must not be.
     const result = await run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('locates 30 of 30 case(s) within top-');
+    expect(result.out).toContain('locates 31 of 31 case(s) within top-');
     expect(result.out).toContain("purpose 'conformance', so this is a reading and not a verdict");
-    expect(result.out).toContain('prompt leakage: 0 of 30 case(s) name their root-cause component');
+    expect(result.out).toContain('prompt leakage: 0 of 31 case(s) name their root-cause component');
   });
 
   it('refuses the same corpus when it declares that it is a benchmark', async () => {
@@ -2960,20 +2960,25 @@ describe('check-fault-cases · the G3 threshold grid', { timeout: SUITE_BUDGET_M
     return JSON.parse(JSON.stringify(SIGNALS)) as Record<string, unknown>;
   }
 
-  it('prints the grid over the shipped corpus, with the margin that explains it', async () => {
+  it('prints the grid over the shipped corpus, and it now moves', async () => {
     // The request behind this reading was "a 4x4 grid would say which cell the defaults sit in and
-    // whether the admission rate moves with them". The answer on this corpus is that it does not
-    // move, so the sentence has to carry the reason: the weakest case stops sustaining three
-    // samples only above |Z| >= 126.85, which is 63x the line the gate applies. The figures are
-    // asserted rather than described, because a corpus drifting towards the thresholds moves the
-    // weakest case first and this is what makes that movement visible before the grid turns red.
+    // whether the admission rate moves with them". Until v3.70 the answer was that it could not
+    // move: the weakest case stopped sustaining three samples only above |Z| >= 126.85, which is
+    // 63x the line the gate applies, so all sixteen cells admitted all thirty cases. That is a
+    // corpus that cannot see the threshold, not a threshold that has been defended.
+    //
+    // The round added a case whose anomaly separates by about three baseline standard deviations
+    // (the same quantity the corpus's fixed jitter cycle sets for every series), and the sentence
+    // now reports the first movement the grid has ever had: the default admits all thirty-one and
+    // one neighbour -- |Z| >= 10 -- refuses it. The figures are asserted rather than described,
+    // because a corpus drifting towards the thresholds moves the weakest case first.
     const result = await run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toContain(
-      'g3 threshold grid: 30 case(s) judged over 4x4 cells (|Z| 1/2/10/100 x samples 1/3/5/8); '
-        + 'the default (|Z| >= 2, 3 samples) admits 30 of 30 and no neighbour changes that; '
-        + "the weakest case 'history-resource-ephemeral-capacity-image-builder' stops sustaining "
-        + '3 sample(s) at |Z| >= 126.85, 63.42x the default; '
+      'g3 threshold grid: 31 case(s) judged over 4x4 cells (|Z| 1/2/10/100 x samples 1/3/5/8); '
+        + 'the default (|Z| >= 2, 3 samples) admits 31 of 31 and 1 of its 4 neighbour(s) change '
+        + "that, by up to 1; the weakest case 'history-config-rate-cache-ttl-pricing' stops "
+        + 'sustaining 3 sample(s) at |Z| >= 3.38, 1.69x the default; '
         + 'the most post-onset samples any case offers is 8, '
         + 'which is the tallest sample line the grid can ask for',
     );

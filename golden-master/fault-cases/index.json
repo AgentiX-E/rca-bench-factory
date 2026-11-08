@@ -2,7 +2,7 @@
   "schema": "rca-bench-fault-cases/3",
   "purpose": "conformance",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Every case must carry a quote in each of its four layers, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check. The purpose field says what the set is for: the same saturation reading is a defect in a benchmark set and a fact of life in a conformance fixture, and a set that does not say which it is cannot be told apart from one that is failing at the other thing.",
-  "min": 30,
+  "min": 31,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -903,6 +903,36 @@
         }
       ],
       "signals": "history-runtime-container-start-notification-worker.signals.json"
+    },
+    {
+      "caseId": "history-config-rate-cache-ttl-pricing",
+      "sampleId": "config-rate-cache-ttl-pricing",
+      "case": "history-config-rate-cache-ttl-pricing.json",
+      "graph": "synthetic-storefront-graph.json",
+      "why": "annotated from the incident text of `config-rate-cache-ttl-pricing`: the component is named, the mechanism is the text's own sentence about the TTL the rollout wrote, the two moving readings are the two rates the text states, and the control is the sentence that says nothing failed. It is the corpus's faintest case on purpose -- the move is about three baseline standard deviations -- because every other case sits tens to billions of times the G3 threshold away from its own baseline, which left the threshold grid with sixteen settings and one verdict. A corpus that cannot see a threshold cannot say whether the threshold is doing anything.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "pricing-service",
+          "why": "the workload whose quote cache was shortened -- the entity both moving readings are taken on"
+        },
+        {
+          "layer": "fault",
+          "quote": "The quote cache TTL was written as 284 seconds where the runbook says 300",
+          "why": "the mechanism, and what makes this `config-mismatch` rather than a capacity or a latency fault: two documents disagree and the deployment followed the wrong one"
+        },
+        {
+          "layer": "process",
+          "quote": "the refresh rate went from 1100 to 1164 calls per second",
+          "why": "the first step's effect, and the sentence that orders the extra refreshes before the latency rather than beside it"
+        },
+        {
+          "layer": "evidence",
+          "quote": "240ms to 254ms",
+          "why": "the two numbers the p99 checkpoint holds; a checkpoint with one number would not say what the fault changed"
+        }
+      ],
+      "signals": "history-config-rate-cache-ttl-pricing.signals.json"
     }
   ]
 }

@@ -235,6 +235,32 @@ describe('validateGeneratedLayout', () => {
     expect(result.valid).toBe(false);
     expect(result.reasons).toEqual(['no samples were provided, so the layout could not be replayed']);
   });
+
+  it('accepts a mapping to a real, populated column that means something else', () => {
+    // The limit of the replay, asserted rather than described. `metricValue` is pointed
+    // at `limit` when the usage column is the number the field should hold; both columns
+    // exist in every sample and both have values, so no structural rule can separate the
+    // two mappings -- the samples do not say which number the field was supposed to be.
+    //
+    // This is the shape the module's doc comment claims, and the shape
+    // `rulegen-agreement.ts` counts as `misreads`. If a future round adds a semantic
+    // reader, this test is the one that must be deleted and replaced by its refusal.
+    const layout: FileLayout = {
+      timestamp: 'time',
+      service: 'svc',
+      metricName: 'kpi',
+      metricValue: 'limit',
+    };
+    const samples: SampleRecord[] = [
+      { time: '2026-09-06T00:00:00Z', svc: 'order', kpi: 'cpu_usage', usage: '20', limit: '500' },
+      { time: '2026-09-06T00:01:00Z', svc: 'order', kpi: 'cpu_usage', usage: '95', limit: '500' },
+    ];
+    const result = validateGeneratedLayout(layout, 'metric', samples);
+    expect(result.valid).toBe(true);
+    // The right mapping passes the same check, so the replay cannot be the thing that
+    // tells them apart: one verdict, two meanings.
+    expect(validateGeneratedLayout({ ...layout, metricValue: 'usage' }, 'metric', samples).valid).toBe(true);
+  });
 });
 
 /**

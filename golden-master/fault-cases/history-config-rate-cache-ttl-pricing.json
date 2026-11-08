@@ -1,0 +1,116 @@
+{
+  "caseId": "history-config-rate-cache-ttl-pricing",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-11",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-11-03T09:12:00.000Z",
+  "window": {
+    "start": "2026-11-03T09:00:00.000Z",
+    "end": "2026-11-03T09:40:00.000Z"
+  },
+  "fault": {
+    "type": "config-mismatch",
+    "category": "config",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "pricing-service",
+      "configMap": "pricing-service-config",
+      "declaredKey": "quote-cache-ttl-seconds",
+      "runbookValue": "300",
+      "writtenValue": "284"
+    },
+    "parameterNotes": {
+      "service": "the service whose quote cache was shortened; both moving readings are taken on it, so the name is the subject of the case rather than a quantity a series could hold.",
+      "configMap": "the ConfigMap the value lives in; the evidence is what the shortened TTL did to two rates, and a ConfigMap name is not a reading.",
+      "declaredKey": "the key whose value the rollout changed; naming it is the mechanism, and no series is per key.",
+      "runbookValue": "the TTL the runbook states, in seconds; the case's point is the distance from it, and the distance is not a series because it is a comparison between two documents.",
+      "writtenValue": "the TTL the rollout actually wrote, in seconds; the two rates below are the consequence measured against the incident text, and the parameter is where the number came from rather than a signal the gates read."
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "service:synthetic-storefront/pricing-service",
+    "rootCauseComponent": "pricing-service",
+    "rootCauseReason": "The rollout wrote a quote cache TTL of 284 seconds where the runbook says 300, so every cached quote expired about 5% sooner and the service re-priced from the tax service more often. The refresh rate rose from 1100 to 1164 calls per second and quote latency p99 rose from 240ms to 254ms, which is a real change and a small one: the move is about three baseline standard deviations, inside the band the alert treats as noise, so nothing fired. Nothing failed and nothing restarted, which is why every explanation built on an error, a crash or a traffic change is excluded by this case rather than supported by it.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "rate_table_refresh_rate",
+        "description": "the rate the table is re-priced from the tax service rose from 1100 to 1164 calls per second after the rollout"
+      },
+      {
+        "type": "metric",
+        "ref": "quote_duration_p99_ms",
+        "description": "quote latency p99 rose from 240ms to 254ms, which is the effect a caller sees and the one that stayed inside the alert's noise band"
+      },
+      {
+        "type": "metric",
+        "ref": "quote_error_ratio",
+        "description": "no request failed, so the fault is a change in how often work is done rather than one in whether it succeeds"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "service:synthetic-storefront/pricing-service",
+        "toEntityId": "external:synthetic-storefront/tax-calculation",
+        "mechanism": "a 284 second TTL expires cached quotes about 5% sooner, so the service re-prices from the tax service at 1164 calls per second instead of 1100, and each of those refreshes sits on the quote path -- which is where the p99 rise from 240ms to 254ms comes from",
+        "evidenceRefs": [
+          "cp-refresh-rate",
+          "cp-p99",
+          "cp-no-errors"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-refresh-rate",
+        "entityRef": "service:synthetic-storefront/pricing-service",
+        "signalRef": "rate_table_refresh_rate",
+        "comparator": ">=",
+        "value": 1164,
+        "unit": "rps",
+        "description": "the refresh rate after the rollout: a rate that rises while the arrival rate does not is work the service chose to do more of, which is what a shorter TTL produces"
+      },
+      {
+        "checkpointId": "cp-p99",
+        "entityRef": "service:synthetic-storefront/pricing-service",
+        "signalRef": "quote_duration_p99_ms",
+        "comparator": ">=",
+        "value": 254,
+        "unit": "ms",
+        "description": "quote latency p99 at the peak, up from 240ms before the window, and the reading that sat inside the noise band"
+      },
+      {
+        "checkpointId": "cp-no-errors",
+        "entityRef": "service:synthetic-storefront/pricing-service",
+        "signalRef": "quote_error_ratio",
+        "comparator": "==",
+        "value": 0,
+        "unit": "1",
+        "description": "no request failed, which rules out every explanation that would have produced an error: the dependency, the pool, the network and the deploy"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "restore the TTL to the 300 seconds the runbook states, and confirm the refresh rate returns to its pre-rollout value",
+        "target": "service:synthetic-storefront/pricing-service"
+      },
+      {
+        "step": 2,
+        "action": "alert on the refresh rate itself rather than on the latency it produces, because the rate moved by the same 5% and did so without a threshold to be inside of",
+        "target": "service:synthetic-storefront/pricing-service"
+      }
+    ]
+  },
+  "sli": {
+    "service": "pricing-service",
+    "metric": "quote_duration_p99_ms"
+  },
+  "query": "Quote latency rose slightly after Monday's config rollout and then held, with no errors and no change in arrival rate; the only other movement was how often the rate table was refreshed. What changed, and why was no alert raised?",
+  "difficulty": "L4",
+  "answerKeyIsolated": true
+}

@@ -328,6 +328,12 @@ rca-bench score --target itbench --dir ./out
   the field contract alone; the report then carries no `checksum` section.
   Checksum verification requires the file sets to agree exactly — a mismatched,
   missing or unanchored file fails the report.
+- The report carries `score` **and** `terms`: the counts the percentage was computed
+  over, one pair per term (`structure`, and `checksum` when anchors were supplied).
+  The denominator differs per target — nine targets, five check counts (14, 9, 8, 7
+  and 2) — so a `100` alone does not say how much evidence it rests on. Without
+  anchors only the structure term is scored, and it is all-or-nothing: the number
+  takes the values `0` and `100` and nothing between.
 - Exit code is 0 when the report passes, 1 when it fails (so CI can gate on it).
 
 ### `rca-bench official`
@@ -406,18 +412,21 @@ rca-bench report --input bundle.json [--title "Report"] [--target openrca-1.0] [
 - With several gate sections on one page the **worst verdict governs**, so a
   page that happens to render a passing bundle first cannot present the score as
   though nothing were wrong.
-- The score always states **its denominator**. The page exports the bundle
-  internally, and an exporter may legally drop a case it cannot represent —
-  `rcaeval-re3` admits code-level faults only, so a bundle of one code fault and
-  two resource faults is scored over one case. `score 100` over a third of a
-  benchmark and `score 100` over all of it are different claims, and only the
-  denominator separates them:
+- The score always states **its denominator**, and it has two of them. The page
+  exports the bundle internally, and an exporter may legally drop a case it cannot
+  represent — `rcaeval-re3` admits code-level faults only, so a bundle of one code
+  fault and two resource faults is scored over one case. `score 100` over a third
+  of a benchmark and `score 100` over all of it are different claims, and only the
+  denominator separates them. The second denominator is the check count:
 
   ```text
-  target rcaeval-re3 — score 100
+  target rcaeval-re3 — score 100 of 100 over 8 structure check(s)
   Scored 1 of 3 case(s) — 2 could not be exported.
   ```
 
+  The check count is printed because nine targets reach `100` over five different
+  counts, and a page that showed the percentage alone would present the weakest
+  contract and the strongest as the same amount of evidence.
   The count is stated on every page, not only when cases were lost: showing it
   "only when something is wrong" is the silence being avoided. When cases were
   lost they are listed under *Cases not scored* with the reason each gave.

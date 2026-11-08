@@ -35,7 +35,9 @@ export { sha256 };
  *      contract (file layout, column headers, answer-key isolation, modality).
  *   2. Checksum verification proves the emitted bytes are byte-stable against
  *      committed Golden Master anchors (external grounding, never self-approved).
- *   3. `scoreExport` combines both into a 0-100 score.
+ *   3. `scoreExport` combines both into a 0-100 score, and reports the counts
+ *      each half was computed over (`terms`) beside it, because the denominator
+ *      differs per target and a percentage without one is not a quantity.
  *
  * All checks are pure functions of the exported file map - no mocks, no IO.
  */
@@ -63,11 +65,46 @@ export interface ChecksumReport {
   extra: string[];
 }
 
+/**
+ * What one term of a score measured, and how much of it passed.
+ *
+ * A rate is two numbers wearing one coat, and the coat is the half a reader sees.
+ * `score: 100` for `openrca-1.0` is fourteen checks; for `cloud-opsbench` it is two,
+ * and the two are not the same claim about the export even though both round to the
+ * same percentage. Carrying the counts beside the number is what lets every surface
+ * print the denominator without recomputing it -- and a recomputation is the defect
+ * this shape exists to remove, because a second count is a second thing that can
+ * disagree with the first.
+ */
+export interface ScoreTerm {
+  /** Checks (or files) under this term that passed. */
+  passed: number;
+  /** Checks (or files) under this term, passed or not. */
+  total: number;
+}
+
+/**
+ * The two terms `score` is the average of, each with its own denominator.
+ *
+ * They are different populations and must never be merged: `structure` counts the
+ * target's contract checks, `checksum` counts the export's files. Nine targets carry
+ * four different check counts, so the structure denominator is also the answer to
+ * "how much evidence does this 100 rest on" -- a question the percentage alone cannot
+ * be asked. `checksum` is absent exactly when no anchors were supplied, which is the
+ * same condition under which `ScoreReport.checksum` is absent.
+ */
+export interface ScoreTerms {
+  structure: ScoreTerm;
+  checksum?: ScoreTerm;
+}
+
 export interface ScoreReport {
   target: ScoreTargetId;
   passed: boolean;
   score: number;
   structure: StructureReport;
+  /** The denominators under `score`, so the number is never printed without them. */
+  terms: ScoreTerms;
   checksum?: ChecksumReport;
 }
 
@@ -968,16 +1005,33 @@ export function verifyChecksums(files: Record<string, string>, anchors: Record<s
   };
 }
 
-function structureRate(structure: StructureReport): number {
-  // Every structure report carries at least one check, so division is safe.
-  return structure.checks.filter((c) => c.passed).length / structure.checks.length;
+/** The counts a structure report's own checks add up to. */
+function structureTerm(structure: StructureReport): ScoreTerm {
+  return {
+    passed: structure.checks.filter((c) => c.passed).length,
+    total: structure.checks.length,
+  };
+}
+
+/** The counts the checksum report's four buckets add up to. */
+function checksumTerm(report: ChecksumReport): ScoreTerm {
+  // The denominator is the export, not the anchor set. Counting only the
+  // anchors the caller supplied let a file the anchors never mention be neither
+  // verified nor held against the rate: one anchor out of twenty-two produced
+  // `score: 100` next to `passed: false`, and the number is the half people
+  // read. A comparison set is a claim about the whole export, so a file it does
+  // not cover is an unverified file, which is exactly what `extra` names.
+  return {
+    passed: report.matched,
+    total: report.matched + report.mismatched.length + report.missing.length + report.extra.length,
+  };
 }
 
 /**
  * Whether a verdict is worth crediting at all.
  *
  * A score has to fail when the thing it scores is not there. `scoreExport`
- * averages the structure rate and the checksum rate, so a report whose checks
+ * averages the structure term and the checksum term, so a report whose checks
  * are vacuously true still buys half the number: an empty export passed
  * `answer-key-isolated` ("query.csv carries no answer key" -- there is no
  * query.csv), `log-header` and `trace-header` (both explicitly accept an absent
@@ -985,25 +1039,20 @@ function structureRate(structure: StructureReport): number {
  * 13 checks, a structure rate of 0.31, and a reported `score` of 15 for an export
  * that does not exist.
  *
- * The rule is the same one every other denominator in this file already
- * follows: a term with nothing under it has no credit to give. The structure
- * report's own `passed` flag already answers this correctly -- it is
- * `checks.every(c => c.passed)` -- so the rate is only meaningful once the
- * verdict is.
+ * The rule is the same one every other denominator in this file already follows:
+ * a term with nothing under it has no credit to give. `structure.passed` is
+ * `checks.every(c => c.passed)`, so a structure term is all-or-nothing and the
+ * rate it would produce is either zero or one -- which is why this reads the
+ * counts rather than dividing them, and why `score` without anchors takes exactly
+ * two values. The percentage was never a scale there; it was a verdict written as
+ * one, and `describeScore` is where that stops being invisible.
  */
-function creditFor(structure: StructureReport): number {
-  return structure.passed ? structureRate(structure) : 0;
+function creditFor(term: ScoreTerm): number {
+  return term.total > 0 && term.passed === term.total ? 1 : 0;
 }
 
-function checksumRate(report: ChecksumReport): number {
-  // The denominator is the export, not the anchor set. Counting only the
-  // anchors the caller supplied let a file the anchors never mention be neither
-  // verified nor held against the rate: one anchor out of twenty-two produced
-  // `score: 100` next to `passed: false`, and the number is the half people
-  // read. A comparison set is a claim about the whole export, so a file it does
-  // not cover is an unverified file, which is exactly what `extra` names.
-  const total = report.matched + report.mismatched.length + report.missing.length + report.extra.length;
-  return total === 0 ? 0 : report.matched / total;
+function rateOf(term: ScoreTerm): number {
+  return term.total === 0 ? 0 : term.passed / term.total;
 }
 
 /**
@@ -1080,21 +1129,49 @@ export function scoreExport(
   anchors?: Record<string, string>,
 ): ScoreReport {
   const structure = structureFor(target, files);
+  const structureCounts = structureTerm(structure);
   if (anchors === undefined) {
     return {
       target,
       passed: structure.passed,
-      score: Math.round(creditFor(structure) * 100),
+      score: Math.round(creditFor(structureCounts) * 100),
       structure,
+      terms: { structure: structureCounts },
     };
   }
   const checksum = verifyChecksums(files, anchors);
-  const score = Math.round(((creditFor(structure) + checksumRate(checksum)) / 2) * 100);
+  const checksumCounts = checksumTerm(checksum);
+  const score = Math.round(((creditFor(structureCounts) + rateOf(checksumCounts)) / 2) * 100);
   return {
     target,
     passed: structure.passed && checksum.passed,
     score,
     structure,
+    terms: { structure: structureCounts, checksum: checksumCounts },
     checksum,
   };
+}
+
+/**
+ * The score with the population it rests on, in one sentence.
+ *
+ * Every surface that prints a score prints this instead of the bare number, because
+ * `100` on its own is not a quantity: it is fourteen passed checks for
+ * `openrca-1.0`, nine for `rca100`, seven for `aiops2025` and two for
+ * `cloud-opsbench` / `itbench` / `openrca-2.0`. Those are four different amounts of
+ * evidence, and the percentage is blind to the difference by construction -- the same
+ * blindness that let "a score of 100" and "the checksum matched every file" read as
+ * one claim in a round that had only checked one file (finding 479's neighbour).
+ *
+ * The wording is deliberately not "of 100": the `100` in `score` is a ceiling that
+ * both terms are scaled onto, not a denominator, and the denominators are the counts.
+ */
+export function describeScore(report: ScoreReport): string {
+  const structure = `over ${report.terms.structure.total} structure check(s)`;
+  const checksum = report.terms.checksum;
+  const parts =
+    checksum === undefined
+      ? [structure]
+      : [structure, `with ${checksum.passed} of ${checksum.total} file(s) matching their anchors`];
+  return `score ${report.score} of 100 ${parts.join(', ')}`;
 }

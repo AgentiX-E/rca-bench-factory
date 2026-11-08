@@ -5,6 +5,7 @@ import { SIGNAL_KINDS } from '../ir/types.js';
 import type { Entity, EntityEdge, EntityGraph, QualityGateReport, SignalKind } from '../ir/types.js';
 import type { SkippedCase } from '../export/openrca.js';
 import type { ScoreReport, ScoreCheck, StructureReport } from '../score/score.js';
+import { describeScore } from '../score/score.js';
 
 /**
  * Static HTML report renderer.
@@ -152,7 +153,10 @@ export function renderScore(report: ScoredExport, gateVerdict?: string): string 
   const scored = report.scope.total - report.scope.skipped.length;
   return [
     '<section><h2>Score</h2>',
-    `<p>target <b>${escapeHtml(report.target)}</b> — score <span class="${scoreClass}">${report.score}</span></p>`,
+    // The percentage is never rendered alone. `100` here is fourteen checks for one
+    // target and two for another, and a page that printed the number without the count
+    // would make four different amounts of evidence look like one.
+    `<p>target <b>${escapeHtml(report.target)}</b> — <span class="${scoreClass}">${escapeHtml(describeScore(report))}</span></p>`,
     // The denominator. Without it a benchmark that lost two thirds of its cases
     // on the way out still reports "score 100", because the scorer only ever
     // sees the bytes it was given and every byte it was given is perfect.

@@ -278,7 +278,9 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // no evidence at all. 35 -> 42 in v3.69, for the two readings this round added: three
     // withdrawals of the G3 grid's cell, boundary and default line, and four of the layout answer
     // set's refusals, its wrong-column reading and its one required-field table.
-    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(42);
+    // 42 -> 45 in v3.70: the score's sentence is a guard, and the three ways it can
+    // lose its denominator are the three withdrawals declared for it.
+    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(45);
     expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(
       pythonJson(`print(json.dumps(len(module.INJECTIONS)))`),
     );

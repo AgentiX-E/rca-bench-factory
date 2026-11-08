@@ -44,6 +44,7 @@ const contractPerfect = (): ScoredExport => ({
     passed: true,
     checks: [{ id: 'row-alignment', passed: true, detail: 'groundtruth rows=1 record rows=1' }],
   },
+  terms: { structure: { passed: 1, total: 1 } },
   scope: { total: 1, skipped: [] },
 });
 
@@ -82,7 +83,7 @@ describe('the page does not paint a passing score green over a blocked dataset',
     });
 
     // The score element must not claim success while the dataset is held back.
-    expect(html).not.toContain('score <span class="ok">100');
+    expect(html).not.toContain('<span class="ok">score 100 of 100');
     expect(html).toContain('100');
   });
 
@@ -94,7 +95,7 @@ describe('the page does not paint a passing score green over a blocked dataset',
       scores: [contractPerfect()],
     });
 
-    expect(html).toContain('score <span class="ok">100');
+    expect(html).toContain('<span class="ok">score 100 of 100');
   });
 
   it('explains why the score is held back', () => {
@@ -113,7 +114,7 @@ describe('the page does not paint a passing score green over a blocked dataset',
     // renderPage is also used for score-only pages. With no gate verdict to
     // contradict, the score stands on its own and is painted normally.
     const html = renderPage({ title: 'Report', scores: [contractPerfect()] });
-    expect(html).toContain('score <span class="ok">100');
+    expect(html).toContain('<span class="ok">score 100 of 100');
   });
 
   it('uses the worst gate verdict when several are rendered', () => {
@@ -127,7 +128,7 @@ describe('the page does not paint a passing score green over a blocked dataset',
     // One quarantined bundle is enough to hold the score back; averaging or
     // taking the first would let a bad dataset through because a good one
     // happened to be rendered first.
-    expect(html).not.toContain('score <span class="ok">100');
+    expect(html).not.toContain('<span class="ok">score 100 of 100');
   });
 
   it('treats a rejected dataset as not admitted', () => {
@@ -138,7 +139,7 @@ describe('the page does not paint a passing score green over a blocked dataset',
       scores: [contractPerfect()],
     });
 
-    expect(html).not.toContain('score <span class="ok">100');
+    expect(html).not.toContain('<span class="ok">score 100 of 100');
   });
 
   it('ranks rejected above quarantined, so the harsher verdict governs', () => {

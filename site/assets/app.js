@@ -448,7 +448,11 @@
             el('span', { text: c.detail, style: 'color:var(--fg-dim)' }),
           ]);
         })),
-        el('p', { class: 'small', text: 'score ' + target.report.score + '/100 · passed=' + target.report.passed }),
+        // The sentence, not the number: it is written by `core.describeScore` and
+        // carried in the payload, so the site cannot print a percentage without the
+        // count it was computed over. Four of these nine targets reach 100 over two
+        // checks and one over fourteen.
+        el('p', { class: 'small', text: target.scoreLine + ' · passed=' + target.report.passed }),
         el('h3', { text: 'Boundaries' }),
         el('ul', { class: 'tight' }, spec.boundaries.map(function (b) {
           return el('li', { text: b });
