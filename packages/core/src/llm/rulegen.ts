@@ -1,4 +1,4 @@
-import type { FileLayout, FileSignalKind } from '../ingest/file.js';
+import { LAYOUT_REQUIRED_FIELDS, type FileLayout, type FileSignalKind } from '../ingest/file.js';
 import { METRIC_SEMANTIC_TYPES, isVocabularyMember } from '../ir/types.js';
 
 /**
@@ -25,12 +25,6 @@ export interface LayoutValidation {
   valid: boolean;
   reasons: string[];
 }
-
-const REQUIRED_FIELDS: Record<FileSignalKind, readonly (keyof FileLayout)[]> = {
-  metric: ['timestamp', 'metricName', 'metricValue'],
-  log: ['timestamp', 'logBody'],
-  trace: ['timestamp', 'traceId', 'spanId', 'spanName', 'durationMs'],
-};
 
 const IR_FIELDS: Record<FileSignalKind, readonly (keyof FileLayout)[]> = {
   metric: ['timestamp', 'service', 'metricName', 'metricValue', 'metricUnit', 'semanticType'],
@@ -262,7 +256,9 @@ export function validateGeneratedLayout(
   samples: SampleRecord[],
 ): LayoutValidation {
   const reasons: string[] = [];
-  for (const field of REQUIRED_FIELDS[signalKind]) {
+  // `LAYOUT_REQUIRED_FIELDS` rather than a table of this module's own: the fields a layout must map
+  // are the same fields `prime.ts` refuses a file for missing, and one fact has one writer.
+  for (const field of LAYOUT_REQUIRED_FIELDS[signalKind]) {
     const column = layout[field];
     if (column === undefined || column === '') {
       reasons.push(`missing required field '${field}'`);

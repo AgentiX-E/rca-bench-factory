@@ -1064,6 +1064,100 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         ),
         "the depth test, which plants a second `inject_time.txt` below a real case",
     ),
+    # ------------------------------------------------------------ g3 threshold grid
+    #
+    # The grid's cells are the *gate's* computation, so a mutation here is not a second opinion
+    # about a rule: it is the only way to make a cell disagree with the verdict it claims to
+    # describe. The corpus cannot do it -- every case's flip point is at least 63x the shipped line,
+    # so no threshold in the grid's range moves a verdict on real data.
+    (
+        "GRID 1. a case's flip point is read from the worst window instead of the best",
+        "packages/core/src/gates/gates.ts",
+        "gate-threshold-grid.test.ts",
+        lambda t: rename(
+            t,
+            "      if (best === null || window > best) best = window;",
+            "      if (best === null || window < best) best = window;",
+        ),
+        "the test that reads a flip point as the best window's smallest score",
+    ),
+    (
+        "GRID 2. the cell boundary stops being inclusive",
+        "packages/core/src/gates/gates.ts",
+        "gate-threshold-grid.test.ts",
+        lambda t: rename(
+            t,
+            "      .filter((one) => one.flipZ === null || minAbsZ > one.flipZ)",
+            "      .filter((one) => one.flipZ === null || minAbsZ >= one.flipZ)",
+        ),
+        "the test that plants a case exactly on the |Z| line, and the cell agreement test",
+    ),
+    (
+        # The flip points are computed per sample line and reused by every |Z| cell. Dropping the
+        # default's own line when the caller's axes do not contain it reported "no case sustains 3
+        # sample(s)" about a case that sustains 62.
+        "GRID 3. the default's sample line is only computed when it is on the axis",
+        "packages/core/src/gates/gates.ts",
+        "gate-threshold-grid.test.ts",
+        lambda t: rename(
+            t,
+            "  for (const samples of new Set([...axes.minSustainedSamples, G3_DEFAULTS.minSustainedSamples])) {",
+            "  for (const samples of new Set(axes.minSustainedSamples)) {",
+        ),
+        "the test that asks a narrower grid and still gets a flip point",
+    ),
+    # ------------------------------------------------------------ rulegen layouts
+    #
+    # The answer set is the whole evidence for both channels: the alias table has no other
+    # denominator, and the validator has no caller. So these are the only mutations that can make
+    # the reading lie.
+    (
+        "LAYOUT 1. a misspelled field is dropped instead of refused",
+        "packages/core/src/llm/rulegen.ts",
+        "rulegen-agreement.test.ts",
+        lambda t: rename(
+            t,
+            "    if (!allowed.includes(key as keyof FileLayout)) {",
+            "    if (false) {",
+        ),
+        "the test that reads the misspelled-field refusal, and the reading over the shipped answer set",
+    ),
+    (
+        "LAYOUT 2. a mapping to the wrong column counts as agreement",
+        "packages/core/src/llm/rulegen-agreement.ts",
+        "rulegen-agreement.test.ts",
+        lambda t: rename(
+            t,
+            "    if (read[field as keyof FileLayout] !== column) fields.push(field);",
+            "    if (read[field as keyof FileLayout] === undefined) fields.push(field);",
+        ),
+        "the test that plants an answer pointing one field at another real column",
+    ),
+    (
+        "LAYOUT 3. two cases with one id are accepted, so a rate drops one silently",
+        "packages/core/src/llm/rulegen-agreement.ts",
+        "rulegen-agreement.test.ts",
+        lambda t: rename(
+            t,
+            "    if (seen.has(id)) fail(`'${id}' appears twice, so a rate over these cases would drop one`);",
+            "    if (false) fail(`'${id}' appears twice, so a rate over these cases would drop one`);",
+        ),
+        "the test that refuses a file with two cases sharing an id",
+    ),
+    (
+        # The required-field table is one writer with two readers. Making the validator read a
+        # table of its own is the shape the round removed, and the test that refuses one missing
+        # field at a time is what notices.
+        "LAYOUT 4. the validator uses a required-field table of its own again",
+        "packages/core/src/llm/rulegen.ts",
+        "rulegen.test.ts",
+        lambda t: rename(
+            t,
+            "  for (const field of LAYOUT_REQUIRED_FIELDS[signalKind]) {",
+            "  for (const field of (signalKind === 'trace' ? ['timestamp', 'traceId'] : LAYOUT_REQUIRED_FIELDS[signalKind])) {",
+        ),
+        "the test that refuses one missing required field at a time",
+    ),
 ]
 
 
@@ -1175,6 +1269,30 @@ EXPECTATIONS: dict[str, tuple[str, ...]] = {
     # The seven pairwise injections. Every one of them is declarative rather than defensive: the
     # shipped corpus has no witness for either arm, so the file's own fixtures are the only place a
     # near duplicate or an overlapping window exists at all.
+    "GRID 1. a case's flip point is read from the worst window instead of the best": (
+        'reads a case’s flip point from the best window of consecutive samples',
+    ),
+    'GRID 2. the cell boundary stops being inclusive': (
+        'admits a case whose best window sits exactly on a |Z| line',
+        'agrees with the gate in every one of its sixteen cells',
+    ),
+    'GRID 3. the default\'s sample line is only computed when it is on the axis': (
+        'says when the default is not a cell of the grid it is printing',
+    ),
+    'LAYOUT 1. a misspelled field is dropped instead of refused': (
+        'refuses the four shapes a model gets wrong, each for its own stated reason',
+        'prints the two channels, the refusal reasons and the absence of kappa',
+    ),
+    'LAYOUT 2. a mapping to the wrong column counts as agreement': (
+        'counts an answer that points a field at a real but different column as a contradiction',
+        'reads both channels, and states which one has a caller',
+    ),
+    'LAYOUT 3. two cases with one id are accepted, so a rate drops one silently': (
+        'refuses two cases with one id',
+    ),
+    'LAYOUT 4. the validator uses a required-field table of its own again': (
+        'refuses one missing required field at a time, and names it',
+    ),
     'PAIRS 1. the task-text comparison never reaches its threshold': (
         'refuses two prompts that differ only in their function words',
     ),

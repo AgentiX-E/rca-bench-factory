@@ -1,6 +1,6 @@
 {
   "rule": "a process.exit(...) call whose argument is not a known zero -- no argument at all is zero; sites and zero partition every process.exit call, whatever position the call sits in; a reference to the exit family that is not a call is refused rather than counted; see scripts/derive-gate-sites.mjs",
-  "scanned": 85,
+  "scanned": 86,
   "excluded": {
     "zero": 18
   },
@@ -201,33 +201,33 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 1495,
+      "line": 1508,
       "condition": "invalid.length > 0",
-      "diagnostic": "check-fault-cases: FAILED — ${String(invalid.length)} case(s) could not be read as a FaultCase",
+      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(invalid.length)} case(s) could not be read as a FaultCase",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 1906,
+      "line": 1944,
       "condition": "problems.length > 0",
-      "diagnostic": "check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
+      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 1915,
+      "line": 1953,
       "condition": "unnamed.length > 0",
-      "diagnostic": "check-fault-cases: FAILED — ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
+      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 1923,
+      "line": 1961,
       "condition": "index.cases.length < floor",
-      "diagnostic": "check-fault-cases: FAILED — ${String(index.cases.length)} four-layer case(s), below the floor of",
+      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(index.cases.length)} four-layer case(s), below the floor of",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -379,6 +379,38 @@
       "diagnostic": "check-roundtrip-record: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/check-roundtrip-record.test.ts"
+    },
+    {
+      "script": "scripts/check-rulegen-agreement.mjs",
+      "line": 68,
+      "condition": "catch",
+      "diagnostic": "check-rulegen-agreement: ${String(error.message)}",
+      "status": "proved",
+      "provedBy": "packages/core/test/rulegen-agreement.test.ts"
+    },
+    {
+      "script": "scripts/check-rulegen-agreement.mjs",
+      "line": 77,
+      "condition": "catch",
+      "diagnostic": "check-rulegen-agreement: FAILED \u2014 ${String(error.message)}",
+      "status": "proved",
+      "provedBy": "packages/core/test/rulegen-agreement.test.ts"
+    },
+    {
+      "script": "scripts/check-rulegen-agreement.mjs",
+      "line": 94,
+      "condition": "reading.verdicts.disagreements.length > 0",
+      "diagnostic": "check-rulegen-agreement: FAILED \u2014 ${String(reading.verdicts.disagreements.length)} of",
+      "status": "proved",
+      "provedBy": "packages/core/test/rulegen-agreement.test.ts"
+    },
+    {
+      "script": "scripts/check-rulegen-agreement.mjs",
+      "line": 107,
+      "condition": "reading.reasons.agreements !== reading.reasons.checked",
+      "diagnostic": "check-rulegen-agreement: FAILED \u2014 '${row.id}' was refused for a reason the answer set does",
+      "status": "proved",
+      "provedBy": "packages/core/test/rulegen-agreement.test.ts"
     },
     {
       "script": "scripts/check-staged-mutation.mjs",
@@ -551,7 +583,7 @@
       "script": "scripts/install-git-hooks.mjs",
       "line": 41,
       "condition": "result.state === 'missing-hook' || result.state === 'unset'",
-      "diagnostic": "install-git-hooks: FAILED (${result.state}) — ${result.message}\\n",
+      "diagnostic": "install-git-hooks: FAILED (${result.state}) \u2014 ${result.message}\\n",
       "status": "proved",
       "provedBy": "packages/core/test/git-hooks.test.ts"
     },
@@ -559,7 +591,7 @@
       "script": "scripts/measure-ci-baseline.mjs",
       "line": 163,
       "condition": "TOKEN === '' || !/^\\d+$/.test(RUN)",
-      "diagnostic": "usage: GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>] [--seed]\\n",
+      "diagnostic": "usage: GITHUB_TOKEN=\u2026 node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>] [--seed]\\n",
       "status": "proved",
       "provedBy": "packages/core/test/ci-budget.test.ts"
     },
@@ -1005,7 +1037,7 @@
     "rule": "every throw statement, partitioned four ways: `fatal` (no enclosing function, no enclosing try) ends the process and is proved like a site; `unguarded` (in a function, no enclosing try) hands control to its caller, which decides; `guarded` (in a try block) is caught here; `rethrow` (in a catch, rethrowing the caught binding) carries a decision made above. A try or a catch stops at a function boundary, because neither is on the stack when the function runs elsewhere. fatal + unguarded + guarded + rethrow is the number of throw statements; see scripts/derive-gate-sites.mjs",
     "counts": {
       "fatal": 11,
-      "unguarded": 71,
+      "unguarded": 73,
       "guarded": 1,
       "rethrow": 10
     },
@@ -1098,6 +1130,22 @@
         "message": "error",
         "status": "proved",
         "provedBy": "packages/core/test/published-refusals.test.ts"
+      },
+      {
+        "script": "scripts/check-rulegen-agreement.mjs",
+        "line": 52,
+        "disposition": "unguarded",
+        "message": "--golden needs a path",
+        "status": "proved",
+        "provedBy": "packages/core/test/rulegen-agreement.test.ts"
+      },
+      {
+        "script": "scripts/check-rulegen-agreement.mjs",
+        "line": 58,
+        "disposition": "unguarded",
+        "message": "unknown argument '${one}'",
+        "status": "proved",
+        "provedBy": "packages/core/test/rulegen-agreement.test.ts"
       },
       {
         "script": "scripts/derive-fault-golden.mjs",

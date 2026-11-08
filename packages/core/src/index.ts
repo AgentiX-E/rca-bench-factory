@@ -174,13 +174,17 @@ export {
   checkSaturation,
   checkSolvability,
   checkG5AntiPollution,
+  describeG3ThresholdGrid,
   describePairSimilarity,
   describePromptLeaks,
   describeSaturation,
+  G3_DEFAULTS,
+  G3_GRID_AXES,
   locatedRank,
   mean,
   normaliseName,
   promptNamePattern,
+  readG3ThresholdGrid,
   readPairSimilarity,
   readPromptLeaks,
   readSaturation,
@@ -195,7 +199,10 @@ export type {
   AllGatesOptions,
   BaselineOutcome,
   G1Options,
+  G3GridAxes,
+  G3GridCell,
   G3Options,
+  G3ThresholdGridReading,
   G4Options,
   G5Options,
   PairSimilarityReading,
@@ -407,6 +414,7 @@ export {
 export type { Dimension, MeasurementBounds } from './util/unit.js';
 
 export {
+  LAYOUT_REQUIRED_FIELDS,
   detectFileLayout,
   FILE_FORMATS,
   ingestFile,
@@ -681,6 +689,27 @@ export type {
   SampleRecord,
 } from './llm/rulegen.js';
 export type { LlmProvider } from './llm/provider.js';
+
+/**
+ * The layout answer set, and the two channels read over it.
+ *
+ * Exported because the reading is the claim: `rulegen` has no caller in this repository, so the
+ * figures it can carry are a reading of the alias table and of the validator, and a reader who
+ * wants to challenge either should be able to run them over the same file this suite does.
+ */
+export {
+  RULEGEN_LAYOUT_SCHEMA,
+  describeRulegenAgreement,
+  parseRulegenLayoutGolden,
+  readRulegenAgreement,
+} from './llm/rulegen-agreement.js';
+export type {
+  RulegenAgreementReading,
+  RulegenCaseReading,
+  RulegenLayoutCase,
+  RulegenLayoutGolden,
+  RulegenLayoutProvenance,
+} from './llm/rulegen-agreement.js';
 
 export {
   DEEPSEEK_DEFAULT_BASE_URL,

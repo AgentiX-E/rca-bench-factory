@@ -105,6 +105,25 @@ export interface FileLayout {
   status?: string;
 }
 
+/**
+ * The fields a layout must map for its signal kind to be readable at all.
+ *
+ * One writer, imported by both readers. It used to be two identical tables -- one in `prime.ts`
+ * deciding whether `ingestFile` may be called, one in `llm/rulegen.ts` deciding whether a model's
+ * answer is accepted -- with nothing holding them together. The two answer different questions
+ * about the same fact: "this file cannot be read" and "this mapping is incomplete". A divergence
+ * would make a layout the model-side validator accepted refused by ingestion, and the sentence it
+ * would print would name a missing column rather than the disagreement between the two tables.
+ *
+ * The order is the order the messages name them in, so a file missing two required columns reports
+ * them in a stable sequence rather than in whatever order the object happened to hold.
+ */
+export const LAYOUT_REQUIRED_FIELDS: Record<FileSignalKind, readonly (keyof FileLayout)[]> = {
+  metric: ['timestamp', 'metricName', 'metricValue'],
+  log: ['timestamp', 'logBody'],
+  trace: ['timestamp', 'traceId', 'spanId', 'spanName', 'durationMs'],
+};
+
 export interface FileIngestOptions {
   format: FileFormat;
   signalKind: FileSignalKind;

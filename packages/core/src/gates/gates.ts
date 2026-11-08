@@ -429,6 +429,90 @@ export function checkG2Semantic(bundle: IrBundle): GateResult {
 
 // ─── G3 · signal validity ──────────────────────────────────────────────────
 
+/**
+ * The two thresholds G3 admits a case by, stated once.
+ *
+ * Extracted from the two `??` arms inside `checkG3Validity` so that the grid below reads the same
+ * numbers the gate applies. A default printed in a document and a default written inline are two
+ * copies, and the copy with no reader is the one that drifts -- the rule this repository has paid
+ * for twice (findings 480, 481).
+ */
+export const G3_DEFAULTS = {
+  minAbsZ: 2,
+  minSustainedSamples: 3,
+} as const;
+
+/**
+ * The 4x4 grid the two thresholds are read on.
+ *
+ * Round numbers on purpose, and wide on purpose. An axis chosen to bracket the corpus's own answers
+ * would be a grid drawn after the measurement, and the |Z| axis spans two orders of magnitude each
+ * way because the shipped corpus's weakest case sits two orders above the default: a narrower grid
+ * would report four identical columns and look like a mistake rather than like a finding.
+ *
+ * The sample axis stops at eight, which is what `SERIES_POINTS` gives a derived series. It is a
+ * round number here rather than an import: the grid asks what a threshold does, and a corpus whose
+ * cases carry four samples will refuse the 8 column for its own reason, which the reading prints.
+ */
+export const G3_GRID_AXES: G3GridAxes = {
+  minAbsZ: [1, G3_DEFAULTS.minAbsZ, 10, 100],
+  minSustainedSamples: [1, G3_DEFAULTS.minSustainedSamples, 5, 8],
+};
+
+/** The two axes a threshold grid is measured over. */
+export interface G3GridAxes {
+  minAbsZ: readonly number[];
+  minSustainedSamples: readonly number[];
+}
+
+/** One cell of the grid: what the gate would say about every case at this pair of lines. */
+export interface G3GridCell {
+  minAbsZ: number;
+  minSustainedSamples: number;
+  admitted: number;
+  refused: number;
+  /** The cases this cell refuses, in bundle order. */
+  refusedCaseIds: string[];
+}
+
+/**
+ * What the grid measured, and the two numbers that explain it.
+ *
+ * `flips` is the reading that survives a flat grid. A case's flip point is the largest |Z| line at
+ * which it still sustains the default's samples, so it is the case's own distance from the
+ * threshold -- and a corpus whose weakest flip is sixty times the default explains why all sixteen
+ * cells agree far better than a sentence saying the default is "conservative" does.
+ */
+export interface G3ThresholdGridReading {
+  axes: G3GridAxes;
+  /** Sixteen cells, row-major: for each |Z| line, every sample line. */
+  cells: G3GridCell[];
+  /** Cases with at least one metric series, which is what the gate grades. */
+  judged: number;
+  /** Cases the gate skips for having no metric signal at all. */
+  unmatched: string[];
+  /** The cell the shipped defaults would produce, whether or not the axes contain it. */
+  defaultCell: G3GridCell;
+  /** Whether that cell is one of the sixteen, which is what makes the grid a measurement of it. */
+  defaultIsAxisPoint: boolean;
+  /**
+   * The orthogonal neighbours of the default cell that change the refused count, with the change.
+   *
+   * Orthogonal rather than diagonal: a diagonal cell differs on both axes at once, so a step there
+   * cannot be attributed to either threshold.
+   */
+  neighbours: Array<{ minAbsZ: number; minSustainedSamples: number; delta: number }>;
+  maxNeighbourDelta: number;
+  /** Each judged case's flip point at the default's sample line; `null` when it never sustains it. */
+  flips: Array<{ caseId: string; flipZ: number | null }>;
+  /** The case with the smallest non-null flip point, which is the corpus's own distance. */
+  weakest: { caseId: string; flipZ: number } | null;
+  /** `weakest.flipZ` over the default's |Z| line; `null` when nothing flips. */
+  margin: number | null;
+  /** The most post-onset samples any judged case offers: the tallest line the axis may ask for. */
+  ceiling: number;
+}
+
 export interface G3Options {
   /** Minimum |Z| for a metric to count as a valid anomaly signal. */
   minAbsZ?: number;
@@ -486,10 +570,83 @@ export function sustainedAnomalySamples(
   return streak;
 }
 
+/**
+ * The (entity, metric) series a case's metric signals form, split at the injection time.
+ *
+ * A group with no baseline sample is not a group: the gate's original loop iterated the baseline
+ * map, so a series that only exists after the injection was never compared with anything. Kept
+ * exactly as it was, because this function is now the only place that decides it -- the grid and
+ * the verdict read the same split.
+ */
+function metricGroups(
+  c: FaultCase,
+  signals: readonly TelemetrySignal[],
+): Array<{ baseline: number[]; post: number[] }> {
+  const t0 = ISO_UTC.test(c.injectTime) ? isoUtcToEpochMs(c.injectTime) : Number.NaN;
+  const grouped = new Map<string, { baseline: number[]; post: number[] }>();
+  for (const s of signals) {
+    if (s.payload.kind !== 'metric') continue;
+    const t = ISO_UTC.test(s.timestamp) ? isoUtcToEpochMs(s.timestamp) : Number.NaN;
+    if (Number.isNaN(t) || Number.isNaN(t0)) continue;
+    const key = `${s.resource['service.name']}|${s.payload.name}`;
+    const group = grouped.get(key) ?? { baseline: [], post: [] };
+    (t >= t0 ? group.post : group.baseline).push(s.payload.value);
+    grouped.set(key, group);
+  }
+  return [...grouped.values()].filter((g) => g.baseline.length > 0 && g.post.length > 0);
+}
+
+/** The |Z| of every post-onset sample, against the case's own baseline for that series. */
+function absZScores(group: { baseline: number[]; post: number[] }): number[] {
+  const mu = mean(group.baseline);
+  const sigma = stddev(group.baseline);
+  return group.post.map((x) => Math.abs(zScore(x, mu, sigma)));
+}
+
+/** The longest run of consecutive samples that each clear `minAbsZ`. */
+function longestRun(zs: readonly number[], minAbsZ: number): number {
+  let best = 0;
+  let streak = 0;
+  for (const z of zs) {
+    if (z >= minAbsZ) {
+      streak += 1;
+      if (streak > best) best = streak;
+    } else {
+      streak = 0;
+    }
+  }
+  return best;
+}
+
+/**
+ * The largest |Z| line at which a case still sustains `samples` consecutive post-onset samples.
+ *
+ * Closed form rather than a search: sustaining a line means some window of `samples` consecutive
+ * samples all clear it, so the largest line that still holds is the best window's *smallest*
+ * z-score. A window is the only comparison the rule makes, which is why a single quiet sample in
+ * the middle of a strong run lowers the flip point to the quiet sample -- and why a case whose
+ * strong samples are not consecutive reports the shorter run rather than the spike.
+ *
+ * `null` means the case cannot sustain that many samples at *any* line, which is a different
+ * finding from a flip point of zero: zero is a case sitting exactly on the threshold, and no
+ * window at all is a case with nothing to measure.
+ */
+function flipPoint(zsPerGroup: ReadonlyArray<readonly number[]>, samples: number): number | null {
+  let best: number | null = null;
+  for (const zs of zsPerGroup) {
+    for (let start = 0; start + samples <= zs.length; start += 1) {
+      let window = Number.POSITIVE_INFINITY;
+      for (let i = start; i < start + samples; i += 1) window = Math.min(window, zs[i] as number);
+      if (best === null || window > best) best = window;
+    }
+  }
+  return best;
+}
+
 export function checkG3Validity(bundle: IrBundle, options: G3Options = {}): GateResult {
   const v: GateViolation[] = [];
-  const minAbsZ = options.minAbsZ ?? 2.0;
-  const minSustained = options.minSustainedSamples ?? 3;
+  const minAbsZ = options.minAbsZ ?? G3_DEFAULTS.minAbsZ;
+  const minSustained = options.minSustainedSamples ?? G3_DEFAULTS.minSustainedSamples;
   const maxQuarantine = options.maxQuarantineRatio ?? 0.05;
 
   if (options.quarantineRatio !== undefined && options.quarantineRatio > maxQuarantine) {
@@ -508,50 +665,8 @@ export function checkG3Validity(bundle: IrBundle, options: G3Options = {}): Gate
 
     if (metrics.length === 0) continue;
 
-    // group by (entity, metric name) and look for at least one sustained anomaly
-    const grouped = new Map<string, number[]>();
-    const t0 = ISO_UTC.test(c.injectTime) ? isoUtcToEpochMs(c.injectTime) : Number.NaN;
-    for (const s of metrics) {
-      const t = ISO_UTC.test(s.timestamp) ? isoUtcToEpochMs(s.timestamp) : Number.NaN;
-      if (Number.isNaN(t) || Number.isNaN(t0)) continue;
-      if (t >= t0) continue; // baseline only
-      const key = `${s.resource['service.name']}|${s.payload.name}`;
-      const arr = grouped.get(key) ?? [];
-      arr.push(s.payload.value);
-      grouped.set(key, arr);
-    }
-
-    const postByKey = new Map<string, number[]>();
-    for (const s of metrics) {
-      const t = ISO_UTC.test(s.timestamp) ? isoUtcToEpochMs(s.timestamp) : Number.NaN;
-      if (Number.isNaN(t) || Number.isNaN(t0) || t < t0) continue;
-      const key = `${s.resource['service.name']}|${s.payload.name}`;
-      const arr = postByKey.get(key) ?? [];
-      arr.push(s.payload.value);
-      postByKey.set(key, arr);
-    }
-
-    let anyStrong = false;
-    for (const [key, baseline] of grouped) {
-      const post = postByKey.get(key) ?? [];
-      if (post.length === 0) continue;
-      const mu = mean(baseline);
-      const sigma = stddev(baseline);
-      let streak = 0;
-      let best = 0;
-      for (const x of post) {
-        if (Math.abs(zScore(x, mu, sigma)) >= minAbsZ) {
-          streak += 1;
-          best = Math.max(best, streak);
-        } else {
-          streak = 0;
-        }
-      }
-      if (best >= minSustained) {
-        anyStrong = true;
-        break;
-      }
-    }
+    const groups = metricGroups(c, sigs);
+    const anyStrong = groups.some((group) => longestRun(absZScores(group), minAbsZ) >= minSustained);
     if (!anyStrong) {
       v.push({
         code: 'WEAK_ANOMALY_SIGNAL',
@@ -596,6 +711,177 @@ export function checkG3Validity(bundle: IrBundle, options: G3Options = {}): Gate
   }
 
   return gate('G3', v);
+}
+
+/**
+ * Read both G3 thresholds as a grid, and publish the two numbers that explain it.
+ *
+ * The request this answers was "a 4x4 grid would say which cell the defaults sit in and whether the
+ * admission rate moves with them". On the shipped corpus the answer is that it does not move at
+ * all, and that is not a defect in the grid: the corpus's weakest case stops sustaining three
+ * samples only above |Z| >= 126.8, so every line from 1 to 100 admits every case. A grid that
+ * reported sixteen identical cells and stopped there would be a measurement nobody can act on, so
+ * the reading also carries each case's flip point -- the corpus's *distance* from the threshold --
+ * and the ceiling the sample axis runs into.
+ *
+ * Every cell is derived from one per-case computation, and that computation is the gate's own
+ * (`metricGroups`, `absZScores`, `flipPoint`), so the grid cannot disagree with the verdict it is
+ * describing. A test asserts the agreement over all sixteen cells.
+ */
+export function readG3ThresholdGrid(
+  bundle: IrBundle,
+  options: { axes?: G3GridAxes } = {},
+): G3ThresholdGridReading {
+  const axes = options.axes ?? G3_GRID_AXES;
+
+  const judged: Array<{ caseId: string; zs: number[][]; postSamples: number }> = [];
+  const unmatched: string[] = [];
+  for (const c of bundle.cases) {
+    const sigs = bundle.signals[c.caseId] ?? [];
+    const hasMetric = sigs.some((s) => s.payload.kind === 'metric');
+    if (!hasMetric) {
+      unmatched.push(c.caseId);
+      continue;
+    }
+    const groups = metricGroups(c, sigs);
+    judged.push({
+      caseId: c.caseId,
+      zs: groups.map(absZScores),
+      postSamples: groups.reduce((most, g) => Math.max(most, g.post.length), 0),
+    });
+  }
+
+  /**
+   * Every case's flip point at one sample line, computed once and reused by every |Z| cell.
+   *
+   * The default's line is always computed, even when the caller's axes do not contain it: `flips`
+   * answers "how far is each case from the line the gate applies", and a caller asking a narrower
+   * question still gets that answer. Reading it off the axis instead reported "no case sustains 3
+   * sample(s)" for a bundle whose case sustains 62 -- a reading of the grid's shape presented as a
+   * reading of the corpus.
+   */
+  const flipsAt = new Map<number, Array<{ caseId: string; flipZ: number | null }>>();
+  for (const samples of new Set([...axes.minSustainedSamples, G3_DEFAULTS.minSustainedSamples])) {
+    flipsAt.set(
+      samples,
+      judged.map((one) => ({ caseId: one.caseId, flipZ: flipPoint(one.zs, samples) })),
+    );
+  }
+
+  /**
+   * The flip points at one sample line.
+   *
+   * No `?? []` fallback, deliberately: every line this is asked for was computed above, because the
+   * set it iterates is `axes.minSustainedSamples` plus the default's own line. A fallback here
+   * would be a branch no input can take, and the answer it would hand back -- an empty list, which
+   * reads as "nothing is refused" -- is the one answer a guard must never produce for a question it
+   * did not understand.
+   */
+  const flipsAtLine = (samples: number): Array<{ caseId: string; flipZ: number | null }> =>
+    flipsAt.get(samples) as Array<{ caseId: string; flipZ: number | null }>;
+
+  const cellsOf = (minAbsZ: number, minSustainedSamples: number): G3GridCell => {
+    const refusedCaseIds = flipsAtLine(minSustainedSamples)
+      .filter((one) => one.flipZ === null || minAbsZ > one.flipZ)
+      .map((one) => one.caseId);
+    return {
+      minAbsZ,
+      minSustainedSamples,
+      admitted: judged.length - refusedCaseIds.length,
+      refused: refusedCaseIds.length,
+      refusedCaseIds,
+    };
+  };
+
+  const cells: G3GridCell[] = [];
+  for (const minAbsZ of axes.minAbsZ) {
+    for (const samples of axes.minSustainedSamples) cells.push(cellsOf(minAbsZ, samples));
+  }
+
+  const defaultCell = cellsOf(G3_DEFAULTS.minAbsZ, G3_DEFAULTS.minSustainedSamples);
+  const defaultIsAxisPoint =
+    axes.minAbsZ.includes(G3_DEFAULTS.minAbsZ)
+    && axes.minSustainedSamples.includes(G3_DEFAULTS.minSustainedSamples);
+
+  // The four orthogonal neighbours, in a fixed order so the reading is comparable between runs:
+  // the line below, the line above, one sample fewer, one sample more.
+  const zIndex = axes.minAbsZ.indexOf(G3_DEFAULTS.minAbsZ);
+  const kIndex = axes.minSustainedSamples.indexOf(G3_DEFAULTS.minSustainedSamples);
+  const neighbourAxes: Array<[number, number]> = [];
+  if (zIndex > 0) neighbourAxes.push([zIndex - 1, kIndex]);
+  if (zIndex >= 0 && zIndex + 1 < axes.minAbsZ.length) neighbourAxes.push([zIndex + 1, kIndex]);
+  if (kIndex > 0) neighbourAxes.push([zIndex, kIndex - 1]);
+  if (kIndex >= 0 && kIndex + 1 < axes.minSustainedSamples.length) neighbourAxes.push([zIndex, kIndex + 1]);
+  const neighbours = neighbourAxes
+    .filter(([z, k]) => z >= 0 && k >= 0)
+    .map(([z, k]) => {
+      const cell = cellsOf(axes.minAbsZ[z] as number, axes.minSustainedSamples[k] as number);
+      return {
+        minAbsZ: cell.minAbsZ,
+        minSustainedSamples: cell.minSustainedSamples,
+        delta: cell.refused - defaultCell.refused,
+      };
+    });
+
+  const flips = flipsAtLine(G3_DEFAULTS.minSustainedSamples);
+  let weakest: { caseId: string; flipZ: number } | null = null;
+  for (const one of flips) {
+    if (one.flipZ === null) continue;
+    if (weakest === null || one.flipZ < weakest.flipZ) weakest = { caseId: one.caseId, flipZ: one.flipZ };
+  }
+
+  return {
+    axes,
+    cells,
+    judged: judged.length,
+    unmatched,
+    defaultCell,
+    defaultIsAxisPoint,
+    neighbours,
+    maxNeighbourDelta: neighbours.reduce((most, n) => Math.max(most, Math.abs(n.delta)), 0),
+    flips,
+    weakest,
+    margin: weakest === null ? null : weakest.flipZ / G3_DEFAULTS.minAbsZ,
+    ceiling: judged.reduce((most, one) => Math.max(most, one.postSamples), 0),
+  };
+}
+
+/** One sentence: what the grid says, what the default admits, how far the corpus is from it. */
+export function describeG3ThresholdGrid(reading: G3ThresholdGridReading): string {
+  const { axes, judged, defaultCell, neighbours } = reading;
+  const parts: string[] = [
+    `g3 threshold grid: ${judged} case(s) judged over `
+      + `${axes.minAbsZ.length}x${axes.minSustainedSamples.length} cells `
+      + `(|Z| ${axes.minAbsZ.join('/')} x samples ${axes.minSustainedSamples.join('/')}); `
+      + `the default (|Z| >= ${G3_DEFAULTS.minAbsZ}, ${G3_DEFAULTS.minSustainedSamples} samples) `
+      + `admits ${defaultCell.admitted} of ${judged}`,
+  ];
+  const movers = neighbours.filter((n) => n.delta !== 0).length;
+  parts.push(
+    movers === 0
+      ? ' and no neighbour changes that'
+      : ` and ${movers} of its ${neighbours.length} neighbour(s) change that, `
+        + `by up to ${reading.maxNeighbourDelta}`,
+  );
+  if (!reading.defaultIsAxisPoint) {
+    parts.push(' (the default cell is not on this grid)');
+  }
+  parts.push(
+    '; ',
+    reading.weakest === null
+      ? `no case sustains ${G3_DEFAULTS.minSustainedSamples} sample(s) at any line, so there is no flip to report`
+      : `the weakest case '${reading.weakest.caseId}' stops sustaining `
+        + `${G3_DEFAULTS.minSustainedSamples} sample(s) at |Z| >= ${reading.weakest.flipZ.toFixed(2)}, `
+        // The margin is a division of the flip point by the default, computed here rather than read
+        // off the reading: the reading's copy is `null` exactly when this branch cannot run, and a
+        // `?? 0` for a case that cannot reach it is a fallback no input can take.
+        + `${(reading.weakest.flipZ / G3_DEFAULTS.minAbsZ).toFixed(2)}x the default`,
+  );
+  parts.push(
+    `; the most post-onset samples any case offers is ${reading.ceiling}, `
+      + 'which is the tallest sample line the grid can ask for',
+  );
+  return parts.join('');
 }
 
 // ─── G4 · solvability and difficulty ───────────────────────────────────────

@@ -185,6 +185,7 @@ const ENUMERATED_MODULES = [
   'llm/provider.ts',
   'llm/registry.ts',
   'llm/rulegen.ts',
+  'llm/rulegen-agreement.ts',
   'pack/archive.ts',
   'pack/example.ts',
   'report/html.ts',
@@ -748,6 +749,21 @@ const TESTED = [
   'describePairSimilarity',
   'tokeniseTaskText',
   'TASK_TEXT_STOP_WORDS',
+  // finding 482 -- G3's two thresholds read as a grid. `G3_DEFAULTS` is the gate's own default
+  // written once, which is why it is exported: a reader who wants to argue with the line the corpus
+  // was graded by should not have to read the source to find it.
+  'readG3ThresholdGrid',
+  'describeG3ThresholdGrid',
+  'G3_DEFAULTS',
+  'G3_GRID_AXES',
+  // finding 483 -- the layout answer set, read by both channels. `LAYOUT_REQUIRED_FIELDS` is here
+  // because it became one writer for a table that used to exist twice (prime.ts and rulegen.ts),
+  // and a one-writer table a reader cannot see is a table a reader cannot check.
+  'RULEGEN_LAYOUT_SCHEMA',
+  'parseRulegenLayoutGolden',
+  'readRulegenAgreement',
+  'describeRulegenAgreement',
+  'LAYOUT_REQUIRED_FIELDS',
   'runAllGates',
   'zScore',
   'mean',

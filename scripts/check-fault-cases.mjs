@@ -404,6 +404,19 @@ let promptLeakReading = null;
  * rule ran.
  */
 let pairSimilarityReading = null;
+
+/**
+ * G3's two thresholds read as a 4x4 grid over the corpus, plus each case's distance from them.
+ *
+ * G3 is applied per case above with no options, so the defaults are the only thresholds this corpus
+ * has ever been graded by. Whether they are the right ones was, until this reading, a judgement
+ * nothing measured: a grid says which cell the defaults sit in and whether the admission rate moves
+ * with them, and on this corpus the answer is that it does not move at all -- every case sustains
+ * eight of eight samples at every line from 1 to 100. That is worth printing rather than hiding,
+ * because it says the corpus cannot tell the thresholds apart and the defence of the defaults has
+ * to come from the margin instead.
+ */
+let g3GridReading = null;
 /**
  * Where each baseline placed the answer, and how wide the ranking it placed it in was.
  *
@@ -1668,6 +1681,19 @@ function logPairSimilarity() {
   console.log(`check-fault-cases: ${core.describePairSimilarity(pairSimilarityReading)}`);
 }
 
+/**
+ * What the two G3 thresholds do to this corpus, and how far the corpus sits from them.
+ *
+ * Printed on both exits, and printed when the grid is flat: a grid whose sixteen cells agree is not
+ * a grid that passed, it is a corpus that cannot see the thresholds -- and the sentence carries the
+ * margin that says so, because "no case moved" and "the lines are far below every case" are the same
+ * observation stated once as a silence and once as a number.
+ */
+function logG3ThresholdGrid() {
+  if (g3GridReading === null) return;
+  console.log(`check-fault-cases: ${core.describeG3ThresholdGrid(g3GridReading)}`);
+}
+
 function logCheckpointCounts() {
   if (checkpointRefs.total === 0) return;
   // The log kind is counted inside the parenthetical, because the four kinds are a partition of the
@@ -1757,6 +1783,17 @@ const SUITE_TARGETS = [['RE1', 'rcaeval-re1'], ['RE2', 'rcaeval-re2'], ['RE3', '
 // What replaces it is the fact the corpus can act on: how many exported cases carry a log table and
 // how many carry a span table. A case with no log line is a case the log-based methods cannot be
 // asked about, and the old count said so only as a total over files.
+if (telemetryCases.length > 0) {
+  // The grid is read over the same signals G3 was applied to above, so the sixteen cells and the
+  // thirty verdicts are one computation rather than two readings of the same rule.
+  g3GridReading = core.readG3ThresholdGrid({
+    irVersion: '1.0.0',
+    graph: firstGraph ?? { entities: [], edges: [] },
+    cases: telemetryCases.map((one) => telemetryCases.find((c) => c === one) ?? one),
+    signals: telemetrySignals,
+  });
+}
+
 if (telemetryCases.length > 0 && firstGraph !== null) {
   const bundle = { irVersion: '1.0.0', graph: firstGraph, cases: telemetryCases, signals: telemetrySignals };
   const { feasibility } = core.computeCoverage(bundle);
@@ -1899,6 +1936,7 @@ if (problems.length > 0) {
   logSaturation();
   logPromptLeaks();
   logPairSimilarity();
+  logG3ThresholdGrid();
   logCheckpointCounts();
   console.error(
     `check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)`,
@@ -2017,6 +2055,7 @@ logLocalisationReading();
 logSaturation();
 logPromptLeaks();
 logPairSimilarity();
+logG3ThresholdGrid();
 logCheckpointCounts();
 
 console.log(

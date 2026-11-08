@@ -88,3 +88,183 @@ the suite counts (guarded -- `check-doc-counts` refuses a stale copy), the gate-
 `derive-gate-sites --check`), and the coverage figure (unguarded -- and therefore the one that was
 wrong). The rule that separates them is not "guard everything": it is that a number with two copies
 needs one of the two copies to be *computed* rather than *remembered*.
+
+## Finding 482 — two thresholds nothing had ever moved
+
+`checkG3Validity` admits a case when some metric sustains `|Z| >= 2.0` for `3` consecutive post-onset
+samples. Both numbers are parameters with defaults, both defaults were written inline in the
+function, and nothing in the tree had ever asked what happens either side of them. The open-list
+entry said so in one line -- "a 4x4 grid would say which cell the defaults sit in and whether the
+admission rate moves with them" -- and the answer, once measured, is that **it does not move**:
+
+| cell | admitted | cell | admitted |
+| --- | --- | --- | --- |
+| `\|Z\| >= 1`, 1 sample | 30 of 30 | `\|Z\| >= 10`, 1 sample | 30 of 30 |
+| `\|Z\| >= 1`, 8 samples | 30 of 30 | `\|Z\| >= 100`, 8 samples | 30 of 30 |
+
+Sixteen cells, one verdict. That is not a grid that passed; it is a corpus that cannot see the
+thresholds, and the grid's job was to say which of the two it was. The reading that separates them
+is each case's **flip point** -- the largest `|Z|` line at which it still sustains three samples,
+which is the best three-window's smallest z-score and therefore a closed form rather than a search:
+
+| quantity | value |
+| --- | --- |
+| cases judged | **30** |
+| weakest flip point | **126.85** -- `history-resource-ephemeral-capacity-image-builder` |
+| strongest flip point | **3.15e12** -- `history-kafka-consumer-lag` |
+| margin over the shipped line | **63.42x** |
+| most post-onset samples a case offers | **8** |
+
+So the `|Z|` axis is inert across two orders of magnitude and the sample axis is inert up to the
+number of samples the corpus gives each case. Both facts are consequences of the corpus's
+construction rather than of the gate: a derived series steps from its baseline to its post value and
+a counter's pre-window is exactly flat, so `stddev` is zero or a two-percent jitter and the z-score
+is the ratio of the step to *that* -- 126 at the weakest and 3.15e12 at the strongest. A corpus built
+that way cannot test a threshold, which is what `probe-z-floor` found about `epsilon` (finding 288)
+one level down.
+
+**What the grid can still defend, and what it cannot.** It defends the *ordering*: the refused count
+never falls as either axis rises, asserted over all sixteen cells, so the surface is a surface and not
+sixteen unrelated measurements. It cannot defend the *value*: any line from 1 to 100 produces the same
+verdict on this corpus, so the default is a judgement the corpus is silent about. The reading does not
+pretend otherwise -- `check-fault-cases.mjs` prints the margin beside the grid on both exits, and the
+open-list entry is rewritten to say what the corpus cannot answer rather than what the grid failed to.
+
+**The shape that made the answer trustworthy.** The grid and the verdict are one computation:
+`metricGroups`, `absZScores` and `flipPoint` are shared with `checkG3Validity`, and a test compares
+every cell's refused set against `checkG3Validity`'s own violations for that pair of lines. Sixteen
+cells that agree with the gate are a reading of the gate; sixteen cells computed by a second
+implementation would have been a second rule, and the round before this one paid for exactly that
+(finding 479).
+
+Two smaller things came out of writing it. `G3_DEFAULTS` now exists so the grid reads the numbers the
+gate applies rather than restating them, and the first version of the reading computed its flip points
+only for the sample lines *on the caller's axis* -- so a caller asking a narrower question was told
+"no case sustains 3 sample(s)" about a case that sustains 62. A reading of the grid's shape presented
+as a reading of the corpus, caught by the test that asked a narrower question on purpose.
+
+## Finding 483 — a channel that exists as a library, and a table that exists twice
+
+The open-list entry said: "`rulegen` has no refusal count and no agreement reading... nothing compares
+its output with the thirty human annotations that already exist." Two of those three claims are wrong,
+and the third is the one that matters.
+
+**The thirty annotations belong to another channel.** `golden-master/fault-extraction/samples.json`
+carries thirty hand-written incident texts with an expected `type`, `category` and `component`, and
+`buildExtractionReport` compares a run against them: hits, misses, a layered rate, a miss
+classification, a strict threshold. The `fault-extraction-accuracy` workflow calls it. So the
+annotation set the entry points at is already read -- by the channel that extracts faults from text,
+which is not `rulegen`.
+
+**And `rulegen` has no caller at all.** `buildRulegenPrompt`, `parseRulegenResponseChecked` and
+`validateGeneratedLayout` are exported from `packages/core/src/index.ts` and invoked from nowhere in
+`src/` or `scripts/` except their own module and their tests. The path every ingested file takes is
+`ingest/prime.ts`, which infers a layout from the header row through `detectFileLayout`'s alias table
+and never asks a model. So "no refusal count" was not a missing measurement: it was the correct report
+of a function nothing invokes, and an agreement rate over model output would have described a channel
+that does not run.
+
+**The table, which is the defect worth repairing.** `REQUIRED_FIELDS` -- the fields a layout must map
+for its signal kind to be readable -- was written twice, byte for byte:
+
+```ts
+// packages/core/src/ingest/prime.ts
+const REQUIRED_FIELDS: Record<FileSignalKind, ReadonlyArray<keyof FileLayout>> = { ... };
+// packages/core/src/llm/rulegen.ts
+const REQUIRED_FIELDS: Record<FileSignalKind, readonly (keyof FileLayout)[]> = { ... };
+```
+
+Two readers of one fact: `prime` decides whether `ingestFile` may be called, `rulegen` decides whether
+a model's mapping is complete. Identical when the round began, and held together by nothing -- so a
+divergence would have produced a layout the validator accepted and ingestion refused, with a sentence
+naming a *missing column* rather than the disagreement between two tables. This is the same defect as
+v3.67's `contractVersion` and v3.68's stop-word list, in its third costume: **one fact, two writers,
+no rule.** The table now lives in `ingest/file.ts` -- which owns `FileLayout` and `FileSignalKind` --
+and both modules import it, so divergence is not expressible.
+
+### The answer set, and what it measures
+
+Sixteen authored cases in `golden-master/rulegen-layouts.json`: a header row, two or three sample
+records, the layout a careful human reader produces, and -- for the model side -- one whole candidate
+response written the way a model gets it wrong. The reading reports two figures that are not the same
+claim:
+
+| channel | figure | what it measures |
+| --- | --- | --- |
+| the alias table | **14 of 16** specified layouts | what ships: it differs on the two cases whose value column is outside its vocabulary |
+| the validator | **16 of 16** verdicts, 9 accepted / 7 refused | the guard over answers: misspelled field, absent column, empty cell, required field missing, wrong-kind field, invented enum value, confidence above one |
+| the reasons | **7 of 7** | a refusal for the wrong reason is a wrong answer with the right exit code |
+| the class it cannot see | **1** | an accepted answer that maps `metricValue` at `limit` where the answer set says `usage` |
+
+That last row is the reading worth having. `validateGeneratedLayout` replays a layout against the
+samples, so it refuses a column that is absent or empty -- a *structural* check. A mapping to a real,
+populated column that means the wrong thing passes it. The validator is right about its own contract
+and the channel is wrong about the data, and one number cannot carry both, which is why they are
+counted apart.
+
+**Kappa is absent, and the absence is the claim.** Cohen's kappa needs two independent annotators;
+one author wrote these header rows, the specified layouts and the candidates. So the figure is
+agreement with a *specified* answer -- weaker than agreement between annotators -- and every sentence
+that prints it says which one it is. The alternative was to leave the number unqualified, which is how
+a weaker claim gets read as a stronger one.
+
+**The grid and the answer set are the same shape.** Both put a default's decision into a table, both
+report what the table cannot decide beside what it can, and both refuse to let a figure be printed
+without the sentence that says what it is a figure *of*. A single default and a single rate are the
+same object: a number whose justification lives in whoever typed it.
+
+**And the test that proves this gate's argument refusal proved the sentence, not the exit.**
+`verify-sites-are-sensitive` hollowed `check-rulegen-agreement.mjs:68` -- the `process.exit(1)` in
+the argument catch -- and the file stayed green, because the test asserted only that the message
+appeared. A refusal that prints and then succeeds is a report, not a refusal, and the site this test
+claims is the exit. Both statuses are asserted now. The gate said it before this round's own reading
+did: *the witness reaches the exit. It does not depend on it, so it is not a proof of that exit -- it
+is a proof that the gate ran.*
+
+## Finding 484 — a specifier that resolved only when a loader chose to fall back
+
+A full run in this round went red in twelve files. Eleven were child-process timeouts on a box still
+loaded from the coverage run before it, and went green on a rerun without a change. The twelfth was
+different:
+
+```
+Error: Cannot find module '../../scripts/format-spec.mjs'
+imported from '.../packages/core/test/published-refusals.test.ts'
+Caused by: Failed to load url ../../scripts/format-spec.mjs (resolved id: ../../scripts/format-spec.mjs)
+```
+
+The file is `packages/core/test/published-refusals.test.ts`, so `../../` names `packages/`, and
+`packages/scripts/` has never existed. The path was wrong from the day it was written, and the same
+specifier appears nowhere else: the other forty-one imports of `scripts/*.mjs` in the test tree spell
+`../../../`. It ran anyway, because vite-node resolved the module against its own root before
+externalising it, and on one run it did not: node resolved the specifier against the importing file,
+which is what the error's second line reports.
+
+**The green after the red is the trap.** Read alone, "red once, green twice on the same file" is a
+description of a loaded machine, and the honest response would have been to note it and move on. The
+thing that separates a defect from a hiccup is inside the error: the path it named was not a path
+anyone had written. A module-not-found about a directory that does not exist is not a timeout about a
+directory that does.
+
+**Fixing the line is not the repair.** A specifier that resolves only inside one loader's fallback
+will be written again by the next person who counts directories wrong, and it will be green on their
+machine in exactly the same way. The test tree already had a reader of these specifiers --
+`scripts-are-classified.test.ts` matches `from '…/scripts/x.mjs'` to refuse a test importing a gate --
+so the regex was widened to capture the whole specifier beside the file name, and one more assertion
+asks whether the specifier, resolved against the file that writes it, lands on a file.
+
+Its first run reported two offenders, and both were prose: the guard's own doc comment spells the
+pattern, and the control test quotes it. A guard that fails on its own documentation is a guard
+somebody deletes, so the scan strips comments first (`//` must follow whitespace, so a URL inside a
+string is not read as one), and the stripper's three cases are asserted in the control. The only
+offender left was the real line. Putting the wrong specifier back makes the guard name it again:
+
+```
+published-refusals.test.ts spells '../../scripts/format-spec.mjs', which resolves to no file
+```
+
+| reading | value |
+| --- | --- |
+| `scripts/*.mjs` specifiers in the test tree | **42** |
+| that land on a file, resolved from the writing file | **42** after the repair, **41** before |
+| the directory the wrong one named | `packages/scripts/` -- absent from every commit |

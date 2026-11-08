@@ -1,0 +1,238 @@
+{
+  "schema": "rca-bench-rulegen-layouts/1",
+  "provenance": {
+    "note": "Hand-written column-mapping cases for the two layout channels: the deterministic alias table that ships (`detectFileLayout`) and the model-side validator that does not yet have a caller (`validateGeneratedLayout`). Each case carries the header row a real export would have, two or three sample records, the layout a careful human reader would produce, and -- where the case is about the model side -- one candidate answer written the way a model gets it wrong. This file is authored and reviewable rather than captured, so the answers do not move when a model changes.",
+    "reviewGate": "H3",
+    "authoringRule": "The expected layout must be derivable from the header row and the samples alone, by a reader who knows the IR contract. A case whose answer needs a fact the file does not carry is a bad case, not a hard one.",
+    "candidateRule": "A candidate is a whole response, not a layout: the text a model would return, including the ways it goes wrong -- a misspelled field name, a column the header row does not have, a required field left out, an enum value outside its vocabulary, a confidence above one. The expected verdict is what the validator should say about it.",
+    "annotationRule": "One author wrote the cases, the expected layouts and the candidates, so there is no inter-annotator agreement to compute and Cohen's kappa does not exist here. What is measured is agreement with a specified answer -- a weaker claim than agreement between annotators, and it is stated as agreement with a specified answer everywhere it is reported.",
+    "measuredAt": "2026-11-08"
+  },
+  "cases": [
+    {
+      "id": "metric-prometheus-export",
+      "signalKind": "metric",
+      "headers": ["timestamp", "service", "metric_name", "value"],
+      "samples": [
+        { "timestamp": "2026-09-14T02:03:00Z", "service": "checkout-api", "metric_name": "cpu_usage", "value": 0.81 },
+        { "timestamp": "2026-09-14T02:03:15Z", "service": "checkout-api", "metric_name": "cpu_usage", "value": 0.84 }
+      ],
+      "expectedLayout": { "timestamp": "timestamp", "service": "service", "metricName": "metric_name", "metricValue": "value" },
+      "candidate": "{\"layout\":{\"timestamp\":\"timestamp\",\"service\":\"service\",\"metricName\":\"metric_name\",\"metricValue\":\"value\"},\"confidence\":0.93,\"rationale\":\"the header names are the IR names\"}",
+      "expectedVerdict": "accepted",
+      "why": "the easy case, and the one that keeps the reading's denominator honest: a channel that fails this has nothing else to say"
+    },
+    {
+      "id": "metric-bare-abbreviations",
+      "signalKind": "metric",
+      "headers": ["ts", "svc", "metric", "val"],
+      "samples": [
+        { "ts": "2026-09-14T02:03:00Z", "svc": "cart-api", "metric": "request_rate", "val": 412 },
+        { "ts": "2026-09-14T02:03:15Z", "svc": "cart-api", "metric": "request_rate", "val": 418 }
+      ],
+      "expectedLayout": { "timestamp": "ts", "service": "svc", "metricName": "metric", "metricValue": "val" },
+      "candidate": "{\"layout\":{\"timestamp\":\"ts\",\"service\":\"svc\",\"metricName\":\"metric\",\"metricValue\":\"val\"},\"confidence\":0.71,\"rationale\":\"ts, svc, metric and val are the usual abbreviations\"}",
+      "expectedVerdict": "accepted",
+      "why": "abbreviations are in the alias table, so both channels are expected to read them"
+    },
+    {
+      "id": "metric-prefixed-columns",
+      "signalKind": "metric",
+      "headers": ["event_ts", "container", "kpi", "reading"],
+      "samples": [
+        { "event_ts": "2026-09-14T02:03:00Z", "container": "checkout-api-app", "kpi": "cpu_usage", "reading": 0.81 },
+        { "event_ts": "2026-09-14T02:03:15Z", "container": "checkout-api-app", "kpi": "cpu_usage", "reading": 0.84 }
+      ],
+      "expectedLayout": { "timestamp": "event_ts", "service": "container", "metricName": "kpi", "metricValue": "reading" },
+      "candidate": "{\"layout\":{\"timestamp\":\"event_ts\",\"service\":\"container\",\"metricName\":\"kpi\",\"metricValue\":\"reading\"},\"confidence\":0.64,\"rationale\":\"event_ts is a timestamp, container names the workload, kpi names the metric and reading is its value\"}",
+      "expectedVerdict": "accepted",
+      "why": "none of these four names is in the alias table, which is the case the model-side channel exists for; the deterministic table is expected to disagree here and the reading counts that separately"
+    },
+    {
+      "id": "log-plain",
+      "signalKind": "log",
+      "headers": ["time", "level", "message", "service"],
+      "samples": [
+        { "time": "2026-09-14T02:03:00Z", "level": "ERROR", "message": "connection pool exhausted", "service": "payment-api" },
+        { "time": "2026-09-14T02:03:01Z", "level": "WARN", "message": "retrying pool checkout", "service": "payment-api" }
+      ],
+      "expectedLayout": { "timestamp": "time", "service": "service", "logBody": "message", "severity": "level" },
+      "candidate": "{\"layout\":{\"timestamp\":\"time\",\"service\":\"service\",\"logBody\":\"message\",\"severity\":\"level\"},\"confidence\":0.9,\"rationale\":\"the column names are the usual log names\"}",
+      "expectedVerdict": "accepted",
+      "why": "the four fields a log layout carries, all spelled plainly"
+    },
+    {
+      "id": "log-shouted-headers",
+      "signalKind": "log",
+      "headers": ["TIME", "LEVEL", "MESSAGE", "SERVICE"],
+      "samples": [
+        { "TIME": "2026-09-14T02:03:00Z", "LEVEL": "ERROR", "MESSAGE": "read timeout after 30s", "SERVICE": "search-api" }
+      ],
+      "expectedLayout": { "timestamp": "TIME", "service": "SERVICE", "logBody": "MESSAGE", "severity": "LEVEL" },
+      "candidate": "{\"layout\":{\"timestamp\":\"TIME\",\"service\":\"SERVICE\",\"logBody\":\"MESSAGE\",\"severity\":\"LEVEL\"},\"confidence\":0.88,\"rationale\":\"the names are upper case versions of the IR names\"}",
+      "expectedVerdict": "accepted",
+      "why": "case folding is a decision the alias table makes; a header row in capitals is ordinary in vendor exports"
+    },
+    {
+      "id": "trace-otel",
+      "signalKind": "trace",
+      "headers": ["timestamp", "service", "trace_id", "span_id", "parent_span_id", "span_name", "duration_ms", "status"],
+      "samples": [
+        { "timestamp": "2026-09-14T02:03:00Z", "service": "checkout-api", "trace_id": "tr-1", "span_id": "sp-1", "parent_span_id": "sp-0", "span_name": "POST /checkout", "duration_ms": 8400, "status": "ERROR" },
+        { "timestamp": "2026-09-14T02:03:01Z", "service": "payment-api", "trace_id": "tr-1", "span_id": "sp-2", "parent_span_id": "sp-1", "span_name": "charge", "duration_ms": 12, "status": "OK" }
+      ],
+      "expectedLayout": {
+        "timestamp": "timestamp",
+        "service": "service",
+        "traceId": "trace_id",
+        "spanId": "span_id",
+        "parentSpanId": "parent_span_id",
+        "spanName": "span_name",
+        "durationMs": "duration_ms",
+        "status": "status"
+      },
+      "candidate": "{\"layout\":{\"timestamp\":\"timestamp\",\"service\":\"service\",\"traceId\":\"trace_id\",\"spanId\":\"span_id\",\"parentSpanId\":\"parent_span_id\",\"spanName\":\"span_name\",\"durationMs\":\"duration_ms\",\"status\":\"status\"},\"confidence\":0.95,\"rationale\":\"OpenTelemetry column names\"}",
+      "expectedVerdict": "accepted",
+      "why": "the widest layout the trace contract admits, which is the shape the exporter for RE2 and RE3 reads"
+    },
+    {
+      "id": "trace-abbreviated",
+      "signalKind": "trace",
+      "headers": ["ts", "svc", "trace", "span", "parentspan", "operation", "duration"],
+      "samples": [
+        { "ts": "2026-09-14T02:03:00Z", "svc": "cart-api", "trace": "tr-9", "span": "sp-9", "parentspan": "sp-8", "operation": "GET /cart", "duration": 240 },
+        { "ts": "2026-09-14T02:03:00Z", "svc": "cart-api", "trace": "tr-9", "span": "sp-10", "parentspan": "sp-9", "operation": "redis get", "duration": 12 }
+      ],
+      "expectedLayout": {
+        "timestamp": "ts",
+        "service": "svc",
+        "traceId": "trace",
+        "spanId": "span",
+        "parentSpanId": "parentspan",
+        "spanName": "operation",
+        "durationMs": "duration"
+      },
+      "candidate": "{\"layout\":{\"timestamp\":\"ts\",\"service\":\"svc\",\"traceId\":\"trace\",\"spanId\":\"span\",\"parentSpanId\":\"parentspan\",\"spanName\":\"operation\",\"durationMs\":\"duration\"},\"confidence\":0.69,\"rationale\":\"abbreviated span columns\"}",
+      "expectedVerdict": "accepted",
+      "why": "every abbreviation here is in the alias table, so this is the trace counterpart of the bare-abbreviation metric case"
+    },
+    {
+      "id": "metric-semantic-type",
+      "signalKind": "metric",
+      "headers": ["timestamp", "service", "metric", "value"],
+      "samples": [
+        { "timestamp": "2026-09-14T02:03:00Z", "service": "checkout-api", "metric": "request_duration_p99_ms", "value": 4300 }
+      ],
+      "expectedLayout": { "timestamp": "timestamp", "service": "service", "metricName": "metric", "metricValue": "value" },
+      "candidate": "{\"layout\":{\"timestamp\":\"timestamp\",\"service\":\"service\",\"metricName\":\"metric\",\"metricValue\":\"value\",\"semanticType\":\"latency\"},\"confidence\":0.87,\"rationale\":\"a duration in milliseconds is a latency\"}",
+      "expectedVerdict": "accepted",
+      "why": "`semanticType` is not a source column and is validated against its own vocabulary, so a legal value leaves the verdict at accepted"
+    },
+    {
+      "id": "metric-semantic-type-outside-vocabulary",
+      "signalKind": "metric",
+      "headers": ["timestamp", "service", "metric", "value"],
+      "samples": [
+        { "timestamp": "2026-09-14T02:03:00Z", "service": "checkout-api", "metric": "request_duration_p99_ms", "value": 4300 }
+      ],
+      "expectedLayout": { "timestamp": "timestamp", "service": "service", "metricName": "metric", "metricValue": "value" },
+      "candidate": "{\"layout\":{\"timestamp\":\"timestamp\",\"service\":\"service\",\"metricName\":\"metric\",\"metricValue\":\"value\",\"semanticType\":\"latency-ish\"},\"confidence\":0.6,\"rationale\":\"a duration\"}",
+      "expectedVerdict": "refused",
+      "expectedReason": "layout field 'semanticType' must be one of",
+      "why": "the enum is closed, so an invented class is refused by name rather than carried into the IR"
+    },
+    {
+      "id": "metric-misspelled-field",
+      "signalKind": "metric",
+      "headers": ["timestamp", "service", "metric", "value"],
+      "samples": [
+        { "timestamp": "2026-09-14T02:03:00Z", "service": "checkout-api", "metric": "cpu_usage", "value": 0.81 }
+      ],
+      "expectedLayout": { "timestamp": "timestamp", "service": "service", "metricName": "metric", "metricValue": "value" },
+      "candidate": "{\"layout\":{\"timstamp\":\"timestamp\",\"service\":\"service\",\"metricName\":\"metric\",\"metricValue\":\"value\"},\"confidence\":0.82,\"rationale\":\"the timestamp column\"}",
+      "expectedVerdict": "refused",
+      "expectedReason": "layout field 'timstamp' is not an IR field",
+      "why": "the typo the module was written for: dropping it would produce a layout missing `timestamp`, and every later message would name the missing field rather than the rejected name"
+    },
+    {
+      "id": "metric-column-absent-from-header",
+      "signalKind": "metric",
+      "headers": ["timestamp", "service", "metric", "value"],
+      "samples": [
+        { "timestamp": "2026-09-14T02:03:00Z", "service": "checkout-api", "metric": "cpu_usage", "value": 0.81 },
+        { "timestamp": "2026-09-14T02:03:15Z", "service": "checkout-api", "metric": "cpu_usage", "value": 0.84 }
+      ],
+      "expectedLayout": { "timestamp": "timestamp", "service": "service", "metricName": "metric", "metricValue": "value" },
+      "candidate": "{\"layout\":{\"timestamp\":\"timestamp\",\"service\":\"service\",\"metricName\":\"metric\",\"metricValue\":\"latency_ms\"},\"confidence\":0.55,\"rationale\":\"the value looks like a latency\"}",
+      "expectedVerdict": "refused",
+      "expectedReason": "maps to column 'latency_ms' which is missing or empty in a sample",
+      "why": "a hallucinated column is the second half of the same defect: the name is a legal IR field, so only the replay can refuse it"
+    },
+    {
+      "id": "metric-value-empty-in-one-sample",
+      "signalKind": "metric",
+      "headers": ["timestamp", "service", "metric", "value", "note"],
+      "samples": [
+        { "timestamp": "2026-09-14T02:03:00Z", "service": "checkout-api", "metric": "cpu_usage", "value": 0.81, "note": "0.81" },
+        { "timestamp": "2026-09-14T02:03:15Z", "service": "checkout-api", "metric": "cpu_usage", "value": 0.84, "note": "" }
+      ],
+      "expectedLayout": { "timestamp": "timestamp", "service": "service", "metricName": "metric", "metricValue": "value" },
+      "candidate": "{\"layout\":{\"timestamp\":\"timestamp\",\"service\":\"service\",\"metricName\":\"metric\",\"metricValue\":\"note\"},\"confidence\":0.5,\"rationale\":\"the note column repeats the reading\"}",
+      "expectedVerdict": "refused",
+      "expectedReason": "maps to column 'note' which is missing or empty in a sample",
+      "why": "the replay is per sample, not per header: a column that exists and is empty on one row cannot carry a required field"
+    },
+    {
+      "id": "trace-missing-duration",
+      "signalKind": "trace",
+      "headers": ["timestamp", "service", "trace_id", "span_id", "span_name"],
+      "samples": [
+        { "timestamp": "2026-09-14T02:03:00Z", "service": "cart-api", "trace_id": "tr-9", "span_id": "sp-9", "span_name": "GET /cart" }
+      ],
+      "expectedLayout": { "timestamp": "timestamp", "service": "service", "traceId": "trace_id", "spanId": "span_id", "spanName": "span_name" },
+      "candidate": "{\"layout\":{\"timestamp\":\"timestamp\",\"service\":\"service\",\"traceId\":\"trace_id\",\"spanId\":\"span_id\",\"spanName\":\"span_name\"},\"confidence\":0.72,\"rationale\":\"the file has no duration column\"}",
+      "expectedVerdict": "refused",
+      "expectedReason": "missing required field 'durationMs'",
+      "why": "a required field the file simply does not have: the layout is honest and the file is unreadable, which is a refusal and not a repair"
+    },
+    {
+      "id": "log-trace-field",
+      "signalKind": "log",
+      "headers": ["time", "level", "message", "service"],
+      "samples": [
+        { "time": "2026-09-14T02:03:00Z", "level": "ERROR", "message": "read timeout", "service": "search-api" }
+      ],
+      "expectedLayout": { "timestamp": "time", "service": "service", "logBody": "message", "severity": "level" },
+      "candidate": "{\"layout\":{\"timestamp\":\"time\",\"service\":\"service\",\"logBody\":\"message\",\"severity\":\"level\",\"spanId\":\"service\"},\"confidence\":0.44,\"rationale\":\"filed the service under the span id\"}",
+      "expectedVerdict": "refused",
+      "expectedReason": "layout field 'spanId' is not an IR field for signal kind 'log'",
+      "why": "the contract is per kind, so a legal field of another kind is an illegal field of this one"
+    },
+    {
+      "id": "metric-confidence-out-of-range",
+      "signalKind": "metric",
+      "headers": ["timestamp", "service", "metric", "value"],
+      "samples": [
+        { "timestamp": "2026-09-14T02:03:00Z", "service": "checkout-api", "metric": "cpu_usage", "value": 0.81 }
+      ],
+      "expectedLayout": { "timestamp": "timestamp", "service": "service", "metricName": "metric", "metricValue": "value" },
+      "candidate": "{\"layout\":{\"timestamp\":\"timestamp\",\"service\":\"service\",\"metricName\":\"metric\",\"metricValue\":\"value\"},\"confidence\":1.35,\"rationale\":\"certain\"}",
+      "expectedVerdict": "refused",
+      "expectedReason": "'confidence' must be a number between 0 and 1",
+      "why": "the shape rules are checked before the contract, so a malformed confidence never reaches the field set"
+    },
+    {
+      "id": "metric-wrong-column-both-present",
+      "signalKind": "metric",
+      "headers": ["timestamp", "service", "metric", "usage", "limit"],
+      "samples": [
+        { "timestamp": "2026-09-14T02:03:00Z", "service": "checkout-api", "metric": "cpu_usage", "usage": 0.81, "limit": 0.5 },
+        { "timestamp": "2026-09-14T02:03:15Z", "service": "checkout-api", "metric": "cpu_usage", "usage": 0.84, "limit": 0.5 }
+      ],
+      "expectedLayout": { "timestamp": "timestamp", "service": "service", "metricName": "metric", "metricValue": "usage" },
+      "candidate": "{\"layout\":{\"timestamp\":\"timestamp\",\"service\":\"service\",\"metricName\":\"metric\",\"metricValue\":\"limit\"},\"confidence\":0.61,\"rationale\":\"the limit is the saturation figure\"}",
+      "expectedVerdict": "accepted",
+      "why": "the class the replay cannot see: both columns exist, both are non-empty, and the mapping is wrong. Accepted is the correct verdict for the validator and a wrong answer for the channel, which is why the reading reports the two separately"
+    }
+  ]
+}

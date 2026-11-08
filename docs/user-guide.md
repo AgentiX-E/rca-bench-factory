@@ -129,7 +129,7 @@ node packages/cli/dist/main.js gate --input examples/order-prod/bundle.json --ta
 | --- | --- | --- |
 | G1 structural | passed | required signal kinds for the target; a natural-language query is present |
 | G2 semantic | passed | every reference resolves; causal hops exist in the topology (BFS) |
-| G3 validity | passed | the anomaly is statistically real (Z ≥ 2.0) |
+| G3 validity | passed | the anomaly is statistically real (Z ≥ 2.0 sustained for 3 samples); `check-fault-cases` prints the margin between that line and the corpus's weakest case |
 | G4 solvability | **failed** | baseline locators must rank the root cause within top-K |
 | G5 anti-pollution | passed | the task text does not leak the answer key, and no two cases in the set are one incident written twice |
 

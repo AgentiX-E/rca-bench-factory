@@ -2950,3 +2950,55 @@ describe('check-fault-cases · a case has to answer for the modality it does not
     }
   });
 });
+
+describe('check-fault-cases · the G3 threshold grid', { timeout: SUITE_BUDGET_MS }, () => {
+  const SIGNALS = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  function signals(): Record<string, unknown> {
+    return JSON.parse(JSON.stringify(SIGNALS)) as Record<string, unknown>;
+  }
+
+  it('prints the grid over the shipped corpus, with the margin that explains it', async () => {
+    // The request behind this reading was "a 4x4 grid would say which cell the defaults sit in and
+    // whether the admission rate moves with them". The answer on this corpus is that it does not
+    // move, so the sentence has to carry the reason: the weakest case stops sustaining three
+    // samples only above |Z| >= 126.85, which is 63x the line the gate applies. The figures are
+    // asserted rather than described, because a corpus drifting towards the thresholds moves the
+    // weakest case first and this is what makes that movement visible before the grid turns red.
+    const result = await run(['--cases', CASES]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain(
+      'g3 threshold grid: 30 case(s) judged over 4x4 cells (|Z| 1/2/10/100 x samples 1/3/5/8); '
+        + 'the default (|Z| >= 2, 3 samples) admits 30 of 30 and no neighbour changes that; '
+        + "the weakest case 'history-resource-ephemeral-capacity-image-builder' stops sustaining "
+        + '3 sample(s) at |Z| >= 126.85, 63.42x the default; '
+        + 'the most post-onset samples any case offers is 8, '
+        + 'which is the tallest sample line the grid can ask for',
+    );
+  });
+
+  it('prints the grid on the refusing exit too, and refuses the case it cannot see', async () => {
+    // The reading is evidence, not decoration: a flat corpus has to move it. This is also the only
+    // arm that reaches the sentence with no flip point at all -- two samples cannot sustain three --
+    // and the script's second exit, which is where a refused corpus is reported.
+    const edited = signals();
+    const series = edited.series as Array<Record<string, unknown>>;
+    for (const one of series) one.post = one.baseline;
+    const result = await run(['--cases', corpus({ signals: edited, competitor: false })]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain('g3 threshold grid: 1 case(s) judged');
+    expect(result.out).toContain('admits 0 of 1');
+    // The flat corpus's flip point is whatever the jitter leaves it: the post-onset readings are
+    // the baseline's own level, so their z-scores are the jitter's, a fraction of a sigma. What the
+    // sentence must not do is report the same 126.85 on a corpus that carries no anomaly at all.
+    const flip = /stops sustaining 3 sample\(s\) at \|Z\| >= ([0-9.]+), ([0-9.]+)x the default/.exec(result.out);
+    expect(flip, 'the flip clause is missing from the refusing exit').not.toBeNull();
+    expect(Number(flip![1])).toBeLessThan(1);
+    expect(Number(flip![2])).toBeLessThan(0.5);
+    // The refusals are the same cells G3 itself refuses, which is the agreement the unit tests hold
+    // over synthetic bundles and this one holds over a real corpus file.
+    expect(result.out).toContain('signals fail G3: no metric sustains |Z| >= 2 for 3 samples after injection');
+  });
+});

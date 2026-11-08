@@ -189,7 +189,12 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // the stop-word injection breaks two tests -- the headline refusal and the one that holds the
     // published list to the filter that uses it. These are the only injections in the table whose
     // subject has no witness in the shipped corpus at all.
-    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 41],
+    //
+    // 41 -> 51 in v3.69: seven injections for the two readings this round added, and ten witnesses
+    // because three of them break a second test as well -- the grid's boundary withdrawal is seen
+    // by the sixteen-cell agreement test, and two of the layout withdrawals are seen by the
+    // sentence the command prints.
+    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 51],
     ['scripts/injection/fault-extraction-scoring.py', 'fault-extraction-scoring', 12],
     ['scripts/injection/fetch-official-retry.py', 'fetch-official-retry', 6],
     ['scripts/injection/fault-extraction-workflow.py', 'fault-extraction-workflow', 9],

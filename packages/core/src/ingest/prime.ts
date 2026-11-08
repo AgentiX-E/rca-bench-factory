@@ -7,7 +7,14 @@ import {
   resolveEntityRef,
   VALID_RELATIONS,
 } from '../entity/graph.js';
-import { detectFileLayout, ingestFile, type FileFormat, type FileLayout, type FileSignalKind } from './file.js';
+import {
+  LAYOUT_REQUIRED_FIELDS,
+  detectFileLayout,
+  ingestFile,
+  type FileFormat,
+  type FileLayout,
+  type FileSignalKind,
+} from './file.js';
 import { irBundleSchema } from '../ir/schema.js';
 import { parseFaultSpec, type FaultSpec } from '../fault/collector.js';
 import { readCorpusCategory } from '../fault/corpus-fault-taxonomy.js';
@@ -242,12 +249,6 @@ const KIND_STEMS: ReadonlyArray<{ kind: FileSignalKind; stem: string }> = [
 ];
 
 /** Fields a signal kind cannot do without. A missing one quarantines the file. */
-const REQUIRED_FIELDS: Record<FileSignalKind, ReadonlyArray<keyof FileLayout>> = {
-  metric: ['timestamp', 'metricName', 'metricValue'],
-  log: ['timestamp', 'logBody'],
-  trace: ['timestamp', 'traceId', 'spanId', 'spanName', 'durationMs'],
-};
-
 function extensionOf(path: string): string {
   const base = fileNameOf(path);
   const dot = base.lastIndexOf('.');
@@ -363,7 +364,9 @@ function inferLayout(text: string, format: FileFormat, signalKind: FileSignalKin
 }
 
 function missingFields(layout: FileLayout, kind: FileSignalKind): string[] {
-  return REQUIRED_FIELDS[kind].filter((f) => layout[f] === undefined).map(String);
+  // The table is `ingest/file.ts`'s, not this module's: whether a file is readable and whether a
+  // model's mapping is complete are two readers of one contract.
+  return LAYOUT_REQUIRED_FIELDS[kind].filter((f) => layout[f] === undefined).map(String);
 }
 
 /** The `ingestFile` options for one file, or the reason it cannot be read. */

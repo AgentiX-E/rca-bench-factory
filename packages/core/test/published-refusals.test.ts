@@ -272,7 +272,7 @@ describe('scripts/format-spec.mjs · an id that names no spec', () => {
    * same list that names it.
    */
   it('throws for an id no spec declares, and names the id', async () => {
-    const { FORMAT_SPECS, specById } = (await import('../../scripts/format-spec.mjs')) as {
+    const { FORMAT_SPECS, specById } = (await import('../../../scripts/format-spec.mjs')) as {
       FORMAT_SPECS: { id: string }[];
       specById: (id: string) => unknown;
     };

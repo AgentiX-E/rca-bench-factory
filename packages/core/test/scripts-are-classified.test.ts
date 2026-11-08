@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -119,6 +119,18 @@ const REGISTER: Record<string, Entry> = {
       '`read-remote-index.test.ts` spawns it over a zip built by `zip` and a range-honouring server, so ' +
       'every exit it owns is driven, including the refusal that is this script\'s supported-scope ' +
       'statement rather than a transport failure.',
+  },
+
+  'check-rulegen-agreement.mjs': {
+    class: 'gate',
+    why:
+      'It exits 1 when a verdict disagrees with the layout answer set, when a refusal names a reason ' +
+      'the answer set does not, or when the file cannot be read, so it is a gate by the inventory ' +
+      'rule. `rulegen-agreement.test.ts` spawns it for every exit it owns, over a copy of the answer ' +
+      'set with one verdict flipped and once with one reason changed -- a verdict-only check would ' +
+      'pass a validator that refused everything for a single reason. Its reading is deliberately not ' +
+      'the exit: the alias table is allowed to miss a column name outside its vocabulary, because ' +
+      'that is what the model-side channel exists for, so its count is printed and not gated.',
   },
 
   'check-fault-cases.mjs': {
@@ -791,16 +803,34 @@ describe('scripts/ · every script is classified, and the class is checked', () 
  * in the meta-gate's `UNATTRIBUTED` line.
  */
 describe('a gate is proved by being emptied, so no test may import one', () => {
-  /** `from '../../../scripts/x.mjs'` and dynamic `import('…/scripts/x.mjs')`. */
-  const IMPORT = /(?:from\s+|import\s*\(\s*)'[^']*?\/([\w.-]+\.mjs)'/g;
+  /**
+   * `from '../../../scripts/x.mjs'` and dynamic `import('…/scripts/x.mjs')`.
+   *
+   * Two groups: the whole specifier, and the file name the register is keyed by. Both are needed
+   * and neither is derivable from the other without a second walk over the tree -- the register
+   * names files, and the depth check below is about specifiers.
+   */
+  const IMPORT = /(?:from\s+|import\s*\(\s*)'([^']*?\/([\w.-]+\.mjs))'/g;
+
+  /**
+   * The source with its comments removed.
+   *
+   * The first run of the depth check below reported two offenders in this very file, and both were
+   * prose: the doc comment above spells the pattern, and the control test quotes it. A specifier
+   * inside a comment is not an import, and a guard that fails on its own documentation is a guard
+   * somebody deletes. `//` is required to follow whitespace so that a URL inside a string
+   * (`http://…`) is not read as the start of a comment.
+   */
+  const withoutComments = (source: string): string =>
+    source.replace(/\/\*\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/[^\n]*/g, '$1');
 
   it('no test file imports a file the register calls a gate or a probe', () => {
     const offenders: string[] = [];
     const testDir = resolve(ROOT, 'packages/core', 'test');
     for (const name of readdirSync(testDir).filter((entry) => entry.endsWith('.test.ts'))) {
-      const source = readFileSync(resolve(testDir, name), 'utf8');
+      const source = withoutComments(readFileSync(resolve(testDir, name), 'utf8'));
       for (const match of source.matchAll(IMPORT)) {
-        const script = match[1]!;
+        const script = match[2]!;
         const klass = REGISTER[script]?.class;
         if (klass === 'gate' || klass === 'probe') {
           offenders.push(`${name} imports ${script}, which is a ${klass}`);
@@ -815,13 +845,63 @@ describe('a gate is proved by being emptied, so no test may import one', () => {
     ).toEqual([]);
   });
 
+  it('spells every specifier at the depth of the file that writes it', () => {
+    // The register is a list of *names*, so no reader in this file knows where a script lives.
+    // `published-refusals.test.ts` sits three directories below the root and spelled
+    // `../../scripts/format-spec.mjs`: a path under `packages/`, which does not exist. Vite-node
+    // resolved it anyway, through a fallback this test never depended on -- until a run on a loaded
+    // box went `ERR_MODULE_NOT_FOUND` about a path nobody had written, and the same revision was
+    // green on the next attempt. A specifier that only resolves inside one loader is a specifier
+    // that is wrong; the depth is a fact about the importer, so it is checked against the
+    // importer's own location rather than against a second copy of the tree.
+    const offenders: string[] = [];
+    let checked = 0;
+    const testDir = resolve(ROOT, 'packages/core', 'test');
+    for (const name of readdirSync(testDir).filter((entry) => entry.endsWith('.test.ts'))) {
+      const source = withoutComments(readFileSync(resolve(testDir, name), 'utf8'));
+      for (const match of source.matchAll(IMPORT)) {
+        const specifier = match[1]!;
+        checked += 1;
+        if (!existsSync(resolve(testDir, specifier))) {
+          offenders.push(`${name} spells '${specifier}', which resolves to no file`);
+        }
+      }
+    }
+    expect(
+      offenders,
+      'a relative specifier is resolved against the file that writes it, so one that points at a ' +
+        'directory the repository does not have works only while a loader chooses to fall back: ' +
+        'fix the path rather than the loader',
+    ).toEqual([]);
+    // The floor, not a claim: a walk that read nothing would make the assertion above pass over
+    // every file, which is the failure mode a guard over a tree has to state.
+    expect(checked).toBeGreaterThan(30);
+  });
+
   it('reads imports at all, which is the half that a broken pattern would skip', () => {
     // The negative control. An `IMPORT` regex that matched nothing would make the
     // assertion above pass over every file, and the failure would only appear the
     // next time somebody imported a gate -- which is the day it was written for.
     const sample = "import { check } from '../../../scripts/audit-volumes.mjs';";
-    const names = [...sample.matchAll(IMPORT)].map((match) => match[1]);
+    const names = [...sample.matchAll(IMPORT)].map((match) => match[2]);
     expect(names).toEqual(['audit-volumes.mjs']);
+    // Both groups, because the depth check reads the first and the register check the second.
+    expect([...sample.matchAll(IMPORT)].map((match) => match[1])).toEqual([
+      '../../../scripts/audit-volumes.mjs',
+    ]);
+    // And the stripper: prose about an import is not an import, while the code under a trailing
+    // `//` is. Both halves matter -- one guard would be deleted for being wrong, and the other
+    // would blind the walk. The samples name a script that exists, so that this control is not
+    // itself the offender the walk reports.
+    expect(
+      withoutComments("// import x from '../../../scripts/audit-volumes.mjs'\nconst a = 1; // trailing"),
+    ).toBe('\nconst a = 1; ');
+    expect(withoutComments("/**`from '../../../scripts/audit-volumes.mjs'`*/\nconst b = 2;")).toBe(
+      '\nconst b = 2;',
+    );
+    expect(withoutComments("const url = 'http://example.test/a';")).toBe(
+      "const url = 'http://example.test/a';",
+    );
     // And the register must actually distinguish the two classes, or the filter
     // above is a filter over one value.
     expect(REGISTER['audit-volumes.mjs']?.class).toBe('data');

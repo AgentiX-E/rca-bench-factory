@@ -2387,9 +2387,9 @@ written where it stood, which is how `gates/gates.ts` goes to **100 / 100 / 100 
 
 | item | value |
 | --- | --- |
-| `core` test suite | **240 files, 6104 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **244 files, 6291 tests passed** (as of this commit) |
+| `core` test suite | **240 files, 6104 tests passed** (at v3.68) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.68) |
+| repo test suite | **244 files, 6291 tests passed** (at v3.68) |
 | coverage | `core` **99.97 / 99.80 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** (statements / branches / functions / lines); `gates/gates.ts` is **100 / 100 / 100 / 100** |
 | new tests | **22** (6,082 -> 6,104), all in `gate-pair-similarity.test.ts`: the two arms' refusals, the two sentence branches, the tokeniser and the stop-word list that uses it, the corpus readings, and four boundaries -- cross-system, absent prompt, unreadable bound, zero-length window -- plus the repeated-`caseId` pair. One fixture was edited in place: `check-fault-cases.test.ts`'s ten copies now vary their prompt and window, because a set of ten identical incidents is a duplicate-detection specimen |
 | new mutations | **7** injections in `gate-tests-battery.py` (PAIRS 1-7); **28 -> 35** injections, **33 -> 41** witnesses, all 34 reachable rows CAUGHT and 1 redundant as declared |
@@ -2418,3 +2418,112 @@ readers, all of them about one case -- and the one claim that needs two cases ha
 feeds it compared one case at a time, so the arm, once added, would still have been silent had it not
 been asked again over the whole set. The third finding is the same sentence about documents: a figure
 needs a second reader, and the copy that has one is the copy that stays true.
+
+## v3.69 — 两条从没被人动过的阈值，和一个只存在于库里的通道
+
+### 一、网格十六格一个答案，而那不是网格通过了
+
+`checkG3Validity` 用「某个指标在注入后连续 3 个样本 `|Z| >= 2.0`」接纳一个案例。两个数都是带默认值的参数，两个默认值都内联在函数里，而树里没有任何东西问过它们两侧是什么样。网格的答案是：**什么都没变**。
+
+| 单元 | 接纳 | 单元 | 接纳 |
+| --- | --- | --- | --- |
+| `\|Z\| >= 1`，1 样本 | 30 / 30 | `\|Z\| >= 10`，1 样本 | 30 / 30 |
+| `\|Z\| >= 1`，8 样本 | 30 / 30 | `\|Z\| >= 100`，8 样本 | 30 / 30 |
+
+十六格，一个判决。这不是网格通过了，是**语料看不见阈值**——而网格的职责正是分清这两件事。分开它们的是每个案例的**翻转点**：它仍能撑住 3 个样本的最大 `\|Z\|` 线，也就是最佳三窗里最小的那个 z（闭式，不用搜索）。
+
+| 量 | 值 |
+| --- | --- |
+| 被判决的案例 | **30** |
+| 最弱的翻转点 | **126.85** —— `history-resource-ephemeral-capacity-image-builder` |
+| 最强的翻转点 | **3.15e12** —— `history-kafka-consumer-lag` |
+| 相对默认线的余量 | **63.42 倍** |
+| 单个案例能给的最多样本 | **8** |
+
+原因是语料的构造而不是门禁：派生序列从基线一步跳到 post 值，计数器的前置窗口精确平坦，于是 `stddev` 是零或 2% 抖动，z 就成了步长与**那个**的比值——最弱 126，最强 3.15e12。这样造出来的语料测不了阈值，这正是 `probe-z-floor` 关于 `epsilon` 的发现（finding 288）低一层的样子。
+
+**网格还能辩护什么。** 顺序：任一条轴抬高，被拒数不会下降，十六格全部断言过，所以这是一个曲面而不是十六次互不相干的测量。**不能辩护什么：**数值——1 到 100 之间任何一条线在这份语料上给出同一个判决，所以默认值是一个语料对它保持沉默的判断。读数不假装相反：`check-fault-cases.mjs` 在两个出口都把余量印在网格旁边，清单条目改写为「语料回答不了什么」而不是「网格没测出什么」。
+
+**让答案可信的形状。**网格与判决是同一次计算：`metricGroups`、`absZScores`、`flipPoint` 与 `checkG3Validity` 共用，一条测试把每一格拒掉的集合与 `checkG3Validity` 自己的违规逐格比对。十六格与门禁一致，那是对门禁的读数；十六格由第二份实现算出，那是第二条规则——上一轮刚为这件事付过账（finding 479）。
+
+写它的时候抓到两个小东西。`G3_DEFAULTS` 现在存在，网格读的是门禁应用的数而不是复述的；而这个读数的第一版**只给调用方轴上的样本线**算翻转点，于是问了个更窄问题的调用方被告知「没有任何案例撑住 3 个样本」——而那个案例撑住 62 个。把网格形状的读数当成语料的读数，被那条故意问窄问题的测试抓住。
+
+### 二、一个只存在于库里的通道，和一张写了两遍的表
+
+清单条目说：`rulegen` 没有拒绝计数、没有一致率，「没有任何东西把它和已经存在的三十条人工标注比对」。三句话里两句是错的，第三句才是要害。
+
+**那三十条标注属于另一个通道。** `golden-master/fault-extraction/samples.json` 有三十条手写事故文本与期望的 `type`/`category`/`component`，`buildExtractionReport` 把一次运行与之比对：命中、miss、分层比率、miss 分类、严格阈值。`fault-extraction-accuracy` workflow 调用它。所以那条条目指向的标注集**早就被读了**——被从文本抽取故障的通道读，而那不是 `rulegen`。
+
+**而 `rulegen` 根本没有调用方。**`buildRulegenPrompt`、`parseRulegenResponseChecked`、`validateGeneratedLayout` 从 `index.ts` 导出，在 `src/` 与 `scripts/` 里除了自己和测试之外无人调用。每个被摄取的文件走的是 `ingest/prime.ts` 的别名表。所以「没有拒绝计数」不是一个缺失的测量，而是一个无人调用的函数的正确报告；对模型输出报一个一致率，描述的是一个不运行的通道。
+
+**表才是值得修的缺陷。**`REQUIRED_FIELDS`——一个布局必须映射哪些字段才算可读——被逐字节写了两遍：`ingest/prime.ts` 一份决定能否调用 `ingestFile`，`llm/rulegen.ts` 一份决定模型的映射是否完整。两者在本轮开始时完全相同，而没有任何东西把它们拴在一起；一旦分叉，就会出现「验证器接受的布局被摄取拒绝」，而那句报错会写**缺列**而不是两个表不一致。这与 v3.67 的 `contractVersion`、v3.68 的停用词表是同一个缺陷的第三件外衣：**一个事实，两个写者，没有规则。**表现在住在 `ingest/file.ts`（它拥有 `FileLayout` 与 `FileSignalKind`），两个模块都导入它，分叉不再可表达。
+
+### 三、答案集量的是什么
+
+`golden-master/rulegen-layouts.json` 里十六个手写案例：一个表头行、两三条样本、一个仔细的人类读者会给出的布局，以及——模型那一侧——整段候选回答，按模型出错的方式写。读数报两个**不是同一个断言**的数：
+
+| 通道 | 数 | 量的是什么 |
+| --- | --- | --- |
+| 别名表 | **14 / 16** 个指定布局 | 发的是它：差在两个值列不在其词表里的案例 |
+| 验证器 | **16 / 16** 个判决，9 接受 / 7 拒绝 | 对回答的守卫：拼错的字段、不存在的列、空格、缺必需字段、错模态字段、编造的枚举值、超过 1 的置信度 |
+| 理由 | **7 / 7** | 理由错的拒绝等于答案错而退出码对 |
+| 它看不见的那一类 | **1** | 一个被接受的回答把 `metricValue` 指到 `limit`，而答案集说 `usage` |
+
+最后一行是值得有的那个读数。`validateGeneratedLayout` 把布局对样本重放，所以它拒绝的是缺失或空的列——一个**结构性**检查。指到一个真实、非空、含义错误的列，它能通过。验证器对自己的契约是对的，通道对数据是错的，一个数载不动两个断言。
+
+**kappa 缺席，而缺席本身就是主张。**Cohen's kappa 需要两个独立标注者；这十六个表头、指定布局与候选回答出自同一个作者。所以这个数是与**指定答案**的一致——弱于标注者之间的一致——每一句印它的话都说明是哪一种。另一种做法是把数字不加限定地印出来，而那是弱主张被读成强主张的路径。
+
+### 四、两轮之间格式上的一个共同点
+
+网格与答案集是同一个形状：把默认值的一个决定放进一张表，把表**不能**决定的东西报在它**能**决定的东西旁边，并且拒绝让一个数被印出来而不带那句「它是关于什么的数」。一个默认值和一个比率是同一件东西：一个其辩护住在敲下它的人脑子里的数字。
+
+### 五、一条只在别人的回退里成立的导入路径
+
+全量跑在这一轮红了十二个文件，其中十一个是子进程超时——机器被上一次覆盖率跑压住了，重跑即绿。第十二个不是：`published-refusals.test.ts` 报 `ERR_MODULE_NOT_FOUND`，说 `../../scripts/format-spec.mjs` 找不到。
+
+那个文件在 `packages/core/test/` 下，所以 `../../` 是 `packages/`，而 `packages/scripts/` 在树里不存在。路径**从来**就是错的。它一直能跑，是因为 vite-node 把树外模块当作外部依赖之前先按自己的根解析了一遍；当那次运行没有走那条回退（同一台机器、同一份文件、同一分钟，前一次红后一次绿），node 按 importer 解析，于是拿出一个没人写过的路径。
+
+守卫不是把这一行改对就完事——**一条只在某个加载器的回退里成立的路径，下一轮会以同样方式再出现一次**。`scripts-are-classified.test.ts` 里已经有一个读 `from '…/scripts/x.mjs'` 的正则，用来禁止测试导入 gate；它被扩成同时读出整条 specifier，于是同一个读取器多出一个问题：这条 specifier 按写它的那个文件解析，落不落在一个真文件上。
+
+守卫第一次运行就报了**两条**，两条都是散文：守卫自己的 doc comment 写出了那个形状，控制用例把形状引在字符串里。一条会因为自己的注释而红的守卫会被删掉，所以扫描前先去注释（`//` 必须紧跟在空白之后，这样字符串里的 `http://` 不会被读成注释开头），并把这三种情况写成控制断言。随后它报出的唯一一条 offender 就是真文件里那一行，而把那一行改回错的，它会再次点名报告。
+
+| 读法 | 结果 |
+| --- | --- |
+| 全树 `scripts/*.mjs` specifier | **42** 条，全部落在一个真文件上 |
+| 修之前 | 1 条落在 `packages/scripts/`——一个不存在的目录 |
+| 同一条 specifier 的外部依赖路径 | node 按 importer 解析 → `ERR_MODULE_NOT_FOUND` |
+
+这件事的形状值得记下来：**红一次、绿一次、同一份文件**，如果只看后来的绿，它就是「机器抖了一下」。可用的线索是错误自己说的那句话——它报的路径没人写过。一个真缺陷与一次抖动的区别，经常只是错误信息里那个路径存不存在。
+
+### Readings
+
+> Ledger for `v3.69`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **242 files, 6160 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **246 files, 6347 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.80 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100**; `gates/gates.ts` and `llm/rulegen-agreement.ts` are **100 / 100 / 100 / 100** |
+| new tests | **56** (6,104 -> 6,160): **20** in the new `gate-threshold-grid.test.ts`, **27** in the new `rulegen-agreement.test.ts`, **2** in `check-fault-cases.test.ts` (the corpus reading and its refusal), **3** in `rulegen.test.ts` (the one-writer table), **1** in `scripts-are-classified.test.ts` (the depth guard over every script specifier), and **3** produced by the `it.each` tables that read the registers this round extended -- `export-surface-enumerated.test.ts` alone accounts for two, measured by running its previous revision beside it |
+| new mutations | **7** injections in `gate-tests-battery.py` (GRID 1-3, LAYOUT 1-4); **35 -> 42** injections, **41 -> 51** witnesses. Two of the ten new witnesses are second tests on one injection: withdrawing the grid's inclusive boundary is seen by the sixteen-cell agreement test as well as by the boundary case, and withdrawing the wrong-column comparison is seen by the shipped reading as well as by the planted one. All 41 reachable rows CAUGHT, 1 redundant as declared, 0 survived, 0 inert, 0 unattributed |
+| the grid | **4x4** cells over `\|Z\|` 1/2/10/100 and 1/3/5/8 samples; **30 of 30** admitted in every cell whose sample line is reachable; weakest flip **126.85**, margin **63.42x**; **8** samples is the tallest line the corpus can satisfy |
+| the answer set | **16** authored cases; alias table **14 of 16**; validator **16 of 16** verdicts (9 / 7), reasons **7 of 7**; **1** accepted answer maps a field to another real column |
+| the second writer | `REQUIRED_FIELDS` **2 -> 1**: moved to `ingest/file.ts` and imported by `prime.ts` and `rulegen.ts`; a test refuses a layout missing exactly one required field, for every field of every kind |
+| the channel | `rulegen` has **0** production callers; the thirty extractions annotations the open-list entry cited belong to `fault-extraction`, which reads them through `buildExtractionReport` |
+| the claims | **213** claim(s) across **59** file(s), **132** failure site(s), from `gate-sites.json` |
+| the list | **22 -> 22** open: two closed (G3's grid, `rulegen`'s reading), two opened (the corpus cannot move the `\|Z\|` axis; the validator cannot see a wrong-but-valid mapping) |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P2** | **The corpus cannot move the z-score axis** | new this round: every case's flip point is at least 63x the line, so the grid is a constant | a case whose separation sits near 2-4 sigma, so the threshold has something to decide; the flip-point reading is what a reader checks it against |
+| **P2** | `score` divides by a different denominator per target | unchanged: the sentence needs a measurement under it | a test asserting two targets' check counts differ |
+| **P2** | `docs/acceptance.md` is 96 KB and grows by clause per round | worsened this round by six clauses | move the per-round clauses to a volume, after measuring how many sections match that shape |
+| **P2** | Cloud-OpsBench has no established vendor | unchanged: the field is `null` and the page prints *not established* | read the paper's author block and record the line the value comes from |
+| **P2** | two prose targets cite a paper no digest pins | unchanged | a sha256 and a byte count per paper, or a declaration saying the id is all this repository read |
+| **P3** | **The layout validator cannot see a wrong-but-valid mapping** | new this round: **1** of the 16 cases is accepted and misreads a column | a second reader for the model-side channel when it gets a caller, or a stated limit on what a replay can claim |
+| **P3** | the coverage figure has no reader that computes it | unchanged | a `docs:check` step that reads a coverage report when one exists, or a sentence saying the ledger is the only copy |
+
+**The lesson.** Both items this round were a number with nothing under it, and both times the repair was to compute what the number was *of*. The thresholds had no grid, so nobody could say whether 2.0 was defended or merely unexamined; the answer is that the corpus is silent about it, and only a flip point can say which. The channel had no rate, so the entry said the rate was missing; the answer is that the channel has no caller and the annotations belonged to a neighbour, and the thing actually worth repairing was one table written twice. **A default is a claim about a distribution, and a claim about a distribution needs the distribution to be able to disagree with it.**

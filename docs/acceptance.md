@@ -92,7 +92,7 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   the `sensitivity` job runs `verify-sites-are-sensitive.mjs`, which asks whether that
   file **notices** the exit's absence -- one run per claim with that site's code
   replaced by success, and a baseline run per file so a red claimant cannot be
-  credited with catching anything. Measured at **207 of 207** claim(s) across 58 file(s).
+  credited with catching anything. Measured at **213 of 213** claim(s) across 59 file(s).
   The figure was 105 of 105 in both halves at v3.41, and it drifted for twenty-four rounds
   because nothing read the sentence -- an external reviewer quoted the 105 as the current
   state, which is what a number with no reader costs. `check-doc-counts` reads it now:
@@ -1407,3 +1407,32 @@ from an anecdote again.
   the same round and both forms now report `0 of 30` (finding 480). A number in a document is either a
   reading -- cite the command that prints it -- or history, dated and in the past tense. The third thing,
   history written as though it were a reading, is the one that goes false without anyone editing it.
+
+### A default is a claim about a distribution (v3.69)
+
+- **A threshold with a default is read as a grid, and the grid is the gate's own computation.** G3's
+  `minAbsZ` (2.0) and `minSustainedSamples` (3) sit in `G3_DEFAULTS`, and `readG3ThresholdGrid` evaluates
+  sixteen cells by the same `metricGroups` / `absZScores` / `flipPoint` the verdict uses. A test compares
+  every cell's refused set against `checkG3Validity`'s violations for that pair of lines, because a grid
+  computed by a second implementation would be a second rule (finding 482).
+- **A grid whose cells all agree is a finding about the corpus, not a pass.** On the shipped corpus 30 of
+  30 cases are admitted at every reachable cell, and the reading says why: the weakest case stops
+  sustaining three samples only at `|Z| >= 126.85`, which is 63.42x the shipped line. The margin is
+  printed on both exits of `check-fault-cases.mjs` and asserted by a test; a rule that reports `passed`
+  without printing what it measured is indistinguishable from a rule that never ran.
+- **What a flat grid defends is the ordering, not the value.** The refused count never falls as either
+  axis rises, over all sixteen cells. The value is undefended wherever the corpus cannot see the line,
+  and the open list says so rather than the grid implying otherwise.
+- **One fact, one writer -- third time in three rounds.** `REQUIRED_FIELDS` existed byte for byte in
+  `ingest/prime.ts` and `llm/rulegen.ts`, one deciding whether a file is readable and one whether a
+  model's mapping is complete. It is now `LAYOUT_REQUIRED_FIELDS` in `ingest/file.ts`, imported by both,
+  and a test refuses a layout missing exactly one required field for every field of every kind.
+- **An agreement figure names what it is agreement with.** The layout answer set has one author, so
+  Cohen's kappa does not exist and every sentence that prints the figure says it is agreement with a
+  *specified* answer -- a weaker claim than agreement between annotators, stated rather than implied
+  (finding 483).
+- **A validator's reach is stated, not assumed.** `validateGeneratedLayout` replays a layout against the
+  samples, so it refuses a column that is absent or empty and cannot refuse a mapping to a real column
+  that means the wrong thing. The reading counts that class separately (`misreads`) instead of folding it
+  into the rate: the validator being right about its contract and the channel being right about the data
+  are two claims.

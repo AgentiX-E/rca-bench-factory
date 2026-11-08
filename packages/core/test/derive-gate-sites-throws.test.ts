@@ -267,7 +267,16 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // 93 is v3.67's two: `modalitiesProse` refuses a modality code the specification has no word
     // for, and `contractVersionOf` refuses a contract constant the package does not export. Both
     // are `unguarded` -- they hand control to the generator, which is where the exit is.
-    expect(total).toBe(93);
+    //
+    // 95 is v3.69's two, and they are one decision seen from both ends. `parseRulegenLayoutGolden`
+    // refuses an answer set it cannot compute a rate over -- a duplicate id would drop a case from
+    // the denominator, an expected column the header row does not carry would make the alias table
+    // look worse than it is, and an accepted case that names a refusal reason would make the
+    // reading disagree with itself. `check-rulegen-agreement.mjs`'s `parseArgs` refuses a
+    // `--golden` with no path and an argument it does not know, because a flag that swallowed the
+    // next word would read the shipped file and pass. One is a module refusing its input, the other
+    // a command refusing its invocation, and both end the process where they are written.
+    expect(total).toBe(95);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -321,7 +330,9 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // must not be read as one, or the channel replays a history the remote already has.
     // 71 unguarded is v3.67's two, beside the 69 argued above: the two refusals that keep a
     // contract table from printing a code nobody can read and a version no exporter wrote.
-    expect(counts).toEqual({ fatal: 11, unguarded: 71, guarded: 1, rethrow: 10 });
+    // 71 -> 73 in v3.69: the answer-set parser and the new command's argument reader, both
+    // `unguarded` -- they hand control to their callers, which is where the exit is.
+    expect(counts).toEqual({ fatal: 11, unguarded: 73, guarded: 1, rethrow: 10 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

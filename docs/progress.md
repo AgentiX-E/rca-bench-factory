@@ -532,7 +532,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.68: **22** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.69: **22** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1093,18 +1093,44 @@ is a row about rather than paraphrase one that no `grep` will find.
   `docs:check`, which does not run the suite, so the honest state is that one of the two copies is
   remembered. Either a `docs:check` step reads a report when one exists, or the table says in a
   sentence that the ledger is the only computed copy and this one is a convenience]`
-- **G3's two thresholds have no grid.** `minAbsZ` (2.0) and `minSustainedSamples` (3) are
+- ~~**G3's two thresholds have no grid.**~~ `minAbsZ` (2.0) and `minSustainedSamples` (3) are
   parameters with no sensitivity reading, and `probe-z-floor` measures epsilon rather than either
   of them.
-  `[open: a 4x4 grid would say which cell the defaults sit in and whether the admission rate
-  moves with them; nothing here has measured that, so the defaults are a judgement the repository
-  has never had to defend]`
-- **`rulegen` has no refusal count and no agreement reading.** The module extracts a structured
+  **Closed by finding 482.** The grid exists: 4x4 over `|Z|` 1/2/10/100 and 1/3/5/8 samples, printed
+  by `check-fault-cases.mjs` on both exits, with every cell's refused set asserted equal to
+  `checkG3Validity`'s own violations. Its answer is that **the admission rate does not move** -- 30
+  of 30 in every reachable cell -- and the reading that separates "the default is defended" from "the
+  corpus cannot see the line" is each case's flip point: weakest **126.85**, **63.42x** the default.
+  Both defaults are now `G3_DEFAULTS`, read by the gate and by the grid rather than written twice.
+  What the grid could not do is defend the *value*, and that is the item opened below.
+- ~~**`rulegen` has no refusal count and no agreement reading.**~~ The module extracts a structured
   rule from an incident and validates it; it does not report how often validation refused, and
   nothing compares its output with the thirty human annotations that already exist.
-  `[open: Cohen's kappa was the obvious measure and it is not available -- two independent
-  annotators are required and this repository has one -- so the reading has to be agreement with
-  a fixed set of answers, which is a weaker claim and has to say so]`
+  **Closed by finding 483, with two of its three premises corrected.** The thirty annotations are
+  `fault-extraction`'s, and `buildExtractionReport` already reads them; and `rulegen` has **no
+  production caller at all**, so a rate over model output would describe a channel that does not run.
+  What was built is `golden-master/rulegen-layouts.json` (16 authored cases) plus
+  `scripts/check-rulegen-agreement.mjs`: the alias table reproduces **14 of 16** specified layouts,
+  the validator agrees on **16 of 16** verdicts (9 accepted, 7 refused) and **7 of 7** reasons, and
+  **1** accepted answer maps a field to another real column -- the class a replay cannot refuse.
+  Kappa is absent and the absence is stated where the figure is printed. The defect worth the round
+  was neither of those: `REQUIRED_FIELDS` was written twice, byte for byte, and is now one constant
+  in `ingest/file.ts` imported by both readers.
+- **The corpus cannot move the z-score axis.** Every one of the thirty cases stops sustaining three
+  samples only above `|Z| >= 126.85`, so a grid over 1 to 100 has one answer in all sixteen cells.
+  The gate's threshold is therefore unexamined by the corpus rather than defended by it: any line in
+  that range classifies this set identically (finding 482).
+  `[open: the fix is a case whose separation sits near 2-4 sigma -- a fault that is real and quiet
+  rather than a step from 180ms to 4.3s -- and the flip-point reading is what a reviewer checks it
+  against, because a case added to move the grid is a case added to move a number]`
+- **The layout validator cannot see a wrong-but-valid mapping.** `validateGeneratedLayout` replays a
+  layout against the samples, so it refuses a column that is absent or empty. A mapping to a real,
+  populated column that means the wrong thing passes: the answer set carries one
+  (`metricValue` at `limit` where the specification says `usage`) and it is accepted, correctly, for
+  the contract the validator enforces (finding 483).
+  `[open: the statement "a replay checks structure, not semantics" needs either a second reader when
+  the model-side channel gets a caller, or a sentence in the module saying what a replay can claim
+  -- today the module documents the rule and not its limit]`
 - **`score` divides by a different denominator per target, and the documents did not say so.**
   `scoreExport` returns a pass-rate times 100 over the checks that target has: seven targets,
   seven denominators, and a 100 that is not one quantity.
@@ -1173,7 +1199,7 @@ and this table.
 | [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 7 | v3.47 | v3.53 |
-| [volume-12.md](progress/volume-12.md) | 15 | v3.54 | v3.68 |
+| [volume-12.md](progress/volume-12.md) | 16 | v3.54 | v3.69 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

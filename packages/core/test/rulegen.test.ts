@@ -7,7 +7,7 @@ import {
   validateGeneratedLayout,
 } from '../src/llm/rulegen.js';
 import type { SampleRecord } from '../src/llm/rulegen.js';
-import type { FileLayout } from '../src/ingest/file.js';
+import { LAYOUT_REQUIRED_FIELDS, type FileLayout, type FileSignalKind } from '../src/ingest/file.js';
 
 /**
  * LLM rule-generation core tests.
@@ -487,5 +487,70 @@ describe('rulegen - the prompt names the contract the parser enforces', () => {
   it('does not ask for a semantic type when the signal kind has none', () => {
     const prompt = buildRulegenPrompt('log', [{ ts: 'x', msg: 'm' }]);
     expect(prompt).not.toContain('semanticType');
+  });
+});
+
+describe('the fields a layout must map, written once', () => {
+  /**
+   * `LAYOUT_REQUIRED_FIELDS` is one writer with two readers: `ingest/prime.ts` refuses a *file* whose
+   * layout cannot carry a required field, and this module refuses a *mapping* that leaves one out.
+   * They were two identical tables with nothing holding them together, so a divergence would have
+   * made a layout the validator accepted refused by ingestion -- with a sentence naming a missing
+   * column rather than the disagreement.
+   *
+   * The table is now imported by both, which makes divergence impossible in the source. What is left
+   * to assert is that the table is the *contract*: a layout missing exactly one required field is
+   * refused for that field by name, and a layout carrying all of them is accepted.
+   */
+  const COLUMNS: Record<FileSignalKind, Record<string, string>> = {
+    metric: { timestamp: 'ts', metricName: 'kpi', metricValue: 'val' },
+    log: { timestamp: 'ts', logBody: 'msg' },
+    trace: { timestamp: 'ts', traceId: 'tr', spanId: 'sp', spanName: 'op', durationMs: 'dur' },
+  };
+
+  const SAMPLES: Record<string, string> = {
+    ts: '2026-09-06T00:00:00Z',
+    kpi: 'cpu_usage',
+    val: '20',
+    msg: 'connection pool exhausted',
+    tr: 'tr-1',
+    sp: 'sp-1',
+    op: 'GET /cart',
+    dur: '12',
+  };
+
+  it('accepts a layout that maps every required field, for each kind', () => {
+    for (const kind of ['metric', 'log', 'trace'] as const) {
+      const layout = COLUMNS[kind] as FileLayout;
+      const result = validateGeneratedLayout(layout, kind, [SAMPLES]);
+      expect(result.valid, `${kind} with every required field`).toBe(true);
+    }
+  });
+
+  it('refuses one missing required field at a time, and names it', () => {
+    // One field at a time rather than all at once: a table with an extra member would leave the
+    // extra untested by a "delete a field" test, and a table that lost a member would still pass
+    // the all-at-once arm.
+    for (const kind of ['metric', 'log', 'trace'] as const) {
+      for (const field of LAYOUT_REQUIRED_FIELDS[kind]) {
+        const layout = { ...(COLUMNS[kind] as FileLayout) };
+        delete layout[field];
+        const result = validateGeneratedLayout(layout, kind, [SAMPLES]);
+        expect(result.valid, `${kind} without '${String(field)}'`).toBe(false);
+        expect(result.reasons.join(' | ')).toContain(`missing required field '${String(field)}'`);
+      }
+    }
+  });
+
+  it('is the table the four field lists are derived from, not a fifth copy', () => {
+    // `rulegenLayoutFields` is the *admissible* set and `LAYOUT_REQUIRED_FIELDS` the *required* one:
+    // a required field that is not admissible would be unreachable, so the subset relation is the
+    // assertion holding the two together.
+    for (const kind of ['metric', 'log', 'trace'] as const) {
+      const admissible = rulegenLayoutFields(kind);
+      for (const field of LAYOUT_REQUIRED_FIELDS[kind]) {
+        expect(admissible, `${kind}: '${String(field)}' is required and must be mappable`).toContain(String(field));
+      }
+    }
   });
 });

@@ -258,8 +258,12 @@ describe('the two baskets are a partition of the calls, not a remainder', () => 
     // disagree with the specification. The three throws this round added do not appear here --
     // they are throws, counted in the partition below, and a round that added only throws would
     // leave both numbers still.
-    expect(calls).toBe(146);
-    expect(sites).toBe(128);
+    // 150/132 is v3.69's: `check-rulegen-agreement.mjs` owns four exits -- an argument it cannot
+    // read, a file it cannot read, a verdict that disagrees with the answer set, and a refusal that
+    // names the wrong reason -- and the gate-sites row for the case-file derivation shifted. The two
+    // numbers move together for the reason the paragraph above states: one question, counted two ways.
+    expect(calls).toBe(150);
+    expect(sites).toBe(132);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

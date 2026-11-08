@@ -275,8 +275,10 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // metadata table gained a rewrite: the three new injections are the three ways this round's
     // guarantees can be withdrawn. 28 -> 35 in v3.68, for G5's pairwise arms -- seven withdrawals,
     // one per guard, because a fixture is the whole evidence and a guard without an injection has
-    // no evidence at all.
-    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(35);
+    // no evidence at all. 35 -> 42 in v3.69, for the two readings this round added: three
+    // withdrawals of the G3 grid's cell, boundary and default line, and four of the layout answer
+    // set's refusals, its wrong-column reading and its one required-field table.
+    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(42);
     expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(
       pythonJson(`print(json.dumps(len(module.INJECTIONS)))`),
     );
