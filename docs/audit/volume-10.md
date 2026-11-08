@@ -4267,7 +4267,11 @@ row although the specification carries a string for all seven; one had no `Modal
 `Modalities` cells carried content the codes cannot produce (`(+ causal path)`, and bold on `events` and
 `alerts` marking which modalities the factory adds). The prose was not wrong; it was unwitnessed, which
 is how `metrics, logs, traces` and `['M','L','T']` can mean the same thing on Tuesday and not on
-Wednesday.
+Wednesday. Both notes are gone from the row, and what each one said is one paragraph away: the causal
+path is the page's own layout section (`causal_path.json` is the 2.0-specific artefact), and the bold
+was an emphasis on two entries of a list the page's opening sentence already counts ("six observability
+modalities"). Emphasis on a row that the prose beneath it repeats is decoration; it is the rows nobody
+repeats that drift.
 
 ### The repair, and what it costs
 
