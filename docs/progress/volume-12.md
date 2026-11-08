@@ -1927,9 +1927,9 @@ Nothing in it was rewritten.
 | the arm that was deleted | **39** closure citations in the open list, **39** resolving -- by `check-citations.mjs`, which had done it since finding 205; the round's own arm and three tests removed |
 | the index | **93,828 -> 74,295** bytes, against a smallest volume of 92,355: the relation v2.35 bought headroom with fired, and `## Audit passes` moved to `docs/audit/passes.md` (finding 470) |
 | mutation | **24** substitutions; **24 of 24 red, 0 survivors, 0 inert**, tree restored. Three new: the record collector, the twenty-character floor, and the case fold. Three written for the citation arm left with it |
-| the receipt | **pending**, and the reason is structural: a row that names the tree it is in cannot be written in that tree. It is `verify:local` over the commit this table ships in, and the reading lands in the next push -- the same lag the ledger records about itself |
-| the history | **pending** for the same reason; the twenty-third attempt carries this round's commits and is written after the ref moves |
-| CI on that tree | **pending**: the workflows run on the pushed commit, so their conclusion cannot be in it |
+| the receipt | `verify:local` **OK** -- 34 command(s) covering 47 of the 57 run steps, tree `22f3141ac`; the ten that did not run need a runner, sudo or the run token, and each says which. The reading is of that tree, which is the content commit's; this table was written after it, so the tree it ships in has a second receipt and this row does not name it |
+| the history | `golden-master/publish-readings.json`: **23 attempts**, 392 requests. Attempt 23 carried this round's two commits -- 20 requests, none retried, none unanswered, slowest `PATCH /git/refs/heads/master` 2 275 ms. The remote tip is `5177c8e38`, whose tree is `22f3141ac`: the receipt's tree. The ledger row was appended after the ref moved and is carried by the next push, which is the lag the file records about itself |
+| CI on that tree | `CI` **8/8** jobs and `Anchor round trip` **1/1**, both success (runs 42434336635 and 42434336604) |
 
 ### Left open, in the order the goal is reached
 

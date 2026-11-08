@@ -1029,15 +1029,15 @@ is a row about rather than paraphrase one that no `grep` will find.
 - **The remote's history and the local one share no name above a boundary 272 commits old.** Every
   push here rebuilds a commit from the local revision, so the remote's tip is a reconstruction rather
   than the object this checkout holds: below the boundary the two agree byte for byte, and above it
-  they are two histories that carry the same trees. That is why a record can say "the remote tip is
-  `5d8f9a679`" and no local command can print that name.
+  they are two histories that carry the same trees. That is why a record's `the remote tip is <sha>`
+  line names a commit no local command can print.
   `[open: convergence means rewriting the remote's history, and this channel refuses to move a ref backwards by design -- a force push is the one ref update it will not make, so the two histories stay two]`
 - **The currency line proves a round counted the list, not that it read it.** The stamp at the top of
   this section -- fifteen entries open, read at v3.65 -- is arithmetic over the entries below it, and the guard recomputes it. A number
   computed from the guard cannot disagree with the guard, so the stamp is sharp about the count and
   silent about whether a round looked at any entry -- and v3.63 and v3.64 each printed a number that
   was wrong about the thing it stood for.
-  `[open: the one sentence a round cannot fake is the claim in an entry's headline about what closed it, and reading that claim needs a citation resolved against the audit -- which this round added for struck entries and not for a round's reading of the ones it leaves open]`
+  `[open: the one sentence a round cannot fake is an entry's headline saying what closed it, and that shape is required of a struck entry only -- a round's reading of the entries it leaves open is still a count, which is the half this stamp cannot check]`
 - **The base search reads one remote tip per branch this checkout does not have.** `locateBaseAmongRefs`
   walks every remote head whose commit is not in the local ancestry and asks the transport for its
   tree, stopping early only when a candidate lands at depth one. The cost is the repository's branch
