@@ -741,6 +741,13 @@ const TESTED = [
   'describePromptLeaks',
   'promptNamePattern',
   'normaliseName',
+  // finding 479 -- G5's fifth and sixth arms: two cases that are one incident written twice. The
+  // tokeniser and its stop-word list are exported because they are the comparison's definition --
+  // a reader checking a reported similarity has to be able to reproduce it.
+  'readPairSimilarity',
+  'describePairSimilarity',
+  'tokeniseTaskText',
+  'TASK_TEXT_STOP_WORDS',
   'runAllGates',
   'zScore',
   'mean',

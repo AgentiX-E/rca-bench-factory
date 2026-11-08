@@ -270,6 +270,19 @@ function corpusOf(count: number, difficulty?: 'L1' | 'L2' | 'L3' | 'L4'): string
   for (let index = 0; index < count; index += 1) {
     const faultCase = JSON.parse(JSON.stringify(REAL_CASE)) as Record<string, unknown>;
     faultCase.caseId = `history-copy-${String(index)}`;
+    // A copy is a carrier of a difficulty label and nothing else about it is under test here, which
+    // is why the prompt and the window move with the index as well as the id. They used to stay
+    // put, and that made the fixture a corpus of one incident counted ten times -- correct for a
+    // test about levels, and refused by G5 the moment its pairwise arms existed. The refusal was
+    // the rule working; the fixture was answering a question about difficulty with a set that is
+    // also a duplicate-detection specimen.
+    const shiftSeconds = (index + 1) * 7200;
+    const original = faultCase.window as { start: string; end: string };
+    const shifted = (iso: string): string =>
+      new Date(Date.parse(iso) + shiftSeconds * 1000).toISOString();
+    faultCase.window = { start: shifted(original.start), end: shifted(original.end) };
+    faultCase.injectTime = shifted(String(faultCase.injectTime));
+    faultCase.query = `copy ${String(index)} probe`;
     // Overwrite rather than keep: the real annotation states a level, so a copy that inherits it
     // would make every ungraded corpus look graded.
     if (difficulty === undefined) delete faultCase.difficulty;

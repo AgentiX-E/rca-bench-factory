@@ -852,6 +852,88 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         lambda t: rename(t, "  if (typeof value !== 'string') {", "  if (false) {"),
         "the test that names a constant the package does not export",
     ),
+    # ------------------------------------------------------------ g5 pairwise
+    #
+    # G5's two new arms compare one case with another, and their only witness is a fixture: the
+    # shipped corpus's closest pair is 0.25 against a 0.90 line and its most overlapping pair is
+    # 0.17 against 0.50. That makes these injections the *whole* evidence that the arms work, not
+    # a second opinion about tests that would have failed anyway -- a mutation here is the only
+    # thing in the tree that can make either arm report a near duplicate at all.
+    (
+        "PAIRS 1. the task-text comparison never reaches its threshold",
+        "packages/core/src/gates/gates.ts",
+        "gate-pair-similarity.test.ts",
+        lambda t: rename(t, "        if (jaccard >= thresholds.taskTextJaccard) {", "        if (false) {"),
+        "the refusal test, which is the only one that expects a near duplicate",
+    ),
+    (
+        "PAIRS 2. the window comparison never reaches its threshold",
+        "packages/core/src/gates/gates.ts",
+        "gate-pair-similarity.test.ts",
+        lambda t: rename(t, "        if (iou >= thresholds.windowIou) {", "        if (false) {"),
+        "the overlap test, which is the only one that expects an overlapping window",
+    ),
+    (
+        # Cross-system pairs are not one incident written twice. Allowing the comparison to cross a
+        # system boundary would make every corpus of two systems a pile of near duplicates, and the
+        # only test that notices is the one built from two systems saying one sentence.
+        "PAIRS 3. cases in two systems start being compared",
+        "packages/core/src/gates/gates.ts",
+        "gate-pair-similarity.test.ts",
+        lambda t: rename(t, "      if (left.system !== right.system) {", "      if (false) {"),
+        "the cross-system test, which is the only one with two systems in it",
+    ),
+    (
+        # A bound `Date.parse` cannot read is declined rather than parsed to NaN. NaN propagates
+        # into the ratio, every comparison against it is false, and the pair is judged readable --
+        # which is how a gate reports a clean overlap over a window it never read.
+        "PAIRS 4. an unreadable window bound is judged instead of skipped",
+        "packages/core/src/gates/gates.ts",
+        "gate-pair-similarity.test.ts",
+        lambda t: rename(
+            t,
+            "  if (bounds.some((bound) => Number.isNaN(bound))) return null;",
+            "  if (false) return null;",
+        ),
+        "the test that feeds it a window reading 'yesterday'",
+    ),
+    (
+        # The stop-word list is what makes "differ only in their function words" a duplicate at
+        # 1.00 rather than a near miss at 0.77. Without it the rule still works on exact copies and
+        # stops working on the case it was written for.
+        "PAIRS 5. the comparison keeps the words that carry no subject",
+        "packages/core/src/gates/gates.ts",
+        "gate-pair-similarity.test.ts",
+        lambda t: rename(
+            t,
+            "  return tokens.filter((token) => !TASK_TEXT_STOP_WORDS.has(token));",
+            "  return tokens;",
+        ),
+        "the function-word test and the test that holds the list to the filter",
+    ),
+    (
+        # A CJK prompt tokenised to the empty set would be reported as either a duplicate or a
+        # skip, and both are wrong: the two prompts are comparable, just in another script.
+        "PAIRS 6. a CJK prompt tokenises to nothing",
+        "packages/core/src/gates/gates.ts",
+        "gate-pair-similarity.test.ts",
+        lambda t: rename(
+            t,
+            r"  const tokens = text.toLowerCase().match(/[a-z0-9]+|[\u4e00-\u9fff]/g) ?? [];",
+            "  const tokens = text.toLowerCase().match(/[a-z0-9]+/g) ?? [];",
+        ),
+        "the CJK test, which is the only one written in one",
+    ),
+    (
+        # "0 near-duplicates" and "no pair to compare" are different claims. The early return is
+        # the only thing that distinguishes them, and a one-case set is the only input that reaches
+        # it -- so a mutation here is the only way to see the sentence that asserts it.
+        "PAIRS 7. a set of one case reports zero duplicates instead of no pair",
+        "packages/core/src/gates/gates.ts",
+        "gate-pair-similarity.test.ts",
+        lambda t: rename(t, "  if (reading.pairs === 0) {", "  if (false) {"),
+        "the test that asks a one-case bundle what it compared",
+    ),
     # ------------------------------------------------------------ cli-reference
     (
         "CLIREF 1. the flag lookup loses its word boundary",
@@ -1090,6 +1172,31 @@ EXPECTATIONS: dict[str, tuple[str, ...]] = {
     'EXAMPLES 10. a version that is not a string is printed instead of refused': (
         'refuses a specification naming a constant the package does not export',
     ),
+    # The seven pairwise injections. Every one of them is declarative rather than defensive: the
+    # shipped corpus has no witness for either arm, so the file's own fixtures are the only place a
+    # near duplicate or an overlapping window exists at all.
+    'PAIRS 1. the task-text comparison never reaches its threshold': (
+        'refuses two prompts that differ only in their function words',
+    ),
+    'PAIRS 2. the window comparison never reaches its threshold': (
+        'refuses two cases whose windows overlap by nine tenths',
+    ),
+    'PAIRS 3. cases in two systems start being compared': (
+        'does not compare cases from two systems with each other',
+    ),
+    'PAIRS 4. an unreadable window bound is judged instead of skipped': (
+        'declines a window it cannot parse rather than throwing',
+    ),
+    'PAIRS 5. the comparison keeps the words that carry no subject': (
+        'refuses two prompts that differ only in their function words',
+        'drops every word the published list names, so the list and the code are one definition',
+    ),
+    'PAIRS 6. a CJK prompt tokenises to nothing': (
+        'reads a CJK prompt as tokens rather than as nothing',
+    ),
+    'PAIRS 7. a set of one case reports zero duplicates instead of no pair': (
+        'says that a set of one case offered no pair at all',
+    ),
     'CLIREF 1. the flag lookup loses its word boundary': (
         'does not accept a longer flag as documentation of a shorter one',
     ),
@@ -1174,7 +1281,17 @@ def _measure() -> int:
             # test run can decide anything. A script that does not parse fails
             # every test in the file that imports it, which is the same exit
             # status and the same shape of failure as a real catch.
-            loads, parse_error = parses(script, mutated)
+            #
+            # A TypeScript subject is not asked here. `node --check` reads the file as
+            # JavaScript, so every type annotation in it is a syntax error and the answer
+            # would be "no" for every mutation -- a verdict about the tool rather than about
+            # the edit. For those rows the runner's own transform failure decides, which
+            # `attribute` reads before it looks at a single witness. The suffix decides which
+            # question is answerable, so it is read rather than assumed.
+            if pathlib.Path(script).suffix in {".ts", ".tsx"}:
+                loads, parse_error = True, ""
+            else:
+                loads, parse_error = parses(script, mutated)
             if not loads:
                 print(f"UNPARSEABLE {name}")
                 print(f"         expecting: {description}")

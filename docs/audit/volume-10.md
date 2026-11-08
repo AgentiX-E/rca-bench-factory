@@ -4358,3 +4358,118 @@ So the enumeration is separate and explicit: for every spec, the page carries ex
 `<!-- target: id -->` block and one `<!-- fields: id/<path> -->` marker per documented file. Sixty-five
 markers -- seven target blocks and twenty-three field tables -- checked against the specification's own
 list rather than against the page.
+
+## Finding 479 — a gate that compared a case with everything except another case
+
+G5 is the anti-pollution gate, and four of its arms read one case against something that is not a case:
+a regular expression (`SENSITIVE_DATA_PRESENT`), a fingerprint from a public benchmark
+(`PUBLIC_SET_CONTAMINATION`), a boolean the case asserts about itself
+(`ANSWER_KEY_NOT_ISOLATED`), and the component name inside the prompt (`LEAK_IN_QUERY`). The comparison
+the word *pollution* is actually about -- two cases in one set that are the same incident written twice,
+so that a set of thirty is a set of twenty-two with eight of them counted twice -- had no arm at all.
+
+`caseFingerprint` cannot stand in for it. It hashes a six-tuple:
+
+```ts
+[c.system, c.fault.type, c.injectTime, c.groundTruth.rootCauseEntityId, c.window.start, c.window.end]
+```
+
+Move one of those six fields by a minute and the hash changes, so the same incident re-typed into the
+set is two cases to it. That is the right rule for the claim it serves -- `PUBLIC_SET_CONTAMINATION`
+says "this case **is** that published case", an identity claim -- and it is blind to the claim this
+finding is about, which is "these two cases are one incident" and is a statement about degrees rather
+than about equality.
+
+**The corpus guard could not have noticed either.** `check-fault-cases.mjs` asks G5 of every case, but
+it builds the bundle as `{ cases: [parsedCase] }` -- one case per call. Four of G5's arms read a case
+alone, so that shape is right for them. `DUPLICATE_CASE` compares a case with the ones before it, and in
+a bundle of one there are none: it could not fire in that loop if the corpus held the same incident ten
+times. The proof is a fixture that already existed. `check-fault-cases.test.ts` builds ten carriers of a
+difficulty label by deep-copying one annotation and changing only `caseId`:
+
+```ts
+const faultCase = JSON.parse(JSON.stringify(REAL_CASE));
+faultCase.caseId = `history-copy-${String(index)}`;
+```
+
+Same prompt, same `injectTime`, same window, ten times -- and the tree before this round was green on
+it. That fixture was not wrong about difficulty; it was answering a question about levels with a set
+that is also a duplicate-detection specimen, and nothing in the tree was reading the second question.
+
+### The two arms, and why there are two
+
+A near-duplicate prompt is one incident written up twice; two overlapping windows are two incidents
+whose telemetry cannot be told apart, and their prompts may differ as much as the two faults do. One
+combined "these cases are too similar" verdict would make the reader work out which of the two they were
+looking at, and would let one arm's threshold move the other's population.
+
+| arm | compares | code | default |
+| --- | --- | --- | --- |
+| task text | set Jaccard over the tokens of `query`, function words dropped | `NEAR_DUPLICATE_QUERY` | 0.90 |
+| window | intersection over union of two half-open `[start, end)` windows | `OVERLAPPING_WINDOW` | 0.50 |
+
+Both compare only pairs inside one system. The same prompt over two graphs asks two different
+questions, and one system's faults at one moment cannot contaminate another's telemetry.
+
+Three details are decisions rather than incidentals. The stop-word list is dropped from **both** sides,
+which pulls a genuine near duplicate (two prompts differing only in `The`/`A`) to exactly 1.00 and
+pushes a topical coincidence down, because what those prompts shared was `after`, `while` and `at`. A
+CJK character is a token of its own: `[a-z0-9]+` alone would tokenise `订单服务变慢了` to the empty set,
+and an empty set would then have to be reported as either a duplicate or a skip, and both are wrong. And
+a bound `Date.parse` cannot read is **declined** rather than parsed: NaN propagates into the ratio, every
+comparison against NaN is false, and the pair is judged clean -- a gate reporting a clean overlap over a
+window it never read.
+
+### The reading is the evidence, because the corpus has no witness
+
+The shipped corpus cannot demonstrate either arm. Measured over its thirty cases, all in one system:
+
+| quantity | value |
+| --- | --- |
+| pairs compared | **435** (`n(n-1)/2`, every pair same-system) |
+| closest task text | **0.25** -- `history-code-timezone-booking-api` against `history-middleware-redis-latency-session-cache` |
+| most overlapping window | **1/6** -- `history-middleware-cache-shard-product-index` against `history-resource-memory-leak-recommendation` |
+| near duplicates / overlapping windows | **0 / 0** |
+
+A rule whose only failure is synthetic is a rule this list has learned to distrust, and the way out is
+not to skip the rule but to make it report what it measured. `readPairSimilarity` returns the two
+maxima beside the two thresholds, `describePairSimilarity` prints them, and `check-fault-cases.mjs`
+prints that sentence on both exits:
+
+```
+pairwise similarity: 435 of 435 pair(s) share a system, and 435 carry task text on both sides;
+closest task text 0.25 (history-code-timezone-booking-api <-> history-middleware-redis-latency-session-cache)
+against a 0.90 threshold, most overlapping window 0.17 (history-middleware-cache-shard-product-index
+<-> history-resource-memory-leak-recommendation) against 0.50; 0 near-duplicate(s) and 0 overlapping window(s)
+```
+
+With that line, the two defaults stop being unstated judgements: a corpus drifting towards duplication
+raises the maximum long before it crosses the line, and the margin is a printed number (3.6x on task
+text, 3.0x on window) that a test asserts and refuses to let shrink below 2x. Without it, the same rule
+would have said `passed` -- which is what a rule that never ran its body also says.
+
+### Three figures, one name
+
+The arm's measured maximum had been published three times before this round, and no two agreed:
+
+| source | value | reproducible by the rule? |
+| --- | --- | --- |
+| `progress.md`, the entry that opened this item | 0.308 | no -- no tokenisation in the tree produces it |
+| this round's first probe, written before the implementation | 0.2414 | no -- that probe carried a shorter stop-word list |
+| `readPairSimilarity` on the shipped corpus | **0.25** | yes, and a test asserts it |
+
+All three sit far below 0.90, so the conclusion never changed and the *reading* did, three times. The
+open-list entry is corrected to the figure the rule itself computes, and the test asserts the number
+rather than a bound so that the next drift is a red test rather than a sentence nobody re-checks.
+
+### What the guard does now
+
+- `readPairSimilarity` / `describePairSimilarity` / `checkG5AntiPollution` share one computation, so the
+  verdict and the printed reading cannot disagree.
+- `check-fault-cases.mjs` asks G5 of the whole corpus once, and filters that report to the three codes
+  whose subject is a pair -- `DUPLICATE_CASE` included, because it had the same blindness for the same
+  reason. The filter is a statement about where each arm reads its subject, not a preference: the four
+  per-case arms were already asked with a better subject line.
+- A TypeScript subject in the injection battery is no longer sent to `node --check`. That tool reads the
+  file as JavaScript, so every type annotation is a syntax error and all seven mutations came back
+  `UNPARSEABLE` -- the battery was answering a question about its own instrument.

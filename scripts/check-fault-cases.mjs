@@ -396,6 +396,15 @@ let saturationReading = null;
 /** The prompt-leakage reading, taken over every case rather than only the ones with telemetry. */
 let promptLeakReading = null;
 /**
+ * G5's fifth and sixth arms: how close the closest pair of cases is, on task text and on window.
+ *
+ * Kept beside the leak reading because it is the same kind of statement -- a number over a
+ * denominator with the boundary it was compared against -- and printed on both exits for the same
+ * reason: the corpus has no witness for either arm, so the maximum is the only evidence that the
+ * rule ran.
+ */
+let pairSimilarityReading = null;
+/**
  * Where each baseline placed the answer, and how wide the ranking it placed it in was.
  *
  * Reported rather than gated, and it is the number the corpus's difficulty argument turns on: a
@@ -1434,6 +1443,39 @@ for (const leak of promptLeakReading.leaks) {
   );
 }
 
+// G5's two pairwise arms, which are the only checks in this file that compare one case with
+// another. Both are read here rather than left to `checkG5AntiPollution`'s verdict because the
+// reading is the evidence: this corpus has no witness for either -- 435 pairs, the closest at 0.25
+// against a 0.90 line and the most overlapping at 0.17 against 0.50 -- so what says the rule works
+// is the maximum it prints, not the silence it keeps.
+pairSimilarityReading = core.readPairSimilarity(
+  { irVersion: '1.0.0', graph: firstGraph ?? { entities: [], edges: [] }, cases: allCases, signals: {} },
+  {},
+);
+
+// The whole corpus as one set, once.
+//
+// G5 was asked above of every case in a bundle holding that case alone, and four of its arms
+// compare a case with something that is not another case -- a pattern, a public fingerprint, a
+// declaration, a component name -- so one case per bundle is the right shape for them. The other
+// three compare a case with its neighbours, and a bundle of one has no neighbour: `DUPLICATE_CASE`
+// and the two pairwise codes could not fire in that loop even if the corpus held the same incident
+// ten times, which is exactly what `check-fault-cases.test.ts` builds when it needs ten carriers of
+// a difficulty label.
+//
+// Filtered by code rather than reported whole, and the filter is a statement about where each arm
+// reads its subject rather than a preference: the four per-case arms have already been asked with a
+// better subject line, so reporting them again would report one defect twice under two names.
+const PAIRWISE_G5_CODES = new Set(['DUPLICATE_CASE', 'NEAR_DUPLICATE_QUERY', 'OVERLAPPING_WINDOW']);
+const corpusPollution = core.checkG5AntiPollution(
+  { irVersion: '1.0.0', graph: firstGraph ?? { entities: [], edges: [] }, cases: allCases, signals: {} },
+  { requireAnswerKeyIsolation: true },
+);
+for (const violation of corpusPollution.violations) {
+  if (!PAIRWISE_G5_CODES.has(violation.code)) continue;
+  problems.push(`the corpus fails the anti-pollution gate: ${violation.message}`);
+}
+
 // A file in the directory that the index does not name is a case nobody will run.
 //
 // `background-telemetry.json` is the one exception and it is not a case: it belongs to the corpus
@@ -1611,6 +1653,19 @@ function logSaturation() {
 function logPromptLeaks() {
   if (promptLeakReading === null) return;
   console.log(`check-fault-cases: ${core.describePromptLeaks(promptLeakReading)}`);
+}
+
+/**
+ * How close the closest pair of cases in the corpus is, on the two axes G5 now compares.
+ *
+ * Printed on both exits, and printed when the answer is "no pair" as well: a corpus of one case
+ * offers no pair, and the sentence that says so is a different claim from "zero duplicates". The
+ * two maximums are the point of the line -- with no witness in the corpus, the distance between
+ * the maximum and the threshold is the only measurement this arm has.
+ */
+function logPairSimilarity() {
+  if (pairSimilarityReading === null) return;
+  console.log(`check-fault-cases: ${core.describePairSimilarity(pairSimilarityReading)}`);
 }
 
 function logCheckpointCounts() {
@@ -1843,6 +1898,7 @@ if (problems.length > 0) {
   logLocalisationReading();
   logSaturation();
   logPromptLeaks();
+  logPairSimilarity();
   logCheckpointCounts();
   console.error(
     `check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)`,
@@ -1960,6 +2016,7 @@ logPoolNarrowing();
 logLocalisationReading();
 logSaturation();
 logPromptLeaks();
+logPairSimilarity();
 logCheckpointCounts();
 
 console.log(

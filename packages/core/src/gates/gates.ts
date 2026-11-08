@@ -1032,6 +1032,21 @@ export interface G5Options {
    * skips part of its subject is the shape this repository keeps removing.
    */
   minNameLength?: number;
+  /**
+   * Highest task-text Jaccard two cases in one system may share before the pair is
+   * refused as a near duplicate.
+   *
+   * The default is a judgement and this comment says so rather than defending it: the
+   * shipped corpus's closest pair scores 0.2414, so 0.90 sits 3.7 multiples above
+   * anything real telemetry has produced here. What keeps that a measurement rather
+   * than a hope is `readPairSimilarity`, which returns the corpus's own maximum beside
+   * this threshold -- a set drifting towards duplication raises the maximum long before
+   * it crosses the line, and both the reading and its test are what makes the drift
+   * visible.
+   */
+  maxTaskTextJaccard?: number;
+  /** Highest window IoU two cases in one system may share. Default 0.5; see above. */
+  maxWindowIou?: number;
 }
 
 /**
@@ -1044,10 +1059,18 @@ export interface G5Options {
  * the corpus says `checkout-api` in the field and `checkout-api p99 latency rose`
  * in the prompt, which a substring test finds, and says `billing-service` in the
  * field against `The billing service began throwing` in the prompt, which it does
- * not. Measured on the shipped corpus, the substring form of this rule reported
- * **3 of 30** and this form reports **19 of 30** -- the difference is entirely
- * hyphen against space, and the seventeen cases in that gap were reported as
+ * not. Measured on the corpus as it stood before v3.66, the substring form of this
+ * rule reported **3 of 30** and this form reported **19 of 30** -- the difference is
+ * entirely hyphen against space, and the sixteen cases in that gap were reported as
  * clean by the test that was supposed to find them.
+ *
+ * Both figures are **history**, and the past tense above is deliberate. v3.66 rewrote
+ * the corpus's task texts so that none of them names its component, and both forms
+ * report **0 of 30** on the tree since. The current figure is not restated here,
+ * because a comment has no reader that runs: `check-fault-cases.mjs` prints
+ * `prompt leakage: N of M case(s)` on every run, and that line is the reading. What the
+ * two dated numbers still argue for is this rule's shape -- on a corpus that does name
+ * its components, normalising the hyphen is worth sixteen cases (finding 480).
  *
  * Case is folded for the same reason and with the same evidence: `Media
  * Transcoder` and `media-transcoder` are one name.
@@ -1158,6 +1181,255 @@ export function describePromptLeaks(reading: PromptLeakReading): string {
   return sentence;
 }
 
+/**
+ * The tokens two task texts share only because English needs them.
+ *
+ * ## Why the comparison drops them, and why that raises the similarity it reports
+ *
+ * Without the list, two prompts that differ by one function word score `1 - 1/(n+1)`
+ * for a vocabulary of `n` -- 0.87 at fifteen tokens -- and two prompts about different
+ * incidents that happen to sit at the same sentence length score almost the same. The
+ * list removes the part of the sentence that carries no subject from **both** sides,
+ * which pulls a real near duplicate up to exactly 1.0 and pushes a topical coincidence
+ * down, because the coincidence was carried by words like `after`, `while` and `at`.
+ *
+ * The list is English. A CJK prompt is tokenised one character per token (see
+ * `tokeniseTaskText`) and no character is dropped, which makes the comparison for those
+ * prompts stricter than a stop-word list would be -- fewer tokens are ignored, so two
+ * prompts have to agree on more of them. Nothing in this repository ships a CJK prompt
+ * today; when one arrives, the pairwise reading prints its similarity and that figure
+ * is the calibration point.
+ */
+export const TASK_TEXT_STOP_WORDS: ReadonlySet<string> = new Set([
+  'a', 'an', 'the', 'and', 'or', 'but', 'if', 'then', 'than', 'that', 'this', 'these',
+  'those', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'of', 'to', 'in', 'on',
+  'at', 'for', 'with', 'from', 'by', 'as', 'it', 'its', 'their', 'there', 'here',
+  'over', 'under', 'after', 'before', 'during', 'while', 'no', 'not', 'so', 'such',
+  'into', 'onto', 'out', 'up', 'down', 'again', 'once', 'both', 'each', 'all', 'any',
+]);
+
+/**
+ * A task text as the set of tokens a reader would compare it by.
+ *
+ * Latin runs are split on anything that is not a letter or a digit, so `checkout-api`
+ * and `checkout api` are the same two tokens in the same order. A CJK character is a
+ * token on its own: those scripts do not put spaces between words, and the alternative
+ * -- `[a-z0-9]+` alone -- would tokenise `订单服务变慢了` to the empty set, which the
+ * caller would then have to treat as either a duplicate or a skip and both would be
+ * wrong.
+ */
+export function tokeniseTaskText(text: string): string[] {
+  const tokens = text.toLowerCase().match(/[a-z0-9]+|[\u4e00-\u9fff]/g) ?? [];
+  return tokens.filter((token) => !TASK_TEXT_STOP_WORDS.has(token));
+}
+
+/**
+ * Set Jaccard similarity: the shared token count over the size of the union.
+ *
+ * Both sides are non-empty here, and that is the caller's guard rather than this function's.
+ * `readPairSimilarity` counts a pair with an empty side under `skippedNoQuery` *before* it asks
+ * for a number, because "the two prompts share nothing" and "one prompt was not there" are two
+ * findings and a 0 returned here would merge them into the second. A size check in this function
+ * would be a second writer of that decision, and the one thing this repository has measured
+ * repeatedly is what happens to the copy that nothing runs.
+ */
+function jaccardOf(left: ReadonlySet<string>, right: ReadonlySet<string>): number {
+  let shared = 0;
+  for (const token of left) if (right.has(token)) shared += 1;
+  return shared / (left.size + right.size - shared);
+}
+
+/**
+ * Intersection over union of two half-open windows, or `null` when a bound is unreadable.
+ *
+ * Half-open on purpose: two incidents that follow one another share no instant, so
+ * `end === start` is 0 rather than 1. A zero-length window -- a case whose start and end
+ * are the same millisecond -- has no union and is reported as 0, because the alternative
+ * is to call every pair of degenerate windows maximally overlapping.
+ *
+ * `null` is the answer for a bound `Date.parse` cannot read. G1 rejects such a case, and
+ * G5 must still not throw on it: `runAllGates` calls every gate on every set, so a gate
+ * that threw would replace a gate report with an exception.
+ */
+function windowOverlap(left: FaultCase['window'], right: FaultCase['window']): number | null {
+  const bounds = [left.start, left.end, right.start, right.end].map((bound) => Date.parse(bound));
+  if (bounds.some((bound) => Number.isNaN(bound))) return null;
+  const [leftStart, leftEnd, rightStart, rightEnd] = bounds as [number, number, number, number];
+  const union = Math.max(leftEnd, rightEnd) - Math.min(leftStart, rightStart);
+  if (union <= 0) return 0;
+  const intersection = Math.max(0, Math.min(leftEnd, rightEnd) - Math.max(leftStart, rightStart));
+  return intersection / union;
+}
+
+export interface PairSimilarityReading {
+  /** Cases the set contained. */
+  cases: number;
+  /** Unordered pairs the set contained: `n * (n - 1) / 2`. */
+  pairs: number;
+  /** Pairs this rule compared on task text: same system, both sides tokenised to something. */
+  judgedTaskText: number;
+  /** Pairs this rule compared on window: same system, four readable bounds. */
+  judgedWindows: number;
+  /** Pairs it did not compare at all, because the two cases belong to different systems. */
+  skippedCrossSystem: number;
+  /** Pairs within one system whose task text was absent or empty on at least one side. */
+  skippedNoQuery: number;
+  /** Pairs within one system whose window had a bound that could not be read. */
+  skippedMalformedWindow: number;
+  /** The pair with the highest task-text similarity, and what that similarity was. */
+  closestTaskText: { a: string; b: string; jaccard: number } | null;
+  /** The pair with the highest window overlap, and what that overlap was. */
+  mostOverlappingWindow: { a: string; b: string; iou: number } | null;
+  /** Pairs at or above the task-text threshold. */
+  nearDuplicates: Array<{ a: string; b: string; jaccard: number }>;
+  /** Pairs at or above the window threshold. */
+  overlappingWindows: Array<{ a: string; b: string; iou: number }>;
+  /** The two boundaries the verdicts were reached against. */
+  thresholds: { taskTextJaccard: number; windowIou: number };
+}
+
+/**
+ * Whether the set contains the same case twice, measured on what a solver would read.
+ *
+ * ## Why the fingerprint could not answer this
+ *
+ * `caseFingerprint` hashes a six-tuple that includes `injectTime` and both window bounds,
+ * which makes it an identity test rather than a similarity test: move one of those six
+ * fields by a minute and the hash changes, so the same incident re-typed into the set is
+ * two cases to it. It is the right rule for `PUBLIC_SET_CONTAMINATION`, where the claim
+ * is "this case *is* that published case", and it is blind to the claim this arm makes,
+ * which is "these two cases are one incident" and is a statement about degrees.
+ *
+ * The earlier entry in `progress.md` said `G5 has no near-duplicate and no window-overlap
+ * arm` and then listed the reason no witness could be offered: 435 same-system pairs, no
+ * fingerprint collisions, and a maximum task-text Jaccard of 0.308. This function is the
+ * answer to the first half; the second half is answered by returning the maximum rather
+ * than only the verdict, because a rule whose only evidence is synthetic is a rule with
+ * an unstated default, and a maximum printed every run is a calibration curve.
+ *
+ * ## Why two arms and not one
+ *
+ * They fail for different reasons and are repaired by different edits. A near-duplicate
+ * prompt is a second write-up of one incident; two overlapping windows are two incidents
+ * whose telemetry cannot be told apart, and their prompts may be as different as the two
+ * faults are. A single "these cases are too similar" verdict would make the reader work
+ * out which of the two they were looking at, and would let one arm's threshold move the
+ * other's population.
+ */
+export function readPairSimilarity(
+  bundle: IrBundle,
+  options: G5Options = {},
+): PairSimilarityReading {
+  const thresholds = {
+    taskTextJaccard: options.maxTaskTextJaccard ?? 0.9,
+    windowIou: options.maxWindowIou ?? 0.5,
+  };
+  const reading: PairSimilarityReading = {
+    cases: bundle.cases.length,
+    pairs: 0,
+    judgedTaskText: 0,
+    judgedWindows: 0,
+    skippedCrossSystem: 0,
+    skippedNoQuery: 0,
+    skippedMalformedWindow: 0,
+    closestTaskText: null,
+    mostOverlappingWindow: null,
+    nearDuplicates: [],
+    overlappingWindows: [],
+    thresholds,
+  };
+
+  // Tokenised once per case rather than once per pair: the work is in the pair loop, and
+  // re-tokenising would make an O(n^2) comparison O(n^2 * |text|) for no reason.
+  //
+  // Indexed by position rather than keyed by `caseId`. A bundle may carry the same id twice --
+  // nothing in the IR forbids it, and the whole point of `DUPLICATE_CASE` is that a set can --
+  // so a map would make the second case silently inherit the first one's tokens and the pair
+  // would be compared with itself.
+  const tokens: ReadonlySet<string>[] = bundle.cases.map(
+    (c) => new Set(tokeniseTaskText(c.query ?? '')),
+  );
+
+  for (let i = 0; i < bundle.cases.length; i += 1) {
+    for (let j = i + 1; j < bundle.cases.length; j += 1) {
+      const left = bundle.cases[i] as FaultCase;
+      const right = bundle.cases[j] as FaultCase;
+      reading.pairs += 1;
+
+      // Cross-system pairs are not one incident written twice: the same prompt over two
+      // graphs asks two different questions, and one system's two faults at one moment
+      // cannot contaminate the other's telemetry.
+      if (left.system !== right.system) {
+        reading.skippedCrossSystem += 1;
+        continue;
+      }
+
+      const leftTokens = tokens[i] as ReadonlySet<string>;
+      const rightTokens = tokens[j] as ReadonlySet<string>;
+      if (leftTokens.size === 0 || rightTokens.size === 0) {
+        reading.skippedNoQuery += 1;
+      } else {
+        reading.judgedTaskText += 1;
+        const jaccard = jaccardOf(leftTokens, rightTokens);
+        if (reading.closestTaskText === null || jaccard > reading.closestTaskText.jaccard) {
+          reading.closestTaskText = { a: left.caseId, b: right.caseId, jaccard };
+        }
+        if (jaccard >= thresholds.taskTextJaccard) {
+          reading.nearDuplicates.push({ a: left.caseId, b: right.caseId, jaccard });
+        }
+      }
+
+      const iou = windowOverlap(left.window, right.window);
+      if (iou === null) {
+        reading.skippedMalformedWindow += 1;
+      } else {
+        reading.judgedWindows += 1;
+        if (reading.mostOverlappingWindow === null || iou > reading.mostOverlappingWindow.iou) {
+          reading.mostOverlappingWindow = { a: left.caseId, b: right.caseId, iou };
+        }
+        if (iou >= thresholds.windowIou) {
+          reading.overlappingWindows.push({ a: left.caseId, b: right.caseId, iou });
+        }
+      }
+    }
+  }
+  return reading;
+}
+
+/**
+ * The pairwise reading in the sentence a reader can check.
+ *
+ * Printed by the caller that owns a corpus, in the same shape as the other readings
+ * there: a number, its denominator, and the boundary it applied. The two maximums are
+ * part of the sentence rather than a debug field because they are the rule's only
+ * evidence on a corpus with no witness -- with them it says "I looked, and the closest
+ * pair is 0.24 against a line at 0.90"; without them it says "passed", which is what a
+ * rule that never ran its body also says.
+ */
+export function describePairSimilarity(reading: PairSimilarityReading): string {
+  if (reading.pairs === 0) {
+    return `pairwise similarity: no pair to compare in a set of ${String(reading.cases)} case(s)`;
+  }
+  const sameSystem = reading.pairs - reading.skippedCrossSystem;
+  const text =
+    reading.closestTaskText === null
+      ? 'no pair carried task text on both sides'
+      : `closest task text ${reading.closestTaskText.jaccard.toFixed(2)} ` +
+        `(${reading.closestTaskText.a} <-> ${reading.closestTaskText.b})`;
+  const window =
+    reading.mostOverlappingWindow === null
+      ? 'no pair had two readable windows'
+      : `most overlapping window ${reading.mostOverlappingWindow.iou.toFixed(2)} ` +
+        `(${reading.mostOverlappingWindow.a} <-> ${reading.mostOverlappingWindow.b})`;
+  return (
+    `pairwise similarity: ${String(sameSystem)} of ${String(reading.pairs)} pair(s) share a ` +
+    `system, and ${String(reading.judgedTaskText)} carry task text on both sides; ${text} ` +
+    `against a ${reading.thresholds.taskTextJaccard.toFixed(2)} threshold, ${window} against ` +
+    `${reading.thresholds.windowIou.toFixed(2)}; ${String(reading.nearDuplicates.length)} ` +
+    `near-duplicate(s) and ${String(reading.overlappingWindows.length)} overlapping window(s)`
+  );
+}
+
 export const DEFAULT_SENSITIVE_PATTERNS: RegExp[] = [
   /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/, // email
   /\b(?:\d{1,3}\.){3}\d{1,3}\b/, // IPv4
@@ -1202,6 +1474,35 @@ export function checkG5AntiPollution(bundle: IrBundle, options: G5Options = {}):
         `case '${leak.caseId}' names its root-cause component ('${leak.component}') in the task text, ` +
         'so locating it is a reading exercise rather than a diagnosis',
       fieldPath: `${leak.caseId}.query`,
+    });
+  }
+
+  // The two arms below compare a case with another case, which is the one comparison the
+  // word *pollution* is about and the one the gate did not make: four arms compared cases
+  // with a pattern, a public fingerprint, a declaration and a component name, and a set of
+  // thirty incidents could have been twenty-two incidents with eight of them counted twice
+  // without a single violation. Both are read through `readPairSimilarity` so that the
+  // verdict and the printed reading are one computation.
+  const pairs = readPairSimilarity(bundle, options);
+  for (const duplicate of pairs.nearDuplicates) {
+    v.push({
+      code: 'NEAR_DUPLICATE_QUERY',
+      message:
+        `case '${duplicate.b}' repeats '${duplicate.a}' -- their task texts share ` +
+        `${duplicate.jaccard.toFixed(2)} of their vocabulary against a ` +
+        `${pairs.thresholds.taskTextJaccard.toFixed(2)} threshold, so the set counts one ` +
+        'incident twice',
+      fieldPath: `${duplicate.b}.query`,
+    });
+  }
+  for (const overlap of pairs.overlappingWindows) {
+    v.push({
+      code: 'OVERLAPPING_WINDOW',
+      message:
+        `cases '${overlap.a}' and '${overlap.b}' share ${overlap.iou.toFixed(2)} of their ` +
+        `window against a ${pairs.thresholds.windowIou.toFixed(2)} threshold, so neither ` +
+        "case's telemetry is attributable to its own injection",
+      fieldPath: `${overlap.b}.window`,
     });
   }
 

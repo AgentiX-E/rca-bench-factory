@@ -135,7 +135,7 @@ A case is admitted to a benchmark only after every gate passes:
 | G2 | Semantic | Every reference resolves; causal hops are topologically connected |
 | G3 | Validity | The fault is a real anomaly (Z-score ≥ 2.0, sustained ≥ 3 samples) |
 | G4 | Solvability | The case is neither trivially easy nor impossible |
-| G5 | Anti-pollution | No PII, no duplicate case (FNV-1a fingerprint), no leakage |
+| G5 | Anti-pollution | No PII, no duplicate case -- an exact fingerprint **and** two pairwise arms (task-text Jaccard, window IoU) -- and no leaked answer in the prompt |
 
 ## 7. Exporters
 

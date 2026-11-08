@@ -53,14 +53,20 @@ previously measuring.
 ## Coverage
 
 Measured by `vitest run --coverage` (v8) over `packages/core`, the only package
-with a coverage gate.
+with a coverage gate. The four figures below are the measurement taken at
+**v3.68** (2026-11-08); each round's own copy of them is the `coverage` row of its
+`### Readings` ledger in the progress log, and that row is written by the round that
+ran the suite. This section is retaken when the residual's *shape*
+changes, not every round -- a table retaken every round is a table whose figures
+get typed rather than measured, which is how the 99.93 this table used to publish
+came to exist (finding 481).
 
 | Dimension | Result | Gate |
 | --- | --- | --- |
-| Statements | 99.96% | ≥ 95% |
-| Branches | 99.93% | ≥ 95% |
+| Statements | 99.97% | ≥ 95% |
+| Branches | 99.80% | ≥ 95% |
 | Functions | 100% | ≥ 95% |
-| Lines | 99.96% | ≥ 95% |
+| Lines | 99.97% | ≥ 95% |
 
 The residual is two statements and four branches, all of them documented
 backstops rather than gaps, across four sites (the pass-13 additions are all at
@@ -526,7 +532,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.67: **22** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.68: **22** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1062,13 +1068,31 @@ is a row about rather than paraphrase one that no `grep` will find.
   not a fifth thing to equate, it was the proof that the table was a paraphrase. `contractVersion`
   left the specification (the constant is the only writer), the whole table is generated, and
   `gen-examples.mjs --check` refuses a page that disagrees (finding 478).
-- **G5 has no near-duplicate and no window-overlap arm.** The fingerprint is a six-tuple hashed
+~~**G5 has no near-duplicate and no window-overlap arm.** The fingerprint is a six-tuple hashed
   with FNV, so it catches an exact copy and nothing else: two cases built from the same incident
   with a minute moved are two cases as far as this gate is concerned.
   `[open: the shipped corpus offers no witness -- 435 same-system pairs, 0 with a window IoU above
   0.8, 0 fingerprint collisions, and a maximum task-text Jaccard of 0.308 -- so the only evidence
   a new arm could have is a fixture, and a rule whose only failure is synthetic is a rule this
-  list has learned to distrust]`
+  list has learned to distrust]`~~
+  **Closed by finding 479.** Two arms now compare a case with its neighbours -- `NEAR_DUPLICATE_QUERY`
+  at a 0.90 set Jaccard over the task text with function words dropped, `OVERLAPPING_WINDOW` at a
+  0.50 IoU over two half-open windows -- and the corpus's own figures are the reading the entry said
+  it could not have: **435** pairs, closest task text **0.25**, most overlapping window **1/6**, and
+  **0** refused on either arm. The 0.308 this entry published was not a measurement the rule can
+  reproduce; the figure it can is 0.25, and a test asserts it. The entry was also wrong about where
+  the risk sat: the guard fed G5 **one case per bundle**, so even a working pairwise arm would have
+  been silent, and the ten identical copies in `check-fault-cases.test.ts` passed for that reason.
+- **The coverage figure has no reader that computes it.** `docs/progress.md` publishes the
+  four-dimension reading under a sentence beginning "Measured by `vitest run --coverage`", and the
+  per-round copy of it lives in a `### Readings` ledger. `check-doc-counts` holds the suite counts to
+  a run and `derive-gate-sites --check` holds the gate-site count to a derivation; nothing holds this
+  one to anything, which is why it published **99.93** branches for at least eight rounds while every
+  ledger read 99.80 (finding 481).
+  `[open: the repair corrected the figure, not the gap -- a guard would need a coverage report during
+  `docs:check`, which does not run the suite, so the honest state is that one of the two copies is
+  remembered. Either a `docs:check` step reads a report when one exists, or the table says in a
+  sentence that the ledger is the only computed copy and this one is a convenience]`
 - **G3's two thresholds have no grid.** `minAbsZ` (2.0) and `minSustainedSamples` (3) are
   parameters with no sensitivity reading, and `probe-z-floor` measures epsilon rather than either
   of them.
@@ -1149,7 +1173,7 @@ and this table.
 | [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 7 | v3.47 | v3.53 |
-| [volume-12.md](progress/volume-12.md) | 14 | v3.54 | v3.67 |
+| [volume-12.md](progress/volume-12.md) | 15 | v3.54 | v3.68 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

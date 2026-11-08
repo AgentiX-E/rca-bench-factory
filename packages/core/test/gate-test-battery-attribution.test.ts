@@ -273,8 +273,10 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // Every check above is about a table, and a table with two rows would satisfy
     // all of them. 25 -> 28 in v3.67, when the generator's `--check` gained a refusal and the
     // metadata table gained a rewrite: the three new injections are the three ways this round's
-    // guarantees can be withdrawn.
-    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(28);
+    // guarantees can be withdrawn. 28 -> 35 in v3.68, for G5's pairwise arms -- seven withdrawals,
+    // one per guard, because a fixture is the whole evidence and a guard without an injection has
+    // no evidence at all.
+    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(35);
     expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(
       pythonJson(`print(json.dumps(len(module.INJECTIONS)))`),
     );

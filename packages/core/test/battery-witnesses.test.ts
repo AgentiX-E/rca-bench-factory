@@ -184,7 +184,12 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // version that is not a string being printed instead of refused -- plus the three witnesses
     // the retargeted stale-block injection now names, because planning a rewrite is one decision
     // for all three marker kinds.
-    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 33],
+    //
+    // 33 -> 41 in v3.68: seven injections for G5's two pairwise arms, and eight witnesses because
+    // the stop-word injection breaks two tests -- the headline refusal and the one that holds the
+    // published list to the filter that uses it. These are the only injections in the table whose
+    // subject has no witness in the shipped corpus at all.
+    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 41],
     ['scripts/injection/fault-extraction-scoring.py', 'fault-extraction-scoring', 12],
     ['scripts/injection/fetch-official-retry.py', 'fetch-official-retry', 6],
     ['scripts/injection/fault-extraction-workflow.py', 'fault-extraction-workflow', 9],

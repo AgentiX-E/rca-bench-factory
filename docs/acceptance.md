@@ -1373,3 +1373,37 @@ from an anecdote again.
   true: the coverage report is a build artefact and `docs:check` runs without one. What makes the number
   true is that it is written by the round that measured it, in the commit that measured it -- which is
   the difference between this row and the gate-site count above, where an artefact exists to derive from.
+
+### Pollution is a case compared with another case (v3.68)
+
+- **G5 compares a case with its neighbours, and a set may not hold one incident twice.** Two arms, both
+  restricted to pairs inside one system: `NEAR_DUPLICATE_QUERY` when two task texts share at least 0.90 of
+  their vocabulary as a set Jaccard, `OVERLAPPING_WINDOW` when two `[start, end)` windows share at least
+  0.50 of their union. The fingerprint stays what it was -- an identity rule for
+  `PUBLIC_SET_CONTAMINATION` -- and is not asked to answer a question about degrees (finding 479).
+- **The comparison drops function words from both sides and reads CJK one character at a time.** Dropping
+  `The`/`A` is what makes two spellings of one prompt score 1.00 rather than 0.77, and it leaves a topical
+  coincidence lower than it would otherwise be. `[a-z0-9]+` alone would tokenise `订单服务变慢了` to the
+  empty set, and an empty set would have to be reported as either a duplicate or a skip; a CJK character
+  is a token of its own. The published stop-word list and the filter that uses it are one definition: a
+  test asks each listed word to tokenise to nothing.
+- **A window bound that cannot be read is declined, not parsed.** `Date.parse` answers NaN for a bound
+  that is not a timestamp, NaN propagates into the ratio, and every comparison against NaN is false --
+  which is how a gate reports a clean overlap over a window it never read. Such a pair is counted under
+  `skippedMalformedWindow` and G5 does not throw on it: `runAllGates` calls every gate on every set.
+- **A rule with no witness in the corpus reports the maximum it measured.** The shipped corpus's closest
+  pair scores 0.25 and its most overlapping pair 1/6, against 0.90 and 0.50 -- so silence is not evidence
+  and `readPairSimilarity` returns both maxima beside both thresholds. `check-fault-cases.mjs` prints
+  `describePairSimilarity` on both exits, a test asserts the two figures and refuses a default under twice
+  the measured maximum, and the injections that withdraw each guard are the only place a near duplicate
+  exists at all.
+- **A gate a corpus guard feeds one case at a time cannot have a pairwise arm.** `check-fault-cases.mjs`
+  built `{ cases: [parsedCase] }` for every case, which is right for the four arms that read one case and
+  blind to `DUPLICATE_CASE` and both new arms: ten copies of one incident passed that loop. The corpus is
+  now asked as one set as well, filtered to the three codes whose subject is a pair, because the four
+  per-case arms have already been asked with a better subject line.
+- **A figure that was a reading and is written in the present tense will go false.** `readPromptLeaks`
+  argued for its normalisation with `3 of 30` against `19 of 30`; v3.66 rewrote the corpus's prompts in
+  the same round and both forms now report `0 of 30` (finding 480). A number in a document is either a
+  reading -- cite the command that prints it -- or history, dated and in the past tense. The third thing,
+  history written as though it were a reading, is the one that goes false without anyone editing it.

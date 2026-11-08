@@ -2232,9 +2232,9 @@ to 93** -- the two new ones are `modalitiesProse` refusing a code it has no word
 
 | item | value |
 | --- | --- |
-| `core` test suite | **239 files, 6082 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **243 files, 6269 tests passed** (as of this commit) |
+| `core` test suite | **239 files, 6082 tests passed** (at v3.67) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.67) |
+| repo test suite | **243 files, 6269 tests passed** (at v3.67) |
 | coverage | `core` **99.97 / 99.80 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** (statements / branches / functions / lines) -- unmoved from v3.66, because this round's code is in `scripts/`, which the coverage gate does not measure; what measures it is the injection battery |
 | new tests | **15** (6,067 -> 6,082): 9 in `gen-examples.test.ts` (the two refusals that replaced the pinning test, six for the metadata table including its two refusals, one enumerating the thirty markers), 4 for the coverage-row rule, 2 for the affiliation equation |
 | new mutations | **3** injections in `gate-tests-battery.py` (EXAMPLES 8, 9, 10) and **6 retargeted**, because planning a rewrite is one decision for all three marker kinds |
@@ -2262,3 +2262,159 @@ paraphrases, and the one that mattered was not the version everybody kept in ste
 nobody did, and it was wrong for two months while three copies of the version agreed perfectly. The
 generator had a check for one of the three things it wrote, which is finding 471's 105-and-204 one level
 down: the gate existed, was named after the work, and measured the artifact that never drifts.
+
+## v3.68 — a pollution gate that compared a case with everything except another case
+
+### 一、Four arms, and none of them read a case against a case
+
+G5 is the anti-pollution gate. Its four arms read one case against a regular expression, a
+fingerprint from a public benchmark, a boolean the case asserts about itself, and the component name
+inside its own prompt. The comparison the word *pollution* is actually about -- two cases in one set
+that are the same incident written twice, so that a set of thirty is a set of twenty-two with eight of
+them counted twice -- had no arm at all (finding 479).
+
+`caseFingerprint` cannot stand in for it, and the reason is the shape of the rule rather than its
+implementation: it hashes `system|type|injectTime|rootCauseEntityId|window.start|window.end`, so
+moving any of those six by a minute produces a different case. That is exactly right for
+`PUBLIC_SET_CONTAMINATION`, which claims "this case **is** that published case". It is blind to "these
+two cases are one incident", which is a statement about degrees.
+
+Two arms were added, both restricted to pairs inside one system:
+
+| arm | compares | code | default | corpus |
+| --- | --- | --- | --- | --- |
+| task text | set Jaccard over `query` tokens, function words dropped | `NEAR_DUPLICATE_QUERY` | 0.90 | closest **0.25** |
+| window | IoU of two half-open `[start, end)` windows | `OVERLAPPING_WINDOW` | 0.50 | widest **1/6** |
+
+Three details in that table are decisions rather than incidentals. The stop-word list is applied to
+both sides, which is what pulls two prompts differing only in `The`/`A` from 0.77 to exactly 1.00 and
+pushes a topical coincidence down -- the coincidence was carried by `after`, `while` and `at`. A CJK
+character is a token of its own, because `[a-z0-9]+` alone tokenises `订单服务变慢了` to the empty set and
+an empty set would then have to be reported as either a duplicate or a skip, and both are wrong. And a
+bound `Date.parse` cannot read is **declined** rather than parsed: NaN propagates into the ratio, every
+comparison against NaN is false, and the pair is reported clean over a window nobody read.
+
+### 二、The corpus guard asked the gate one case at a time
+
+`check-fault-cases.mjs` asks G5 of every case, and builds the bundle as `{ cases: [parsedCase] }`. For
+the four arms above that shape is right. `DUPLICATE_CASE` compares a case with the ones before it, and
+a bundle of one has none -- so it could not fire in that loop if the corpus held one incident ten
+times, and neither could either new arm.
+
+The proof was already in the tree, and this is the part worth recording: `check-fault-cases.test.ts`
+builds ten carriers of a difficulty label by deep-copying one annotation and changing only `caseId`.
+Same prompt, same `injectTime`, same window, ten times -- and **v3.67 was green on it**. The fixture
+was not wrong about difficulty; it was answering a question about levels with a set that is also a
+duplicate-detection specimen, and nothing was reading the second question. Adding the arms turned that
+fixture red, which is the rule working, and the fixture now moves the prompt and the window with the
+index because a copy is a carrier of one label and nothing else about it is under test.
+
+The guard now also asks G5 of the whole corpus once, filtered to the three codes whose subject is a
+pair (`DUPLICATE_CASE` included -- it had the same blindness for the same reason). The filter is a
+statement about where each arm reads its subject, not a preference: the four per-case arms have
+already been asked with a better subject line, and reporting them twice would report one defect under
+two names.
+
+### 三、With no witness in the corpus, the maximum is the evidence
+
+435 pairs, all within one system, and the closest is 0.25 against a line at 0.90. A rule whose only
+failure is synthetic is a rule this list has learned to distrust, so the repair was not to skip the
+rule but to make it publish what it measured: `readPairSimilarity` returns both maxima beside both
+thresholds, `describePairSimilarity` prints them, and `check-fault-cases.mjs` prints that sentence on
+both exits --
+
+```
+pairwise similarity: 435 of 435 pair(s) share a system, and 435 carry task text on both sides;
+closest task text 0.25 (...) against a 0.90 threshold, most overlapping window 0.17 (...) against
+0.50; 0 near-duplicate(s) and 0 overlapping window(s)
+```
+
+-- so the two defaults stop being unstated judgements. A corpus drifting towards duplication raises
+the maximum long before it crosses the line; the margin is a printed number (3.6x and 3.0x) that a
+test asserts and refuses to let fall below 2x. Without that line the same rule would have said
+`passed`, which is what a rule that never ran its body also says.
+
+**Three figures, one name.** The arm's maximum had been published three times and no two agreed:
+`progress.md` said **0.308**, the probe written before the implementation said **0.2414**, and the
+rule itself says **0.25**. The first cannot be reproduced by any tokenisation in the tree; the second
+came from a shorter stop-word list than the one that shipped. All three are far below 0.90, so the
+conclusion never moved and the reading did, three times. The open-list entry now carries the figure
+the rule computes, and a test asserts the number rather than a bound so the next drift is a red test.
+
+### 四、Two numbers that were readings once
+
+`readPromptLeaks` argues for its normalisation with `3 of 30` against `19 of 30`. Both were true when
+written and both stopped being true in **the same round**: v3.66's `b16892f` rewrote the corpus's task
+texts so that none names its component, and both forms now report `0 of 30`. The volume records the
+repair; the comment, two directories away, described the defect in the present tense (finding 480).
+The figures are kept and dated -- they are the argument for the rule's shape -- and the comment now
+points at the line `check-fault-cases.mjs` prints on every run for the current value. `seventeen` in
+that sentence was also wrong: 19 - 3 is sixteen.
+
+The same shape turned up in `docs/progress.md`, in the `## Coverage` table, where it is worse.
+`check-doc-counts` guards the suite counts and nothing guards the coverage figure, so the table
+published `99.96 / 99.93 / 100 / 99.96` while every ledger for eight rounds read `99.96 / 99.75` and
+then `99.97 / 99.80`. **99.93 was never a measurement** -- it was typed, under a sentence beginning
+`Measured by` (finding 481). The table now carries the measured figures, the date, and the sentence
+that says it is retaken when the residual's shape changes rather than every round.
+
+Three figures about this repository are published twice: the suite counts (guarded), the gate-site
+count (derived), and the coverage figure (neither, and therefore the one that was wrong). The rule is
+not "guard everything". It is that a number with two copies needs one of them to be computed rather
+than remembered.
+
+### Five、What the gates cost to extend
+
+Seven injections were added, one per guard the new arms carry, because a fixture is the whole evidence
+here rather than a second opinion: **28 injections became 35, witnesses 33 became 41** (the stop-word
+injection breaks two tests, the headline refusal and the one that holds the published list to the
+filter). The battery's own pre-flight had to learn a distinction it had documented and never
+implemented: its subject is now a `.ts` file, and `node --check` reads TypeScript as JavaScript, so
+all seven rows came back `UNPARSEABLE` on the first run -- the instrument answering a question about
+itself. The suffix decides which question is answerable now, and the runner's own transform failure
+decides for the rows that have no answer from `node`.
+
+Two uncovered branches were found by the coverage run and closed by tests rather than by exemptions:
+the sentence's second null (`no pair had two readable windows`, the mirror of the first), and a
+degenerate zero-length window. A third was a guard that could not be reached -- `jaccardOf`'s
+empty-set test, which the caller already performs under `skippedNoQuery`, because "the two prompts
+share nothing" and "one prompt was not there" are two findings. It was deleted with that sentence
+written where it stood, which is how `gates/gates.ts` goes to **100 / 100 / 100 / 100**.
+
+### Readings
+
+> Ledger for `v3.68`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **240 files, 6104 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **244 files, 6291 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.80 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** (statements / branches / functions / lines); `gates/gates.ts` is **100 / 100 / 100 / 100** |
+| new tests | **22** (6,082 -> 6,104), all in `gate-pair-similarity.test.ts`: the two arms' refusals, the two sentence branches, the tokeniser and the stop-word list that uses it, the corpus readings, and four boundaries -- cross-system, absent prompt, unreadable bound, zero-length window -- plus the repeated-`caseId` pair. One fixture was edited in place: `check-fault-cases.test.ts`'s ten copies now vary their prompt and window, because a set of ten identical incidents is a duplicate-detection specimen |
+| new mutations | **7** injections in `gate-tests-battery.py` (PAIRS 1-7); **28 -> 35** injections, **33 -> 41** witnesses, all 34 reachable rows CAUGHT and 1 redundant as declared |
+| the arms | **2** new G5 codes; **435** pairs compared; closest task text **0.25**, most overlapping window **1/6**, **0** and **0** refused |
+| the figures | **0.308 -> 0.2414 -> 0.25**: three readings of one maximum, the last one reproducible by the rule and asserted by a test |
+| the gate | **4 of 6** arms compared a case with something that is not a case; the corpus guard fed it **1 case per bundle**, so the pairwise ones could not fire even on ten copies |
+| the coverage table | `99.96 / 99.93 / 100 / 99.96` -> **99.97 / 99.80 / 100 / 99.97**; 99.93 was typed, not measured |
+| the claims | **207** claim(s) across **58** file(s), **128** failure site(s) -- unchanged: this round's prose names no count in the shape the rule reads, and the two figures that moved are readings rather than claims |
+| the list | **22 -> 22** open: this round closed the G5 item and opened one about the coverage table's missing reader |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P2** | G3's two thresholds have no grid | unchanged: the defaults are a judgement nothing has defended | a 4x4 grid and a rule that refuses a default on a slope |
+| **P2** | `rulegen` has no refusal count and no agreement reading | unchanged: the thirty human annotations already exist and nothing compares against them | agreement with a fixed answer set, and the absence of kappa stated as a choice |
+| **P2** | `score` divides by a different denominator per target | unchanged: the sentence needs a measurement under it | a test asserting two targets' check counts differ |
+| **P2** | `docs/acceptance.md` is 96 KB and grows by clause per round | worsened this round by six clauses: L3 and L4 are the two large layers | move the per-round clauses to a volume, after measuring how many sections match that shape |
+| **P2** | Cloud-OpsBench has no established vendor | unchanged: the field is `null` and the page prints *not established* | read the paper's author block, as `openrca-2.0`'s was read, and record the line the value comes from |
+| **P2** | two prose targets cite a paper no digest pins | unchanged: `itbench` and `cloud-opsbench` print an arXiv id beside the one the corpus pins | a sha256 and a byte count per paper, or a declaration saying the id is all this repository read |
+| **P3** | the coverage figure has no reader that computes it | new this round: the table was wrong by 0.13 branches for at least eight rounds, and it is now correct by hand | a `docs:check` step that reads a coverage report when one exists, or a sentence saying the ledger is the only copy |
+
+**The lesson.** Both of this round's first two findings are the same sentence: *a comparison needs a
+second case.* G5 compared a case with a pattern, a fingerprint, a declaration and a name -- four
+readers, all of them about one case -- and the one claim that needs two cases had none. The guard that
+feeds it compared one case at a time, so the arm, once added, would still have been silent had it not
+been asked again over the whole set. The third finding is the same sentence about documents: a figure
+needs a second reader, and the copy that has one is the copy that stays true.
