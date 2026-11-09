@@ -1279,9 +1279,16 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
   // refusal as a malformed export. Both zero-case paths above `continue` before
   // this, so what reaches here has files to judge.
   if (!shape.passed) {
-    const failing = shape.checks.filter((c) => !c.passed).map((c) => `${c.id} (${c.detail})`);
+    // `scoreExport` answers with a report whose checks live under `structure`; this read used the
+    // pre-report field name, `shape.checks`, which stopped existing when the report grew its terms.
+    // Nothing noticed for two reasons, and the second is the defect: the branch is only reached by a
+    // case that scores 1.00 and *still* does not match the target's layout, so every green run
+    // stepped over it -- and the first run that reached it, the weekly official-corpus job on
+    // 2026-11-02, ended in `TypeError: Cannot read properties of undefined (reading 'filter')`
+    // instead of naming the field that was wrong (finding 496).
+    const failing = shape.structure.checks.filter((c) => !c.passed).map((c) => `${c.id} (${c.detail})`);
     const reason = `${entry.caseId}: the export does not match ${target}'s field contract - ${failing.join('; ')}`;
-    console.log(`ROUNDTRIP FAIL ${label} shape=${shape.checks.filter((c) => !c.passed).length}`);
+    console.log(`ROUNDTRIP FAIL ${label} shape=${shape.structure.checks.filter((c) => !c.passed).length}`);
     roundTripFailures.push(reason);
     scoreRecords.push({ caseId: entry.caseId, target, status: 'failed', reason });
     continue;

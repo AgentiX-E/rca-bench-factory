@@ -287,7 +287,9 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // 55 -> 61 in v3.74: six for the level a case claims -- the excess threshold, the missing
     // sentence, the sentence's shape, the note's placement, the note with no level, and the gate that
     // read the labels instead of the chains.
-    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(61);
+    // 61 -> 62 in v3.75: one for the round-trip reporter's field-contract branch, which read a field
+    // name the score report had moved and crashed instead of naming the field.
+    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(62);
     expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(
       pythonJson(`print(json.dumps(len(module.INJECTIONS)))`),
     );

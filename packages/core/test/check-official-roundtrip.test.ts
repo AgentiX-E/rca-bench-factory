@@ -244,6 +244,20 @@ function writeModalities(dir: string): void {
   );
 }
 
+/**
+ * A case whose export scores 1.00 and still does not match the target's layout.
+ *
+ * The reporter's field-contract branch is the only one that can say *which* field is wrong, and
+ * reaching it needs both halves at once: an export the official rule loads and scores, and a layout
+ * the target's contract refuses. A `logs.csv` whose header drops `container_name` and `time` is
+ * exactly that -- the adapter carries the columns through, the RE2 reader still finds its case, the
+ * metric table is intact, and the contract refuses the modality table.
+ */
+function writeCaseWithShortLogHeader(root: string, caseId: string): void {
+  writeCase(root, caseId);
+  writeFileSync(join(root, caseId, 'logs.csv'), 'timestamp,message\n1705353846067349596,request started\n');
+}
+
 /** A descriptor file naming the cases that were actually written. */
 function writeCases(path: string, caseIds: string[], suite = 'RE2'): void {
   const cases = caseIds.map((caseId) => ({
@@ -360,6 +374,37 @@ describe('scripts/check-official.mjs · the round trip leaves the default verdic
 });
 
 describe('scripts/check-official.mjs · what the round trip refuses to pass', { timeout: FILE_TIMEOUT_MS }, () => {
+  it('names the fields a case does not satisfy instead of crashing before the sentence', async () => {
+    // The branch this drives was unreachable in every test of this file, because a case reaches it
+    // only by scoring 1.00 and *still* failing a field check -- so every green run stepped over it,
+    // and the read inside it kept a field name the score report had moved. The first run that ever
+    // reached it, the weekly official-corpus job on 2026-11-02 and again on 2026-11-09, ended in
+    // `TypeError: Cannot read properties of undefined (reading 'filter')`: a crash where a refusal
+    // belonged, and no sentence saying which field was wrong (finding 496).
+    const root = freshRoot();
+    writeCaseWithShortLogHeader(root, 'RE2-ob-cpu_1');
+    const cases = join(scratch, 'short-log.json');
+    writeCases(cases, ['RE2-ob-cpu_1']);
+    const result = await run(['--official-dir', root, '--cases', cases]);
+    expect(result.stderr, 'a crash is the defect, not the verdict').not.toContain('TypeError');
+    expect(result.status).toBe(1);
+    // The verdict line carries the count of failing checks; the sentence behind it is a failure and
+    // goes to stderr with the rest of them, which is why an assertion that reads only stdout sees a
+    // number with no field in it.
+    expect(result.stdout).toContain('ROUNDTRIP FAIL');
+    expect(result.stdout).toContain('shape=2');
+    expect(result.stderr).toContain("the export does not match rcaeval-re2's field contract");
+    // Each failing check is named by id with its own detail, because the two ids here are two
+    // different repairs: one says the case lost a modality table, the other says its header is not
+    // the corpus's. A single count would leave the reader to find out which.
+    expect(result.stderr).toContain('modality-set');
+    expect(result.stderr).toContain('logs-header');
+    expect(result.stderr).toContain(
+      "expected 'time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template'",
+    );
+    expect(result.stderr).toMatch(/ROUNDTRIP 0 of 1 declared case\(s\) round-tripped/);
+  });
+
   it('passes a corpus whose one case round-trips', async () => {
     const root = freshRoot();
     writeCase(root, 'RE2-ob-cpu_1');

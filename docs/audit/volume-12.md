@@ -206,3 +206,41 @@ so the number no longer depends on which way the corpus is annotated.
 `checkDifficultyDistribution` reads the earned level at its hard end for that reason, and keeps reading
 the claims at its easy end, where a claim can only make the corpus look easier than it is and the
 shortfall rule refuses a claim that is not backed. Each end reads the count that cannot be inflated.
+
+## Finding 496 — the one sentence about which field a case got wrong had never been run
+
+The weekly `Official data` job has been red since 2026-11-02. Its log ends like this:
+
+```
+ROUNDTRIP PASS   2/270 RE2-OB/checkoutservice_cpu/2   target=rcaeval-re2   oracle=1.00 signals=317010
+TypeError: Cannot read properties of undefined (reading 'filter')
+    at scripts/check-official.mjs:1282
+```
+
+A crash, at the line whose whole job is to name the field a case does not satisfy.
+
+`scoreExport` answers with a `ScoreReport`: `{ target, passed, score, structure, terms }`, and the checks
+live under `structure`. The reporter read `shape.checks` — the field name from before the report grew
+its terms — while `shape.passed` at the top of the same `if` still existed, so the guard fired and the
+body threw. One line of the block was updated when the report was restructured and the other was not.
+
+**Why nothing caught it: the branch is unreachable from every fixture the suite has.** Reaching it needs
+both halves at once — an export that scores 1.00, *and* a layout the target's contract refuses. Every
+case in `check-official-roundtrip.test.ts` either round-trips cleanly or fails before this point (empty
+descriptor, absent case, empty read, a refusal the exporter named). So the only code in the round trip
+that can say *which* field is wrong had never executed on any corpus, in any run, since it was written.
+Dead code cannot be wrong loudly; it can only be wrong on the first input that reaches it, and that
+input was a 4.24 GB weekly download.
+
+**It reproduces in one file.** A corpus case whose `logs.csv` header drops `container_name` and `time`:
+the adapter carries the columns through, RE2's reader still finds and scores the case, the metric table
+is intact, and the contract refuses the modality table. Against the unfixed script that fixture produced
+the same `TypeError` locally, in thirty seconds, on the first try.
+
+**The repair is two field names and one test.** `shape.structure.checks` in both reads; and a fixture
+that drives the branch, asserting that stderr carries no `TypeError`, that the verdict line counts two
+failing checks, and that both ids arrive with their own details — because `modality-set` and
+`logs-header` are two different repairs, and a count would leave the reader to find out which.
+
+What the sentence says about the real case is the next scheduled run's business. The round trip's
+*verdict* was never in doubt — that case does fail the contract — only its ability to say why.

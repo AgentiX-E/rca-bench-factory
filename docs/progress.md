@@ -532,7 +532,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.74: **23** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.75: **24** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1190,6 +1190,13 @@ is a row about rather than paraphrase one that no `grep` will find.
   a relabel -- puts it at five of thirty-four (0.147), which is the first size where losing one holds.
   `[open: annotate or add a case whose chain is three hops deep, and measure what the denominator should
   be rather than inheriting 0.1 from a corpus three times smaller]`
+- **The weekly official-corpus job's sentence has not been read yet.** v3.75 fixed the reporter that
+  crashed instead of naming the field (finding 496), so the next scheduled run prints which check the
+  one case fails. The two candidates are different repairs and one of them is not a defect at all: if it
+  is `modality-set`, the case is a corpus shape this round trip has no skip for, and the rule it should
+  follow is the one it already applies to a named refusal.
+  `[open: the first green-or-red line the fixed reporter prints, read against the two repairs it can
+  name]`
 - **The level a case claims still reaches both exports, and the note that defends it does not.** The
   distribution gate stopped reading claims in v3.74, so a corpus can no longer meet its tenth by
   relabelling; `difficultyFor` still projects `FaultCase.difficulty`, so the case with a one-hop chain
@@ -1260,7 +1267,7 @@ and this table.
 | [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
-| [volume-12.md](progress/volume-12.md) | 19 | v3.56 | v3.74 |
+| [volume-12.md](progress/volume-12.md) | 20 | v3.56 | v3.75 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

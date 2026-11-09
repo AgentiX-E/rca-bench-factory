@@ -2504,9 +2504,9 @@ bought.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **244 files, 6225 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **248 files, 6412 tests passed** (as of this commit) |
+| `core` test suite | **244 files, 6225 tests passed** (at v3.74) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.74) |
+| repo test suite | **248 files, 6412 tests passed** (at v3.74) |
 | coverage | `core` **99.97 / 99.82 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100**; `fault/difficulty.ts` and `gates/gates.ts` are **100 / 100 / 100 / 100** |
 | new tests | **6214 -> 6225, +11**: eight for `readDifficultyClaim` (the five refusals and the three silences), one naming the corpus's six claims, one for the gate's immunity to relabelling, and one for the field the assembler leaves out |
 | mutations | **55 -> 61** injections, **65 -> 73** witnesses; 60 caught, 0 survived / inert / unattributed, 1 redundant as declared |
@@ -2519,3 +2519,56 @@ checkable, the excess is whatever the annotator believed that morning, and a pub
 over it measures the annotator. The condition is what turns the excess back into a statement — not
 because a guard can tell a good reason from a bad one, but because a corpus whose over-claims each carry
 a sentence can be argued with, while one whose over-claims carry nothing can only be believed.
+
+## v3.75 — the one sentence about which field a case got wrong had never been run
+
+The weekly `Official data` job has been red since 2026-11-02, and its log ends in a crash rather than a
+verdict:
+
+```
+ROUNDTRIP PASS   2/270 RE2-OB/checkoutservice_cpu/2   target=rcaeval-re2   oracle=1.00 signals=317010
+TypeError: Cannot read properties of undefined (reading 'filter')
+    at scripts/check-official.mjs:1282
+```
+
+Line 1282 is inside the block whose entire job is to name the field a case does not satisfy.
+`scoreExport` answers with a `ScoreReport` — `{ target, passed, score, structure, terms }` — and the
+checks live under `structure`; the reporter read `shape.checks`, the name from before the report grew
+its terms, while `shape.passed` in the same `if` still existed, so the guard fired and the body threw.
+One line of that block was updated when the report was restructured and the other was not.
+
+**Why nothing caught it: no fixture in the suite can reach the branch.** Reaching it needs an export
+that scores 1.00 *and* a layout the target's contract refuses. Every case in
+`check-official-roundtrip.test.ts` either round-trips cleanly or fails before that point — empty
+descriptor, absent case, empty read, a refusal the exporter named — so the only code in the round trip
+that can say *which* field is wrong had never executed on any corpus since it was written (finding 496).
+
+**It reproduces in one file, in thirty seconds.** A corpus case whose `logs.csv` header drops
+`container_name` and `time`: the adapter carries the columns, RE2's reader still scores the case, the
+metric table is intact, and the contract refuses the modality table. Against the unfixed script that
+fixture produced the same `TypeError`, locally, on the first try. The repair is two field names and one
+test; the test asserts no `TypeError`, a verdict line counting two failing checks, and both ids with
+their own details on stderr — because `modality-set` and `logs-header` are two different repairs and a
+count would leave the reader to find out which.
+
+The battery got `REPORT 1` for it, and that mutation replaces both reads rather than one: a mutation
+that leaves half a defect in place measures half a rule.
+
+### Readings
+
+> Ledger for `v3.75`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **244 files, 6226 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **248 files, 6413 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.82 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100**; `scripts/check-official.mjs` is outside the instrumented tree, and the branch this round fixed is covered by the suite's own assertion instead |
+| new tests | **6225 -> 6226, +1**: the round trip's field-contract branch, driven by a corpus case whose log table is off-contract |
+| mutations | **61 -> 62** injections, **73 -> 74** witnesses; 61 caught, 0 survived / inert / unattributed, 1 redundant as declared |
+| the weekly job | red on 2026-11-02 and 2026-11-09 with the same `TypeError`; the fixed script prints `shape=2` and both check ids for the reproducing fixture |
+| list | **23 -> 24** open: one entry for what the weekly job's sentence will say about the real case |
+
+**The lesson.** A branch that only a failing input can reach is a branch that no green run has ever
+executed, and its first execution is either a correct refusal or a crash — there is nothing in between
+and nothing before. The way to know which is not to read it carefully; it is to write the failing input.

@@ -1437,6 +1437,29 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         ),
         "cannot be met by relabelling, which is the property the share exists for",
     ),
+    # ------------------------------------------------------------ the sentence a failure earns
+    (
+        # `scoreExport` answers with a report whose checks live under `structure`; this read used the
+        # field name from before that report grew its terms. Restored, the branch that says *which*
+        # field a case does not satisfy throws instead of printing -- and the branch is reached only
+        # by a case that scores 1.00 and still fails a check, so no green run steps on it.
+        "REPORT 1. the field-contract branch reads the score report's old field name",
+        "scripts/check-official.mjs",
+        "check-official-roundtrip.test.ts",
+        # Both reads, because the line that reports the count would otherwise still answer while
+        # the line that builds the sentence threw -- and a mutation that leaves half a defect in
+        # place is a mutation that measures half a rule.
+        lambda t: rename(
+            rename(
+                t,
+                "    const failing = shape.structure.checks.filter((c) => !c.passed).map((c) => `${c.id} (${c.detail})`);",
+                "    const failing = shape.checks.filter((c) => !c.passed).map((c) => `${c.id} (${c.detail})`);",
+            ),
+            "    console.log(`ROUNDTRIP FAIL ${label} shape=${shape.structure.checks.filter((c) => !c.passed).length}`);",
+            "    console.log(`ROUNDTRIP FAIL ${label} shape=${shape.checks.filter((c) => !c.passed).length}`);",
+        ),
+        "names the fields a case does not satisfy instead of crashing before the sentence",
+    ),
     (
         # The names are the actionable half of the coverage sentence: "answers 30 of the 32" is a
         # ratio whose denominator is stated, and which two are unanswered is the part an author acts
@@ -1646,6 +1669,9 @@ EXPECTATIONS: dict[str, tuple[str, ...]] = {
     ),
     'LEVEL 6. the hard end of the distribution reads the labels again': (
         'cannot be met by relabelling, which is the property the share exists for',
+    ),
+    'REPORT 1. the field-contract branch reads the score report\'s old field name': (
+        'names the fields a case does not satisfy instead of crashing before the sentence',
     ),
     'COVER 1. the coverage sentence counts the samples it does not answer': (
         'names the samples it does not answer',

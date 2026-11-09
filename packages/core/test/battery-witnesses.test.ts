@@ -207,7 +207,10 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // 65 -> 73 in v3.74: six injections for the level a case claims, and eight witnesses because two
     // of them break both directions -- a sentence refused as a label, a label accepted as a sentence,
     // and a note refused at the floor while one below it is accepted.
-    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 73],
+    //
+    // 73 -> 74 in v3.75: one for the round-trip reporter, whose failing branch is only reached by a
+    // case that scores 1.00 and still does not match the target's layout.
+    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 74],
     ['scripts/injection/fault-extraction-scoring.py', 'fault-extraction-scoring', 12],
     ['scripts/injection/fetch-official-retry.py', 'fetch-official-retry', 6],
     ['scripts/injection/fault-extraction-workflow.py', 'fault-extraction-workflow', 9],
