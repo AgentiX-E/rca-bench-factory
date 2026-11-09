@@ -94,6 +94,7 @@ export {
   readDurationRestatement,
   readPostSampleSpacing,
   readSeriesHold,
+  trimNumber,
 } from './fault/derived-telemetry.js';
 export type {
   DurationRestatementInput,
@@ -983,6 +984,18 @@ export type { LogLineAttribution } from './fault/log-attribution.js';
 export { describeReadingProblem, resolveReading } from './fault/reading-reference.js';
 export { MIN_NOTE_LENGTH, checkParameterNotes, describeParameterNoteFault } from './fault/parameter-notes.js';
 export type { ParameterNoteFault, ParameterNotesReport } from './fault/parameter-notes.js';
+
+// How long the fault lasted: a parameter the case names as its own length, read against the episode
+// its `hold` samples draw. `hold` counts samples and a parameter states a span of time, and nothing
+// said which parameter was the episode -- so `burstMinutes: 5` beside a four-sample episode of
+// fourteen minutes said nothing to anyone (finding 492).
+export { describeDurationClaim, readDurationClaim, readEpisodeLength } from './fault/duration-claim.js';
+export type {
+  DurationClaimFault,
+  DurationClaimInput,
+  DurationClaimReport,
+  EpisodeLength,
+} from './fault/duration-claim.js';
 export {
   ABSENCE_FIELDS,
   EVIDENCE_MODALITIES,

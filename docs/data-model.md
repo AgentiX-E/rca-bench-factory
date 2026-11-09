@@ -707,6 +707,24 @@ quantity and the rule has nothing to say about it -- `splitDurationMinutes: 17` 
 eight is a fault that lasts seventeen minutes in a window whose post side is wider, and refusing it
 would be a rule about vocabulary rather than about arithmetic.
 
+`fault.durationParameter` is the field that ends the guessing that rule declined to do. The corpus
+carries **fourteen** time-valued parameters and **five** of them are the episode -- the other nine are
+knobs (`terminationGracePeriodSeconds` is a kubelet setting, `retentionGapHours: 31` is a gap the ticket
+measured, `readyAfterSeconds: 40` is how long a replacement took to serve). Naming the one that is the
+episode turns a number into a claim the samples can refute: `readDurationClaim` reads it against
+`hold x spacing`, in the parameter's own unit and to the millisecond, and refuses four things -- a name
+the case does not declare, a value that is not a quantity in a unit of time, a case whose series draw no
+excursion at all, and a number the episode contradicts. A case that names nothing is **not** refused:
+it makes no claim, which is the boundary `fault/parameter-notes.ts` draws from the other side, and the
+run prints how many cases answer rather than turning a silence into a pass.
+
+A series that never returns has a length too, and it is the whole post side: an absent `hold` means all
+eight samples and an absent `noise` still says the value is exact. Two cases had written *"the readings
+are shares and carry no duration of their own"* in a note beside their `durationMinutes`, and their
+windows gave those readings thirty and a hundred and fifty minutes (findings 492 and 493). The note was
+wrong and so was the window: the ticket's number stayed and the geometry moved, which is the repair
+v3.72 made on two other cases.
+
 ### A reading is a measurement, and a measurement stays inside its unit and on its grid
 
 `baseline` and `post` are what the annotation says the reading was; the samples are what an exporter

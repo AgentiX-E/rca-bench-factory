@@ -32,7 +32,8 @@
     "parameterNotes": {
       "mergeThreads": "one merge thread per search node, which is why the burst is six threads rather than one: the same merge ran on every member because every member held a copy of the segment.",
       "mergeSegments": "how many segments the reindex left behind for the compactor to merge in one pass, which is the trigger the ticket names and the reason the burst was this wide."
-    }
+    },
+    "durationParameter": "burstMinutes"
   },
   "groundTruth": {
     "rootCauseEntityId": "service:synthetic-storefront/search-cluster",

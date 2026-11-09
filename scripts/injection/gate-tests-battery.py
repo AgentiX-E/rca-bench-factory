@@ -1271,6 +1271,81 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         ),
         "the test that says nothing when the stated duration is not the hold",
     ),
+    # ------------------------------------------------------------ the length a case claims
+    #
+    # `fault.durationParameter` names the one parameter that states how long the fault lasted, and
+    # `hold x spacing` is how long the samples say it lasted. The five ways to read that rule wrongly
+    # are all silent: each one returns a verdict where the file deserved a refusal, or a refusal
+    # where the file was honest.
+    (
+        # A case's excursions are the series that leave their baseline and come back; a flat series
+        # states no episode. Inverting the skip counts every control series as an episode and every
+        # excursion as nothing, which is the corpus's own control series made into a length.
+        "CLAIM 1. a case's own excursions are skipped and its flat series counted",
+        "packages/core/src/fault/duration-claim.ts",
+        "duration-claim.test.ts",
+        lambda t: rename(
+            t,
+            "    if (one.baseline === one.post) continue;",
+            "    if (one.baseline !== one.post) continue;",
+        ),
+        "the test that reads an excursion and ignores a series that never leaves its baseline",
+    ),
+    (
+        # Two distinct lengths mean one number cannot be the length of all of them. Raising the
+        # threshold reads the shorter one as *the* length and calls the case a disagreement, which
+        # blames the number for the file having two episodes.
+        "CLAIM 2. three lengths are needed before one number stops being the length of them all",
+        "packages/core/src/fault/duration-claim.ts",
+        "duration-claim.test.ts",
+        lambda t: rename(
+            t,
+            "  if (episode.lengths.length > 1) {",
+            "  if (episode.lengths.length > 2) {",
+        ),
+        "the test that refuses one number for a case whose series hold for two different lengths",
+    ),
+    (
+        # `hold x spacing` is the episode; `spacing` alone is one sample of it. Reading the episode
+        # as a single sample makes every stated length too long by the hold, which is the arithmetic
+        # v3.72 introduced and this round had to put behind a declaration to be able to use.
+        "CLAIM 3. the episode is read as one sample rather than as the samples it holds",
+        "packages/core/src/fault/duration-claim.ts",
+        "duration-claim.test.ts",
+        lambda t: rename(
+            t,
+            "    lengths.set(hold * spacingMs, hold);",
+            "    lengths.set(spacingMs, hold);",
+        ),
+        "the test that refuses a stated length the samples contradict, naming all three numbers",
+    ),
+    (
+        # The comparison is the rule. Inverted, every case that agrees is refused and every case
+        # that disagrees passes -- a verdict that is exactly wrong rather than merely absent.
+        "CLAIM 4. the comparison is inverted, so agreement is refused and disagreement accepted",
+        "packages/core/src/fault/duration-claim.ts",
+        "duration-claim.test.ts",
+        lambda t: rename(
+            t,
+            "  if (Math.abs(statedMs - measuredMs) <= 1) return { parameter, episode, fault: null };",
+            "  if (Math.abs(statedMs - measuredMs) > 1) return { parameter, episode, fault: null };",
+        ),
+        "the test that accepts a stated length the samples draw",
+    ),
+    (
+        # A unit of time is what makes a parameter a length. Inverted, every duration is refused as
+        # a count and every count is handed to the converter, which throws rather than answering --
+        # so the refusal stops being a sentence and becomes a crash in the guard.
+        "CLAIM 5. a time unit is refused and every other unit is compared as time",
+        "packages/core/src/fault/duration-claim.ts",
+        "duration-claim.test.ts",
+        lambda t: rename(
+            t,
+            "!isConvertible(stated.unit, 's')",
+            "isConvertible(stated.unit, 's')",
+        ),
+        "the test that refuses a parameter that is not a quantity in a unit of time",
+    ),
     (
         # The names are the actionable half of the coverage sentence: "answers 30 of the 32" is a
         # ratio whose denominator is stated, and which two are unanswered is the part an author acts
@@ -1439,6 +1514,25 @@ EXPECTATIONS: dict[str, tuple[str, ...]] = {
     # too, for the opposite reason, which is why a mutation needs a witness that can tell them apart.
     'DURATION 2. the guard refuses every duration that is not the hold': (
         'refuses a duration that reuses the sample count as a length of time',
+    ),
+    'CLAIM 1. a case\'s own excursions are skipped and its flat series counted': (
+        'ignores a series that never leaves its baseline',
+    ),
+    'CLAIM 2. three lengths are needed before one number stops being the length of them all': (
+        'refuses one number for a case whose series hold for two different lengths',
+    ),
+    'CLAIM 3. the episode is read as one sample rather than as the samples it holds': (
+        'refuses a stated length the samples contradict, naming all three numbers',
+    ),
+    'CLAIM 4. the comparison is inverted, so agreement is refused and disagreement accepted': (
+        'accepts a stated length the samples draw',
+    ),
+    # Two witnesses because the inversion breaks both directions: the count that should be refused
+    # for having no length is handed to the converter, and the duration that should be accepted is
+    # refused for being one.
+    'CLAIM 5. a time unit is refused and every other unit is compared as time': (
+        'refuses a parameter that is not a quantity in a unit of time',
+        'accepts a stated length the samples draw',
     ),
     'COVER 1. the coverage sentence counts the samples it does not answer': (
         'names the samples it does not answer',

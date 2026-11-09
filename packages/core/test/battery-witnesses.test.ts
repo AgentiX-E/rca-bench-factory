@@ -196,7 +196,14 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // because three of them break a second test as well -- the grid's boundary withdrawal is seen
     // by the sixteen-cell agreement test, and two of the layout withdrawals are seen by the
     // sentence the command prints.
-    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 59],
+    //
+    // 59 -> 65 in v3.73: five injections for the length a case claims, and six witnesses because
+    // the last one breaks both directions -- the count that must be refused for having no length is
+    // handed to the converter, and the duration that must be accepted is refused for being one.
+    // A sixth witness appeared only after the first battery run: the flat-series injection was
+    // credited UNATTRIBUTED because the test's control series held for as many samples as its
+    // excursion, so both readings produced the same length and nothing distinguished them.
+    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 65],
     ['scripts/injection/fault-extraction-scoring.py', 'fault-extraction-scoring', 12],
     ['scripts/injection/fetch-official-retry.py', 'fetch-official-retry', 6],
     ['scripts/injection/fault-extraction-workflow.py', 'fault-extraction-workflow', 9],

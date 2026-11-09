@@ -525,6 +525,20 @@ export interface FaultCase {
      * the question finding 300 could not put to a rule (`fault/parameter-notes.ts`).
      */
     parameterNotes?: Record<string, string>;
+    /**
+     * Which of those parameters states how long this fault lasted, if the case states it at all.
+     *
+     * The corpus writes a duration in two vocabularies -- `hold` counts post-onset samples and a
+     * parameter such as `burstMinutes` names a span of time -- and until this field existed nothing
+     * said which parameter was the episode rather than a knob (`terminationGracePeriodSeconds` is a
+     * setting, not a length). Naming it turns the number into a claim: `fault/duration-claim.ts`
+     * reads it against `hold x spacing` and refuses a case whose sentence and samples disagree.
+     *
+     * Read from the file as written rather than through the schema, for the reason `parameterNotes`
+     * is: the module that refuses a bad value is the module that can say why in a sentence, and a
+     * schema refusal would say `Invalid input`.
+     */
+    durationParameter?: string;
   };
   groundTruth: GroundTruth;
   /**

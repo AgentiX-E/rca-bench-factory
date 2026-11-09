@@ -2559,25 +2559,101 @@ describe('check-fault-cases · a key nothing cites has to say why it is there', 
   });
 
   it('prints cited and explained as a partition of the keys the corpus declares', async () => {
-    // Two numbers that must add up, rather than two shares that may not: every key is either spoken
-    // for by a reading or explained by a note, and the run is red if any is neither. A line that
-    // printed them as percentages could agree while a key fell between the two.
+    // Three routes that must add up, rather than three shares that may not: every key is stated by a
+    // reading, named by its case as the length of its own episode, or explained by a note, and the run
+    // is red if any is none of the three. A line that printed them as percentages could agree while a
+    // key fell between them, and one key can be both a citation and a stated length -- which is why
+    // the overlap is printed rather than hidden inside the first number.
     const result = await run([]);
     expect(result.status, result.out).toBe(0);
     const line =
-      /parameters (\d+) of (\d+) \((\d+) percent\) cited by a reading across (\d+) case\(s\); (\d+) explained by a note, shortest (\d+) character\(s\)/.exec(
+      /parameters (\d+) declared across (\d+) case\(s\), (\d+) spoken for \((\d+) percent: (\d+) cited by a reading, (\d+) named as the length of their episode, (\d+) of them both\), (\d+) explained by a note, shortest (\d+) character\(s\)/.exec(
         result.out,
       );
     expect(line, 'the parameter line is missing from the report').not.toBeNull();
-    const [, cited, declared, , cases, noted, shortest] = line!;
-    expect(Number(cited) + Number(noted)).toBe(Number(declared));
+    const [, declared, cases, spoken, , cited, named, both, noted, shortest] = line!;
+    expect(Number(cited) + Number(named) - Number(both) + Number(noted)).toBe(Number(declared));
+    expect(Number(spoken)).toBe(Number(cited) + Number(named) - Number(both));
     expect(Number(cases)).toBe(CORPUS_SIZE);
+    expect(Number(both)).toBeGreaterThan(0);
+    expect(Number(named)).toBeGreaterThanOrEqual(Number(both));
     expect(Number(cited)).toBeGreaterThan(0);
     expect(Number(noted)).toBeGreaterThan(0);
     expect(
       Number(shortest),
       'a note shorter than a clause is a label the rule would have refused',
     ).toBeGreaterThan(40);
+  });
+});
+
+describe('check-fault-cases · how long a case says its fault lasted', { timeout: SUITE_BUDGET_MS }, () => {
+  // The rule's own module is `fault/duration-claim.ts`, and `duration-claim.test.ts` holds its six
+  // refusals apart from any corpus. What these check is the wiring: that the guard asks every case
+  // which of its parameters is the episode, that a number the samples contradict reaches the reader
+  // as a problem, and that a case which names a length needs no sentence about it.
+  //
+  // The fixture is the real checkout annotation: an eight-sample post side of twenty-two minutes, so
+  // a duration parameter has exactly one number that agrees with it.
+  const SIGNALS = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  function declaring(value: number): string {
+    return corpus({
+      signals: JSON.parse(JSON.stringify(SIGNALS)) as Record<string, unknown>,
+      mutate: (faultCase) => {
+        const fault = faultCase.fault as Record<string, unknown>;
+        (fault.parameters as Record<string, unknown>).burstMinutes = { value, unit: 'min' };
+        fault.durationParameter = 'burstMinutes';
+      },
+    });
+  }
+
+  it('refuses a stated length the samples contradict, and names the sample and the episode', async () => {
+    // Twenty-one minutes beside eight samples of 2.75 minutes: the v3.72 rule compared the parameter
+    // with the *hold* and said nothing, because 21 is not 8 (finding 492).
+    const result = await run(['--cases', declaring(21)]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain(
+      "fault.durationParameter names 'burstMinutes', which states 21 min as the length of this " +
+        'episode, and its 8 sample(s) at 2.75 min each are 22 min',
+    );
+  });
+
+  it('accepts the same case when the number the samples draw is the number the parameter states', async () => {
+    const result = await run(['--cases', declaring(22)]);
+    expect(result.status, result.out).toBe(0);
+    // And it counts as spoken for, so the case needs no note about the key: the samples are the
+    // statement, and a sentence beside them would be a second one that can drift.
+    expect(result.out).toContain('1 named as the length of their episode');
+    expect(result.out).not.toContain('and no reading cites it');
+  });
+
+  it('refuses a declaration that names a parameter the case does not declare', async () => {
+    const dir = corpus({
+      signals: JSON.parse(JSON.stringify(SIGNALS)) as Record<string, unknown>,
+      mutate: (faultCase) => {
+        (faultCase.fault as Record<string, unknown>).durationParameter = 'burstSecond';
+      },
+    });
+    const result = await run(['--cases', dir]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain(
+      "fault.durationParameter names 'burstSecond', and fault.parameters declares no such key " +
+        '(it declares: container, cpuLimit)',
+    );
+  });
+
+  it('says nothing about a case that states no length, which is not a claim rather than a silence', async () => {
+    // The optional field has to stay optional: most cases state a span of time that is a knob
+    // (`terminationGracePeriodSeconds`) rather than the episode, and refusing them for not naming one
+    // would be a rule about the author's honesty rather than about the file's arithmetic.
+    const result = await run([
+      '--cases',
+      corpus({ signals: JSON.parse(JSON.stringify(SIGNALS)) as Record<string, unknown> }),
+    ]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain('0 named as the length of their episode');
   });
 });
 

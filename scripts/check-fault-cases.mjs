@@ -286,7 +286,17 @@ const withTelemetry = [];
  * rather than gated -- how much of the annotation a reading speaks for, and how short the shortest
  * note is.
  */
-const parameterUse = { declared: 0, referenced: 0, noted: 0, cases: 0, shortest: 0 };
+const parameterUse = {
+  declared: 0,
+  referenced: 0,
+  noted: 0,
+  cases: 0,
+  shortest: 0,
+  /** Cases that name the parameter stating how long the fault lasted. */
+  duration: 0,
+  /** Keys that are both cited by a reading and named as the length of their episode. */
+  namedAlsoCited: 0,
+};
 
 /**
  * What each case says about the reading that ranks it.
@@ -703,6 +713,8 @@ for (const entry of index.cases) {
     if (parameterKeys.length > 0) parameterUse.cases += 1;
     /** The keys a reading in this case cites, by either route: a series point or a configuration. */
     const citedParameters = new Set();
+    /** The key this case names as the length of its own episode, if it names one. */
+    let durationParameter = null;
     // A reading may be a literal or a reference to a quantity the case declares about itself. The
     // resolution happens once, here, and everything downstream -- the range check, the expansion, the
     // expression evaluator, the checkpoint comparison -- reads the hash rather than the file. The
@@ -858,6 +870,34 @@ for (const entry of index.cases) {
       // version of this rule, which was exactly that.
     }
 
+    // How long the fault lasted, as the case claims it and as its samples draw it. `hold` counts
+    // samples, `readPostSampleSpacing` turns one into wall-clock time, and the product is the only
+    // length in the file rather than a claim about one. The case names which parameter is that
+    // length (`fault.durationParameter`), and the number is then read against the episode -- not
+    // against another number that happens to equal it, which is what the rule below did and why
+    // `burstMinutes: 5` beside a fourteen-minute episode said nothing to it (finding 492).
+    //
+    // A case that names no length is not refused: it makes no claim, and a claim nobody makes cannot
+    // be wrong. The guard prints how many cases answer instead, so a corpus drifting towards silence
+    // is visible in the run's own output.
+    const durationClaim = core.readDurationClaim({
+      declaration: rawCase?.fault?.durationParameter,
+      parameters,
+      series: series.map((one) => resolvedDeclaration(one, resolvedReadings)),
+      when,
+    });
+    if (durationClaim.fault !== null) {
+      problems.push(`'${caseId}' ${core.describeDurationClaim(durationClaim.fault)}`);
+    } else if (durationClaim.parameter !== null) {
+      parameterUse.duration += 1;
+      // Naming the length speaks for the number more strongly than a note does: the case says what
+      // the parameter is, and the samples are required to agree. The key is added to the set the
+      // note rule reads, not to the set a reading fills, because the two are different routes and
+      // the run's output counts them apart -- a key that is both a citation and a stated length is
+      // one key in one of them and two claims in the sentence.
+      durationParameter = durationClaim.parameter;
+    }
+
     // What the case says its fault lasted, against what its own clock says it lasted. `hold` counts
     // samples and a parameter such as `burstMinutes` states a span of time; a case that gives both the
     // same number is asserting that one sample is one unit long, and until this rule existed nothing
@@ -865,6 +905,10 @@ for (const entry of index.cases) {
     // minutes apart said four minutes about a plateau that lasted fourteen (finding 490). The rule is
     // run over the excursion series only: a control series whose two readings are equal states no
     // excursion and therefore no length, and its hold means nothing.
+    //
+    // It stays after the claim above because it catches the coincidence a case never declared: a file
+    // that writes the hold's number in a time unit without saying that the number is its length is
+    // still making the claim, and it is still refused when the window makes it false.
     if (Object.keys(parameters).length > 0) {
       const spacingMs = core.readPostSampleSpacing(when);
       const excursions = series.filter(
@@ -1292,13 +1336,24 @@ for (const entry of index.cases) {
     // reasons, and an allow-list of descriptive names is today's list turned into a law (finding 300
     // refused both), so the question moved into the file: `fault.parameterNotes`, one sentence per
     // key, and `fault/parameter-notes.ts` refuses a case that does not answer it (finding 326).
+    //
+    // A key the case names as the length of its own episode is spoken for as well, and by a stronger
+    // statement than a note: the number is checked against the samples rather than explained. It is
+    // passed as part of `cited` for that reason -- the field asks which keys need no sentence -- while
+    // the run's own count keeps the two routes apart.
+    const spoken = durationParameter === null
+      ? citedParameters
+      : new Set([...citedParameters, durationParameter]);
     const notes = core.checkParameterNotes({
       parameters,
       notes: rawCase?.fault?.parameterNotes,
-      cited: citedParameters,
+      cited: spoken,
     });
     for (const fault of notes.faults) {
       problems.push(core.describeParameterNoteFault(fault, caseId));
+    }
+    if (durationParameter !== null && citedParameters.has(durationParameter)) {
+      parameterUse.namedAlsoCited += 1;
     }
     parameterUse.referenced += notes.cited;
     parameterUse.noted += notes.noted;
@@ -1572,9 +1627,18 @@ if (invalid.length > 0) {
 function logParameterUse() {
   if (parameterUse.declared === 0) return;
   const share = Math.round((parameterUse.referenced / parameterUse.declared) * 100);
+  // Three routes to a parameter that is spoken for, counted separately because they are three
+  // different claims: a reading that cites the number, a case that names it as the length of its own
+  // episode and has the samples agree, and a sentence saying why nothing reads it. One key can be
+  // both a citation and a stated length, so the citation count subtracts the overlap rather than
+  // assuming the two routes are disjoint.
+  const cited = parameterUse.referenced - parameterUse.duration + parameterUse.namedAlsoCited;
   console.log(
-    `check-fault-cases: parameters ${String(parameterUse.referenced)} of ${String(parameterUse.declared)} ` +
-      `(${String(share)} percent) cited by a reading across ${String(parameterUse.cases)} case(s); ` +
+    `check-fault-cases: parameters ${String(parameterUse.declared)} declared across ` +
+      `${String(parameterUse.cases)} case(s), ${String(parameterUse.referenced)} spoken for ` +
+      `(${String(share)} percent: ${String(cited)} cited by a reading, ` +
+      `${String(parameterUse.duration)} named as the length of their episode, ` +
+      `${String(parameterUse.namedAlsoCited)} of them both), ` +
       `${String(parameterUse.noted)} explained by a note, shortest ${String(parameterUse.shortest)} ` +
       'character(s)',
   );

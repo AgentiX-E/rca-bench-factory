@@ -314,8 +314,14 @@ export function describeDurationRestatement(fault: HoldDurationFault): string {
   );
 }
 
-/** A ratio as a short decimal, so a sentence about 3.5 minutes does not read 3.5000000000000004. */
-function trimNumber(value: number): string {
+/**
+ * A ratio as a short decimal, so a sentence about 3.5 minutes does not read 3.5000000000000004.
+ *
+ * Exported because `fault/duration-claim.ts` writes the same three numbers into its sentences -- the
+ * stated span, one sample's length and the span the samples draw -- and two formatters would be two
+ * answers to how a span is printed.
+ */
+export function trimNumber(value: number): string {
   return String(Number(value.toFixed(3)));
 }
 

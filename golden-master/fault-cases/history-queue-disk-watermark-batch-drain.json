@@ -32,7 +32,8 @@
     "parameterNotes": {
       "exportGigabytes": "The size of the one-pass export, which is what made the topic fill in minutes rather than hours and is the trigger the ticket names.",
       "writeStreams": "One producer stream per shard of the export, which is why the watermark moved on every broker at once rather than on one of them."
-    }
+    },
+    "durationParameter": "burstMinutes"
   },
   "groundTruth": {
     "rootCauseEntityId": "mq:synthetic-storefront/order-events",

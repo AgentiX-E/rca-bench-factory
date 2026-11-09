@@ -9,7 +9,7 @@
   "injectTime": "2026-09-25T09:12:00.000Z",
   "window": {
     "start": "2026-09-25T09:00:00.000Z",
-    "end": "2026-09-25T09:42:00.000Z"
+    "end": "2026-09-25T09:30:00.000Z"
   },
   "fault": {
     "type": "upstream-5xx",
@@ -29,9 +29,9 @@
     },
     "parameterNotes": {
       "dependency": "the upstream that answered 503; the pricing service's error ratios are per dependency in the source, and this is the one that moved.",
-      "answeredWith": "the status the upstream answered with; the ratio series counts the responses, and a status code says which failure rather than how many.",
-      "durationMinutes": "how long the failures lasted, stated for a replay; the readings are shares and carry no duration of their own."
-    }
+      "answeredWith": "the status the upstream answered with; the ratio series counts the responses, and a status code says which failure rather than how many."
+    },
+    "durationParameter": "durationMinutes"
   },
   "groundTruth": {
     "rootCauseEntityId": "external:synthetic-storefront/tax-calculation",

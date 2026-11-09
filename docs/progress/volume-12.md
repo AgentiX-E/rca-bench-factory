@@ -2186,9 +2186,9 @@ needs a second reader, and the copy that has one is the copy that stays true.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **243 files, 6191 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **247 files, 6378 tests passed** (as of this commit) |
+| `core` test suite | **243 files, 6191 tests passed** (at v3.69) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.69) |
+| repo test suite | **247 files, 6378 tests passed** (at v3.69) |
 | coverage | `core` **99.97 / 99.80 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100**; `gates/gates.ts` and `llm/rulegen-agreement.ts` are **100 / 100 / 100 / 100** |
 | new tests | **56** (6,104 -> 6,160): **20** in the new `gate-threshold-grid.test.ts`, **27** in the new `rulegen-agreement.test.ts`, **2** in `check-fault-cases.test.ts` (the corpus reading and its refusal), **3** in `rulegen.test.ts` (the one-writer table), **1** in `scripts-are-classified.test.ts` (the depth guard over every script specifier), and **3** produced by the `it.each` tables that read the registers this round extended -- `export-surface-enumerated.test.ts` alone accounts for two, measured by running its previous revision beside it |
 | new mutations | **7** injections in `gate-tests-battery.py` (GRID 1-3, LAYOUT 1-4); **35 -> 42** injections, **41 -> 51** witnesses. Two of the ten new witnesses are second tests on one injection: withdrawing the grid's inclusive boundary is seen by the sixteen-cell agreement test as well as by the boundary case, and withdrawing the wrong-column comparison is seen by the shipped reading as well as by the planted one. All 41 reachable rows CAUGHT, 1 redundant as declared, 0 survived, 0 inert, 0 unattributed |
@@ -2360,3 +2360,79 @@ writes the same number twice in two units has written one fact and broken it in 
 hid a duration inside a name; `burstMinutes: 4` beside `hold: 4` hid the *unit* inside an
 agreement — four of what, against four of what — and both were repaired the same way: compute the
 number that sits between the two statements and refuse the file that cannot say it.
+
+## v3.73 — which of a case's numbers is its own length
+
+v3.72's rule compared a parameter with the *count*: `burstMinutes: 4` beside `hold: 4` was read as one
+fact written twice, and refused when the window made a sample longer than a minute. The hole is one line
+of arithmetic away. Write `burstMinutes: 5` beside `hold: 4` in a window whose samples are 3.5 minutes
+apart, and the file says **five minutes** about an episode of **fourteen** — and the rule says nothing,
+because five is not four. It was comparing two numbers instead of asking what the parameter is for.
+
+The corpus says so itself, in the only place that can. It carries **fourteen** time-valued parameters and
+five of them are the episode (`burstMinutes` twice, `splitDurationMinutes`, `durationMinutes` twice); the
+other nine are knobs the fault ran under — `terminationGracePeriodSeconds: 30` is a kubelet setting,
+`retentionGapHours: 31` is a gap the ticket measured, `readyAfterSeconds: 40` is how long a replacement
+took to serve. No rule over the names separates the five from the nine: guessing would be right five
+times and wrong nine, which is the shape `spike` had when a duration was hidden in a name. So the file
+answers instead — `fault.durationParameter` names the one parameter that states how long this fault
+lasted — and `readDurationClaim` reads that number against `hold x spacing`, in the parameter's own unit,
+to the millisecond.
+
+**It found two cases on its first run, both of them stating a length their own file contradicted twice.**
+
+`history-dependency-upstream-5xx-pricing` declares `durationMinutes: 18` and its window ended at 09:42
+from an onset of 09:12 — thirty minutes of post side at 3.75 minutes a sample, with no `hold`, which is
+the declaration "elevated for all eight". Its own log line reads `degradation window 09:12-09:30 UTC`,
+so the file held three statements of one span and the two a reader would trust most disagreed.
+`history-dependency-schema-change-currency-feed` declares `durationMinutes: 120` and its window ended at
+11:30 from 09:00 — a hundred and fifty minutes at 18.75 a sample — while a checkpoint description in the
+same file said "the two hours between the deploy at 09:00 and the revert at 11:00" (findings 492, 493).
+
+Both carried a note saying *"the readings are shares and carry no duration of their own"*. The note was
+written to explain why no reading cites the parameter, and it answered a different question: a share that
+is elevated from the onset to the window's edge is an episode with a length, and the length is the whole
+post side. **The window moved, not the sentence** — 09:30 and 11:00, the two times each file already
+named — so one sample is 2.25 minutes in the first and fifteen in the second, and eight of them are
+exactly the eighteen and the hundred and twenty the parameters state.
+
+The rule refuses four things, each with a different repair: a name the case does not declare, a value that
+is not a quantity in a unit of time, a case whose series draw no excursion at all, and a number the
+episode contradicts. A case that names nothing is **not** refused — it makes no claim — which is the
+boundary `fault.parameterNotes` draws from the other side, and why the run prints the answer instead of
+asserting it: `37 spoken for (34 percent: 36 cited by a reading, 5 named as the length of their episode,
+4 of them both), 72 explained by a note`. Five declarations is a small number and it is the honest one;
+the alternative was a rule about the annotation's vocabulary that would have refused nine legitimate
+knobs.
+
+The battery then found a test of mine that could not tell two readings apart. The injection that inverts
+the flat-series skip was credited **UNATTRIBUTED**: twenty-two tests went red and the named witness was
+not among them, because the fixture's control series held for the same four samples as its excursion, so
+both readings produced 840,000 ms and the assertion passed either way. The control now holds for one
+sample, and the same mutation fails the same test for the reason it was written for. That is the second
+time this campaign has caught a witness that agreed with itself (finding 158 was the first), and the
+first time the battery caught it before the round ended.
+
+### Readings
+
+> Ledger for `v3.73`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **244 files, 6214 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **248 files, 6401 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.82 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100**; `fault/duration-claim.ts` is **100 / 100 / 100 / 100** |
+| new tests | **6191 -> 6214, +23**: sixteen in the new `duration-claim.test.ts` (six refusals, four episode readings, the tolerance, the corpus reading), four in `check-fault-cases.test.ts` for the wiring, and three from the `it.each` tables that read the registers this round extended -- `export-surface-enumerated.test.ts` runs two of them over the module list and one over every source file, so the new module is three tests |
+| mutations | **50 -> 55** injections, **59 -> 65** witnesses; 54 caught, 0 survived / inert / unattributed, 1 redundant as declared |
+| corpus | **33** cases unchanged; **5** name their own length; post windows **30 -> 18** and **150 -> 120** minutes |
+| parameters | **37 of 109** spoken for, up from 36: one note became a checked number; notes 72 |
+| grid | **33 of 33** at the default, **0 / 0 / 1 / 2** at 1 / 3 / 5 / 8 samples — unchanged, because a narrower window moves no value |
+| list | **21 -> 22** open: one closed (the duration rule), two opened (the field can be deleted; a window can outlive a sentence) |
+
+**The lesson.** A rule that fires on two numbers being *equal* is a rule about a coincidence, and the
+coincidence is the author's, not the file's. The corpus could not say "this number is my length" in any
+vocabulary it had — `hold` counts samples, `parameters` are open, and a note is prose — so the missing
+field was the answer and the arithmetic came after it. What the declaration buys is narrow and real: a
+case that states its length can now be wrong in exactly one way, and that way is refused with the sample,
+the count and both spans in the sentence.

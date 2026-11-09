@@ -532,7 +532,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.72: **21** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.73: **22** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1159,14 +1159,30 @@ is a row about rather than paraphrase one that no `grep` will find.
   `Measured:` the neighbour count could not see it, because 8 is two steps from the default 3, so the
   reading now prints the axis itself — `the sample line refuses 0 / 0 / 1 / 2 case(s) at 1 / 3 / 5 / 8`
   — and `check-fault-cases.test.ts` pins the staircase rather than a count of neighbours.
-- **The duration rule only fires when the parameter's number *is* the hold.** `readDurationRestatement`
-  compares one sample's length with one unit of the parameter, and it is asked only about a parameter
-  whose value equals the hold. A case that states `burstMinutes: 5` beside `hold: 4` in a window whose
-  samples are 3.5 minutes long asserts twenty minutes of plateau in five, and nothing refuses it: the
-  numbers are different, so the rule treats it as a different quantity — which is right for
-  `splitDurationMinutes: 17` and wrong for this.
-  `[open: a relation that holds for every time-unit parameter a case cites as the fault's own length,
-  which needs the file to say which parameters those are rather than the numbers to coincide]`
+- ~~**The duration rule only fires when the parameter's number *is* the hold.**~~ **Closed by finding 492 and finding 493.** `readDurationRestatement` compares one
+  sample's length with one unit of the parameter, and it is asked only about a parameter whose value
+  equals the hold -- so `burstMinutes: 5` beside `hold: 4` in a window whose samples are 3.5 minutes
+  long asserted fourteen minutes of plateau in five and nothing refused it. The entry asked for the file
+  to say which parameters are the fault's own length, and `fault.durationParameter` is that field:
+  `readDurationClaim` reads the named number against `hold x spacing` and found
+  `history-dependency-upstream-5xx-pricing` claiming eighteen minutes over a thirty-minute post side
+  and `history-dependency-schema-change-currency-feed` claiming a hundred and twenty over a hundred and
+  fifty. Both windows moved to the time each file already named in its own prose.
+- **A case can satisfy the length rule by deleting the field.** `fault.durationParameter` is optional
+  on purpose: nine of the corpus's fourteen time-valued parameters are knobs (`terminationGracePeriodSeconds`,
+  `retentionGapHours`, `readyAfterSeconds`), and a rule that demanded a length would be a rule about the
+  annotation's vocabulary. The cost is that a case which never names its length makes no claim and is
+  refused by nothing -- so the rule is a statement about files that *do* claim one, and the run can only
+  print how many do (`5 named as the length of their episode`).
+  `[open: a way to tell a knob from an episode without reading prose, which would make the field
+  mandatory in the cases where it applies rather than in all of them]`
+- **A window can still outlive the sentence that describes it, when the sentence is prose.** The two
+  repairs in v3.73 were each pointed at the right number by a *string*: a log body reading
+  `degradation window 09:12-09:30 UTC` and a checkpoint description reading "the two hours between the
+  deploy at 09:00 and the revert at 11:00". Nothing compares either with `window.end`, and the guard
+  that found them was asking about a parameter, not about the window.
+  `[open: a place where a window's two endpoints are cited as data rather than written in a sentence --
+  the same question `signalRef` answered for a reading's identity]`
 - **The difficulty ratchet has one unit of slack left.** An L3 case was added in v3.72, and five L4 of
   thirty-three is 0.152: losing one L4 leaves 0.125 and losing two leaves 0.097, below the 0.1 floor.
   The next case that is not an L4 spends the corpus's whole margin.
@@ -1234,7 +1250,7 @@ and this table.
 | [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
-| [volume-12.md](progress/volume-12.md) | 17 | v3.56 | v3.72 |
+| [volume-12.md](progress/volume-12.md) | 18 | v3.56 | v3.73 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
