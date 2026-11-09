@@ -45,6 +45,14 @@ import { scoreExtractionSample } from './extraction-scoring.js';
  * A run that is not wholly graded is therefore refused, with the samples named. It is a
  * pipeline finding -- it belongs in the report and in `pending`, not in a reading that
  * would disagree with the report it claims to preserve.
+ *
+ * ## What a smaller key looks like, since v3.71
+ *
+ * The paragraph above says the record can only hold the second of the two statements, and that is
+ * still true -- but "the reading answers 30 of the 32 samples the key holds" is a third statement,
+ * and it is the one a reader needs. It has no field either: `key.size` is the day's key and anything
+ * recomputed now is today's. `describeReadingCoverage` writes it as a sentence, so the number and its
+ * denominator are printed together and an assertion can pin the whole line.
  */
 
 const FIELDS = ['type', 'category', 'component'] as const;
@@ -349,4 +357,65 @@ function impliedTotals(entry: ReadingEntry): ReadingTotals {
     if (FIELDS.every((field) => sample.answered[field] === sample.expected[field])) totals.strict += 1;
   }
   return totals;
+}
+
+/** What a reading answered, measured against the key it claims to answer. */
+export interface ReadingCoverage {
+  /** How many samples the key holds -- the denominator, stated rather than left to be reconstructed. */
+  key: number;
+  /** How many of the key's samples the reading answers. */
+  answered: number;
+  /** The key's samples the reading does not answer, in key order. */
+  unanswered: string[];
+  /** Samples the reading answers that the key does not carry. */
+  extra: string[];
+  /** One sentence: the two counts, and the names behind them. */
+  sentence: string;
+}
+
+/**
+ * The reading's own denominator, as one sentence.
+ *
+ * `record.key.size` is the size of *the key on the day the reading was taken*, and the tree's key
+ * has since grown -- so a reader comparing `totals.strict` with `record.key.size` is comparing a
+ * reading with a key it was not scored against, and a reader comparing it with `samples.json` today
+ * is doing the same thing with a different pair of numbers. Neither is wrong; what was missing is a
+ * sentence that says which pair it is using. The M1 reading answers 30 of the 32 samples the key it
+ * was taken from holds, and nothing printed that: the file holds the 30 rows, the key holds the 32
+ * ids, and the subtraction was left to whoever noticed.
+ *
+ * Two lists of ids rather than one list and a count, because the names are the actionable half: a
+ * reading that answers 30 of 32 is a reading whose author wants to know *which two*, and the two are
+ * different every round. The extra answers are reported separately and are **not** folded into the
+ * count: a reading that answers an id the key does not carry was taken against a different text, and
+ * "the reading is missing six" and "the reading is missing two and answers one the key does not have"
+ * are different defects that a single number would average into one.
+ */
+export function describeReadingCoverage(request: {
+  key: readonly { readonly id: string }[];
+  reading: readonly { readonly id: string }[];
+}): ReadingCoverage {
+  const keyed = new Set(request.key.map((sample) => sample.id));
+  const answered = new Set(request.reading.map((sample) => sample.id));
+  const unanswered = request.key.filter((sample) => !answered.has(sample.id)).map((sample) => sample.id);
+  const extra = request.reading.filter((sample) => !keyed.has(sample.id)).map((sample) => sample.id);
+  const count = keyed.size;
+  const answeredCount = request.key.filter((sample) => answered.has(sample.id)).length;
+
+  const sentence = [
+    count === 0
+      ? 'the key holds no samples, so the reading answers none of it'
+      : unanswered.length === 0
+        ? `the reading answers all ${String(count)} sample(s) the key holds`
+        : `the reading answers ${String(answeredCount)} of the ${String(count)} sample(s) the key ` +
+          `holds; unanswered: ${unanswered.join(', ')}`,
+    // The extra clause is appended in both branches: an empty key with answers in the reading is the
+    // one case where "holds no samples" would read as a clean pass, and it is the case where the
+    // answers came from somewhere else.
+    ...(extra.length === 0
+      ? []
+      : [`${String(extra.length)} answer(s) the key does not carry: ${extra.join(', ')}`]),
+  ].join('; ');
+
+  return { key: count, answered: answeredCount, unanswered, extra, sentence };
 }

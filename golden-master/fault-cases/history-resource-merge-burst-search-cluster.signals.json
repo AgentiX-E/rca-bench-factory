@@ -1,0 +1,50 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-resource-merge-burst-search-cluster",
+  "why": "Telemetry for the corpus's first self-clearing case, derived from the numbers the incident text states. Every series here declares `hold: 4`, and that is the point of the case rather than a detail of it: the corpus could previously say 'the level change lasts the whole post-window' (`step`) or 'it lasts exactly one sample' (`spike`), and nothing in between, so every case sustained all eight post-onset samples and G3's sample axis could not refuse anything at any line. Four is not a chosen number -- it is the shortest hold at which both of G4's baselines still place the answer, because the robust baseline reads the post-window's median and four elevated samples in eight put that median between the two levels, where three leave it on the baseline. The control series is flat and exact: a burst that is slow without being down is the claim the case makes, and an error ratio that wobbled would contradict it.",
+  "series": [
+    {
+      "service": "search-cluster",
+      "metric": "search_merge_thread_utilisation",
+      "unit": "1",
+      "baseline": 0.12,
+      "post": 0.98,
+      "hold": 4,
+      "quote": "sat at 98% utilisation, up from its usual 12%",
+      "why": "the saturation itself: the metric the burst moves, and the one a reader has to look at to call this `cpu-saturation` rather than `network-delay`. The baseline is well below the peak on purpose -- 0.98 with a 2 % jitter arm reaches 0.9996 and the unit's ceiling clamp then keeps it at 0.98..1, so the peak is a reading the scale can hold."
+    },
+    {
+      "service": "search-cluster",
+      "metric": "search_merge_lag_seconds",
+      "unit": "s",
+      "baseline": 1.2,
+      "post": 84,
+      "hold": 4,
+      "quote": "went from 1.2s to 84s",
+      "why": "the effect the pager saw, and the case's SLI: a duration, so the RCA-eval exporters publish it as the latency column rather than skipping the case for having no latency to observe"
+    },
+    {
+      "service": "catalog-service",
+      "metric": "catalog_query_p99_ms",
+      "unit": "ms",
+      "baseline": 40,
+      "post": 300,
+      "hold": 4,
+      "quote": "catalog p99 rose from 40ms to 300ms",
+      "why": "the same four minutes one hop out. It is a symptom rather than a second fault, which is why the causal chain crosses this service instead of starting at it"
+    },
+    {
+      "service": "storefront",
+      "metric": "storefront_error_ratio",
+      "unit": "1",
+      "baseline": 0,
+      "post": 0,
+      "noise": "none",
+      "quote": "The storefront error ratio did not move",
+      "why": "the control. A ratio of counted requests is a computation rather than a sample, so it is exact -- and it reads zero at both ends, which is what makes 'slow' and 'down' two different verdicts on this case rather than two words for one"
+    }
+  ],
+  "noLogs": "the text quotes a pager, three numbers and a duration, and no line any process wrote: the merge finished, which is the one kind of incident a log file records as nothing at all.",
+  "noTraces": "the exchange the ticket measured is a query the storefront made and catalog-service waited on, and the text gives a percentile for it rather than a single span's duration, so a trace here would be a number this case invented rather than one it was annotated from."
+}

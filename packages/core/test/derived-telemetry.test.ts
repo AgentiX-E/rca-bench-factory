@@ -9,9 +9,11 @@ import {
   SERIES_NOISE,
   SERIES_POINTS,
   TRACE_OFFSET_MS,
+  describeSeriesHoldFault,
   expandLog,
   expandSeries,
   expandTraces,
+  readSeriesHold,
   type SeriesDeclaration,
 } from '../src/fault/derived-telemetry.js';
 
@@ -144,20 +146,65 @@ describe('expandSeries · the shape each derivation means', () => {
     expect([...counterValues].sort((left, right) => left - right)).toEqual(counterValues);
   });
 
-  it('spikes: one sample at the post value and then back to the baseline', () => {
+  it('holds for one sample when the declaration says so: the shape that used to be called a spike', () => {
+    // `hold: 1` is the migration of the retired `spike` member, and the numbers below are the ones
+    // the spike test asserted before the member was removed -- identical, digit for digit, which is
+    // how the removal is a change of vocabulary rather than a change of arithmetic.
     const declaration: SeriesDeclaration = {
       service: 'cart-service',
       metric: 'client_span_duration_ms',
       unit: 'ms',
       baseline: 12,
       post: 900,
-      derivation: 'spike',
+      hold: 1,
     };
     const sample = values(declaration);
     expect(sample[SERIES_POINTS]).toBe(900);
-    // The return is baseline-sized, and the jitter still applies to it -- a spike that returned to
+    // The return is baseline-sized, and the jitter still applies to it -- a series that returned to
     // exactly 12 while its baseline samples moved would be a different series from the one before.
     expect(sample.slice(SERIES_POINTS + 1)).toEqual([12.24, 11.76, 12.12, 11.88, 12.192, 11.808, 12.072]);
+  });
+
+  it('holds for four samples and then returns, which is the shortest recovery both baselines can see', () => {
+    // The corpus's merge-burst case, and the reason `hold` exists at all. Four is not a chosen number:
+    // G4 accepts a case only when both baselines place its answer, the robust baseline reads the
+    // post-window's *median*, and a median over eight samples is the mean of the fourth and fifth. With
+    // four elevated samples those two sit on opposite levels and the median lands between them, which
+    // is a case the robust baseline can see; with three, the fourth and fifth are both baseline samples
+    // and the median is the baseline itself, which is a case it cannot see at all.
+    const declaration: SeriesDeclaration = {
+      service: 'search-cluster',
+      metric: 'search_merge_thread_utilisation',
+      unit: '1',
+      baseline: 0.12,
+      post: 0.98,
+      hold: 4,
+    };
+    const sample = values(declaration);
+    expect(sample.slice(SERIES_POINTS)).toEqual([0.98, 0.9996, 0.9604, 0.9898, 0.1188, 0.12192, 0.11808, 0.12072]);
+
+    const median = (xs: readonly number[]): number => {
+      const sorted = [...xs].sort((left, right) => left - right);
+      const middle = sorted.length / 2;
+      return ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
+    };
+    const post = sample.slice(SERIES_POINTS);
+    expect(median(post)).toBeCloseTo(0.54116, 10);
+    // The same series with one sample fewer of hold: the median falls back onto the baseline, and
+    // that is the argument for four rather than for any larger number -- the minimum is solvable.
+    const shorter = values({ ...declaration, hold: 3 });
+    expect(median(shorter.slice(SERIES_POINTS))).toBeCloseTo(0.12156, 10);
+    expect(median(shorter.slice(SERIES_POINTS))).toBeLessThan(0.12 * 1.1);
+  });
+
+  it('holds for the whole side when the declaration says nothing about duration', () => {
+    // "Eight" and "whatever a side holds" are one statement, and only the second has to be kept in
+    // sync with `SERIES_POINTS`: a literal 8 here would be a number to update in two places, and the
+    // one that was not updated would be the declaration an author reads.
+    expect(readSeriesHold({})).toEqual({ hold: SERIES_POINTS, fault: null });
+    expect(values({ service: 's', metric: 'm', baseline: 1, post: 2 }).slice(SERIES_POINTS)).toEqual(
+      values({ service: 's', metric: 'm', baseline: 1, post: 2, hold: SERIES_POINTS }).slice(SERIES_POINTS),
+    );
   });
 
   it('keeps a reading at its unit\'s ceiling, where the noise can only go down', () => {
@@ -418,9 +465,75 @@ describe('expandTraces · ids that are identities', () => {
   });
 });
 
+describe('readSeriesHold · the duration a declaration states, and the three ways it can fail to', () => {
+  it('reads a hold inside the side it has samples for', () => {
+    expect(readSeriesHold({ hold: 1 })).toEqual({ hold: 1, fault: null });
+    expect(readSeriesHold({ hold: 4 })).toEqual({ hold: 4, fault: null });
+    expect(readSeriesHold({ hold: SERIES_POINTS })).toEqual({ hold: SERIES_POINTS, fault: null });
+    // A derivation that is not a counter is irrelevant to the field: only an accumulation refuses it.
+    expect(readSeriesHold({ derivation: 'step', hold: 2 })).toEqual({ hold: 2, fault: null });
+  });
+
+  it('refuses a value that is not a whole number of samples, and says which kind of not', () => {
+    // Three spellings of the same mistake, and the sentence distinguishes them because the fix does:
+    // a string in a number field is a typo, `null` is a deleted value, and 4.5 is a duration measured
+    // in something other than samples.
+    const asText = readSeriesHold({ hold: '4' });
+    expect(asText.fault).toEqual({ kind: 'not-a-count', hold: '4', why: 'it is string' });
+    expect(describeSeriesHoldFault(asText.fault!, 'search_merge_thread_utilisation')).toBe(
+      "'search_merge_thread_utilisation' declares hold \"4\", and a hold is a whole number of samples: it is string",
+    );
+
+    const asNull = readSeriesHold({ hold: null });
+    expect(asNull.fault).toEqual({ kind: 'not-a-count', hold: null, why: 'it is null' });
+
+    const asFraction = readSeriesHold({ hold: 4.5 });
+    expect(asFraction.fault).toEqual({ kind: 'not-a-count', hold: 4.5, why: 'it is not a whole number' });
+    // The number still comes back, and it comes back as the default rather than as the bad value: a
+    // malformed declaration must produce the shape the corpus had before the field existed, never a
+    // third shape nobody wrote. The guard is what refuses the file.
+    expect(asText.hold).toBe(SERIES_POINTS);
+    expect(asFraction.hold).toBe(SERIES_POINTS);
+  });
+
+  it('refuses a hold outside the samples a side has', () => {
+    const zero = readSeriesHold({ hold: 0 });
+    expect(zero.fault).toEqual({ kind: 'out-of-range', hold: 0 });
+    expect(describeSeriesHoldFault(zero.fault!, 'search_merge_lag_seconds')).toBe(
+      "'search_merge_lag_seconds' declares hold 0, and a hold is between 1 and 8 samples -- an absent hold means all 8",
+    );
+    // A hold of twelve cannot mean a longer excursion: a side holds eight samples, so it means a typo
+    // or a window the author had in mind and did not write.
+    expect(readSeriesHold({ hold: SERIES_POINTS + 1 }).fault).toEqual({
+      kind: 'out-of-range',
+      hold: SERIES_POINTS + 1,
+    });
+  });
+
+  it('refuses a hold on an accumulation, because a counter that stops is a level', () => {
+    // Checked before the range, and the order is the point: a counter with `hold: 0` has two defects
+    // and the one worth naming is that the field does not apply to the shape at all.
+    const read = readSeriesHold({ derivation: 'counter', hold: 4 });
+    expect(read.fault).toEqual({ kind: 'on-a-counter', hold: 4 });
+    expect(read.hold).toBe(SERIES_POINTS);
+    expect(describeSeriesHoldFault(read.fault!, 'container_restarts_total')).toBe(
+      "'container_restarts_total' declares hold on a counter, and a counter accumulates through its " +
+        "post-window -- holding it at its post value would be a level wearing a counter's name",
+    );
+    expect(readSeriesHold({ derivation: 'counter', hold: 0 }).fault).toEqual({
+      kind: 'on-a-counter',
+      hold: 0,
+    });
+  });
+});
+
 describe('the vocabulary', () => {
-  it('is the three shapes the corpus can express', () => {
-    expect(SERIES_DERIVATIONS).toEqual(['step', 'counter', 'spike']);
+  it('is the two shapes the corpus can express, because duration is a number rather than a name', () => {
+    // `spike` was the third member until v3.71 and it was a step with `hold: 1`: a shape whose name
+    // carried a duration, and the only duration it could carry was one sample. The vocabulary lost a
+    // word and the field gained a range, which is why this list is shorter and the corpus's cases can
+    // do more.
+    expect(SERIES_DERIVATIONS).toEqual(['step', 'counter']);
   });
 });
 
@@ -431,20 +544,24 @@ describe('the published description', () => {
   // read by the guard, not parsed -- so the comparison lives here rather than being left to drift.
   const DOC = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'docs', 'data-model.md');
 
-  it('names exactly the members of SERIES_DERIVATIONS, in order', () => {
+  it('names exactly the members of SERIES_DERIVATIONS, and the field that replaced the third', () => {
     const text = readFileSync(DOC, 'utf8');
     const lines = text.split('\n');
     const start = lines.findIndex((one) => one.startsWith('`derivation` is a closed vocabulary'));
     expect(start, 'the paragraph describing `derivation` is gone from docs/data-model.md').toBeGreaterThan(-1);
-    // The paragraph, not the line: markdown wraps, and a check that reads one line would have found
-    // two of the three members and passed for the wrong reason.
-    const paragraph: string[] = [];
-    for (const line of lines.slice(start)) {
-      if (line.trim() === '') break;
-      paragraph.push(line);
+    // The section, not the line and not the paragraph: markdown wraps, and the `hold` paragraph that
+    // belongs to the same section is a second paragraph. A check that stopped at the blank line
+    // between them read one member and passed for the wrong reason.
+    const end = lines.findIndex((one, at) => at > start && one.startsWith('### '));
+    expect(end, 'the section after `derivation` is gone, so this test cannot find its boundary').toBeGreaterThan(start);
+    // First occurrence of each, in the order the section introduces them: the words recur later in
+    // the same section (a counter's flat pre-window, a hold on a counter), and a comparison against
+    // every occurrence would compare the section's prose with the vocabulary's order.
+    const named: string[] = [];
+    for (const match of lines.slice(start, end).join('\n').matchAll(/`(step|counter|hold)`/g)) {
+      if (!named.includes(match[1] as string)) named.push(match[1] as string);
     }
-    const named = [...paragraph.join(' ').matchAll(/`(step|counter|spike)`/g)].map((match) => match[1]);
-    expect(named).toEqual([...SERIES_DERIVATIONS]);
+    expect(named).toEqual([...SERIES_DERIVATIONS, 'hold']);
   });
 
   it('names exactly the members of SERIES_NOISE, in order', () => {

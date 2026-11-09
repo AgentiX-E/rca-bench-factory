@@ -532,7 +532,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.70: **21** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.71: **20** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1139,19 +1139,25 @@ is a row about rather than paraphrase one that no `grep` will find.
   half was computed over) and `describeScore` renders `score 100 of 100 over 14 structure check(s)`;
   every surface prints the sentence, and the site takes it from the payload rather than composing
   one (finding 485).
-- **The accuracy figure behind `M1_STRICT_THRESHOLD` is now over 30 of 31 samples.** The corpus grew
-  by one case, and its incident text had to go into the extraction key, so the recorded run --
-  which predates the sample -- is a statement about the thirty it answered.
-  `[open: either a run over the thirty-first sample, or a published figure that says which set it is
-  over; today `m1-reading-is-reproducible.test.ts` names the one unanswered sample, so the gap is
-  measured and the number is honest, but a reader comparing 4/31 to the reading's 4/30 has two
-  denominators and no sentence]`
-- **The grid's sample axis is still constant.** The faint case moved the `|Z|` axis -- `|Z| >= 10`
-  now refuses it -- and left the sample line untouched: 1, 3, 5 and 8 all admit all thirty-one,
-  because every case offers eight post-onset samples and the strongest three are never in doubt.
-  `[open: a case whose anomaly is three consecutive samples inside a longer quiet window would move
-  the sample axis the way the faint case moved the z axis, and `SERIES_POINTS` is what makes that
-  expressible -- the derivation has no shape that produces it today]`
+~~**The accuracy figure behind `M1_STRICT_THRESHOLD` is now over 30 of 31 samples.**~~
+  Measured: the number now has a sentence that carries its denominator. `describeReadingCoverage`
+  writes `the reading answers 30 of the 32 sample(s) the key holds; unanswered: …`,
+  `score-fault-extraction.mjs --record` prints it beside the report, and
+  `m1-reading-is-reproducible.test.ts` pins the whole line -- so the two denominators a reader used
+  to have to choose between are one sentence with both numbers in it, and a new sample that no run
+  answered lengthens the list rather than moving the figure (finding 489).
+~~**The grid's sample axis is still constant.**~~ Measured: it was constant because the schema could
+  only say "the whole post-window" or "exactly one sample" -- `spike` was a step whose *name* carried
+  a duration, and the only duration it could carry was one. `hold` says the number, `spike` retired
+  into `hold: 1`, and the corpus's merge-burst case returns after four samples: the default admits
+  **32 of 32** and **2** of its four neighbours now change that, `|Z| >= 10` for being too weak and
+  **5 samples** for being too short (finding 488).
+- **The sample axis has one witness.** The grid's sample line moves because exactly one of the
+  thirty-two cases recovers before its window ends; a second case with a different hold would make
+  the axis a *range* rather than a single point, and would test whether `hold: 6` and `hold: 2` land
+  in different cells.
+  `[open: a second self-clearing case, or a measurement saying why one witness is enough for this
+  axis when one witness was not enough for the `|Z|` axis]`
 - **`docs/acceptance.md` is 96 KB and grows by clause per round.** L3 is 284 lines and L4 is 405;
   L0, L1, L2 and L5 are 14, 7, 7 and 6, so the obvious split by layer would produce four files
   of a dozen lines.
@@ -1213,8 +1219,8 @@ and this table.
 | [volume-08.md](progress/volume-08.md) | 14 | v3.07 | v3.20 |
 | [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
-| [volume-11.md](progress/volume-11.md) | 7 | v3.47 | v3.53 |
-| [volume-12.md](progress/volume-12.md) | 17 | v3.54 | v3.70 |
+| [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
+| [volume-12.md](progress/volume-12.md) | 16 | v3.56 | v3.71 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

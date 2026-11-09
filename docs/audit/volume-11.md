@@ -380,3 +380,63 @@ sentence with no test -- the acceptance is pinned: `rulegen.test.ts` plants a la
 correct mapping to `usage` is accepted by the same check, so the pair reads as "one verdict, two
 meanings". If a later round adds a semantic reader, that test is the one that must be replaced
 by its refusal.
+
+## Finding 488 — a shape whose name carried a duration, and the axis that could not move because of it
+
+G3 asks two questions of a case: how far from its baseline did a metric move (`|Z|`), and for how
+many consecutive samples did it stay there. v3.69 built a 4x4 grid over the pair and found sixteen
+settings with one verdict: **1, 3, 5 and 8** samples all admitted all thirty-one cases, because
+every case's post side held the post value for all eight samples and `longestRun` counted to eight
+in every one of them.
+
+The cause was not the threshold and not the noise model. `expandSeries` wrote the post side in two
+shapes: `counter` accumulated, and everything else sat at `post` for the whole side — with one
+exception, `spike`, which sat at `post` for **one** sample and returned. So the vocabulary could
+say "the excursion lasts the whole post-window" and "the excursion lasts exactly one sample", and
+nothing could say four. A shape whose *name* carries a duration can only carry the one duration the
+name spells, and no declaration the schema admits could move the sample axis, which is why a round
+that added a case could move the `|Z|` axis and leave the other one flat.
+
+The field is now `hold`: a whole number of post-onset samples, absent meaning the whole side
+(`SERIES_POINTS`), refused on a `counter` (it accumulates through its window, so a hold would stop
+it at its post value — a level wearing a counter's name) and outside `1..SERIES_POINTS` (a side has
+eight samples; twelve is a typo or a window the author did not write). `spike` is gone and its
+series is spelled `hold: 1`, which the migration test pins to the same seven numbers the retired
+member produced. The corpus's first self-clearing case — merge threads at 0.12 -> 0.98 for four
+samples, lag 1.2s -> 84s, catalog p99 40 -> 300ms, error ratio flat — is what moves it: the default
+admits **32 of 32** and **2 of 4** neighbours now change that, `|Z| >= 10` for being too weak and
+**5 samples** for being too short. Four is derived rather than chosen: the robust baseline reads the
+post-window median, and a median over eight samples is the mean of the fourth and fifth, so four
+elevated samples place it between the two levels and three leave it on the baseline.
+
+The rule lives in `readSeriesHold`, not in the guard, because a second copy of "between 1 and eight"
+is a copy that can disagree with the expansion. The guard prints the sentence that function returns,
+so the refusal an author reads and the arithmetic the samples follow are the same code.
+
+## Finding 489 — a reading that answers 30 of 32 and never said so
+
+`golden-master/fault-extraction/readings.json` records what the model answered, sample by sample.
+Every total in it is computed over the samples that run *answered*, and the file states the size of
+the key it was taken from — `key.size: 30`. The corpus now holds **32** samples, and it held 31
+before this round. Three numbers, then, and none of them printed beside another: the reading's own
+denominator (30), the key of the day (30), and today's key (32).
+
+The arithmetic a reader had to do was not hard, it was *unspecified*. Dividing `totals.strict` by
+`key.size` gives a ratio over the day's key; dividing by today's `samples.json` gives a different
+ratio over a key the reading was never scored against; and the two differ by exactly the samples
+added since. `m1-reading-is-reproducible.test.ts` has named the unanswered sample since v3.70,
+which made the gap *visible to a test* and not to a reader of the report — the scorer prints
+`graded: 30/30` and says nothing about the key, because `score-fault-extraction.mjs` scores the
+samples it was handed and its denominator is the run's reach rather than the key's size.
+
+`describeReadingCoverage({ key, reading })` now writes the sentence —
+`the reading answers 30 of the 32 sample(s) the key holds; unanswered: config-rate-cache-ttl-pricing,
+resource-merge-burst-search-cluster` — and returns the two lists behind it, so the assertable
+object and the printable line are one computation. `score-fault-extraction.mjs --record` prints it
+under the report, the M1 test pins the whole sentence, and a file with no `status: 'current'` entry
+is reported as having none rather than as covering nothing.
+
+The extra answers are a clause of their own and are deliberately not folded into the count. A
+reading that answers an id the key does not carry was taken against a different text, which is a
+defect of provenance; a reading that answers fewer samples than the key holds is a key that grew.
+Adding them into one "missing N" would average two findings into a number that describes neither.

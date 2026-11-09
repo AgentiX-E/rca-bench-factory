@@ -1369,3 +1369,317 @@ object. A test whose two sides can be the same object is a test of the harness. 
 apply it is the one item on this list that has never been measured at all: P17's job declaration,
 where the artifact under test would be a budget that only CI can spend.
 
+## v3.54 — a job no run had measured, and the budget only CI can spend
+
+The previous round ended with a ruler: *for every test, name the failure shape it cannot
+produce.* It also named the one item on the open list that had never been measured at all:
+P17's job declaration, whose subject is a budget that only CI can spend. This round takes
+both at once, and takes P3 with them, because a declaration no real job ever uses is a
+mechanism with the same defect as the channel in v3.53.
+
+### One — the same shape one level up (P17)
+
+`R8` let a tree declare a **step** the recording had not measured, and every field it wrote
+was already in `ci.yml`. A whole **job** is that shape one level up, with a difference that
+is not a detail: the job's ceiling is part of `R6`'s comparison, so a job no run has
+measured has nothing to be compared with, and `--borrow` was refused across a budget in
+v3.52. `R9` is the answer. A job promise names four things and no others: the job id, the
+ceiling written in `ci.yml`, the bound on **every** step of that job, and an argument of at
+least forty characters. `budgetErrors` checks each of them against the workflow, exempts
+the job from `R2`'s gap, and refuses the promise the moment the recording holds that job --
+because its first run is the thing it was waiting for.
+
+### Two — a whitelist, because the ruler is about what a writer cannot know
+
+A local apparatus cannot spend a runner's budget. It can, however, catch someone writing
+down the seconds that only a run could have produced. `JOB_PROMISE_KEYS` and
+`STEP_PROMISE_KEYS` are whitelists rather than a documented convention: an extra key --
+`seconds`, `run`, `commit`, `measured`, `ratio`, `derived` -- is refused by name as a
+measurement its writer has not watched happen. `R9` deliberately computes **no deadline**:
+`R5` needs the seconds measured in front of a bound, and every step of a job that has never
+run is unmeasured, so the sum has no terms. The first green run supplies them and `R4`/`R5`
+settle the numbers in the commit that deletes the promise. Nineteen cases in
+`ci-budget.test.ts` hold these rules, and each says in a comment which failure shape its
+fixture cannot produce; a twentieth reads the block and refuses a case added without that
+sentence. The mark is assembled and matched only on comment lines so the case does not
+count its own pattern.
+
+### Three — a real job, so the promise is used rather than merely tested (P3)
+
+The sites battery measured **626 s** on the runner against a bound `R4` put at 1252 s --
+52 s was the closest this campaign has come to refusing a legitimate run. v3.53 bought the
+margin back with a rule (20 -> 25, ceiling 21 -> 26); this round spends less instead. The
+sorted claimant files are divided by position across `sensitivity` and a new job
+`sensitivity-shard`, each running one half against the same 25-minute bound, so the wall
+clock is the slower shard rather than their sum. `checkShardPlan` reads the real `ci.yml`
+and the real inventory and refuses a plan that omits a shard, calls one twice, puts two in
+one job, disagrees on the count, or measures one claim twice or not at all. The shipped
+script refuses a shard with no claimant, because two green jobs one of which measured
+nothing is a shape a single job cannot produce.
+
+The bound is **not** tightened in the round that splits: its measurement is of the
+unsharded command, and `R4` has to size a bound from a run of the command it will enforce.
+The step's name is unchanged for the same reason -- `R2` pins the recording to it, so a
+recording taken from the unsharded run still names a step that exists.
+
+### Four — a guard that stopped seeing a command with arguments
+
+Registering the new job found a defect that had nothing to do with budgets.
+`cold-tree-job.test.ts` decides which jobs run the suite by following each `run:` command
+to the script it names. Its pattern ended in `$`, so
+`node scripts/verify-sites-are-sensitive.mjs --shard 1/2` did not match and the guard
+answered "this job runs no suite" about a job that does nothing else. Adding a flag made a
+whole job invisible to the shell check. The `$` is gone, `sensitivity-shard` is registered
+in `SUITE_JOB_IDS`, and the six jobs that run the suite are named again.
+
+### Five — the recorder keeps the gap open
+
+`measure-ci-baseline.mjs` now knows a job promise. A declared job a run never reported is
+skipped, not filled with a borrowed or invented number: the recording keeps the hole, and
+`R9` reads the same promise and the same recording, so the gap is a state the gate can be
+green in. A `--borrow` of a declared job is refused, because a borrow is not a first run --
+it would put the id in the recording against seconds from a different job. The first run
+that reports the job records it normally, says the promise can be deleted, and leaves the
+sentence for the round rather than erasing the only account of why the job exists.
+
+### Readings
+
+> Ledger for `v3.54`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **237 files, 5849 tests passed** (at v3.54) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.54) |
+| repo test suite | **241 files, 6036 tests passed** (at v3.54) |
+| new tests | **25** in `core` (6,036 -> 6,061): eight for the two gate arms, four for rule 5 and its dated exemption, five through `check-fault-cases`, four for the matrix's two columns, and four more across the enumeration and the witness table |
+| throw partition | **74 statements**: 6 `fatal`, 60 `unguarded`, 1 `guarded`, 7 `rethrow` |
+| failure sites | **123** across 58 of **83** scripts; two re-annotated after their guard text changed |
+| the recording | run `42172498744`, **8 jobs / 82 steps / 61 bounded**, 45 min measured; bounds total **292 min**, tightest `verify / Test with coverage` at **2.3x**. Before the settlement it was run `42131836805`, 7 jobs / 75 steps, with one declared job deliberately absent |
+| the bound that was two seconds short | `Lint` measured **361 s** in `42172498744` and **347 s** in v3.53's reading; twice 361 is **722**, and its bound was **720**. `R4` refused a step that had done nothing but run on a slightly slower machine. It is **14** minutes now -- 2.33x -- and 840 plus the 27 s measured in front of it is 867, inside the 15-minute ceiling, so no ceiling moved and `R6` had nothing to excuse |
+| the third run | `42172498744`: **8 of 8 jobs success**, batteries-heavy **11.4**, build **9.2**, batteries **8.7**, sensitivity-shard **6.6**, sensitivity **5.2**, golden master **3.1**, backend **0.8**, cold tree **0.5** min; **12.2 min of wall clock**. The installed backend took **50 s** this time -- a mirror having a good day |
+| the job that had never been bounded | `backend` measured **296 s** in `42165763231` against **37 s** in the run before it -- `apt-get install prometheus` on a bad and a good day. Over three minutes the floor applies to every step of the job, and seven steps at three minutes are 21, one more than the 20-minute ceiling it had, so the job could not be bounded at all until the ceiling moved. It is **34** now: five setup steps at 3, the install at **16** (1.5x the 648 s a cold runner measured, 3.5x the 273 s of the install step in this run), the reader at 3 |
+| `R6`, split in two | a budget *narrower* than the one the reading was taken under is still refused, because a bound that fit the wider ceiling may expire after the job has already died; a *wider* one is accepted and named in the summary (`backend 20 -> 34`), because no step bound moves and `R5`'s deadline only gains room. Refusing that direction closed the same circle `R9` opens: a ceiling could then only be widened by a run, and a run happens after the push this gate has to pass |
+| the split, measured | shard 1 **248 s**, shard 2 **387 s** -- **635 s** together against **626 s** unsharded; the wall clock is the slower shard, **7.0 of 12.5 min**, where the battery used to be the longest job at 11.3 |
+| the promise, settled | the first green run measured `sensitivity-shard` at **387 s** against a 25-minute bound: **3.9x**, `R4` green, `R5`'s sum inside a 26-minute ceiling. The promise was deleted in this commit, which is the lifetime it declared -- one real run, not a borrow |
+| CI | run `42160224254` on `b054d7f9a`: **8 of 8 jobs success** -- batteries-heavy **12.5**, batteries **11.7**, sensitivity-shard **7.0**, build **6.0**, sensitivity **4.9**, cold tree **2.2**, golden master **1.0**, backend **0.6** min; **12.5 min of wall clock** |
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P1** | real network shapes beyond a closed socket | local servers drive 5xx, 400 and 422 | keep a reading of what the API actually answered on every real push |
+| **P2** | a mistyped `--branch` reads as an unborn branch | `publish-cli --branch main` on a `master` repository found no ref, so the plan was "publish the whole history onto nothing"; only the merge refusal stopped it. A linear history would have created a second branch silently | refuse a plan whose base is `null` on a repository that is not empty, unless the caller says `--new-branch` |
+| **P2** | P13: a mutation is one substitution | unchanged | a second mutation, or an assertion about mutations |
+| **P2** | P2 / P5 / P7 / P8 | unchanged | unchanged |
+| **P3** | P9 / P14 | unchanged | unchanged |
+| **P3** | the shards are unbalanced by file cost, not by count | **248/387** then **189/440**, ratio 1.56 -> 2.33 while the counts differ by ten | time each claimant file once, cut where the seconds are, then settle the bound with a run of the rearranged command |
+| **P3** | `backend`'s 16-minute install bound has never met a slow day | sized from 648 s on a cold runner and 273 s in this run; 13 minutes was refused by `R4` at 440 s, which is the same arithmetic | a run that installs from a slow mirror, and the bound re-sized from it if 16 proves short |
+
+**The lesson, for the round after this one.** The previous ruler was about a test: name the
+failure shape it cannot produce. Applied to P17 it produced a whitelist rather than a
+simulation -- the local suite cannot spend a budget, but it can refuse a promise that
+claims to have measured one. The honest boundary is therefore written into the rule and
+the tests instead of being discovered later: `R9` says nothing about a deadline, and the
+first CI run is where the numbers are settled. A mechanism that has never been used by a
+real job is a mechanism nobody has tested, so this round also gives it one.
+
+### The promise's whole life, in one round
+
+The tree was published with the promise in it -- `sensitivity-shard` declared, no run
+having measured it, `check-ci-budget` green in that state because `R9` reads the same
+promise and the same recording and the gap is a state both agree on. The run that followed
+was the first one that could answer it, and it answered with a number the promise was
+forbidden to write: the recorder measured the job at **387 s**, printed that one declaration
+was now measured and could be deleted, and the deletion is part of this round's last commit.
+`check-ci-budget` then read **8 jobs / 82 steps / 54 bounded**, and `R4` accepted 25 minutes
+against 387 s at **3.9x** -- a bound sized by a run of the command it enforces, which is the
+thing a declaration cannot do.
+
+The next round was supposed to ask whether **13** minutes (2.0x of 387 s) would hold the
+slower shard. The run after this one answered it before anybody could ask: the same shard
+measured **440 s**, 13.7% slower, and 13 minutes is 780 s, which is under `R4`'s required
+twice the measurement (880 s). The suggestion was refused by its own arithmetic one run
+later. The lesson is not that 25 minutes is tight -- it is that a bound sized from a single
+reading of a variable step is a bound that expires the first time the runner has a
+different day, and the two shards' drift (**248 -> 189**, **387 -> 440**, sum **635 ->
+629**) is the measurement of how variable that day is.
+
+The split also moved the critical path. The sites battery was the longest job at 11.3 min in
+run `42131836805`; in `42160224254` it is **4.9** and **7.0** in parallel, and
+`batteries-heavy` at **12.5** now sets the wall clock. P3's subject -- a gate whose cost grows
+with its claims -- is therefore no longer the thing that lengthens a run, which is a
+different statement from "the shards are balanced": shard 2 is **1.6x** shard 1, exactly the
+imbalance the local reading predicted.
+
+## v3.55 — the statistic a bound was always supposed to be taken from
+
+v3.54 closed with a sentence it had earned three times in three runs: *a bound sized from a
+single reading of a variable step is a bound that expires the first time the runner has a
+different day.* The open list then recorded the honest version of it -- every bound's number
+should say which reading it came from and what a slower day is expected to cost. This round
+is the one that answers it, and the answer is not a margin. It is a different statistic.
+
+### One — the maximum was being taken over a sample of one (finding 423, `R10`)
+
+`R4` asks for twice **the** measurement. "The" was one run: the one in
+`golden-master/ci-baseline.json`. A bound needs a maximum over days, and a recording is one
+day by construction, so the rule was exact about the wrong quantity and green while being
+wrong -- a bound could satisfy it and still fire on a day this repository had already
+measured.
+
+`R10` closes the gap. `golden-master/ci-readings.json` holds one entry per run the recorder
+has ever measured; each step in it carries its seconds **and the command those seconds were
+spent on**. A bound must be at least twice the slowest reading of *its command*, from
+whichever job and whichever run. The command is stored rather than resolved through today's
+tree because a renamed step would otherwise lose its series, and losing a series is losing
+the slow day that justified a bound. Two shapes fall out of keying by command: the same
+script in two jobs is one series (`sensitivity` and `sensitivity-shard` now share theirs),
+and an action step keys by its name, because an action has no `run:` of its own and the
+download is what costs.
+
+The file is required rather than optional. A gate that skipped the comparison whenever the
+history was absent would print `OK` about a question it had not asked, which is the silence
+`R10` exists to remove; the refusal names the path it looked for.
+
+### Two — the history has to outlive the workflow it describes (finding 424, `--seed`)
+
+The first version demanded of a reading what `R2` demands of the recording: every job of
+today's workflow, every step of every job. That is right for the recording -- a bound with
+no reading is the gap `R2` refuses -- and wrong for a history, because `42131836805` ran
+seven jobs and today's workflow has eight. The recorder refused it, and a rule that insists
+will refuse every run from before the last structural change: adding a job silently resets
+every bound's evidence to the sample of one the rule was written to remove.
+
+So the two files answer different questions and now have different rules. The **recording**
+is what CI will spend and must describe the workflow as it stands. A **seed** is evidence
+about a command on a day: it is appended to the history, never to the recording, and what
+did not exist then is printed rather than thrown --
+`seeded run 42131836805 with 7 of 8 job(s) and 75 step(s); 1 item(s) did not exist then`.
+A seed may not be newer than the recording, may not be the recording (one day entered twice
+is one day weighted twice), and may not be combined with `--borrow` (borrowed seconds are not
+a day anything ran).
+
+The result is a six-run history where there had been four consecutive runs of one afternoon,
+and the difference is not cosmetic: the gate immediately refused a `sensitivity` bound of 20
+minutes against a seeded **633 s** day.
+
+### Three — a deadline summed the recording rather than the slowest day (finding 425)
+
+`R5` says a bound must expire before its job does: `bound + the steps in front of it` fits
+inside the ceiling. The prefix was the recording's seconds. Under `R10` that is no longer the
+right sum -- if a step may legitimately take twice its recorded time, so may everything in
+front of it -- and a ceiling validated against a fast prefix is a ceiling a slow morning
+overruns, after which the job dies and names no step, which is the defect step bounds exist
+to remove.
+
+Two ceilings moved and neither had been touched by this round: `verify` from 15 to **18**
+(`Lint`'s 14-minute bound plus 1019 s of prefix, 164 s of which is the shell install at 153 s
+rather than 9, and `Test with coverage` was the second one out at 902), and `batteries-heavy`
+from 25 to **27** (the 15-minute backend-support bound plus 1532 s, which does not fit in
+1500).
+
+### Four — the bound that was under twice its own slow day (finding 426)
+
+`Install the shells the suite cross-checks against` was bounded at 3 minutes in all five jobs
+that run it, against a 9-second reading, and green for ten rounds. The history holds **153 s**
+for the same command: an `apt-get update` against a slow mirror. Twice that is 306, which
+does not fit in 180. It is **6** minutes everywhere now. Nothing about the step changed --
+what changed is that a day exists on which it took seventeen times longer, and until this
+round nothing in the tree could see that day.
+
+### Five — a bound too wide for its own ceiling, and why narrowing beat raising (finding 427)
+
+`sensitivity`'s bound was 25 minutes, and the seeded 633 s day still fits inside twice it.
+`R5` did not: 1500 s of bound plus 180 s of prefix is **1680**, against a **1560** ceiling.
+Two repairs, not equal. Raising the ceiling to 29 keeps a bound that is looser than the
+evidence requires; narrowing to **22** minutes (1320 s, 2.09x) puts the deadline at 1500 s
+inside a ceiling that does not move, and reports a hang seven minutes sooner. A ceiling is a
+tolerance for imprecision and a bound is a claim about a command, so the claim was corrected
+and the tolerance left alone.
+
+### Six — the instrument that could not say why (finding 428)
+
+The first CI run of this round failed the sites battery's shard 2, and what it printed was a
+file, a verdict, and an instruction to re-run the file by hand. The same shard passes locally
+in 2.9 minutes with 92 claims and 120 runs, so the reader had no exit code and not one line of
+output to think with.
+
+`failureSummary` is right and is not the defect: it quotes at most four lines of a failed run
+and returns **nothing** when the run names no failing test, because a summary it invented
+would be a sentence about a failure nobody described. The case that arrived here is the one it
+cannot describe -- vitest exiting non-zero **with every test passing** when a worker's RPC
+deadline expires -- so the summary was empty and the gate printed an empty detail. `outputTail`
+quotes the last three lines the run did print, under `its own output ends:`, which is evidence
+rather than a diagnosis; the sentence also carries the exit code now, because a red test and a
+dead runner are different findings.
+
+The other half is a hypothesis the next run tests, and it is finding 297's shape one layer out:
+the battery runs four claimants at a time, each a `vitest` of its own, and every child sized
+its pool from the machine -- four claimants on a four-vCPU runner ask for **sixteen** workers.
+`--maxWorkers=1` costs nothing for a one-file run and removes the oversubscription by
+construction.
+
+### Seven — the instruments
+
+The mutation set is the new rules' failure shapes, one substitution each: a tie in the
+slowest-reading lookup going to the older run, a duplicate day admitted, the age check
+inverted, the deadline falling back to the recorded day, an action step keying an empty
+command, a seed demanding every job, a seed writing the recording, and a seed allowed to be
+newer than it. Eight red. Each of those eight is a number that would have looked plausible
+on the summary line, which is the same lesson this repository keeps relearning. Three more
+hold the instrument's two repairs.
+
+### Readings
+
+> Ledger for `v3.55`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **238 files, 5890 tests passed** (at v3.55) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.55) |
+| repo test suite | **242 files, 6077 tests passed** (at v3.55) |
+| `core` suite | **238 files, 5890 tests passed**; **41** of them new this round -- 38 in `ci-readings.test.ts` (six for `--seed`), one for `outputTail`, two for the instrument's red-baseline report |
+| coverage | `core` **99.96 / 99.75 / 100 / 99.96**, `cli` **100 / 100 / 100 / 100** |
+| mutation | **11** substitutions, **11** red: eight on the new rules (restored green at 115 cases) and three on the instrument. The third of those **survived** on its first case -- the fixture held exactly three lines, so "the tail" and "the head" were the same three -- and the case was what needed fixing |
+| failure sites | **124** across **58** of **83** scripts; throws **79** = 11 `fatal` + 60 `unguarded` + 1 `guarded` + 7 `rethrow` |
+| site proofs | **189** claims across **57** files, every one driven |
+| the gate's own summary | 8 jobs recorded, **61 of 82** steps bounded, 49 min measured, bounds total **301** min, **6** readings of the workflow |
+| the run | `42205959904`: **8 of 8 jobs success**, **15.0** min wall clock -- batteries-heavy 15.0, batteries 11.7, build 7.7, sensitivity-shard **6.8**, sensitivity 5.3, golden master 0.8, backend 0.7, cold tree 0.3. The shard that failed the run before it passes with the same claims and the same mutants; the only change is `--maxWorkers=1` |
+
+
+### Left open, in the order the goal is reached
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| **P1** | real network shapes beyond a closed socket | unchanged | keep a reading of what the API answered on every real push |
+| **P2** | the history is six runs, four of them one afternoon | seeded from `42131836805` and `42142175689` plus this round's runs | record every green run; a bound's worst day is only as good as the worst day recorded |
+| **P2** | P13: a mutation is one substitution | unchanged | a second mutation, or an assertion about mutations |
+| **P2** | `backend`'s 16-minute install bound has never met a slow day | unchanged, and `R10` now divides it by the 648 s cold day | the history will answer it the first time a slow mirror is recorded |
+| **P3** | the shards are unbalanced by file cost, not by count | unchanged | time each claimant file once, cut where the seconds are |
+| **P3** | P2 / P5 / P7 / P8 / P9 / P14 | unchanged | unchanged |
+
+### Eight — the run, and the shard that went green
+
+Run `42205959904` is **8 of 8 jobs success** in **15.0 minutes** of wall clock, which is
+`batteries-heavy` and nothing else: batteries 11.7, build 7.7, sensitivity-shard **6.8**,
+sensitivity **5.3**, golden master 0.8, backend 0.7, cold tree 0.3.
+
+The shard is the reading that matters. It is the one that failed the previous run, and it
+passes now with the same claims, the same files and the same mutations -- the only difference
+being `--maxWorkers=1` on each claimant run. That is one measurement, not a proof, and it is
+the measurement the hypothesis predicted: four claimants each sizing their pool from a
+four-vCPU runner is sixteen workers for four files, and the file that paid was the one whose
+duration is a single synchronous block. Nothing about the battery's own arithmetic changed.
+
+The four bounds this round moved all survived their first real day: `sensitivity` at 22
+minutes against a 5.3-minute job, `batteries-heavy` at 27 against 15.0, `verify` at 18 against
+7.7, and the shell install at 6 minutes in all five jobs. None of them was close, which is
+what a bound sized from the slowest recorded day rather than from the last one looks like on
+an ordinary day.
+
+**The lesson, for the round after this one.** A rule that divides by a number should say
+which number, and the file that holds the numbers should be able to grow backwards. Both
+halves were needed: `R10` without `--seed` would have divided by an afternoon, and `--seed`
+without `R10` would have recorded days nothing read. The next round's version of this
+question is the one on the open list -- a margin is a claim about the *next* day, and no
+maximum over recorded days can make it. Six runs is six runs.

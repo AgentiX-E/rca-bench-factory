@@ -163,9 +163,14 @@ describe('the golden type labels obey the shape the prompt now states', () => {
     // the vocabulary has, and how many samples there are. Both are stated, so a vocabulary
     // that shrank to a handful of labels fails here (`size` would fall) and a sample that was
     // dropped without its type fails too (the counts move together).
+    //
+    // v3.71 added a thirty-second sample that reuses `cpu-saturation` for the same reason v3.70's
+    // reused `config-mismatch`: the corpus needed a *shape*, not a label. The vocabulary therefore
+    // stayed at thirty while the set grew, which is the pair of numbers this asserts and the reason
+    // they are two numbers rather than one.
     const types = goldenSamples().map((s) => s.expected.type);
     expect(new Set(types).size, 'the vocabulary').toBe(30);
-    expect(types.length, 'the set').toBe(31);
+    expect(types.length, 'the set').toBe(32);
   });
 });
 

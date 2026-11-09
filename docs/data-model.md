@@ -640,7 +640,7 @@ the guard refuses a quote the text does not contain.
 
 | block | fields | expanded into |
 | --- | --- | --- |
-| `series[]` | `service`, `metric`, `unit`, `baseline`, `post`, `derivation`, `noise`, `quote`, `why` | metric signals: eight samples per side of the onset, spread across that side's own span of the window |
+| `series[]` | `service`, `metric`, `unit`, `baseline`, `post`, `derivation`, `hold`, `noise`, `quote`, `why` | metric signals: eight samples per side of the onset, spread across that side's own span of the window |
 | `logs[]` | `service`, `id`, `body`, `severity`, `quote`, `why` | log signals at onset + 30s, 150s, 270s |
 | `traces[]` | `service`, `spanName`, `durationMs`, `parent`, `quote`, `why` | trace signals at onset + 10s, with span ids derived from `sha256(caseId)` |
 
@@ -678,11 +678,23 @@ reads 1 dips to 0.98, and neither is a reading the data contains. A `counter` re
 outright -- its samples are its accumulation and are exact either way, so the field would claim a
 distinction the shape does not have.
 
-`derivation` is a closed vocabulary in `ir` terms -- `step` (a level change, the default), `counter`
-(an accumulation whose pre-window is flat at `baseline` and whose last sample is exactly `post`), and
-`spike` (one sample at `post`, then `baseline`). A counter's pre-window is flat because the
-declaration says what the counter had accumulated by the start of the window; a value that rises
-before the fault is a claim the file does not make.
+`derivation` is a closed vocabulary in `ir` terms -- `step` (a level change, the default) and
+`counter` (an accumulation whose pre-window is flat at `baseline` and whose last sample is exactly
+`post`). A counter's pre-window is flat because the declaration says what the counter had accumulated
+by the start of the window; a value that rises before the fault is a claim the file does not make.
+
+`hold` is how long a step holds, counted in post-onset samples, and it is the field that replaced a
+third member of that vocabulary. A declaration that omits it holds for the whole side -- all eight
+samples -- and one that says `hold: 4` sits at `post` for four samples and at `baseline` for the
+remaining four. The retired member was `spike`, which meant "one sample at `post`, then `baseline`",
+and it was a step with `hold: 1` wearing a duration's name: a shape vocabulary that can only say "all
+of the window" or "exactly one sample" cannot answer a question about how long an excursion has to
+last, and the sample axis of G3's threshold grid is exactly that question -- which is why that axis
+moved no cell for as long as every declaration could only mean "all of them". Three values are
+refused, by `readSeriesHold` and not by a second copy of the rule in the guard: anything that is not
+a whole number of samples, a hold on a `counter` (the shape accumulates through its post-window, so
+holding it at `post` would be a level), and anything outside `1..8` (a side has eight samples, so a
+larger hold is a typo or a window the author did not write).
 
 ### A reading is a measurement, and a measurement stays inside its unit and on its grid
 

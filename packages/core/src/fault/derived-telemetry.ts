@@ -58,21 +58,25 @@ import { clampToUnit, quantizeToUnit } from '../util/unit.js';
 /**
  * How a declared series gets from its baseline to its post value.
  *
- * - `step` (the default): a level change that holds for the whole post-window.
+ * - `step` (the default): a level change that holds for `hold` samples -- all of them, unless the
+ *   declaration names a shorter run.
  * - `counter`: an accumulating series, because a counter that jumps to its post value is a level
  *   wearing a counter's name.
- * - `spike`: one post-onset sample at the post value, then the baseline again.
  *
- * `spike` exists because a corpus that can only express a step cannot say what a brief excursion
- * looks like, and the two baselines treat that shape differently: peak-z cannot distinguish it from a
- * sustained change, and a median over the window barely notices it. It is what the negative control
- * for G4's two-solver requirement is built from.
+ * There were three members until v3.71, and the third was `spike`: one post-onset sample at the post
+ * value and then the baseline again. It was a step with a hold of one, spelled as a separate word --
+ * which meant the corpus's *shape* vocabulary carried a **duration** inside a name, and the only
+ * duration it could carry was one sample. A corpus that can only say "the excursion lasts the whole
+ * post-window" or "it lasts exactly one sample" cannot answer a threshold question about how long an
+ * excursion has to last, and G3's sample axis is exactly that question: the grid's four sample lines
+ * moved no cell for as long as every case sustained all eight samples, because every declaration
+ * could only mean "all of them". `hold` says the number instead, and `spike` became `hold: 1`.
  *
  * The vocabulary is closed here and checked by the guard, because the first version tested
  * `derivation === 'counter'` and treated everything else as a step -- so a typo produced a different
  * shape from the one the author wrote, and no reading of the file revealed it.
  */
-export const SERIES_DERIVATIONS = ['step', 'counter', 'spike'] as const;
+export const SERIES_DERIVATIONS = ['step', 'counter'] as const;
 
 /** How a declared series moves. Derived from `SERIES_DERIVATIONS`. */
 export type SeriesDerivation = (typeof SERIES_DERIVATIONS)[number];
@@ -114,6 +118,102 @@ export const SERIES_POINTS = 8;
 /** The fixed jitter cycle, as a fraction of the reading. */
 export const SERIES_JITTER = [0, 1, -1, 0.5, -0.5, 0.8, -0.8, 0.3] as const;
 
+/**
+ * Why a declaration's `hold` cannot be read.
+ *
+ * Three refusals rather than one, because they are three different defects in an annotation and an
+ * author who is told "hold is invalid" learns nothing: a hold that is not a whole number of samples,
+ * a hold on a shape that accumulates, and a hold outside the number of samples a side has. The
+ * third is the interesting one -- `hold: 12` cannot mean "twelve samples at the post value" when a
+ * side holds eight, and the only honest readings of it are a typo or a declaration that wanted a
+ * different window.
+ *
+ * `on-a-counter` is checked before the range check because it is the more specific statement: a
+ * counter with `hold: 0` has a defect the range check would also find, and the defect worth naming
+ * is that the field does not apply to the shape at all.
+ */
+export type SeriesHoldFault =
+  | { kind: 'not-a-count'; hold: unknown; why: string }
+  | { kind: 'on-a-counter'; hold: number }
+  | { kind: 'out-of-range'; hold: number };
+
+/**
+ * What a declaration's `hold` says, and whether it said it.
+ *
+ * The number comes back even when there is a fault, because every caller expands the series with
+ * something and the guard is what refuses the file: returning `undefined` here would make a
+ * malformed declaration produce a *different* series rather than a refusal, which is the class of
+ * defect that let a misspelled `derivation` survive three rounds. The default is `SERIES_POINTS`,
+ * so a fault degrades to the shape the corpus had before the field existed rather than to nothing.
+ */
+export interface SeriesHoldRead {
+  /** How many post-onset samples sit at `post`; the rest return to `baseline`. */
+  hold: number;
+  /** `null` when the field was read. A fault is reported rather than thrown. */
+  fault: SeriesHoldFault | null;
+}
+
+/** Why a value is not a whole number of samples, in the words the refusal uses. */
+function whyNotACount(raw: unknown): string {
+  if (typeof raw !== 'number') return `it is ${raw === null ? 'null' : typeof raw}`;
+  return 'it is not a whole number';
+}
+
+/**
+ * Read `hold`, and name what is wrong with it when something is.
+ *
+ * Absent means `SERIES_POINTS`: a declaration that says nothing about duration gets the level
+ * change the corpus has always meant, so the field is additive rather than a migration. That is the
+ * one value this function can take without a declaration, and it is why `hold` is a number here and
+ * an optional field on the interface -- "eight" and "whatever a side holds" are the same statement,
+ * and only one of them has to be kept in sync with `SERIES_POINTS`.
+ */
+export function readSeriesHold(declaration: {
+  derivation?: SeriesDerivation | undefined;
+  hold?: unknown;
+}): SeriesHoldRead {
+  const raw = declaration.hold;
+  if (raw === undefined) return { hold: SERIES_POINTS, fault: null };
+  if (typeof raw !== 'number' || !Number.isInteger(raw)) {
+    return { hold: SERIES_POINTS, fault: { kind: 'not-a-count', hold: raw, why: whyNotACount(raw) } };
+  }
+  if (declaration.derivation === 'counter') {
+    return { hold: SERIES_POINTS, fault: { kind: 'on-a-counter', hold: raw } };
+  }
+  if (raw < 1 || raw > SERIES_POINTS) {
+    return { hold: SERIES_POINTS, fault: { kind: 'out-of-range', hold: raw } };
+  }
+  return { hold: raw, fault: null };
+}
+
+/**
+ * One sentence per refusal, naming the metric rather than the file.
+ *
+ * The guard prints these into the list of problems it collected, and a reader has the case id on the
+ * line above -- so the sentence names the series, which is the thing the author has to edit, and
+ * states the rule the value broke. The rules are not restated in the guard: a second copy of "a hold
+ * is between 1 and eight" is a copy that can disagree with the expansion.
+ */
+export function describeSeriesHoldFault(fault: SeriesHoldFault, metric: string): string {
+  switch (fault.kind) {
+    case 'not-a-count':
+      return (
+        `'${metric}' declares hold ${JSON.stringify(fault.hold)}, and a hold is a whole number of ` +
+        `samples: ${fault.why}`
+      );
+    case 'on-a-counter':
+      return (
+        `'${metric}' declares hold on a counter, and a counter accumulates through its post-window -- ` +
+        'holding it at its post value would be a level wearing a counter\'s name'
+      );
+    case 'out-of-range':
+      return (
+        `'${metric}' declares hold ${String(fault.hold)}, and a hold is between 1 and ` +
+        `${String(SERIES_POINTS)} samples -- an absent hold means all ${String(SERIES_POINTS)}`
+      );
+  }
+}
+
 /** Where a declared log line lands, relative to the onset: three lines, a minute and a half apart. */
 export const LOG_OFFSETS_MS = [30_000, 150_000, 270_000] as const;
 
@@ -146,6 +246,18 @@ export interface SeriesDeclaration {
   derivation?: SeriesDerivation;
   /** Absent means `sampled`. A counter is exact regardless, so the field says nothing about one. */
   noise?: SeriesNoise;
+  /**
+   * How many post-onset samples sit at `post` before the series returns to `baseline`.
+   *
+   * Absent means `SERIES_POINTS`, which is a level change that lasts the whole post-window. A
+   * smaller number is an excursion the case recovers from, and until this field existed the corpus
+   * had no way to say that: `spike` could say "one sample", and nothing could say "four".
+   *
+   * Refused on a `counter` (it accumulates through the window; a hold would stop it at its post
+   * value) and outside `[1, SERIES_POINTS]` (a side has eight samples, so a hold of twelve is a
+   * typo rather than a longer excursion). `readSeriesHold` owns all three refusals.
+   */
+  hold?: number;
 }
 
 export interface LogDeclaration {
@@ -216,6 +328,11 @@ function withNoise(
  * makes a share of 1 read as 1. The pre-window is drawn around `baseline`, so the two numbers the
  * declaration states are the two numbers a reader can find in the output -- which is what makes a
  * checkpoint asserting `>= post` a statement about data rather than about a file.
+ *
+ * A declaration with a `hold` shorter than the side returns to its baseline at sample `hold + 1` and
+ * stays there, and `longestRun` in G3 therefore stops counting at `hold` -- which is the whole point
+ * of the field: the sample axis of the threshold grid asks "how long must an excursion last", and
+ * before `hold` no case could answer anything but "the rest of the window".
  */
 export function expandSeries(declaration: SeriesDeclaration, when: ExpansionTime): TelemetrySignal[] {
   const windowStartMs = Date.parse(when.windowStart);
@@ -241,15 +358,18 @@ export function expandSeries(declaration: SeriesDeclaration, when: ExpansionTime
   }
 
   const increment = (declaration.post - declaration.baseline) / SERIES_POINTS;
+  // How long the excursion lasts, as a number. A declaration that names no hold holds for the whole
+  // side, and one that names a hold of four returns to its baseline for the last four samples.
+  const { hold } = readSeriesHold(declaration);
   for (let index = 0; index < SERIES_POINTS; index += 1) {
     const level =
       derivation === 'counter'
         ? declaration.baseline + (index + 1) * increment
-        : derivation === 'spike' && index > 0
-          ? declaration.baseline
-          : declaration.post;
-    // The jitter is applied to the level a sample sits at, so a spike's excursion is post-sized and
-    // its return is baseline-sized, and a counter's accumulation is exact because it is a total.
+        : index < hold
+          ? declaration.post
+          : declaration.baseline;
+    // The jitter is applied to the level a sample sits at, so an excursion's samples are post-sized
+    // and its return is baseline-sized, and a counter's accumulation is exact because it is a total.
     // A counter is exact but not necessarily whole: (178 - 0) / 8 is 22.25 of a restart, so the
     // accumulation lands on the unit's grid as well -- the same obligation the noise has, and the
     // reason the quantize call is outside the `derivation` test rather than a fourth branch.

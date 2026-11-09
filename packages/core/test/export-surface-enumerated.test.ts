@@ -874,9 +874,13 @@ const TESTED = [
   'SERIES_JITTER',
   'SERIES_NOISE',
   'TRACE_OFFSET_MS',
+  'describeSeriesHoldFault',
   'expandLog',
   'expandSeries',
   'expandTraces',
+  // A step's duration, read rather than inferred from the shape's name: `spike` was a step with a
+  // hold of one, and removing it is what let the G3 sample axis move for the first time (v3.71).
+  'readSeriesHold',
   // fault/expression.ts -- the arithmetic a derived checkpoint states, evaluated rather than
   // believed (finding 245).
   'MAX_EXPRESSION_DEPTH',
@@ -898,6 +902,7 @@ const TESTED = [
   // the command that writes the file.
   'assembleReading',
   'compareReadingToArtefact',
+  'describeReadingCoverage',
   'digestExpectedColumn',
   // fault/miss-detail.ts -- finding 92, reading the published miss detail back.
   'MISS_DETAIL_TITLE',

@@ -2,7 +2,7 @@
   "schema": "rca-bench-fault-cases/3",
   "purpose": "conformance",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Every case must carry a quote in each of its four layers, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check. The purpose field says what the set is for: the same saturation reading is a defect in a benchmark set and a fact of life in a conformance fixture, and a set that does not say which it is cannot be told apart from one that is failing at the other thing.",
-  "min": 31,
+  "min": 32,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -933,6 +933,36 @@
         }
       ],
       "signals": "history-config-rate-cache-ttl-pricing.signals.json"
+    },
+    {
+      "caseId": "history-resource-merge-burst-search-cluster",
+      "sampleId": "resource-merge-burst-search-cluster",
+      "case": "history-resource-merge-burst-search-cluster.json",
+      "graph": "synthetic-storefront-graph.json",
+      "why": "annotated from the incident text of `resource-merge-burst-search-cluster`: the cluster, the six nodes and the hop to catalog-service are the text's own names, the mechanism is its sentence about the merge threads, and the duration is the number the parameter carries rather than one counted from prose. It is the corpus's first case whose telemetry *returns*, and that is the gap it was written for: every other case holds its post value for all eight post-onset samples, so the G3 threshold grid's four sample lines admitted every case at every one of them and the axis measured nothing. The recovery is stated as `hold: 4` on each series rather than as prose, and four is the shortest hold both of G4's baselines can still place -- the robust baseline reads the post-window median, which four elevated samples in eight put between the two levels and three leave on the baseline.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "query lag on the search cluster went from 1.2s to 84s",
+          "why": "the cluster the merge ran on, named in the sentence that measures what it cost -- the entity the chain starts at and the component an operator would repair"
+        },
+        {
+          "layer": "fault",
+          "quote": "Every merge thread on the six search nodes sat at 98% utilisation, up from its usual 12%",
+          "why": "the mechanism, and what makes this `cpu-saturation` rather than `network-delay`: a resource was fully consumed inside the process, and no link failed"
+        },
+        {
+          "layer": "process",
+          "quote": "the catalog p99 rose from 40ms to 300ms over the same four minutes",
+          "why": "the second step's effect, and the sentence that orders it after the merge rather than beside it -- catalog waits on search, and the text says so in the same breath"
+        },
+        {
+          "layer": "evidence",
+          "quote": "fell back on its own",
+          "why": "the recovery, which is the fact this case is in the corpus to state: a saturation with a declared end is a different shape from one that runs to the end of the window, and the two baselines disagree about how visible it is"
+        }
+      ],
+      "signals": "history-resource-merge-burst-search-cluster.signals.json"
     }
   ]
 }

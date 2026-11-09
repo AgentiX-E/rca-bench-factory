@@ -201,7 +201,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 1508,
+      "line": 1519,
       "condition": "invalid.length > 0",
       "diagnostic": "check-fault-cases: FAILED — ${String(invalid.length)} case(s) could not be read as a FaultCase",
       "status": "proved",
@@ -209,7 +209,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 1944,
+      "line": 1955,
       "condition": "problems.length > 0",
       "diagnostic": "check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
       "status": "proved",
@@ -217,7 +217,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 1953,
+      "line": 1964,
       "condition": "unnamed.length > 0",
       "diagnostic": "check-fault-cases: FAILED — ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
       "status": "proved",
@@ -225,7 +225,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 1961,
+      "line": 1972,
       "condition": "index.cases.length < floor",
       "diagnostic": "check-fault-cases: FAILED — ${String(index.cases.length)} four-layer case(s), below the floor of",
       "status": "proved",
@@ -742,14 +742,14 @@
     },
     {
       "script": "scripts/score-fault-extraction.mjs",
-      "line": 153,
+      "line": 202,
       "verdict": "code",
       "status": "proved",
       "provedBy": "packages/core/test/fault-extraction-scripts.test.ts"
     },
     {
       "script": "scripts/score-fault-extraction.mjs",
-      "line": 156,
+      "line": 205,
       "diagnostic": "fatal: ${error instanceof Error ? error.message : String(error)}",
       "status": "proved",
       "provedBy": "packages/core/test/fault-extraction-scripts.test.ts"
@@ -1825,7 +1825,7 @@
       },
       {
         "script": "scripts/score-fault-extraction.mjs",
-        "line": 53,
+        "line": 62,
         "disposition": "unguarded",
         "message": "unknown argument '${a}'",
         "status": "proved",
@@ -1833,7 +1833,7 @@
       },
       {
         "script": "scripts/score-fault-extraction.mjs",
-        "line": 84,
+        "line": 93,
         "disposition": "unguarded",
         "message": "${path} is not an object; expected the artefact derive-fault-golden.mjs writes",
         "status": "proved",
@@ -1841,7 +1841,7 @@
       },
       {
         "script": "scripts/score-fault-extraction.mjs",
-        "line": 87,
+        "line": 96,
         "disposition": "unguarded",
         "message": "${path} has schema '${String(raw.schema)}', not 'rca-bench-fault-extraction-predictions/1'",
         "status": "proved",
@@ -1849,7 +1849,7 @@
       },
       {
         "script": "scripts/score-fault-extraction.mjs",
-        "line": 92,
+        "line": 101,
         "disposition": "unguarded",
         "message": "${path} has no 'predictions' array",
         "status": "proved",

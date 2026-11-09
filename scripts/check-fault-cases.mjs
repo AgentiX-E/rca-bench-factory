@@ -801,6 +801,17 @@ for (const entry of index.cases) {
           );
         }
       }
+      // How long the excursion lasts, when the declaration says. Checked here for the same reason
+      // `derivation` and `noise` are: `expandSeries` degrades a fault to the default, so a `hold` of
+      // twelve or a `hold` on a counter would produce samples that quietly disagree with the file and
+      // no reading of the case would show it. The rule itself lives in `readSeriesHold`, because a
+      // second copy of "between 1 and eight" is a copy that can drift from the expansion.
+      const holdRead = core.readSeriesHold({ derivation: one?.derivation, hold: one?.hold });
+      if (holdRead.fault !== null) {
+        problems.push(
+          `'${caseId}' ${core.describeSeriesHoldFault(holdRead.fault, String(one?.metric))}`,
+        );
+      }
       // A reading has to be a value its unit admits. The expansion clamps the *noise* into the unit's
       // range, and this is the other half: the number the annotation states is the author's, and a
       // share of 120 % in `%` is not a noisy measurement, it is a number no measurement can be. The

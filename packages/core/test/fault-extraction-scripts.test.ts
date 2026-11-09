@@ -106,6 +106,26 @@ function writePredictions(dir: string, predictions: unknown[], schema = 'rca-ben
   return path;
 }
 
+/**
+ * A readings file holding one entry, and only the fields the coverage line reads.
+ *
+ * The reading is not a prediction artefact and the command does not score it: the line states what
+ * the recorded reading *answered* against the key it was taken from, so the entry needs its sample
+ * rows and its status and nothing else -- a fixture that filled in the totals would be testing a
+ * field this path never reads.
+ */
+function writeReadings(dir: string, status: string, ids: string[]): string {
+  const path = join(dir, `readings-${status}.json`);
+  writeFileSync(
+    path,
+    JSON.stringify({
+      schema: 'rca-bench-fault-extraction-readings/1',
+      readings: [{ status, samples: ids.map((id) => ({ id, expected: {}, answered: {} })) }],
+    }),
+  );
+  return path;
+}
+
 let workdir = '';
 
 beforeAll(() => {
@@ -389,6 +409,46 @@ describe('scripts/score-fault-extraction.mjs · the report it prints', () => {
     // One sample withheld from the denominator, whatever the corpus size is.
     expect(result.stdout).toMatch(
       new RegExp(`graded\\s*: ${dataset.samples.length - 1}/${dataset.samples.length} \\(`),
+    );
+  });
+
+  it('states what the recorded reading answered against the key it was taken from', () => {
+    // The defect this line closes: `readings.json` is self-consistent and its coverage was
+    // invisible, so "the reading answers 30 of the 30 it was taken from" and "30 of the 32 the
+    // key holds now" were the same file read two ways and nothing said which reading was running.
+    // Two samples are withheld here so the sentence has to name them, which is the half a count
+    // alone cannot state.
+    const dataset = JSON.parse(readFileSync(DATASET, 'utf8')) as { samples: Array<{ id: string; expected: unknown }> };
+    const answered = dataset.samples.slice(0, dataset.samples.length - 2).map((s) => s.id);
+    const withheld = dataset.samples.slice(-2).map((s) => s.id);
+    const predictions = writePredictions(
+      workdir,
+      dataset.samples.map((s) => ({ sampleId: s.id, parseOk: true, validationValid: true, extracted: s.expected })),
+    );
+    const result = run(SCORE, ['--predictions', predictions, '--record', writeReadings(workdir, 'current', answered)]);
+    const expected =
+      `the reading answers ${answered.length} of the ${dataset.samples.length} sample(s) the key holds; ` +
+      `unanswered: ${withheld.join(', ')}`;
+    expect(result.stdout).toContain(`record         : ${expected}`);
+    // The reading is scored by the same arithmetic the report uses, and the two denominators are
+    // deliberately not the same number: the report grades every sample this run answered, and the
+    // record states how many of the key's samples its own answers cover.
+    expect(result.stdout).toContain(`graded: ${dataset.samples.length}/${dataset.samples.length} (`);
+  });
+
+  it('says a record has no current reading rather than printing a reading of zero', () => {
+    // A file whose entries are all historical is not a reading of the rule in the tree. Reporting
+    // "answers none of the 32" would be a number about a file rather than about a run, and the
+    // reader would have no way to tell the two apart.
+    const dataset = JSON.parse(readFileSync(DATASET, 'utf8')) as { samples: Array<{ id: string; expected: unknown }> };
+    const predictions = writePredictions(
+      workdir,
+      dataset.samples.map((s) => ({ sampleId: s.id, parseOk: true, validationValid: true, extracted: s.expected })),
+    );
+    const readings = writeReadings(workdir, 'reverted', [dataset.samples[0]!.id]);
+    const result = run(SCORE, ['--predictions', predictions, '--record', readings]);
+    expect(result.stdout).toMatch(
+      /record\s*: no reading recorded at .* is marked current \(0 of 1 are\), so there is no coverage to state/,
     );
   });
 });

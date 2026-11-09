@@ -17,11 +17,11 @@ import { describe, expect, it } from 'vitest';
  * two separate grounds, and this file is the record so the next person starts from the
  * numbers rather than from the idea.
  *
- * ## Ground one: a candidate list caps the ceiling at 26/31
+ * ## Ground one: a candidate list caps the ceiling at 27/32
  *
  * The strongest form of "constrain the answer" is to hand the model the candidates the text
  * supports. The natural extraction is *runs of adjacent words joined by a hyphen*, which is
- * how every expected component is spelled — and **25 of 30** expected components are
+ * how every expected component is spelled — and **27 of 32** expected components are
  * recoverable that way. The five that are not are not obscure; three of them are the
  * samples that have been hardest to fix:
  *
@@ -104,7 +104,7 @@ function wordsOf(text: string): Set<string> {
 }
 
 describe('the component answer space a mechanism could offer', () => {
-  it('recovers 26 of 31 expected components as adjacent-word runs, and names the five it cannot', () => {
+  it('recovers 27 of 32 expected components as adjacent-word runs, and names the five it cannot', () => {
     // The ceiling of a candidate-list prompt, pinned. If the corpus grows, this number moves
     // and the claim in the header has to be re-read rather than quietly falsified.
     const unrecoverable = samples
@@ -118,7 +118,9 @@ describe('the component answer space a mechanism could offer', () => {
       'middleware-redis-latency-cache',
       'network-delay-cart-to-inventory',
     ]);
-    expect(samples.length - unrecoverable.length).toBe(26);
+    // 27 in v3.71 (26 of 31 in v3.70): the merge-burst text names `search-cluster` as the run "search
+    // cluster", so it joins the recoverable side and the five it cannot recover are unchanged.
+    expect(samples.length - unrecoverable.length).toBe(27);
   });
 
   it('offers a median of more than two hundred candidates per text, which is why the list is not an option', () => {
@@ -128,7 +130,11 @@ describe('the component answer space a mechanism could offer', () => {
     const sizes = samples.map((sample) => candidates(sample.incidentText).size).sort((a, b) => a - b);
     const median = sizes[Math.floor(sizes.length / 2)] as number;
     expect(median).toBeGreaterThan(150);
-    expect(sizes[sizes.length - 1] as number).toBeLessThan(500);
+    // 524 is the longest list in the corpus and it belongs to the merge-burst text, which is the
+    // longest incident in the key: the bound is order-of-magnitude, not a target, and 500 was the
+    // previous maximum rather than a rule. The claim is that a candidate list cannot fit in a
+    // prompt, and six hundred hyphenated runs cannot either.
+    expect(sizes[sizes.length - 1] as number).toBeLessThan(600);
   });
 
   it('never finds a correct answer outside the incident’s words, so a membership rule costs nothing', () => {

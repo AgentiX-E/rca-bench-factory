@@ -86,15 +86,19 @@ export {
   SERIES_JITTER,
   SERIES_NOISE,
   TRACE_OFFSET_MS,
+  describeSeriesHoldFault,
   expandLog,
   expandSeries,
   expandTraces,
+  readSeriesHold,
 } from './fault/derived-telemetry.js';
 export type {
   ExpansionTime,
   LogDeclaration,
   SeriesDeclaration,
   SeriesDerivation,
+  SeriesHoldFault,
+  SeriesHoldRead,
   SeriesNoise,
   TraceDeclaration,
 } from './fault/derived-telemetry.js';
@@ -844,11 +848,13 @@ export type {
 export {
   assembleReading,
   compareReadingToArtefact,
+  describeReadingCoverage,
   digestExpectedColumn,
 } from './fault/reading-record.js';
 export type {
   AssembleReadingRequest,
   ReadingAnswer,
+  ReadingCoverage,
   ReadingDifference,
   ReadingEntry,
   ReadingField,

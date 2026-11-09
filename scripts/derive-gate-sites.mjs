@@ -79,7 +79,7 @@
  *
  * ```
  * derive-fault-golden.mjs:252     main().then((code) => process.exit(code))
- * score-fault-extraction.mjs:153  main().then((code) => process.exit(code))
+ * score-fault-extraction.mjs:202  main().then((code) => process.exit(code))
  * ```
  *
  * `code` is `main()`'s return value, which is the verdict. The inventory published
@@ -701,7 +701,7 @@ export function throwsIn(name, source) {
  * ## Why the floor is a function rather than a distance
  *
  * The scan used to stop after 60 lines, and a distance can cross the boundary that
- * matters. `score-fault-extraction.mjs:153` is `process.exit(code)` in the `.then`
+ * matters. `score-fault-extraction.mjs:202` is `process.exit(code)` in the `.then`
  * continuation; a few lines above it sits `console.log('\nM1 exit condition met.')`
  * -- the sentence printed on the *success* path -- so the exit that fires when M1
  * is **not** met would have been published with success's message as its

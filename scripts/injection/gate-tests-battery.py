@@ -1205,6 +1205,57 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         ),
         "the test that reads the score as one of two values without anchors",
     ),
+    # ------------------------------------------------------------ the duration of an excursion
+    #
+    # `hold` is the field that replaced the `spike` member, and these are the three ways it can be
+    # read wrongly. Each mutation is checked against the file that owns the rule rather than against
+    # the guard, because the rule lives in the package and the guard only prints what it says.
+    (
+        # A hold of zero is a declaration that nothing ever reaches the post value -- the one shape
+        # the corpus cannot express, because it is a case with no anomaly at all. The lower bound is
+        # what refuses it, and widening the bound to accept it produces a series whose post side never
+        # leaves its baseline while every checkpoint on that series still claims the post value.
+        "HOLD 1. a hold of zero is accepted, so an excursion lasts no samples",
+        "packages/core/src/fault/derived-telemetry.ts",
+        "derived-telemetry.test.ts",
+        lambda t: rename(
+            t,
+            "  if (raw < 1 || raw > SERIES_POINTS) {",
+            "  if (raw < 0 || raw > SERIES_POINTS) {",
+        ),
+        "the test that refuses a hold outside the samples a side has",
+    ),
+    (
+        # A counter accumulates through its post-window; holding one at its post value turns an
+        # accumulation into a level while keeping the word. The refusal is the only thing that makes
+        # the two shapes distinguishable from the declaration alone.
+        "HOLD 2. a counter is allowed to hold, so an accumulation becomes a level",
+        "packages/core/src/fault/derived-telemetry.ts",
+        "derived-telemetry.test.ts",
+        lambda t: rename(
+            t,
+            """  if (declaration.derivation === 'counter') {
+    return { hold: SERIES_POINTS, fault: { kind: 'on-a-counter', hold: raw } };
+  }
+""",
+            "",
+        ),
+        "the test that refuses a hold on an accumulation",
+    ),
+    (
+        # The names are the actionable half of the coverage sentence: "answers 30 of the 32" is a
+        # ratio whose denominator is stated, and which two are unanswered is the part an author acts
+        # on. Printing the count instead of the names is a sentence that reads the same and says less.
+        "COVER 1. the coverage sentence counts the samples it does not answer",
+        "packages/core/src/fault/reading-record.ts",
+        "reading-record.test.ts",
+        lambda t: rename(
+            t,
+            "`holds; unanswered: ${unanswered.join(', ')}`,",
+            "`holds; unanswered: ${String(unanswered.length)}`,",
+        ),
+        "the test that names the samples the reading does not answer",
+    ),
 ]
 
 
@@ -1342,6 +1393,15 @@ EXPECTATIONS: dict[str, tuple[str, ...]] = {
     # exist passes four of rca100's nine checks, and a rate would pay it for the four.
     'SCORE 3. a partial pass earns credit': (
         'gives an empty check list no credit rather than a NaN',
+    ),
+    'HOLD 1. a hold of zero is accepted, so an excursion lasts no samples': (
+        'refuses a hold outside the samples a side has',
+    ),
+    'HOLD 2. a counter is allowed to hold, so an accumulation becomes a level': (
+        'refuses a hold on an accumulation',
+    ),
+    'COVER 1. the coverage sentence counts the samples it does not answer': (
+        'names the samples it does not answer',
     ),
     'LAYOUT 2. a mapping to the wrong column counts as agreement': (
         'counts an answer that points a field at a real but different column as a contradiction',

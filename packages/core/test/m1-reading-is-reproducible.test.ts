@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+import { describeReadingCoverage } from '../src/fault/reading-record.js';
 import { M1_STRICT_THRESHOLD } from '../src/fault/extraction-scoring.js';
 
 /**
@@ -213,18 +214,26 @@ describe('M1’s readings are re-derivable from the repository', () => {
     // so each reading carries a status, and the assertions are on that.
     const current = file.readings.filter((reading) => reading.status === 'current');
     expect(current).toHaveLength(1);
-    // The current reading was taken over **30** of the 31 samples, and the difference is stated
-    // rather than smoothed: v3.70 added a sample that no recorded run has ever answered, so the
-    // reading behind `M1_STRICT_THRESHOLD` is now a statement about the thirty it did answer.
-    // The assertion used to be `key.size === key.samples.length`, which was true while the set
-    // only ever grew by re-running it; it is now pinned to the number, and the absence is
-    // measured below so a later round cannot add a second unanswered sample in silence.
-    expect(current[0]?.key.size).toBe(30);
-    const answered = new Set(current[0]?.samples.map((sample) => sample.id) ?? []);
+    // `key.size` is the size of the key **on the day the reading was taken**, and it stays 30: it is a
+    // historical fact about that run, not a statement about today's corpus. What the corpus holds now
+    // is 32 -- v3.70 added a sample no recorded run has ever answered and v3.71 added a second -- and
+    // the two numbers are reconciled by a sentence rather than by a subtraction a reader has to think
+    // to do. `describeReadingCoverage` writes that sentence, `score-fault-extraction.mjs --record`
+    // prints the same one, and pinning the whole line here is what makes the report and the test one
+    // statement instead of two that happen to agree.
+    expect(current[0]?.key.size, 'the key the reading was taken from, not the one in the tree').toBe(30);
+    const coverage = describeReadingCoverage({ key: key.samples, reading: current[0]?.samples ?? [] });
+    expect(coverage.key).toBe(32);
+    expect(coverage.answered).toBe(30);
     expect(
-      key.samples.filter((sample) => !answered.has(sample.id)).map((sample) => sample.id),
+      coverage.unanswered,
       'the samples no recorded run has answered -- the price of growing the corpus',
-    ).toEqual(['config-rate-cache-ttl-pricing']);
+    ).toEqual(['config-rate-cache-ttl-pricing', 'resource-merge-burst-search-cluster']);
+    expect(coverage.extra, 'a reading that answers an id the key does not carry was taken on another text').toEqual([]);
+    expect(coverage.sentence).toBe(
+      'the reading answers 30 of the 32 sample(s) the key holds; unanswered: ' +
+        'config-rate-cache-ttl-pricing, resource-merge-burst-search-cluster',
+    );
     expect(file.readings.filter((reading) => reading.status === 'old-key')).toHaveLength(4);
     const reverted = file.readings.filter((reading) => reading.status === 'reverted');
     expect(reverted, 'the record must carry both experiments that lost').toHaveLength(2);

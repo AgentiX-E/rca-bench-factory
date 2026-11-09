@@ -1,0 +1,149 @@
+{
+  "caseId": "history-resource-merge-burst-search-cluster",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-11",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-11-05T14:12:00.000Z",
+  "window": {
+    "start": "2026-11-05T14:00:00.000Z",
+    "end": "2026-11-05T14:40:00.000Z"
+  },
+  "fault": {
+    "type": "cpu-saturation",
+    "category": "resource",
+    "injectionMethod": "historical",
+    "parameters": {
+      "mergeThreads": {
+        "value": 6,
+        "unit": "count"
+      },
+      "burstMinutes": {
+        "value": 4,
+        "unit": "min"
+      },
+      "mergeSegments": {
+        "value": 41,
+        "unit": "count"
+      }
+    },
+    "parameterNotes": {
+      "mergeThreads": "one merge thread per search node, which is why the burst is six threads rather than one: the same merge ran on every member because every member held a copy of the segment.",
+      "mergeSegments": "how many segments the reindex left behind for the compactor to merge in one pass, which is the trigger the ticket names and the reason the burst was this wide."
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "service:synthetic-storefront/search-cluster",
+    "rootCauseComponent": "search-cluster",
+    "rootCauseReason": "The nightly reindex left forty-one segments for the compactor, and the merge that followed held every merge thread on all six search nodes at 98 % utilisation for four minutes. Nothing was killed and no limit was reached: the box gave the merge the CPU it asked for, which meant it gave it to nothing else. Query lag went from 1.2s to 84s, catalog-service carried that lag out to the storefront as a p99 of 300ms instead of 40ms, and then the merges finished and the numbers returned on their own. That recovery is the reason this case exists in the corpus: a saturation with a declared end is a different shape from one that lasts the window, and the corpus could not state it until `hold` existed -- every series it could write either held for all eight post-onset samples or for exactly one.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "search_merge_thread_utilisation",
+        "description": "every merge thread at 98 % of the core it runs on, for four post-onset samples and then back to 12 %"
+      },
+      {
+        "type": "metric",
+        "ref": "search_merge_lag_seconds",
+        "description": "query lag on the cluster risen from 1.2s to 84s and returned, which is the window the burst occupied rather than the window the incident occupied"
+      },
+      {
+        "type": "metric",
+        "ref": "catalog_query_p99_ms",
+        "description": "the same four minutes seen one hop out, at 300ms against a 40ms baseline"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "service:synthetic-storefront/search-cluster",
+        "toEntityId": "service:synthetic-storefront/catalog-service",
+        "mechanism": "the merge held every search thread it could schedule, so a query waited behind the merge instead of between merges: lag on the cluster rose from 1.2s to 84s for as long as the burst ran",
+        "evidenceRefs": [
+          "cp-merge-utilisation",
+          "cp-merge-lag",
+          "cp-burst-minutes"
+        ]
+      },
+      {
+        "step": 2,
+        "fromEntityId": "service:synthetic-storefront/catalog-service",
+        "toEntityId": "service:synthetic-storefront/storefront",
+        "mechanism": "catalog-service waits on search for every listing it renders, so the cluster's lag reached the storefront as its own query p99 -- 40ms to 300ms -- and left it when the merges finished",
+        "evidenceRefs": [
+          "cp-catalog-p99",
+          "cp-error-ratio-flat"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-merge-utilisation",
+        "entityRef": "service:synthetic-storefront/search-cluster",
+        "signalRef": "search_merge_thread_utilisation",
+        "comparator": ">=",
+        "value": 0.98,
+        "unit": "1",
+        "description": "the merge threads at 98 % of a core, which is the saturation itself rather than its effect on a query"
+      },
+      {
+        "checkpointId": "cp-merge-lag",
+        "entityRef": "service:synthetic-storefront/search-cluster",
+        "signalRef": "search_merge_lag_seconds",
+        "comparator": ">=",
+        "value": 84,
+        "unit": "s",
+        "description": "query lag at the peak of the burst, seventy times the baseline the same series states before the onset"
+      },
+      {
+        "checkpointId": "cp-catalog-p99",
+        "entityRef": "service:synthetic-storefront/catalog-service",
+        "signalRef": "catalog_query_p99_ms",
+        "comparator": ">=",
+        "value": 300,
+        "unit": "ms",
+        "description": "the p99 one hop out, which is what the storefront's users were served while the merge ran"
+      },
+      {
+        "checkpointId": "cp-burst-minutes",
+        "entityRef": "service:synthetic-storefront/search-cluster",
+        "signalRef": "burstMinutes",
+        "signalKind": "configuration",
+        "comparator": "==",
+        "value": 4,
+        "unit": "min",
+        "description": "the burst's own duration, cited from the injection's parameter rather than counted from prose, because the recovery is the claim this case is in the corpus to make"
+      },
+      {
+        "checkpointId": "cp-error-ratio-flat",
+        "entityRef": "service:synthetic-storefront/storefront",
+        "signalRef": "storefront_error_ratio",
+        "comparator": "==",
+        "value": 0,
+        "unit": "1",
+        "description": "no request failed at any point, which is what separates a saturation that is slow from one that is also down"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "run the reindex's merges under their own CPU quota, or throttle the merge rate, so a routine compaction cannot take the threads a query needs",
+        "target": "service:synthetic-storefront/search-cluster"
+      },
+      {
+        "step": 2,
+        "action": "alarm on merge-thread utilisation as well as on query lag, so the next burst is a page before it is a fourteen-minute investigation",
+        "target": "service:synthetic-storefront/search-cluster"
+      }
+    ]
+  },
+  "sli": {
+    "service": "search-cluster",
+    "metric": "search_merge_lag_seconds"
+  },
+  "query": "At 14:12 UTC query lag across the index went from 1.2s to 84s and stayed there for four minutes, while every merge thread on the six nodes running it sat at 98% utilisation, up from its usual 12%. catalog-service passed the delay on to the storefront as a p99 of 300ms, up from 40ms. No request failed, no pod restarted, and the numbers came back on their own. What saturated, and why did it clear itself?",
+  "difficulty": "L3",
+  "answerKeyIsolated": true
+}

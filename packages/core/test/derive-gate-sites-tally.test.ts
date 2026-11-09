@@ -268,7 +268,7 @@ describe('the two baskets are a partition of the calls, not a remainder', () => 
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([
       'derive-fault-golden.mjs:252',
-      'score-fault-extraction.mjs:153',
+      'score-fault-extraction.mjs:202',
     ]);
   });
 });

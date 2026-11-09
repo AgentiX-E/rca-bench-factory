@@ -6,6 +6,7 @@ import type { ExtractionSamplePrediction, GoldenDataset } from '../src/fault/ext
 import {
   assembleReading,
   compareReadingToArtefact,
+  describeReadingCoverage,
   digestExpectedColumn,
 } from '../src/fault/reading-record.js';
 
@@ -389,5 +390,72 @@ describe('a row that arrived without a type is written as an absence, not as a m
     });
     expect(reading.samples[0]?.answered).toEqual({ type: null, category: null, component: null });
     expect(reading.totals).toEqual({ type: 0, category: 0, component: 0, strict: 0 });
+  });
+});
+
+describe('the coverage sentence: a reading and the key it claims to answer', () => {
+  // The reading states its totals and the key states its size, and neither states the ratio. Every
+  // reading taken so far was wholly graded, so "24 of 30" and "24 of the 30 answered" were the same
+  // number written two ways -- until the corpus grew and the two stopped being the same number.
+
+  const keyOf = (ids: readonly string[]): Array<{ id: string }> => ids.map((id) => ({ id }));
+  const readingOf = (ids: readonly string[]): Array<{ id: string }> => ids.map((id) => ({ id }));
+
+  it('states the count and its denominator when every sample is answered', () => {
+    const coverage = describeReadingCoverage({ key: keyOf(['a', 'b', 'c']), reading: readingOf(['a', 'b', 'c']) });
+    expect(coverage).toEqual({
+      key: 3,
+      answered: 3,
+      unanswered: [],
+      extra: [],
+      sentence: 'the reading answers all 3 sample(s) the key holds',
+    });
+  });
+
+  it('names the samples it does not answer, in key order', () => {
+    // The names are the actionable half: a reading that answers 30 of 32 is one whose author wants to
+    // know which two, and the two change every round. Key order rather than reading order, because the
+    // question is what the key is missing from its own list.
+    const coverage = describeReadingCoverage({
+      key: keyOf(['c', 'a', 'b', 'd']),
+      reading: readingOf(['d', 'b', 'a']),
+    });
+    expect(coverage.answered).toBe(3);
+    expect(coverage.unanswered).toEqual(['c']);
+    expect(coverage.sentence).toBe('the reading answers 3 of the 4 sample(s) the key holds; unanswered: c');
+  });
+
+  it('reports an answer the key does not carry as its own clause, not as a smaller count', () => {
+    // Two different defects: a reading taken on a key that has since shrunk, and a reading taken on a
+    // different text. Folding the second into "missing two" would average them into one number and hide
+    // which one happened.
+    const coverage = describeReadingCoverage({
+      key: keyOf(['a', 'b', 'c']),
+      reading: readingOf(['a', 'b', 'ghost']),
+    });
+    expect(coverage.answered).toBe(2);
+    expect(coverage.unanswered).toEqual(['c']);
+    expect(coverage.extra).toEqual(['ghost']);
+    expect(coverage.sentence).toBe(
+      'the reading answers 2 of the 3 sample(s) the key holds; unanswered: c; ' +
+        '1 answer(s) the key does not carry: ghost',
+    );
+  });
+
+  it('says a key of no samples holds nothing rather than that all zero are answered', () => {
+    // "answers all 0 sample(s)" is a true sentence that reads as a pass. The empty key is a shape a
+    // corpus should never be in, and the sentence says so instead of dividing by it.
+    const coverage = describeReadingCoverage({ key: keyOf([]), reading: readingOf([]) });
+    expect(coverage).toEqual({
+      key: 0,
+      answered: 0,
+      unanswered: [],
+      extra: [],
+      sentence: 'the key holds no samples, so the reading answers none of it',
+    });
+    // An answer with no key at all is the extra clause on its own.
+    expect(describeReadingCoverage({ key: keyOf([]), reading: readingOf(['x']) }).sentence).toBe(
+      'the key holds no samples, so the reading answers none of it; 1 answer(s) the key does not carry: x',
+    );
   });
 });

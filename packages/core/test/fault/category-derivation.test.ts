@@ -140,10 +140,12 @@ function adversarialWords(): string[] {
 // ---------------------------------------------------------------------------
 
 describe('A. the dataset obeys the category rule', () => {
-  it('derives the labelled category from the labelled type in all thirty-one', () => {
+  // Thirty-two in v3.71 (thirty-one in v3.70): the corpus gained the merge-burst sample, and the
+  // derivation covers it like every other row rather than being told about it.
+  it('derives the labelled category from the labelled type in all thirty-two', () => {
     const reading = assessDatasetConformance(datasetSamples());
-    expect(reading.graded).toBe(31);
-    expect(reading.conforming).toBe(31);
+    expect(reading.graded).toBe(32);
+    expect(reading.conforming).toBe(32);
     expect(reading.share).toBe(1);
     expect(reading.conforms).toBe(true);
   });
@@ -169,7 +171,7 @@ describe('A. the dataset obeys the category rule', () => {
       s.sampleId === 'resource-cpu-saturation-checkout' ? { ...s, category: 'network' } : s,
     );
     const reading = assessDatasetConformance(broken);
-    expect(reading.conforming).toBe(30);
+    expect(reading.conforming).toBe(31);
     expect(reading.conforms).toBe(false);
     expect(reading.disagreements).toHaveLength(1);
     expect(reading.disagreements[0]?.sampleId).toBe('resource-cpu-saturation-checkout');
@@ -205,8 +207,8 @@ describe('A. the dataset obeys the category rule', () => {
 describe('B. the rule covers every labelled type', () => {
   it('leaves no expected type undecidable', () => {
     const reading = assessDerivability(datasetSamples());
-    expect(reading.graded).toBe(31);
-    expect(reading.defined).toBe(31);
+    expect(reading.graded).toBe(32);
+    expect(reading.defined).toBe(32);
     expect(reading.undefinedTypes).toEqual([]);
     expect(reading.total).toBe(true);
   });
@@ -474,14 +476,16 @@ describe('E. the miss result is a property of the run, not of the model', () => 
 // ---------------------------------------------------------------------------
 
 describe('F. the reading cannot separate anyone, and says so', () => {
-  it('finds the alternative readings disagreeing with the label on four of thirty-one', () => {
+  it('finds the alternative readings disagreeing with the label on four of thirty-two', () => {
     // The corpus grew from 19 to 30 in v2.45 and this reading moved with it: 2 of 19 became
-    // 4 of 30, because two of the new types sit where the row order decides. The *verdict*
+    // 4 of 30, because two of the new types sit where the row order decides. It grew twice
+    // more -- 31 in v3.70, 32 in v3.71 -- and the count stayed at four both times, which is
+    // itself the reading: a new sample can only move it by disagreeing with the rule. The *verdict*
     // did not move -- 0.1333 is still at or below the floor of 0.2 -- and that is the point
     // of asserting the count as well as the verdict: a corpus change that silently made the
     // reading look better would fail here.
     const power = assessDiscriminatingPower(datasetSamples());
-    expect(power.graded).toBe(31);
+    expect(power.graded).toBe(32);
     expect(power.differ).toHaveLength(4);
     expect(power.differ.sort()).toEqual([
       'feature-flag-misconfiguration',
@@ -507,7 +511,7 @@ describe('F. the reading cannot separate anyone, and says so', () => {
 
   it('computes the share as four of thirty-one', () => {
     const power = assessDiscriminatingPower(datasetSamples());
-    expect(power.share).toBeCloseTo(4 / 31, 10);
+    expect(power.share).toBeCloseTo(4 / 32, 10);
   });
 
   it('does not call the reading load-bearing', () => {
@@ -534,7 +538,7 @@ describe('F. the reading cannot separate anyone, and says so', () => {
     // The reason carries the share to four places and the floor as written. Asserting the
     // exact floor text rather than a formatted one: the first version of this test expected
     // `0.2000`, which the module has never printed -- the test was wrong, not the module.
-    expect(power.reason).toContain('0.1290');
+    expect(power.reason).toContain('0.1250');
     expect(power.reason).toContain(`floor of ${ALT_READING_FLOOR}`);
     expect(power.reason).toContain('at or below the floor');
   });
@@ -743,7 +747,7 @@ describe('J. every branch the corpus cannot reach is reached by a control', () =
     // The premise. If this ever stops holding the controls below become redundant rather than
     // wrong, and the assertion says so instead of leaving a reader to work it out.
     const corpus = assessDatasetConformance(datasetSamples());
-    expect(corpus.graded).toBe(31);
+    expect(corpus.graded).toBe(32);
     expect(corpus.disagreements).toHaveLength(0);
   });
 
@@ -762,7 +766,7 @@ describe('J. every branch the corpus cannot reach is reached by a control', () =
 
   it('reports every corpus type as defined, so the unknown branch is unexercised by it', () => {
     const corpus = assessDerivability(datasetSamples());
-    expect(corpus.graded).toBe(31);
+    expect(corpus.graded).toBe(32);
     expect(corpus.undefinedTypes).toHaveLength(0);
     expect(corpus.total).toBe(true);
   });
@@ -1148,7 +1152,7 @@ describe('N. the dataset states the rule it follows, and the whole file obeys it
     const rule = provenance()['categoryRule'];
     expect(rule).toBeDefined();
     expect(rule).toContain('inferFaultCategory');
-    expect(rule).toContain('31 of 31');
+    expect(rule).toContain('32 of 32');
     expect(rule).toContain('self-consistency');
   });
 
@@ -1284,7 +1288,7 @@ const REAL_CONSUMERS: CategoryConsumer[] = [
 describe('O. downstream agreement measures what depends on the predicted field', () => {
   it('grades every sample the dataset labels', () => {
     const reading = assessDownstreamAgreement(datasetSamples(), REAL_CONSUMERS);
-    expect(reading.graded).toBe(31);
+    expect(reading.graded).toBe(32);
   });
 
   it('moves no branching consumer on any sample of this corpus', () => {
@@ -1292,7 +1296,7 @@ describe('O. downstream agreement measures what depends on the predicted field',
     // the field is derivable away without moving them. This is the figure the verdict governs.
     const reading = assessDownstreamAgreement(datasetSamples(), REAL_CONSUMERS);
     expect(reading.moved).toEqual([]);
-    expect(reading.inert).toBe(31);
+    expect(reading.inert).toBe(32);
     expect(reading.share).toBe(1);
     expect(reading.lossless).toBe(true);
   });
@@ -1360,7 +1364,7 @@ describe('O. downstream agreement measures what depends on the predicted field',
     // because either alone is compatible with a `separates` that ignores the denominator.
     const corpus = assessDownstreamAgreement(datasetSamples(), REAL_CONSUMERS);
     expect(corpus.separates).toBe(false);
-    expect(corpus.reason).toContain('1 of 31');
+    expect(corpus.reason).toContain('1 of 32');
   });
 
   it('reaches the separating branch with a corpus the alternative reading moves throughout', () => {

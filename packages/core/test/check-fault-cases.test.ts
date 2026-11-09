@@ -406,7 +406,7 @@ describe('check-fault-cases · the corpus as it stands', { timeout: SUITE_BUDGET
     expect(result.status, result.out).toBe(0);
     // One, because the scratch corpus holds the one case the helper writes -- which is also what
     // proves the count is read from the directory it was given rather than from the repository.
-    expect(result.out).toContain('1 of 31');
+    expect(result.out).toContain('1 of 32');
   });
 
   it('states no neighbour count in the background file, because nothing re-derives one', async () => {
@@ -840,9 +840,9 @@ describe('check-fault-cases · derived telemetry is a claim G3 can refuse', { ti
     // locate all thirty cases, which is what a fixture is for and what a benchmark set must not be.
     const result = await run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('locates 31 of 31 case(s) within top-');
+    expect(result.out).toContain('locates 32 of 32 case(s) within top-');
     expect(result.out).toContain("purpose 'conformance', so this is a reading and not a verdict");
-    expect(result.out).toContain('prompt leakage: 0 of 31 case(s) name their root-cause component');
+    expect(result.out).toContain('prompt leakage: 0 of 32 case(s) name their root-cause component');
   });
 
   it('refuses the same corpus when it declares that it is a benchmark', async () => {
@@ -1035,7 +1035,8 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
       caseId: 'history-checkout-cpu-saturation',
       origin: 'derived',
       why:
-        'A declaration built to separate the two baselines: the root cause carries a spike and ' +
+        'A declaration built to separate the two baselines: the root cause carries a one-sample ' +
+        'excursion and ' +
         'three other services carry steps, so peak-z ranks the truth first and a median shift ' +
         'ranks it last.',
       series: [
@@ -1045,7 +1046,10 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
           unit: 'ms',
           baseline: 180,
           post: 4300,
-          derivation: 'spike',
+          // A brief excursion, and since v3.71 that is a *duration on a step* rather than a third
+          // shape: `spike` was a step with `hold: 1`, and the member was removed so the same field
+          // could say four as well as one. The series this builds is unchanged, digit for digit.
+          hold: 1,
           quote: '180ms to 4.3s',
           why: 'the annotation, carrying the fault as a brief excursion rather than a step',
         },
@@ -1086,8 +1090,9 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
     };
   }
 
-  it('refuses a case that only the spike-sensitive baseline can locate', async () => {
-    // The negative control for `minSolvers: 2`. The spike is the root cause's only evidence: peak-z
+  it('refuses a case that only the excursion-sensitive baseline can locate', async () => {
+    // The negative control for `minSolvers: 2`. The one-sample excursion is the root cause's only
+    // evidence: peak-z
     // sees it, the median of the window does not, so the robust ranking places `checkout-api` fourth
     // of four -- outside a top-K of three -- and the case is refused. Under one solver it would pass.
     //
@@ -1097,7 +1102,7 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
     // (`checkout-api-0`, a different `service.name`) outranked the service -- a ranking decided by an
     // epsilon. The floor is the unit's resolution now, the pod's statistic is a real number, and the
     // service is first. The case is still refused for the reason the test is about: the robust
-    // baseline's median cannot see a lone spike, so it places the answer fourth.
+    // baseline's median cannot see a lone excursion, so it places the answer fourth.
     // No competitor: this test is about the two solvers disagreeing, and a corpse-wide refusal for a
     // second reason would make its numbers unreadable.
     const result = await run(['--cases', corpus({ signals: spikeCase(), competitor: false })]);
@@ -1164,7 +1169,7 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
     const result = await run(['--cases', corpus({ signals: edited })]);
     expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
-      "declares derivation 'counters' for 'container_cpu_throttled_seconds_total', which is not one of step / counter / spike",
+      "declares derivation 'counters' for 'container_cpu_throttled_seconds_total', which is not one of step / counter",
     );
   });
 });
@@ -2967,16 +2972,19 @@ describe('check-fault-cases · the G3 threshold grid', { timeout: SUITE_BUDGET_M
     // 63x the line the gate applies, so all sixteen cells admitted all thirty cases. That is a
     // corpus that cannot see the threshold, not a threshold that has been defended.
     //
-    // The round added a case whose anomaly separates by about three baseline standard deviations
-    // (the same quantity the corpus's fixed jitter cycle sets for every series), and the sentence
-    // now reports the first movement the grid has ever had: the default admits all thirty-one and
-    // one neighbour -- |Z| >= 10 -- refuses it. The figures are asserted rather than described,
-    // because a corpus drifting towards the thresholds moves the weakest case first.
+    // v3.70 added a case whose anomaly separates by about three baseline standard deviations (the
+    // same quantity the corpus's fixed jitter cycle sets for every series), and the grid moved for
+    // the first time: the default admits all of them and one neighbour -- |Z| >= 10 -- refuses that
+    // case. v3.71 moved the *other* axis, which had never moved at all: a case whose series return
+    // to their baseline after four post-onset samples is refused at five, because `longestRun` stops
+    // counting where the excursion stops. Two neighbours now change the verdict, and the two reasons
+    // are different -- too weak on the |Z| axis, too short on the sample axis -- which is the whole
+    // point of a 4x4 grid over a 1-dimensional question.
     const result = await run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toContain(
-      'g3 threshold grid: 31 case(s) judged over 4x4 cells (|Z| 1/2/10/100 x samples 1/3/5/8); '
-        + 'the default (|Z| >= 2, 3 samples) admits 31 of 31 and 1 of its 4 neighbour(s) change '
+      'g3 threshold grid: 32 case(s) judged over 4x4 cells (|Z| 1/2/10/100 x samples 1/3/5/8); '
+        + 'the default (|Z| >= 2, 3 samples) admits 32 of 32 and 2 of its 4 neighbour(s) change '
         + "that, by up to 1; the weakest case 'history-config-rate-cache-ttl-pricing' stops "
         + 'sustaining 3 sample(s) at |Z| >= 3.38, 1.69x the default; '
         + 'the most post-onset samples any case offers is 8, '
