@@ -84,5 +84,6 @@
   },
   "query": "About three percent of exports fail and the jobs are never retried. The broker sees the connection close rather than a nack, and the logs show an unhandled TypeError in the CSV writer when a column contains an embedded newline. What failed?",
   "difficulty": "L3",
+  "difficultyNote": "the failure looks like a finish: the exception closes the connection rather than nacking the message, so a dead job reports the same thing as a completed one and the answer has to be argued from the absence of a retry.",
   "answerKeyIsolated": true
 }

@@ -1,4 +1,5 @@
 import type { DisplacementReading, RankedCandidate } from '../fault/displacement.js';
+import { difficultyFloor } from '../fault/difficulty.js';
 import type {
   EntityGraph,
   FaultCase,
@@ -1225,14 +1226,28 @@ export function checkSolvability(
 }
 
 /**
- * Whether the graded cases are spread across the levels. A property of the set, asked once.
+ * Whether the corpus is spread across the levels. A property of the set, asked once.
  *
- * `graded` counts the cases that state a level. A case that does not is not an easy case: the
- * exporter projects an absent level to `medium` (`export/difficulty.ts` documents that arm), so an
- * unannotated corpus exports as uniformly medium and the distribution rule has nothing to say about
- * it. Below `distributionMinCases` this returns passed rather than a verdict, because a share
- * computed from three cases is not a measurement of a share -- and the caller that owns the corpus
- * prints the count, so "the rule did not apply" is visible rather than silent.
+ * **The two ends read two different numbers, and that is the rule rather than an oversight.** Each
+ * end reads the count the corpus cannot inflate:
+ *
+ * - `DIFFICULTY_SKEWED_EASY` reads the levels cases **claim**, over the cases that claim one. A case
+ *   can only push this number up by calling itself easy, and a case that calls itself easy while
+ *   its own chain is long is refused as a shortfall before any share is computed
+ *   (`findDifficultyShortfalls`). So the claim is the stricter reading, and it is the right one.
+ * - `DIFFICULTY_SKEWED_HARD` reads the levels cases **earn** (`difficultyFloor` over every case in
+ *   the bundle), not the levels they claim. The claim is the weaker reading: a corpus could meet a
+ *   tenth by relabelling, which is the one thing this gate exists to be unable to reward. The
+ *   corpus found that out with one case claiming `L4` over a single causal step while the other four
+ *   holders of the level reach three (finding 494): the published share was `5/33` by claim and
+ *   `4/33` by structure, and only one of those two numbers is a property of the corpus.
+ *
+ * Below `distributionMinCases` this returns passed rather than a verdict, because a share computed
+ * from three cases is not a measurement of a share -- and the caller that owns the corpus prints the
+ * count, so "the rule did not apply" is visible rather than silent. The easy end keeps the graded
+ * denominator it has always had: an unannotated case projects to `medium` in both exports
+ * (`export/difficulty.ts` documents that arm), so it is not an easy case and counting it in the easy
+ * share would report a silence as a claim.
  */
 export function checkDifficultyDistribution(bundle: IrBundle, options: G4Options = {}): GateResult {
   const v: GateViolation[] = [];
@@ -1243,17 +1258,22 @@ export function checkDifficultyDistribution(bundle: IrBundle, options: G4Options
   const graded = bundle.cases.filter((c) => c.difficulty !== undefined);
   if (graded.length >= distributionMinCases) {
     const l1 = graded.filter((c) => c.difficulty === 'L1').length / graded.length;
-    const l4 = graded.filter((c) => c.difficulty === 'L4').length / graded.length;
     if (l1 > maxL1Share) {
       v.push({
         code: 'DIFFICULTY_SKEWED_EASY',
         message: `L1 share ${l1.toFixed(3)} exceeds the ${maxL1Share} ceiling`,
       });
     }
+    const earned = bundle.cases.filter(
+      (c) => difficultyFloor({ case: c, graph: bundle.graph }) === 'L4',
+    ).length;
+    const l4 = earned / bundle.cases.length;
     if (l4 < minL4Share) {
       v.push({
         code: 'DIFFICULTY_SKEWED_HARD',
-        message: `L4 share ${l4.toFixed(3)} is below the ${minL4Share} floor`,
+        message:
+          `earned L4 share ${l4.toFixed(3)} (${String(earned)} of ${String(bundle.cases.length)} ` +
+          `cases carry a chain of three or more steps) is below the ${minL4Share} floor`,
       });
     }
   }

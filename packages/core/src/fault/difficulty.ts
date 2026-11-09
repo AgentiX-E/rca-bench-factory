@@ -1,5 +1,6 @@
 import type { EntityGraph, FaultCase } from '../ir/types.js';
 import { indexGraph } from '../entity/graph.js';
+import { MIN_SENTENCE_LENGTH, looksLikeSentence } from '../util/prose.js';
 
 /**
  * The lowest difficulty a case's *structure* can support.
@@ -78,7 +79,10 @@ export interface DifficultyShortfall {
   floor: NonNullable<FaultCase['difficulty']>;
 }
 
-const RANK: Record<NonNullable<FaultCase['difficulty']>, number> = { L1: 1, L2: 2, L3: 3, L4: 4 };
+/** One of the four levels, named once so the two readers of the ladder agree on the type. */
+export type DifficultyLevel = NonNullable<FaultCase['difficulty']>;
+
+const RANK: Record<DifficultyLevel, number> = { L1: 1, L2: 2, L3: 3, L4: 4 };
 
 /**
  * Cases that claim less structure than they carry.
@@ -102,4 +106,116 @@ export function findDifficultyShortfalls(input: {
     }
   }
   return out;
+}
+
+/**
+ * The other half of monotonicity, which the floor cannot state on its own.
+ *
+ * `difficultyFloor` refuses a level *below* the structure. Nothing refused a level far **above** it,
+ * and the corpus shows what that costs: six of its thirty-three cases claim more than their chains
+ * carry, and one of them claims `L4` -- the level every other holder reaches with three hops -- on a
+ * chain of **one**, over `pricing-service -> tax-calculation` (finding 494). `docs/data-model.md`
+ * permits the excess on purpose, because a floor is not a rating and a case can be hard to *detect*
+ * while being easy to trace: the same case moves three baseline standard deviations inside the band
+ * its alert treats as noise, so nothing fired and the question is whether there was an incident at
+ * all.
+ *
+ * A permission with no condition is how a label stops meaning anything. So the condition is the one
+ * an author can always meet and a reader can always argue with: **a claim above the floor has to say
+ * what the floor cannot see.** That is the same shape as `fault.parameterNotes` (finding 326) and
+ * the same limit applies -- a guard can check that the sentence is there, in the right place, and as
+ * long as a clause; it cannot check that it is true.
+ *
+ * The converse is refused as well, and it is the placement rule that keeps the field meaningful: a
+ * note **exactly at** the floor explains a gap of nothing, because the label there makes the weakest
+ * claim the structure supports. If a case has something to say about why it is hard, that is a claim
+ * above the floor and the label is what should say so. A level *below* the floor is left alone: the
+ * shortfall rule already refuses it, and two sentences about one mistake is the defect this campaign
+ * keeps deleting.
+ */
+export type DifficultyClaimFault =
+  | { kind: 'unsupported'; caseId: string; declared: DifficultyLevel; floor: DifficultyLevel }
+  | { kind: 'redundant'; caseId: string; declared: DifficultyLevel; floor: DifficultyLevel }
+  | { kind: 'stray'; caseId: string; note: string }
+  | { kind: 'notText'; caseId: string; note: unknown }
+  | { kind: 'label'; caseId: string; note: string };
+
+/** One case's level read against its own structure, with every way its note fails to answer. */
+export interface DifficultyClaim {
+  readonly caseId: string;
+  /** The level the case states, if it states one. */
+  readonly declared: DifficultyLevel | undefined;
+  /** The level its own chain and breadth support at the least. */
+  readonly floor: DifficultyLevel;
+  /** Whether the case claims more than the floor. */
+  readonly above: boolean;
+  readonly faults: readonly DifficultyClaimFault[];
+}
+
+/**
+ * Read one case's level against its structure and its reason.
+ *
+ * The order of the checks is the order of the defects: a level below the floor is somebody else's
+ * refusal (`findDifficultyShortfalls`), so it is neither an unsupported claim nor a redundant note
+ * and this function says nothing about it. A note that is not text is refused as itself before its
+ * length is judged, because "a note is a sentence" is the weaker statement.
+ */
+export function readDifficultyClaim(input: {
+  case: FaultCase;
+  graph: EntityGraph;
+}): DifficultyClaim {
+  const caseId = input.case.caseId;
+  const declared = input.case.difficulty;
+  const floor = difficultyFloor({ case: input.case, graph: input.graph });
+  const note = input.case.difficultyNote;
+  const faults: DifficultyClaimFault[] = [];
+
+  if (declared === undefined) {
+    // A note with no level has nothing to explain: it is what a relabelling leaves behind.
+    if (typeof note === 'string') faults.push({ kind: 'stray', caseId, note });
+    else if (note !== undefined) faults.push({ kind: 'notText', caseId, note });
+    return { caseId, declared, floor, above: false, faults };
+  }
+
+  const above = RANK[declared] > RANK[floor];
+  if (note !== undefined && typeof note !== 'string') {
+    faults.push({ kind: 'notText', caseId, note });
+    return { caseId, declared, floor, above, faults };
+  }
+  if (above && note === undefined) faults.push({ kind: 'unsupported', caseId, declared, floor });
+  if (above && note !== undefined && !looksLikeSentence(note)) faults.push({ kind: 'label', caseId, note });
+  if (RANK[declared] === RANK[floor] && note !== undefined) {
+    faults.push({ kind: 'redundant', caseId, declared, floor });
+  }
+  return { caseId, declared, floor, above, faults };
+}
+
+/** The sentence a reader of the guard's output gets for each way a level's evidence falls short. */
+export function describeDifficultyClaimFault(fault: DifficultyClaimFault): string {
+  switch (fault.kind) {
+    case 'unsupported':
+      return (
+        `'${fault.caseId}' is labelled ${fault.declared} and its own structure supports ${fault.floor}, ` +
+        'and fault.difficultyNote says nothing -- a level above the floor claims something the chain ' +
+        'cannot show, and the note is where the case says what'
+      );
+    case 'redundant':
+      return (
+        `'${fault.caseId}' is labelled ${fault.declared}, which is exactly what its structure supports, ` +
+        'and it carries a fault.difficultyNote -- there is no gap for the sentence to explain; a case ' +
+        'that is harder than its chain says so in `difficulty`, not in a note beside it'
+      );
+    case 'stray':
+      return (
+        `'${fault.caseId}' carries a fault.difficultyNote and declares no difficulty at all, so the ` +
+        'note explains a claim nobody made'
+      );
+    case 'notText':
+      return `'${fault.caseId}' carries fault.difficultyNote as ${JSON.stringify(fault.note)}, and a note is a sentence of text`;
+    case 'label':
+      return (
+        `'${fault.caseId}' explains its level with '${fault.note}', which is a label: a note says what ` +
+        `the chain cannot show, in at least ${String(MIN_SENTENCE_LENGTH)} characters and ending as a sentence does`
+      );
+  }
 }

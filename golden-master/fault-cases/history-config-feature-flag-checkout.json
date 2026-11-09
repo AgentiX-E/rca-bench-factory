@@ -136,5 +136,6 @@
   },
   "query": "The one-click checkout button vanished for every user at 08:00 and no deployment ran that day. What turned it off, and why did nothing page?",
   "difficulty": "L2",
+  "difficultyNote": "nothing degraded anywhere: the deployment counter is flat and storefront answered every request, so the case's only evidence is an absence -- a button that is not there -- while every reading that normally carries a fault stays quiet.",
   "answerKeyIsolated": true
 }

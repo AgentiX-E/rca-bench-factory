@@ -2432,23 +2432,43 @@ describe('check-fault-cases · the difficulty distribution is a property of the 
     // only a new case can change is a rule everyone learns to skip.
     const result = await run(['--cases', corpusOf(10, 'L3')]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('L4 share 0.000 is below the 0.1 floor');
+    // The sentence names the reading, because v3.74 the hard end of the distribution is computed from
+    // the chains rather than from the labels: `L4 share` alone would leave a reader asking which of
+    // the two numbers the corpus was being judged on.
+    expect(result.out).toContain('earned L4 share 0.000 (0 of 10 cases carry a chain of three or more steps)');
+    expect(result.out).toContain('is below the 0.1 floor');
     expect(result.out, 'the spread is named, not just the violation').toContain('difficulty spread L1 0 / L2 0 / L3 10');
+    expect(result.out, 'both numbers are printed, and they are not the same fact').toContain(
+      'difficulty 0 of 10 case(s) earn L4 by their own chains, and 0 claim above theirs',
+    );
   });
 
   it('accepts a spread set, so the rule can pass as well as fail', async () => {
-    // Nine at the floor and one above it: no L1, a tenth at L4, and nothing claiming less structure
-    // than it carries. Asserted on the verdict rather than on the absence of a phrase, which is what
-    // the earlier version did -- and that version passed while the run was red, because the message
-    // it looked for had been reworded.
+    // Nine at the floor and one that earns L4: no L1, a tenth at the hardest level, and nothing
+    // claiming less structure than it carries. The tenth case has to *earn* the level -- a third
+    // causal step -- because v3.74 the hard end reads the chains: relabelling a two-step case was
+    // enough to make this fixture pass, which is the defect the round is about (finding 494).
     const dir = corpusOf(10, 'L3');
-    const hardest = JSON.parse(readFileSync(join(dir, 'case-9.json'), 'utf8')) as Record<string, unknown>;
+    const hardest = JSON.parse(readFileSync(join(dir, 'case-9.json'), 'utf8')) as {
+      difficulty?: string;
+      groundTruth: {
+        causalChain: Array<{ step: number; fromEntityId: string; toEntityId: string; mechanism: string; evidenceRefs: string[] }>;
+      };
+    };
+    hardest.groundTruth.causalChain.push({
+      step: 3,
+      fromEntityId: 'service:synthetic-storefront/checkout-api',
+      toEntityId: 'service:synthetic-storefront/storefront',
+      mechanism: 'the checkout path is what the storefront renders, so the caller is where a reader sees the slowdown',
+      evidenceRefs: [],
+    });
     hardest.difficulty = 'L4';
     writeFileSync(join(dir, 'case-9.json'), `${JSON.stringify(hardest, null, 2)}\n`);
     const result = await run(['--cases', dir]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toContain('within the target');
     expect(result.out).toContain('difficulty spread L1 0 / L2 0 / L3 9 / L4 1');
+    expect(result.out).toContain('difficulty 1 of 10 case(s) earn L4 by their own chains');
   });
 
   it('says how many cases state a level, because an unset level exports as medium', async () => {

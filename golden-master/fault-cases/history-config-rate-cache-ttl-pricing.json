@@ -112,5 +112,6 @@
   },
   "query": "Quote latency rose slightly after Monday's config rollout and then held, with no errors and no change in arrival rate; the only other movement was how often the rate table was refreshed. What changed, and why was no alert raised?",
   "difficulty": "L4",
+  "difficultyNote": "nothing fired and nothing failed: the move is about three baseline standard deviations, inside the band this system's alert treats as noise, so the case asks whether there was an incident at all rather than which component caused one.",
   "answerKeyIsolated": true
 }

@@ -2419,9 +2419,9 @@ first time the battery caught it before the round ended.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **244 files, 6214 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **248 files, 6401 tests passed** (as of this commit) |
+| `core` test suite | **244 files, 6214 tests passed** (at v3.73) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.73) |
+| repo test suite | **248 files, 6401 tests passed** (at v3.73) |
 | coverage | `core` **99.97 / 99.82 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100**; `fault/duration-claim.ts` is **100 / 100 / 100 / 100** |
 | new tests | **6191 -> 6214, +23**: sixteen in the new `duration-claim.test.ts` (six refusals, four episode readings, the tolerance, the corpus reading), four in `check-fault-cases.test.ts` for the wiring, and three from the `it.each` tables that read the registers this round extended -- `export-surface-enumerated.test.ts` runs two of them over the module list and one over every source file, so the new module is three tests |
 | mutations | **50 -> 55** injections, **59 -> 65** witnesses; 54 caught, 0 survived / inert / unattributed, 1 redundant as declared |
@@ -2436,3 +2436,86 @@ vocabulary it had — `hold` counts samples, `parameters` are open, and a note i
 field was the answer and the arithmetic came after it. What the declaration buys is narrow and real: a
 case that states its length can now be wrong in exactly one way, and that way is refused with the sample,
 the count and both spans in the sentence.
+
+## v3.74 — the level a case claims, and the level its chain earns
+
+`difficultyFloor` refuses a level *below* the structure and says nothing about a level far above it.
+`docs/data-model.md` permitted the excess on purpose, and the reason is real: a case can be hard to
+detect while being easy to trace. What the permission did not require was an account of the excess, and
+a permission with no condition is how a label stops meaning anything.
+
+The corpus shows the price. **Six of its thirty-three cases claim above their floor, and one of them
+claims `L4`** — the level the other four reach with three causal steps — **over a chain of one**:
+`pricing-service -> tax-calculation` (finding 494). The published hardest-level share was therefore two
+numbers wearing one name:
+
+| reading | value | a property of |
+| --- | --- | --- |
+| cases that state `L4` | 5 of 33 = 0.152 | the annotations |
+| cases whose chains earn `L4` | **4 of 33 = 0.121** | the corpus |
+
+Both exports project the first: `cloudopsbench` as `difficulty`, `itbench` as `scenario_complexity`. So
+the one-hop case ships as `hard` beside three-hop chains, and a consumer reading the ladder cannot tell
+which is which.
+
+The repair is the condition, in the shape `fault.parameterNotes` already has. `fault.difficultyNote`
+says what the floor cannot see; `readDifficultyClaim` refuses a claim above the floor that does not
+answer it, and refuses a note **at** the floor — where the label already makes the weakest claim the
+structure supports, so there is no gap to explain. Six cases claim above and six answer, and the six
+sentences name six different reasons, which is the evidence that the field is not a synonym for "hard":
+
+- a delay that exists only as the difference between two normal readings on two clocks;
+- an absence, where every rate that normally carries a fault stayed flat;
+- a move three baseline standard deviations inside the band the alert treats as noise;
+- a mechanism that is a nightly job's schedule and not an entity in the graph at all;
+- a retention raised days before the window, which no reading records;
+- an exception that closed a connection instead of nacking the message, so a dead job looks finished.
+
+The note does **not** travel into a bundle, and that omission is deliberate: it is the one field
+`assembleBundle`'s whitelist leaves out, because three of those six sentences name a mechanism, and a
+mechanism is what a solver is supposed to produce.
+
+**The distribution gate now reads two different numbers at its two ends.** The easy ceiling reads the
+levels cases *claim*, over the cases that claim one; the hard floor reads the levels their chains
+*earn*, over every case in the bundle. Each end reads the count the corpus cannot inflate: a case can
+only push the easy number up by calling itself easy, and one that does so with a long chain is refused
+as a shortfall before any share is computed, while a corpus could meet the hard number by relabelling —
+which is the one thing the gate exists to be unable to reward. The new test for it is ten copies of a
+case with no chain at all, every one labelled `L4`: by claim that is a corpus of the hardest level, and
+the gate fails it.
+
+**And the ratchet's one unit of slack was the case that never earned the level** (finding 495). The
+arithmetic was right and the reading was wrong, because it dropped *cases* rather than *levels*, and one
+of the five it could drop was the one-hop claim:
+
+| reading | drop the claimed case | drop one earned case |
+| --- | --- | --- |
+| by claim, as it was | 4 of 32 = 0.125, holds | 4 of 32 = 0.125, holds |
+| by earned level, as it is | 4 of 32 = 0.125, holds | **3 of 32 = 0.094, fails** |
+
+So the corpus can afford to lose none of the four that earn it, and the case whose deletion costs
+nothing is the one the gate never counted. That is a worse number than the test claimed and it is the
+one the arithmetic supports. It also cannot move by relabelling any more, which is the half the round
+bought.
+
+### Readings
+
+> Ledger for `v3.74`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **244 files, 6225 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **248 files, 6412 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.82 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100**; `fault/difficulty.ts` and `gates/gates.ts` are **100 / 100 / 100 / 100** |
+| new tests | **6214 -> 6225, +11**: eight for `readDifficultyClaim` (the five refusals and the three silences), one naming the corpus's six claims, one for the gate's immunity to relabelling, and one for the field the assembler leaves out |
+| mutations | **55 -> 61** injections, **65 -> 73** witnesses; 60 caught, 0 survived / inert / unattributed, 1 redundant as declared |
+| corpus | **33** cases unchanged; **5** state `L4`, **4** earn it; **6** claim above their floor and **6** say what the chain cannot see |
+| gate | hard end reads `difficultyFloor`; easy end unchanged; `4 of 33 = 0.121`, so the corpus can afford to lose **0** earned cases |
+| list | **22 -> 23** open: the ratchet rewritten as a fifth earned level, one new entry for the claim still reaching both exports |
+
+**The lesson.** A field with a floor and no ceiling is a field with a comment box: the floor is
+checkable, the excess is whatever the annotator believed that morning, and a published number computed
+over it measures the annotator. The condition is what turns the excess back into a statement — not
+because a guard can tell a good reason from a bad one, but because a corpus whose over-claims each carry
+a sentence can be argued with, while one whose over-claims carry nothing can only be believed.

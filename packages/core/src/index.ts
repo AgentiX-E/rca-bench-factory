@@ -924,6 +924,17 @@ export { assessFourLayer, describeUncitedEvidence, formatFourLayerReading } from
 export { difficultyFloor, findDifficultyShortfalls } from './fault/difficulty.js';
 export type { DifficultyShortfall } from './fault/difficulty.js';
 
+// The other half of the same property. A floor refuses a level below the structure and says nothing
+// about a level far above it, which left the corpus with one case claiming the hardest level over a
+// single causal step. `readDifficultyClaim` reads the excess as a claim that has to be stated: what
+// the chain cannot see, in a sentence, when and only when the level is above the floor.
+export { describeDifficultyClaimFault, readDifficultyClaim } from './fault/difficulty.js';
+export type {
+  DifficultyClaim,
+  DifficultyClaimFault,
+  DifficultyLevel,
+} from './fault/difficulty.js';
+
 // The system's background telemetry: the series a case does not quote because they assert nothing
 // about the incident, and the rules that keep them from being read as evidence.
 export {

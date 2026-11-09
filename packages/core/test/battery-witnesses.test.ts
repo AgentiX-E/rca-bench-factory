@@ -203,7 +203,11 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // A sixth witness appeared only after the first battery run: the flat-series injection was
     // credited UNATTRIBUTED because the test's control series held for as many samples as its
     // excursion, so both readings produced the same length and nothing distinguished them.
-    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 65],
+    //
+    // 65 -> 73 in v3.74: six injections for the level a case claims, and eight witnesses because two
+    // of them break both directions -- a sentence refused as a label, a label accepted as a sentence,
+    // and a note refused at the floor while one below it is accepted.
+    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 73],
     ['scripts/injection/fault-extraction-scoring.py', 'fault-extraction-scoring', 12],
     ['scripts/injection/fetch-official-retry.py', 'fetch-official-retry', 6],
     ['scripts/injection/fault-extraction-workflow.py', 'fault-extraction-workflow', 9],

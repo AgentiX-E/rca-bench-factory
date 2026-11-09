@@ -123,5 +123,6 @@
   },
   "query": "At 09:12 the nightly export wrote its 900 GB into the topic in one pass: the broker's disk watermark climbed from 35% to 92% for six minutes and append p99 rose from 8ms to 240ms. Producers were throttled rather than failed, and the consumer lag went from 40s to 900s behind them. Retention reclaimed the export's segments once the batch ended, and append time came back to 8ms on its own. Why did the topic fill, and why did it clear?",
   "difficulty": "L3",
+  "difficultyNote": "the mechanism is a nightly job's schedule, which is not an entity in this graph, and both readings return on their own before the window ends, so the case cannot be solved by following a chain and has to be solved by explaining a shape that recovered.",
   "answerKeyIsolated": true
 }

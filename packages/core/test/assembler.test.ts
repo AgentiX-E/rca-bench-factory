@@ -92,6 +92,26 @@ describe('assembleBundle - happy path', () => {
     expect(fc.difficulty).toBeUndefined();
   });
 
+  it('does not carry the note that justifies a level, because it is a paragraph of the answer', () => {
+    // The note says what the chain cannot see, and for three of the corpus's six over-claims that is
+    // a setting changed days earlier or an exception that closed a connection -- an explanation a
+    // solver is supposed to produce. The level travels; the defence stays in the case file, where
+    // `readDifficultyClaim` reads it.
+    const base = validDraft();
+    const result = assembleBundle({
+      ...base,
+      case: {
+        ...base.case,
+        difficulty: 'L4',
+        difficultyNote: 'nothing fired: the move is three baseline standard deviations inside the noise band.',
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bundle.cases[0]?.difficulty).toBe('L4');
+    expect(result.bundle.cases[0]?.difficultyNote).toBeUndefined();
+  });
+
   it('preserves answerKeyIsolated', () => {
     const base = validDraft();
     const result = assembleBundle({ ...base, case: { ...base.case, answerKeyIsolated: true } });

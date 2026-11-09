@@ -118,6 +118,7 @@ interface FaultCase {
   groundTruth: GroundTruth;
   query?: string;                     // natural-language task description
   difficulty?: 'L1'|'L2'|'L3'|'L4';
+  difficultyNote?: string;            // required above the floor, refused at it
   quality?: QualityGateReport;
   answerKeyIsolated?: boolean;        // true when answer key is stored separately
 }
@@ -140,9 +141,24 @@ lowest level a case's own structure supports:
 | 1 | ≥ 2 | `L2` |
 | 1 | 1 | `L1` |
 
-A declared level **at or above** the floor is accepted; a level **below** it is refused by the corpus
-guard, because it is an annotation contradicting the case it annotates. That is monotonicity, which
-every definition of difficulty must satisfy and which is the only part derivable from the data.
+A declared level **below** the floor is refused by the corpus guard, because it is an annotation
+contradicting the case it annotates. That is monotonicity, which every definition of difficulty must
+satisfy and which is the only part derivable from the data.
+
+A declared level **above** the floor is allowed, because a case can be hard to *detect* while being
+easy to trace: `history-config-rate-cache-ttl-pricing` moves about three baseline standard deviations
+inside the band its alert treats as noise, so nothing fired and the question is whether there was an
+incident at all rather than which component caused one. What is not allowed is claiming the excess
+silently. `fault.difficultyNote` says what the floor cannot see, and `readDifficultyClaim` refuses a
+level above the floor that does not answer — and refuses a note **at** the floor, where there is no
+gap to explain (finding 494). Six of the corpus's thirty-three cases claim above their floor and six
+answer; their six sentences name six different reasons, which is the evidence that the excess is not
+one thing wearing six names.
+
+That note does **not** travel into a bundle. It names what the chain cannot see — a setting changed
+days before the window, an exception that closed a connection instead of nacking the message — which
+is a paragraph of the answer, so `assembleBundle` carries the level and leaves the defence in the
+case file.
 
 It is **not** a rating of how hard a case is for a model. That needs per-case accuracy over enough
 solvers to separate the levels, and this repository has two local baselines and one configured
@@ -150,17 +166,19 @@ provider. Until that exists, a level means "at least this much structure" and no
 its floor may be trivial and a case above it may be easy.
 
 The distribution of levels across a corpus is checked once per corpus (`checkDifficultyDistribution`,
-ten graded cases before it says anything). A corpus with no `L4` case reports that fact on every run
-rather than failing: no correction to a label can produce a level the corpus's chains cannot reach.
-That was true of this corpus for as long as every chain in it was one or two steps, and it stopped
-being true the round the corpus's first three-step chains were annotated. Three of its twenty cases
-now carry three hops, one of them ending inside the system rather than at a caller, and the share is
-met with **exactly one case of margin**: three of thirty -- the size the corpus is committed to
-annotating -- is 0.100, which is the floor itself and not above it. The suite holds that number
-(`difficulty-floor.test.ts` names all three cases and asserts the share against the committed
-denominator as well as against today's count) while the guard keeps printing it rather than gating on
-it. A rule that fails on a property no annotation can repair teaches people to skip the line; a rule
-nothing asserts is a number that drifts back to zero.
+ten graded cases before it says anything), and **its two ends read two different numbers**. The easy
+ceiling reads the levels cases claim, over the cases that claim one; the hard floor reads the levels
+their chains **earn** (`difficultyFloor` over every case in the bundle). Each end reads the count the
+corpus cannot inflate: a case can only push the easy number up by calling itself easy, and one that
+does so with a long chain is refused as a shortfall before any share is computed, while a corpus could
+meet the hard number by relabelling and the gate exists to be unable to reward that (finding 494).
+
+The two numbers were the same until v3.74 and are not any more: five cases state `L4`, four of them
+reach it with three causal steps, and the fifth states it over a chain of one. The share the corpus
+publishes is **four of thirty-three, 0.121**, and it can afford to lose **none** of them — three of
+thirty-two is 0.094 — while the case whose deletion costs nothing is the one the gate never counted
+(`difficulty-floor.test.ts` asserts both halves, and finding 495 is the round the arithmetic changed).
+The guard prints both readings side by side rather than one, because they are not the same fact.
 
 #### Background telemetry, and what "top-K" means
 

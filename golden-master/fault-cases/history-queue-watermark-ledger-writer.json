@@ -86,5 +86,6 @@
   },
   "query": "Ledger publishes started timing out at 21:40 and the producer buffer grew to 40,000 records while the broker throttled rather than failed them. The topic's retention had been raised to seven days the week before. What failed?",
   "difficulty": "L3",
+  "difficultyNote": "the cause is off the chain in time rather than in space: the retention was raised days before the window and no reading records the change, so the chain shows a writer failing against a broker whose setting was already wrong.",
   "answerKeyIsolated": true
 }

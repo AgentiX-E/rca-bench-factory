@@ -1346,6 +1346,97 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         ),
         "the test that refuses a parameter that is not a quantity in a unit of time",
     ),
+    # ------------------------------------------------------------ the level a case claims
+    #
+    # `fault.difficulty` has a floor and, until v3.74, no ceiling: a case could claim any level above
+    # what its chain carried and nothing asked why, so one case claimed L4 -- the level four others
+    # reach with three hops -- over a single causal step (finding 494). `fault.difficultyNote` is the
+    # question, and these six mutations are the ways to answer it wrongly.
+    (
+        # The excess is the whole rule: `>` decides whether a claim needs defending. Read as `>=`,
+        # every case standing exactly on its floor becomes a claim that has to explain itself, and
+        # the corpus's twenty-seven at-floor cases are refused for making the weakest claim their
+        # structure supports.
+        "LEVEL 1. a case standing on its floor counts as claiming above it",
+        "packages/core/src/fault/difficulty.ts",
+        "difficulty-floor.test.ts",
+        lambda t: rename(
+            t,
+            "  const above = RANK[declared] > RANK[floor];",
+            "  const above = RANK[declared] >= RANK[floor];",
+        ),
+        "says nothing about a case at its floor with no note",
+    ),
+    (
+        # The refusal is the round: a claim with no sentence is the state the corpus was in. Inverted,
+        # the guard refuses the cases that answered and accepts the one that did not -- a verdict that
+        # is exactly wrong rather than merely absent.
+        "LEVEL 2. a claim above the floor is refused when it does explain itself",
+        "packages/core/src/fault/difficulty.ts",
+        "difficulty-floor.test.ts",
+        lambda t: rename(
+            t,
+            "  if (above && note === undefined) faults.push({ kind: 'unsupported', caseId, declared, floor });",
+            "  if (above && note !== undefined) faults.push({ kind: 'unsupported', caseId, declared, floor });",
+        ),
+        "refuses a level above the floor that does not say what the chain cannot see",
+    ),
+    (
+        # Presence is not shape. A string of three characters is in the right field and says nothing,
+        # which is the defect `util/prose.ts` exists for; inverted, a real sentence is refused as a
+        # label and a label is accepted as a sentence.
+        "LEVEL 3. any string counts as the sentence a claim needs",
+        "packages/core/src/fault/difficulty.ts",
+        "difficulty-floor.test.ts",
+        lambda t: rename(
+            t,
+            "  if (above && note !== undefined && !looksLikeSentence(note)) faults.push({ kind: 'label', caseId, note });",
+            "  if (above && note !== undefined && looksLikeSentence(note)) faults.push({ kind: 'label', caseId, note });",
+        ),
+        "refuses a note that is a label where a sentence is required",
+    ),
+    (
+        # Placement is the second half of the rule: a note at the floor explains a gap of nothing,
+        # and the field stops meaning "what the chain cannot see" the moment it is allowed to explain
+        # the absence of a gap. Inverted, the refusal moves to the cases that never needed it.
+        "LEVEL 4. a note at the floor explains something, and a note below it does too",
+        "packages/core/src/fault/difficulty.ts",
+        "difficulty-floor.test.ts",
+        lambda t: rename(
+            t,
+            "  if (RANK[declared] === RANK[floor] && note !== undefined) {",
+            "  if (RANK[declared] !== RANK[floor] && note !== undefined) {",
+        ),
+        "refuses a note at the floor, because there is no gap for it to explain",
+    ),
+    (
+        # A note with no level is what a relabelling leaves behind, and it explains a claim nobody
+        # made. Narrowed to the empty string, the branch is still reachable and never taken: the
+        # refusals that matter become silent while the code looks like it is still asking.
+        "LEVEL 5. a note on a case that states no level is given a pass",
+        "packages/core/src/fault/difficulty.ts",
+        "difficulty-floor.test.ts",
+        lambda t: rename(
+            t,
+            "    if (typeof note === 'string') faults.push({ kind: 'stray', caseId, note });",
+            "    if (typeof note === 'string' && note === '') faults.push({ kind: 'stray', caseId, note });",
+        ),
+        "refuses a note on a case that states no level at all",
+    ),
+    (
+        # The round's central mutation, and the reason the gate changed: the hard end of the
+        # distribution read the labels, so a corpus could meet its tenth by relabelling. Read as the
+        # claims again, the share the corpus publishes is a statement about its annotations.
+        "LEVEL 6. the hard end of the distribution reads the labels again",
+        "packages/core/src/gates/gates.ts",
+        "difficulty-floor.test.ts",
+        lambda t: rename(
+            t,
+            "      (c) => difficultyFloor({ case: c, graph: bundle.graph }) === 'L4',",
+            "      (c) => c.difficulty === 'L4',",
+        ),
+        "cannot be met by relabelling, which is the property the share exists for",
+    ),
     (
         # The names are the actionable half of the coverage sentence: "answers 30 of the 32" is a
         # ratio whose denominator is stated, and which two are unanswered is the part an author acts
@@ -1533,6 +1624,28 @@ EXPECTATIONS: dict[str, tuple[str, ...]] = {
     'CLAIM 5. a time unit is refused and every other unit is compared as time': (
         'refuses a parameter that is not a quantity in a unit of time',
         'accepts a stated length the samples draw',
+    ),
+    'LEVEL 1. a case standing on its floor counts as claiming above it': (
+        'says nothing about a case at its floor with no note',
+    ),
+    'LEVEL 2. a claim above the floor is refused when it does explain itself': (
+        'refuses a level above the floor that does not say what the chain cannot see',
+    ),
+    # Two witnesses because the inversion breaks both ends: a label is accepted where a sentence is
+    # required, and a sentence is refused where it is exactly what the field asks for.
+    'LEVEL 3. any string counts as the sentence a claim needs': (
+        'refuses a note that is a label where a sentence is required',
+        'accepts a level above the floor whose note is a sentence',
+    ),
+    'LEVEL 4. a note at the floor explains something, and a note below it does too': (
+        'refuses a note at the floor, because there is no gap for it to explain',
+        'says nothing about a level below the floor, which the shortfall rule already refuses',
+    ),
+    'LEVEL 5. a note on a case that states no level is given a pass': (
+        'refuses a note on a case that states no level at all',
+    ),
+    'LEVEL 6. the hard end of the distribution reads the labels again': (
+        'cannot be met by relabelling, which is the property the share exists for',
     ),
     'COVER 1. the coverage sentence counts the samples it does not answer': (
         'names the samples it does not answer',

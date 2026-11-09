@@ -148,3 +148,61 @@ rather than turning a silence into a pass.
 length -- would be a rule about the annotation's vocabulary, and nine of the fourteen time-valued
 parameters are legitimately not lengths. What the field buys is that a case *which states its length*
 can be wrong in exactly one way, and that way is caught.
+
+## Finding 494 — the hardest level was claimed once without the chain that earns it
+
+`difficultyFloor` refuses a level below the structure and is silent about a level above it, so six of the
+corpus's thirty-three cases claim more than their chains carry. Five of the six are one rank above their
+floor and defensible as judgements. The sixth is `history-config-rate-cache-ttl-pricing`: **`L4`, over a
+chain of one step** (`service:pricing-service -> external:tax-calculation`), where the other four
+holders of the level reach it with three hops.
+
+Measured, that is the whole difficulty report in one line:
+
+| reading | value | what it is a property of |
+| --- | --- | --- |
+| cases that state `L4` | 5 of 33 | the annotations |
+| cases whose chains earn `L4` | **4 of 33** | the corpus |
+
+`s3 = 5/33 = 0.152`, `4/33 = 0.121`, and only the second number survives a relabelling. Both exports
+(`cloudopsbench` as `difficulty`, `itbench` as `scenario_complexity`) project the first: the one-hop case
+is published as `hard` beside three-hop chains, and a consumer reading the ladder has no way to know.
+
+**The excess is not the defect; the silence is.** A case can genuinely be hard to detect while being easy
+to trace, and this one is the corpus's cleanest example of that axis: it moves about three baseline
+standard deviations inside the band its alert treats as noise, so nothing fired, nothing failed, and the
+question is whether there was an incident at all. `docs/data-model.md` permits the excess for exactly
+this reason. What it did not require was an account of it, and a permission with no condition is how a
+label stops meaning anything.
+
+**The repair is a condition, in the same shape as `fault.parameterNotes`.** `fault.difficultyNote` says
+what the floor cannot see; `readDifficultyClaim` refuses a level above the floor that does not answer,
+and refuses a note at or below the floor — where the label already makes the weakest claim the structure
+supports, so there is no gap for a sentence to explain. Six cases claim above and six answer, and the six
+sentences name six different reasons: a delay that exists only as the difference between two normal
+readings; an absence where every rate stayed flat; a move inside the noise band; a mechanism that is a
+nightly job's schedule and not an entity in the graph at all; a retention raised days before the window;
+an exception that closed a connection rather than nacking the message.
+
+The note does not travel into a bundle, and that is the one deliberate omission in `assembleBundle`'s
+whitelist: the defence for a level is a paragraph of the answer.
+
+## Finding 495 — the ratchet's one unit of slack was the case that never earned the level
+
+`difficulty-floor.test.ts` held a ratchet: drop one `L4` case and the corpus still meets its tenth, drop
+two and it does not. The arithmetic was right and the reading was wrong, because it dropped cases rather
+than levels, and one of the five it could drop was the case from finding 494.
+
+| reading | dropping the claimed case | dropping one earned case |
+| --- | --- | --- |
+| by claim, as it was | 4 of 32 = 0.125, passes | 4 of 32 = 0.125, passes |
+| by earned level, as it is | 4 of 32 = 0.125, passes | **3 of 32 = 0.094, fails** |
+
+So the corpus can afford to lose **none** of the cases that earn the level, and the case whose deletion
+costs nothing is the one the gate never counted. That is a worse number than the test claimed and it is
+the one the arithmetic supports; the round that established it also made it unable to move by relabelling,
+so the number no longer depends on which way the corpus is annotated.
+
+`checkDifficultyDistribution` reads the earned level at its hard end for that reason, and keeps reading
+the claims at its easy end, where a claim can only make the corpus look easier than it is and the
+shortfall rule refuses a claim that is not backed. Each end reads the count that cannot be inflated.

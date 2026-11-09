@@ -293,6 +293,11 @@ export const faultCaseSchema = z.object({
   sli: z.unknown().optional(),
   query: z.string().optional(),
   difficulty: z.enum(['L1', 'L2', 'L3', 'L4']).optional(),
+  /**
+   * Admitted as written, like `fault.parameterNotes` and `sli`: the judge is `fault/difficulty.ts`,
+   * and it can say which of the two placements is wrong rather than that the string is not a string.
+   */
+  difficultyNote: z.unknown().optional(),
   quality: z.unknown().optional(),
   answerKeyIsolated: z.boolean().optional(),
 });

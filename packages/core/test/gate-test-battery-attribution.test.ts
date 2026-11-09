@@ -284,7 +284,10 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // 48 -> 50 in v3.72: two for the duration guard -- one drops the spacing check, one inverts it.
     // 50 -> 55 in v3.73: five for the length a case claims -- the flat series, the two lengths, the
     // episode read as one sample, the inverted comparison, and the unit that decides what a length is.
-    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(55);
+    // 55 -> 61 in v3.74: six for the level a case claims -- the excess threshold, the missing
+    // sentence, the sentence's shape, the note's placement, the note with no level, and the gate that
+    // read the labels instead of the chains.
+    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(61);
     expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(
       pythonJson(`print(json.dumps(len(module.INJECTIONS)))`),
     );

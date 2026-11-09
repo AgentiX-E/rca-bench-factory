@@ -558,6 +558,14 @@ export interface FaultCase {
   /** Natural-language task description required by OpenRCA-style benchmarks. */
   query?: string;
   difficulty?: 'L1' | 'L2' | 'L3' | 'L4';
+  /**
+   * What a level above the structural floor is claiming that the structure cannot see.
+   *
+   * Required exactly when `difficulty` exceeds `difficultyFloor`, and refused exactly when it does
+   * not: at the floor the label makes the weakest claim the case's own chain supports, so there is
+   * no gap for a sentence to explain. `fault/difficulty.ts` owns the rule.
+   */
+  difficultyNote?: string;
   quality?: QualityGateReport;
   /** True when the answer key is stored physically separate from the task. */
   answerKeyIsolated?: boolean;

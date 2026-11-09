@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { difficultyFloor, findDifficultyShortfalls } from '../src/fault/difficulty.js';
+import { difficultyFloor, findDifficultyShortfalls, readDifficultyClaim, describeDifficultyClaimFault } from '../src/fault/difficulty.js';
 import { checkDifficultyDistribution } from '../src/gates/gates.js';
 import type { Entity, EntityGraph, FaultCase } from '../src/ir/types.js';
 
@@ -183,6 +183,113 @@ describe('findDifficultyShortfalls', () => {
 });
 
 /**
+ * The other half of monotonicity, which the floor cannot state.
+ *
+ * A floor refuses a level below the structure and is silent about a level above it. The corpus had
+ * six of the second kind and one of them claimed `L4` -- the level four other cases reach with three
+ * hops -- over a single causal step (finding 494). The rule is not a ban: a case can be hard to
+ * detect while being easy to trace. It is the condition under which the excess is a statement.
+ */
+describe('readDifficultyClaim', () => {
+  /** Two steps across three kinds: floor L3. */
+  const deep = faultCase(
+    [
+      ['container:default/api-app', 'pod:default/api-0'],
+      ['pod:default/api-0', 'service:default/api'],
+    ],
+    'container:default/api-app',
+  );
+  const read = (over: Partial<FaultCase>) => readDifficultyClaim({ case: { ...deep, ...over }, graph: GRAPH });
+
+  it('says nothing about a case at its floor with no note', () => {
+    const claim = read({ difficulty: 'L3' });
+    expect(claim).toEqual({ caseId: 'case-001', declared: 'L3', floor: 'L3', above: false, faults: [] });
+  });
+
+  it('refuses a level above the floor that does not say what the chain cannot see', () => {
+    const claim = read({ difficulty: 'L4' });
+    expect(claim.above).toBe(true);
+    expect(claim.faults).toEqual([
+      { kind: 'unsupported', caseId: 'case-001', declared: 'L4', floor: 'L3' },
+    ]);
+    // The sentence names both levels, because the author has two ways to answer it: say why, or
+    // move the label down to what the chain supports.
+    expect(describeDifficultyClaimFault(claim.faults[0]!)).toBe(
+      "'case-001' is labelled L4 and its own structure supports L3, and fault.difficultyNote says " +
+        'nothing -- a level above the floor claims something the chain cannot show, and the note is ' +
+        'where the case says what',
+    );
+  });
+
+  it('accepts a level above the floor whose note is a sentence', () => {
+    const note = 'nothing fired: the move is three baseline standard deviations inside the noise band.';
+    expect(read({ difficulty: 'L4', difficultyNote: note }).faults).toEqual([]);
+  });
+
+  it('refuses a note that is a label where a sentence is required', () => {
+    const claim = read({ difficulty: 'L4', difficultyNote: 'subtle' });
+    expect(claim.faults).toEqual([{ kind: 'label', caseId: 'case-001', note: 'subtle' }]);
+    expect(describeDifficultyClaimFault(claim.faults[0]!)).toContain(
+      'which is a label: a note says what the chain cannot show',
+    );
+  });
+
+  it('refuses a note at the floor, because there is no gap for it to explain', () => {
+    // The placement rule is what keeps the field from becoming a second statement of the label: at
+    // the floor the label already says everything the structure supports, and a case that is harder
+    // than its chain says so in `difficulty`.
+    const claim = read({
+      difficulty: 'L3',
+      difficultyNote: 'the readings recover before the window ends, so there is nothing to look at after.',
+    });
+    expect(claim.above).toBe(false);
+    expect(claim.faults).toEqual([{ kind: 'redundant', caseId: 'case-001', declared: 'L3', floor: 'L3' }]);
+    // The sentence has to say where the claim belongs instead, because `redundant` is the one refusal
+    // whose repair is not "write the note" but "the note is the wrong field".
+    expect(describeDifficultyClaimFault(claim.faults[0]!)).toBe(
+      "'case-001' is labelled L3, which is exactly what its structure supports, and it carries a " +
+        'fault.difficultyNote -- there is no gap for the sentence to explain; a case that is harder ' +
+        'than its chain says so in `difficulty`, not in a note beside it',
+    );
+  });
+
+  it('refuses a note on a case that states no level at all', () => {
+    const claim = read({ difficultyNote: 'the readings recover before the window ends, so nothing is left.' });
+    expect(claim).toEqual({
+      caseId: 'case-001',
+      declared: undefined,
+      floor: 'L3',
+      above: false,
+      faults: [{ kind: 'stray', caseId: 'case-001', note: 'the readings recover before the window ends, so nothing is left.' }],
+    });
+    expect(describeDifficultyClaimFault(claim.faults[0]!)).toContain('the note explains a claim nobody made');
+  });
+
+  it('refuses a note that is not text, with or without a level', () => {
+    // Refused as itself rather than as a short sentence: "a note is a sentence" is the weaker claim,
+    // and a number in the field is a different mistake from a sentence that says nothing.
+    const withLevel = read({ difficulty: 'L4', difficultyNote: 3 });
+    expect(withLevel.faults).toEqual([{ kind: 'notText', caseId: 'case-001', note: 3 }]);
+    expect(describeDifficultyClaimFault(withLevel.faults[0]!)).toBe(
+      "'case-001' carries fault.difficultyNote as 3, and a note is a sentence of text",
+    );
+    const withoutLevel = read({ difficultyNote: { why: 'x' } });
+    expect(withoutLevel.faults).toEqual([{ kind: 'notText', caseId: 'case-001', note: { why: 'x' } }]);
+  });
+
+  it('says nothing about a level below the floor, which the shortfall rule already refuses', () => {
+    // Two rules over one field, and neither reports the other's defect twice: a level below the
+    // floor is already refused by `findDifficultyShortfalls`, so reading it here as an unsupported
+    // claim (or its note as redundant) would print two sentences about one mistake.
+    const claim = read({
+      difficulty: 'L2',
+      difficultyNote: 'the readings recover before the window ends, so there is nothing to look at after.',
+    });
+    expect(claim).toEqual({ caseId: 'case-001', declared: 'L2', floor: 'L3', above: false, faults: [] });
+  });
+});
+
+/**
  * The shipped corpus, which is where the floor stops being a property of a fixture.
  *
  * The corpus spent seven rounds with no L4 case at all, and the reason was not that the labels were
@@ -211,6 +318,25 @@ describe('the shipped corpus · the labels and the ladder', () => {
 
   it('has no case claiming less structure than its own chain carries', () => {
     expect(findDifficultyShortfalls({ cases: shipped, graph: shippedGraph })).toEqual([]);
+  });
+
+  it('answers for every level that claims more than its chain carries, and for none that does not', () => {
+    // Six cases claim above their floor and six say what the floor cannot see. Naming them is the
+    // point rather than counting them: the sentence each one carries is a judgement about a
+    // different axis -- a measurement that is a comparison, an absence with nothing to read, a move
+    // inside the noise band, a mechanism off the graph, a setting changed days earlier, a failure
+    // that looks like a finish -- so the field's content is the evidence that the excess is not one
+    // thing wearing six names.
+    const claims = shipped.map((one) => readDifficultyClaim({ case: one, graph: shippedGraph }));
+    expect(claims.filter((one) => one.above).map((one) => one.caseId).sort()).toEqual([
+      'history-cart-network-delay',
+      'history-config-feature-flag-checkout',
+      'history-config-rate-cache-ttl-pricing',
+      'history-queue-disk-watermark-batch-drain',
+      'history-queue-watermark-ledger-writer',
+      'history-unhandled-exception-export',
+    ]);
+    for (const claim of claims) expect(claim.faults, claim.caseId).toEqual([]);
   });
 
   it('has a hardest level, and names the cases whose chains earn it', () => {
@@ -254,30 +380,52 @@ describe('the shipped corpus · the labels and the ladder', () => {
     expect(outside).toHaveLength(2);
   });
 
-  it('meets the published L4 share, which is the claim the level was never able to make', () => {
+  it('meets the published L4 share, and that share is what the chains earn rather than what the cases claim', () => {
     const bundle = { irVersion: '1.0.0', graph: shippedGraph, cases: shipped, signals: {} };
     expect(checkDifficultyDistribution(bundle).violations).toEqual([]);
-    // Three of twenty, stated so that a corpus that grows a third ungraded case fails here rather
-    // than sliding under the floor on the next annotation.
-    const graded = shipped.filter((one) => one.difficulty !== undefined);
-    const hardest = graded.filter((one) => one.difficulty === 'L4');
-    expect(hardest.length / graded.length).toBeGreaterThanOrEqual(0.1);
+    // The two numbers were the same until v3.74 and are not any more: five cases state L4, four of
+    // them reach it with three causal steps, and one states it over a chain of one (finding 494).
+    // The gate reads the second number, because a share a corpus can meet by relabelling is not a
+    // measurement of anything.
+    const claimed = shipped.filter((one) => one.difficulty === 'L4');
+    const earned = shipped.filter((one) => difficultyFloor({ case: one, graph: shippedGraph }) === 'L4');
+    expect(claimed).toHaveLength(5);
+    expect(earned).toHaveLength(4);
+    expect(earned.length / shipped.length).toBeGreaterThanOrEqual(0.1);
+  });
+
+  it('cannot be met by relabelling, which is the property the share exists for', () => {
+    // Ten copies of a case with no chain at all, every one of them labelled L4. By claim that is a
+    // corpus of the hardest level; by structure it is ten cases whose chains support L1, and the
+    // gate has to be unable to see the first number. The refusals that answer a claim like this are
+    // the corpus guard's (`readDifficultyClaim` and `findDifficultyShortfalls`), not the share's --
+    // the gate reads structure, and the annotation is checked where the annotation lives.
+    const flat = Array.from({ length: 10 }, (_, index) => ({
+      ...faultCase([]),
+      caseId: `history-flat-${String(index)}`,
+      difficulty: 'L4' as const,
+    }));
+    expect(
+      checkDifficultyDistribution({ irVersion: '1.0.0', graph: GRAPH, cases: flat, signals: {} }).violations.map(
+        (one) => one.code,
+      ),
+    ).toEqual(['DIFFICULTY_SKEWED_HARD']);
   });
 
   it('meets that share at the denominator it is committed to, and states the size at which it would not', () => {
     // The corpus is committed to annotating every sample in the extraction key, so the size the
-    // share has to survive is the key's size and not today's count. The margin was zero until the
-    // fourth L4 case: three of thirty is exactly the floor, which meant the next annotation to
-    // arrive at any level below L4 would have taken the corpus outside its target.
+    // share has to survive is the key's size and not today's count.
     //
-    // The deadline is now *outside the key* rather than merely ahead of it, and that is a derived
-    // statement rather than a promise: four L4 cases fall below a tenth of the corpus at forty-one
-    // cases, and the extraction key carries thirty samples, so no annotation the key can supply
-    // moves the ladder off its floor.
+    // The numerator is the earned one, which is one fewer than it was when this test was written:
+    // four cases reach L4 with three causal steps and one states it over a single hop. The deadline
+    // is still *outside the key* rather than merely ahead of it, and that is a derived statement
+    // rather than a promise: four earned L4 cases fall below a tenth of the corpus at forty-one
+    // cases, and the extraction key carries thirty-three samples, so no annotation the key can
+    // supply moves the ladder off its floor.
     const key = JSON.parse(
       readFileSync(resolve(CORPUS, '..', 'fault-extraction', 'samples.json'), 'utf8'),
     ) as { samples: unknown[] };
-    const hardest = shipped.filter((one) => one.difficulty === 'L4');
+    const hardest = shipped.filter((one) => difficultyFloor({ case: one, graph: shippedGraph }) === 'L4');
     const atFullSize = hardest.length / key.samples.length;
     expect(atFullSize).toBeGreaterThanOrEqual(0.1);
     // The smallest corpus at which the same numerator is no longer enough, derived from the floor
@@ -286,29 +434,40 @@ describe('the shipped corpus · the labels and the ladder', () => {
     expect(bindsAt).toBeGreaterThan(key.samples.length);
   });
 
-  it('survives the loss of one L4 case and loses the property at two, which is the ratchet', () => {
+  it('is exactly one case from the floor, and the case it can afford to lose is the one that never earned the level', () => {
     // How many L4 cases the corpus can lose is a number, and it has moved every round the count
-    // moved: three of twenty-two is 0.136 and survived one loss; four of thirty is 0.133 and
-    // survived one; five of thirty-one is 0.161, so four of thirty (0.133) and three of
-    // twenty-nine (0.103) both hold. v3.72 added an L3 case, and that spent the whole remaining
-    // slack: five of thirty-three is 0.152, four of thirty-two is 0.125 and three of thirty-one is
-    // 0.097, which is below the 0.1 floor. The ratchet is asserted on both sides, because the
-    // number that matters is how many annotations the corpus can afford to get wrong.
-    const hardest = shipped.filter((one) => one.difficulty === 'L4');
+    // moved. The number changed meaning in v3.74: it used to be read over the labels, and the one
+    // case the corpus could afford to lose was the case that only *claimed* L4 -- deleting it took
+    // five of thirty-three to four of thirty-two, which is 0.125, while not deleting it left a
+    // corpus whose hard count was one annotation away from a tenth.
+    //
+    // Read over the chains, the corpus can afford to lose **none**: three of thirty-two is 0.094,
+    // and the case whose deletion costs nothing is the one the gate never counted. That is the
+    // sharper statement, and it is the one the arithmetic supports.
+    const earned = shipped.filter((one) => difficultyFloor({ case: one, graph: shippedGraph }) === 'L4');
+    const claimedOnly = shipped.filter(
+      (one) =>
+        one.difficulty === 'L4' &&
+        difficultyFloor({ case: one, graph: shippedGraph }) !== 'L4',
+    );
+    expect(claimedOnly.map((one) => one.caseId)).toEqual(['history-config-rate-cache-ttl-pricing']);
     const drop = (...dropIds: string[]) => ({
       irVersion: '1.0.0',
       graph: shippedGraph,
       cases: shipped.filter((one) => !dropIds.includes(one.caseId)),
       signals: {},
     });
-    expect(
-      checkDifficultyDistribution(drop(hardest[0]!.caseId)).violations.map((one) => one.code),
-    ).toEqual([]);
-    expect(
-      checkDifficultyDistribution(drop(hardest[0]!.caseId, hardest[1]!.caseId)).violations.map(
-        (one) => one.code,
-      ),
-    ).toEqual(['DIFFICULTY_SKEWED_HARD']);
+    const codes = (...dropIds: string[]): string[] =>
+      checkDifficultyDistribution(drop(...dropIds)).violations.map((one) => one.code);
+
+    // The claim is not a case the corpus can lose: the gate never counted it.
+    expect(codes(claimedOnly[0]!.caseId)).toEqual([]);
+    // Every earned case is one the corpus cannot lose.
+    for (const one of earned) {
+      expect(codes(one.caseId), `${one.caseId} is a case the corpus cannot afford to lose`).toEqual([
+        'DIFFICULTY_SKEWED_HARD',
+      ]);
+    }
     // Padded with copies of a shipped L3 case rather than with literals, because what the rule reads
     // is a share: the point is the size at which the same numerator stops being enough.
     const filler = shipped.find((one) => one.difficulty === 'L3')!;
@@ -325,8 +484,8 @@ describe('the shipped corpus · the labels and the ladder', () => {
         ],
         signals: {},
       }).violations.map((one) => one.code);
-    expect(at(hardest.length * 10), 'four of forty is exactly the floor').toEqual([]);
-    expect(at(hardest.length * 10 + 1), 'four of forty-one is below it').toEqual([
+    expect(at(earned.length * 10), 'four of forty is exactly the floor').toEqual([]);
+    expect(at(earned.length * 10 + 1), 'four of forty-one is below it').toEqual([
       'DIFFICULTY_SKEWED_HARD',
     ]);
   });

@@ -1505,6 +1505,18 @@ if (firstGraph !== null && allCases.length > 0) {
         `${shortfall.floor} at least -- a level may not claim less structure than the case carries`,
     );
   }
+  // The other direction, and the one nothing asked about until this round: a level far above the
+  // structure is a claim the chain cannot show, and it goes out to two consumers as `hard`. Six of
+  // the thirty-three cases do it, so the rule is not a ban -- it is the condition under which the
+  // excess is a statement rather than a mood: the case says what the chain cannot see.
+  const claims = { above: 0, answered: 0 };
+  for (const one of allCases) {
+    const claim = core.readDifficultyClaim({ case: one, graph: firstGraph });
+    for (const fault of claim.faults) problems.push(core.describeDifficultyClaimFault(fault));
+    if (!claim.above) continue;
+    claims.above += 1;
+    if (claim.faults.length === 0) claims.answered += 1;
+  }
   const distribution = core.checkDifficultyDistribution(
     { irVersion: '1.0.0', graph: firstGraph, cases: allCases, signals: {} },
     {},
@@ -1513,8 +1525,16 @@ if (firstGraph !== null && allCases.length > 0) {
   for (const one of allCases) {
     if (one.difficulty !== undefined) counts[one.difficulty] += 1;
   }
+  // What the hard end of the distribution gate reads, printed here because the two numbers are the
+  // round's finding: a corpus can claim its way to a tenth and cannot earn its way there by
+  // relabelling, so the guard shows both and the gate uses the second.
+  const earnedL4 = allCases.filter(
+    (one) => core.difficultyFloor({ case: one, graph: firstGraph }) === 'L4',
+  ).length;
   difficultySpread = {
     counts,
+    earnedL4,
+    claims,
     unmet: distribution.violations.map((violation) => violation.message),
   };
 }
@@ -1707,11 +1727,18 @@ function logDifficultyCoverage() {
       'state a level; the distribution rule applies at 10',
   );
   if (difficultySpread === null) return;
-  const { counts, unmet } = difficultySpread;
+  const { counts, unmet, earnedL4, claims } = difficultySpread;
   console.log(
     `check-fault-cases: difficulty spread L1 ${String(counts.L1)} / L2 ${String(counts.L2)} / ` +
       `L3 ${String(counts.L3)} / L4 ${String(counts.L4)}; ` +
       (unmet.length === 0 ? 'within the target' : `outside the target -- ${unmet.join('; ')}`),
+  );
+  // Two numbers for the hard end, printed side by side because they are not the same fact: the
+  // levels cases claim, and the levels their chains earn. The gate reads the second.
+  console.log(
+    `check-fault-cases: difficulty ${String(earnedL4)} of ${String(allCases.length)} case(s) earn L4 ` +
+      `by their own chains, and ${String(claims.above)} claim above theirs ` +
+      `(${String(claims.answered)} of them say what the chain cannot see)`,
   );
 }
 

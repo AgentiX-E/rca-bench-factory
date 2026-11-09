@@ -532,7 +532,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.73: **22** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.74: **23** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1183,11 +1183,21 @@ is a row about rather than paraphrase one that no `grep` will find.
   that found them was asking about a parameter, not about the window.
   `[open: a place where a window's two endpoints are cited as data rather than written in a sentence --
   the same question `signalRef` answered for a reading's identity]`
-- **The difficulty ratchet has one unit of slack left.** An L3 case was added in v3.72, and five L4 of
-  thirty-three is 0.152: losing one L4 leaves 0.125 and losing two leaves 0.097, below the 0.1 floor.
-  The next case that is not an L4 spends the corpus's whole margin.
-  `[open: annotate the next case at L4, or measure what the floor should be now that the corpus is
-  three times the size it was when 0.1 was chosen]`
+- **The corpus can afford to lose none of the four cases that earn its hardest level.** The ratchet used
+  to say one, and that unit was the case claiming `L4` over a single hop (findings 494 and 495). Read
+  over the chains the gate now uses: four of thirty-three is 0.121 and three of thirty-two is 0.094, so
+  the margin is `0.021` against a case worth `0.030`. A fifth earned `L4` -- a chain of three steps, not
+  a relabel -- puts it at five of thirty-four (0.147), which is the first size where losing one holds.
+  `[open: annotate or add a case whose chain is three hops deep, and measure what the denominator should
+  be rather than inheriting 0.1 from a corpus three times smaller]`
+- **The level a case claims still reaches both exports, and the note that defends it does not.** The
+  distribution gate stopped reading claims in v3.74, so a corpus can no longer meet its tenth by
+  relabelling; `difficultyFor` still projects `FaultCase.difficulty`, so the case with a one-hop chain
+  ships to `cloudopsbench` as `hard` and to `itbench` as `scenario_complexity: hard` beside three-hop
+  chains. The note is deliberately not assembled into a bundle, because it is a paragraph of the answer
+  -- which leaves the projection with no defence attached.
+  `[open: a projection that carries the floor beside the claim, or a consumer-facing field that says the
+  level is a claim rather than a measurement]`
 - **`docs/acceptance.md` is 96 KB and grows by clause per round.** L3 is 284 lines and L4 is 405;
   L0, L1, L2 and L5 are 14, 7, 7 and 6, so the obvious split by layer would produce four files
   of a dozen lines.
@@ -1250,7 +1260,7 @@ and this table.
 | [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
-| [volume-12.md](progress/volume-12.md) | 18 | v3.56 | v3.73 |
+| [volume-12.md](progress/volume-12.md) | 19 | v3.56 | v3.74 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

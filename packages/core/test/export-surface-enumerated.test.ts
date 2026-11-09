@@ -1155,9 +1155,13 @@ const TESTED = [
   'checkAnswerPresence',
   // fault/sample-coverage.ts -- the count that covers samples rather than entries.
   'checkSampleCoverage',
-  // fault/difficulty.ts
+  // fault/difficulty.ts -- the floor and the claim it cannot state. A level below the structure is
+  // refused by the first; a level above it is allowed only with a sentence saying what the chain
+  // cannot see, which is the second (finding 494).
   'difficultyFloor',
   'findDifficultyShortfalls',
+  'readDifficultyClaim',
+  'describeDifficultyClaimFault',
   // fault/pool-width.ts -- what trimming the candidate pool to services would buy and cost, which
   // v3.31 decided by sentence and finding 339 decided by measurement.
   'assessPoolNarrowing',

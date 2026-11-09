@@ -73,6 +73,12 @@ export function assembleBundle(draft: unknown): BundleAssemblyResult {
     groundTruth: d.case.groundTruth,
     ...(d.case.query !== undefined ? { query: d.case.query } : {}),
     ...(d.case.difficulty !== undefined ? { difficulty: d.case.difficulty } : {}),
+    // `difficultyNote` is deliberately absent from this list, and it is the only field of
+    // `FaultCase` that is. The note says what a case's chain cannot see -- the measurement that is
+    // only a comparison, the setting changed days before the window, the exception that closes a
+    // connection instead of nacking it -- which is a paragraph of the answer. A bundle is what a
+    // solver is given, so the justification for a level stays in the case file, where the guard
+    // reads it, and the level itself travels alone.
     ...(d.case.answerKeyIsolated !== undefined ? { answerKeyIsolated: d.case.answerKeyIsolated } : {}),
   };
 
