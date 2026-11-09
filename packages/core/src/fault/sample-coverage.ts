@@ -106,3 +106,55 @@ export function checkSampleCoverage(input: {
 
   return problems;
 }
+
+/**
+ * The vocabulary the key declares, against the types its own samples label (finding 503).
+ *
+ * `samples.json` holds two lists that look like one. `types` is the vocabulary
+ * `buildFaultExtractionPrompt` puts in front of a model -- it is the closed set the answer grammar
+ * states -- and `expected.type` on every sample is what the corpus labels. Nothing compared them,
+ * and the key is the only file where the two can disagree.
+ *
+ * v3.78 found it the way this repository finds most things: by growing the corpus. The fifth
+ * three-step chain needed a fault no sample named, so a sample was added with a new type -- and the
+ * whole suite stayed green with the vocabulary not listing it. A prompt built from that file offers
+ * thirty types to a model being asked for the thirty-first, so the oracle is an answer the prompt
+ * forbids: an extraction reading taken in that state measures the grammar rather than the model.
+ *
+ * ## Why both directions in one refusal
+ *
+ * The two drifts read the same way to a reader -- the list and the corpus disagree -- and they are
+ * one repair, which is to make the list what the samples say. A second refusal would print a second
+ * message about one edit.
+ *
+ * A type the prompt offers and no sample labels is *not* harmless: the vocabulary is a claim about
+ * what the corpus contains, and a member nothing labels is a category an answer can be scored into
+ * with no case behind it. The corpus's own `types` list is sorted, so the refusal prints the
+ * disagreement rather than a position.
+ */
+export function checkSampleVocabulary(input: {
+  declared: readonly string[];
+  labelled: readonly string[];
+}): string[] {
+  const offered = new Set(input.declared);
+  const labels = new Set(input.labelled);
+  const unoffered = [...labels].filter((one) => !offered.has(one)).sort();
+  const unlabelled = [...offered].filter((one) => !labels.has(one)).sort();
+  if (unoffered.length === 0 && unlabelled.length === 0) return [];
+  const halves: string[] = [];
+  if (unoffered.length > 0) {
+    halves.push(
+      `${joinNames(unoffered)} label${unoffered.length === 1 ? 's' : ''} a sample, and the vocabulary ` +
+        'does not list it: the extraction prompt states that list, so the corpus asks for a type the ' +
+        'prompt does not offer',
+    );
+  }
+  if (unlabelled.length > 0) {
+    halves.push(
+      `${joinNames(unlabelled)} ${unlabelled.length === 1 ? 'is' : 'are'} in the vocabulary and no ` +
+        'sample labels it: the list is a claim about what the corpus contains, and a member with no ' +
+        'case behind it is a type an answer can be scored into',
+    );
+  }
+  return [halves.join('; and ')];
+}

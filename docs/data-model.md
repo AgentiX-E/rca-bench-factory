@@ -151,7 +151,7 @@ inside the band its alert treats as noise, so nothing fired and the question is 
 incident at all rather than which component caused one. What is not allowed is claiming the excess
 silently. `fault.difficultyNote` says what the floor cannot see, and `readDifficultyClaim` refuses a
 level above the floor that does not answer — and refuses a note **at** the floor, where there is no
-gap to explain (finding 494). Six of the corpus's thirty-three cases claim above their floor and six
+gap to explain (finding 494). Six of the corpus's thirty-four cases claim above their floor and six
 answer; their six sentences name six different reasons, which is the evidence that the excess is not
 one thing wearing six names.
 
@@ -173,12 +173,14 @@ corpus cannot inflate: a case can only push the easy number up by calling itself
 does so with a long chain is refused as a shortfall before any share is computed, while a corpus could
 meet the hard number by relabelling and the gate exists to be unable to reward that (finding 494).
 
-The two numbers were the same until v3.74 and are not any more: five cases state `L4`, four of them
-reach it with three causal steps, and the fifth states it over a chain of one. The share the corpus
-publishes is **four of thirty-three, 0.121**, and it can afford to lose **none** of them — three of
-thirty-two is 0.094 — while the case whose deletion costs nothing is the one the gate never counted
-(`difficulty-floor.test.ts` asserts both halves, and finding 495 is the round the arithmetic changed).
-The guard prints both readings side by side rather than one, because they are not the same fact.
+The two numbers were the same until v3.74 and are not any more: six cases state `L4`, five of them
+reach it with three causal steps, and the sixth states it over a chain of one. The share the corpus
+publishes is **five of thirty-four, 0.147**, and it can afford to lose **one** of them — four of
+thirty-three is 0.121 — while two is 0.094, below the floor. It could afford to lose none before v3.78
+added the fifth earned case, which is the round the arithmetic stopped being a knife edge
+(`difficulty-floor.test.ts` asserts that any one may go and no two may, and finding 495 is the round
+that made the count mean the chains rather than the labels). The guard prints both readings side by
+side rather than one, because they are not the same fact.
 
 #### Background telemetry, and what "top-K" means
 

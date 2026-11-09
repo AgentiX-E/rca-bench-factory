@@ -5,7 +5,7 @@
     "reviewGate": "H3",
     "authoringRule": "The expected.type must be derivable from the incident text by a careful human reader. A sample whose answer needs context the text does not carry is a bad sample, not a hard one.",
     "annotationRule": "The expected.component must be the deployed workload that owns the fault, and it must be recoverable from the incident text under the token rule the extraction prompt states -- every hyphen-delimited token of the name appears in the text, case-insensitively. This is asserted over the whole file in fault-prompt-grammar.test.ts, so an annotation that names something its text does not carry fails a test. One sample was re-annotated under this rule: config-feature-flag-checkout named `checkout-ui`, which its text never carries; see its annotationNote.",
-    "categoryRule": "The expected.category must be the value inferFaultCategory (packages/core/src/fault/category.ts) returns for the sample's own expected.type. The rule is stated here because it was true of the whole file and written down nowhere: the category was authored by reading the type, so the derivation reproduces it exactly in every sample -- 33 of 33 in fault/category-derivation.test.ts, which asserts it over the whole file and asserts that every one of them lands on a member of FAULT_CATEGORIES, so an expected.type added without a derivable category fails a test rather than being counted as a miss. The same module measures the rule's discriminating power and records that it is below the floor, so this concordance is self-consistency and not a result: see finding 102. Whether the extraction prompt should state the rule is a product decision, deliberately not taken here."
+    "categoryRule": "The expected.category must be the value inferFaultCategory (packages/core/src/fault/category.ts) returns for the sample's own expected.type. The rule is stated here because it was true of the whole file and written down nowhere: the category was authored by reading the type, so the derivation reproduces it exactly in every sample -- 34 of 34 in fault/category-derivation.test.ts, which asserts it over the whole file and asserts that every one of them lands on a member of FAULT_CATEGORIES, so an expected.type added without a derivable category fails a test rather than being counted as a miss. The same module measures the rule's discriminating power and records that it is below the floor, so this concordance is self-consistency and not a result: see finding 102. Whether the extraction prompt should state the rule is a product decision, deliberately not taken here."
   },
   "types": [
     "cache-shard-unassigned",
@@ -31,6 +31,7 @@
     "pod-kill",
     "pod-shutdown-timeout",
     "queue-disk-watermark",
+    "queue-duplicate-amplification",
     "redis-latency",
     "regex-catastrophic-backtracking",
     "replica-lag",
@@ -336,6 +337,15 @@
         "type": "queue-disk-watermark",
         "category": "middleware",
         "component": "order-events"
+      }
+    },
+    {
+      "id": "queue-duplicate-publish-ingest-writer",
+      "incidentText": "The ingest writer's accept latency went from 40ms to 30,000ms at 08:22 and its publish rate fell from 60,000 records a second to 1,200, while the ingest queue received 4 records for every document in the bucket. Nothing on the broker side had changed: no append was refused, the disk watermark moved only from 35 to 39 percent, and append p99 held at 8ms throughout. The release that morning replaced the writer's 500-document batch with one publish call per document, and with acks=all and a single in-flight request each call waits a full round trip, so three replicas together cannot outrun the arrival rate while every one of them sits at 0.4 of its CPU. Each call that exceeds the client's two-second timeout is retried, the writer sets no idempotence key, and the broker commits every attempt, which is why the topic holds four copies of a document the bucket holds once. Restoring the batched publish brought both readings back within one window and nothing else was changed.",
+      "expected": {
+        "type": "queue-duplicate-amplification",
+        "category": "middleware",
+        "component": "ingest-writer"
       }
     }
   ]

@@ -1,0 +1,64 @@
+{
+ "schema": "rca-bench-derived-signals/1",
+ "origin": "derived",
+ "caseId": "history-queue-duplicate-publish-ingest-writer",
+ "why": "Telemetry for the duplicate-publish case: six series arranged so that the loudest reading is the topic's contents rather than its health. The two controls are the ones that separate this case from the four queue faults already in the corpus -- a broker at 8ms with a watermark four points above its baseline cannot be the cause of a fifty-fold collapse, and a container at 0.4 of its CPU cannot be saturated -- so a method that ranks by magnitude returns the topic, which moved, and the container, which did not.",
+ "series": [
+  {
+   "service": "ingest-writer",
+   "metric": "ingest_accept_latency_p99_ms",
+   "unit": "ms",
+   "baseline": 40,
+   "post": 30000,
+   "quote": "The ingest writer's accept latency went from 40ms to 30,000ms",
+   "why": "the checkpoint `cp-latency` holds it, and the 40ms is the same sentence's other number, so both ends of the excursion are the ticket's"
+  },
+  {
+   "service": "ingest-writer",
+   "metric": "records_published_per_second",
+   "unit": "count",
+   "baseline": 60000,
+   "post": 1200,
+   "quote": "its publish rate fell from 60,000 records a second to 1,200",
+   "why": "the collapse measured on the entity that publishes rather than on the entity that receives, which is what keeps the topic from being the answer"
+  },
+  {
+   "service": "ingest-writer",
+   "metric": "container_cpu_usage_ratio",
+   "unit": "1",
+   "baseline": 0.4,
+   "post": 0.4,
+   "quote": "every one of them sits at 0.4 of its CPU",
+   "why": "a series that does not move, on purpose: it is the control that says waiting rather than working, and it is the reading a saturation hypothesis has to explain away"
+  },
+  {
+   "service": "ingest-queue",
+   "metric": "records_per_document",
+   "unit": "count",
+   "baseline": 1,
+   "post": 4,
+   "quote": "the ingest queue received 4 records for every document in the bucket",
+   "why": "the topic's own count against a source of truth outside it, which is the only reading in this case that can see a duplicate at all"
+  },
+  {
+   "service": "ingest-queue",
+   "metric": "append_duration_p99_ms",
+   "unit": "ms",
+   "baseline": 8,
+   "post": 8,
+   "quote": "append p99 held at 8ms throughout",
+   "why": "the broker's health, flat: it rules out the three ways a queue becomes a cause -- throttling, slow appends and refusal"
+  },
+  {
+   "service": "ingest-queue",
+   "metric": "disk_watermark_percent",
+   "unit": "%",
+   "baseline": 35,
+   "post": 39,
+   "quote": "the disk watermark moved only from 35 to 39 percent",
+   "why": "four points, against the 92 percent the corpus's other watermark case required before a broker throttles: the duplication is real and nowhere near a capacity event"
+  }
+ ],
+ "noLogs": "the evidence is two counts and a ratio, and the mechanism writes no line anywhere: the writer logs a document when it lands in the bucket, not when a publish call is retried, and the text quotes no log line from either side.",
+ "noTraces": "no span is quoted and none is implied -- the writer's publish path is a client call the text measures by its rate rather than by a duration, and a span invented here would be the one reading in this case that came from the annotation rather than from the incident."
+}

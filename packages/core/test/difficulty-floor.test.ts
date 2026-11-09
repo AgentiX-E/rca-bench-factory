@@ -343,11 +343,12 @@ describe('the shipped corpus · the labels and the ladder', () => {
     // Named rather than counted: at this size a share of 0.1 is satisfied by two cases, so a count
     // alone would let a chain be shortened while the number stayed whole.
     const hardest = shipped.filter((one) => difficultyFloor({ case: one, graph: shippedGraph }) === 'L4');
-    expect(hardest.map((one) => one.difficulty)).toEqual(['L4', 'L4', 'L4', 'L4']);
+    expect(hardest.map((one) => one.difficulty)).toEqual(['L4', 'L4', 'L4', 'L4', 'L4']);
     expect(hardest.map((one) => one.caseId).sort()).toEqual([
       'history-code-slow-regex-api-gateway',
       'history-dependency-schema-change-currency-feed',
       'history-middleware-cache-shard-product-index',
+      'history-queue-duplicate-publish-ingest-writer',
       'history-runtime-pod-shutdown-webhook-dispatcher',
     ]);
     // Three steps each, read off the chain rather than off the label: the two numbers can disagree,
@@ -373,11 +374,22 @@ describe('the shipped corpus · the labels and the ladder', () => {
     expect(inside.map((one) => one.caseId)).toEqual([
       'history-middleware-cache-shard-product-index',
       'history-dependency-schema-change-currency-feed',
+      'history-queue-duplicate-publish-ingest-writer',
     ]);
     // Both shapes, and the count on each side: a corpus that swapped one for the other would keep
     // the total and lose the property the test is about.
-    expect(threeStep).toHaveLength(4);
+    expect(threeStep).toHaveLength(5);
     expect(outside).toHaveLength(2);
+    // The inside endings are two kinds rather than one, and v3.78 added the second: the queue case
+    // stops at a resource the root cause writes to, not at a neighbouring service it calls. A chain
+    // that can only end at a service or outside has no shape for "the thing that is wrong is what
+    // this topic holds", which is a question the corpus could not ask before it had one.
+    const endsAtResource = inside.filter((one) =>
+      ((one.groundTruth.causalChain ?? []).at(-1)?.toEntityId ?? '').startsWith('mq:'),
+    );
+    expect(endsAtResource.map((one) => one.caseId)).toEqual([
+      'history-queue-duplicate-publish-ingest-writer',
+    ]);
   });
 
   it('meets the published L4 share, and that share is what the chains earn rather than what the cases claim', () => {
@@ -389,9 +401,11 @@ describe('the shipped corpus · the labels and the ladder', () => {
     // measurement of anything.
     const claimed = shipped.filter((one) => one.difficulty === 'L4');
     const earned = shipped.filter((one) => difficultyFloor({ case: one, graph: shippedGraph }) === 'L4');
-    expect(claimed).toHaveLength(5);
-    expect(earned).toHaveLength(4);
+    expect(claimed).toHaveLength(6);
+    expect(earned).toHaveLength(5);
     expect(earned.length / shipped.length).toBeGreaterThanOrEqual(0.1);
+    // 5 of 34 is 0.147, and it is the first size at which the share survives losing a case -- the
+    // subject of the ratchet below.
   });
 
   it('cannot be met by relabelling, which is the property the share exists for', () => {
@@ -434,16 +448,23 @@ describe('the shipped corpus · the labels and the ladder', () => {
     expect(bindsAt).toBeGreaterThan(key.samples.length);
   });
 
-  it('is exactly one case from the floor, and the case it can afford to lose is the one that never earned the level', () => {
+  it('can afford to lose exactly one earned case, and not two', () => {
     // How many L4 cases the corpus can lose is a number, and it has moved every round the count
     // moved. The number changed meaning in v3.74: it used to be read over the labels, and the one
     // case the corpus could afford to lose was the case that only *claimed* L4 -- deleting it took
     // five of thirty-three to four of thirty-two, which is 0.125, while not deleting it left a
-    // corpus whose hard count was one annotation away from a tenth.
+    // corpus whose hard count is one annotation away from a tenth.
     //
-    // Read over the chains, the corpus can afford to lose **none**: three of thirty-two is 0.094,
-    // and the case whose deletion costs nothing is the one the gate never counted. That is the
-    // sharper statement, and it is the one the arithmetic supports.
+    // Read over the chains it became **none**: at four of thirty-three, deleting any earned case
+    // took the corpus to three of thirty-two, which is 0.094. That was the sharper statement and it
+    // was also a knife edge -- one case's chain shortened by an edit put the corpus below the floor
+    // the corpus publishes, and nothing else had to happen.
+    //
+    // v3.78 added the fifth earned case, and the arithmetic is why: five of thirty-four is 0.147,
+    // so one may be lost (four of thirty-three, 0.121) and two may not (three of thirty-two, 0.094).
+    // One unit of slack is what makes this a ratchet rather than a coincidence, and the pair of
+    // assertions below is the difference between the two states -- an assertion that only counted
+    // the cases could not tell them apart.
     const earned = shipped.filter((one) => difficultyFloor({ case: one, graph: shippedGraph }) === 'L4');
     const claimedOnly = shipped.filter(
       (one) =>
@@ -462,11 +483,19 @@ describe('the shipped corpus · the labels and the ladder', () => {
 
     // The claim is not a case the corpus can lose: the gate never counted it.
     expect(codes(claimedOnly[0]!.caseId)).toEqual([]);
-    // Every earned case is one the corpus cannot lose.
+    // Any one earned case may go, and the corpus still meets its own tenth.
     for (const one of earned) {
-      expect(codes(one.caseId), `${one.caseId} is a case the corpus cannot afford to lose`).toEqual([
-        'DIFFICULTY_SKEWED_HARD',
-      ]);
+      expect(codes(one.caseId), `${one.caseId} is a case the corpus can now afford to lose`).toEqual([]);
+    }
+    // And no two, which is the half that makes the first half a measurement: a corpus whose slack
+    // grew with its size would pass the loop above and say nothing.
+    for (const [at, one] of earned.entries()) {
+      for (const other of earned.slice(at + 1)) {
+        expect(
+          codes(one.caseId, other.caseId),
+          `${one.caseId} and ${other.caseId} together take the corpus below its floor`,
+        ).toEqual(['DIFFICULTY_SKEWED_HARD']);
+      }
     }
     // Padded with copies of a shipped L3 case rather than with literals, because what the rule reads
     // is a share: the point is the size at which the same numerator stops being enough.
@@ -484,8 +513,8 @@ describe('the shipped corpus · the labels and the ladder', () => {
         ],
         signals: {},
       }).violations.map((one) => one.code);
-    expect(at(earned.length * 10), 'four of forty is exactly the floor').toEqual([]);
-    expect(at(earned.length * 10 + 1), 'four of forty-one is below it').toEqual([
+    expect(at(earned.length * 10), 'five of fifty is exactly the floor').toEqual([]);
+    expect(at(earned.length * 10 + 1), 'five of fifty-one is below it').toEqual([
       'DIFFICULTY_SKEWED_HARD',
     ]);
   });

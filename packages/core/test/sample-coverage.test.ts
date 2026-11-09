@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { checkSampleCoverage } from '../src/fault/sample-coverage.js';
+import { checkSampleCoverage, checkSampleVocabulary } from '../src/fault/sample-coverage.js';
 
 /**
  * The count that says "every sample is covered", and the one input that makes it false.
@@ -142,5 +142,73 @@ describe('checkSampleCoverage', () => {
     });
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain('covered twice');
+  });
+});
+
+/**
+ * The vocabulary the prompt offers, against the types the corpus labels (finding 503).
+ *
+ * `samples.json` carries two things that look like one: a `types` array, which is the list
+ * `buildFaultExtractionPrompt` puts in front of a model, and the `expected.type` of every sample,
+ * which is what the corpus actually labels. Nothing compared them.
+ *
+ * v3.78 found it by growing the corpus: the fifth three-step chain needed a fault no sample named,
+ * so `queue-duplicate-amplification` was added to a sample -- and the suite stayed green with the
+ * vocabulary *not* listing it, which means the prompt would have offered thirty types to a model
+ * being asked for the thirty-first. The oracle would have been an answer the prompt forbids.
+ */
+describe('the vocabulary the prompt states, against the types the corpus labels', () => {
+  it('says nothing when the two agree', () => {
+    expect(
+      checkSampleVocabulary({
+        declared: ['b', 'a'],
+        labelled: ['a', 'b', 'a'],
+      }),
+    ).toEqual([]);
+  });
+
+  it('names a type the corpus labels and the prompt does not offer', () => {
+    const problems = checkSampleVocabulary({ declared: ['a'], labelled: ['a', 'b'] });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("'b'");
+    expect(problems[0]).toContain('asks for a type the prompt does not offer');
+  });
+
+  it('names a type the prompt offers and no sample labels', () => {
+    const problems = checkSampleVocabulary({ declared: ['a', 'b'], labelled: ['a'] });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("'b'");
+    expect(problems[0]).toContain('no sample labels');
+  });
+
+  it('reports both directions in one refusal, because they are one repair', () => {
+    const problems = checkSampleVocabulary({ declared: ['a', 'b'], labelled: ['a', 'c'] });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("'c'");
+    expect(problems[0]).toContain("'b'");
+  });
+
+  it('counts a repeated type once, so the vocabulary is a set rather than a tally', () => {
+    expect(checkSampleVocabulary({ declared: ['a'], labelled: ['a', 'a', 'a'] })).toEqual([]);
+  });
+
+  it('says nothing about a key with no samples, because there is no vocabulary to hold', () => {
+    expect(checkSampleVocabulary({ declared: [], labelled: [] })).toEqual([]);
+  });
+
+  // A refusal that only ever names one member is a sentence nobody has read in the plural, and the
+  // two spellings sit on either side of a `length === 1` test -- the kind of branch v8 reports as
+  // covered while no fixture has ever taken it. Two members on each side, so both plurals run and the
+  // names arrive in a stated order rather than in whatever order the sets held.
+  it('names several unoffered labels in the plural, in sorted order', () => {
+    const problems = checkSampleVocabulary({ declared: ['a'], labelled: ['c', 'a', 'b'] });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("'b' and 'c' label a sample");
+  });
+
+  it('names several unlabelled offers in the plural, in sorted order', () => {
+    const problems = checkSampleVocabulary({ declared: ['d', 'b', 'a'], labelled: ['a'] });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("'b' and 'd' are in the vocabulary");
   });
 });

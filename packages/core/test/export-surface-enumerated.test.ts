@@ -1155,6 +1155,9 @@ const TESTED = [
   'checkAnswerPresence',
   // fault/sample-coverage.ts -- the count that covers samples rather than entries.
   'checkSampleCoverage',
+  // ...and the key's vocabulary against the types its own samples label, which nothing compared
+  // until v3.78 added a sample with a type the prompt did not offer (finding 503).
+  'checkSampleVocabulary',
   // fault/difficulty.ts -- the floor and the claim it cannot state. A level below the structure is
   // refused by the first; a level above it is allowed only with a sentence saying what the chain
   // cannot see, which is the second (finding 494).

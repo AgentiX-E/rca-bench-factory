@@ -1473,3 +1473,43 @@ from an anecdote again.
   list gains bytes every round whatever the bound. The rule bounds the index against the volume, not
   against history, and the round that reaches the ceiling will have to move the closed part of the list
   into a volume -- named here so it is not discovered under a red build.
+
+### A set that grows is how a rule about a set gets tested (v3.78)
+
+- **The corpus's ratchet had a knife edge, and the round closed it with a case rather than an argument.**
+  Four of thirty-three earned `L4` is 0.121 against a published floor of 0.1, so one edit shortening one
+  chain put the corpus under its own claim. `history-queue-duplicate-publish-ingest-writer` is the fifth
+  earned case -- three hops, `container -> pod -> service -> mq` -- and the first chain in the corpus that
+  ends at a queue, which is to say at a component whose *contents* are wrong rather than whose latency is.
+- **The denominator is now derived instead of quoted.** The tenth came from a corpus of nine. The gate
+  prints the size at which the same numerator stops satisfying it (`floor(5 / 0.1) + 1 = 51`) and asserts
+  the knife edge from both sides: any **one** earned case may be lost (4 of 33, 0.121), no **two** may be
+  (3 of 32, 0.094). A ratchet that tolerates one and a ratchet that tolerates none differ by a single case,
+  and no single fixture can tell them apart.
+- **The case demanded a reading the corpus had never asked for.** Records on the topic against documents in
+  the bucket, `records_per_document = 4`: the first reading that is a comparison **between two systems**
+  rather than an excursion inside one series. That distinction is the case's reason to exist -- an
+  excursion is the one shape a duplicate does not have, and every method the corpus ships ranks by
+  excursion.
+- **Its loudest series is a control, by construction.** Append p99 flat at 8ms, disk watermark 35 -> 39
+  percent, container CPU at 0.4 of quota. A magnitude rank returns the topic, which is healthy and holds
+  four copies of every document; the cause is the container that is *waiting*, and waiting is what its CPU
+  reading says and what a rank never asks.
+- **The prompt's vocabulary and the corpus's labels were two lists of the same names, and nothing compared
+  them (finding 503).** `types` is the closed set the prompt offers; `expected.type` is the label a case
+  carries. Shape was checked, coverage was checked, and the *content* of the vocabulary was not: it could
+  name a type no case carries, or omit a type a case carries.
+- **The hole was proved rather than suspected.** Dropping `queue-duplicate-amplification` -- this round's
+  own type -- from `types` left `fault-prompt-grammar` and `check-fault-cases` both **green**. The corpus
+  would have shipped a case whose answer the prompt declared illegal, and its own gate would have called
+  that a pass. `checkSampleVocabulary` refuses in one sentence per direction, because a reader repairing a
+  mismatch needs to know which side moved: `asks for a type the prompt does not offer`, `no sample labels
+  it`.
+- **Six fixtures would have been the previous round's shape, so the rule has an injection.** `VOCAB 1`
+  empties the direction that refuses an unoffered label; the witness is the fixture that names one. The
+  battery reads 64 injections and 76 witnesses, one of each being this rule.
+- **What is not claimed.** The rule cannot say which side wins: adding a fault type means editing both
+  lists, and whether a type with no case behind it should be deleted or a case added stays a decision with
+  a reason in a round -- which is what the `provenance.categoryRule` count is for. And the corpus still has
+  a claim it cannot earn: **six** cases state `L4` and **five** earn it, because the level is read from the
+  graph rather than from the label, and that gap is the gate's whole point rather than a defect to close.

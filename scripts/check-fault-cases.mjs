@@ -267,6 +267,18 @@ for (const problem of core.checkSampleCoverage({
 })) {
   problems.push(problem);
 }
+
+// The vocabulary the prompt states, against the types the key's own samples label (finding 503).
+//
+// Asked of the key alone, before any case is read: the two lists are both in `samples.json`, so this
+// is a question about one file and the answer does not depend on what has been annotated. See
+// `fault/sample-coverage.ts` for why the drift is invisible and why both directions are one refusal.
+for (const problem of core.checkSampleVocabulary({
+  declared: Array.isArray(samples.types) ? samples.types.map((one) => String(one)) : [],
+  labelled: (samples.samples ?? []).map((sample) => String(sample?.expected?.type ?? '')),
+})) {
+  problems.push(problem);
+}
 /** Cases whose derived telemetry passed G1's signal rules and G3. Reported, not gated. */
 const withTelemetry = [];
 /** What the checkpoints of every annotated case claim about the signals it declares. */

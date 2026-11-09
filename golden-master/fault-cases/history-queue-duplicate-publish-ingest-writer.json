@@ -1,0 +1,165 @@
+{
+ "caseId": "history-queue-duplicate-publish-ingest-writer",
+ "system": "synthetic-storefront",
+ "environment": {
+  "system": "synthetic-storefront",
+  "version": "2026-10",
+  "deployRef": "authored-not-deployed"
+ },
+ "injectTime": "2026-10-21T08:22:00.000Z",
+ "window": {
+  "start": "2026-10-21T07:40:00.000Z",
+  "end": "2026-10-21T09:10:00.000Z"
+ },
+ "fault": {
+  "type": "queue-duplicate-amplification",
+  "category": "middleware",
+  "injectionMethod": "historical",
+  "parameters": {
+   "service": "ingest-writer",
+   "recordsPerPublishCall": {
+    "value": 1,
+    "unit": "count"
+   },
+   "previousRecordsPerPublishCall": {
+    "value": 500,
+    "unit": "count"
+   }
+  },
+  "parameterNotes": {
+   "service": "the writer whose publish path changed; the accept latency and the publish rate are that service's own readings, so the name is the subject of both rather than a value beside them.",
+   "recordsPerPublishCall": "one record per call, which is the whole mechanism: with acks=all and one in-flight request the call waits a round trip, so the ceiling on throughput becomes calls per second rather than bytes per second.",
+   "previousRecordsPerPublishCall": "the batch the release removed. It is here because the drop from 60,000 to 1,200 is only a fifty-fold collapse against it -- without the number the same readings describe a slow morning."
+  }
+ },
+ "groundTruth": {
+  "rootCauseEntityId": "container:synthetic-storefront/ingest-writer-jvm",
+  "rootCauseComponent": "ingest-writer",
+  "rootCauseReason": "The release replaced a 500-document batch with one publish call per document, and with acks=all and a single in-flight request every call costs a full round trip before the next one starts, so the writer's throughput became calls per second rather than documents per second. The container is the answer and not the service because the change is in the client's batching code and the reading that decides it is the container's own CPU: it sits at 0.4 of its quota for the whole window, which is a process waiting rather than a process saturated, and no amount of replicas helps a client that serialises its own calls. The queue is the loudest thing in the telemetry and the wrong answer twice over: no append was refused, its disk watermark moved four points and its append p99 held at 8ms, so the topic was healthy while holding four copies of every document. Those copies are the second half of the mechanism and the reason the case is filed under the queue at all -- the client retries a call that exceeded its two-second timeout and sets no idempotence key, so the broker commits every attempt, and the ratio of records to documents is what makes a duplicate visible where a throughput graph only shows a hole.",
+  "rootCauseIndicators": [
+   {
+    "type": "metric",
+    "ref": "records_published_per_second",
+    "description": "60,000 records a second to 1,200 while the arrival rate did not move, which places the loss inside the writer rather than in the input"
+   },
+   {
+    "type": "metric",
+    "ref": "container_cpu_usage_ratio",
+    "description": "0.4 of the quota throughout, which is the control that separates waiting from working: a batcher that costs CPU would show it here"
+   },
+   {
+    "type": "metric",
+    "ref": "records_per_document_ratio",
+    "description": "4 records on the topic for every document in the bucket, which is what a retry without an idempotence key writes"
+   }
+  ],
+  "causalChain": [
+   {
+    "step": 1,
+    "fromEntityId": "container:synthetic-storefront/ingest-writer-jvm",
+    "toEntityId": "pod:synthetic-storefront/ingest-writer-0",
+    "mechanism": "the publish path sends one record per call and waits for acks=all before sending the next, so the pod spends the window in a round trip rather than in the parser: published records fall fifty-fold while the pod's CPU share does not move",
+    "evidenceRefs": [
+     "cp-publish-rate",
+     "cp-idle-cpu"
+    ]
+   },
+   {
+    "step": 2,
+    "fromEntityId": "pod:synthetic-storefront/ingest-writer-0",
+    "toEntityId": "service:synthetic-storefront/ingest-writer",
+    "mechanism": "all three replicas run the same release, so the ceiling is per pod and the service inherits it exactly: the pending uploads queue in front of a publisher that cannot outrun the arrival rate, and the service's accept latency goes from 40ms to 30,000ms",
+    "evidenceRefs": [
+     "cp-latency",
+     "cp-idle-cpu"
+    ]
+   },
+   {
+    "step": 3,
+    "fromEntityId": "service:synthetic-storefront/ingest-writer",
+    "toEntityId": "mq:synthetic-storefront/ingest-queue",
+    "mechanism": "a call that exceeds the client's two-second timeout is retried and the writer sets no idempotence key, so four attempts of every document commit as four records and the topic holds 4 records per document the bucket holds once -- the queue is correct and its contents are not",
+    "evidenceRefs": [
+     "cp-duplicates",
+     "cp-broker-steady",
+     "cp-watermark"
+    ]
+   }
+  ],
+  "evidenceCheckpoints": [
+   {
+    "checkpointId": "cp-latency",
+    "entityRef": "service:synthetic-storefront/ingest-writer",
+    "signalRef": "ingest_accept_latency_p99_ms",
+    "comparator": ">=",
+    "value": 30000,
+    "unit": "ms",
+    "description": "the ticket's 30,000ms measured at the service, seven hundred and fifty times the 40ms it replaced"
+   },
+   {
+    "checkpointId": "cp-publish-rate",
+    "entityRef": "container:synthetic-storefront/ingest-writer-jvm",
+    "signalRef": "records_published_per_second",
+    "comparator": "<=",
+    "value": 1500,
+    "unit": "count",
+    "description": "the collapse, on the entity that publishes: 1,200 a second against 60,000 before the release"
+   },
+   {
+    "checkpointId": "cp-idle-cpu",
+    "entityRef": "container:synthetic-storefront/ingest-writer-jvm",
+    "signalRef": "container_cpu_usage_ratio",
+    "comparator": "<=",
+    "value": 0.5,
+    "unit": "1",
+    "description": "0.4 of the quota for the whole window, which is the difference between a publisher waiting on acks and one doing too much work"
+   },
+   {
+    "checkpointId": "cp-duplicates",
+    "entityRef": "mq:synthetic-storefront/ingest-queue",
+    "signalRef": "records_per_document",
+    "comparator": ">=",
+    "value": 4,
+    "unit": "count",
+    "description": "4 records per document: the topic's contents disagree with the bucket, and the direction of the disagreement is the finding"
+   },
+   {
+    "checkpointId": "cp-broker-steady",
+    "entityRef": "mq:synthetic-storefront/ingest-queue",
+    "signalRef": "append_duration_p99_ms",
+    "comparator": "==",
+    "value": 8,
+    "unit": "ms",
+    "description": "8ms before and after, which rules out the broker as the cause of the collapse"
+   },
+   {
+    "checkpointId": "cp-watermark",
+    "entityRef": "mq:synthetic-storefront/ingest-queue",
+    "signalRef": "disk_watermark_percent",
+    "comparator": "<=",
+    "value": 40,
+    "unit": "%",
+    "description": "39 percent at its highest, so the duplication was not large enough to threaten retention: the topic never throttled and never dropped anything"
+   }
+  ],
+  "remediation": [
+   {
+    "step": 1,
+    "action": "restore a batched publish, and set the idempotence key so a retried call commits once rather than once per attempt",
+    "target": "container:synthetic-storefront/ingest-writer-jvm"
+   },
+   {
+    "step": 2,
+    "action": "measure the ratio of records on the topic to documents in the bucket as a standing reading, because a duplicate is invisible in every throughput graph this pipeline published",
+    "target": "mq:synthetic-storefront/ingest-queue"
+   }
+  ]
+ },
+ "sli": {
+  "service": "ingest-writer",
+  "metric": "ingest_accept_latency_p99_ms"
+ },
+ "query": "Ingest accept latency went from 40ms to 30,000ms at 08:22 and the topic now holds four copies of documents the bucket holds once. Which component caused it, and what rules out the broker?",
+ "difficulty": "L4",
+ "answerKeyIsolated": true
+}

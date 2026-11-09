@@ -1,8 +1,8 @@
 {
   "schema": "rca-bench-fault-cases/3",
   "purpose": "conformance",
-  "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Every case must carry a quote in each of its four layers, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check. The purpose field says what the set is for: the same saturation reading is a defect in a benchmark set and a fact of life in a conformance fixture, and a set that does not say which it is cannot be told apart from one that is failing at the other thing.",
-  "min": 33,
+  "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty-four extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Every case must carry a quote in each of its four layers, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check. The purpose field says what the set is for: the same saturation reading is a defect in a benchmark set and a fact of life in a conformance fixture, and a set that does not say which it is cannot be told apart from one that is failing at the other thing.",
+  "min": 34,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -993,6 +993,36 @@
         }
       ],
       "signals": "history-queue-disk-watermark-batch-drain.signals.json"
+    },
+    {
+      "caseId": "history-queue-duplicate-publish-ingest-writer",
+      "sampleId": "queue-duplicate-publish-ingest-writer",
+      "case": "history-queue-duplicate-publish-ingest-writer.json",
+      "graph": "synthetic-storefront-graph.json",
+      "why": "annotated from the incident text of `queue-duplicate-publish-ingest-writer`: the writer, the queue and the bucket are the text's own names, and the mechanism is its sentence about a batch replaced by one call per document. Three things make it the case the corpus did not have. Its chain is three hops with a **queue at the end** rather than a service or a caller, so the propagation leaves the component that caused it and arrives at the one whose contents are wrong. It is the corpus's first case where the demanded reading is a **ratio across two systems** -- records on the topic against documents in the bucket -- rather than an excursion inside one series, which is the only shape in which a duplicate is visible: every throughput graph this pipeline published shows a hole and calls it a slow publisher. And its two controls are flat by construction: a broker at 8ms with a four-point watermark and a container at 0.4 of its CPU, so a method that ranks by magnitude returns the topic, and the cause is a component that nothing in the telemetry singles out except the one number that was not being measured.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "The ingest writer's accept latency went from 40ms to 30,000ms",
+          "why": "the component and its reading in one sentence: the latency is the service's, the publish rate is the container's, and both belong to a workload an operator would page on rather than to the topic it writes"
+        },
+        {
+          "layer": "fault",
+          "quote": "replaced the writer's 500-document batch with one publish call per document",
+          "why": "the change, its shape and what it replaced. One record per call with acks=all and a single in-flight request is what turns throughput into calls per second, and the 500 is what makes the fifty-fold drop a measurement rather than an adjective"
+        },
+        {
+          "layer": "process",
+          "quote": "the writer sets no idempotence key, and the broker commits every attempt",
+          "why": "the second half of the mechanism, and the sentence that makes the topic's count the fault rather than a symptom of one: a retry without an idempotence key is a second record"
+        },
+        {
+          "layer": "evidence",
+          "quote": "no append was refused, the disk watermark moved only from 35 to 39 percent, and append p99 held at 8ms throughout",
+          "why": "the control, stated by the text in the place a reader looks for a cause: every reading a healthy broker produces, in the window where the writer lost 98 percent of its throughput"
+        }
+      ],
+      "signals": "history-queue-duplicate-publish-ingest-writer.signals.json"
     }
   ]
 }

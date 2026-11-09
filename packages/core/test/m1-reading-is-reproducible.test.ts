@@ -216,15 +216,15 @@ describe('M1’s readings are re-derivable from the repository', () => {
     expect(current).toHaveLength(1);
     // `key.size` is the size of the key **on the day the reading was taken**, and it stays 30: it is a
     // historical fact about that run, not a statement about today's corpus. What the corpus holds now
-    // is 33 -- v3.70 added a sample no recorded run has ever answered, v3.71 a second and v3.72 a
-    // third -- and
+    // is 34 -- v3.70 added a sample no recorded run has ever answered, v3.71 a second, v3.72 a third
+    // and v3.78 a fourth -- and
     // the two numbers are reconciled by a sentence rather than by a subtraction a reader has to think
     // to do. `describeReadingCoverage` writes that sentence, `score-fault-extraction.mjs --record`
     // prints the same one, and pinning the whole line here is what makes the report and the test one
     // statement instead of two that happen to agree.
     expect(current[0]?.key.size, 'the key the reading was taken from, not the one in the tree').toBe(30);
     const coverage = describeReadingCoverage({ key: key.samples, reading: current[0]?.samples ?? [] });
-    expect(coverage.key).toBe(33);
+    expect(coverage.key).toBe(34);
     expect(coverage.answered).toBe(30);
     expect(
       coverage.unanswered,
@@ -233,12 +233,13 @@ describe('M1’s readings are re-derivable from the repository', () => {
       'config-rate-cache-ttl-pricing',
       'resource-merge-burst-search-cluster',
       'middleware-queue-watermark-batch-drain',
+      'queue-duplicate-publish-ingest-writer',
     ]);
     expect(coverage.extra, 'a reading that answers an id the key does not carry was taken on another text').toEqual([]);
     expect(coverage.sentence).toBe(
-      'the reading answers 30 of the 33 sample(s) the key holds; unanswered: ' +
+      'the reading answers 30 of the 34 sample(s) the key holds; unanswered: ' +
         'config-rate-cache-ttl-pricing, resource-merge-burst-search-cluster, ' +
-        'middleware-queue-watermark-batch-drain',
+        'middleware-queue-watermark-batch-drain, queue-duplicate-publish-ingest-writer',
     );
     expect(file.readings.filter((reading) => reading.status === 'old-key')).toHaveLength(4);
     const reverted = file.readings.filter((reading) => reading.status === 'reverted');

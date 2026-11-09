@@ -312,6 +312,11 @@ function corpusOf(count: number, difficulty?: 'L1' | 'L2' | 'L3' | 'L4'): string
     `${JSON.stringify(
       {
         ...(JSON.parse(readFileSync(SAMPLES, 'utf8')) as Record<string, unknown>),
+        // The vocabulary is the set these copies label, which is one type. Inheriting the shipped
+        // key's list here would make the fixture a key whose prompt offers thirty-one types for a
+        // corpus that labels one, and `checkSampleVocabulary` refuses exactly that (finding 503) --
+        // the rule is right and the fixture was describing a key no author would write.
+        types: [String((FIRST_SAMPLE.expected as { type: string }).type)],
         samples: cases.map((entry, index) => ({
           id: copyId(index),
           incidentText: FIRST_SAMPLE.incidentText,
@@ -386,6 +391,25 @@ describe('check-fault-cases · the corpus as it stands', { timeout: SUITE_BUDGET
     expect(result.out).toContain('every case passes G1, G2 and G5 -- structure, references, units, and no leaked identifiers');
   });
 
+  it('refuses a key whose vocabulary is not the types its own samples label', async () => {
+    // Finding 503. The gate read the key, resolved every `sampleId` against it and compared the
+    // index's length to the key's -- and never asked whether the vocabulary the prompt is built
+    // from was the set of types the samples label. v3.78 found it by adding a sample with a new
+    // type and leaving the list alone: the prompt then offers thirty types to a model being asked
+    // for the thirty-first, and every extraction reading taken in that state measures the grammar.
+    const key = JSON.parse(readFileSync(SAMPLES, 'utf8')) as { types: string[]; samples: unknown[] };
+    const dropped = key.types.at(-1) as string;
+    const drifted = join(workspace(), 'samples.json');
+    writeFileSync(
+      drifted,
+      `${JSON.stringify({ ...key, types: key.types.slice(0, -1) }, null, 2)}\n`,
+    );
+    const result = await run(['--samples', drifted]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain(`'${dropped}' labels a sample`);
+    expect(result.out).toContain('asks for a type the prompt does not offer');
+  });
+
   it('reports the shipped corpus as within its difficulty target, which the readout never said before', async () => {
     // The line is printed rather than gated, deliberately: a share is a property of the set, and a
     // rule that fails every run on something no label can repair teaches people to skip the line.
@@ -406,7 +430,7 @@ describe('check-fault-cases · the corpus as it stands', { timeout: SUITE_BUDGET
     expect(result.status, result.out).toBe(0);
     // One, because the scratch corpus holds the one case the helper writes -- which is also what
     // proves the count is read from the directory it was given rather than from the repository.
-    expect(result.out).toContain('1 of 33');
+    expect(result.out).toContain('1 of 34');
   });
 
   it('states no neighbour count in the background file, because nothing re-derives one', async () => {
@@ -840,9 +864,9 @@ describe('check-fault-cases · derived telemetry is a claim G3 can refuse', { ti
     // locate all thirty cases, which is what a fixture is for and what a benchmark set must not be.
     const result = await run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('locates 33 of 33 case(s) within top-');
+    expect(result.out).toContain('locates 34 of 34 case(s) within top-');
     expect(result.out).toContain("purpose 'conformance', so this is a reading and not a verdict");
-    expect(result.out).toContain('prompt leakage: 0 of 33 case(s) name their root-cause component');
+    expect(result.out).toContain('prompt leakage: 0 of 34 case(s) name their root-cause component');
   });
 
   it('refuses the same corpus when it declares that it is a benchmark', async () => {
@@ -3079,8 +3103,8 @@ describe('check-fault-cases · the G3 threshold grid', { timeout: SUITE_BUDGET_M
     const result = await run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toContain(
-      'g3 threshold grid: 33 case(s) judged over 4x4 cells (|Z| 1/2/10/100 x samples 1/3/5/8); '
-        + 'the default (|Z| >= 2, 3 samples) admits 33 of 33 and 2 of its 4 neighbour(s) change '
+      'g3 threshold grid: 34 case(s) judged over 4x4 cells (|Z| 1/2/10/100 x samples 1/3/5/8); '
+        + 'the default (|Z| >= 2, 3 samples) admits 34 of 34 and 2 of its 4 neighbour(s) change '
         + "that, by up to 1; the weakest case 'history-config-rate-cache-ttl-pricing' stops "
         + 'sustaining 3 sample(s) at |Z| >= 3.38, 1.69x the default; '
         + 'the sample line refuses 0 / 0 / 1 / 2 case(s) at 1 / 3 / 5 / 8; '

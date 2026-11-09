@@ -1374,9 +1374,9 @@ newest ledger keeps the one claim about the present, which the round after this 
 
 | item | value |
 | --- | --- |
-| `core` test suite | **244 files, 6235 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **248 files, 6422 tests passed** (as of this commit) |
+| `core` test suite | **244 files, 6235 tests passed** (at v3.77) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.77) |
+| repo test suite | **248 files, 6422 tests passed** (at v3.77) |
 | coverage | `core` **99.97 / 99.82 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** |
 | new tests | **6234 -> 6235, net +1**: the two relation cases became three -- a closed volume the index has passed (the defect, red before the change), an open one it has passed with the volume named and `smallest` absent from the sentence, and the printed pair |
 | mutations | **63** injections, **75** witnesses; 62 caught, 0 survived / inert / unattributed, 1 redundant as declared. `VOLUME 1` restores the smallest-volume set and is caught by the fixture whose closed volume the index has passed -- the rule had three fixtures and no injection, which is how a rule is covered without being *proved* |
@@ -1392,3 +1392,106 @@ but by naming a set whose smallest member had been frozen eleven volumes earlier
 rule; it was in the round that had to delete three paragraphs of its own evidence to satisfy it. When a
 gate's refusal names a repair and the repair is not available, the gate is measuring the wrong object,
 and the arithmetic of the next round is what says so.
+
+## v3.78 — a case three hops deep, and two lists of the same names
+
+The live list carried one item about a **knife edge** rather than a missing feature: four of thirty-three
+earned `L4` is 0.121, three of thirty-two is 0.094, and the floor the corpus publishes is a tenth. So one
+edit shortening one chain could put the corpus under its own claim, and the entry asked for two things at
+once -- a case whose chain is three hops deep, and a denominator measured rather than inherited from a
+corpus three times smaller. This round is both, and while it was being written a second hole came out of
+the case it added: the prompt's vocabulary and the corpus's labels were two lists of the same names with
+nothing comparing them (finding 503).
+
+### The case the corpus was missing was the one at the hard end
+
+`history-queue-duplicate-publish-ingest-writer` is annotated from the corpus's own incident text, and it
+carries the chain the audit kept asking for: `container:ingest-writer-jvm -> pod:ingest-writer-0 ->
+service:ingest-writer -> mq:ingest-queue`. Three hops, ending at a **queue** rather than a service or a
+caller -- the first chain in the corpus that arrives somewhere whose *contents* are wrong rather than whose
+latency is.
+
+Two properties make it the case that was missing, and they are different properties:
+
+- **The demanded reading is a ratio across two systems.** Records on the topic against documents in the
+  bucket, `records_per_document = 4`. Every reading this pipeline took before it was an excursion *inside
+  one series*, and an excursion is exactly the shape a duplicate does not have: nothing doubles, one
+  number lags. A throughput graph shows a hole and the corpus's own method calls the publisher slow.
+- **Its loudest series is a control.** Append p99 holds at 8ms, the disk watermark moves 35 -> 39 percent,
+  and the container sits at 0.4 of its quota for the whole window. So ranking by magnitude returns the
+  topic -- healthy, holding four copies of every document -- and the cause is a container that is *waiting*
+  rather than saturated, which is the one thing its CPU reading can say and the one thing a magnitude rank
+  never asks.
+
+Writing it also cost four refusals from `check-fault-cases`, and each was a rule that had never been run
+against this shape: `count/s` is not a unit the corpus knows, `4.02` cannot live in a `1`-dimensioned
+series, `count` does not admit a fraction, and a case with no logs and no traces still has to say so in a
+sentence. The corpus gate was right four times.
+
+### The denominator is derived from the floor, not quoted from a smaller corpus
+
+The entry's second half was the number `0.1`. Five of thirty-four is 0.147, which passes -- and the tenth
+had been inherited from a corpus of nine, where it happened to be the same digit for a different reason.
+`difficulty-floor.test.ts` now derives what the tenth *means*: the size at which the same numerator stops
+satisfying it is `floor(5 / 0.1) + 1 = 51`, printed as a bound rather than assumed, so a reader can see how
+much room the claim has instead of being told it has some.
+
+The knife edge is now asserted from both sides in one test, because a ratchet that can lose one case and a
+ratchet that can lose none differ by a single case and no fixture distinguishes them one at a time:
+
+| | earned `L4` | corpus | share | against 0.1 |
+| --- | --- | --- | --- | --- |
+| as shipped | 5 | 34 | 0.147 | passes |
+| lose any **one** | 4 | 33 | 0.121 | still passes |
+| lose any **two** | 3 | 32 | 0.094 | fails |
+
+So the corpus can afford exactly one, and the test says so by dropping each earned case in turn and then
+each pair -- not by quoting 0.147 and trusting that dropping one leaves it above the line.
+
+### Two lists of the same names, and nothing compared them (finding 503)
+
+`samples.json` states the fault types twice: `types` is the **closed vocabulary the prompt offers**, and
+each sample's `expected.type` is the **label the corpus gives it**. `fault-prompt-grammar` read the first
+for shape -- no duplicates, a count the gate re-derives -- and `checkSampleCoverage` read the second for
+coverage. Nothing compared them, so the vocabulary's content was unguarded in both directions: it could
+name a type no case carries, and it could omit a type a case carries.
+
+**The hole was proved before it was closed.** Adding this round's case meant adding its type, and deleting
+`queue-duplicate-amplification` from `types` afterwards left `fault-prompt-grammar` and
+`check-fault-cases` both green -- the corpus would have shipped a case whose answer the prompt declared
+illegal and its own gate would have called that a pass. `checkSampleVocabulary` now returns one refusal per
+direction (`asks for a type the prompt does not offer`, `no sample labels it`), `check-fault-cases` applies
+it where the file is already open, and the export test enumerates it so the next rule cannot be added
+without a name.
+
+Six fixtures would have been the v3.77 shape again -- covered rather than proved -- so the round added a
+**mutation** in the same breath: `VOCAB 1` empties the direction that refuses an unoffered label, and the
+fixture that names one is the witness. The battery reads **64 injections, 76 witnesses**, one of each being
+this rule.
+
+### Readings
+
+> Ledger for `v3.78`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **244 files, 6244 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **248 files, 6431 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.82 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** |
+| new tests | **6235 -> 6244, net +9**: six fixtures for the vocabulary rule (agreement, each direction, both in one refusal, a repeated type counted once, a key with no samples), two more for the two plurals -- the branch either side of `length === 1`, which the branch report called covered while no fixture had taken it -- and one for `check-fault-cases` applying the rule to a key whose `types` is one short |
+| mutations | **64** injections, **76** witnesses; **63 caught**, 0 survived / inert / unattributed, **1 redundant as declared**. `VOCAB 1` empties the direction that refuses an unoffered label, and four fixtures go red with the one that names it |
+| the corpus | **33 -> 34** cases; `34 of 34` answer the prompt; vocabulary **30 -> 31** types; `provenance.categoryRule` **33 of 33 -> 34 of 34** |
+| the hardest level | claimed **6**, earned **5**, `5 of 34`; chain lengths are read from the graph, so the sixth claim is a label the gate refuses to count |
+| the ratio | `records_per_document = 4` on the topic against the bucket -- the corpus's first reading that is a comparison between two systems rather than an excursion inside one |
+| the knife edge | lose any one earned case: 4 of 33 = 0.121 (passes); lose any two: 3 of 32 = 0.094 (fails); the size at which five stops being enough is `floor(5 / 0.1) + 1 = 51` |
+| list | **27 -> 26** open: the entry about the knife edge is closed by the case and the derivation, and the vocabulary hole it exposed was closed in this same round rather than filed |
+
+**The lesson.** A gate is only as wide as the shape it has been run against. Three guards read
+`samples.json` -- shape, coverage, and which type a sample may answer with -- and all three were green over
+a file that could name a type no case carried, because each one read the half it was written for and the
+sentence that would have joined them had never been needed. The case did not reveal this by being hard; it
+revealed it by being the **first case added since the vocabulary became closed**, which is the general
+form: a rule about a set is tested by the set growing, and nothing about a green suite says the last
+addition was checked.
+

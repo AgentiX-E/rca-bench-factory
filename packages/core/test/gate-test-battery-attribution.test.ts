@@ -289,9 +289,10 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // read the labels instead of the chains.
     // 61 -> 62 in v3.75: one for the round-trip reporter's field-contract branch, which read a field
     // name the score report had moved and crashed instead of naming the field.
-    // 62 -> 63 in v3.77: one for the progress index's size relation, which compared the index against
+    // 63 -> 64 in v3.78: one for the vocabulary rule, whose two directions are one refusal and two
+    // separate defects -- an unoffered label and an unlabelled offer.
     // every volume and therefore against a constant -- the smallest one, closed eleven volumes earlier.
-    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(63);
+    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(64);
     expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(
       pythonJson(`print(json.dumps(len(module.INJECTIONS)))`),
     );

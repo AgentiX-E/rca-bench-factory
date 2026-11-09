@@ -532,7 +532,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.77: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.78: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1183,13 +1183,20 @@ is a row about rather than paraphrase one that no `grep` will find.
   that found them was asking about a parameter, not about the window.
   `[open: a place where a window's two endpoints are cited as data rather than written in a sentence --
   the same question `signalRef` answered for a reading's identity]`
-- **The corpus can afford to lose none of the four cases that earn its hardest level.** The ratchet used
-  to say one, and that unit was the case claiming `L4` over a single hop (findings 494 and 495). Read
-  over the chains the gate now uses: four of thirty-three is 0.121 and three of thirty-two is 0.094, so
-  the margin is `0.021` against a case worth `0.030`. A fifth earned `L4` -- a chain of three steps, not
-  a relabel -- puts it at five of thirty-four (0.147), which is the first size where losing one holds.
-  `[open: annotate or add a case whose chain is three hops deep, and measure what the denominator should
-  be rather than inheriting 0.1 from a corpus three times smaller]`
+- ~~**The corpus can afford to lose none of the four cases that earn its hardest level.**~~ The ratchet
+  used to say one, and that unit was the case claiming `L4` over a single hop (findings 494 and 495).
+  Read over the chains the gate now uses: four of thirty-three is 0.121 and three of thirty-two is 0.094,
+  so the margin is `0.021` against a case worth `0.030`. A fifth earned `L4` -- a chain of three steps,
+  not a relabel -- puts it at five of thirty-four (0.147), which is the first size where losing one holds.
+  ~~`[open: annotate or add a case whose chain is three hops deep, and measure what the denominator should
+  be rather than inheriting 0.1 from a corpus three times smaller]`~~ **Closed by v3.78**, which is the
+  case and the measurement. `history-queue-duplicate-publish-ingest-writer`
+  carries a three-step chain -- container, pod, service, and out to the topic -- so the earned count is
+  **five of thirty-four (0.147)**; the denominator is measured rather than inherited, because the test
+  derives the size at which the same numerator stops working (`floor(5 / 0.1) + 1 = 51`) instead of
+  quoting the tenth, and asserts that any **one** earned case may be dropped (four of thirty-three, 0.121)
+  while no two may (three of thirty-two, 0.094). The knife edge is the thing that closed: before it, a
+  single edit shortening one chain put the corpus below the floor the corpus publishes.
 - **The weekly job's sentence has still not been read, and v3.75 did not deliver it.** The dispatch it
   was fixed for printed `shape=1` twice and nothing else: the sentence was built and pushed onto the
   epilogue's list, which that run never reached (finding 497). v3.76 put it on the case's own line, so
@@ -1284,7 +1291,7 @@ and this table.
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
-| [volume-13.md](progress/volume-13.md) | 14 | v3.64 | v3.77 |
+| [volume-13.md](progress/volume-13.md) | 15 | v3.64 | v3.78 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

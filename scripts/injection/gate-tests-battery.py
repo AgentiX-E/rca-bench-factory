@@ -1489,6 +1489,22 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         ),
         "the fixture whose closed volume the index has already passed",
     ),
+    (
+        # The rule this round added answers in **two** directions, because the two lists it compares are
+        # two claims about one set: what the prompt offers, and what the corpus labels. Emptying the
+        # first direction leaves a vocabulary that can promise a type no case will ever be scored into
+        # while the guard still looks like it is asking -- the shape finding 503 was raised for, one
+        # half at a time.
+        "VOCAB 1. a label the prompt does not offer is no longer a refusal",
+        "packages/core/src/fault/sample-coverage.ts",
+        "sample-coverage.test.ts",
+        lambda t: rename(
+            t,
+            "  const unoffered = [...labels].filter((one) => !offered.has(one)).sort();",
+            "  const unoffered: string[] = [];",
+        ),
+        "names a type the corpus labels and the prompt does not offer",
+    ),
 ]
 
 
@@ -1693,6 +1709,9 @@ EXPECTATIONS: dict[str, tuple[str, ...]] = {
     ),
     'VOLUME 1. the index is measured against the smallest volume again': (
         'does not refuse an index that a closed volume can no longer match',
+    ),
+    'VOCAB 1. a label the prompt does not offer is no longer a refusal': (
+        'names a type the corpus labels and the prompt does not offer',
     ),
     'LAYOUT 2. a mapping to the wrong column counts as agreement': (
         'counts an answer that points a field at a real but different column as a contradiction',

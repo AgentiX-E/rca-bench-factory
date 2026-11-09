@@ -168,9 +168,15 @@ describe('the golden type labels obey the shape the prompt now states', () => {
     // reused `config-mismatch`: the corpus needed a *shape*, not a label. The vocabulary therefore
     // stayed at thirty while the set grew, which is the pair of numbers this asserts and the reason
     // they are two numbers rather than one.
+    //
+    // v3.78 is the other direction, and it is why the pair is asserted rather than the vocabulary
+    // alone: the fifth three-step chain needed a fault nothing in the corpus named -- a publisher
+    // that duplicates -- so `queue-duplicate-amplification` is the thirty-first type and the set grew
+    // by one. A test that only counted the set would not have noticed a new label; a test that only
+    // counted the vocabulary would not have noticed a new sample.
     const types = goldenSamples().map((s) => s.expected.type);
-    expect(new Set(types).size, 'the vocabulary').toBe(30);
-    expect(types.length, 'the set').toBe(33);
+    expect(new Set(types).size, 'the vocabulary').toBe(31);
+    expect(types.length, 'the set').toBe(34);
   });
 });
 

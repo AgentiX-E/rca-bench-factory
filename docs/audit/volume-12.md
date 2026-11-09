@@ -434,3 +434,31 @@ is the one claim about the present, and the round that follows dates it.
 **What would have caught it earlier** is nothing: the guard fired the moment the claim stopped being true,
 which is the first moment it could. The cost is three row edits in the next round's write-up, and the
 benefit is that the previous round's counts are read rather than inherited.
+
+## Finding 503 — two lists of the same thirty-one names, and nothing that compared them
+
+`samples.json` carries two statements about fault types. `types` is the **closed vocabulary the prompt
+offers**: a model reading the extraction prompt may answer with one of those strings and no other. Each
+sample's `expected.type` is the **label the corpus gives that sample**. The pair has to agree in both
+directions -- a type nobody labels is an option that cannot be right, and a label the prompt does not offer
+is a right answer the prompt forbids -- and no rule in this repository read the two against each other.
+
+`fault-prompt-grammar` read `types` and checked it for shape: no duplicates, no empty strings, a count
+`check-fault-cases` could re-derive. `checkSampleCoverage` read the labels and asked whether every label had
+a sample. The sentence that would have joined them was never written, so the vocabulary's *content* was
+unchecked: it could name a type no sample carried, and it could be missing a type a sample carried.
+
+**The hole was proved before it was closed**, which is the only way to know a guard was missing rather than
+merely quiet: dropping `queue-duplicate-amplification` from `types` -- the type the new case in v3.78
+labels -- left `fault-prompt-grammar` and `check-fault-cases` both **green**. The corpus would have shipped
+a case whose answer the prompt declared illegal, and the corpus's own gate would have called that a pass.
+
+`checkSampleVocabulary` now takes the two lists and returns one refusal per direction, because a reader
+repairing a mismatch needs to know which side moved: `asks for a type the prompt does not offer` and `no
+sample labels it`. It is wired into `check-fault-cases`, which is where the file is already open, and it is
+enumerated in the export test so the next rule cannot be added without a name.
+
+**What it still does not do** is decide which side wins when the two disagree. Adding a fault type to the
+corpus means editing both lists, and the guard says so, but it cannot say whether a type that no case
+labels should be deleted or whether a case is missing. That choice stays a decision with a reason in a
+round, which is what the `provenance.categoryRule` count is for.

@@ -215,7 +215,12 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // the rule was covered by three fixtures and by nothing that proved a *mutation* of it is caught.
     // The restoration is the set the rule compares against, so the witness is the fixture whose
     // oldest volume the index has already passed.
-    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 75],
+    //
+    // 75 -> 76 in v3.78: one for the vocabulary rule the corpus gate now applies to `samples.json`'s
+    // two lists of the same names. Six fixtures and no injection would have been the v3.77 shape
+    // again -- covered rather than proved -- so the direction that refuses an unoffered label is
+    // emptied, and the fixture that names one has to be the one that goes red.
+    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 76],
     ['scripts/injection/fault-extraction-scoring.py', 'fault-extraction-scoring', 12],
     ['scripts/injection/fetch-official-retry.py', 'fetch-official-retry', 6],
     ['scripts/injection/fault-extraction-workflow.py', 'fault-extraction-workflow', 9],

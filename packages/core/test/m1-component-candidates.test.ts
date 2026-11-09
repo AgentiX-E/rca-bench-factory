@@ -104,7 +104,7 @@ function wordsOf(text: string): Set<string> {
 }
 
 describe('the component answer space a mechanism could offer', () => {
-  it('recovers 28 of 33 expected components as adjacent-word runs, and names the five it cannot', () => {
+  it('recovers 29 of 34 expected components as adjacent-word runs, and names the five it cannot', () => {
     // The ceiling of a candidate-list prompt, pinned. If the corpus grows, this number moves
     // and the claim in the header has to be re-read rather than quietly falsified.
     const unrecoverable = samples
@@ -118,10 +118,12 @@ describe('the component answer space a mechanism could offer', () => {
       'middleware-redis-latency-cache',
       'network-delay-cart-to-inventory',
     ]);
-    // 28 of 33 in v3.72 (27 of 32 in v3.71, 26 of 31 in v3.70): the batch-drain text names its
-    // component as the run "order events", so it joins the recoverable side and the five it cannot
+    // 29 of 34 in v3.78 (28 of 33 in v3.72, 27 of 32 in v3.71, 26 of 31 in v3.70). The two numbers
+    // move for different reasons and the pair is the point: the batch-drain text joined the
+    // recoverable side because it names its component as the run "order events", the duplicate-publish
+    // text joins it because `ingest-writer` is the run "ingest writer", and the five the rule cannot
     // recover are still the same five.
-    expect(samples.length - unrecoverable.length).toBe(28);
+    expect(samples.length - unrecoverable.length).toBe(29);
   });
 
   it('offers a median of more than two hundred candidates per text, which is why the list is not an option', () => {
@@ -131,11 +133,14 @@ describe('the component answer space a mechanism could offer', () => {
     const sizes = samples.map((sample) => candidates(sample.incidentText).size).sort((a, b) => a - b);
     const median = sizes[Math.floor(sizes.length / 2)] as number;
     expect(median).toBeGreaterThan(150);
-    // 524 is the longest list in the corpus and it belongs to the merge-burst text, which is the
-    // longest incident in the key: the bound is order-of-magnitude, not a target, and 500 was the
-    // previous maximum rather than a rule. The claim is that a candidate list cannot fit in a
-    // prompt, and six hundred hyphenated runs cannot either.
-    expect(sizes[sizes.length - 1] as number).toBeLessThan(600);
+    // 644 is the longest list in the corpus and it belongs to the duplicate-publish text, which is
+    // the longest incident in the key at 985 characters: the bound is order-of-magnitude, not a
+    // target, and it has moved with the longest text three rounds running -- 500, then 524, then
+    // 644. What the test is for is unchanged: a candidate list cannot fit in a prompt, and seven
+    // hundred hyphenated runs cannot either. The bound is written as a round number above the
+    // measurement on purpose -- pinning 644 would make the next long incident a test failure with
+    // no claim behind it, which is the shape finding 202 names.
+    expect(sizes[sizes.length - 1] as number).toBeLessThan(700);
   });
 
   it('never finds a correct answer outside the incident’s words, so a membership rule costs nothing', () => {
