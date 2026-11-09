@@ -170,7 +170,7 @@ describe('the golden type labels obey the shape the prompt now states', () => {
     // they are two numbers rather than one.
     const types = goldenSamples().map((s) => s.expected.type);
     expect(new Set(types).size, 'the vocabulary').toBe(30);
-    expect(types.length, 'the set').toBe(32);
+    expect(types.length, 'the set').toBe(33);
   });
 });
 

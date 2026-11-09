@@ -857,6 +857,40 @@ for (const entry of index.cases) {
       // A gate that no input can fail is a gate a reader learns to skip; finding 285 records the first
       // version of this rule, which was exactly that.
     }
+
+    // What the case says its fault lasted, against what its own clock says it lasted. `hold` counts
+    // samples and a parameter such as `burstMinutes` states a span of time; a case that gives both the
+    // same number is asserting that one sample is one unit long, and until this rule existed nothing
+    // computed that length -- so `hold: 4` beside `burstMinutes: 4` in a window whose samples were 3.5
+    // minutes apart said four minutes about a plateau that lasted fourteen (finding 490). The rule is
+    // run over the excursion series only: a control series whose two readings are equal states no
+    // excursion and therefore no length, and its hold means nothing.
+    if (Object.keys(parameters).length > 0) {
+      const spacingMs = core.readPostSampleSpacing(when);
+      const excursions = series.filter(
+        (one) =>
+          typeof one?.baseline === 'number' &&
+          typeof one?.post === 'number' &&
+          one.baseline !== one.post,
+      );
+      for (const [name, raw] of Object.entries(parameters)) {
+        const stated = core.readDeclaredQuantity(raw);
+        if (stated === undefined || stated.unit === undefined) continue;
+        for (const one of excursions) {
+          const hold = core.readSeriesHold({ derivation: one?.derivation, hold: one?.hold }).hold;
+          const restated = core.readDurationRestatement({
+            hold,
+            spacingMs,
+            stated: { name, value: stated.value, unit: stated.unit },
+          });
+          if (restated === null) continue;
+          // One line per parameter: every series that repeats the hold would repeat the sentence, and
+          // the author has one field to choose between rather than one per series.
+          problems.push(`'${caseId}' ${core.describeDurationRestatement(restated)}`);
+          break;
+        }
+      }
+    }
     const logs = Array.isArray(declaration.logs) ? declaration.logs : [];
     for (const one of logs) {
       const quote = typeof one?.quote === 'string' ? one.quote : '';

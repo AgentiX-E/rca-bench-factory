@@ -558,8 +558,13 @@ function shadowingReading(slug: string): string {
  */
 export function assessDiscriminatingPower(samples: DerivationSample[]): PowerReading {
   const readable = samples.filter((sample) => sample.type.trim() !== '');
-  const substringDiffer: string[] = [];
-  const shadowingDiffer: string[] = [];
+  // A *set* per reading, not one set and two arrays: the corpus may hold two samples of one type,
+  // and until it did, a type that disagreed in both of them was pushed twice. The field is "the
+  // expected types this reading classifies differently", so a list that names `queue-disk-watermark`
+  // twice is a count of rows wearing a type's name -- and the union beside it was already a set,
+  // which is how the duplicate survived: the two fields disagreed about what they were counting.
+  const substringDiffer = new Set<string>();
+  const shadowingDiffer = new Set<string>();
   const differSet = new Set<string>();
 
   for (const sample of readable) {
@@ -567,18 +572,18 @@ export function assessDiscriminatingPower(samples: DerivationSample[]): PowerRea
     const bySubstring = substringReading(sample.type);
     const byShadowing = shadowingReading(sample.type);
     if (bySubstring !== labelled) {
-      substringDiffer.push(sample.type);
+      substringDiffer.add(sample.type);
       differSet.add(sample.type);
     }
     if (byShadowing !== labelled) {
-      shadowingDiffer.push(sample.type);
+      shadowingDiffer.add(sample.type);
       differSet.add(sample.type);
     }
   }
 
   const alternativeReadings: AlternativeReading[] = [
-    { name: 'substring', differ: substringDiffer },
-    { name: 'row-shadowing', differ: shadowingDiffer },
+    { name: 'substring', differ: [...substringDiffer] },
+    { name: 'row-shadowing', differ: [...shadowingDiffer] },
   ];
 
   const graded = readable.length;

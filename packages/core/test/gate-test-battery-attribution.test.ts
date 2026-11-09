@@ -281,7 +281,8 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // 42 -> 45 in v3.70: the score's sentence is a guard, and the three ways it can lose its
     // denominator are the three withdrawals declared for it.
     // 45 -> 48 in v3.71: two mutations for `readSeriesHold` and one for the coverage sentence.
-    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(48);
+    // 48 -> 50 in v3.72: two for the duration guard -- one drops the spacing check, one inverts it.
+    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(50);
     expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(
       pythonJson(`print(json.dumps(len(module.INJECTIONS)))`),
     );

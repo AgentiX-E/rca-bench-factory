@@ -509,6 +509,16 @@ export interface G3ThresholdGridReading {
   weakest: { caseId: string; flipZ: number } | null;
   /** `weakest.flipZ` over the default's |Z| line; `null` when nothing flips. */
   margin: number | null;
+  /**
+   * How many cases each sample line refuses, in the axis's own order, with `|Z|` at its default.
+   *
+   * This is the sample axis's shape, and the neighbour count cannot show it: the default line is 3
+   * and its orthogonal neighbours are 1 and 5, so the tallest line (8) is two steps away and a case
+   * that first becomes refuseable there changes no neighbour. Before this field the only reading of
+   * the axis was "2 of 4 neighbours change", which stayed at 2 when a second self-clearing case made
+   * the 5-sample line refuse one case and the 8-sample line refuse two -- a staircase nothing printed.
+   */
+  sampleLineRefusals: number[];
   /** The most post-onset samples any judged case offers: the tallest line the axis may ask for. */
   ceiling: number;
 }
@@ -842,6 +852,9 @@ export function readG3ThresholdGrid(
     flips,
     weakest,
     margin: weakest === null ? null : weakest.flipZ / G3_DEFAULTS.minAbsZ,
+    sampleLineRefusals: axes.minSustainedSamples.map(
+      (samples) => cellsOf(G3_DEFAULTS.minAbsZ, samples).refused,
+    ),
     ceiling: judged.reduce((most, one) => Math.max(most, one.postSamples), 0),
   };
 }
@@ -876,6 +889,13 @@ export function describeG3ThresholdGrid(reading: G3ThresholdGridReading): string
         // off the reading: the reading's copy is `null` exactly when this branch cannot run, and a
         // `?? 0` for a case that cannot reach it is a fallback no input can take.
         + `${(reading.weakest.flipZ / G3_DEFAULTS.minAbsZ).toFixed(2)}x the default`,
+  );
+  // The axis's shape, line by line: the count at the default's |Z| for each sample line the grid
+  // asks about. `0 / 0 / 1 / 2` is a staircase, and it is the reading that a second self-clearing
+  // case changes -- the neighbour count above cannot, because 8 is two steps from the default 3.
+  parts.push(
+    `; the sample line refuses ${reading.sampleLineRefusals.join(' / ')} case(s) at `
+      + `${axes.minSustainedSamples.join(' / ')}`,
   );
   parts.push(
     `; the most post-onset samples any case offers is ${reading.ceiling}, `

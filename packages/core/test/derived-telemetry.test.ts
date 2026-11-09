@@ -9,10 +9,13 @@ import {
   SERIES_NOISE,
   SERIES_POINTS,
   TRACE_OFFSET_MS,
+  describeDurationRestatement,
   describeSeriesHoldFault,
   expandLog,
   expandSeries,
   expandTraces,
+  readDurationRestatement,
+  readPostSampleSpacing,
   readSeriesHold,
   type SeriesDeclaration,
 } from '../src/fault/derived-telemetry.js';
@@ -588,5 +591,102 @@ describe('the published description', () => {
     expect(text).toContain(`onset + ${String(LOG_OFFSETS_MS[0]! / 1000)}s`);
     expect(text).toContain(`onset + ${String(TRACE_OFFSET_MS / 1000)}s`);
     expect(text).toContain('eight samples per side');
+  });
+
+  describe('a hold is a count of samples, so its length is the window\'s', () => {
+    // The v3.71 case's own clock: a 28-minute post window divided into eight samples.
+    const burst = {
+      windowStart: '2026-11-05T14:00:00.000Z',
+      onset: '2026-11-05T14:12:00.000Z',
+      windowEnd: '2026-11-05T14:40:00.000Z',
+    };
+    // The same case after the repair: a 8-minute post window, so a sample is a minute.
+    const minute = { ...burst, windowEnd: '2026-11-05T14:20:00.000Z' };
+
+    it('reads one post-onset sample as the post span divided by eight', () => {
+      expect(readPostSampleSpacing(burst)).toBe(210_000);
+      expect(readPostSampleSpacing(minute)).toBe(60_000);
+      // Written out rather than recomputed: 3.5 minutes is what the sentence below prints, and a
+      // change to the division has to change this number rather than agree with itself.
+      expect(readPostSampleSpacing(burst) / 60_000).toBe(3.5);
+    });
+
+    it('refuses a duration that reuses the sample count as a length of time', () => {
+      const fault = readDurationRestatement({
+        hold: 4,
+        spacingMs: readPostSampleSpacing(burst),
+        stated: { name: 'burstMinutes', value: 4, unit: 'min' },
+      });
+      expect(fault).toEqual({
+        kind: 'samples-read-as-unit',
+        parameter: 'burstMinutes',
+        value: 4,
+        unit: 'min',
+        hold: 4,
+        spacingMs: 210_000,
+      });
+      // The sentence carries all three numbers, because the author has to choose which to change.
+      expect(describeDurationRestatement(fault!)).toBe(
+        "'burstMinutes' states 4 min beside a hold of 4 sample(s), and one sample is 3.5 min: the " +
+          'same number is a count of samples in one field and a length of time in the other, and the ' +
+          'two are one fact only when a sample is one min',
+      );
+    });
+
+    it('accepts the same two numbers when the window makes a sample one minute', () => {
+      expect(
+        readDurationRestatement({
+          hold: 4,
+          spacingMs: readPostSampleSpacing(minute),
+          stated: { name: 'burstMinutes', value: 4, unit: 'min' },
+        }),
+      ).toBeNull();
+      // The unit the parameter is stated in decides what one sample has to be, not minutes: a case
+      // that states its length in seconds beside a one-second sample is the same fact twice.
+      expect(
+        readDurationRestatement({
+          hold: 6,
+          spacingMs: 1_000,
+          stated: { name: 'drainSeconds', value: 6, unit: 's' },
+        }),
+      ).toBeNull();
+      expect(
+        readDurationRestatement({
+          hold: 6,
+          spacingMs: 1_000,
+          stated: { name: 'drainSeconds', value: 6, unit: 'min' },
+        }),
+      ).not.toBeNull();
+    });
+
+    it('says nothing when the stated duration is not the hold', () => {
+      // `splitDurationMinutes: 17` beside a hold of eight is a different quantity, not a restatement.
+      expect(
+        readDurationRestatement({
+          hold: 8,
+          spacingMs: readPostSampleSpacing(minute),
+          stated: { name: 'splitDurationMinutes', value: 17, unit: 'min' },
+        }),
+      ).toBeNull();
+    });
+
+    it('says nothing about a value that is not a time at all', () => {
+      // A `count` has no length to compare, and an unknown unit is a claim about someone else's
+      // table -- the same decision `measurementBounds` makes, and the reason neither is refused.
+      expect(
+        readDurationRestatement({
+          hold: 4,
+          spacingMs: 210_000,
+          stated: { name: 'mergeSegments', value: 4, unit: 'count' },
+        }),
+      ).toBeNull();
+      expect(
+        readDurationRestatement({
+          hold: 4,
+          spacingMs: 210_000,
+          stated: { name: 'cycleTime', value: 4, unit: 'furlong' },
+        }),
+      ).toBeNull();
+    });
   });
 });

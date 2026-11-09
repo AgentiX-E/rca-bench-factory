@@ -406,7 +406,7 @@ describe('check-fault-cases · the corpus as it stands', { timeout: SUITE_BUDGET
     expect(result.status, result.out).toBe(0);
     // One, because the scratch corpus holds the one case the helper writes -- which is also what
     // proves the count is read from the directory it was given rather than from the repository.
-    expect(result.out).toContain('1 of 32');
+    expect(result.out).toContain('1 of 33');
   });
 
   it('states no neighbour count in the background file, because nothing re-derives one', async () => {
@@ -840,9 +840,9 @@ describe('check-fault-cases · derived telemetry is a claim G3 can refuse', { ti
     // locate all thirty cases, which is what a fixture is for and what a benchmark set must not be.
     const result = await run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('locates 32 of 32 case(s) within top-');
+    expect(result.out).toContain('locates 33 of 33 case(s) within top-');
     expect(result.out).toContain("purpose 'conformance', so this is a reading and not a verdict");
-    expect(result.out).toContain('prompt leakage: 0 of 32 case(s) name their root-cause component');
+    expect(result.out).toContain('prompt leakage: 0 of 33 case(s) name their root-cause component');
   });
 
   it('refuses the same corpus when it declares that it is a benchmark', async () => {
@@ -2983,10 +2983,11 @@ describe('check-fault-cases · the G3 threshold grid', { timeout: SUITE_BUDGET_M
     const result = await run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toContain(
-      'g3 threshold grid: 32 case(s) judged over 4x4 cells (|Z| 1/2/10/100 x samples 1/3/5/8); '
-        + 'the default (|Z| >= 2, 3 samples) admits 32 of 32 and 2 of its 4 neighbour(s) change '
+      'g3 threshold grid: 33 case(s) judged over 4x4 cells (|Z| 1/2/10/100 x samples 1/3/5/8); '
+        + 'the default (|Z| >= 2, 3 samples) admits 33 of 33 and 2 of its 4 neighbour(s) change '
         + "that, by up to 1; the weakest case 'history-config-rate-cache-ttl-pricing' stops "
         + 'sustaining 3 sample(s) at |Z| >= 3.38, 1.69x the default; '
+        + 'the sample line refuses 0 / 0 / 1 / 2 case(s) at 1 / 3 / 5 / 8; '
         + 'the most post-onset samples any case offers is 8, '
         + 'which is the tallest sample line the grid can ask for',
     );

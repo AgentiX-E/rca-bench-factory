@@ -1243,6 +1243,35 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         "the test that refuses a hold on an accumulation",
     ),
     (
+        # The spacing is the third number, and the one nobody wrote down: a hold of four beside a
+        # parameter of four is one fact only when a sample is one unit long. Accepting the pair
+        # whenever the numbers are equal is exactly the reading that let a four-minute burst hold
+        # fourteen minutes of telemetry (v3.72).
+        "DURATION 1. two equal numbers are accepted whatever a sample lasts",
+        "packages/core/src/fault/derived-telemetry.ts",
+        "derived-telemetry.test.ts",
+        lambda t: rename(
+            t,
+            "  if (Math.abs(spacingMs - unitMs) < 1) return null;\n",
+            "",
+        ),
+        "the test that accepts two equal numbers only when a sample is one unit",
+    ),
+    (
+        # Inverting the comparison is a different defect from dropping the spacing check: it makes
+        # the guard silent about the case it exists for and loud about every duration that is not
+        # the hold, which is the corpus's other seven time-unit parameters.
+        "DURATION 2. the guard refuses every duration that is not the hold",
+        "packages/core/src/fault/derived-telemetry.ts",
+        "derived-telemetry.test.ts",
+        lambda t: rename(
+            t,
+            "  if (stated.value !== hold) return null;",
+            "  if (stated.value === hold) return null;",
+        ),
+        "the test that says nothing when the stated duration is not the hold",
+    ),
+    (
         # The names are the actionable half of the coverage sentence: "answers 30 of the 32" is a
         # ratio whose denominator is stated, and which two are unanswered is the part an author acts
         # on. Printing the count instead of the names is a sentence that reads the same and says less.
@@ -1399,6 +1428,17 @@ EXPECTATIONS: dict[str, tuple[str, ...]] = {
     ),
     'HOLD 2. a counter is allowed to hold, so an accumulation becomes a level': (
         'refuses a hold on an accumulation',
+    ),
+    'DURATION 1. two equal numbers are accepted whatever a sample lasts': (
+        'accepts the same two numbers when the window makes a sample one minute',
+    ),
+    # The witness is the refusal, not the silence: with the comparison inverted, a case whose
+    # parameter *is* the hold falls out of the rule before the spacing is ever computed, and the
+    # corpus case that states four minutes must stop being refused. The silence test does not move,
+    # because it hands the guard a sample that is one minute long -- the inversion returns null there
+    # too, for the opposite reason, which is why a mutation needs a witness that can tell them apart.
+    'DURATION 2. the guard refuses every duration that is not the hold': (
+        'refuses a duration that reuses the sample count as a length of time',
     ),
     'COVER 1. the coverage sentence counts the samples it does not answer': (
         'names the samples it does not answer',

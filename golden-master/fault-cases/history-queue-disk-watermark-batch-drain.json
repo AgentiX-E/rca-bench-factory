@@ -1,0 +1,126 @@
+{
+  "caseId": "history-queue-disk-watermark-batch-drain",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-11",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-11-04T09:08:00.000Z",
+  "window": {
+    "start": "2026-11-04T09:00:00.000Z",
+    "end": "2026-11-04T09:16:00.000Z"
+  },
+  "fault": {
+    "type": "queue-disk-watermark",
+    "category": "middleware",
+    "injectionMethod": "historical",
+    "parameters": {
+      "exportGigabytes": {
+        "value": 900,
+        "unit": "GiBy"
+      },
+      "burstMinutes": {
+        "value": 6,
+        "unit": "min"
+      },
+      "writeStreams": {
+        "value": 8,
+        "unit": "count"
+      }
+    },
+    "parameterNotes": {
+      "exportGigabytes": "The size of the one-pass export, which is what made the topic fill in minutes rather than hours and is the trigger the ticket names.",
+      "writeStreams": "One producer stream per shard of the export, which is why the watermark moved on every broker at once rather than on one of them."
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "mq:synthetic-storefront/order-events",
+    "rootCauseComponent": "order-events",
+    "rootCauseReason": "The nightly export stopped being spread across the night and was written in one pass at 09:08, so eight producer streams filled the topic's disk faster than retention could reclaim it. The watermark climbed from 35 % to 92 % and the broker throttled the producers instead of failing them, which is why nothing errored and everything got slow: appends went from 8ms to 240ms, the consumers' fetch loop fell behind the throttled writes, and lag went from 40s to 900s. Then the export ended, retention reclaimed the segments, and both readings returned on their own. It is the corpus's second case that recovers, and the first whose excursion is six samples long rather than four: the sample axis of the threshold grid asks how long an excursion must last, and two cases with different lengths make that axis a range instead of a single point.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "broker_disk_watermark_percent",
+        "description": "the topic's disk at 92 % of what it is allowed, for six post-onset samples and then back to 35 %"
+      },
+      {
+        "type": "metric",
+        "ref": "topic_append_p99_ms",
+        "description": "the throttle seen by the producer: appends at 240ms against 8ms, which is what a full disk costs before anything is rejected"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "mq:synthetic-storefront/order-events",
+        "toEntityId": "service:synthetic-storefront/order-events-consumer",
+        "mechanism": "throttled writes are still writes: with appends at 240ms the consumer's fetch loop could not keep up with them, and lag rose from 40s to 900s for as long as the burst ran, then returned on its own when the export ended",
+        "evidenceRefs": [
+          "cp-watermark",
+          "cp-append-p99",
+          "cp-consumer-lag",
+          "cp-burst-minutes"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-watermark",
+        "entityRef": "mq:synthetic-storefront/order-events",
+        "signalRef": "broker_disk_watermark_percent",
+        "comparator": ">=",
+        "value": 92,
+        "unit": "%",
+        "description": "the topic's disk at its peak, which is the fault itself rather than its effect on a consumer"
+      },
+      {
+        "checkpointId": "cp-append-p99",
+        "entityRef": "mq:synthetic-storefront/order-events",
+        "signalRef": "topic_append_p99_ms",
+        "comparator": ">=",
+        "value": 240,
+        "unit": "ms",
+        "description": "the append time at the peak, thirty times the baseline the same series states before the onset"
+      },
+      {
+        "checkpointId": "cp-consumer-lag",
+        "entityRef": "service:synthetic-storefront/order-events-consumer",
+        "signalRef": "consumer_lag_seconds",
+        "comparator": ">=",
+        "value": 900,
+        "unit": "s",
+        "description": "lag at the peak of the burst, more than twenty times the baseline the same series states before the onset"
+      },
+      {
+        "checkpointId": "cp-burst-minutes",
+        "entityRef": "mq:synthetic-storefront/order-events",
+        "signalRef": "burstMinutes",
+        "signalKind": "configuration",
+        "comparator": "==",
+        "value": 6,
+        "unit": "min",
+        "description": "the burst's own length, cited from the injection's parameter; six minutes is also six samples, because this window makes one sample a minute, and that agreement is what the guard now holds every case to"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "spread the export across the night instead of writing it in one pass, or give the topic a disk quota that reclaims segments before the watermark reaches the throttle",
+        "target": "mq:synthetic-storefront/order-events"
+      },
+      {
+        "step": 2,
+        "action": "alarm on consumer lag as well as on the watermark, so the next batch is a page before it is a six-minute backlog",
+        "target": "service:synthetic-storefront/order-events-consumer"
+      }
+    ]
+  },
+  "sli": {
+    "service": "order-events",
+    "metric": "topic_append_p99_ms"
+  },
+  "query": "At 09:12 the nightly export wrote its 900 GB into the topic in one pass: the broker's disk watermark climbed from 35% to 92% for six minutes and append p99 rose from 8ms to 240ms. Producers were throttled rather than failed, and the consumer lag went from 40s to 900s behind them. Retention reclaimed the export's segments once the batch ended, and append time came back to 8ms on its own. Why did the topic fill, and why did it clear?",
+  "difficulty": "L3",
+  "answerKeyIsolated": true
+}

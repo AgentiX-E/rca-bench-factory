@@ -2186,9 +2186,9 @@ needs a second reader, and the copy that has one is the copy that stays true.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **243 files, 6186 tests passed** (as of this commit) |
+| `core` test suite | **243 files, 6191 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **247 files, 6373 tests passed** (as of this commit) |
+| repo test suite | **247 files, 6378 tests passed** (as of this commit) |
 | coverage | `core` **99.97 / 99.80 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100**; `gates/gates.ts` and `llm/rulegen-agreement.ts` are **100 / 100 / 100 / 100** |
 | new tests | **56** (6,104 -> 6,160): **20** in the new `gate-threshold-grid.test.ts`, **27** in the new `rulegen-agreement.test.ts`, **2** in `check-fault-cases.test.ts` (the corpus reading and its refusal), **3** in `rulegen.test.ts` (the one-writer table), **1** in `scripts-are-classified.test.ts` (the depth guard over every script specifier), and **3** produced by the `it.each` tables that read the registers this round extended -- `export-surface-enumerated.test.ts` alone accounts for two, measured by running its previous revision beside it |
 | new mutations | **7** injections in `gate-tests-battery.py` (GRID 1-3, LAYOUT 1-4); **35 -> 42** injections, **41 -> 51** witnesses. Two of the ten new witnesses are second tests on one injection: withdrawing the grid's inclusive boundary is seen by the sixteen-cell agreement test as well as by the boundary case, and withdrawing the wrong-column comparison is seen by the shipped reading as well as by the planted one. All 41 reachable rows CAUGHT, 1 redundant as declared, 0 survived, 0 inert, 0 unattributed |
@@ -2298,3 +2298,65 @@ defect from a smaller key.
 axis that asked about duration could not be moved by any file the schema admitted. Naming the number
 moved the axis; naming the denominator made the reading's own ratio printable. Both repairs are the
 same move — take the quantity out of the word and put it where it can be measured.
+
+## v3.72 — the duration a case stated and the one its telemetry held
+
+`hold` was the whole of v3.71's repair, and it took one round to show that the field does not only
+express a duration — it *checks* one. `history-resource-merge-burst-search-cluster` says its merge
+"stayed there for four minutes", declares `burstMinutes: 4`, cites that parameter from a checkpoint,
+and ships `hold: 4`. A hold counts samples, and a sample in that window was 3.5 minutes long, so the
+plateau ran from 14:12 to 14:26 — **fourteen minutes of telemetry under a sentence that says four**.
+The two numbers were the same number, which is exactly why nothing looked.
+
+The class is older than the case. `history-network-partition-search-cluster` has said since it was
+annotated that "the seventeen minutes are the gap between 03:02 and 03:19", in a window that ended at
+03:40: its member count stayed halved for **thirty-eight** minutes. Before `hold` no case could state
+an end at all, so a window was the only duration a case could have, and a window that outlives the
+sentence was not a contradiction anyone could write down (finding 490).
+
+Both repairs move the geometry rather than the sentence: the merge-burst window now ends at 14:20 and
+the partition window at 03:19, so a sample is a minute in the first and the second ends where its own
+text says the links came back. `readPostSampleSpacing` computes the number nobody wrote down —
+`(windowEnd - onset) / SERIES_POINTS` — and `readDurationRestatement` asks the only question a file
+can be held to: a parameter whose value **is** the hold is asserting that one sample is one unit of
+that parameter, and the window either makes that true or it does not. It refused one case in the
+shipped corpus before the repair and was silent about the other seven time-unit parameters, because
+`splitDurationMinutes: 17` beside a hold of eight is a different quantity rather than a restatement.
+
+The sample axis got its second witness the same round, because a grid that measures duration should
+be able to tell two durations apart. `history-queue-disk-watermark-batch-drain` is a six-minute
+burst at one sample a minute: the topic's disk climbs 35 % -> 92 %, append p99 8ms -> 240ms, consumer
+lag 40s -> 900s, and the export's segments are reclaimed once the batch ends. At the 5-sample line the
+four-sample case is refused and the six-sample one is not; at the 8-sample line both are — so the two
+land in **different cells**, which is what a second witness is for. The neighbour count cannot show
+it, because 8 is two steps from the default 3: the reading now prints the axis itself,
+`the sample line refuses 0 / 0 / 1 / 2 case(s) at 1 / 3 / 5 / 8`, and the test pins the staircase.
+
+The smaller finding came free with that case. `assessDiscriminatingPower` reports two alternative
+readings, each with the types it disagrees with, beside a union of them. The union was a `Set` and the
+two lists were arrays, so the fields disagreed about what they counted — and until this round no type
+had two samples. With two `queue-disk-watermark` samples both disagreeing, the row-shadowing list came
+back with five entries and four types, in a field documented as "the expected types this reading
+classifies differently": a count of rows wearing a type's name (finding 491).
+
+### Readings
+
+> Ledger for `v3.72`.
+
+| item | value |
+| --- | --- |
+| suites | `core` **243 / 6191**, `cli` 4 / 187, repo **247 / 6378**, all green |
+| coverage | `core` **99.97 / 99.82 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** |
+| new tests | **5**: the spacing reading, the refusal, the acceptance, the silence for a different quantity, the silence for a non-time unit |
+| mutations | **48 -> 50** injections, **57 -> 59** witnesses; 49 caught, 1 redundant, 0 survived / inert / unattributed |
+| grid | **33 of 33** at the default, **2 of 4** neighbours, and the axis prints **0 / 0 / 1 / 2** at 1 / 3 / 5 / 8 samples |
+| corpus | **33** cases / **33** samples / **30** types; **3** samples with no recorded run; **528** pairs, 496 -> 528 |
+| windows | merge-burst post **38 -> 8** minutes, partition post **38 -> 17** minutes, both to match their own prose |
+| ratchet | the L4 slack **2 -> 1**: five of thirty-three is 0.152, four of thirty-two 0.125, three of thirty-one 0.097 |
+| list | **20 -> 21**: one closed, two opened |
+
+**The lesson.** A field that states a quantity also states what it is measured in, and a case that
+writes the same number twice in two units has written one fact and broken it in one place. `spike`
+hid a duration inside a name; `burstMinutes: 4` beside `hold: 4` hid the *unit* inside an
+agreement — four of what, against four of what — and both were repaired the same way: compute the
+number that sits between the two statements and refuse the file that cannot say it.

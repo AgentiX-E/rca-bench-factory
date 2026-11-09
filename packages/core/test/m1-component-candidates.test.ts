@@ -104,7 +104,7 @@ function wordsOf(text: string): Set<string> {
 }
 
 describe('the component answer space a mechanism could offer', () => {
-  it('recovers 27 of 32 expected components as adjacent-word runs, and names the five it cannot', () => {
+  it('recovers 28 of 33 expected components as adjacent-word runs, and names the five it cannot', () => {
     // The ceiling of a candidate-list prompt, pinned. If the corpus grows, this number moves
     // and the claim in the header has to be re-read rather than quietly falsified.
     const unrecoverable = samples
@@ -118,9 +118,10 @@ describe('the component answer space a mechanism could offer', () => {
       'middleware-redis-latency-cache',
       'network-delay-cart-to-inventory',
     ]);
-    // 27 in v3.71 (26 of 31 in v3.70): the merge-burst text names `search-cluster` as the run "search
-    // cluster", so it joins the recoverable side and the five it cannot recover are unchanged.
-    expect(samples.length - unrecoverable.length).toBe(27);
+    // 28 of 33 in v3.72 (27 of 32 in v3.71, 26 of 31 in v3.70): the batch-drain text names its
+    // component as the run "order events", so it joins the recoverable side and the five it cannot
+    // recover are still the same five.
+    expect(samples.length - unrecoverable.length).toBe(28);
   });
 
   it('offers a median of more than two hundred candidates per text, which is why the list is not an option', () => {

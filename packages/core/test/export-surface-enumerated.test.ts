@@ -874,6 +874,7 @@ const TESTED = [
   'SERIES_JITTER',
   'SERIES_NOISE',
   'TRACE_OFFSET_MS',
+  'describeDurationRestatement',
   'describeSeriesHoldFault',
   'expandLog',
   'expandSeries',
@@ -881,6 +882,10 @@ const TESTED = [
   // A step's duration, read rather than inferred from the shape's name: `spike` was a step with a
   // hold of one, and removing it is what let the G3 sample axis move for the first time (v3.71).
   'readSeriesHold',
+  // How long a sample is, and whether a stated duration is the hold written in another unit: the
+  // arithmetic that a case stating `burstMinutes: 4` beside `hold: 4` was never asked (v3.72).
+  'readDurationRestatement',
+  'readPostSampleSpacing',
   // fault/expression.ts -- the arithmetic a derived checkpoint states, evaluated rather than
   // believed (finding 245).
   'MAX_EXPRESSION_DEPTH',

@@ -190,12 +190,13 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // published list to the filter that uses it. These are the only injections in the table whose
     // subject has no witness in the shipped corpus at all.
     //
-    // 41 -> 51 in v3.69, then 51 -> 54 in v3.70, then 54 -> 57 in v3.71: three injections for the
+    // 41 -> 51 in v3.69, then 51 -> 54 in v3.70, then 54 -> 57 in v3.71, then 57 -> 59 in v3.72
+    // (two injections for the duration guard): each with
     // two rules this round moved -- the duration of an excursion and the coverage of a reading
     // because three of them break a second test as well -- the grid's boundary withdrawal is seen
     // by the sixteen-cell agreement test, and two of the layout withdrawals are seen by the
     // sentence the command prints.
-    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 57],
+    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 59],
     ['scripts/injection/fault-extraction-scoring.py', 'fault-extraction-scoring', 12],
     ['scripts/injection/fetch-official-retry.py', 'fetch-official-retry', 6],
     ['scripts/injection/fault-extraction-workflow.py', 'fault-extraction-workflow', 9],

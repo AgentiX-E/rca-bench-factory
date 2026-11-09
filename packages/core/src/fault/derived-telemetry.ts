@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import type { LogSeverity, SignalPayload, TelemetrySignal } from '../ir/types.js';
-import { clampToUnit, quantizeToUnit } from '../util/unit.js';
+import { clampToUnit, convertUnit, dimensionOf, quantizeToUnit } from '../util/unit.js';
 
 /**
  * The corpus's derived telemetry, as a module rather than as a script's private helper.
@@ -212,6 +212,111 @@ export function describeSeriesHoldFault(fault: SeriesHoldFault, metric: string):
         `${String(SERIES_POINTS)} samples -- an absent hold means all ${String(SERIES_POINTS)}`
       );
   }
+}
+
+/**
+ * The wall-clock length of one post-onset sample, which is the number that turns `hold` into time.
+ *
+ * The post side divides its own span into `SERIES_POINTS` intervals, so a sample lasts
+ * `(windowEnd - onset) / SERIES_POINTS`. No case states that number, and until this round nothing
+ * computed it -- which is what let one case write `hold: 4` and `burstMinutes: 4` and be read as two
+ * statements of one fact when it was four samples against four minutes, sixteen minutes apart. The
+ * two fields are the same fact only when a sample happens to be one unit long, and that is a property
+ * of the window rather than of either field.
+ */
+export function readPostSampleSpacing(when: ExpansionTime): number {
+  return (Date.parse(when.windowEnd) - Date.parse(when.onset)) / SERIES_POINTS;
+}
+
+/**
+ * A stated duration that reuses the sample count as if the two numbers were one quantity.
+ *
+ * The corpus states a fault's length in two vocabularies: `hold` counts samples, and a parameter such
+ * as `burstMinutes` states a span of time. A case that gives both the same number is asserting that
+ * one sample is one unit of that parameter, and nothing in the file says so. When the window makes it
+ * true the two fields are one fact written twice and the case is honest; when the window makes it
+ * false, one of the two is wrong and the file cannot say which -- so the refusal names both numbers
+ * and the length of a sample, and leaves the choice of which to change to the author.
+ *
+ * A parameter whose number is *not* the hold is not a restatement and is not this function's
+ * business: `splitDurationMinutes: 17` beside a hold of eight is a fault that lasts seventeen minutes
+ * in a window whose post side is wider, and those are different quantities that happen to live in the
+ * same file.
+ */
+export type HoldDurationFault = {
+  kind: 'samples-read-as-unit';
+  parameter: string;
+  value: number;
+  unit: string;
+  hold: number;
+  spacingMs: number;
+};
+
+/** What a case's stated duration and its telemetry have to be compared as. */
+export interface DurationRestatementInput {
+  /** The effective hold of the excursion, as `readSeriesHold` returned it. */
+  hold: number;
+  /** `readPostSampleSpacing` for the case's own window. */
+  spacingMs: number;
+  stated: { name: string; value: number; unit: string };
+}
+
+/**
+ * Whether a stated duration is the hold written in another unit of measure.
+ *
+ * Three ways to answer "no" and each one is a different statement: a value that is not the hold is a
+ * different quantity, a unit that is not a time has no length to compare, and a spacing that equals
+ * one unit means the two numbers *are* one fact and the case is consistent.
+ */
+export function readDurationRestatement(
+  input: DurationRestatementInput,
+): HoldDurationFault | null {
+  const { hold, spacingMs, stated } = input;
+  if (stated.value !== hold) return null;
+  if (dimensionOfQuietly(stated.unit) !== 'time') return null;
+  const unitMs = convertUnit(1, stated.unit, 's') * 1000;
+  if (Math.abs(spacingMs - unitMs) < 1) return null;
+  return {
+    kind: 'samples-read-as-unit',
+    parameter: stated.name,
+    value: stated.value,
+    unit: stated.unit,
+    hold,
+    spacingMs,
+  };
+}
+
+/** `dimensionOf` for a unit the table may not know, which is a statement rather than an error here. */
+function dimensionOfQuietly(unit: string): string | undefined {
+  try {
+    return dimensionOf(unit);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The sentence the guard prints for a restated duration.
+ *
+ * Two numbers and a length, because the author has to choose which of the two to change: widen the
+ * window so a sample is one minute, or stop giving the parameter the hold's number. Naming the sample
+ * length is what makes the choice available -- without it a reader sees `4` twice and agrees with
+ * both.
+ */
+export function describeDurationRestatement(fault: HoldDurationFault): string {
+  const unitMs = convertUnit(1, fault.unit, 's') * 1000;
+  const perSample = trimNumber(fault.spacingMs / unitMs);
+  return (
+    `'${fault.parameter}' states ${String(fault.value)} ${fault.unit} beside a hold of ` +
+    `${String(fault.hold)} sample(s), and one sample is ${perSample} ${fault.unit}: the same number ` +
+    `is a count of samples in one field and a length of time in the other, and the two are one fact ` +
+    `only when a sample is one ${fault.unit}`
+  );
+}
+
+/** A ratio as a short decimal, so a sentence about 3.5 minutes does not read 3.5000000000000004. */
+function trimNumber(value: number): string {
+  return String(Number(value.toFixed(3)));
 }
 
 /** Where a declared log line lands, relative to the onset: three lines, a minute and a half apart. */

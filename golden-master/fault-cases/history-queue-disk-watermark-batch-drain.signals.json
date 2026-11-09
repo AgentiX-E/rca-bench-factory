@@ -1,0 +1,50 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-queue-disk-watermark-batch-drain",
+  "why": "Telemetry for the corpus's second self-clearing case, and the first whose excursion is six samples rather than four. Six is what makes the sample axis of G3 a range rather than a point: a hold of four is refused at five samples, a hold of six is not, and only at the tallest line do the two cases agree. The window is eight minutes wide on each side of the onset, so one sample is one minute and `burstMinutes: 6` is the same fact as `hold: 6` rather than a coincidence of two fours -- the v3.71 case said four minutes about a plateau that lasted fourteen because its samples were 3.5 minutes apart and nothing computed that (finding 490). The control series is flat and exact: a topic that is full without being down is the claim the case makes.",
+  "series": [
+    {
+      "service": "order-events",
+      "metric": "broker_disk_watermark_percent",
+      "unit": "%",
+      "baseline": 35,
+      "post": 92,
+      "hold": 6,
+      "quote": "the broker's disk watermark climbed from 35% to 92% for six minutes",
+      "why": "the fault itself: the share of the disk the topic is allowed to use, which is what an operator reads to decide whether it is about to refuse writes. Below 100 % on purpose, because a watermark at its ceiling is a topic that already failed, and this case is about one that only slowed"
+    },
+    {
+      "service": "order-events",
+      "metric": "topic_append_p99_ms",
+      "unit": "ms",
+      "baseline": 8,
+      "post": 240,
+      "hold": 6,
+      "quote": "append p99 rose from 8ms to 240ms",
+      "why": "the case's SLI, and a duration, so the RCA-eval exporters publish it as the latency column rather than skipping the case for having no latency to observe. It is the throttle seen from the producer's side: the broker kept accepting writes, at a price"
+    },
+    {
+      "service": "order-events-consumer",
+      "metric": "consumer_lag_seconds",
+      "unit": "s",
+      "baseline": 40,
+      "post": 900,
+      "hold": 6,
+      "quote": "the consumer lag went from 40s to 900s behind them",
+      "why": "the same six minutes one hop out. A symptom rather than a second fault, which is why the causal chain crosses this entity instead of starting at it"
+    },
+    {
+      "service": "order-events",
+      "metric": "topic_append_error_ratio",
+      "unit": "1",
+      "baseline": 0,
+      "post": 0,
+      "noise": "none",
+      "quote": "no append was refused",
+      "why": "the control. A ratio of counted requests is a computation rather than a sample, so it is exact, and it reads zero at both ends -- which is what makes 'full' and 'down' two different verdicts on this case"
+    }
+  ],
+  "noLogs": "the text quotes a pager, three numbers and a duration, and no line any process wrote: the broker throttled instead of rejecting, which is the one kind of saturation a log file records as nothing at all.",
+  "noTraces": "the exchange the ticket measured is an append the producer waited on, and the text gives a percentile for it rather than a single span's duration, so a trace here would be a number this case invented rather than one it was annotated from."
+}

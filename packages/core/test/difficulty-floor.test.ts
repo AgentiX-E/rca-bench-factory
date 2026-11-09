@@ -286,12 +286,14 @@ describe('the shipped corpus · the labels and the ladder', () => {
     expect(bindsAt).toBeGreaterThan(key.samples.length);
   });
 
-  it('survives the loss of two L4 cases and loses the property at three, which is the ratchet', () => {
+  it('survives the loss of one L4 case and loses the property at two, which is the ratchet', () => {
     // How many L4 cases the corpus can lose is a number, and it has moved every round the count
     // moved: three of twenty-two is 0.136 and survived one loss; four of thirty is 0.133 and
     // survived one; five of thirty-one is 0.161, so four of thirty (0.133) and three of
-    // twenty-nine (0.103) both hold and two of twenty-eight (0.071) does not. The slack is what
-    // the next annotations spend, so both sides are asserted.
+    // twenty-nine (0.103) both hold. v3.72 added an L3 case, and that spent the whole remaining
+    // slack: five of thirty-three is 0.152, four of thirty-two is 0.125 and three of thirty-one is
+    // 0.097, which is below the 0.1 floor. The ratchet is asserted on both sides, because the
+    // number that matters is how many annotations the corpus can afford to get wrong.
     const hardest = shipped.filter((one) => one.difficulty === 'L4');
     const drop = (...dropIds: string[]) => ({
       irVersion: '1.0.0',
@@ -300,14 +302,12 @@ describe('the shipped corpus · the labels and the ladder', () => {
       signals: {},
     });
     expect(
+      checkDifficultyDistribution(drop(hardest[0]!.caseId)).violations.map((one) => one.code),
+    ).toEqual([]);
+    expect(
       checkDifficultyDistribution(drop(hardest[0]!.caseId, hardest[1]!.caseId)).violations.map(
         (one) => one.code,
       ),
-    ).toEqual([]);
-    expect(
-      checkDifficultyDistribution(
-        drop(hardest[0]!.caseId, hardest[1]!.caseId, hardest[2]!.caseId),
-      ).violations.map((one) => one.code),
     ).toEqual(['DIFFICULTY_SKEWED_HARD']);
     // Padded with copies of a shipped L3 case rather than with literals, because what the rule reads
     // is a share: the point is the size at which the same numerator stops being enough.

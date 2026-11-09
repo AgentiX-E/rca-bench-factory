@@ -1887,11 +1887,15 @@ INJECTIONS: list[
         # to a `string[]` -- and the build refused it: TS2322. The battery reported the compile
         # error rather than a survival, which is the harness working, but a mutation the compiler
         # rejects is not measuring anything and the entry had to be rewritten to one the language
-        # accepts. `concat` on the per-reading lists is the same defect in a well-typed shape.
+        # accepts. The second version concatenated the two per-reading arrays, and v3.72 made both
+        # of them sets (finding 491), so `concat` stopped compiling: the union is now built by
+        # spreading the two sets into one array, which is the same defect in a shape the language
+        # accepts -- a type both readings disagree about appears twice, and `differ.length` counts
+        # rows where the field says types.
         lambda t: rename(
             t,
             "  const differ = [...differSet];",
-            "  const differ = substringDiffer.concat(shadowingDiffer);",
+            "  const differ = [...substringDiffer, ...shadowingDiffer];",
         ),
         'derivation',
         'derivation',

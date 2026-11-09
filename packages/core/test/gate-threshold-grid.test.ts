@@ -310,7 +310,8 @@ describe('the grid the thresholds are read on', () => {
         + 'the default (|Z| >= 2, 3 samples) admits 2 of 2 and 1 of its 4 neighbour(s) change that, '
         + 'by up to 1; '
         + "the weakest case 'weakest-case' stops sustaining 3 sample(s) at |Z| >= 3.40, "
-        + '1.70x the default; the most post-onset samples any case offers is 5, '
+        + '1.70x the default; the sample line refuses 0 / 0 / 0 / 2 case(s) at 1 / 3 / 5 / 8; '
+        + 'the most post-onset samples any case offers is 5, '
         + 'which is the tallest sample line the grid can ask for',
     );
   });
@@ -325,7 +326,8 @@ describe('the grid the thresholds are read on', () => {
         + 'the default (|Z| >= 2, 3 samples) admits 2 of 2 and 1 of its 4 neighbour(s) change that, '
         + 'by up to 1; '
         + "the weakest case 'borderline' stops sustaining 3 sample(s) at |Z| >= 9.50, "
-        + '4.75x the default; the most post-onset samples any case offers is 5, '
+        + '4.75x the default; the sample line refuses 0 / 0 / 0 / 2 case(s) at 1 / 3 / 5 / 8; '
+        + 'the most post-onset samples any case offers is 5, '
         + 'which is the tallest sample line the grid can ask for',
     );
   });
@@ -338,6 +340,7 @@ describe('the grid the thresholds are read on', () => {
       'g3 threshold grid: 1 case(s) judged over 4x4 cells (|Z| 1/2/10/100 x samples 1/3/5/8); '
         + 'the default (|Z| >= 2, 3 samples) admits 0 of 1 and no neighbour changes that; '
         + 'no case sustains 3 sample(s) at any line, so there is no flip to report; '
+        + 'the sample line refuses 1 / 1 / 1 / 1 case(s) at 1 / 3 / 5 / 8; '
         + 'the most post-onset samples any case offers is 2, '
         + 'which is the tallest sample line the grid can ask for',
     );
@@ -354,6 +357,7 @@ describe('the grid the thresholds are read on', () => {
         + 'the default (|Z| >= 2, 3 samples) admits 1 of 1 and no neighbour changes that '
         + '(the default cell is not on this grid); '
         + "the weakest case 'a' stops sustaining 3 sample(s) at |Z| >= 60.00, 30.00x the default; "
+        + 'the sample line refuses 0 / 0 / 1 / 1 case(s) at 1 / 2 / 4 / 5; '
         + 'the most post-onset samples any case offers is 3, '
         + 'which is the tallest sample line the grid can ask for',
     );

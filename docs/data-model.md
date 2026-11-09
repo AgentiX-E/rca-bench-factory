@@ -696,6 +696,17 @@ a whole number of samples, a hold on a `counter` (the shape accumulates through 
 holding it at `post` would be a level), and anything outside `1..8` (a side has eight samples, so a
 larger hold is a typo or a window the author did not write).
 
+`hold` is a **count**, so its length is a property of the window rather than of the field: the post
+side divides its own span into eight intervals, so one sample lasts `(windowEnd - onset) / 8`, and
+`readPostSampleSpacing` is where that number lives. A case that also states its fault's length in
+time -- `burstMinutes: 4` -- has said the same thing twice, and the two statements agree only when a
+sample happens to be one unit of that parameter. `readDurationRestatement` is the rule that says so:
+when the parameter's number *is* the hold, one sample has to be one `min`, or the file is asserting a
+duration its own telemetry contradicts. A parameter whose number is not the hold is a different
+quantity and the rule has nothing to say about it -- `splitDurationMinutes: 17` beside a hold of
+eight is a fault that lasts seventeen minutes in a window whose post side is wider, and refusing it
+would be a rule about vocabulary rather than about arithmetic.
+
 ### A reading is a measurement, and a measurement stays inside its unit and on its grid
 
 `baseline` and `post` are what the annotation says the reading was; the samples are what an exporter

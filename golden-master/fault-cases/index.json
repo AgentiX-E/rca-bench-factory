@@ -2,7 +2,7 @@
   "schema": "rca-bench-fault-cases/3",
   "purpose": "conformance",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Every case must carry a quote in each of its four layers, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check. The purpose field says what the set is for: the same saturation reading is a defect in a benchmark set and a fact of life in a conformance fixture, and a set that does not say which it is cannot be told apart from one that is failing at the other thing.",
-  "min": 32,
+  "min": 33,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -963,6 +963,36 @@
         }
       ],
       "signals": "history-resource-merge-burst-search-cluster.signals.json"
+    },
+    {
+      "caseId": "history-queue-disk-watermark-batch-drain",
+      "sampleId": "middleware-queue-watermark-batch-drain",
+      "case": "history-queue-disk-watermark-batch-drain.json",
+      "graph": "synthetic-storefront-graph.json",
+      "why": "annotated from the incident text of `middleware-queue-watermark-batch-drain`: the export job, the topic and the consumer are the text's own names, and the mechanism is its sentence about producers being throttled rather than failed. It is the corpus's second case whose telemetry returns and the first whose excursion lasts six samples, which is what turns the sample axis of the threshold grid from a point into a range: a hold of four is refused at five samples, a hold of six is not, and only at the tallest line do both cases agree. The case states its length as `burstMinutes: 6` and its window makes one sample a minute, so the parameter and the hold are one fact rather than two numbers that happen to match.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "The order events topic filled in six minutes at 09:12",
+          "why": "the component the chain starts at, named in the sentence that measures how long it was full -- an operator repairs the topic's quota, not the export that wrote to it"
+        },
+        {
+          "layer": "fault",
+          "quote": "the broker's disk watermark climbed from 35% to 92% for six minutes",
+          "why": "the mechanism, and what makes this `queue-disk-watermark` rather than a link failure: the disk was consumed inside the topic and nothing was rejected"
+        },
+        {
+          "layer": "process",
+          "quote": "the consumer lag went from 40s to 900s behind them",
+          "why": "the step's effect, and the sentence that orders it after the throttle rather than beside it -- a throttled write is still a write a consumer has to catch up with"
+        },
+        {
+          "layer": "evidence",
+          "quote": "append time came back to 8ms without anything being restarted",
+          "why": "the recovery, which is the fact this case is in the corpus to state: a queue that fills with a declared end is a different shape from one that fills for the rest of the window"
+        }
+      ],
+      "signals": "history-queue-disk-watermark-batch-drain.signals.json"
     }
   ]
 }

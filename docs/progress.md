@@ -532,7 +532,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.71: **20** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.72: **21** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1152,12 +1152,26 @@ is a row about rather than paraphrase one that no `grep` will find.
   into `hold: 1`, and the corpus's merge-burst case returns after four samples: the default admits
   **32 of 32** and **2** of its four neighbours now change that, `|Z| >= 10` for being too weak and
   **5 samples** for being too short (finding 488).
-- **The sample axis has one witness.** The grid's sample line moves because exactly one of the
-  thirty-two cases recovers before its window ends; a second case with a different hold would make
-  the axis a *range* rather than a single point, and would test whether `hold: 6` and `hold: 2` land
-  in different cells.
-  `[open: a second self-clearing case, or a measurement saying why one witness is enough for this
-  axis when one witness was not enough for the `|Z|` axis]`
+- ~~**The sample axis has one witness.**~~ **Closed by finding 490 and the case it was written
+  beside.** A second self-clearing case exists — `history-queue-disk-watermark-batch-drain`, six
+  samples at one minute each — and the two cases land in **different cells**: the 5-sample line
+  refuses the four-sample case and admits the six-sample one, the 8-sample line refuses both.
+  `Measured:` the neighbour count could not see it, because 8 is two steps from the default 3, so the
+  reading now prints the axis itself — `the sample line refuses 0 / 0 / 1 / 2 case(s) at 1 / 3 / 5 / 8`
+  — and `check-fault-cases.test.ts` pins the staircase rather than a count of neighbours.
+- **The duration rule only fires when the parameter's number *is* the hold.** `readDurationRestatement`
+  compares one sample's length with one unit of the parameter, and it is asked only about a parameter
+  whose value equals the hold. A case that states `burstMinutes: 5` beside `hold: 4` in a window whose
+  samples are 3.5 minutes long asserts twenty minutes of plateau in five, and nothing refuses it: the
+  numbers are different, so the rule treats it as a different quantity — which is right for
+  `splitDurationMinutes: 17` and wrong for this.
+  `[open: a relation that holds for every time-unit parameter a case cites as the fault's own length,
+  which needs the file to say which parameters those are rather than the numbers to coincide]`
+- **The difficulty ratchet has one unit of slack left.** An L3 case was added in v3.72, and five L4 of
+  thirty-three is 0.152: losing one L4 leaves 0.125 and losing two leaves 0.097, below the 0.1 floor.
+  The next case that is not an L4 spends the corpus's whole margin.
+  `[open: annotate the next case at L4, or measure what the floor should be now that the corpus is
+  three times the size it was when 0.1 was chosen]`
 - **`docs/acceptance.md` is 96 KB and grows by clause per round.** L3 is 284 lines and L4 is 405;
   L0, L1, L2 and L5 are 14, 7, 7 and 6, so the obvious split by layer would produce four files
   of a dozen lines.
@@ -1220,7 +1234,7 @@ and this table.
 | [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
-| [volume-12.md](progress/volume-12.md) | 16 | v3.56 | v3.71 |
+| [volume-12.md](progress/volume-12.md) | 17 | v3.56 | v3.72 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
