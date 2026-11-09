@@ -325,20 +325,30 @@ That is arithmetic, not bad luck, and it was never written down.
 is expected to stay under, before the first case; it samples the heap at five stage boundaries per case,
 records the number on the case's record, and prints a `ROUNDTRIP COST` line whenever a case is heavier or
 slower than every case before it, so the log carries the growth curve rather than 270 repeated readings;
-and it reports at the end
+and it refuses at 90% of the budget with the case named.
+
+The shape of that last line was published here as a **projection**, and this block used to print it as if
+it were an output:
 
 ```
 ROUNDTRIP cost 270 case(s) in 201.4 min; largest 3712 MB of the 7168 MB this run was given (52%) at
 RE2-TT/ts-auth-service_cpu/1; slowest 51.3 s at RE2-TT/ts-order-service_cpu/2
 ```
 
-A run at 90% or more of its budget **fails**, with the case named, because a run at 95% has not passed —
-it has one case left before it dies, and the death has no sentence in it. The budget defaults to the
-heap limit and is set by `--heap-budget`, which is how the refusal is tested: the branch exists for a
-corpus that nearly exhausts a runner, and a test cannot build one.
+It was 270 cases at the rate Online Boutique set and 3.7 GB from the local 17 MB per MB, and it was never
+observed. The first run that reached that case died there at **96% of the same budget** (finding 504), so
+the projection was wrong by a factor of two in the optimistic direction -- and, worse, it was
+indistinguishable from a reading (finding 506). What replaced it is measured: **4,100 MB at case 54**,
+unchanged for the next 128 cases, and then a step past 6,960 MB at case 182.
 
-The workflow then declares the number instead of inheriting it: `--max-old-space-size=7168`, three and a
-half times the largest measured case, with the measurement in the comment above it.
+A run at 90% or more of its budget **stops itself**, with the case named, because a run at 95% has not
+passed — it has one case left before it dies, and the death has no sentence in it. The check used to run
+once, after the loop, which is the one place it cannot help (finding 504); it runs per case now. The
+budget defaults to the heap limit and is set by `--heap-budget`, which is how the refusal is tested: the
+branch exists for a corpus that nearly exhausts a runner, and a test cannot build one.
+
+The workflow declares the number instead of inheriting it -- `--max-old-space-size=12288` since the
+dispatches measured what 7168 could not hold, with the arithmetic in the comment above it.
 
 **And the bound that had gone stale beside it.** `timeout-minutes: 90` was written when the round trip
 was believed to take ten minutes. The run measured 35 s a case on Online Boutique; 270 cases plus a
@@ -462,3 +472,93 @@ enumerated in the export test so the next rule cannot be added without a name.
 corpus means editing both lists, and the guard says so, but it cannot say whether a type that no case
 labels should be deleted or whether a case is missing. That choice stays a decision with a reason in a
 round, which is what the `provenance.categoryRule` count is for.
+
+## Finding 504 — a refusal computed after the loop is a sentence a dying run never says
+
+The heap guard existed, was tested, and was in the wrong place. It was computed once, over the whole
+run, from the largest heap any case had been observed at:
+
+```
+ROUNDTRIP cost 270 case(s) in … min; largest 3712 MB of the 7168 MB this run was given (52%) at …
+```
+
+and then `if (share >= 0.9)` pushed a refusal. A test drove it with `--heap-budget 1` and it passed. The
+guard's whole purpose is to say *"the next case of that size will not fit"* **before** the process is
+killed, and it ran at the one moment when the process has already survived everything it was going to
+survive.
+
+Run `42674673341` is the measurement that makes this a defect rather than a style complaint. It reached
+**6,960 MB of a 7,216 MB budget -- 96% -- at case 182 of 270**, the first TrainTicket case, and V8 ended
+it with `FATAL ERROR: Reached heap limit`. The refusal fired zero times. The sentence in the log names no
+case, no stage and no percentage, because the only sentence that would have was on the far side of the
+loop.
+
+**The refusal moved into the per-case `finally`**, which is where the number it reads is computed. At 90%
+of the declared heap the run now pushes the sentence, names the case and the share, records what it
+scored, and **stops deliberately** -- an exit with a reason instead of an abort without one. The cases
+after it are not scored, and the report says how many were: `declared 3, scored 1` is a subset that is
+stated, which is the difference between a partial run and a partial run standing in for the whole.
+
+**And the number itself was wrong.** 7168 MB was 3.4x the largest case measured locally, on a synthetic
+case of 122 MB. The corpus's own largest case is not a case of that shape: TrainTicket's first ships
+**1,433,140 spans against SockShop's 95,000**, and the curve before it was flat -- the peak was 4,100 MB
+at case 54 and did not move for 128 cases. A flat curve followed by a step is the one shape a
+"largest observed so far" statistic cannot warn about, which is why the refusal is now checked per case
+rather than over a summary. The workflow declares **12288**, and the number is not a guess about the
+corpus: the refusal will name the case and the percentage the next time the corpus outgrows its job.
+
+Two mutations carry it. `HEAP 1` removes the guard; the fixture it is caught by is the three-case run
+under a 1 MB budget, which must report one case of three. The first draft of that mutation raised the
+threshold to `1.5`, which under a 1 MB budget is a share of 1,184% -- the mutation was inert, the battery
+said SURVIVED, and the repair was to delete the guard rather than to narrow it. A mutation that cannot
+change an outcome is not evidence about a test.
+
+## Finding 505 — the census was written after a loop that the only interesting run did not finish
+
+`ROUNDTRIP CENSUS modalities <slice>: logs n/m, traces n/m` is the line that says what a corpus slice
+actually ships. It was printed in the epilogue, from a map filled inside the loop. The dispatch that
+reached TrainTicket is therefore the dispatch that printed **nothing about TrainTicket**: it died at that
+slice's first case, one line after `ROUNDTRIP PASS 181/270` and before the `ROUNDTRIP MODALITY` line that
+would have described its tables.
+
+That is the third instance of one shape, and the corpus has now named it three times: v3.75's sentence
+(built, queued, never printed), v3.76's report (written before every `exit`, and the abort was not an
+exit), and this. Each repair moved one reading *closer to the case it describes*; this round moves the
+last of them **before the first case**.
+
+Every number in the census is a fact about the corpus that is already known when the walk finishes --
+each declared case either has `logs.csv` in the file set or does not -- so there was never anything for it
+to wait for. `takeCensus` now runs over the descriptors before the loop and `printCensus` is called once,
+above the first case. A run that dies at case 182 still says what TrainTicket ships, and a run that is
+stopped by its own heap refusal says what the *whole* slice ships, because the count is a property of the
+corpus rather than of the cases that got as far as a comparison.
+
+The same round read the reading that v3.75 and v3.76 were both written for: the check id on the failing
+case line. It is **`data-csv-time`**, for two cases of 270 (`checkoutservice_cpu/2`, `checkoutservice_mem/2`):
+*"the table's first instant is '0' and the injection time is '1708475361', which have to be on the same
+clock"*. Two cases, one corpus shape, no action. The other 168 failures carry the id `modalities` and no
+sentence -- their reason is the `ROUNDTRIP MODALITY` line above, so the case line says which check failed
+and nothing about why. That is the same complaint one order smaller, and it is left stated rather than
+fixed: a line that names the check is what the entry asked for.
+
+## Finding 506 — an example in a document is a measurement nobody took
+
+Finding 499 published the shape of the line the repair would print:
+
+```
+ROUNDTRIP cost 270 case(s) in 201.4 min; largest 3712 MB of the 7168 MB this run was given (52%) at
+RE2-TT/ts-auth-service_cpu/1; slowest 51.3 s at RE2-TT/ts-order-service_cpu/2
+```
+
+No run produced that. It is a projection -- 270 cases at the observed rate, 3.7 GB from the local 17 MB
+per MB -- written in a fenced block, in the position where a reading goes, with three decimal-exact
+numbers that no artefact anywhere in this repository contains. The first run that reached the case named
+in it died there, at **96% of that same budget**: the projection was off by a factor of two and in the
+direction that matters, since a case costing 3.7 GB would have left 3.4 GB of headroom.
+
+The failure is not the arithmetic. It is that a document printed an output, which a reader has no way to
+distinguish from an output that was observed -- and this repository's whole method is that a number is
+either measured or labelled as not. The block now says what it is: a projection from the local
+measurement, with the two readings that replaced it beside it (4,100 MB at case 54; death above 6,960 MB
+at case 182), and a pointer to the fact that the line is printed by every run so the next one can be
+compared rather than consulted.

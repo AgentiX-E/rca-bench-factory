@@ -532,7 +532,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.78: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.79: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1197,22 +1197,44 @@ is a row about rather than paraphrase one that no `grep` will find.
   quoting the tenth, and asserts that any **one** earned case may be dropped (four of thirty-three, 0.121)
   while no two may (three of thirty-two, 0.094). The knife edge is the thing that closed: before it, a
   single edit shortening one chain put the corpus below the floor the corpus publishes.
-- **The weekly job's sentence has still not been read, and v3.75 did not deliver it.** The dispatch it
-  was fixed for printed `shape=1` twice and nothing else: the sentence was built and pushed onto the
-  epilogue's list, which that run never reached (finding 497). v3.76 put it on the case's own line, so
-  the next run prints which check the two cases fail. If it is `modality-set` the case is a corpus shape
-  with no skip for it, and the rule to follow is the one already applied to a named refusal.
-  `[open: the first `ROUNDTRIP FAIL … shape=` line that carries a check id]`
-- **The heap this corpus needs is measured locally, not really.** The job is sized at 7168 MB from
-  17 MB of heap per MB of CSV, taken on a synthetic case in the corpus's own shape, because the real
-  `RE2-TT` case has never been held whole; the peak it prints is sampled at five stage boundaries, so
-  the mark between two of them is higher.
-  `[open: the `ROUNDTRIP cost … largest … MB of the 7168 MB` line from a run that finishes]`
-- **`RE2-TT`'s tables and SockShop's log header are both unmeasured.** TrainTicket starts at case 181
-  and no run has reached one, so it inherits RE2's plan — the claim SockShop falsified for itself.
-  SockShop's `logs.csv` has never been read either (its cases failed on the traces claim first); the
-  plan inherits RE2's nine columns and `logs-header` says so if that inheritance is wrong.
-  `[open: the `ROUNDTRIP CENSUS modalities RE2-TT` line and the first `RE2-SS` `logs-header` check]`
+- ~~**The weekly job's sentence has still not been read, and v3.75 did not deliver it.**~~ The dispatch
+  it was fixed for printed `shape=1` twice and nothing else: the sentence was built and pushed onto the
+  epilogue's list, which that run never reached (finding 497). v3.76 put it on the case's own line.
+  ~~`[open: the first `ROUNDTRIP FAIL … shape=` line that carries a check id]`~~ **Closed by v3.79**,
+  which read two of them from run `42674673341`. The check id is `data-csv-time`: cases
+  `2/270` and `14/270` (`checkoutservice_cpu/2` and `checkoutservice_mem/2`) fail with *"the table's
+  first instant is '0' and the injection time is '1708475361', which have to be on the same clock"* --
+  two cases out of 270, and a corpus shape rather than an export defect. The other 168 failures carry
+  the id `modalities` with no sentence after it, which is a second-order version of the same complaint:
+  their reason is the `ROUNDTRIP MODALITY` line above, so the case line says *which* check failed and
+  nothing about *why*. What the round did with the answer is finding 505's subject: the two readings
+  that would have made the run legible were both written after the loop.
+- **The heap this corpus needs is measured now, and the number was wrong.** The job was sized at
+  7168 MB from 17 MB of heap per MB of CSV, taken on a synthetic case in the corpus's own shape. Run
+  `42674673341` reached **6,960 MB of it (96%) at case 182** -- the first TrainTicket case, 1,433,140
+  spans against SockShop's 95,000 -- and V8 killed it. The largest case before that was 4,100 MB at
+  case 54, so the curve is flat at 4.1 GB for 180 cases and then leaves the budget in one step. v3.79
+  raised the declaration to 12288 and moved the refusal to where it fires while the process is alive
+  (finding 504). What is still not measured is the peak the *modality comparison* needs, because the
+  run has never held a TrainTicket case to the end of one.
+  `[open: a `ROUNDTRIP cost … largest … MB …` line from a run that finishes, and the peak the modality
+  comparison needs rather than the peak the ingest needed]`
+- **`RE2-TT`'s tables and SockShop's log header are still unmeasured, and the reason was placement.**
+  TrainTicket starts at case 182 and the one run that reached it died there, so the census line that
+  would have said what TrainTicket ships was never printed -- it was written in the epilogue, after a
+  loop that did not finish (finding 505). The line now prints before the first case, from the walk's
+  file set, so the next dispatch reads it whether or not it survives TrainTicket. What that does not
+  give is the *comparison*: `logs-header` and the plan's columns are checked per case, so SockShop's
+  nine columns stay an inheritance until a run reaches an `RE2-SS` case and says otherwise.
+  `[open: the first `RE2-SS` `logs-header` check, which the census line cannot stand in for]`
+- **The modality comparison holds two maps of every row's signature.** `compareModalityTables` builds a
+  `Map<string, number>` per side, keyed by the joined cells of the compared columns: for a TrainTicket
+  case that is two maps of 1.4 million long strings, on top of the two row arrays the parse produced,
+  and the heap samples are taken at five stage boundaries so a spike inside this function is invisible
+  until V8 prints one. 168 of the run's failures were `modalities`, so the function that decides them
+  is the busiest in the round trip and the only one whose memory has never been measured.
+  `[open: what the comparison costs on the corpus's largest case, and a shape that does not hold two
+  maps of it]`
 - **The level a case claims still reaches both exports, and the note that defends it does not.** The
   distribution gate stopped reading claims in v3.74, so a corpus can no longer meet its tenth by
   relabelling; `difficultyFor` still projects `FaultCase.difficulty`, so the case with a one-hop chain
@@ -1291,7 +1313,7 @@ and this table.
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
-| [volume-13.md](progress/volume-13.md) | 15 | v3.64 | v3.78 |
+| [volume-13.md](progress/volume-13.md) | 16 | v3.64 | v3.79 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

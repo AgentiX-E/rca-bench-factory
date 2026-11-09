@@ -1505,6 +1505,47 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         ),
         "names a type the corpus labels and the prompt does not offer",
     ),
+    (
+        # The budget refusal is a per-case decision because the death it prevents happens inside
+        # the loop (finding 504). Restored to "fires only when the run is already over", a run that
+        # spends its heap scores every case, refuses nothing, and is then killed by V8 -- which is
+        # the state the 2026-11-09 dispatch was found in, having printed 6,960 MB of a 7,216 MB
+        # budget and one sentence that names no case.
+        "HEAP 1. the budget refusal never fires, and the run dies instead",
+        "scripts/check-official.mjs",
+        "check-official-roundtrip.test.ts",
+        # The whole guard, removed rather than narrowed. The first draft raised the threshold to
+        # `1.5` -- which under a 1 MB budget is a share of 1184%, so the mutation was inert and the
+        # battery reported it as a survivor: a mutation that cannot change an outcome is not
+        # evidence about the test, it is a mutation chosen from the wrong end of the comparison.
+        lambda t: rename(
+            t,
+            "    if (share >= HEAP_REFUSAL_SHARE && heapPressure === null) {",
+            "    if (false && share >= HEAP_REFUSAL_SHARE && heapPressure === null) {",
+        ),
+        "stops at the case that spends the heap, and still says what the slice ships",
+    ),
+    (
+        # The census is printed before the first case because every number in it is a fact about
+        # the corpus that is already known (finding 505). Moved back into the epilogue, a run that
+        # dies inside the loop says nothing about what the slice ships -- and the one dispatch that
+        # reached TrainTicket died at its first case, so that reading was written zero times.
+        "CENSUS 1. the census waits for the last case again",
+        "scripts/check-official.mjs",
+        "check-official-roundtrip.test.ts",
+        # Two edits, because the defect is a *move*: printing it twice would leave the order test
+        # green on the early call while the late one still existed.
+        lambda t: rename(
+            rename(
+                t,
+                "printCensus();\n\nfor (const [index, entry] of (descriptors.cases ?? []).entries()) {",
+                "for (const [index, entry] of (descriptors.cases ?? []).entries()) {",
+            ),
+            "if (modalityComparisons.length > 0) {",
+            "printCensus();\n\nif (modalityComparisons.length > 0) {",
+        ),
+        "prints the census before the first case rather than after the last",
+    ),
 ]
 
 
@@ -1712,6 +1753,12 @@ EXPECTATIONS: dict[str, tuple[str, ...]] = {
     ),
     'VOCAB 1. a label the prompt does not offer is no longer a refusal': (
         'names a type the corpus labels and the prompt does not offer',
+    ),
+    'HEAP 1. the budget refusal never fires, and the run dies instead': (
+        'stops at the case that spends the heap, and still says what the slice ships',
+    ),
+    'CENSUS 1. the census waits for the last case again': (
+        'prints the census before the first case rather than after the last',
     ),
     'LAYOUT 2. a mapping to the wrong column counts as agreement': (
         'counts an answer that points a field at a real but different column as a contradiction',

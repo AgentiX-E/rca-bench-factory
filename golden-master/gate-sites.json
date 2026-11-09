@@ -327,7 +327,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 1819,
+      "line": 1881,
       "condition": "roundTripFailures.length > 0",
       "diagnostic": "ROUNDTRIP ${roundTripped} of ${declared.length} declared case(s) round-tripped;",
       "status": "proved",
@@ -335,7 +335,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 1853,
+      "line": 1915,
       "condition": "declared.length > 0 && !account.accounted",
       "diagnostic": "\\nROUNDTRIP FAILED\\nROUNDTRIP - ${account.gap}",
       "status": "exempt",

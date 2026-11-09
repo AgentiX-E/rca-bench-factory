@@ -1218,6 +1218,62 @@ const carriageOf = (slice, table) => {
   }
   return entry;
 };
+
+/**
+ * Count one case's tables into the census, from the walk rather than from the adapter.
+ *
+ * `adapted.absent` names only the tables this case's *plan* wanted, so a slice whose
+ * plan stopped naming traces would report every case as carrying them. The census is
+ * about the corpus, and the corpus is what was walked.
+ */
+function takeCensus(entry) {
+  const slice = String(entry.caseId).split('/')[0];
+  for (const table of MODALITY_TABLES) {
+    const modFile = MODALITY_FILES.get(table);
+    if (modFile === undefined) continue;
+    const carrier = carriageOf(slice, table);
+    if (files.has(`${entry.caseId}/${modFile}`)) {
+      carrier.present += 1;
+    } else {
+      carrier.absent += 1;
+      if (carrier.firstAbsent.length < 3) carrier.firstAbsent.push(entry.caseId);
+    }
+  }
+}
+
+/**
+ * What the corpus ships, per slice and table, read from the walk rather than from the
+ * plans: the plan is this script's claim and this line is the corpus's answer, and a
+ * reader comparing two runs sees a slice lose its spans here before any comparison
+ * notices.
+ *
+ * ## Why this is printed before the first case and not after the last
+ *
+ * It used to be printed in the epilogue, and the 2026-11-09 dispatch died of the heap
+ * at case 182 of 270 -- so the one reading that would have said what TrainTicket ships
+ * was never written, on the run that needed it (finding 503's shape, a third time:
+ * v3.75's sentence, v3.76's report, and now this). The numbers come from the walk's
+ * file set, which is complete before the first case runs, so there is no reason for
+ * this line to wait for a loop that may not finish.
+ *
+ * Only the slices this script reads tables for get a line. A slice with no plan at all
+ * (RE1 is metrics-only) would print a line of zeros about tables that are never read,
+ * which reads as "read them, found nothing" rather than as "not read".
+ */
+function printCensus() {
+  if (modalityCarriage.size === 0) return;
+  const slices = [...new Set([...modalityCarriage.values()].map((one) => one.slice))]
+    .filter((slice) => SLICE_MODALITY_PLANS[slice] !== undefined || MODALITY_PLANS[slice.split('-')[0]] !== undefined)
+    .sort();
+  for (const slice of slices) {
+    const parts = MODALITY_TABLES.map((table) => {
+      const carrier = modalityCarriage.get(`${slice} ${table}`);
+      const total = carrier === undefined ? 0 : carrier.present + carrier.absent;
+      return carrier === undefined ? '' : `${table} ${carrier.present}/${total}`;
+    }).filter((part) => part !== '');
+    console.log(`ROUNDTRIP CENSUS modalities ${slice}: ${parts.join(', ')}`);
+  }
+}
 /**
  * The largest heap each case was *observed* at, and how long it took.
  *
@@ -1230,6 +1286,38 @@ const carriageOf = (slice, table) => {
  * whether the job's declared heap is still the right one.
  */
 const caseCost = { peakMb: 0, peakCase: null, slowestMs: 0, slowestCase: null, totalMs: 0 };
+/**
+ * The share of the declared heap at which a run stops itself rather than being killed.
+ *
+ * Nine tenths, and it is a judgement rather than a measurement: the corpus's cases are
+ * not one size (the largest observed was 4,100 MB against a 2,900 MB median), so a run
+ * that has spent 90% of its budget has less than one case of headroom left. The number
+ * that *is* measured is the peak itself, printed on every case that moves it.
+ */
+const HEAP_REFUSAL_SHARE = 0.9;
+/**
+ * The sentence that stopped the run, or null.
+ *
+ * Set inside the per-case `finally` and read after it, because the loop's exit has to
+ * happen after the bookkeeping: a `break` inside `finally` would skip the report that
+ * the same block writes.
+ */
+let heapPressure = null;
+/**
+ * The census, taken before the first case rather than after the last.
+ *
+ * Every number in it is a fact about the corpus that is already known -- each declared
+ * case either has a table in the walk's file set or does not -- so there is nothing for
+ * it to wait for. It used to be printed in the epilogue, and the 2026-11-09 dispatch
+ * died of the heap at case 182 of 270, which is to say it died before the one reading
+ * that would have said what TrainTicket ships (finding 505).
+ */
+for (const entry of descriptors.cases ?? []) {
+  if (!files.has(`${entry.caseId}/inject_time.txt`)) continue;
+  takeCensus(entry);
+}
+printCensus();
+
 for (const [index, entry] of (descriptors.cases ?? []).entries()) {
   const label = `${String(index + 1).padStart(3)}/${declared.length} ${entry.caseId.padEnd(30)}`;
   if (!files.has(`${entry.caseId}/inject_time.txt`)) continue;
@@ -1263,32 +1351,6 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
     }
 
     sample();
-
-    /**
-     * What the slice ships, counted for every declared table, whether the plan
-     * reads it or not.
-     *
-     * Counted from the walk's file set rather than from the adapter, so the line
-     * describes the corpus and not this script's opinion of it: `RE2-SS traces
-     * 0/90` is a fact about SockShop, and it is the fact that made 90 cases fail
-     * before the plan knew it (finding 500).
-     */
-    const slice = String(entry.caseId).split('/')[0];
-    for (const table of MODALITY_TABLES) {
-      const modFile = MODALITY_FILES.get(table);
-      if (modFile === undefined) continue;
-      const carrier = carriageOf(slice, table);
-      // From the walk's own file set, not from the adapter: `adapted.absent` only
-      // names the tables this case's *plan* wanted, so a slice whose plan stopped
-      // naming traces would report every case as carrying them. The census is about
-      // the corpus, and the corpus is what was walked.
-      if (files.has(`${entry.caseId}/${modFile}`)) {
-        carrier.present += 1;
-      } else {
-        carrier.absent += 1;
-        if (carrier.firstAbsent.length < 3) carrier.firstAbsent.push(entry.caseId);
-      }
-    }
 
     if (planForCase(entry).length > 0 && adapted.plans.length === 0) {
       // A case that ships none of the tables its plan names is not a case the plan
@@ -1585,8 +1647,32 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
           `(${heavier ? 'largest' : ''}${heavier && slower ? ' and ' : ''}${slower ? 'slowest' : ''} so far)`,
       );
     }
+    /**
+     * The heap refusal, made where it can still be acted on.
+     *
+     * It used to be computed once, after the loop, from the largest case the run had
+     * observed -- which is the one place it cannot help. The 2026-11-09 dispatch reached
+     * 6,960 MB of a 7,216 MB budget at case 182 and was killed by V8, so the check that
+     * existed to say "the next case of that size will not fit" ran zero times and the
+     * only sentence in the log was the one V8 prints, which names no case (finding 504).
+     *
+     * Per case, the same sentence arrives while the process is still alive, and the run
+     * stops deliberately: an exit with a reason instead of an abort without one. The
+     * cases after this one are not scored, and the report says how many were, which is
+     * the difference between a subset that is stated and a subset that stands in for the
+     * whole.
+     */
+    const share = heapBudgetMb === 0 ? 0 : peakMb / heapBudgetMb;
+    if (share >= HEAP_REFUSAL_SHARE && heapPressure === null) {
+      heapPressure =
+        `the largest case used ${Math.round(peakMb)} MB, ${Math.round(share * 100)}% of the ` +
+        `${heapBudgetMb} MB heap this run was given (${entry.caseId}); the next case of that size ` +
+        `would not fit, so the number in the job has to grow deliberately rather than by accident`;
+      roundTripFailures.push(heapPressure);
+    }
     emitScoreReport();
   }
+  if (heapPressure !== null) break;
 }
 
 /**
@@ -1715,28 +1801,6 @@ for (const carrier of modalityCarriage.values()) {
   );
 }
 
-if (modalityCarriage.size > 0) {
-  // What the corpus ships, per slice and table, read from the walk rather than from
-  // the plans: the plan is this script's claim and this line is the corpus's answer,
-  // and a reader comparing two runs sees a slice lose its spans here before any
-  // comparison notices. One line per slice, tables in the order the IR names them.
-  const slices = [...new Set([...modalityCarriage.values()].map((one) => one.slice))]
-    // Only the slices this script reads tables for. A slice with no plan at all (RE1
-    // is metrics-only) gets no line, because a line of zeros about a suite whose
-    // tables are never read is the same confusion the silence rule above exists for:
-    // it would read as "read them, found nothing" rather than "not read".
-    .filter((slice) => SLICE_MODALITY_PLANS[slice] !== undefined || MODALITY_PLANS[slice.split('-')[0]] !== undefined)
-    .sort();
-  for (const slice of slices) {
-    const parts = MODALITY_TABLES.map((table) => {
-      const carrier = modalityCarriage.get(`${slice} ${table}`);
-      const total = carrier === undefined ? 0 : carrier.present + carrier.absent;
-      return carrier === undefined ? '' : `${table} ${carrier.present}/${total}`;
-    }).filter((part) => part !== '');
-    console.log(`ROUNDTRIP CENSUS modalities ${slice}: ${parts.join(', ')}`);
-  }
-}
-
 if (modalityComparisons.length > 0) {
   // One line for the whole run, because the per-case lines say "this case's tables
   // are the corpus's" and this says how much of the corpus was carried to say it.
@@ -1766,14 +1830,16 @@ if (modalityComparisons.length > 0) {
 }
 
 /**
- * What the run cost, and whether it still fits.
+ * What the run cost.
  *
- * The peak is the largest heap any case was observed at; the comparison is against
- * the number this run was given, which on a runner is Node's cap and can be set with
- * `--max-old-space-size`. A run at 90% of its heap has not passed: it has one case
- * left before it dies, and the death has no sentence in it (`Reached heap limit` is
- * printed by V8, not by this script, and carries no case name). So the refusal is
- * made while the run can still say which case and by how much (finding 499).
+ * The peak is the largest heap any case was observed at; the comparison is against the
+ * number this run was given, which on a runner is Node's cap and can be set with
+ * `--max-old-space-size`. This block used to *also* make the refusal, and that was the
+ * defect: a run at 90% of its heap is a run that has one case left before it dies, and
+ * the 2026-11-09 dispatch reached 96% of its budget and died inside the loop, so the
+ * check ran zero times (finding 504). The sentence lives in the per-case `finally` now;
+ * this one is the number it is derived from, printed once so two runs can be compared
+ * without a log search.
  */
 if (caseCost.peakCase !== null) {
   const share = heapBudgetMb === 0 ? 0 : caseCost.peakMb / heapBudgetMb;
@@ -1783,13 +1849,9 @@ if (caseCost.peakCase !== null) {
       `(${Math.round(share * 100)}%) at ${caseCost.peakCase}; slowest ${(caseCost.slowestMs / 1000).toFixed(1)} s at ` +
       `${caseCost.slowestCase}`,
   );
-  if (share >= 0.9) {
-    roundTripFailures.push(
-      `the largest case used ${Math.round(caseCost.peakMb)} MB, ${Math.round(share * 100)}% of the ` +
-        `${heapBudgetMb} MB heap this run was given (${caseCost.peakCase}); the next case of that size ` +
-        `would not fit, so the number in the job has to grow deliberately rather than by accident`,
-    );
-  }
+  // The refusal itself lives in the per-case `finally`, because a run that spends its
+  // heap dies inside the loop and never reaches this line (finding 504). What is left
+  // here is the number: the peak, the budget and the case that set it.
 }
 
 if (scoreReportPath !== undefined) {

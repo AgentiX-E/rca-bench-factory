@@ -382,12 +382,18 @@ jobs:
           # is 4 GB, which is a fact about Node and not about the corpus: a case of
           # `RE2-TT`'s size needs more than that, and the run that found out did so
           # with `FATAL ERROR: Reached heap limit` after 84 minutes and no other
-          # number anywhere. 7168 is 3.4x the largest case measured locally (a
-          # 122 MB case costs 2.1 GB of heap) and leaves the runner's remaining
-          # memory to the rest of the process; the step prints
-          # `largest ... MB of the ... MB this run was given` on every run, so the
-          # next time the corpus grows the number moves deliberately (finding 499).
-          NODE_OPTIONS="--max-old-space-size=7168" \
+          # number anywhere.
+          #
+          # 7168 was 3.4x the largest case measured locally and it was wrong, which
+          # the 2026-11-09 dispatch measured rather than argued: the run reached
+          # 6,960 MB of it at case 182 of 270 -- the first TrainTicket case, with
+          # 1,433,140 spans against SockShop's 95,000 -- and V8 killed it with a
+          # sentence that names no case. 12288 is the runner's 16 GB less room for
+          # the process and the download, and it is not a guess about the corpus:
+          # the script now refuses at 90% of whatever it is given, per case, naming
+          # the case and the percentage, so the next size comes from a sentence
+          # instead of from an abort (findings 499 and 504).
+          NODE_OPTIONS="--max-old-space-size=12288" \
             node scripts/check-official.mjs --official-dir "$OFFICIAL_DIR" --cases "$CASES" --report "$SCORES"
 
       # The aggregate tables are the one part of a case directory that this

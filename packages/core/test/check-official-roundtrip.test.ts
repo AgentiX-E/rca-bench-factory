@@ -713,6 +713,78 @@ describe('scripts/check-official.mjs · what a run leaves behind when it dies', 
     expect(result.stdout).toContain('ROUNDTRIP COST');
   });
 
+  /**
+   * The refusal has to arrive while the process is alive, and this is the case that says so.
+   *
+   * The check used to run once, after the loop, over the largest case the run had seen -- which
+   * is the one place it cannot help: the 2026-11-09 dispatch reached 6,960 MB of a 7,216 MB
+   * budget at case 182 and was killed by V8, so the sentence that existed to say "the next case
+   * of that size will not fit" ran zero times. Three cases and a 1 MB budget reach it on the
+   * first one, and the two assertions that matter are structural: the report covers one case of
+   * three, which is a run that *stopped*, and the census still describes all three, which is the
+   * reading that used to be written after the loop and therefore never (finding 505).
+   */
+  it('stops at the case that spends the heap, and still says what the slice ships', async () => {
+    const root = freshRoot();
+    // The corpus's own layout: the slice is the first path component, so three cases of
+    // one slice need the slashes a real case id has.
+    const ids = ['RE2-ob/cpu_1', 'RE2-ob/cpu_2', 'RE2-ob/cpu_3'];
+    for (const id of ids) writeCase(root, id);
+    const casesPath = join(scratch, 'pressure-stop.json');
+    writeCases(casesPath, ids);
+    const reportPath = join(scratch, 'pressure-stop-report.json');
+    const result = await run([
+      '--official-dir',
+      root,
+      '--cases',
+      casesPath,
+      '--heap-budget',
+      '1',
+      '--report',
+      reportPath,
+    ]);
+    expect(result.status).toBe(1);
+    // A stop, not a kill: exactly one case was scored and the report says so.
+    expect((result.stdout.match(/ROUNDTRIP PASS/g) ?? []).length).toBe(1);
+    const report = JSON.parse(readFileSync(reportPath, 'utf8')) as {
+      cases: unknown[];
+      summary: { declared: number; scored: number };
+    };
+    expect(report.summary.declared).toBe(3);
+    expect(report.summary.scored).toBe(1);
+    expect(report.cases.length).toBe(1);
+    // The sentence names the case and the share, like the epilogue version did.
+    expect(result.stderr).toMatch(
+      /the largest case used \d+ MB, \d+% of the 1 MB heap this run was given \(RE2-ob\/cpu_1\); the next case of that size would not fit/,
+    );
+    // And the census is complete anyway: it is a fact about the corpus, and the walk is finished
+    // before the first case runs.
+    expect(result.stdout).toContain('ROUNDTRIP CENSUS modalities RE2-ob: logs 3/3, traces 3/3');
+  });
+
+  /**
+   * What a slice ships, printed before anything is compared.
+   *
+   * The order is the assertion rather than the text: the line existed before this change too, in
+   * the epilogue, where a run that dies inside the loop cannot reach it. `indexOf` is the whole
+   * measurement -- a reader of a two-hour log sees this sentence at the top or not at all.
+   */
+  it('prints the census before the first case rather than after the last', async () => {
+    const root = freshRoot();
+    writeCase(root, 'RE2-ob/cpu_1');
+    writeCase(root, 'RE2-ob/cpu_2');
+    const casesPath = join(scratch, 'census-order.json');
+    writeCases(casesPath, ['RE2-ob/cpu_1', 'RE2-ob/cpu_2']);
+    const result = await run(['--official-dir', root, '--cases', casesPath]);
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    const censusAt = result.stdout.indexOf('ROUNDTRIP CENSUS modalities RE2-ob:');
+    const firstPassAt = result.stdout.indexOf('ROUNDTRIP PASS');
+    expect(censusAt).toBeGreaterThan(-1);
+    expect(firstPassAt).toBeGreaterThan(-1);
+    expect(censusAt).toBeLessThan(firstPassAt);
+    expect(result.stdout).toContain('ROUNDTRIP CENSUS modalities RE2-ob: logs 2/2, traces 2/2');
+  });
+
   it('refuses a run whose largest case would not fit in the heap it was given', async () => {
     // `--heap-budget` is the branch's own door, for the same reason `--bundle` is: the
     // refusal exists for a corpus that nearly exhausts a runner, and a test cannot

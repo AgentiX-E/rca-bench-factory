@@ -291,8 +291,11 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // name the score report had moved and crashed instead of naming the field.
     // 63 -> 64 in v3.78: one for the vocabulary rule, whose two directions are one refusal and two
     // separate defects -- an unoffered label and an unlabelled offer.
+    //
+    // 64 -> 66 in v3.79: one for the heap refusal's placement and one for the census's, because a
+    // sentence that is computed after the loop is a sentence a dying run never prints.
     // every volume and therefore against a constant -- the smallest one, closed eleven volumes earlier.
-    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(64);
+    expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(66);
     expect(pythonJson(`print(json.dumps(len(module.EXPECTATIONS)))`)).toBe(
       pythonJson(`print(json.dumps(len(module.INJECTIONS)))`),
     );

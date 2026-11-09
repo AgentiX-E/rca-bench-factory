@@ -1475,9 +1475,9 @@ this rule.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **244 files, 6244 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **248 files, 6431 tests passed** (as of this commit) |
+| `core` test suite | **244 files, 6244 tests passed** (at v3.78) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.78) |
+| repo test suite | **248 files, 6431 tests passed** (at v3.78) |
 | coverage | `core` **99.97 / 99.82 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** |
 | new tests | **6235 -> 6244, net +9**: six fixtures for the vocabulary rule (agreement, each direction, both in one refusal, a repeated type counted once, a key with no samples), two more for the two plurals -- the branch either side of `length === 1`, which the branch report called covered while no fixture had taken it -- and one for `check-fault-cases` applying the rule to a key whose `types` is one short |
 | mutations | **64** injections, **76** witnesses; **63 caught**, 0 survived / inert / unattributed, **1 redundant as declared**. `VOCAB 1` empties the direction that refuses an unoffered label, and four fixtures go red with the one that names it |
@@ -1495,3 +1495,89 @@ revealed it by being the **first case added since the vocabulary became closed**
 form: a rule about a set is tested by the set growing, and nothing about a green suite says the last
 addition was checked.
 
+
+## v3.79 — two readings that were written after the loop
+
+The dispatch this round was written for finished, and what it delivered was the opposite of a reading: the
+three P0 items all came back **answered**, and every answer was a defect.
+
+- The case line finally carried a check id: `data-csv-time`, for two cases of 270, with the sentence that
+  names both clocks. Two of 270 is a corpus shape and needs no repair; the entry that had waited three
+  rounds for it is closed.
+- The heap question was answered by the run dying: **6,960 MB of a 7,216 MB budget, 96%, at case 182** --
+  the first TrainTicket case, 1,433,140 spans against SockShop's 95,000 -- and the refusal that existed to
+  warn before that moment fired **zero times**.
+- The census question was answered by silence: `CENSUS modalities RE2-TT` never printed, on the only run
+  that has ever reached TrainTicket.
+
+Both silences have one cause, and it is the same one this corpus has now paid for three rounds running: a
+sentence that is computed **after the loop** is a sentence that a run dying inside the loop never says.
+
+### The refusal was on the far side of the loop (finding 504)
+
+The heap guard was computed once, over the whole run, from the largest heap any case had been observed at.
+A test drove it with `--heap-budget 1` and it passed. Its purpose is to say *"the next case of that size
+will not fit"* **before** the process is killed, and it ran at the only moment when that can no longer be
+true.
+
+The refusal now lives in the per-case `finally`, where the number it reads is computed: at 90% of the
+declared heap the run pushes the sentence, names the case and the share, records what it scored, and
+**stops deliberately**. `declared 3, scored 1` is a subset that is stated -- the difference between a
+partial run and a partial run standing in for the whole.
+
+The declared heap was wrong as well, and in the direction that matters. 7168 was 3.4× the largest case
+measured locally, on a synthetic case; the corpus's own largest is not that shape. The curve says so
+plainly: **4,100 MB at case 54, then flat for 128 cases**, and then a step past 6,960 MB. A flat line
+followed by a cliff is the one shape a "largest observed so far" statistic cannot warn about, which is
+why the check is per case rather than over a summary, and why the workflow now declares **12288**.
+
+### The census printed after a loop the interesting run did not finish (finding 505)
+
+`ROUNDTRIP CENSUS modalities <slice>: logs n/m, traces n/m` is the line that says what a slice ships. It
+was printed in the epilogue from a map filled inside the loop, so the one dispatch that reached
+TrainTicket is the one that printed nothing about it -- one line after `PASS 181/270` and before the
+`ROUNDTRIP MODALITY` line that would have described its tables.
+
+Every number in that line is a fact about the corpus that is known when the walk ends: each declared case
+either has `logs.csv` in the file set or does not. `takeCensus` now runs over the descriptors before the
+loop and `printCensus` is called once, above the first case. A run stopped by its own budget refusal now
+says what the **whole** slice ships, because the count is a property of the corpus rather than of the
+cases that got as far as a comparison.
+
+### The example in the audit was a measurement nobody took (finding 506)
+
+Finding 499 published the shape of the line the repair would print -- `largest 3712 MB of the 7168 MB this
+run was given (52%)`, `201.4 min`, `slowest 51.3 s` -- in a fenced block, in the position a reading goes.
+No run produced it: it was 270 cases at Online Boutique's rate and 3.7 GB from 17 MB per MB. The first run
+that reached the case named in it died there at 96% of the same budget, so the projection was wrong by a
+factor of two **in the optimistic direction**, and it was indistinguishable from a number somebody had
+measured.
+
+The block is a projection now, labelled as one, with the two readings that replaced it beneath it. The
+repair is not the arithmetic -- it is that a document must not print an output, because a reader has no
+way to tell.
+
+### Readings
+
+> Ledger for `v3.79`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **244 files, 6246 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **248 files, 6433 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.82 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** |
+| new tests | **6244 -> 6246, net +2**: the three-case run under a 1 MB budget must stop after one case and still print the census for all three; and the census must appear before the first `ROUNDTRIP PASS` rather than after the last |
+| mutations | **66** injections, **78** witnesses; **65 caught**, 0 survived / inert / unattributed, 1 redundant as declared. `HEAP 1` removes the guard and `CENSUS 1` moves the print back into the epilogue; both are placement mutations, because placement was the defect |
+| the run | `42674673341`: **182 of 270 cases** in 90 minutes, then `FATAL ERROR: Reached heap limit` at 6,960 MB of 7,216 |
+| the curve | 2,935 MB at case 1, **4,100 MB at case 54**, flat to case 181, **> 6,960 MB at case 182** |
+| the check id | `data-csv-time`, 2 cases of 270 (`checkoutservice_cpu/2`, `checkoutservice_mem/2`); the other 168 failures carry `modalities` and no sentence, because their reason is the `MODALITY` line above |
+| the heap | declared **7168 -> 12288**, and the number is now bounded by a sentence rather than by a projection: the refusal names the case and the share |
+| list | **26 -> 26** open: the check-id entry is closed, the heap and census entries are rewritten with the readings and stay open, and the modality comparison's two signature maps are a new entry |
+
+**The lesson.** A reading and a repair have the same requirement: they must exist on the path the failure
+takes. This corpus has now moved four of them -- v3.75's sentence, v3.76's report, and this round's refusal
+and census -- and each time the number was right and the position was wrong. The question that finds this
+class before it costs a dispatch is not "is this measured" but **"is this measured somewhere the run is
+still alive"**, and the cheap test is the one this round added twice: kill the run early, and assert that
+the sentence a reader needs is already in the log.

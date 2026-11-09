@@ -220,7 +220,13 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // two lists of the same names. Six fixtures and no injection would have been the v3.77 shape
     // again -- covered rather than proved -- so the direction that refuses an unoffered label is
     // emptied, and the fixture that names one has to be the one that goes red.
-    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 76],
+    //
+    // 76 -> 78 in v3.79: two for the two readings that were written after the loop -- the heap
+    // refusal (a run at 96% of its budget died with no sentence) and the modality census (the one
+    // dispatch that reached TrainTicket died at its first case, so the reading was written zero
+    // times). Both mutations restore the placement rather than the arithmetic, because the
+    // placement was the defect.
+    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 78],
     ['scripts/injection/fault-extraction-scoring.py', 'fault-extraction-scoring', 12],
     ['scripts/injection/fetch-official-retry.py', 'fetch-official-retry', 6],
     ['scripts/injection/fault-extraction-workflow.py', 'fault-extraction-workflow', 9],

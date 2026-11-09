@@ -1513,3 +1513,48 @@ from an anecdote again.
   a reason in a round -- which is what the `provenance.categoryRule` count is for. And the corpus still has
   a claim it cannot earn: **six** cases state `L4` and **five** earn it, because the level is read from the
   graph rather than from the label, and that gap is the gate's whole point rather than a defect to close.
+
+### A reading that is computed after the loop does not exist on the path the failure takes (v3.79)
+
+- **The heap refusal existed, was tested, and ran zero times on the run it was written for.** It was
+  computed once, over the whole run, from the largest heap any case had been observed at; its purpose is
+  to say *"the next case of that size will not fit"* **before** V8 ends the process, and it ran at the one
+  moment when that can no longer be true. Dispatch `42674673341` reached **6,960 MB of a 7,216 MB budget
+  (96%) at case 182 of 270** and was killed; the only sentence in the log names no case (finding 504).
+- **The refusal is a per-case decision now, and it stops the run rather than warning it.** At 90% of the
+  declared heap the sentence names the case and the share, the case is still recorded, and the loop ends
+  deliberately: `declared 3, scored 1` is a subset that is stated, which is the difference between a
+  partial run and a partial run standing in for the whole.
+- **The declared heap was wrong in the optimistic direction.** 7168 was 3.4x the largest case measured
+  locally, on a synthetic case. The corpus's own largest is not that shape: the peak was **4,100 MB at
+  case 54**, flat for the next 128 cases, and then a step past 6,960 MB at the first TrainTicket case
+  (1,433,140 spans against SockShop's 95,000). A flat line followed by a cliff is the one shape a
+  "largest observed so far" statistic cannot warn about, which is why the check is per case and why the
+  job now declares **12288**.
+- **The census was printed after a loop the interesting run did not finish.** `ROUNDTRIP CENSUS modalities
+  <slice>` is the line that says what a slice ships; it was written in the epilogue from a map filled
+  inside the loop, so the only dispatch that ever reached TrainTicket printed nothing about it. Every
+  number in it is a fact about the corpus that is known when the walk ends, so it now prints **before the
+  first case** -- and a run stopped by its own budget refusal still says what the whole slice ships
+  (finding 505).
+- **The check id that three rounds waited for arrived, and it is `data-csv-time`.** Two cases of 270
+  (`checkoutservice_cpu/2`, `checkoutservice_mem/2`) fail with *"the table's first instant is '0' and the
+  injection time is '1708475361', which have to be on the same clock"*: a corpus shape, not an export
+  defect, and no repair. The other 168 failures carry the id `modalities` and no sentence, because their
+  reason is the `MODALITY` line above -- the same complaint one order smaller, and left stated.
+- **The audit had printed a projection as if it were a reading.** Finding 499 published
+  `largest 3712 MB … (52%)`, `201.4 min`, `slowest 51.3 s` in a fenced block, in the position an output
+  goes. No run produced it, and the first run that reached the case it named died at 96% of the same
+  budget -- wrong by a factor of two in the direction that hides the problem (finding 506). The block is
+  labelled as a projection now, with the two readings that replaced it beside it.
+- **Both repairs have a mutation, and both are placement mutations.** `HEAP 1` deletes the guard and
+  `CENSUS 1` moves the print back into the epilogue; the fixtures that catch them fail on the placement
+  and not on the arithmetic. `HEAP 1`'s first draft raised the threshold to `1.5`, which under a 1 MB
+  budget is a share of 1,184% -- inert, reported as a survivor, and repaired by deleting the guard rather
+  than narrowing it.
+- **What is not claimed.** The modality comparison still holds two `Map<string, number>` of every row's
+  signature, which is two maps of 1.4 million long strings on a TrainTicket case, and the heap samples
+  are taken at five stage boundaries so a spike inside that function is invisible until V8 prints one.
+  It is entry 27 in the live list, with the number that makes it a candidate for the next round: 168 of
+  the run's failures were `modalities`, so the function that decides them is the busiest in the round trip
+  and the only one whose memory has never been measured.
