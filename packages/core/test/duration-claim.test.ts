@@ -143,7 +143,7 @@ describe('readDurationClaim', () => {
 
   it('refuses a length the case has no excursion to draw', () => {
     const fault = read('burstMinutes', { series: [series({ baseline: 2, post: 2 })] }).fault as DurationClaimFault;
-    expect(fault).toEqual({ kind: 'no-episode', parameter: 'burstMinutes', statedMs: 240_000, unit: 'min', spacingMs: 210_000 });
+    expect(fault).toEqual({ kind: 'no-episode', parameter: 'burstMinutes', statedMs: 240_000, unit: 'min' });
     expect(describeDurationClaim(fault)).toBe(
       "fault.durationParameter names 'burstMinutes', which states 4 min, and the case shows no " +
         'excursion: every series either returns to its own baseline or never leaves it, so the stated ' +

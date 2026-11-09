@@ -72,8 +72,14 @@ export type DurationClaimFault =
   | { kind: 'unknown-parameter'; parameter: string; declared: readonly string[] }
   /** The parameter exists and is not a `{ value, unit }` quantity in a unit of time. */
   | { kind: 'not-a-duration'; parameter: string; declared: unknown }
-  /** The case's series show no excursion, so nothing of its own is that long. */
-  | { kind: 'no-episode'; parameter: string; statedMs: number; unit: string; spacingMs: number }
+  /**
+   * The case's series show no excursion, so nothing of its own is that long.
+   *
+   * No sample length is carried here, unlike the two refusals below: a case with no excursion has no
+   * episode for a sample's length to belong to, and a number in the sentence that the reader cannot
+   * act on is the defect this file is about.
+   */
+  | { kind: 'no-episode'; parameter: string; statedMs: number; unit: string }
   /** The series disagree about how long the episode is, so one number cannot be all of them. */
   | { kind: 'ambiguous'; parameter: string; statedMs: number; unit: string; measuredMs: readonly number[] }
   /** The stated span and the drawn one are two different numbers for one episode. */
@@ -194,7 +200,7 @@ export function readDurationClaim(input: DurationClaimInput): DurationClaimRepor
     return {
       parameter,
       episode,
-      fault: { kind: 'no-episode', parameter, statedMs, unit, spacingMs: episode.spacingMs },
+      fault: { kind: 'no-episode', parameter, statedMs, unit },
     };
   }
   if (episode.lengths.length > 1) {
