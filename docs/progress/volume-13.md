@@ -1563,9 +1563,9 @@ way to tell.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **244 files, 6246 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **248 files, 6433 tests passed** (as of this commit) |
+| `core` test suite | **244 files, 6246 tests passed** (at v3.79) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.79) |
+| repo test suite | **248 files, 6433 tests passed** (at v3.79) |
 | coverage | `core` **99.97 / 99.82 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** |
 | new tests | **6244 -> 6246, net +2**: the three-case run under a 1 MB budget must stop after one case and still print the census for all three; and the census must appear before the first `ROUNDTRIP PASS` rather than after the last |
 | mutations | **66** injections, **78** witnesses; **65 caught**, 0 survived / inert / unattributed, 1 redundant as declared. `HEAP 1` removes the guard and `CENSUS 1` moves the print back into the epilogue; both are placement mutations, because placement was the defect |
@@ -1581,3 +1581,127 @@ and census -- and each time the number was right and the position was wrong. The
 class before it costs a dispatch is not "is this measured" but **"is this measured somewhere the run is
 still alive"**, and the cheap test is the one this round added twice: kill the run early, and assert that
 the sentence a reader needs is already in the log.
+
+## v3.80 — the instrument that named one quantity as another, eight numbers nothing read, and a proof of a throw that proved it exits
+
+This round did not start from the plan. It started from the suite refusing to run: the first
+`pnpm test:coverage` on the machine it was written on exited 1 with **6,246 of 6,246 tests
+passing** and one file over the stall budget. Both of the round's other two findings came from
+the same question -- *what does this number actually measure* -- asked of a document table and
+of the inventory's own diagnostic.
+
+### The gauge measured wall clock and named the file (finding 507)
+
+`gate-sites-are-proven.test.ts`, one file, one revision, one command, four readings:
+
+| reading | configuration |
+| --- | --- |
+| 11,905 ms | that file alone |
+| 11,547 ms | that file alone, with coverage |
+| 14,448 ms | full suite, `--maxWorkers=2` |
+| 23,897 / 43,895 / **47,727** ms | full suite, four workers, three runs |
+
+The budget is 45,000. The only variable across those four readings is what else was running, so
+the verdict "this test file held the event loop" is a claim about the file that three of the
+four readings do not support. The gauge exists to prevent a run that is red with nothing failing,
+and on this box it produced one.
+
+Two repairs, and the second is the one that makes the suite green. **The reading now carries both
+quantities**: `stop()` returns `{ longestMs, cpuMs }`, the CPU figure is sampled per tick so it
+belongs to the longest stall rather than to the run, and the verdict prints both without claiming
+to know which cause it was -- a low CPU figure is also what a descheduled process looks like.
+The budget stays on wall clock, because the deadline it guards is a wall clock.
+
+**The file's cost was repairable, and the split is what said so.** Measured alone, 9,630 ms of
+wall against **820 ms of CPU**: the work was I/O. Twenty-nine calls to `pointerRoot()` each copied
+a 107-file fixture into `tmpdir()`, and every rule re-read and re-scanned the same ~60 test files.
+The fixture is now copied once, reads are cached by `(path, size, mtime-ns)` -- `make`'s
+invariant, so a rewritten file is seen and a file that appears later is seen -- and the two scans
+are memoised by the body itself, which cannot be stale by construction. Alone: **11,905 -> 2,503
+ms**, CPU 253 ms. At the multiplier that produced 47,727 ms, the same file now lands at about a
+tenth of the budget.
+
+`publish.test.ts` is the next-nearest and is named rather than left to be discovered: 28,183 ms
+without coverage and 31,855 ms with it, 71% of the budget, in `git` process starts. That is a
+measurement, not a repair, and it is on the open list.
+
+### Eight numbers, eight wrong, and nothing reading any of them (finding 508)
+
+`## Repository` publishes the size of this repository in eight rows. Measured against the tree:
+commits `95` for 530, source files `45` for 97, source lines `13,483` for 33,706, test files `78
+core` for 245, test lines `25,174` for 104,552, tests `2341` for 6,267, tracked files `208` for
+633. `grep -rn 'Tracked files\|Source lines\|Source files\|Repository' scripts/` returns nothing,
+and `check-doc-counts.mjs` reads 352 counts out of the same file without reading this table,
+because its subject is rows carrying a count in one of the shapes it knows. The one table that
+answers "how big is this" was the one table with no reader.
+
+`scripts/check-repository-table.mjs` now performs all eight derivations and refuses a drifted
+value, a label it cannot derive, a table that lost a row, a `Commits` cell whose dated revision
+does not resolve, and a test-file count on which its glob and the suite's own measurement
+disagree. `Commits` is *dated* -- the one row that cannot be current, because the commit that
+writes it is the commit it would have to count. Twelve tests drive every refusal against a
+**five-file repository** built in `tmpdir()`, which is what `--root` and `--doc` are for.
+
+### The inventory recorded a success line as a failure's diagnostic (finding 509)
+
+The deriver takes the nearest printed string above a site, and this round's own gate printed its
+verdict before its failure branch -- so the inventory published `check-repository-table: OK (...)`
+as what the site says when the table is **wrong**. Nothing could see it: the annotation was
+carried, the proof resolved, the site was counted. The repair is one reordering, and the rule that
+would have caught it is `violationsOf` rule 11, which refuses a diagnostic matching `:\s*OK\b` on
+either population. Zero of 133 sites and zero of 99 throw rows carry one today, and it fails on
+the corrupted inventory the battery builds, which is the only way to know a rule can fail.
+
+### The proof of a throw row proved the gate exits (finding 510)
+
+The full gate run failed at step 8 of 34, in the half of a proof that reachability does not answer:
+`verify-sites-are-sensitive.mjs` hollows each exit and each `throw` in turn and asks whether some
+test goes red. It named `scripts/check-repository-table.mjs:380`, the `throw` inside `rewrite()`
+that refuses to repair a table containing a row it cannot derive.
+
+The battery's own recommended experiment agreed with it: **delete that line and the file passes,
+twelve of twelve**. The test meant to prove the row asserted three things -- exit status 1, the
+sentence about the revision, and that the label was still in the document -- and all three survive
+the deletion. The cell is written as `[object Object]`, the `--write` run re-reads its own output,
+finds the same unresolvable revision there, prints the same sentence, and exits 1; the label
+survives because a rewrite does not touch labels. **A rewrite that damages the document and then
+reports the damage passes every one of those assertions.**
+
+The comment above that test had the property right and the assertion had it weaker:
+
+> it has to stop rather than write the other seven and leave the eighth as it was, which is a
+> half-repaired table that reads as a repaired one
+
+"Stop rather than write" is byte equality with what was there before, so that is what the test
+asserts now, and the same deletion turns it red at the assertion that reads the file back. The
+lesson is not about this one test: a property stated in prose agreed with the code for the whole
+life of the defect, and the only thing that disagreed was the same property stated as an assertion.
+
+### Readings
+
+> Ledger for `v3.80`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **245 files, 6267 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **249 files, 6454 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.82 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** |
+| new tests | **6246 -> 6267, net +21**: twelve for `check-repository-table` (every refusal, `--write` idempotence, and a document it cannot read), five for the stall gauge (the CPU split, its attribution to the longest stall, and the verdict naming both numbers), and four for the fixture and the two caches in `gate-sites-are-proven.test.ts` |
+| the four readings | one file, one revision: **11,905 / 11,547 / 14,448 / 23,897 · 43,895 · 47,727** ms for alone / alone+coverage / 2 workers / 4 workers |
+| the repair | **11,905 -> 2,503 ms** alone, CPU **820 -> 253 ms**; 29 fixture copies -> 1; reads and scans memoised by identity and by body |
+| the fingerprint | `check-repository-table.mjs:408` published its own success line as its failure diagnostic; reordered, and rule 11 now refuses the shape on both populations |
+| the table | eight rows, eight wrong: **95/530 commits**, **45/97** source files, **13,483/33,706** lines, **78+3 / 245+4** test files, **2341+173 / 6267+187** tests, **208/633** tracked |
+| list | **26 -> 28** open: two new entries -- the worker count that decides the stall verdict, and the next-nearest file at 71% of the budget |
+| the battery | `verify-sites-are-sensitive` named **1 problem**: `check-repository-table.mjs:380`, which the file survived being deleted from -- **12 of 12 green** -- and which now fails the same experiment at the assertion that reads the document back |
+| the table after the repair | `Test lines` **104,552 -> 104,560 core**: the eight lines the new assertion and its comment added, which `check-repository-table` caught before any reader did |
+
+**The lesson.** A measurement is two things -- a number and the name of what it measures -- and
+this round found four places where they had come apart: a stall labelled "this file blocked" that
+was mostly a loaded box, a table labelled "at this revision" that was 120 revisions old, a
+diagnostic labelled "what this site says when it fails" that was the sentence it prints when it
+succeeds, and a proof labelled "this exit is needed" that held with the exit deleted. The fourth
+is the one worth carrying: its property had been written down correctly, in prose, directly above
+the assertion that failed to express it -- so what the round adds is not only the four repairs but
+the observation that **a property in a comment is a claim, and a property in an assertion is the
+only one that can disagree**.

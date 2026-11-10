@@ -76,12 +76,35 @@ describe('event loop · the gauge measures blocking, not duration', () => {
     // cannot run. The bound is loose on purpose: a slow runner can only make the
     // measured stall larger, and an assertion pinned to 500 would fail there.
     spawnSync('sleep', ['0.5']);
-    const longest = watch.stop();
+    const longest = watch.stop().longestMs;
 
     expect(longest).toBeGreaterThanOrEqual(400);
     // And it is not simply "the time that passed": the gauge reports the stall,
     // which is bounded above by the block plus one interval of scheduling.
     expect(longest).toBeLessThan(2_000);
+  });
+
+  it('says how much of the block was this process running, and how much was not', () => {
+    // The split the reading needed and did not have. Two files can report the same wall-clock
+    // stall for opposite reasons: one runs its own code for forty seconds, the other waits on a
+    // child for forty seconds. Until this was measured, the verdict gave the same advice to both.
+    //
+    // A synchronous child is the discriminating experiment, and it is the *cheap* one: the parent
+    // is blocked in `waitpid`, so the wall clock advances while the CPU figure barely moves. The
+    // bound is one-sided -- a loaded runner can only add CPU here -- so the assertion is that the
+    // gap exists, not that it has a particular size.
+    const watch = startStallWatch({ intervalMs: 20 });
+    spawnSync('sleep', ['0.3']);
+    const measured = watch.stop();
+
+    expect(measured.longestMs).toBeGreaterThanOrEqual(250);
+    expect(measured.cpuMs).toBeLessThan(measured.longestMs / 2);
+    // No upper bound is asserted, and the reason is a reading rather than a preference: the
+    // figure counts every thread this process owns, so a window spent partly in a thread pool
+    // can contain more CPU than wall clock -- `ingest-report.test.ts` measured 11,586 ms inside
+    // a 9,814 ms stall. An upper bound here would be asserting a property the instrument does
+    // not have, and it would go red on a machine with a busier pool rather than on a defect.
+    expect(measured.cpuMs).toBeGreaterThanOrEqual(0);
   });
 
   it('reports no stall when the same wall time is awaited', async () => {
@@ -91,7 +114,7 @@ describe('event loop · the gauge measures blocking, not duration', () => {
         settle();
       });
     });
-    const longest = watch.stop();
+    const longest = watch.stop().longestMs;
 
     // The same half second, spent waiting rather than blocking. 150 ms is three
     // intervals of slack for a loaded runner; a blocked loop reports 500.
@@ -125,7 +148,45 @@ describe('event loop · the gauge measures blocking, not duration', () => {
     clock = 450; // 50 ms late
     ticks[0]!();
 
-    expect(watch.stop()).toBe(200);
+    expect(watch.stop().longestMs).toBe(200);
+  });
+
+  it('attributes the CPU figure to the longest stall rather than to the run', () => {
+    // CPU time is cumulative, so "the CPU figure" has to be a delta, and the only useful delta is
+    // the one belonging to the stall being reported. The first draft read it at the end of the run,
+    // which reports the whole file's CPU time beside the worst stall's wall time -- two numbers
+    // about different windows, which is precisely the defect this round is about.
+    //
+    // The clock and the CPU counter are injected so the attribution can be asserted instead of
+    // inferred: the *later* stall is 40 ms and burns 900 ms of CPU, and the reading must still
+    // carry the 500 ms stall's 10 ms.
+    let clock = 0;
+    let cpu = 0;
+    const ticks: Array<() => void> = [];
+    const watch = startStallWatch({
+      intervalMs: 100,
+      now: () => clock,
+      cpuNow: () => cpu,
+      schedule: (tick) => {
+        ticks.push(tick);
+        return {
+          cancel: () => {
+            ticks.length = 0;
+          },
+        };
+      },
+    });
+
+    clock = 600; // 500 ms late, and the process ran for 10 ms of it
+    cpu = 10;
+    ticks[0]!();
+    clock = 740; // 40 ms late, and the process burned 900 ms inside it
+    cpu = 910;
+    ticks[0]!();
+
+    const measured = watch.stop();
+    expect(measured.longestMs).toBe(500);
+    expect(measured.cpuMs).toBe(10);
   });
 });
 
@@ -184,7 +245,7 @@ describe('event loop · the numbers the gauge is calibrated against', () => {
     // what makes the budget a margin rather than a measurement, and this is the instrument.
     const lines: Array<{ path: string; line: string }> = [];
     recordStall(
-      { file: `${ROOT}/packages/core/test/one.test.ts`, longestMs: 1234.6, budgetMs: STALL_BUDGET_MS },
+      { file: `${ROOT}/packages/core/test/one.test.ts`, longestMs: 1234.6, cpuMs: 900.4, budgetMs: STALL_BUDGET_MS },
       { environment: { [STALL_REPORT_ENV]: '/tmp/report.jsonl' }, root: ROOT, append: (path, line) => lines.push({ path, line }) },
     );
     expect(lines).toHaveLength(1);
@@ -193,6 +254,7 @@ describe('event loop · the numbers the gauge is calibrated against', () => {
     expect(JSON.parse(lines[0]!.line)).toEqual({
       file: 'packages/core/test/one.test.ts',
       longestMs: 1_235,
+      cpuMs: 900,
       budgetMs: STALL_BUDGET_MS,
     });
   });
@@ -202,11 +264,11 @@ describe('event loop · the numbers the gauge is calibrated against', () => {
     // record written by default would make every run append to a file nobody asked for.
     const lines: string[] = [];
     recordStall(
-      { file: '/anywhere.test.ts', longestMs: 1, budgetMs: STALL_BUDGET_MS },
+      { file: '/anywhere.test.ts', longestMs: 1, cpuMs: 0, budgetMs: STALL_BUDGET_MS },
       { environment: {}, append: (_path, line) => lines.push(line) },
     );
     recordStall(
-      { file: '/anywhere.test.ts', longestMs: 1, budgetMs: STALL_BUDGET_MS },
+      { file: '/anywhere.test.ts', longestMs: 1, cpuMs: 0, budgetMs: STALL_BUDGET_MS },
       { environment: { [STALL_REPORT_ENV]: '' }, append: (_path, line) => lines.push(line) },
     );
     expect(lines).toEqual([]);
@@ -214,6 +276,7 @@ describe('event loop · the numbers the gauge is calibrated against', () => {
 
   it('fails only what is over budget, and says what to do about it', () => {
     expect(stallVerdict(STALL_BUDGET_MS, STALL_BUDGET_MS)).toBeUndefined();
+    expect(stallVerdict({ longestMs: STALL_BUDGET_MS, cpuMs: STALL_BUDGET_MS }, STALL_BUDGET_MS)).toBeUndefined();
     const verdict = stallVerdict(STALL_BUDGET_MS + 1, STALL_BUDGET_MS);
 
     expect(verdict).toBeDefined();
@@ -222,6 +285,25 @@ describe('event loop · the numbers the gauge is calibrated against', () => {
     // The message has to name the remedy: a red that says only "too slow" invites
     // raising the budget, which is the mistake this file exists to stop.
     expect(verdict).toContain('Await the child');
+    // A reading that carried no CPU figure says so, rather than printing a zero that would read as
+    // "the process never ran" -- the two causes of a long stall need opposite repairs.
+    expect(verdict).toContain('did not measure how much of it was CPU time');
+  });
+
+  it('names the CPU time it measured, and does not claim to know why the rest was not CPU', () => {
+    // The sentence this replaced gave one remedy -- "await the child" -- to both causes, and the
+    // round that measured four readings of one file (11.5 s alone, 47.7 s in a loaded suite) is
+    // why: a file that spends its stall running its own code cannot be repaired by awaiting it.
+    const verdict = stallVerdict({ longestMs: 47_727, cpuMs: 11_547 }, STALL_BUDGET_MS);
+
+    expect(verdict).toBeDefined();
+    expect(verdict).toContain('47727');
+    expect(verdict).toContain('11547');
+    // Both readings, and the two ways to read them. What it must not do is assert which one this
+    // was: a low CPU figure is also what a process that was not being scheduled looks like, and
+    // this instrument cannot tell those apart.
+    expect(verdict).toContain('nearly all CPU is this file running its own code');
+    expect(verdict).toContain('mostly not is a child it waited for synchronously');
   });
 
   it('takes a budget from the environment, and refuses a malformed one', () => {

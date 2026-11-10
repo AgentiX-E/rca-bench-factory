@@ -262,8 +262,14 @@ describe('the two baskets are a partition of the calls, not a remainder', () => 
     // read, a file it cannot read, a verdict that disagrees with the answer set, and a refusal that
     // names the wrong reason -- and the gate-sites row for the case-file derivation shifted. The two
     // numbers move together for the reason the paragraph above states: one question, counted two ways.
-    expect(calls).toBe(150);
-    expect(sites).toBe(132);
+    // 151/133 is v3.80's, and it is the first pair in this file where only one number moved: the new
+    // gate `check-repository-table.mjs` owns exactly one exit, the `if (check() !== 0)` at the bottom
+    // of every gate in this directory, so the call count and the site count both rise by one. The
+    // same round added four `throw new Error` statements, and those are counted in the partition
+    // below rather than here -- which is what makes this pair the evidence that the two questions
+    // are separate questions.
+    expect(calls).toBe(151);
+    expect(sites).toBe(133);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

@@ -413,81 +413,53 @@ document that described it as downloading the data was describing an intention.
 
 | Metric | Value |
 | --- | --- |
-| Commits | 95 |
-| Packages | `@rca-bench-factory/core`, `@rca-bench-factory/cli` |
-| Source files | 45 (`src/`, excluding tests and build output) |
-| Source lines | 13,483 |
-| Test files | 78 core + 3 CLI |
-| Test lines | 25,174 core + 2,740 CLI |
-| Tests | 2341 core + 173 CLI |
-| Tracked files | 208 |
+| Commits (at `d179592`) | 530 |
+| Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
+| Source files | 97 |
+| Source lines | 33,706 |
+| Test files | 245 core + 4 cli |
+| Test lines | 104,560 core + 3,242 cli |
+| Tests | 6,267 core + 187 cli |
+| Tracked files | 635 |
 
-Re-taken from `git ls-files` and `git rev-list --count HEAD` at this revision. The
-previous table's own closing sentence -- that a status table is a column of
-measurements and they decay together -- was written after four of six rows went
-stale in one pass, and it held: three rows moved again here, for reasons worth
-naming. **Commits** `85 → 88 → 90 → 92 → 93 → 94 → 95`: the anchor diagnostic, the
-payload-name fix, the rule fix, then pass 8's meta-gate, pass 9's export enumeration,
-pass 10's signal-validity module, pass 12's injection planner, and pass 13's two halves
--- the extraction scorer and the fetch-layer retry scope. **Test lines**
-`23,440 → 24,198 → 24,501 → 23,505 → 23,510 → 25,229 → 25,174` and **Tests**
-`1959 → 1978 → 2042 → 2106 → 2186 → 2256 → 2341`: pass 8 adds eleven meta-gate tests,
-pass 9 adds sixty-four enumeration tests, pass 10 adds sixty-four validity tests, pass 11
-adds eighty to the enumeration file, pass 12 adds seventy for the injection planner, and
-pass 13 adds fifty-two for the extraction scorer, twenty-five for its script contract,
-and five net for the fetch retry layer. **Source lines** `12,900 → 13,483` and **Source
-files** `44 → 45` are pass 13's scorer, the largest single module the fault directory has
-gained.
+`node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
+drifted, when a label is one it cannot derive, and when a row has gone missing. That is
+what this table did not have until v3.80, and the reading is worth keeping: **every one of
+the eight was wrong** when the guard was first run against it -- commits `95` for 530,
+source files `45` for 97, tests `2341` for 6,246 -- because a current-state table with no
+reader is right exactly once, at the pass that took it (finding 508).
 
-**Two rows in this pass move for a reason that is not the table decaying, and both are
-the same reason: the injection batteries became scripts.** `Tracked files` is new here
-(`208`) and reports what `check-no-vendored-data.mjs` reports, so the two cannot drift.
-`Test lines` core went `25,229 → 25,174`, a fall of fifty-five, even though two new
-test files were added -- because the two batteries now live in `scripts/injection/` as
-`.py` files and are therefore *not* counted in a `.ts` test-line total. The measurement
-did not shrink; the denominator changed shape. Reporting the figure without that
-sentence would invite the reading that pass 13 removed tests, which is the opposite of
-what happened.
+What each row counts, because a number without its population is a different number:
 
-The two rows that fell in this pass point the same way and are worth separating,
-because only one of them is the table decaying. **Test lines** `24,501 → 23,505` is
-a real fall: pass 11 rewrote `export-surface-enumerated.test.ts`, replacing 144 lines
-of hand-written module-keyed exemption comments -- one short reason per exempted
-module, 26 of them -- with three symbol-keyed entries and the assertions that hold
-them. **Source lines** `13,205 → 12,500` and **Source files** `46 → 43` are not a
-fall at all: the old figures were taken before the count was restricted to `src/`,
-and they included three `.ts` files under `packages/core/` that are not source -- the
-`vitest.config.ts` and the two entry points the package publishes by path. Both
-figures are re-derived from `git ls-files 'packages/core/src/**/*.ts'`, which is what
-the row says it counts.
+| Row | Derivation |
+| --- | --- |
+| `Commits` | `git rev-list --count <revision>`, at the revision the label names |
+| `Packages` | `packages/*/package.json`, in the order `git ls-files` reports them |
+| `Source files` | every `.ts` file under `packages/*/src/` |
+| `Source lines` | newlines in those files -- `wc -l`, which is what a line count means |
+| `Test files` | every `.test.ts` under `packages/<scope>/test/`, held **equal** to the `files` count in `golden-master/doc-counts.json` |
+| `Test lines` | newlines in those files |
+| `Tests` | `golden-master/doc-counts.json`, which the suite itself measures |
+| `Tracked files` | `git ls-files` |
 
-**Test files** counts `*.test.ts`, which is what the runner counts, and the two
-agree at `74`. Counting every `.ts` under `test/` gives `76`, because that directory
-also holds `fixtures.ts` and `helpers.ts` -- support modules with no tests in them.
-The first draft of this row used `75`, then explained the two-number gap with a
-mechanism that does not exist (files excluded by config). Both the figure and the
-explanation were wrong, and the explanation was the worse of the two: it was
-plausible, it cited config that says nothing of the kind, and it would have been
-believed. Re-derived from `ls packages/core/test/*.test.ts` against the runner's own
-count.
+Two properties are worth stating because they are the ones that can fail.
 
-How the previous pass's numbers moved, kept because the pattern is the point:
+**`Test files` and `Tests` are read from two places and compared.** The guard globs the
+test directories and the snapshot records what the runner reported; a glob that stopped
+matching would describe a smaller repository in perfect silence, so the disagreement is
+refused rather than averaged.
 
-- **Commits** was `79` and went to `85`. That one was not a decay, it was
-  arithmetic: the revision before it recorded six commits and then added six more
-  without re-running the count.
-- **Test lines** was `23,401` and went to `23,440`; **Tests** was `1951 core` and
-  went to `1959`. Nine core tests were added by pass 7 -- three for the reachable
-  branch positions it found in `parseRcaEvalPath`, three for the cold check-out in
-  `typecheck-entrypoint.test.ts`, and three for the file-level split, which is why
-  the test-file row showed two numbers rather than one.
+**`Commits` is dated, and the date is checked.** It is the one row that cannot be
+current: the commit that writes it would be the commit it would have to count. So it names
+the revision it measured -- `Commits (at `d179592`)` -- and the guard resolves that
+revision and recomputes the count from it. A reader can verify it against a checkout
+forever; a current number could only ever be verified once.
 
-The sentence this table replaces said the test count was "the one figure that
-moves for a reason worth naming". It moved on the next pass too, and so did four
-others, which is the argument against singling one out: a status table is a
-column of measurements and they decay together. Re-take all of them or the table
-is a list of the ones somebody happened to check.
-
+The numbers describe the **working tree**, which is what lets them corroborate a suite that
+reads the working tree: the first draft globbed `git ls-files`, and a test file that had not been
+committed yet was invisible to it, so the row said 244 files beside a runner that had just counted
+245. A tree with uncommitted source edits fails the guard until the numbers are re-taken with
+`--write`, and that is the intended direction -- the table describes the tree the gate ran on.
 
 ## Test strategy
 
@@ -532,7 +504,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.79: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.80: **28** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1282,6 +1254,22 @@ is a row about rather than paraphrase one that no `grep` will find.
   history, and the index can stay under `MAX_BYTES` only because that volume cannot exceed it.
   `[open: the round that reaches the ceiling will have to move the closed part of the list into a volume,
   and nothing measures how far away that is]`
+- **The worker count decides the stall verdict, and it was chosen by memory alone.** `workerCount()` reads
+  the CPUs the process may use and a ceiling measured on the container's memory; nothing in it consults
+  the one measurement that turned the suite red. Measured on a five-CPU box, same tree, same command:
+  **2 workers -> worst file 14,448 ms** and 153 s of wall clock; **4 workers -> 23,897 / 43,895 / 47,727
+  ms** and 91-99 s. The budget is 45,000, so the count is the difference between a file at a third of it
+  and a file past it -- and the suite is faster at the count that reddens it.
+  `[open: a cap chosen against the stall measurement as well -- the largest count whose worst file stays
+  under half the budget -- with the wall clock it costs measured rather than traded, and the fact that
+  the worst file is now cheap enough to make the question hypothetical kept as a reason rather than an
+  answer]`
+- **The next-nearest file is at 71% of the stall budget.** `publish.test.ts` measured 28,183 ms without
+  coverage and 31,855 ms under it in the four-worker runs, against 45,000 -- and its cost is `git`
+  process starts, which is the shape the config's own comment calls the scheduler's job rather than the
+  file's. It is under budget in every reading taken, which is the only reason it is not a finding.
+  `[open: whether a file whose cost is process starts has a cheaper shape at all, or whether the honest
+  answer is that the budget's lower bound is the worst of these and the number should say so]`
 
 
 ## Pass log
@@ -1313,7 +1301,7 @@ and this table.
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
-| [volume-13.md](progress/volume-13.md) | 16 | v3.64 | v3.79 |
+| [volume-13.md](progress/volume-13.md) | 17 | v3.64 | v3.80 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

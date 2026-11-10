@@ -92,7 +92,7 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   the `sensitivity` job runs `verify-sites-are-sensitive.mjs`, which asks whether that
   file **notices** the exit's absence -- one run per claim with that site's code
   replaced by success, and a baseline run per file so a red claimant cannot be
-  credited with catching anything. Measured at **213 of 213** claim(s) across 59 file(s).
+  credited with catching anything. Measured at **218 of 218** claim(s) across 60 file(s).
   The figure was 105 of 105 in both halves at v3.41, and it drifted for twenty-four rounds
   because nothing read the sentence -- an external reviewer quoted the 105 as the current
   state, which is what a number with no reader costs. `check-doc-counts` reads it now:
@@ -333,6 +333,34 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   arithmetic used a ceiling the borrowed seconds had never been spent inside. The recorder now
   refuses a borrow across a budget and prints both numbers (finding 406): a step's cost is a
   property of the command, and a budget is not.
+
+- **A published table is a derivation, or it is a table nobody reads** (v3.80). `## Repository`
+  published eight measurements of this repository and `grep -rn` found no reader for any of them:
+  commits `95` for 530, tests `2341` for 6,246, tracked files `208` for 633, every row wrong by a
+  factor of two to six, in the document whose first principle is that a claim is only accepted
+  when something produced it (finding 508). The repair is a rule rather than a retyping:
+  `scripts/check-repository-table.mjs` performs each derivation and refuses a drifted value, a
+  label it cannot derive, a row that has gone missing, and a `Commits` cell whose dated revision
+  does not resolve. **The one row that cannot be current is dated** -- the commit that writes it
+  is the commit it would have to count -- and the date is checked, so the number is verifiable
+  against a checkout forever instead of true once.
+- **A measurement carries the name of what it measured** (v3.80). The stall gauge failed a file
+  at 47,727 ms against a 45,000 ms budget with **6,246 of 6,246 tests passing**; the same file on
+  the same tree measured 11,905 ms alone, 11,547 ms alone under coverage, and 14,448 ms with two
+  workers (finding 507). The number was wall clock and the sentence was about the file, and the
+  difference is what a loaded box does. The reading now carries both quantities -- wall and CPU
+  -- and the verdict names both without asserting which cause it was, because a low CPU figure is
+  also what a descheduled process looks like. The budget itself does not move: the deadline it
+  guards is a wall clock. What moves is the file's cost, and the split is what located it: 9,630
+  ms of wall against 820 ms of CPU was twenty-nine copies of a fixture, not arithmetic.
+- **A gate's diagnostic is the line it prints when it fails** (v3.80). The inventory fingerprints
+  a failure site by the nearest printed string above it, so a gate that prints its verdict before
+  branching on its problems has its *success* line published as what it says when it fails -- and
+  nothing could see it, because the annotation was carried, the proof resolved and the site was
+  counted (finding 509). `violationsOf` rule 11 refuses a diagnostic matching `:\s*OK\b` on both
+  populations; zero of 133 sites and zero of 99 throw rows carry one, and it fails on the corrupted
+  inventory the battery builds. It reads a token and not control flow, which is stated as the
+  rule's limit rather than papered over.
 
 ## L4 — Official reproduction (Golden Master, official metrics and round trip)
 
@@ -931,6 +959,8 @@ point, and the boundary between the first two is the whole of what makes the thi
 - [ ] Coverage ≥ 95% per dimension, 100% functions.
 - [ ] Every LLM-produced field carries `FieldProvenance`.
 - [ ] No upstream corpus data in the tracked tree (`pnpm lint`).
+- [ ] Every published table names its derivation and is checked by one
+      (`pnpm docs:check`; `check-repository-table.mjs` for `## Repository`).
 
 ## Honesty boundary
 

@@ -1,5 +1,17 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -141,6 +153,19 @@ import { afterAll, describe, expect, it } from 'vitest';
  * title point at a change. What it still cannot do is read the assertion -- a test that
  * goes red for the wrong reason passes -- which is why the battery distinguishes a red
  * on an assertion, a red on the code's own guard, and a run that broke the tree.
+ *
+ * ## Rule 11 -- a failure site does not print its success line
+ *
+ * The last rule here is about the instrument rather than about the tree, and it was written
+ * because the gate this round added recorded the wrong diagnostic for its own failure site.
+ * `derive-gate-sites.mjs` takes the nearest printed string above a site, which is a lexical
+ * answer to a question about control flow: a gate that prints `<script>: OK (...)` before
+ * branching on its problems gets that line recorded as what it says when it *fails*.
+ *
+ * The rule is narrow because the evidence is: every gate in this directory announces success
+ * as `<script>: OK (` and failure as `<script>: FAILED`, so a colon followed by `OK` is a
+ * success line. It cannot judge an assembled message and it would miss the word "OK" in the
+ * middle of a sentence; what it catches is the shape this repository writes.
  */
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -492,6 +517,97 @@ function importsScript(body: string, script: string): boolean {
 }
 
 /**
+ * The text of a file, read once per identity, and the two scans over it, memoised.
+ *
+ * ## Why this exists -- it is a cost fix, and the cost was the defect
+ *
+ * Every rule in this file reads a test file and scans it twice: once for the `DRIVES`
+ * table (`declaredDrives`) and once for the spawn calls and the bindings that name a
+ * script (`inferredDrives`, which resolves arguments by scanning parentheses). There are
+ * 107 pointers in the shipped inventory, and about forty of the sixty-three tests below
+ * call `violationsOf`, so one run of this file performed roughly **four thousand** reads
+ * and **eight thousand** regex scans over files whose bytes had not changed since the
+ * previous test.
+ *
+ * That did not show up as a slow test file until the suite ran under load. Measured on a
+ * five-CPU box, this file -- one revision, one command -- cost:
+ *
+ *     alone, with coverage            11,547 ms
+ *     full suite, 2 workers           14,448 ms
+ *     full suite, 4 workers           23,897 / 43,895 / 47,727 ms
+ *
+ * The last reading is past `STALL_BUDGET_MS` (45,000) with **6,246 of 6,246 tests
+ * passing**, which is the red-about-nothing that the stall gauge was built to catch: a
+ * file whose own work is 11.5 s becomes a 47.7 s event-loop stall when three other
+ * workers share the box, and the suite exits non-zero with nothing failing. The gauge is
+ * right to fail it -- the worker's bridge deadline is a wall clock -- so the repair has
+ * to be to make the file cheap enough that a loaded runner cannot push it over.
+ *
+ * ## Two caches, and why each one is correct rather than merely faster
+ *
+ * `READS` is keyed by the file's **identity**, not by its path: a hit is only served
+ * when `statSync` reports the same size and the same nanosecond mtime the entry was
+ * written with. That is the invariant `make` has used for fifty years, and it means this
+ * cache cannot serve bytes that are not the bytes on disk -- a test that writes a file
+ * and reads it back gets the new content, because the write changes the identity. The
+ * stat is a few microseconds against a read of tens of kilobytes.
+ *
+ * `SCANS` is keyed by the **text itself**. `declaredDrives` and `inferredDrives` are pure
+ * functions of their argument, so a memo keyed by the argument cannot be stale by
+ * construction: the same text has the same scans, and different text is a different key.
+ *
+ * Neither cache is a place where a defect can hide, which is the test this file applies to
+ * every other claim in it: `analysisIsCached` below drives both and asserts that a
+ * rewritten file is seen, so the identity key is exercised rather than asserted.
+ */
+const READS = new Map<string, { size: number; mtimeNs: number; text: string }>();
+const SCANS = new Map<string, { declared: string[]; inferred: string[] }>();
+
+/**
+ * How many files have been written into the fixture root, over the whole run.
+ *
+ * The property that matters is "the tree is copied once", and a count is the only way to
+ * observe it: a second copy of an unchanged tree leaves no trace in the tree. Exported to
+ * this file's own tests below, where a regression -- deleting the early return in
+ * `pointerRoot` -- doubles it.
+ */
+let fixtureCopies = 0;
+
+/** The text of `path`, or `undefined` when it cannot be read as a file. */
+function readSource(path: string): string | undefined {
+  let size: number;
+  let mtimeNs: number;
+  try {
+    const stats = statSync(path, { bigint: true });
+    size = Number(stats.size);
+    mtimeNs = Number(stats.mtimeNs);
+  } catch {
+    return undefined;
+  }
+  const cached = READS.get(path);
+  if (cached !== undefined && cached.size === size && cached.mtimeNs === mtimeNs) return cached.text;
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch {
+    // A directory stats cleanly and cannot be read. It is not a source file, and an
+    // entry that cached this failure would hide the file appearing later.
+    return undefined;
+  }
+  READS.set(path, { size, mtimeNs, text });
+  return text;
+}
+
+/** The two scans over one body, computed once per distinct body. */
+function scansOf(body: string): { declared: string[]; inferred: string[] } {
+  const cached = SCANS.get(body);
+  if (cached !== undefined) return cached;
+  const scans = { declared: declaredDrives(body), inferred: inferredDrives(body) };
+  SCANS.set(body, scans);
+  return scans;
+}
+
+/**
  * What is wrong with one `provedBy` pointer, given the script it claims to prove.
  *
  * Shared by the site list and the throw partition, because the two claims have the
@@ -510,10 +626,8 @@ function proofProblems(
 ): string[] {
   const problems: string[] = [];
   const script = scriptPath.split('/').pop() ?? scriptPath;
-  let body: string;
-  try {
-    body = readFileSync(resolve(root, provedBy), 'utf8');
-  } catch {
+  const body = readSource(resolve(root, provedBy));
+  if (body === undefined) {
     return [`${where} names ${provedBy}, which does not exist`];
   }
   if (!body.includes(script)) {
@@ -530,8 +644,7 @@ function proofProblems(
   // the inventory records. Comparing the mixed forms directly made every
   // correctly-declared file read as undeclared -- a defect in the rule, caught by
   // running it against the declarations rather than by reading it.
-  const declared = declaredDrives(body);
-  const inferred = inferredDrives(body);
+  const { declared, inferred } = scansOf(body);
   const declaredHere = declared.includes(script) || declared.includes(scriptPath);
   const inferredHere = inferred.includes(script) || inferred.includes(scriptPath);
   // A `throw` has a second way into a process, and it is the commoner one: a module
@@ -586,10 +699,8 @@ function holdProblems(where: string, heldBy: HeldBy, root: string): string[] {
   if (!heldBy.file.endsWith('.test.ts')) {
     problems.push(`${where} is held by ${heldBy.file}, which is not a test file`);
   }
-  let body: string;
-  try {
-    body = readFileSync(resolve(root, heldBy.file), 'utf8');
-  } catch {
+  const body = readSource(resolve(root, heldBy.file));
+  if (body === undefined) {
     return [...problems, `${where} is held by ${heldBy.file}, which does not exist`];
   }
   // The title must be a test's own name, not a phrase in a comment. All three
@@ -646,10 +757,8 @@ function mutantProblems(where: string, mutant: Mutant, root: string): string[] {
   if (mutant.file.endsWith('.test.ts')) {
     problems.push(`${where} mutates ${mutant.file}, a test, so the red run would be about the test file`);
   }
-  let body: string;
-  try {
-    body = readFileSync(resolve(root, mutant.file), 'utf8');
-  } catch {
+  const body = readSource(resolve(root, mutant.file));
+  if (body === undefined) {
     return [...problems, `${where} mutates ${mutant.file}, which does not exist`];
   }
   const occurrences = body.split(mutant.find).length - 1;
@@ -868,6 +977,44 @@ function violationsOf(inventory: Inventory, root: string): string[] {
     );
   }
 
+  // Rule 11 -- a failure site's diagnostic is not a success line.
+  //
+  // The inventory records, for every site, the string the site prints. The deriver finds
+  // that string by walking backwards to the nearest printed literal, which is a lexical
+  // answer to a question that is about control flow: a gate whose failure branch sits
+  // *after* its success branch gets its success line recorded. Measured on the gate this
+  // rule was written beside, the deriver wrote
+  //
+  //     scripts/check-repository-table.mjs:408  check-repository-table: OK (${...}
+  //
+  // as the diagnostic of a site that only executes when the table is wrong -- so the
+  // inventory would have published "this is where the repository says its table is right"
+  // as "this is where it fails". Nothing could see it: the annotation was carried, the
+  // proof resolved, and the site was counted.
+  //
+  // The test is narrow on purpose. Every gate in this directory announces success as
+  // `<script>: OK (` and failure as `<script>: FAILED`, so a colon followed by `OK` is a
+  // success line. That would miss a diagnostic reading "OK" in the middle of a sentence and
+  // it cannot tell a hand-written message from an assembled one; what it catches is the
+  // shape this repository actually writes, which is the only shape it can be wrong about.
+  for (const [where, rows] of [
+    ['site', inventory.sites.map((site) => ({ at: `${site.script}:${String(site.line)}`, text: site.diagnostic }))],
+    [
+      'throw row',
+      (inventory.throws?.rows ?? []).map((row) => ({ at: `${row.script}:${String(row.line)}`, text: row.message })),
+    ],
+  ] as const) {
+    for (const row of rows) {
+      if (row.text === undefined) continue;
+      if (!/:\s*OK\b/.test(row.text)) continue;
+      problems.push(
+        `${row.at} (${where}) records '${row.text}' as its diagnostic, which is a success line: the ` +
+          'deriver takes the nearest printed string above a site, so a failure branch written after ' +
+          'the success branch publishes the success line as what the site says when it fails',
+      );
+    }
+  }
+
   return problems;
 }
 
@@ -893,9 +1040,24 @@ function withThrows(rows: Throw[], counts: Record<string, number>, name: string)
   return dir;
 }
 
-/** Copy every file a `provedBy` pointer names into a scratch root. */
+/**
+ * The scratch root every pointer resolves in, copied once.
+ *
+ * Copying it is the file's largest single cost and it was paid twenty-nine times. Measured
+ * on the tree this cache was added to, one copy is about a hundred and ten files and the
+ * twenty-nine calls are the whole of the gap between this file's 9.6 s and the under-a-
+ * second reading its CPU time (820 ms) says it should have: the copies are I/O, and I/O
+ * is what a loaded box multiplies. Twenty-nine copies of an unchanged tree is twenty-eight
+ * of them wasted.
+ *
+ * Correct because the input cannot change: these are copies of tracked source files, and
+ * nothing in this suite writes to the repository. A test that needs a *different* file
+ * writes its own under its own directory (`withInventory`, `withThrows`), which is why
+ * this root can be a singleton while those cannot.
+ */
 function pointerRoot(): string {
   const dir = join(scratch, 'pointer-root');
+  if (existsSync(dir)) return dir;
   const pointers = [
     ...committed.sites.map((site) => site.provedBy),
     ...(committed.throws?.rows ?? []).map((row) => row.provedBy),
@@ -911,8 +1073,14 @@ function pointerRoot(): string {
     const target = join(dir, provedBy);
     mkdirSync(dirname(target), { recursive: true });
     copyFileSync(resolve(ROOT, provedBy), target);
+    fixtureCopies += 1;
   }
   return dir;
+}
+
+/** The fixture's copy count, for the test that holds "once per run" rather than asserting it. */
+export function fixtureCopyCount(): number {
+  return fixtureCopies;
 }
 
 // The options object is spelled on its own lines rather than in the tidy
@@ -1903,6 +2071,32 @@ describe('rule 10 · an exemption names the edit that falsifies its claim', {
     ).toContainEqual(expect.stringContaining('name the same mutation'));
   });
 
+  it('rejects a site whose diagnostic is the success line the deriver walked past', () => {
+    // Rule 11, and the reading it was written from: the deriver takes the nearest printed
+    // string above a site, so a gate that prints its verdict before its failure branch is
+    // published as failing *with the sentence it prints when it succeeds*. The corruption has
+    // to be a real site, not a fabricated one: the rule reads the shipped inventory.
+    const sites = committed.sites.map((site, i) =>
+      i === 0 ? { ...site, diagnostic: `${site.script.split('/').pop() ?? ''}: OK (${String(site.line)} row(s))` } : site,
+    );
+    const dir = withInventory(sites, 'success-line-diagnostic');
+    expect(
+      violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot()),
+    ).toContainEqual(expect.stringContaining('which is a success line'));
+  });
+
+  it('rejects a throw row whose message is a success line', () => {
+    // The same rule on the partition, because the two halves are published by the same
+    // deriver and a rule applied to one of them is the omission this file has found before.
+    const rows = (committed.throws?.rows ?? []).map((row, i) =>
+      i === 0 ? { ...row, message: `${row.script.split('/').pop() ?? ''}: OK (${String(row.line)})` } : row,
+    );
+    const dir = withThrows(rows, committed.throws?.counts ?? {}, 'throw-success-line');
+    expect(
+      violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot()),
+    ).toContainEqual(expect.stringContaining('which is a success line'));
+  });
+
   it('rejects a proved throw that also names a mutation', () => {
     const rows = (committed.throws?.rows ?? []).map((row) =>
       row.status === 'proved' && row.mutant === undefined
@@ -1921,5 +2115,73 @@ describe('rule 10 · an exemption names the edit that falsifies its claim', {
     expect(
       violationsOf(JSON.parse(readFileSync(join(dir, 'gate-sites.json'), 'utf8')), pointerRoot()),
     ).toContainEqual(expect.stringContaining('and also names a mutation'));
+  });
+});
+
+/**
+ * The fixture and the two caches, held to what their comments claim.
+ *
+ * The caches exist because this file's cost was the defect: twenty-nine copies of a
+ * hundred-and-ten-file tree, and four thousand reads of files that had not changed, took
+ * 11.9 s of wall clock and 253 ms of CPU -- and a loaded box multiplied the wall clock by
+ * four, which put the file past the 45,000 ms stall budget with every test passing. A cost
+ * fix with no test is a cost that comes back, and these four are the properties that made
+ * the fix correct rather than merely faster.
+ */
+describe('the fixture and the two caches · correctness, not just speed', () => {
+  it('copies the pointer tree once per run', () => {
+    // The count, not the timing: a second copy of an unchanged tree leaves no trace in the
+    // tree, so the only observable is how many files were written. Deleting the early return
+    // in `pointerRoot` doubles this number, which is why it is exported rather than inferred
+    // from the absence of a difference.
+    const first = pointerRoot();
+    const after = fixtureCopyCount();
+    expect(after).toBeGreaterThan(100);
+    expect(pointerRoot()).toBe(first);
+    expect(fixtureCopyCount()).toBe(after);
+  });
+
+  it('does not cache a file it could not read, so a file that appears later is seen', () => {
+    // A negative result is the one a cache must never keep: `proofProblems` reads
+    // "undefined" as "does not exist", and an entry recording that would make a file written
+    // a moment later invisible for the rest of the run.
+    const file = join(scratch, 'appears-later.ts');
+    expect(readSource(file)).toBeUndefined();
+    writeFileSync(file, 'now here\n');
+    expect(readSource(file)).toBe('now here\n');
+  });
+
+  it('re-reads a file whose size changed, and one whose mtime changed', () => {
+    // The identity is (path, size, mtime-ns), the invariant `make` uses. Both arms are
+    // exercised because either one alone would leave the other unmeasured: a rewrite that
+    // changes the length and one that does not are different cases, and the mtime is set
+    // explicitly in the second so the assertion does not depend on the filesystem's
+    // timestamp granularity.
+    const file = join(scratch, 'identity.ts');
+    writeFileSync(file, 'first\n');
+    expect(readSource(file)).toBe('first\n');
+
+    writeFileSync(file, 'second, longer\n');
+    expect(readSource(file)).toBe('second, longer\n');
+
+    writeFileSync(file, 'THIRD\n');
+    const later = new Date(Date.now() + 1_000);
+    utimesSync(file, later, later);
+    expect(readSource(file)).toBe('THIRD\n');
+  });
+
+  it('scans a body once, keyed by the body itself rather than by the path', () => {
+    // Identity equality is the whole assertion: the scan is a pure function of the text, so a
+    // memo keyed by the text cannot be stale by construction, and a caller that reads the same
+    // bytes through a different path still gets the memo. Keying by path instead would have
+    // been the faster-looking choice and the wrong one: it needs the identity check that
+    // `readSource` already performs, and it fails for the same body reached two ways.
+    // A script name this file does not otherwise name: `gate-proofs.test.ts` asserts that this
+    // file mentions no gate outside a comment, and a fixture that spelled a real one would be a
+    // mention in code. The scan does not care which name it is.
+    const body = "const DRIVES = ['a-fixture-script.mjs'];\nrun(DRIVES[0]);\n";
+    expect(scansOf(body)).toBe(scansOf(body));
+    expect(scansOf(body).declared).toEqual(['a-fixture-script.mjs']);
+    expect(scansOf(`${body}\n// different\n`)).not.toBe(scansOf(body));
   });
 });

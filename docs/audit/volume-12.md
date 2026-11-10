@@ -562,3 +562,197 @@ either measured or labelled as not. The block now says what it is: a projection 
 measurement, with the two readings that replaced it beside it (4,100 MB at case 54; death above 6,960 MB
 at case 182), and a pointer to the fact that the line is printed by every run so the next one can be
 compared rather than consulted.
+
+## Finding 507 — the gauge that exists to prevent a red with no failing test produced one
+
+`test/support/event-loop-stall.ts` records "the longest stretch during which the loop did
+not turn" and fails a file that exceeds 45,000 ms. Its purpose is singular and stated in
+its own header: vitest's worker→main RPC has a 60-second deadline, a file that blocks
+longer makes the run exit non-zero **with every test passing**, and nothing in the report
+says which file did it.
+
+This round's first run on a five-CPU, 8 GiB box was exactly that failure, produced by the
+instrument:
+
+```
+Test Files  1 failed | 243 passed (244)
+     Tests  6246 passed (6246)
+...
+Error: this test file held the event loop for 47727 ms, past the 45000 ms budget.
+```
+
+`gate-sites-are-proven.test.ts`, one file, one revision, one command — and the same command
+on the same tree gave four different answers:
+
+| reading | configuration | wall | CPU |
+| --- | --- | --- | --- |
+| 11,905 ms | that file alone, no coverage | 11,905 | 253 |
+| 11,547 ms | that file alone, with coverage | 11,547 | — |
+| 14,448 ms | full suite, `--maxWorkers=2` | 14,448 | — |
+| 23,897 / 43,895 / 47,727 ms | full suite, four workers, three runs | 4.1× the first | — |
+
+The only variable is what else was running. So the gauge's verdict is a function of the
+machine's load, and its message -- "this test file held the event loop" -- is a claim about
+the *file* that three of those four readings do not support. This is the round's subject in
+one sentence: **the instrument reported one quantity and named another.**
+
+Two repairs, one per cause, and neither replaces the budget:
+
+1. **The reading now carries both quantities.** `stop()` returns `{ longestMs, cpuMs }`, the
+   CPU figure is the processor time consumed inside the same window (sampled per tick, so it
+   belongs to the longest stall rather than to the run), and the verdict prints both. A stall
+   whose CPU time is close to its wall time is the file running its own code; one whose CPU
+   time is a fraction of it is a child it waited for synchronously, or a process that was not
+   being scheduled. The message says both readings and does **not** classify the case: a low
+   CPU figure is also what a descheduled process looks like, and this instrument cannot tell
+   those apart. The budget stays on wall clock, because the deadline it guards is a wall clock.
+2. **The file's cost was the part that could be repaired.** Measured alone, 9,630 ms of wall
+   against 820 ms of CPU: the work was I/O, not arithmetic. Twenty-nine calls to
+   `pointerRoot()` each copied a 107-file fixture into `tmpdir()`, and every rule re-read and
+   re-scanned the same ~60 test files. The fixture is now copied once (`fixtureCopyCount()`
+   holds it), reads are cached by `(path, size, mtime-ns)` -- `make`'s invariant, so a rewritten
+   file is seen -- and the two scans are memoised by the body itself, which cannot be stale by
+   construction. Alone: **11,905 → 2,503 ms**, CPU 253 ms. Under the four-worker load that
+   produced 47,727 ms, the same multiplier lands at roughly a tenth of the budget.
+
+The next-nearest file is named rather than left to be discovered: `publish.test.ts` measured
+28,183 ms without coverage and 31,855 ms with it in the same four-worker runs, which is 71% of
+the budget. Its cost is `git` process starts and its shape is the one the config's comment
+calls the honest division of labour -- the scheduler is what keeps it under. That is a
+measurement, not a repair, and it is on the open list.
+
+## Finding 508 — eight numbers, eight wrong, and nothing reading any of them
+
+`docs/progress.md` has a `## Repository` section that answers one question -- how big is this
+repository -- with eight rows. Its own prose says the numbers are "re-taken from `git ls-files`
+and `git rev-list --count HEAD` at this revision", and that had been true at pass 13 and at no
+revision since. Measured against the tree this round ran on:
+
+| row | published | the tree | error |
+| --- | --- | --- | --- |
+| `Commits` | 95 | 530 | 5.6× |
+| `Source files` | 45 | 97 | 2.2× |
+| `Source lines` | 13,483 | 33,706 | 2.5× |
+| `Test files` | 78 core + 3 cli | 245 core + 4 cli | 3.1× |
+| `Test lines` | 25,174 + 2,740 | 104,552 + 3,242 | 3.9× |
+| `Tests` | 2341 + 173 | 6,267 + 187 | 2.7× |
+| `Tracked files` | 208 | 633 | 3.0× |
+
+`grep -rn 'Tracked files\|Source lines\|Source files' scripts/` returns nothing. Neither does
+the word `Repository`. The document's other count guard, `check-doc-counts.mjs`, reads **349**
+published counts out of this same file and refuses a label that names the wrong scope -- and it
+does not read this table, because its subject is rows carrying a count in one of the shapes it
+knows. So the one table that publishes the repository's own size was the one table with no
+reader, and it decayed by a factor of two to six while every gate stayed green. That is the
+campaign's signature defect, in the document that keeps the campaign's records.
+
+The repair is a derivation rather than a retyping: `scripts/check-repository-table.mjs` performs
+all eight derivations and refuses a value that has drifted, a label it cannot derive, a table
+that has lost a row, a `Commits` cell whose dated revision does not resolve, and a test-file
+count on which its own glob and the suite's own measurement disagree. `--write` re-derives the
+cells and nothing else. `Commits` is *dated* -- `Commits (at `d179592`)` -- because it is the one
+row that cannot be current: the commit that writes it would be the commit it has to count, which
+is exactly why it had been copied forward by hand for a hundred rounds.
+
+The battery of twelve tests builds a **five-file repository** in `tmpdir()` and drives every
+refusal against it. That is the point of the guard's `--root` and `--doc` flags: a gate that can
+only be pointed at the repository it lives in can only be tested by editing that repository,
+which is how a corpus ends up with gates no test can make red.
+
+## Finding 509 — the inventory records the success line as the diagnostic of a failure
+
+The gate above went into the inventory like every other gate, and the deriver wrote this:
+
+```
+scripts/check-repository-table.mjs:408  condition: check() !== 0
+  diagnostic: 'check-repository-table: OK (${String(table.rows.length)} row(s) under ${HEADING}, ...'
+```
+
+That is the sentence the script prints when the table is **correct**, recorded as what the site
+says when the table is **wrong**. The mechanism is lexical: `derive-gate-sites.mjs` walks
+backwards from the site to the nearest printed string, and the first draft printed its verdict
+before branching on its problems:
+
+```js
+if (problems.length > 0) { ...; console.error('... FAILED'); return 1; }
+console.log(`... OK (...)`);
+return 0;
+```
+
+Nothing could see it. The annotation was carried (it is keyed by line and message), the proof
+resolved, the site was counted, and `violationsOf` asked only whether a row was proved or
+exempt. A gate whose job is to say *where this repository can fail and what each place says* had
+published, for its own newest site, the line it says when it does not fail.
+
+The repair is one reordering -- the success path returns early, so the failure diagnostic is the
+last string above the exit -- and the rule that would have caught it: `violationsOf` rule 11
+refuses a diagnostic matching `:\s*OK\b` on either a site or a throw row. It costs nothing today
+(zero of 133 sites and zero of 99 throw rows carry one) and it fails on the corrupted inventory
+the battery builds, which is the only way to know a rule can fail.
+
+What it cannot do is stated rather than implied: it reads a token, not control flow, so it
+catches the shape this repository writes (`<script>: OK (` for success, `<script>: FAILED` for
+failure) and would miss the word "OK" inside a sentence. The general repair -- a deriver that
+knows which branch a string is printed in -- is a control-flow question, and this inventory is
+built from tokens.
+
+## Finding 510 — the proof of a `throw` row proved the gate exits, not that it stops before writing
+
+The full gate run after the two findings above failed at step 8 of 34, in the battery that asks
+the other half of a proof: `verify-sites-are-sensitive.mjs` hollows each exit and each `throw`,
+one at a time, and asks whether some test goes red. It named one row.
+
+```
+verify-sites-are-sensitive: these exits can stop failing and no test minds:
+  scripts/check-repository-table.mjs:380 is claimed by packages/core/test/check-repository-table.test.ts
+    the file passes with that exit replaced by success
+```
+
+The row is this one, inside `rewrite()` -- the repair path behind `--write`:
+
+```js
+const expected = spec.derive(match);
+if (typeof expected === 'object' && expected !== null && expected.error !== undefined) {
+  throw new Error(`${spec.name}: ${expected.error}`);
+}
+lines[row.index] = `| ${row.label} | ${expected} |`;
+```
+
+Deleting the `throw` and running the file is the discriminating experiment the battery
+recommends, and it agreed: **twelve of twelve green**. The test that was supposed to prove this
+row read:
+
+```ts
+expect(rejected.status).toBe(1);
+expect(rejected.err).toContain('the revision `deadbeef` does not resolve to a commit');
+expect(readFileSync(fixture.doc, 'utf8')).toContain('Commits (at `deadbeef`)');
+```
+
+With the `throw` gone, all three still hold. The cell is written as `[object Object]`, the
+`--write` run re-reads its own output, finds the same unresolvable revision there, prints the
+same sentence, and exits 1. The label survives, because the label is what a rewrite does not
+touch. **A rewrite that damages the document and then reports the damage passes every one of
+those three assertions.**
+
+The comment above the test stated the right property and the assertion stated a weaker one that
+happened to hold:
+
+> it has to stop rather than write the other seven and leave the eighth as it was, which is a
+> half-repaired table that reads as a repaired one
+
+"Stop rather than write" is byte equality with what was there before. That is what the test
+asserts now, and the same experiment turns it red:
+
+```
+❯ packages/core/test/check-repository-table.test.ts:308:47
+    308|     expect(readFileSync(fixture.doc, 'utf8')).toBe(before);
+  Tests  1 failed | 11 passed (12)
+```
+
+The reachability half had been checked, and it passed, because the witness does reach the row.
+That is exactly the gap `verify-sites-are-sensitive.mjs` was written to close one layer up, and
+this pass walked into it while writing the guard that the battery was about to audit. The lesson
+is the one a comment cannot carry: **a property written in prose is not a judge of anything** --
+the same sentence, expressed as an assertion, fails when the behaviour is removed, and the
+prose version agreed with the code the whole time.
+

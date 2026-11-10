@@ -173,6 +173,11 @@ const COLD_AGGREGATES: ReadonlyMap<string, readonly string[]> = new Map([
       // which is an argument for why it should be safe and not evidence that it is.
       'check-citations.mjs',
       'check-backend-support.mjs',
+      // Measured cold-safe before being added, the way every member here was: with
+      // `packages/core/dist` moved aside, `node scripts/check-repository-table.mjs`
+      // printed the eight-row verdict and exited 0. It reads git and two files, which is
+      // an argument for why it should be safe and not evidence that it is.
+      'check-repository-table.mjs',
       'check-roundtrip-record.mjs',
       // Measured cold-safe before being added, the way every member here was: with
       // `packages/core/dist` moved aside, `node scripts/check-open-list.mjs` exits 0.

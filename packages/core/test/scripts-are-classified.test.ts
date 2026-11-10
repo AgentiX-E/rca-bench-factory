@@ -236,6 +236,15 @@ const REGISTER: Record<string, Entry> = {
   },
   'check-doc-counts.mjs': { class: 'gate' },
   'check-l4-status.mjs': { class: 'gate' },
+  'check-repository-table.mjs': {
+    class: 'gate',
+    why:
+      'It exits 1 when a row of the `## Repository` table has drifted, names a metric it cannot derive, ' +
+      'has gone missing, or dates its `Commits` count at a revision that does not resolve, so it is a ' +
+      'gate by the inventory rule. `check-repository-table.test.ts` spawns it against a five-file ' +
+      'repository built in `tmpdir()`, which is the only way to exercise its refusals without editing ' +
+      'the document it guards -- the shipped table is the positive control, not the test.',
+  },
   'check-no-absolute-paths.mjs': { class: 'gate' },
   'check-no-mock.mjs': { class: 'gate' },
   'check-no-secrets.mjs': { class: 'gate' },

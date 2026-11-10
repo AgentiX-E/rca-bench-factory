@@ -27,10 +27,15 @@ const budgetMs = budgetFromEnvironment();
 const watch = startStallWatch({ intervalMs: STALL_INTERVAL_MS });
 
 afterAll((suite) => {
-  const longestMs = watch.stop();
+  const measured = watch.stop();
   // The report first, so a file that is over budget is still measured: the gate throws below, and a
   // throw before the write would lose the one reading a red run is worth having.
-  recordStall({ file: 'filepath' in suite ? suite.filepath : suite.name, longestMs, budgetMs });
-  const verdict = stallVerdict(longestMs, budgetMs);
+  recordStall({
+    file: 'filepath' in suite ? suite.filepath : suite.name,
+    longestMs: measured.longestMs,
+    cpuMs: measured.cpuMs,
+    budgetMs,
+  });
+  const verdict = stallVerdict(measured, budgetMs);
   if (verdict !== undefined) throw new Error(verdict);
 });

@@ -276,7 +276,14 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // `--golden` with no path and an argument it does not know, because a flag that swallowed the
     // next word would read the shipped file and pass. One is a module refusing its input, the other
     // a command refusing its invocation, and both end the process where they are written.
-    expect(total).toBe(95);
+    // 99 is v3.80's four, all in `check-repository-table.mjs` and all inside the derivation rather
+    // than at its exit: a suite snapshot that carries no scope for a row, a glob and a runner that
+    // disagree about how many test files exist, a rewrite with no table to rewrite, and a rewrite
+    // whose `Commits` cell names a revision that does not resolve. Each is a refusal a reader can
+    // act on, and each is proved by a test that drives the guard against a five-file repository --
+    // so the count rose by four and the site list by one, which is the reason the two numbers are
+    // asserted in two files.
+    expect(total).toBe(99);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -332,7 +339,10 @@ describe('the four baskets are a partition of the throws, not a remainder', () =
     // contract table from printing a code nobody can read and a version no exporter wrote.
     // 71 -> 73 in v3.69: the answer-set parser and the new command's argument reader, both
     // `unguarded` -- they hand control to their callers, which is where the exit is.
-    expect(counts).toEqual({ fatal: 11, unguarded: 73, guarded: 1, rethrow: 10 });
+    // `unguarded` 73 -> 77 in v3.80: the four throws added by `check-repository-table.mjs` are all
+    // unguarded -- they hand control to their callers, which is where the refusal is printed -- and
+    // the other three dispositions did not move, which is the claim this row makes.
+    expect(counts).toEqual({ fatal: 11, unguarded: 77, guarded: 1, rethrow: 10 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {
