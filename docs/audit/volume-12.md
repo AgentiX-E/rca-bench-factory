@@ -907,3 +907,89 @@ every producer writes (`official.ts:632` twice, `1278`, `1399`, `1536`, `1924`, 
 `Number.isSafeInteger` test in the CLI's `parseInteger` (`src/cli/args.ts:240`). The seven are a
 single leftover with a single correct fix -- make `terms` required in the record type and delete the
 fallbacks -- and it is queued rather than claimed.
+## Finding 515 — a claimant that ran out of time was filed as a claimant that was red
+
+The sites battery runs each `provedBy` file on its own before it trusts a claim, because a
+file that is already red catches every mutant applied to it and would make the whole table
+green on a broken tree. That baseline run is `vitest run <file> --reporter=dot
+--maxWorkers=1`. It inherited vitest's default ceiling of **30,000 ms per test**.
+
+A full `verify:local` failed at step 10 with:
+
+```
+packages/core/test/gate-sites-are-proven.test.ts does not pass on its own (exit 1), so its
+claims are unmeasured
+  FAIL  test/gate-sites-are-proven.test.ts > … > rejects a sit…
+  Error: Test timed out in 30000ms.
+  Tests  1 failed | 68 passed (69)
+```
+
+The file was green. Run alone it takes **4,900 ms** for 69 tests, and its slowest test --
+`rejects a site that is both proved and exempt`, which copies the pointer fixture -- takes
+**2,370 ms**; the same shard passed on its own twenty minutes earlier in 13.2 minutes for 136
+runs. What differed was that four claimants run at a time, each a vitest of its own, so the
+ceiling vitest assumes (*a test on an idle box*) was measuring a different question
+(*a test on a machine running three other claimants and their `git` children*). The verdict
+was about the machine and was filed as a verdict about the claims.
+
+Two changes, and neither touches the question the battery asks. The claimant run is given
+`--testTimeout=120000`: 24x the whole file, so a test that hangs still fails, twenty-four
+times later. And the baseline's sentence now separates the two findings it had been merging:
+a file that did not finish says `did not finish inside its own 30000 ms of test budget …
+unmeasured rather than unproven`, because "does not pass" sends a reader to the test and the
+truth is the number. The per-test budget is read from the run's own output
+(`Test timed out in (\d+)ms`) and not from the word `Timeout`, because this repository's
+other timeout -- `[vitest-worker]: Timeout calling "onTaskUpdate"` -- is a run in which
+**every test passed** and the worker died on an RPC deadline (findings 199, 507); reading it
+as a test that ran out of time would send a reader to a number that run never mentioned.
+
+The margin is now printed on every run instead of implied: `slowest claimant <file> <n> ms,
+of N run 4 at a time (budget 120000 ms per test)`. A budget nobody prints is a budget that
+is discovered by the next timeout, which is how this one arrived.
+
+## Finding 516 — the file that was at 71% of the stall budget started blocking for 62 seconds
+
+v3.80 wrote this down as a measurement and not a repair: `publish.test.ts` cost 28,183 /
+31,855 ms against a 45,000 ms budget, its cost was process starts, and the open list said so.
+The first coverage run of this round turned it from a margin into a red:
+
+```
+Error: this test file held the event loop for 61987 ms, past the 45000 ms budget.
+Of that, 1740 ms were this process's own CPU time
+```
+
+1,740 ms of CPU against 62 s of blocked loop is the signature the gauge was rebuilt to print
+in v3.80: this file is not computing, it is waiting -- **synchronously**, on
+`spawnSync('git', …)`, which stops the event loop for as long as the child runs. The file
+starts about **300** of them. Alone the whole file is **12,182 ms** of test time; under a
+coverage run with eight files in parallel the same children take five times as long, and the
+worker's RPC deadline is 60,000 ms -- the run the gate exists to prevent, one second away.
+
+The repair is the first of the two the gate names (`Await the child, or split the file`):
+every child is awaited now. One helper spawns and collects (`runChild`, shaped like
+`spawnSync` -- `{ status, stdout, stderr }` -- because a hundred call sites read it and a
+hundred rewritten assertions would be a larger diff than the defect deserves), the seven
+fixture builders that call it became `async`, and every `it` in the file became `async`.
+Measured after: the file alone is **13,690 ms** of test time (was 12,182: 1.5 s of promise
+plumbing) and its blocked-loop time is **0 ms**, which is the number the budget is about. The
+80 tests are unchanged in what they assert.
+
+Three mechanical slips in that conversion are worth naming, because each was caught by a
+different instrument and none by the compiler (the package's `tsc` project does not include
+`test/`):
+
+- A regex that prefixed `await` to helper calls also prefixed it inside two expected strings
+  (`'every one of the 3 commit(s) this push carried'`), and the test that owned one of them
+  failed. A string is not a call site, and a textual transformation does not know that.
+- `await git(...).split('\n')` is `await (git(...).split)`: the assertion then compares two
+  **promises** and `toBe` says `expected Promise{…} to be Promise{…}`. One site, one red.
+- The fake GitHub server's tree handler stored `raw.stdout` (a string) where it had stored a
+  `Buffer`, and `createTree` answered `POST /git/trees -> 500`. Nine tests whose *subject* is
+  something else failed on it -- which is what a shared fixture is for.
+
+And one more that no assertion caught: the async helper's return type was written inline as
+`Promise<{ status: … }>`, and rule 7's scanner finds a function's body by taking the first
+`{` after its parameters -- which landed on that type literal, so `runChild` was read as a
+function whose body contains no spawn, and `publish.test.ts` was reported as declaring
+`publish-cli.mjs` and never spawning it. The repair is a named `ChildResult` interface: a
+return type written as a literal is a brace where a scanner expects a body.

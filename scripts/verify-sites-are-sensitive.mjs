@@ -94,6 +94,7 @@ import { fileURLToPath } from 'node:url';
 import {
   claimedSites,
   claimsByFile,
+  exhaustedTestBudget,
   failureSummary,
   outputTail,
   hookFile,
@@ -121,6 +122,24 @@ const TESTS = resolve(process.env['RCA_SENSITIVE_TESTS'] ?? join(ROOT, 'packages
  * believed.
  */
 const CONCURRENCY = Number(process.env['RCA_SENSITIVE_CONCURRENCY'] ?? '4');
+
+/**
+ * The per-test ceiling a claimant run is given, in milliseconds.
+ *
+ * A claimant is run to answer one question -- does this file pass on its own -- and the
+ * run is also four of them at a time on a shared machine. Vitest's default ceiling is
+ * 30,000 ms, which is a statement about a test on an idle box: the slowest test in the
+ * claimant set here is `rejects a site that is both proved and exempt` at **2,370 ms**
+ * and its whole file is **4,900 ms** alone, but the same file timed out at 30,000 ms
+ * inside a shard run and the shard reported it as a claimant that "does not pass on its
+ * own (exit 1)" -- a verdict about the machine, filed as a verdict about the claims.
+ *
+ * 120,000 ms is 24x the whole file, which is headroom rather than a budget: a test that
+ * hangs still fails, twenty-four times later. The duration of every baseline is reported
+ * by the summary line, so a margin that shrinks is a number a reader sees rather than a
+ * discovery a later round makes by timing out.
+ */
+const CLAIMANT_TIMEOUT_MS = 120_000;
 
 const args = process.argv.slice(2);
 const listOnly = args.includes('--list');
@@ -296,12 +315,20 @@ function runOnce(file, site) {
   // one-file run has nothing to parallelise, so the flag costs no wall clock.
   const child = spawn(
     process.execPath,
-    [vitestEntry(), 'run', relative(TESTS, absolute), '--reporter=dot', '--maxWorkers=1'],
+    [
+      vitestEntry(),
+      'run',
+      relative(TESTS, absolute),
+      '--reporter=dot',
+      '--maxWorkers=1',
+      `--testTimeout=${String(CLAIMANT_TIMEOUT_MS)}`,
+    ],
     {
       cwd: TESTS,
       env,
     },
   );
+  const launchedAt = Date.now();
   let output = '';
   child.stdout.on('data', (chunk) => {
     output += String(chunk);
@@ -314,6 +341,7 @@ function runOnce(file, site) {
       done({
         file,
         status: null,
+        elapsedMs: Date.now() - launchedAt,
         problem: `${file} could not be run -- ${error.message}`,
         detail: [rerun(file)],
       });
@@ -323,6 +351,7 @@ function runOnce(file, site) {
       done({
         file,
         status: status ?? -1,
+        elapsedMs: Date.now() - launchedAt,
         fired: parseTrace(text),
         hollowed: parseHollows(text),
         output,
@@ -364,10 +393,17 @@ for (const outcome of baselines) {
     // the same finding: a red test and a runner that died with every test passing both
     // arrive here, and only the number tells them apart before the output is read.
     const reported = failureSummary(outcome.output);
+    // A third shape, and the one that has already been filed as the first: the file did
+    // not finish. Its own sentence says so, because "does not pass" sends a reader to
+    // the test and the truth is the budget.
+    const budget = exhaustedTestBudget(outcome.output);
     problems.push({
       head:
-        `${outcome.file} does not pass on its own (exit ${String(outcome.status)}), so its claims are ` +
-        'unmeasured',
+        budget === null
+          ? `${outcome.file} does not pass on its own (exit ${String(outcome.status)}), so its claims are ` +
+            'unmeasured'
+          : `${outcome.file} did not finish inside its own ${String(budget)} ms of test budget ` +
+            `(exit ${String(outcome.status)}), so its claims are unmeasured rather than unproven`,
       // A run whose output carries no report at all -- the shape vitest takes when its
       // worker's RPC deadline expires, with every test passing -- leaves the summary
       // empty. The tail is quoted rather than summarised: it is evidence, and the
@@ -414,6 +450,22 @@ rmSync(scratch, { recursive: true, force: true });
 const runs = baselines.length + mutants.length;
 const minutes = ((Date.now() - startedAt) / 60000).toFixed(1);
 const failures = survivors.length + problems.length + unmeasured.length;
+
+// The margin, printed rather than implied. Each claimant is one file run alone, and the
+// ceiling it is given is 120,000 ms per test; a file that needs a large share of it is a
+// margin that is going away, and the number that says so is measured here on every run
+// instead of being discovered by the next timeout.
+const slowest = baselines.reduce(
+  (worst, outcome) => (outcome.elapsedMs > worst.elapsedMs ? outcome : worst),
+  baselines[0],
+);
+if (slowest !== undefined) {
+  process.stdout.write(
+    `verify-sites-are-sensitive: slowest claimant ${slowest.file} ${String(slowest.elapsedMs)} ms, ` +
+      `of ${String(baselines.length)} run ${String(CONCURRENCY)} at a time ` +
+      `(budget ${String(CLAIMANT_TIMEOUT_MS)} ms per test)\n`,
+  );
+}
 
 if (failures > 0) {
   if (survivors.length > 0) {

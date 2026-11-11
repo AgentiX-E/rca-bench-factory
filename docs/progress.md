@@ -422,8 +422,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 97 |
 | Source lines | 34,010 |
 | Test files | 247 core + 4 cli |
-| Test lines | 105,191 core + 3,242 cli |
-| Tests | 6,289 core + 187 cli |
+| Test lines | 105,323 core + 3,242 cli |
+| Tests | 6,293 core + 187 cli |
 | Tracked files | 638 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -508,7 +508,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.81: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.82: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1271,12 +1271,21 @@ is a row about rather than paraphrase one that no `grep` will find.
   under half the budget -- with the wall clock it costs measured rather than traded, and the fact that
   the worst file is now cheap enough to make the question hypothetical kept as a reason rather than an
   answer]`
-- **The next-nearest file is at 71% of the stall budget.** `publish.test.ts` measured 28,183 ms without
+- ~~**The next-nearest file is at 71% of the stall budget.**~~ **Closed by finding 516, and the
+  question it asked had the wrong subject.** `publish.test.ts` measured 28,183 ms without
   coverage and 31,855 ms under it in the four-worker runs, against 45,000 -- and its cost is `git`
   process starts, which is the shape the config's own comment calls the scheduler's job rather than the
   file's. It is under budget in every reading taken, which is the only reason it is not a finding.
-  `[open: whether a file whose cost is process starts has a cheaper shape at all, or whether the honest
-  answer is that the budget's lower bound is the worst of these and the number should say so]`
+  ~~`[open: whether a file whose cost is process starts has a cheaper shape at all, or whether the honest
+  answer is that the budget's lower bound is the worst of these and the number should say so]`~~
+  The budget is about **the event loop**, and this file's test time was never the number it was
+  asking about: measured under coverage at v3.82, the file held the loop for **61,987 ms** while
+  spending **1,740 ms** of CPU. Both figures are seconds of the same file, and the difference is
+  not the scheduler's to fix -- every `git` call was `spawnSync`, so the loop stood still for the
+  length of each child. Repaired by awaiting the spawns (`spawnSync` -> `runChild`): blocked time
+  **61,987 -> 0 ms**, test time 12,182 -> 13,690 ms. The cheaper shape exists and it is not a
+  cheaper process, it is a process the loop is not waiting inside; and the wall clock it costs
+  rose 1.5 s rather than fell, which is the reading the entry's last clause asked for.
 
 
 ## Pass log
@@ -1308,7 +1317,7 @@ and this table.
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
-| [volume-13.md](progress/volume-13.md) | 18 | v3.64 | v3.81 |
+| [volume-13.md](progress/volume-13.md) | 19 | v3.64 | v3.82 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

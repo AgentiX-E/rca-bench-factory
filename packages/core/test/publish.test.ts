@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -66,56 +66,105 @@ const IDENTITY = {
   GIT_COMMITTER_EMAIL: 'lambertyan@example.com',
 };
 
-function git(root: string, args: string[], options: Record<string, unknown> = {}) {
+/** What a finished child says: the shape `spawnSync` returned, kept for its call sites. */
+interface ChildResult {
+  readonly status: number | null;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+/**
+ * One child process, awaited.
+ *
+ * `spawnSync` blocks the event loop for as long as the child runs, and this file starts
+ * about three hundred of them. That is invisible on an idle machine and fatal on a busy
+ * one: the block was measured at 12,182 ms alone and at **61,987 ms** inside a coverage
+ * run, against a 45,000 ms budget and a 60,000 ms worker RPC deadline -- a green suite
+ * turned into a non-zero exit with no failing test (finding 507's failure mode, reached
+ * from the one side the instrument could not fix). Every helper below awaits now, so the
+ * time a child spends running is time this worker spends scheduling other files.
+ *
+ * The shape is `spawnSync`'s, deliberately: `{ status, stdout, stderr }`, with `status`
+ * null when the child never started, because a hundred call sites read it and a hundred
+ * rewritten assertions would be a bigger diff than the defect deserves.
+ */
+function runChild(
+  command: string,
+  args: string[],
+  options: { readonly input?: string; readonly env?: NodeJS.ProcessEnv } = {},
+): Promise<ChildResult> {
+  return new Promise((done) => {
+    const child = spawn(command, args, { env: options.env ?? process.env });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on('error', () => {
+      done({ status: null, stdout, stderr });
+    });
+    child.on('close', (status) => {
+      done({ status, stdout, stderr });
+    });
+    if (options.input !== undefined) child.stdin.end(options.input);
+    else child.stdin.end();
+  });
+}
+
+async function git(root: string, args: string[], options: Record<string, unknown> = {}): Promise<string> {
   const { env: extra, ...rest } = options;
-  const result = spawnSync('git', ['-C', root, ...args], {
-    encoding: 'utf8',
-    ...rest,
+  const result = await runChild('git', ['-C', root, ...args], {
+    ...(rest['input'] === undefined ? {} : { input: String(rest['input']) }),
     env: { ...process.env, ...IDENTITY, ...((extra as object) ?? {}) },
   });
-  if (result.status !== 0) throw new Error(`git ${args.join(' ')} in ${root}: ${String(result.stderr)}`);
+  if (result.status !== 0) throw new Error(`git ${args.join(' ')} in ${root}: ${result.stderr}`);
   return result.stdout;
 }
 
 let clock = 1762265460;
 
-function repository(name: string): string {
+async function repository(name: string): Promise<string> {
   const root = join(SCRATCH, name);
   mkdirSync(root, { recursive: true });
-  git(root, ['init', '-q', '-b', 'main', '.']);
+  await git(root, ['init', '-q', '-b', 'main', '.']);
   return root;
 }
 
 /** One commit; `null` content deletes a path, and `executable` names the paths to chmod. */
-function commit(root: string, message: string, files: Record<string, string | null>, executable: string[] = []): string {
+async function commit(root: string, message: string, files: Record<string, string | null>, executable: string[] = []): Promise<string> {
   for (const [path, content] of Object.entries(files)) {
     if (content === null) {
       rmSync(join(root, path), { force: true });
-      git(root, ['rm', '-q', '--cached', '--', path]);
+      await git(root, ['rm', '-q', '--cached', '--', path]);
       continue;
     }
     mkdirSync(join(root, path, '..'), { recursive: true });
     writeFileSync(join(root, path), content, 'utf8');
-    git(root, ['add', '--', path]);
-    if (executable.includes(path)) git(root, ['update-index', '--chmod=+x', '--', path]);
+    await git(root, ['add', '--', path]);
+    if (executable.includes(path)) await git(root, ['update-index', '--chmod=+x', '--', path]);
   }
   clock += 60;
   const date = `${new Date(clock * 1000).toISOString().slice(0, 19).replace('T', ' ')} +0000`;
-  git(root, ['commit', '-q', '--allow-empty', '-m', message], {
+  await git(root, ['commit', '-q', '--allow-empty', '-m', message], {
     env: { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
   });
-  return git(root, ['rev-parse', 'HEAD']).trim();
+  return (await git(root, ['rev-parse', 'HEAD'])).trim();
 }
 
 /** Five commits, one of each shape the plan has to carry: a file, a deletion, a mode change. */
-function history(name: string) {
-  const source = repository(`${name}-source`);
+async function history(name: string) {
+  const source = await repository(`${name}-source`);
   const shas = [
-    commit(source, 'first', { 'README.md': '# a\n' }),
-    commit(source, 'second', { 'src/one.ts': 'export const one = 1;\n' }),
-    commit(source, 'third', { 'src/two.ts': 'export const two = 2;\n', 'src/gone.ts': 'export const gone = 3;\n', 'run.sh': '#!/bin/sh\n' }, ['run.sh']),
-    commit(source, 'fourth', { 'src/gone.ts': null }),
-    commit(source, 'fifth', { 'docs/note.md': 'a note long enough that its base64 body is longer than the threshold\n' }),
+    await commit(source, 'first', { 'README.md': '# a\n' }),
+    await commit(source, 'second', { 'src/one.ts': 'export const one = 1;\n' }),
+    await commit(source, 'third', { 'src/two.ts': 'export const two = 2;\n', 'src/gone.ts': 'export const gone = 3;\n', 'run.sh': '#!/bin/sh\n' }, ['run.sh']),
+    await commit(source, 'fourth', { 'src/gone.ts': null }),
+    await commit(source, 'fifth', { 'docs/note.md': 'a note long enough that its base64 body is longer than the threshold\n' }),
   ];
   return { source, shas };
 }
@@ -130,10 +179,10 @@ function history(name: string) {
  * It said "none for the ones above it" until v3.60, which a clone does not do: the comment
  * described a fidelity the fixture had never had (finding 449).
  */
-function stage(name: string) {
-  const { source, shas } = history(name);
+async function stage(name: string) {
+  const { source, shas } = await history(name);
   const remote = join(SCRATCH, `${name}-remote.git`);
-  git(SCRATCH, ['clone', '-q', '--bare', source, remote]);
+  await git(SCRATCH, ['clone', '-q', '--bare', source, remote]);
   return { source, remote, shas };
 }
 
@@ -145,20 +194,20 @@ function stage(name: string) {
  * different tree. `upto: null` is a repository with no refs at all, which is the state a first
  * push meets and the only one where the root commit has no parent.
  */
-function staged(name: string, upto: number | null) {
-  const { source, shas } = history(name);
+async function staged(name: string, upto: number | null) {
+  const { source, shas } = await history(name);
   const remote = join(SCRATCH, `${name}-remote.git`);
-  git(SCRATCH, ['init', '-q', '--bare', remote]);
-  if (upto !== null) git(source, ['push', '-q', remote, `${shas[upto]}:refs/heads/main`]);
+  await git(SCRATCH, ['init', '-q', '--bare', remote]);
+  if (upto !== null) await git(source, ['push', '-q', remote, `${shas[upto]}:refs/heads/main`]);
   return { source, remote, shas };
 }
 
-function at(remote: string, sha: string) {
-  git(remote, ['update-ref', 'refs/heads/main', sha]);
+async function at(remote: string, sha: string) {
+  await git(remote, ['update-ref', 'refs/heads/main', sha]);
 }
 
-function log(root: string, rev: string) {
-  return git(root, ['log', '--format=%H %s', rev]).trim();
+async function log(root: string, rev: string) {
+  return (await git(root, ['log', '--format=%H %s', rev])).trim();
 }
 
 /**
@@ -170,11 +219,11 @@ function log(root: string, rev: string) {
  * how much of a long list to print.
  */
 describe('the sentence a refusal names the refs it found with', { timeout: FILE_TIMEOUT_MS }, () => {
-  it('names branches and tags separately, because they are different kinds of ref', () => {
+  it('names branches and tags separately, because they are different kinds of ref', async () => {
     expect(refSentence(['refs/heads/main', 'refs/tags/v1.0'])).toBe('1 branch(es): main; 1 tag(s): v1.0');
   });
 
-  it('prints a short list whole and cuts a long one, so a message stays a message', () => {
+  it('prints a short list whole and cuts a long one, so a message stays a message', async () => {
     const three = ['refs/heads/a', 'refs/heads/b', 'refs/heads/c'];
     expect(refSentence(three)).toBe('3 branch(es): a, b, c');
     const seven = [...three, 'refs/heads/d', 'refs/heads/e', 'refs/heads/f', 'refs/heads/g'];
@@ -187,14 +236,14 @@ describe('the sentence a refusal names the refs it found with', { timeout: FILE_
     expect(refSentence([...five, 'refs/heads/f'])).toBe('6 branch(es): a, b, c, d, e and 1 more');
   });
 
-  it('counts a ref it cannot name as one, rather than dropping it', () => {
+  it('counts a ref it cannot name as one, rather than dropping it', async () => {
     // `refs/pull/7/head` and `refs/notes/commits` are refs: a repository holding only those
     // is not empty, and a sentence that printed nothing would read exactly like one.
     expect(refSentence(['refs/pull/7/head', 'refs/notes/commits'])).toBe('2 other ref(s)');
     expect(refSentence(['refs/heads/main', 'refs/pull/7/head'])).toBe('1 branch(es): main; 1 other ref(s)');
   });
 
-  it('says the count is a lower bound when the walk stopped before the end of the list', () => {
+  it('says the count is a lower bound when the walk stopped before the end of the list', async () => {
     // A page walk is bounded, so there is a repository whose size the channel knows only as
     // "more than what it read". A number printed there would be a count of the part it saw,
     // presented as a count of the whole -- which is the defect the walk was added to fix.
@@ -203,13 +252,13 @@ describe('the sentence a refusal names the refs it found with', { timeout: FILE_
 });
 
 describe('publishing to a repository through the local transport', { timeout: FILE_TIMEOUT_MS }, () => {
-  it('replays every commit the remote does not have, and the remote log becomes the local log', () => {
+  it('replays every commit the remote does not have, and the remote log becomes the local log', async () => {
     // Pushed rather than cloned: the commits above the branch are absent from the remote's
     // object store, so the blobs this case uploads are the blobs that arrive.
-    const { source, remote, shas } = staged('replay', 1);
+    const { source, remote, shas } = await staged('replay', 1);
     const transport = localTransport({ remote });
 
-    return publish({ root: source, rev: 'HEAD', branch: 'main', transport }).then((result) => {
+    return publish({ root: source, rev: 'HEAD', branch: 'main', transport }).then(async (result) => {
       expect(result.state).toBe('published');
       expect(result.identical).toBe(true);
       // Every commit was reproduced from the bytes of its own object, so the names are the
@@ -218,38 +267,38 @@ describe('publishing to a repository through the local transport', { timeout: FI
       // The assertion finding 404 would have failed: three commits went up and one
       // arrived, with every tree identical and the round's account of itself two thirds
       // shorter. A tree comparison is satisfied by that state; a log comparison is not.
-      expect(log(remote, 'main')).toBe(log(source, 'HEAD'));
-      expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
+      expect(await log(remote, 'main')).toBe(await log(source, 'HEAD'));
+      expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[4]!);
     });
   });
 
   it('carries a deletion and a mode change, because both are entries and not absences', async () => {
-    const { source, remote, shas } = stage('entries');
-    at(remote, shas[0]!);
+    const { source, remote, shas } = await stage('entries');
+    await at(remote, shas[0]!);
     const transport = localTransport({ remote });
     await publish({ root: source, rev: 'HEAD', branch: 'main', transport });
 
-    const listing = git(remote, ['ls-tree', '-r', 'main']);
+    const listing = await git(remote, ['ls-tree', '-r', 'main']);
     expect(listing).not.toContain('gone.ts');
     expect(listing).toContain('100755 blob');
-    expect(git(remote, ['ls-tree', '-r', '--name-only', 'main']).trim().split('\n').sort()).toEqual(
-      git(source, ['ls-tree', '-r', '--name-only', 'HEAD']).trim().split('\n').sort(),
+    expect((await git(remote, ['ls-tree', '-r', '--name-only', 'main'])).trim().split('\n').sort()).toEqual(
+      (await git(source, ['ls-tree', '-r', '--name-only', 'HEAD'])).trim().split('\n').sort(),
     );
   });
 
   it('says the remote is current on a second run rather than publishing the tip again', async () => {
-    const { source, remote, shas } = stage('again');
-    at(remote, shas[0]!);
+    const { source, remote, shas } = await stage('again');
+    await at(remote, shas[0]!);
     const transport = localTransport({ remote });
     await publish({ root: source, rev: 'HEAD', branch: 'main', transport });
     const again = await publish({ root: source, rev: 'HEAD', branch: 'main', transport });
     expect(again.state).toBe('current');
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[4]!);
   });
 
   it('creates nothing on a dry run and still names the commits it would publish', async () => {
-    const { source, remote, shas } = stage('dry');
-    at(remote, shas[2]!);
+    const { source, remote, shas } = await stage('dry');
+    await at(remote, shas[2]!);
     const lines: string[] = [];
     const result = await publish({
       root: source,
@@ -261,12 +310,12 @@ describe('publishing to a repository through the local transport', { timeout: FI
     });
     expect(result.state).toBe('planned');
     expect(result.plan.commits).toHaveLength(2);
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[2]!);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[2]!);
     expect(lines.join('\n')).toContain('on the remote tip');
   });
 
   it('publishes a whole history onto a branch on a repository with no refs at all', async () => {
-    const { source, remote, shas } = staged('unborn', null);
+    const { source, remote, shas } = await staged('unborn', null);
     const transport = localTransport({ remote });
     const result = await publish({ root: source, rev: 'HEAD', branch: 'main', transport });
 
@@ -274,16 +323,16 @@ describe('publishing to a repository through the local transport', { timeout: FI
     // The root commit is published with no parent, which is the one step a plan can only
     // carry onto a repository that holds nothing: the five commits are named unchanged.
     expect(result.identity).toEqual({ state: 'exact', commits: 5, base: 'unborn' });
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
-    expect(log(remote, 'main')).toBe(log(source, 'HEAD'));
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[4]!);
+    expect(await log(remote, 'main')).toBe(await log(source, 'HEAD'));
   });
 
   it('refuses a branch that does not exist on a repository that has branches', async () => {
     // The state a typo produces: `--branch mian` on a repository whose branch is `main`.
     // The read answers 404, which is the same status an unborn branch answers, and the plan
     // that follows publishes the whole history onto a branch nobody asked for.
-    const { source, remote, shas } = stage('mistyped');
-    at(remote, shas[1]!);
+    const { source, remote, shas } = await stage('mistyped');
+    await at(remote, shas[1]!);
     const transport = localTransport({ remote });
 
     await expect(publish({ root: source, rev: 'HEAD', branch: 'mian', transport })).rejects.toThrow(
@@ -291,8 +340,8 @@ describe('publishing to a repository through the local transport', { timeout: FI
     );
     // Nothing was created: the refusal is two reads and no write, which is the difference
     // between a push that says no and a push that creates a branch and then says no.
-    expect(spawnSync('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/mian']).status).not.toBe(0);
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+    expect((await runChild('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/mian'])).status).not.toBe(0);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[1]!);
   });
 
   it('creates a name for a commit the remote already holds, and builds nothing', async () => {
@@ -300,8 +349,8 @@ describe('publishing to a repository through the local transport', { timeout: FI
     // branch says so. Until v3.60 the creation path replayed the whole history anyway: the
     // plan walked back from the absent branch and found nowhere to hang, so five commits
     // were rebuilt as new objects for a name that needed one reference (finding 447).
-    const { source, remote, shas } = stage('declared-new');
-    at(remote, shas[1]!);
+    const { source, remote, shas } = await stage('declared-new');
+    await at(remote, shas[1]!);
     const transport = localTransport({ remote });
     const lines: string[] = [];
 
@@ -318,10 +367,10 @@ describe('publishing to a repository through the local transport', { timeout: FI
     expect(result.identity).toEqual({ state: 'held', commits: 0, base: null });
     expect(result.plan.commits).toEqual([]);
     expect(lines.join('\n')).toContain(`the remote already holds ${shas[4]!.slice(0, 9)}`);
-    expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
+    expect((await git(remote, ['rev-parse', 'release'])).trim()).toBe(shas[4]!);
     // The branch that was there did not move: a new branch is a second name for the same
     // history, not a push that lands on the wrong one as well.
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[1]!);
   });
 
   it('refuses to name a commit whose tree no gate blessed, because the name publishes that tree', async () => {
@@ -331,16 +380,16 @@ describe('publishing to a repository through the local transport', { timeout: FI
     // runs on the tip's tree -- so a pointer push is gated like every other push: what crosses
     // the wire is a reference, and what the reference makes reachable is a tree. The bypass was
     // honest about being a bypass; the sentence explaining it was wrong about why.
-    const { source, shas } = history('pointer-gate');
+    const { source, shas } = await history('pointer-gate');
     mkdirSync(join(source, 'scripts'), { recursive: true });
     writeFileSync(join(source, 'scripts', 'verify-local.mjs'), '// a gate, in the only sense this test needs\n');
-    git(source, ['add', '--', 'scripts/verify-local.mjs']);
-    const tip = commit(source, 'a gate appears', {});
+    await git(source, ['add', '--', 'scripts/verify-local.mjs']);
+    const tip = await commit(source, 'a gate appears', {});
     expect(tip).not.toBe(shas[4]);
     const remote = join(SCRATCH, 'pointer-gate-remote.git');
-    git(SCRATCH, ['init', '-q', '--bare', remote]);
-    git(source, ['push', '-q', remote, `${tip}:refs/heads/main`]);
-    const tree = git(source, ['rev-parse', `${tip}^{tree}`]).trim();
+    await git(SCRATCH, ['init', '-q', '--bare', remote]);
+    await git(source, ['push', '-q', remote, `${tip}:refs/heads/main`]);
+    const tree = (await git(source, ['rev-parse', `${tip}^{tree}`])).trim();
     const calls: string[] = [];
     const inner = localTransport({ remote });
     // Every method the executor calls is recorded, and the point of the case is that the
@@ -363,12 +412,12 @@ describe('publishing to a repository through the local transport', { timeout: FI
     expect(calls).toEqual([]);
     // Refused before the name was made: a gate that fired after `POST /git/refs` would have
     // published exactly what it was refusing.
-    expect(spawnSync('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/release']).status).not.toBe(0);
+    expect((await runChild('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/release'])).status).not.toBe(0);
 
     writeReceipt({ root: source, tree, note: 'this test' });
     const result = await publish({ root: source, rev: tip, branch: 'release', transport, newBranch: true });
     expect(result.identity).toEqual({ state: 'held', commits: 0, base: null });
-    expect(git(remote, ['rev-parse', 'release']).trim()).toBe(tip);
+    expect((await git(remote, ['rev-parse', 'release'])).trim()).toBe(tip);
   });
 
   it('replays only the window above a ref tip when the branch is created beside one', async () => {
@@ -378,7 +427,7 @@ describe('publishing to a repository through the local transport', { timeout: FI
     // all -- the history it insisted on replaying contains a merge, and a replayed merge is
     // refused (finding 455). A repository with refs has tips, and `main` is one: the window is
     // what is above it, and the branch is still created rather than moved.
-    const { source, remote, shas } = staged('declared-new-replay', 2);
+    const { source, remote, shas } = await staged('declared-new-replay', 2);
     const transport = localTransport({ remote });
     const lines: string[] = [];
 
@@ -392,8 +441,8 @@ describe('publishing to a repository through the local transport', { timeout: FI
     });
     expect(result.identity).toEqual({ state: 'exact', commits: 2, base: 'commit' });
     expect(lines.join('\n')).toContain(`the remote does not hold ${shas[4]!.slice(0, 9)}`);
-    expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[2]!);
+    expect((await git(remote, ['rev-parse', 'release'])).trim()).toBe(shas[4]!);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[2]!);
   });
 
   it('hangs a created branch on the nearest tip the remote has, not the first one it read', async () => {
@@ -401,15 +450,15 @@ describe('publishing to a repository through the local transport', { timeout: FI
     // the one nearest the tip: `new` at the fourth commit is one commit from the tip and `main`
     // at the second is four. A walk that kept the first match -- and `main` is first in ref
     // order -- would replay four commits for a branch that needs one.
-    const { source, remote, shas } = staged('deepest-tip', 1);
-    git(source, ['push', '-q', remote, `${shas[3]}:refs/heads/new`]);
+    const { source, remote, shas } = await staged('deepest-tip', 1);
+    await git(source, ['push', '-q', remote, `${shas[3]}:refs/heads/new`]);
     const transport = localTransport({ remote });
 
     const result = await publish({ root: source, rev: 'HEAD', branch: 'release', transport, newBranch: true });
     expect(result.identity).toEqual({ state: 'exact', commits: 1, base: 'commit' });
-    expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
-    expect(git(remote, ['rev-parse', 'new']).trim()).toBe(shas[3]!);
+    expect((await git(remote, ['rev-parse', 'release'])).trim()).toBe(shas[4]!);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[1]!);
+    expect((await git(remote, ['rev-parse', 'new'])).trim()).toBe(shas[3]!);
   });
 
   /**
@@ -421,23 +470,22 @@ describe('publishing to a repository through the local transport', { timeout: FI
    * it is the only shape in which choosing a base costs a request -- which is why the three
    * cases below are about counting them.
    */
-  function twinOf({ source, remote, from, name, message }: { source: string; remote: string; from: string; name: string; message: string }) {
+  async function twinOf({ source, remote, from, name, message }: { source: string; remote: string; from: string; name: string; message: string }) {
     const identity = { ...process.env, ...IDENTITY };
-    const tree = git(source, ['rev-parse', `${from}^{tree}`]).trim();
-    const twin = spawnSync('git', ['-C', source, 'commit-tree', tree, '-p', from, '-m', message], { encoding: 'utf8', env: identity }).stdout.trim();
-    git(source, ['push', '-q', remote, `${twin}:refs/heads/${name}`]);
+    const tree = (await git(source, ['rev-parse', `${from}^{tree}`])).trim();
+    const twin = (await runChild('git', ['-C', source, 'commit-tree', tree, '-p', from, '-m', message], { env: identity })).stdout.trim();
+    await git(source, ['push', '-q', remote, `${twin}:refs/heads/${name}`]);
     return twin;
   }
 
   /** A branch pointing at a commit whose tree no commit in this history has. */
-  function foreignTwin({ source, remote, name }: { source: string; remote: string; name: string }) {
+  async function foreignTwin({ source, remote, name }: { source: string; remote: string; name: string }) {
     const identity = { ...process.env, ...IDENTITY };
-    const empty = spawnSync('git', ['-C', source, 'mktree'], { encoding: 'utf8', env: identity, input: '' }).stdout.trim();
-    const twin = spawnSync('git', ['-C', source, 'commit-tree', empty, '-m', `nothing under ${name}`], {
-      encoding: 'utf8',
-      env: identity,
-    }).stdout.trim();
-    git(source, ['push', '-q', remote, `${twin}:refs/heads/${name}`]);
+    const empty = (await runChild('git', ['-C', source, 'mktree'], { env: identity, input: '' })).stdout.trim();
+    const twin = (
+      await runChild('git', ['-C', source, 'commit-tree', empty, '-m', `nothing under ${name}`], { env: identity })
+    ).stdout.trim();
+    await git(source, ['push', '-q', remote, `${twin}:refs/heads/${name}`]);
     return twin;
   }
 
@@ -463,9 +511,9 @@ describe('publishing to a repository through the local transport', { timeout: FI
     // index 1 is as good as this search can get, and the two twin branches below cannot make
     // it better. They were read anyway: the walk compared every tip that was not a local
     // commit, whether or not `best` already held the optimum (finding 459).
-    const { source, remote, shas } = staged('free-base', 3);
-    twinOf({ source, remote, from: shas[0]!, name: 'a-twin', message: 'the same tree, a different name' });
-    twinOf({ source, remote, from: shas[0]!, name: 'z-twin', message: 'the same tree, a third name' });
+    const { source, remote, shas } = await staged('free-base', 3);
+    await twinOf({ source, remote, from: shas[0]!, name: 'a-twin', message: 'the same tree, a different name' });
+    await twinOf({ source, remote, from: shas[0]!, name: 'z-twin', message: 'the same tree, a third name' });
     const { transport, reads } = counted(localTransport({ remote }));
     const lines: string[] = [];
 
@@ -481,9 +529,9 @@ describe('publishing to a repository through the local transport', { timeout: FI
     // below it. Reading `a-twin` answers the question and nothing above it can improve on the
     // answer, so `z-twin` is not read -- and the count is printed, because it is the one number
     // in this path that grows with the repository rather than with the push.
-    const { source, remote, shas } = staged('twin-window', 0);
-    twinOf({ source, remote, from: shas[3]!, name: 'a-twin', message: 'the parent, rebuilt' });
-    foreignTwin({ source, remote, name: 'z-twin' });
+    const { source, remote, shas } = await staged('twin-window', 0);
+    await twinOf({ source, remote, from: shas[3]!, name: 'a-twin', message: 'the parent, rebuilt' });
+    await foreignTwin({ source, remote, name: 'z-twin' });
     const { transport, reads } = counted(localTransport({ remote }));
     const lines: string[] = [];
 
@@ -500,9 +548,9 @@ describe('publishing to a repository through the local transport', { timeout: FI
     // The other end: the only refs are twins whose trees this history does not have, so no
     // base is found at all and the whole ancestry is replayed. Both candidates are read, and
     // the sentence says so -- a reader would otherwise infer it from a five-commit plan.
-    const { source, remote } = staged('twin-none', null);
-    foreignTwin({ source, remote, name: 'a-twin' });
-    foreignTwin({ source, remote, name: 'z-twin' });
+    const { source, remote } = await staged('twin-none', null);
+    await foreignTwin({ source, remote, name: 'a-twin' });
+    await foreignTwin({ source, remote, name: 'z-twin' });
     const { transport, reads } = counted(localTransport({ remote }));
     const lines: string[] = [];
 
@@ -520,32 +568,34 @@ describe('publishing to a repository through the local transport', { timeout: FI
     // same branch created on an empty repository has to replay the merge, and is refused by
     // the plan's own rule. Before v3.61 the creation path always took the second route, so this
     // branch could not be created at all (finding 455).
-    const { source, shas } = history('merge-deep');
+    const { source, shas } = await history('merge-deep');
     const identity = { ...process.env, ...IDENTITY };
-    const second = spawnSync('git', ['-C', source, 'commit-tree', `${shas[1]}^{tree}`, '-p', shas[1], '-m', 'a second parent'], {
-      encoding: 'utf8',
-      env: identity,
-    }).stdout.trim();
-    const merge = spawnSync('git', ['-C', source, 'commit-tree', `${shas[2]}^{tree}`, '-p', shas[2], '-p', second, '-m', 'a merge'], {
-      encoding: 'utf8',
-      env: identity,
-    }).stdout.trim();
-    git(source, ['reset', '-q', '--hard', merge]);
-    const above = commit(source, 'above the merge', { 'docs/a.md': 'a\n' });
-    const tip = commit(source, 'tip above that', { 'docs/b.md': 'b\n' });
+    const second = (
+      await runChild('git', ['-C', source, 'commit-tree', `${shas[1]}^{tree}`, '-p', shas[1], '-m', 'a second parent'], {
+        env: identity,
+      })
+    ).stdout.trim();
+    const merge = (
+      await runChild('git', ['-C', source, 'commit-tree', `${shas[2]}^{tree}`, '-p', shas[2], '-p', second, '-m', 'a merge'], {
+        env: identity,
+      })
+    ).stdout.trim();
+    await git(source, ['reset', '-q', '--hard', merge]);
+    const above = await commit(source, 'above the merge', { 'docs/a.md': 'a\n' });
+    const tip = await commit(source, 'tip above that', { 'docs/b.md': 'b\n' });
     const remote = join(SCRATCH, 'merge-deep-remote.git');
-    git(SCRATCH, ['init', '-q', '--bare', remote]);
-    git(source, ['push', '-q', remote, `${above}:refs/heads/main`]);
+    await git(SCRATCH, ['init', '-q', '--bare', remote]);
+    await git(source, ['push', '-q', remote, `${above}:refs/heads/main`]);
 
     const transport = localTransport({ remote });
     const result = await publish({ root: source, rev: 'HEAD', branch: 'release', transport, newBranch: true });
     expect(result.identity).toEqual({ state: 'exact', commits: 1, base: 'commit' });
-    expect(git(remote, ['rev-parse', 'release']).trim()).toBe(tip);
+    expect((await git(remote, ['rev-parse', 'release'])).trim()).toBe(tip);
 
     // And the route the round removed, on a remote with no refs at all: the whole ancestry,
     // which reaches the merge, which a replay cannot carry.
     const bare = join(SCRATCH, 'merge-deep-empty.git');
-    git(SCRATCH, ['init', '-q', '--bare', bare]);
+    await git(SCRATCH, ['init', '-q', '--bare', bare]);
     await expect(
       publish({ root: source, rev: 'HEAD', branch: 'release', transport: localTransport({ remote: bare }), newBranch: true }),
     ).rejects.toThrow(/has 2 parents, and a replayed commit is published on one/);
@@ -554,7 +604,7 @@ describe('publishing to a repository through the local transport', { timeout: FI
   it('replays the whole history only when the remote has no ref to hang it on', async () => {
     // The other side of the same decision: a repository with no refs has no base, and the
     // first push is the one case where the window really is the ancestry.
-    const { source, remote, shas } = staged('declared-new-empty', null);
+    const { source, remote, shas } = await staged('declared-new-empty', null);
     const transport = localTransport({ remote });
     const lines: string[] = [];
 
@@ -568,21 +618,21 @@ describe('publishing to a repository through the local transport', { timeout: FI
     });
     expect(result.identity).toEqual({ state: 'exact', commits: 5, base: 'unborn' });
     expect(lines.join('\n')).toContain('the remote holds no refs');
-    expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
+    expect((await git(remote, ['rev-parse', 'release'])).trim()).toBe(shas[4]!);
   });
 
   it('refuses --new-branch for a branch that exists, because the flag is a claim about the remote', async () => {
     // The flag was read as permission and not as a statement. A push that says "this branch
     // is new" onto a branch that is there is a push whose author is wrong about the remote,
     // and publishing it would move a branch they believe they are creating.
-    const { source, remote, shas } = stage('claim');
-    at(remote, shas[3]!);
+    const { source, remote, shas } = await stage('claim');
+    await at(remote, shas[3]!);
     const transport = localTransport({ remote });
 
     await expect(publish({ root: source, rev: 'HEAD', branch: 'main', transport, newBranch: true })).rejects.toThrow(
       /'main' already exists at [0-9a-f]{9} and --new-branch says it does not/,
     );
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[3]!);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[3]!);
   });
 
   it('publishes onto a twin of a local ancestor, and says the names are the only difference', async () => {
@@ -591,10 +641,10 @@ describe('publishing to a repository through the local transport', { timeout: FI
     // produced by an earlier replay onto a twin. Every commit above it is renamed by the
     // push that follows, because a commit's name is its content *and its parents' names*.
     // The channel cannot undo that; what it can do is prove the replay lost nothing else.
-    const { source, remote, shas } = stage('twin');
-    const twin = git(remote, ['commit-tree', `${shas[1]}^{tree}`, '-m', 'a twin of the second']).trim();
+    const { source, remote, shas } = await stage('twin');
+    const twin = (await git(remote, ['commit-tree', `${shas[1]}^{tree}`, '-m', 'a twin of the second'])).trim();
     expect(twin).not.toBe(shas[1]);
-    at(remote, twin);
+    await at(remote, twin);
 
     const lines: string[] = [];
     const result = await publish({
@@ -614,45 +664,45 @@ describe('publishing to a repository through the local transport', { timeout: FI
     expect(announced).toBeLessThan(firstBuild);
     expect(lines.filter((line) => line.includes('the same commit, hanging on'))).toHaveLength(3);
     // The content is the local content: same tree, same message, same parent count.
-    expect(git(remote, ['rev-parse', 'main^{tree}']).trim()).toBe(git(source, ['rev-parse', 'HEAD^{tree}']).trim());
-    expect(git(remote, ['log', '-1', '--format=%B', 'main']).trim()).toBe(
-      git(source, ['log', '-1', '--format=%B', 'HEAD']).trim(),
+    expect((await git(remote, ['rev-parse', 'main^{tree}'])).trim()).toBe((await git(source, ['rev-parse', 'HEAD^{tree}'])).trim());
+    expect((await git(remote, ['log', '-1', '--format=%B', 'main'])).trim()).toBe(
+      (await git(source, ['log', '-1', '--format=%B', 'HEAD'])).trim(),
     );
     // And the difference is exactly the parent lines: the remote's tip is the local tip's
     // own bytes with its parents named after the commits the remote actually holds. Comparing
     // the objects with their `parent` lines removed is the isomorphism, stated as a test.
-    const body = (root: string, rev: string) =>
-      git(root, ['cat-file', '-p', rev])
+    const body = async (root: string, rev: string) =>
+      (await git(root, ['cat-file', '-p', rev]))
         .split('\n')
         .filter((line) => !line.startsWith('parent '))
         .join('\n');
-    expect(body(remote, 'main')).toBe(body(source, 'HEAD'));
-    const oldest = git(remote, ['rev-list', '--max-count=3', 'main']).trim().split('\n').pop() ?? '';
-    expect(git(remote, ['rev-list', '--parents', '-n', '1', oldest]).trim().split(' ')[1]).toBe(twin);
+    expect(await body(remote, 'main')).toBe(await body(source, 'HEAD'));
+    const oldest = (await git(remote, ['rev-list', '--max-count=3', 'main'])).trim().split('\n').pop() ?? '';
+    expect((await git(remote, ['rev-list', '--parents', '-n', '1', oldest])).trim().split(' ')[1]).toBe(twin);
   });
 
   it('refuses to create a branch that appeared between the plan and the ref', async () => {
     // The race the creation path has to answer: the plan was made against an absent branch
     // and something else created it first. Asserted on the transport directly, because the
     // window it is about cannot be held open through `publish()`.
-    const { remote, shas } = stage('local-appeared');
+    const { remote, shas } = await stage('local-appeared');
     const transport = localTransport({ remote });
     await expect(transport.updateRef({ branch: 'main', sha: shas[2]!, expected: null })).rejects.toThrow(
       /the branch 'main' was absent when the plan was made and is not now: it is [0-9a-f]{9}/,
     );
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[4]!);
   });
 
   it('answers whether the remote holds a commit, and a blob it holds is not one', async () => {
     // The question the creation path turns on. A remote that holds a blob is not a remote
     // that holds the history that blob appears in, so the answer is asked of `^{commit}`
     // rather than of the object store at large.
-    const { source, remote, shas } = staged('holds', 2);
+    const { source, remote, shas } = await staged('holds', 2);
     const transport = localTransport({ remote });
     try {
       expect(await transport.holds(shas[2]!)).toBe(true);
       expect(await transport.holds(shas[3]!)).toBe(false);
-      const blob = git(source, ['rev-parse', `${shas[2]}:README.md`]).trim();
+      const blob = (await git(source, ['rev-parse', `${shas[2]}:README.md`])).trim();
       expect(await transport.holds(blob)).toBe(false);
     } finally {
       transport.dispose();
@@ -660,8 +710,8 @@ describe('publishing to a repository through the local transport', { timeout: FI
   });
 
   it('does not ask for a ref listing on the ordinary path, where the branch read answered', async () => {
-    const { source, remote, shas } = stage('no-probe');
-    at(remote, shas[3]!);
+    const { source, remote, shas } = await stage('no-probe');
+    await at(remote, shas[3]!);
     const asked: string[] = [];
     const transport = localTransport({ remote });
     const counted = { ...transport, refs: async () => { asked.push('refs'); return transport.refs(); } };
@@ -677,7 +727,7 @@ describe('publishing to a repository through the local transport', { timeout: FI
     // saving is deliberately conservative: the replay that follows is correct whatever the
     // object store contains, while naming a commit the listing never mentioned would rely on
     // objects a repository with no refs is about to collect.
-    const { source, remote, shas } = staged('empty-listing', null);
+    const { source, remote, shas } = await staged('empty-listing', null);
     const transport = localTransport({ remote });
     const asked: string[] = [];
     const lines: string[] = [];
@@ -702,14 +752,14 @@ describe('publishing to a repository through the local transport', { timeout: FI
     // <sha>" is a claim about the object store, and this path never looked at it.
     expect(lines.join('\n')).not.toContain('the remote does not hold');
     expect(result.identical).toBe(true);
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[4]!);
   });
 
   it('refuses when the remote holds neither the revision nor any tree of its ancestry', async () => {
-    const { source, remote } = stage('unrelated');
-    const other = repository('unrelated-other');
-    commit(other, 'somebody else', { 'other.txt': 'x\n' });
-    git(SCRATCH, ['clone', '-q', '--bare', other, join(SCRATCH, 'unrelated-remote-2.git')]);
+    const { source, remote } = await stage('unrelated');
+    const other = await repository('unrelated-other');
+    await commit(other, 'somebody else', { 'other.txt': 'x\n' });
+    await git(SCRATCH, ['clone', '-q', '--bare', other, join(SCRATCH, 'unrelated-remote-2.git')]);
     const stranger = join(SCRATCH, 'unrelated-remote-2.git');
 
     await expect(
@@ -717,8 +767,8 @@ describe('publishing to a repository through the local transport', { timeout: FI
     ).rejects.toThrow(/Publishing the tip alone is how finding 404 lost two of three commits/);
     // Nothing was written to either repository: the refusal happens before the first
     // upload, so the stranger still has its one commit and the source is untouched.
-    expect(git(stranger, ['rev-list', '--count', 'main']).trim()).toBe('1');
-    expect(git(remote, ['rev-list', '--count', 'main']).trim()).toBe('5');
+    expect((await git(stranger, ['rev-list', '--count', 'main'])).trim()).toBe('1');
+    expect((await git(remote, ['rev-list', '--count', 'main'])).trim()).toBe('5');
   });
 
   it('creates a branch at a tip the remote holds under another name, one commit and no blob', async () => {
@@ -730,69 +780,70 @@ describe('publishing to a repository through the local transport', { timeout: FI
     // `staged` with the history pushed up to the fourth commit, then a twin of the fifth made
     // in the source and pushed: the remote holds the twin's tree and blobs and *not* the local
     // commit, which is the state a push leaves behind and the one `holds` answers `false` to.
-    const { source, remote, shas } = staged('twin-creation', 3);
-    const twin = spawnSync(
-      'git',
-      ['-C', source, 'commit-tree', `${shas[4]}^{tree}`, '-p', shas[3]!, '-m', 'a twin of the fifth'],
-      { encoding: 'utf8', env: { ...process.env, ...IDENTITY } },
+    const { source, remote, shas } = await staged('twin-creation', 3);
+    const twin = (
+      await runChild('git', ['-C', source, 'commit-tree', `${shas[4]}^{tree}`, '-p', shas[3]!, '-m', 'a twin of the fifth'], {
+        env: { ...process.env, ...IDENTITY },
+      })
     ).stdout.trim();
-    git(source, ['push', '-q', remote, `${twin}:refs/heads/main`]);
+    await git(source, ['push', '-q', remote, `${twin}:refs/heads/main`]);
     const transport = localTransport({ remote });
 
     const result = await publish({ root: source, rev: 'HEAD', branch: 'copy', transport, newBranch: true });
     expect(result.identity).toEqual({ state: 'parents', commits: 1, base: 'tree' });
     expect(result.plan.commits).toHaveLength(1);
-    const made = git(remote, ['rev-parse', 'copy']).trim();
+    const made = (await git(remote, ['rev-parse', 'copy'])).trim();
     expect(made).not.toBe(shas[4]);
-    expect(git(remote, ['rev-parse', `${made}^{tree}`]).trim()).toBe(git(source, ['rev-parse', 'HEAD^{tree}']).trim());
+    expect((await git(remote, ['rev-parse', `${made}^{tree}`])).trim()).toBe((await git(source, ['rev-parse', 'HEAD^{tree}'])).trim());
     // The parent is the twin, so the branch is one commit above what the remote had -- not a
     // second root, and not a history the branch was never asked to carry.
-    expect(git(remote, ['rev-parse', `${made}^`]).trim()).toBe(twin);
+    expect((await git(remote, ['rev-parse', `${made}^`])).trim()).toBe(twin);
     // And the branch that was there did not move.
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(twin);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(twin);
   });
 
   it('refuses when the remote already carries this tree on a commit that is not this one', async () => {
-    const { source, remote, shas } = stage('sametree');
-    const tree = git(source, ['rev-parse', 'HEAD^{tree}']).trim();
-    const elsewhere = spawnSync('git', ['-C', remote, 'commit-tree', tree, '-m', 'a different message'], {
-      encoding: 'utf8',
-      env: { ...process.env, ...IDENTITY },
-    }).stdout.trim();
-    at(remote, elsewhere);
+    const { source, remote, shas } = await stage('sametree');
+    const tree = (await git(source, ['rev-parse', 'HEAD^{tree}'])).trim();
+    const elsewhere = (
+      await runChild('git', ['-C', remote, 'commit-tree', tree, '-m', 'a different message'], {
+        env: { ...process.env, ...IDENTITY },
+      })
+    ).stdout.trim();
+    await at(remote, elsewhere);
 
     await expect(
       publish({ root: source, rev: 'HEAD', branch: 'main', transport: localTransport({ remote }) }),
     ).rejects.toThrow(/already carries the tree of/);
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(elsewhere);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(elsewhere);
     expect(shas[4]).not.toBe(elsewhere);
   });
 
   it('refuses a branch that moved between the plan and the ref, and forces nothing', async () => {
-    const { source, remote, shas } = stage('moved');
-    at(remote, shas[0]!);
+    const { source, remote, shas } = await stage('moved');
+    await at(remote, shas[0]!);
     const local = localTransport({ remote });
     const interrupted = {
       ...local,
       async updateRef(args: { branch: string; sha: string; expected: string | null }) {
-        at(remote, shas[1]!);
+        await at(remote, shas[1]!);
         return local.updateRef(args);
       },
     };
     await expect(publish({ root: source, rev: 'HEAD', branch: 'main', transport: interrupted })).rejects.toThrow(
       /the branch moved while the plan was being executed/,
     );
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[1]!);
   });
 
   it('asks for a receipt when the repository has a gate, and publishes once it has one', async () => {
-    const { source, remote, shas } = stage('receipt');
-    at(remote, shas[0]!);
+    const { source, remote, shas } = await stage('receipt');
+    await at(remote, shas[0]!);
     mkdirSync(join(source, 'scripts'), { recursive: true });
     writeFileSync(join(source, 'scripts', 'verify-local.mjs'), '// a gate, in the only sense this test needs\n');
-    git(source, ['add', '--', 'scripts/verify-local.mjs']);
-    const head = commit(source, 'a gate appears', {});
-    const tree = git(source, ['rev-parse', `${head}^{tree}`]).trim();
+    await git(source, ['add', '--', 'scripts/verify-local.mjs']);
+    const head = await commit(source, 'a gate appears', {});
+    const tree = (await git(source, ['rev-parse', `${head}^{tree}`])).trim();
 
     expect(() => requireReceipt({ root: source, rev: head, tree })).toThrow(/no verify:local receipt exists/);
     writeReceipt({ root: source, tree, note: 'this test' });
@@ -803,10 +854,10 @@ describe('publishing to a repository through the local transport', { timeout: FI
     expect(result.identical).toBe(true);
   });
 
-  it('does not ask a repository that has no gate, so the prose repository can still be pushed', () => {
-    const source = repository('no-gate');
-    const head = commit(source, 'one', { 'a.txt': 'a\n' });
-    const tree = git(source, ['rev-parse', `${head}^{tree}`]).trim();
+  it('does not ask a repository that has no gate, so the prose repository can still be pushed', async () => {
+    const source = await repository('no-gate');
+    const head = await commit(source, 'one', { 'a.txt': 'a\n' });
+    const tree = (await git(source, ['rev-parse', `${head}^{tree}`])).trim();
     expect(requireReceipt({ root: source, rev: head, tree })).toMatchObject({ state: 'absent' });
   });
 });
@@ -954,7 +1005,7 @@ async function api(remote: string) {
         // Asked with `cat-file -e` directly rather than through the transport's own `holds`:
         // a fixture that answers the question with the code being asked about it would agree
         // with any answer that code gave.
-        if (spawnSync('git', ['-C', remote, 'cat-file', '-e', `${sha}^{commit}`]).status !== 0) {
+        if ((await runChild('git', ['-C', remote, 'cat-file', '-e', `${sha}^{commit}`])).status !== 0) {
           return fail(404, 'Not Found');
         }
         const commit = await local.commit(sha);
@@ -972,15 +1023,15 @@ async function api(remote: string) {
         if (body.encoding === 'base64' && behaviour.maxBase64 !== null && body.content.length > behaviour.maxBase64) {
           return fail(400, 'malformed request');
         }
-        const written = spawnSync('git', ['-C', remote, 'hash-object', '-w', '--stdin'], { input: raw });
+        const written = await runChild('git', ['-C', remote, 'hash-object', '-w', '--stdin'], { input: raw });
         return send(201, { sha: String(written.stdout).trim() });
       }
       if (request.method === 'POST' && path === '/git/trees') {
         const blobs = new Map<string, Buffer>();
         for (const entry of body.tree) {
           if (entry.sha === null) continue;
-          const raw = spawnSync('git', ['-C', remote, 'cat-file', 'blob', entry.sha]);
-          blobs.set(entry.sha, raw.stdout);
+          const raw = await runChild('git', ['-C', remote, 'cat-file', 'blob', entry.sha]);
+          blobs.set(entry.sha, Buffer.from(raw.stdout, 'utf8'));
         }
         const tree = await local.createTree({ base: body.base_tree ?? null, entries: body.tree, blobs });
         return send(201, { sha: tree });
@@ -1006,7 +1057,7 @@ async function api(remote: string) {
         // A push that arrives after somebody else's: the ref moves between the read this
         // channel did and the write it asks for, which is the state `force: false` exists
         // to refuse.
-        if (behaviour.moveOnPatch !== null) at(remote, behaviour.moveOnPatch);
+        if (behaviour.moveOnPatch !== null) await at(remote, behaviour.moveOnPatch);
         try {
           await local.updateRef({ branch: name, sha: body.sha, expected: before.sha });
         } catch (error) {
@@ -1047,23 +1098,23 @@ async function api(remote: string) {
 
 describe('publishing through the GitHub transport, against a server that writes real objects', { timeout: FILE_TIMEOUT_MS }, () => {
   it('reconstructs three commits byte for byte over HTTP', async () => {
-    const { source, remote, shas } = stage('http');
-    at(remote, shas[1]!);
+    const { source, remote, shas } = await stage('http');
+    await at(remote, shas[1]!);
     const server = await api(remote);
     try {
       const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
       const result = await publish({ root: source, rev: 'HEAD', branch: 'main', transport });
       expect(result.identical).toBe(true);
-      expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
-      expect(log(remote, 'main')).toBe(log(source, 'HEAD'));
+      expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[4]!);
+      expect(await log(remote, 'main')).toBe(await log(source, 'HEAD'));
     } finally {
       await server.close();
     }
   });
 
   it('retries a 500 and publishes the same history on the second attempt', async () => {
-    const { source, remote, shas } = stage('retry');
-    at(remote, shas[2]!);
+    const { source, remote, shas } = await stage('retry');
+    await at(remote, shas[2]!);
     const server = await api(remote);
     try {
       server.behaviour.failOnce = 'POST /repos/owner/repo/git/commits';
@@ -1085,8 +1136,8 @@ describe('publishing through the GitHub transport, against a server that writes 
   });
 
   it('retries a request whose socket the peer closed, and the push still ends at the local tip', async () => {
-    const { source, remote, shas } = stage('socket-drop');
-    at(remote, shas[3]!);
+    const { source, remote, shas } = await stage('socket-drop');
+    await at(remote, shas[3]!);
     const server = await api(remote);
     try {
       server.behaviour.dropOnce = 'POST /repos/owner/repo/git/blobs';
@@ -1099,7 +1150,7 @@ describe('publishing through the GitHub transport, against a server that writes 
       });
       const result = await publish({ root: source, rev: 'HEAD', branch: 'main', transport });
       expect(result.identical).toBe(true);
-      expect(log(remote, 'main')).toBe(log(source, 'HEAD'));
+      expect(await log(remote, 'main')).toBe(await log(source, 'HEAD'));
       // The dropped request has no answer to count as an object; the retry does. Assert
       // the retry happened rather than that the first request silently disappeared.
       expect(server.behaviour.requests.filter((key) => key === 'POST /repos/owner/repo/git/blobs').length).toBeGreaterThan(1);
@@ -1109,8 +1160,8 @@ describe('publishing through the GitHub transport, against a server that writes 
   });
 
   it('spends exactly its retry budget on a connection that never answers, then refuses', async () => {
-    const { source, remote, shas } = stage('socket-always');
-    at(remote, shas[3]!);
+    const { source, remote, shas } = await stage('socket-always');
+    await at(remote, shas[3]!);
     const server = await api(remote);
     try {
       server.behaviour.dropAll = 'POST /repos/owner/repo/git/blobs';
@@ -1125,7 +1176,7 @@ describe('publishing through the GitHub transport, against a server that writes 
       await expect(publish({ root: source, rev: 'HEAD', branch: 'main', transport })).rejects.toThrow(/fetch failed|other side closed|UND_ERR/);
       expect(server.behaviour.requests.filter((key) => key === 'POST /repos/owner/repo/git/blobs')).toHaveLength(3);
       // Nothing was forced: the ref is where it started.
-      expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[3]!);
+      expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[3]!);
     } finally {
       await server.close();
     }
@@ -1159,8 +1210,8 @@ describe('publishing through the GitHub transport, against a server that writes 
   });
 
   it('falls back to a utf-8 body when the base64 one is refused, and the commit is still the local one', async () => {
-    const { source, remote, shas } = stage('utf8');
-    at(remote, shas[3]!);
+    const { source, remote, shas } = await stage('utf8');
+    await at(remote, shas[3]!);
     const server = await api(remote);
     try {
       server.behaviour.maxBase64 = 32;
@@ -1175,8 +1226,8 @@ describe('publishing through the GitHub transport, against a server that writes 
   });
 
   it('refuses a truncated listing before it creates a single object', async () => {
-    const { source, remote, shas } = stage('short-listing');
-    at(remote, shas[1]!);
+    const { source, remote, shas } = await stage('short-listing');
+    await at(remote, shas[1]!);
     const server = await api(remote);
     try {
       server.behaviour.truncate = true;
@@ -1186,7 +1237,7 @@ describe('publishing through the GitHub transport, against a server that writes 
       );
       expect(server.behaviour.requests.filter((key) => key.includes('/git/trees') && key.startsWith('POST'))).toEqual([]);
       expect(server.behaviour.requests.filter((key) => key.includes('/git/blobs'))).toEqual([]);
-      expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+      expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[1]!);
     } finally {
       await server.close();
     }
@@ -1198,8 +1249,8 @@ describe('publishing through the GitHub transport, against a server that writes 
     // API keeps, so the case can put the channel in front of a rebuild that is wrong by one
     // byte -- and the refusal is the point: a channel that described this as "a different
     // history" would be guessing at a cause it had never checked.
-    const { source, remote, shas } = stage('http-lost-byte');
-    at(remote, shas[1]!);
+    const { source, remote, shas } = await stage('http-lost-byte');
+    await at(remote, shas[1]!);
     const server = await api(remote);
     server.behaviour.loseMessageTail = true;
     try {
@@ -1211,7 +1262,7 @@ describe('publishing through the GitHub transport, against a server that writes 
         ),
       );
       // Nothing was forced: the ref is where it was when the push started.
-      expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+      expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[1]!);
     } finally {
       await server.close();
     }
@@ -1222,13 +1273,13 @@ describe('publishing through the GitHub transport, against a server that writes 
     // state a first push meets, and the only one where the root commit is published on
     // nothing. A clone would not do -- it carries every object, so the push would be a name
     // for a commit that was already there.
-    const { source, remote, shas } = staged('http-unborn', null);
+    const { source, remote, shas } = await staged('http-unborn', null);
     const server = await api(remote);
     try {
       const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
       const result = await publish({ root: source, rev: 'HEAD', branch: 'main', transport });
       expect(result.identical).toBe(true);
-      expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
+      expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[4]!);
       // The 404 is answered by asking what the repository does hold: one read, and it is
       // what tells an unborn branch on an empty repository from a name that is wrong.
       expect(server.behaviour.requests.filter((key) => key === 'GET /repos/owner/repo/git/refs?per_page=100&page=1')).toHaveLength(1);
@@ -1254,8 +1305,8 @@ describe('publishing through the GitHub transport, against a server that writes 
   it('names a commit the remote already holds with three requests, and writes no object', async () => {
     // The creation path's whole cost when the objects are there: the branch read, the
     // question, the creation. The plan it prints is empty, because there is nothing to build.
-    const { source, remote, shas } = stage('http-pointer');
-    at(remote, shas[1]!);
+    const { source, remote, shas } = await stage('http-pointer');
+    await at(remote, shas[1]!);
     const server = await api(remote);
     try {
       const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
@@ -1263,8 +1314,8 @@ describe('publishing through the GitHub transport, against a server that writes 
       expect(result.state).toBe('published');
       expect(result.identical).toBe(true);
       expect(result.identity).toEqual({ state: 'held', commits: 0, base: null });
-      expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
-      expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+      expect((await git(remote, ['rev-parse', 'release'])).trim()).toBe(shas[4]!);
+      expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[1]!);
       expect(server.behaviour.requests).toEqual([
         'GET /repos/owner/repo/git/ref/heads/release',
         `GET /repos/owner/repo/git/commits/${shas[4]}`,
@@ -1280,7 +1331,7 @@ describe('publishing through the GitHub transport, against a server that writes 
     // ref in the repository". The refusal that turns on that listing counts what it reads and
     // prints a few names, so a repository with a hundred and forty branches was refused with
     // "100 branch(es)" -- a number the reader is entitled to act on, off by forty.
-    const { source, remote } = staged('http-refs-pages', 1);
+    const { source, remote } = await staged('http-refs-pages', 1);
     const server = await api(remote);
     server.behaviour.refsCount = 140;
     try {
@@ -1301,13 +1352,13 @@ describe('publishing through the GitHub transport, against a server that writes 
     // The creation path's base, over the real API's shapes. `main` points at a commit the
     // local ancestry already carries, so the listing's SHA is enough to place it -- no commit
     // read, no tree read until the base has been chosen -- and the window is what is above it.
-    const { source, remote, shas } = staged('http-creation-base', 2);
+    const { source, remote, shas } = await staged('http-creation-base', 2);
     const server = await api(remote);
     try {
       const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
       const result = await publish({ root: source, rev: 'HEAD', branch: 'release', transport, newBranch: true });
       expect(result.identity).toEqual({ state: 'exact', commits: 2, base: 'commit' });
-      expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
+      expect((await git(remote, ['rev-parse', 'release'])).trim()).toBe(shas[4]!);
       const asked = server.behaviour.requests;
       // The tip's name is in the ancestry, so the only read of it is the question about the
       // tip itself -- answered `404`, because the commit above it is the one being published.
@@ -1326,7 +1377,7 @@ describe('publishing through the GitHub transport, against a server that writes 
     // The case a page walk gets wrong by assuming: a hundred is both "the page size" and "the
     // size of a repository with a hundred refs". Only the next page can tell them apart, so
     // the walk asks one more question than the obvious implementation and the count is exact.
-    const { source, remote } = staged('http-refs-exact', 1);
+    const { source, remote } = await staged('http-refs-exact', 1);
     const server = await api(remote);
     server.behaviour.refsCount = 100;
     try {
@@ -1345,7 +1396,7 @@ describe('publishing through the GitHub transport, against a server that writes 
     // the sentence says "at least" rather than printing a number it did not finish counting.
     // A refusal is read by somebody looking for their own branch, and the two facts it owes
     // them are "this repository is not empty" and "here is roughly how much is in it".
-    const { source, remote } = staged('http-refs-bound', 1);
+    const { source, remote } = await staged('http-refs-bound', 1);
     const server = await api(remote);
     server.behaviour.refsCount = 1400;
     try {
@@ -1363,7 +1414,7 @@ describe('publishing through the GitHub transport, against a server that writes 
     // The cost claim: pagination is free on the repositories this channel actually pushes to.
     // A short page is a complete listing, and the request after it would be a request that
     // could only confirm a count it already has.
-    const { source, remote } = staged('http-refs-short', 1);
+    const { source, remote } = await staged('http-refs-short', 1);
     const server = await api(remote);
     try {
       const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
@@ -1384,7 +1435,7 @@ describe('publishing through the GitHub transport, against a server that writes 
     // page exists only because the first one was full. Reading the status as "no refs"
     // anyway would turn the one listing that proves the repository is not empty into a
     // licence to publish a whole history onto a name that is wrong.
-    const { source, remote } = staged('http-refs-late-409', 1);
+    const { source, remote } = await staged('http-refs-late-409', 1);
     const server = await api(remote);
     server.behaviour.refsCount = 140;
     server.behaviour.refsStatusAfter = 409;
@@ -1394,15 +1445,15 @@ describe('publishing through the GitHub transport, against a server that writes 
         /git\/refs\?per_page=100&page=2 -> 409/,
       );
       // And nothing was published: the refusal is the whole outcome of a mistyped branch.
-      expect(spawnSync('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/relese']).status).not.toBe(0);
+      expect((await runChild('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/relese'])).status).not.toBe(0);
     } finally {
       await server.close();
     }
   });
 
   it('says what a dry run would do rather than naming commits it would not build', async () => {
-    const { source, remote, shas } = stage('http-pointer-dry');
-    at(remote, shas[2]!);
+    const { source, remote, shas } = await stage('http-pointer-dry');
+    await at(remote, shas[2]!);
     const server = await api(remote);
     try {
       const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
@@ -1417,7 +1468,7 @@ describe('publishing through the GitHub transport, against a server that writes 
       expect(result.state).toBe('planned');
       expect(result.plan.commits).toEqual([]);
       // Still absent: a dry run reads the remote and creates nothing, including the name.
-      expect(spawnSync('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/release']).status).not.toBe(0);
+      expect((await runChild('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/release'])).status).not.toBe(0);
       expect(server.behaviour.requests.filter((key) => key.startsWith('POST'))).toEqual([]);
     } finally {
       await server.close();
@@ -1428,7 +1479,7 @@ describe('publishing through the GitHub transport, against a server that writes 
     // A `403` on the commit read is not a commit that is absent, and the two differ by a
     // replay of a history the remote already has -- which for this channel is three hundred
     // uploads. So the status is forwarded, and nothing is written.
-    const { source, remote, shas } = staged('http-pointer-refused', 1);
+    const { source, remote, shas } = await staged('http-pointer-refused', 1);
     const server = await api(remote);
     server.behaviour.commitStatus = 403;
     try {
@@ -1439,7 +1490,7 @@ describe('publishing through the GitHub transport, against a server that writes 
       expect(error).toBeInstanceOf(ApiError);
       expect((error as { status: number }).status).toBe(403);
       expect(server.behaviour.requests.filter((key) => key.startsWith('POST'))).toEqual([]);
-      expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+      expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[1]!);
     } finally {
       await server.close();
     }
@@ -1449,8 +1500,8 @@ describe('publishing through the GitHub transport, against a server that writes 
     // The mirror of the moved-ref refusal: the plan was made against an absent branch and
     // the creation is refused because the name is taken. The channel does not re-read the
     // branch here -- see the comment on `updateRef` -- so the sentence says what it knows.
-    const { source, remote } = stage('http-create-refused');
-    git(remote, ['update-ref', '-d', 'refs/heads/main']);
+    const { source, remote } = await stage('http-create-refused');
+    await git(remote, ['update-ref', '-d', 'refs/heads/main']);
     const server = await api(remote);
     server.behaviour.createStatus = 422;
     try {
@@ -1464,15 +1515,15 @@ describe('publishing through the GitHub transport, against a server that writes 
       // cannot tell them apart without a second read it refuses to make, so it says so.
       expect(String((error as Error).message)).toMatch(/was absent when the plan was made and is not now/);
       expect(String((error as Error).message)).toMatch(/or the commit it was to name is not there after all/);
-      expect(spawnSync('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/main']).status).not.toBe(0);
+      expect((await runChild('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/main'])).status).not.toBe(0);
     } finally {
       await server.close();
     }
   });
 
   it('refuses a branch the remote does not have, before it creates a single object', async () => {
-    const { source, remote, shas } = stage('http-mistyped');
-    at(remote, shas[1]!);
+    const { source, remote, shas } = await stage('http-mistyped');
+    await at(remote, shas[1]!);
     const server = await api(remote);
     try {
       const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
@@ -1493,14 +1544,14 @@ describe('publishing through the GitHub transport, against a server that writes 
     // list, and what follows is a first push. Until v3.60 the fixture was a clone with its
     // branch deleted -- objects and all -- so the push that followed was a name for a commit
     // that was already there, and the case passed without ever publishing anything.
-    const { source, remote, shas } = staged('http-empty-409', null);
+    const { source, remote, shas } = await staged('http-empty-409', null);
     const server = await api(remote);
     server.behaviour.refsStatus = 409;
     try {
       const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: server.base });
       const result = await publish({ root: source, rev: 'HEAD', branch: 'main', transport });
       expect(result.identical).toBe(true);
-      expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
+      expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[4]!);
     } finally {
       await server.close();
     }
@@ -1509,8 +1560,8 @@ describe('publishing through the GitHub transport, against a server that writes 
   it('forwards a refusal on the listing rather than reading it as an empty repository', async () => {
     // A listing this channel was not allowed to read is not a repository with no refs, and
     // the difference is a push onto a branch that may already exist.
-    const { source, remote } = stage('http-refs-refused');
-    git(remote, ['update-ref', '-d', 'refs/heads/main']);
+    const { source, remote } = await stage('http-refs-refused');
+    await git(remote, ['update-ref', '-d', 'refs/heads/main']);
     const server = await api(remote);
     server.behaviour.refsStatus = 403;
     try {
@@ -1527,8 +1578,8 @@ describe('publishing through the GitHub transport, against a server that writes 
   });
 
   it('refuses a listing that is not a list, instead of counting it as no refs', async () => {
-    const { source, remote } = stage('http-refs-shape');
-    git(remote, ['update-ref', '-d', 'refs/heads/main']);
+    const { source, remote } = await stage('http-refs-shape');
+    await git(remote, ['update-ref', '-d', 'refs/heads/main']);
     const server = await api(remote);
     server.behaviour.refsNotAList = true;
     try {
@@ -1542,8 +1593,8 @@ describe('publishing through the GitHub transport, against a server that writes 
   });
 
   it('turns a moved ref into a sentence about the branch, and forces nothing', async () => {
-    const { source, remote, shas } = stage('http-moved');
-    at(remote, shas[0]!);
+    const { source, remote, shas } = await stage('http-moved');
+    await at(remote, shas[0]!);
     const server = await api(remote);
     try {
       server.behaviour.moveOnPatch = shas[1]!;
@@ -1551,14 +1602,14 @@ describe('publishing through the GitHub transport, against a server that writes 
       await expect(publish({ root: source, rev: 'HEAD', branch: 'main', transport })).rejects.toThrow(
         /the branch moved while the plan was being executed/,
       );
-      expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+      expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[1]!);
     } finally {
       await server.close();
     }
   });
 
   it('refuses a tree entry whose blob the executor never read', async () => {
-    const { source, remote } = stage('no-blob');
+    const { source, remote } = await stage('no-blob');
     const transport = githubTransport({ token: 'a-token-for-the-server', owner: 'owner', repo: 'repo', api: 'http://127.0.0.1:1' });
     await expect(
       transport.createTree({
@@ -1571,15 +1622,15 @@ describe('publishing through the GitHub transport, against a server that writes 
     expect(source).toContain('source');
   });
 
-  it('refuses an empty token rather than sending a request that will answer 401', () => {
+  it('refuses an empty token rather than sending a request that will answer 401', async () => {
     expect(() => githubTransport({ token: '', owner: 'owner', repo: 'repo' })).toThrow(
       /the GitHub transport needs a token/,
     );
   });
 
   it('reports the API status on the error it throws, so a caller can tell 404 from 422', async () => {
-    const { source, remote, shas } = stage('status');
-    at(remote, shas[0]!);
+    const { source, remote, shas } = await stage('status');
+    await at(remote, shas[0]!);
     const server = await api(remote);
     try {
       const transport = githubTransport({
@@ -1604,8 +1655,8 @@ describe('publishing through the GitHub transport, against a server that writes 
 
 describe('the refusals that a broken transport produces', { timeout: FILE_TIMEOUT_MS }, () => {
   it('refuses a rebuilt tip whose tree is not the tree the gate blessed', async () => {
-    const { source, remote, shas } = stage('lying-tree');
-    at(remote, shas[3]!);
+    const { source, remote, shas } = await stage('lying-tree');
+    await at(remote, shas[3]!);
     const local = localTransport({ remote });
     // A transport that answers with a tree it had lying around: the plan is right and the
     // repository would end up holding something else, which is the one state the assertion
@@ -1613,21 +1664,21 @@ describe('the refusals that a broken transport produces', { timeout: FILE_TIMEOU
     const lying = {
       ...local,
       async createTree() {
-        return git(remote, ['rev-parse', `${shas[1]}^{tree}`]).trim();
+        return (await git(remote, ['rev-parse', `${shas[1]}^{tree}`])).trim();
       },
     };
     await expect(publish({ root: source, rev: 'HEAD', branch: 'main', transport: lying })).rejects.toThrow(
       /refusing to move the ref: the rebuilt tip has tree/,
     );
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[3]!);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[3]!);
   });
 
   it('refuses a blob the API will not take in either encoding, naming the path', async () => {
-    const { source, remote } = stage('binary');
+    const { source, remote } = await stage('binary');
     const binary = Buffer.from([0xff, 0xfe, 0x00, 0x01]);
     writeFileSync(join(source, 'asset.bin'), binary);
-    git(source, ['add', '--', 'asset.bin']);
-    const head = commit(source, 'a binary file', {});
+    await git(source, ['add', '--', 'asset.bin']);
+    const head = await commit(source, 'a binary file', {});
     const server = await api(remote);
     try {
       // No base64 body is accepted, and this file has no utf-8 form to fall back to.
@@ -1642,8 +1693,8 @@ describe('the refusals that a broken transport produces', { timeout: FILE_TIMEOU
   });
 
   it('forwards a status that is neither a retryable 5xx nor a fallback 400', async () => {
-    const { source, remote, shas } = stage('blob-status');
-    at(remote, shas[3]!);
+    const { source, remote, shas } = await stage('blob-status');
+    await at(remote, shas[3]!);
     const server = await api(remote);
     try {
       server.behaviour.blobStatus = 422;
@@ -1663,8 +1714,8 @@ describe('the refusals that a broken transport produces', { timeout: FILE_TIMEOU
   });
 
   it('forwards a refusal on the ref read that is not the 404 of an unborn branch', async () => {
-    const { source, remote, shas } = stage('ref-status');
-    at(remote, shas[4]!);
+    const { source, remote, shas } = await stage('ref-status');
+    await at(remote, shas[4]!);
     const server = await api(remote);
     try {
       server.behaviour.refStatus = 401;
@@ -1676,8 +1727,8 @@ describe('the refusals that a broken transport produces', { timeout: FILE_TIMEOU
   });
 
   it('forwards a refusal on the ref write that is not the 422 of a moved branch', async () => {
-    const { source, remote, shas } = stage('patch-status');
-    at(remote, shas[3]!);
+    const { source, remote, shas } = await stage('patch-status');
+    await at(remote, shas[3]!);
     const server = await api(remote);
     try {
       server.behaviour.patchStatus = 400;
@@ -1689,7 +1740,7 @@ describe('the refusals that a broken transport produces', { timeout: FILE_TIMEOU
   });
 
   it('refuses a local tree request whose blob is not in hand', async () => {
-    const { remote } = stage('local-no-blob');
+    const { remote } = await stage('local-no-blob');
     const transport = localTransport({ remote });
     try {
       await expect(
@@ -1705,14 +1756,14 @@ describe('the refusals that a broken transport produces', { timeout: FILE_TIMEOU
   });
 
   it('refuses to move a branch to a commit that does not descend from it', async () => {
-    const { source, remote, shas } = stage('backwards');
-    at(remote, shas[2]!);
+    const { source, remote, shas } = await stage('backwards');
+    await at(remote, shas[2]!);
     const transport = localTransport({ remote });
     try {
       await expect(
         transport.updateRef({ branch: 'main', sha: shas[0]!, expected: shas[2]! }),
       ).rejects.toThrow(/refusing to move main backwards/);
-      expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[2]!);
+      expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[2]!);
     } finally {
       transport.dispose();
     }
@@ -1723,45 +1774,44 @@ describe('the refusals that a broken transport produces', { timeout: FILE_TIMEOU
 describe('the command line a push goes through', { timeout: FILE_TIMEOUT_MS }, () => {
   const CLI = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'scripts', 'publish-cli.mjs');
 
-  function run(args: string[], env: Record<string, string> = {}) {
-    return spawnSync(process.execPath, [CLI, ...args], {
-      encoding: 'utf8',
+  async function run(args: string[], env: Record<string, string> = {}) {
+    return runChild(process.execPath, [CLI, ...args], {
       env: { ...process.env, GITHUB_TOKEN: '', GH_TOKEN: '', ...env },
     });
   }
 
-  it('refuses to publish without a token, naming what is missing', () => {
-    const result = run(['--rev', 'HEAD', '--branch', 'main', '--repo', 'owner/repo']);
+  it('refuses to publish without a token, naming what is missing', async () => {
+    const result = await run(['--rev', 'HEAD', '--branch', 'main', '--repo', 'owner/repo']);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('the GitHub transport needs a token');
   });
 
-  it('refuses a local transport with no remote to write', () => {
-    const result = run(['--rev', 'HEAD', '--branch', 'main', '--transport', 'local']);
+  it('refuses a local transport with no remote to write', async () => {
+    const result = await run(['--rev', 'HEAD', '--branch', 'main', '--transport', 'local']);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('--transport local needs --remote DIR');
   });
 
-  it('refuses a transport it does not have, and a GitHub push with no repository', () => {
-    const unknown = run(['--rev', 'HEAD', '--branch', 'main', '--transport', 'carrier-pigeon']);
+  it('refuses a transport it does not have, and a GitHub push with no repository', async () => {
+    const unknown = await run(['--rev', 'HEAD', '--branch', 'main', '--transport', 'carrier-pigeon']);
     expect(unknown.status).toBe(1);
     expect(unknown.stderr).toContain("'carrier-pigeon' is not a transport this channel has");
 
-    const noRepo = run(['--rev', 'HEAD', '--branch', 'main']);
+    const noRepo = await run(['--rev', 'HEAD', '--branch', 'main']);
     expect(noRepo.status).toBe(1);
     expect(noRepo.stderr).toContain('--repo OWNER/NAME is required');
   });
 
-  it('refuses an argument it does not know rather than falling back to a default', () => {
-    const result = run(['--rev', 'HEAD', '--branch', 'main', '--force']);
+  it('refuses an argument it does not know rather than falling back to a default', async () => {
+    const result = await run(['--rev', 'HEAD', '--branch', 'main', '--force']);
     expect(result.status).toBe(2);
     expect(result.stdout).toContain("unknown argument '--force'");
   });
 
-  it('publishes to a local remote and prints the plan it executed', () => {
-    const { source, remote, shas } = stage('cli');
-    at(remote, shas[3]!);
-    const result = run([
+  it('publishes to a local remote and prints the plan it executed', async () => {
+    const { source, remote, shas } = await stage('cli');
+    await at(remote, shas[3]!);
+    const result = await run([
       '--rev',
       'HEAD',
       '--branch',
@@ -1776,17 +1826,17 @@ describe('the command line a push goes through', { timeout: FILE_TIMEOUT_MS }, (
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('1/1');
     expect(result.stdout).toContain('VERIFIED');
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[4]!);
   });
 
-  it('refuses a mistyped branch from the command line, and names the flag that would allow it', () => {
-    const { source, remote, shas } = stage('cli-mistyped');
-    at(remote, shas[1]!);
-    const result = run(['--rev', 'HEAD', '--branch', 'mian', '--root', source, '--transport', 'local', '--remote', remote]);
+  it('refuses a mistyped branch from the command line, and names the flag that would allow it', async () => {
+    const { source, remote, shas } = await stage('cli-mistyped');
+    await at(remote, shas[1]!);
+    const result = await run(['--rev', 'HEAD', '--branch', 'mian', '--root', source, '--transport', 'local', '--remote', remote]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("'mian' does not exist and the remote is not empty");
     expect(result.stderr).toContain('--new-branch');
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[1]!);
   });
 
   it('forwards a refusal on the creation that is not the one of a taken name', async () => {
@@ -1794,8 +1844,8 @@ describe('the command line a push goes through', { timeout: FILE_TIMEOUT_MS }, (
     // other status is the API's, forwarded as itself. A channel that read a `403` as "the
     // branch appeared" would tell the operator to re-read a branch it was never allowed to
     // create.
-    const { source, remote } = stage('http-create-refused-403');
-    git(remote, ['update-ref', '-d', 'refs/heads/main']);
+    const { source, remote } = await stage('http-create-refused-403');
+    await git(remote, ['update-ref', '-d', 'refs/heads/main']);
     const server = await api(remote);
     server.behaviour.createStatus = 403;
     try {
@@ -1806,13 +1856,13 @@ describe('the command line a push goes through', { timeout: FILE_TIMEOUT_MS }, (
     }
   });
 
-  it('creates a new branch on a commit the remote already holds, and says it built nothing', () => {
-    const { source, remote, shas } = stage('cli-new-branch');
-    at(remote, shas[1]!);
+  it('creates a new branch on a commit the remote already holds, and says it built nothing', async () => {
+    const { source, remote, shas } = await stage('cli-new-branch');
+    await at(remote, shas[1]!);
     // `--new-branch` is first on purpose: the argument loop advances by two for a flag that
     // takes a value, so a valueless flag missing from that list swallows the argument after
     // it -- here `--rev`, which would fail as `--rev is required` rather than as itself.
-    const result = run([
+    const result = await run([
       '--new-branch', '--rev', 'HEAD', '--branch', 'release', '--root', source,
       '--transport', 'local', '--remote', remote,
     ]);
@@ -1821,12 +1871,12 @@ describe('the command line a push goes through', { timeout: FILE_TIMEOUT_MS }, (
     // is the one this push earned -- the name was created, and the bytes were already there.
     expect(result.stdout).toContain('this push created the name and rebuilt nothing');
     expect(result.stdout).not.toContain('VERIFIED');
-    expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
+    expect((await git(remote, ['rev-parse', 'release'])).trim()).toBe(shas[4]!);
   });
 
-  it('publishes onto a new branch the remote does not hold, and certifies the bytes', () => {
-    const { source, remote, shas } = staged('cli-new-branch-replay', 2);
-    const result = run([
+  it('publishes onto a new branch the remote does not hold, and certifies the bytes', async () => {
+    const { source, remote, shas } = await staged('cli-new-branch-replay', 2);
+    const result = await run([
       '--new-branch', '--rev', 'HEAD', '--branch', 'release', '--root', source,
       '--transport', 'local', '--remote', remote,
     ]);
@@ -1836,40 +1886,40 @@ describe('the command line a push goes through', { timeout: FILE_TIMEOUT_MS }, (
     // created from what is above it rather than from the root of the history (finding 455).
     expect(result.stdout).toContain('1/2');
     expect(result.stdout).toContain('VERIFIED');
-    expect(git(remote, ['rev-parse', 'release']).trim()).toBe(shas[4]!);
+    expect((await git(remote, ['rev-parse', 'release'])).trim()).toBe(shas[4]!);
   });
 
-  it('refuses --new-branch from the command line when the branch is already there', () => {
-    const { source, remote, shas } = stage('cli-new-branch-claim');
-    at(remote, shas[1]!);
-    const result = run([
+  it('refuses --new-branch from the command line when the branch is already there', async () => {
+    const { source, remote, shas } = await stage('cli-new-branch-claim');
+    await at(remote, shas[1]!);
+    const result = await run([
       '--new-branch', '--rev', 'HEAD', '--branch', 'main', '--root', source,
       '--transport', 'local', '--remote', remote,
     ]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("'main' already exists");
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[1]!);
   });
 
-  it('says a twin made the names differ, instead of calling the history foreign', () => {
+  it('says a twin made the names differ, instead of calling the history foreign', async () => {
     // The sentence the channel used to print -- "the history it hangs on is not the local
     // history" -- was true of the SHAs and silent about the contents, which are the same. The
     // operator reading it cannot tell a rewritten parent from a lost commit, and that is the
     // difference between a push that worked and one that has to be redone by hand.
-    const { source, remote, shas } = stage('cli-twin');
-    const twin = git(remote, ['commit-tree', `${shas[1]}^{tree}`, '-m', 'a twin of the second']).trim();
-    at(remote, twin);
-    const result = run(['--rev', 'HEAD', '--branch', 'main', '--root', source, '--transport', 'local', '--remote', remote]);
+    const { source, remote, shas } = await stage('cli-twin');
+    const twin = (await git(remote, ['commit-tree', `${shas[1]}^{tree}`, '-m', 'a twin of the second'])).trim();
+    await at(remote, twin);
+    const result = await run(['--rev', 'HEAD', '--branch', 'main', '--root', source, '--transport', 'local', '--remote', remote]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('this plan hangs on the remote');
     expect(result.stdout).toContain('every one of the 3 commit(s) this push carried');
-    expect(git(remote, ['rev-parse', 'main']).trim()).not.toBe(shas[4]!);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).not.toBe(shas[4]!);
   });
 
-  it('prints the plan a dry run would execute and moves nothing', () => {
-    const { source, remote, shas } = stage('cli-dry');
-    at(remote, shas[3]!);
-    const result = run([
+  it('prints the plan a dry run would execute and moves nothing', async () => {
+    const { source, remote, shas } = await stage('cli-dry');
+    await at(remote, shas[3]!);
+    const result = await run([
       '--rev',
       'HEAD',
       '--branch',
@@ -1884,36 +1934,36 @@ describe('the command line a push goes through', { timeout: FILE_TIMEOUT_MS }, (
     ]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('nothing was created');
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[3]!);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[3]!);
   });
 
-  it('says when the receipt rule was not asked, rather than skipping it quietly', () => {
+  it('says when the receipt rule was not asked, rather than skipping it quietly', async () => {
     // `--no-gate` is used by the one push that publishes no content, so the difference
     // between "the gate blessed this tree" and "nobody asked" has to be in the transcript.
-    const { source, remote, shas } = stage('cli-no-gate');
-    at(remote, shas[3]!);
-    const result = run([
+    const { source, remote, shas } = await stage('cli-no-gate');
+    await at(remote, shas[3]!);
+    const result = await run([
       '--rev', 'HEAD', '--branch', 'main', '--root', source, '--transport', 'local', '--remote', remote, '--no-gate',
     ]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('--no-gate: the receipt rule was not asked');
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[4]!);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[4]!);
   });
 
-  it('says a dry run of the pointer path would create the name, not publish no commits', () => {
+  it('says a dry run of the pointer path would create the name, not publish no commits', async () => {
     // "0 commit(s) would be published; nothing was created" is true of this plan and tells
     // the reader the opposite of what would happen: the ref would move, and it is the only
     // thing that would.
-    const { source, remote, shas } = stage('cli-dry-pointer');
-    at(remote, shas[1]!);
-    const result = run([
+    const { source, remote, shas } = await stage('cli-dry-pointer');
+    await at(remote, shas[1]!);
+    const result = await run([
       '--new-branch', '--rev', 'HEAD', '--branch', 'release', '--root', source,
       '--transport', 'local', '--remote', remote, '--dry-run',
     ]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('one request would create the branch');
     expect(result.stdout).not.toContain('0 commit(s) would be published');
-    expect(spawnSync('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/release']).status).not.toBe(0);
-    expect(git(remote, ['rev-parse', 'main']).trim()).toBe(shas[1]!);
+    expect((await runChild('git', ['-C', remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/release'])).status).not.toBe(0);
+    expect((await git(remote, ['rev-parse', 'main'])).trim()).toBe(shas[1]!);
   });
 });

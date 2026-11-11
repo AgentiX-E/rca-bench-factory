@@ -437,6 +437,28 @@ export function outputTail(text, lines = 3) {
 }
 
 /**
+ * The per-test budget a run exhausted, or `null` if it finished inside it.
+ *
+ * Vitest says `Test timed out in 30000ms.` when a test exceeds its ceiling, and that
+ * sentence is the only thing in the output that separates **a file whose test is wrong**
+ * from **a file that did not finish**. The two are not the same finding: the first is a
+ * claim about the witness, the second is a claim about the machine, and the sites
+ * battery filed the second as the first when a claimant run timed out inside a shard.
+ *
+ * The pattern is the whole sentence and not the word `Timeout`, because a run can print
+ * `[vitest-worker]: Timeout calling "onTaskUpdate"` -- the shape this repository has
+ * measured twice, in which **every test passed** and the runner died on an RPC
+ * deadline. That one is not a test that ran out of time, and reading it as one would
+ * send a reader to the wrong number.
+ */
+export function exhaustedTestBudget(text) {
+  const match = /Test timed out in (\d+)ms/.exec(String(text));
+  if (match === null) return null;
+  const ms = Number(match[1]);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
  * Every site the inventory claims is proved, as `{ site, file }`.
  *
  * Exempt sites are not claims and are left out: their argument is that no input can

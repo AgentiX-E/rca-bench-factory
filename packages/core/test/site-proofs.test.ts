@@ -9,6 +9,7 @@ import {
   blindScripts,
   claimedSites,
   claimsByFile,
+  exhaustedTestBudget,
   failureSummary,
   outputTail,
   hookFile,
@@ -384,6 +385,22 @@ describe('site-proofs · what a red run says about itself', () => {
     // line is quoted as one line.
     expect(outputTail('only this')).toEqual(['only this']);
     expect(outputTail('')).toEqual([]);
+  });
+
+  it('reads an exhausted test budget, and only when a test is what ran out of time', () => {
+    // vitest's own sentence. It is the only line in a run that separates "this file's
+    // test is wrong" from "this file did not finish", and the sites battery filed the
+    // second as the first when a claimant timed out inside a shard.
+    expect(exhaustedTestBudget('Test timed out in 30000ms.')).toBe(30000);
+    expect(exhaustedTestBudget('  ❯ adds up\n  Test timed out in 120000ms.')).toBe(120000);
+    // The other `Timeout` in this repository's output is not this one: a worker whose
+    // RPC deadline expires reports every test passing and dies, and that run says
+    // nothing about any test's budget. Reading it as 30,000 ms would send the reader
+    // to a number the run never mentioned.
+    expect(exhaustedTestBudget('[vitest-worker]: Timeout calling "onTaskUpdate"')).toBeNull();
+    expect(exhaustedTestBudget(REPORT)).toBeNull();
+    expect(exhaustedTestBudget('boom')).toBeNull();
+    expect(exhaustedTestBudget('')).toBeNull();
   });
 
   it('invents nothing when the report carries none of those lines', () => {

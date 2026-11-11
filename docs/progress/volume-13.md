@@ -1808,9 +1808,9 @@ ahead of the twelve missing columns an empty header cannot have. The same read f
 
 | item | value |
 | --- | --- |
-| `core` test suite | **247 files, 6289 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **251 files, 6476 tests passed** (as of this commit) |
+| `core` test suite | **247 files, 6289 tests passed** (at v3.81) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.81) |
+| repo test suite | **251 files, 6476 tests passed** (at v3.81) |
 | coverage | `core` **99.97 / 99.86 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** (per-file thresholds, no exemption) |
 | `modalities.ts` | **100 / 100 / 100 / 100** (was 100 / 98.29 / 100 / 100: two dead positions deleted, one arm exercised, findings 513 and 514) |
 | the residual | **3 statements, 9 branch positions** out of 6,438 (14 positions at the start of the round); `docs:check`'s table retaken rather than left on a figure the tool never printed |
@@ -1847,3 +1847,93 @@ census; and the one function that decided 62% of the corpus's cases had no readi
 sentence recording it could only say "unmeasured". Measuring it took **four minutes** and changed the
 answer by a factor of 8.8. A stage that is expensive is not the same as a stage that is hard to
 measure, and a round willing to write "unmeasured" is one edit away from writing nothing at all.
+
+## v3.82 — a verdict about the machine, filed as two verdicts about the code
+
+The round before this one ended green and pushed; the receipt for its tree was not taken,
+because the run that takes it was started over a dirty working tree and finished with
+`receipt: none`. Taking it produced a red at step 10, and chasing that red produced two
+findings that had nothing to do with the comparison v3.81 was about.
+
+### The claimant that ran out of time was filed as a claimant that was red (finding 515)
+
+`verify-sites-are-sensitive.mjs --shard 2/2` failed with
+
+```
+packages/core/test/gate-sites-are-proven.test.ts does not pass on its own (exit 1), so its
+claims are unmeasured
+  FAIL  … > rejects a sit…
+  Error: Test timed out in 30000ms.
+```
+
+The file is green: 4,900 ms for 69 tests alone, its slowest test 2,370 ms. The same shard had
+passed on its own twenty minutes earlier, 136 runs in 13.2 minutes. The difference was the
+four claimants the battery runs at once -- each a vitest of its own -- so vitest's default
+30,000 ms ceiling, which is a statement about a test on an idle box, was answering a question
+about a machine running three other claimants and their `git` children.
+
+The claimant run now gets `--testTimeout=120000`: 24x the file, so a test that hangs still
+fails, twenty-four times later. And the baseline sentence separates the two findings it had
+been merging -- a file that did not finish says so, and says the number, because "does not
+pass" sends a reader to the test where the truth is the budget. The budget is read from the
+run's own sentence (`Test timed out in (\d+)ms`) and not from the word `Timeout`: this
+repository's other timeout is `[vitest-worker]: Timeout calling "onTaskUpdate"`, a run in
+which every test passed and the worker died on an RPC deadline. The margin is printed on
+every run now -- `slowest claimant <file> <n> ms, of N run 4 at a time (budget 120000 ms per
+test)` -- because a budget nobody prints is a budget discovered by the next timeout.
+
+### The file at 71% of the stall budget started blocking for 62 seconds (finding 516)
+
+v3.80 wrote `publish.test.ts` down as a measurement and not a repair: 28,183 / 31,855 ms
+against 45,000, cost is process starts. The first coverage run of this round made it a red:
+`this test file held the event loop for 61987 ms … Of that, 1740 ms were this process's own
+CPU time`. That ratio is the signature the gauge was rebuilt to print: the file is not
+computing, it is waiting, **synchronously**, on about 300 `spawnSync('git', …)` calls.
+
+Every child is awaited now (`runChild`, shaped like `spawnSync` so a hundred call sites and
+their assertions stay as they were). The file alone went from 12,182 ms of test time to
+13,690 -- 1.5 s of promise plumbing -- and its blocked-loop time from **61,987 ms to 0**,
+which is the number the budget is about. Three mechanical slips in the conversion were each
+caught by a different instrument and none by the compiler: a regex that prefixed `await`
+inside two expected strings, `await git(...).split()` which asserts on two promises, and a
+`Buffer` that became a string and made a fake server answer `POST /git/trees -> 500`. A
+fourth was caught by neither: the helper's inline `Promise<{ … }>` return type is the first
+`{` after its parameters, so rule 7's scanner read the body as `{}` and reported the file as
+declaring `publish-cli.mjs` and never spawning it -- repaired with a named `ChildResult`.
+
+### Readings
+
+> Ledger for `v3.82`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **247 files, 6293 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **251 files, 6480 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.86 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** (per-file thresholds, no exemption); unchanged, because neither repair added a branch without a test |
+| new tests | **6289 -> 6293, net +4**: one for the budget reader, one for the flag, one for the sentence, one for the printed margin |
+| the stall budget | `publish.test.ts` **61,987 ms blocked / 1,740 ms CPU** before; **0 ms blocked / 13,690 ms of test time alone** after |
+| the claimant budget | **30,000 -> 120,000 ms** per test, with the slowest claimant (4,900 ms) printed on every run |
+| the inventory | **135 sites across 62 script(s)**, line numbers re-derived (fingerprints unmoved) |
+| list | **27 -> 26** open: the next-nearest file's entry is closed by the repair it was waiting for |
+
+### Leftovers, in the order that reaches the goal
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| P0 | a round trip that carries all 270 cases | unchanged since v3.81 | dispatch `official-data.yml` at `re2` and read `ROUNDTRIP cost ... largest ... MB` |
+| P1 | worker count decided by memory rather than by the stall reading | open since v3.80 | choose the cap from the stall measurement |
+| P2 | a case record's `terms` is optional in the type and written by every producer | open since v3.81: seven of the residual's nine branch positions | make `terms` required and delete the fallbacks |
+| P2 | the index grows every round | unchanged | measure the distance to the ceiling first |
+| P3 | coverage numbers have no reader that computes them | unchanged | teach `docs:check` to read a report |
+
+**The lesson.** Both findings are one shape and it is not the shape of v3.81. A number was
+measured against the wrong thing: the sites battery asked "does this file pass" and answered
+"does it pass in thirty seconds on a box running three other claimants", and the stall gate
+asked "does this file block the loop" and got a file that answered yes because it was
+*designed* to block. Neither was a wrong number -- each was a right number about a different
+subject, which is why neither could be found by re-reading the code. The instrument that
+catches this class is not a sharper assertion; it is the sentence that names what was
+measured, printed next to the number. That is what the two repairs are: not a longer timeout
+and not an async helper, but a budget a reader can see and a verdict that says which of two
+findings it found.

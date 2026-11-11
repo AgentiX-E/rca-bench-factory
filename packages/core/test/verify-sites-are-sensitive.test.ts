@@ -50,6 +50,8 @@ interface FixtureOptions {
   red?: boolean;
   /** Fails with output that carries no report at all: every test passing, non-zero exit. */
   silent?: boolean;
+  /** Fails the way vitest does when a test exceeds its own budget: one sentence, exit 1. */
+  timedOut?: boolean;
   /** Writes the arguments it was given, so a case can read what the gate asked for. */
   argv?: boolean;
 }
@@ -100,6 +102,7 @@ function fixture(claims: { line: 1 | 2; file: string }[], options: FixtureOption
     options.blind === true ? 'BLIND' : '',
     options.red === true ? 'RED' : '',
     options.silent === true ? 'SILENT' : '',
+    options.timedOut === true ? 'TIMEDOUT' : '',
     options.argv === true ? 'ARGV' : '',
   ]
     .filter((one) => one !== '')
@@ -134,6 +137,12 @@ function fixture(claims: { line: 1 | 2; file: string }[], options: FixtureOption
     '}',
     'if (text.includes("SILENT")) {',
     '  process.stdout.write("[vitest-worker]: Timeout calling " + String.fromCharCode(34) + "onTaskUpdate" + String.fromCharCode(34) + "\\n");',
+    '  process.exit(1);',
+    '}',
+    'if (text.includes("TIMEDOUT")) {',
+    '  process.stdout.write(" FAIL  " + file + " > drives the gate\\n");',
+    '  process.stdout.write("Error: Test timed out in 30000ms.\\n");',
+    '  process.stdout.write("\\n      Tests  1 failed (1)\\n");',
     '  process.exit(1);',
     '}',
     'if (text.includes("RED")) {',
@@ -322,6 +331,62 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
       expect(result.stderr).toContain('does not pass on its own (exit 1)');
       expect(result.stderr).toContain('its own output ends: [vitest-worker]: Timeout calling');
       expect(result.stderr).toContain('run it alone:');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('gives a claimant a test budget larger than the one vitest assumes', () => {
+    // The gate asks whether a file passes on its own, and it asks it four files at a
+    // time. Vitest's default ceiling answers a different question -- how long a test
+    // takes on an idle box -- and this repository has already seen the two diverge: the
+    // slowest claimant file runs in 4,900 ms alone and timed out at 30,000 ms inside a
+    // shard, which the gate then reported as a claimant that "does not pass on its own".
+    // A verdict about the machine, filed as a verdict about the claims. The flag is
+    // asserted rather than the constant, so the number can be re-measured without
+    // rewriting the fixture.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      assert: true,
+      argv: true,
+    });
+    try {
+      const result = runGate(tree);
+      expect(result.status).toBe(0);
+      const argv = readFileSync(join(tree, 'argv.txt'), 'utf8');
+      expect(argv).toContain('--testTimeout=120000');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('separates a claimant that did not finish from one that is red', () => {
+    // Two sentences for two findings. "Does not pass on its own" sends a reader to the
+    // test; a file that ran out of budget sends them to the number, and until this case
+    // the gate said the first about the second.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      assert: true,
+      timedOut: true,
+    });
+    try {
+      const result = runGate(tree);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('did not finish inside its own 30000 ms of test budget');
+      expect(result.stderr).toContain('unmeasured rather than unproven');
+      expect(result.stderr).not.toContain('does not pass on its own');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('prints the slowest claimant, so the margin is a number a reader sees', () => {
+    // The budget is 24x the slowest file today. A margin nobody prints is a margin that
+    // is discovered by the next timeout, which is how this one arrived.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], { assert: true });
+    try {
+      const result = runGate(tree);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('slowest claimant packages/core/test/one.test.ts');
+      expect(result.stdout).toContain('budget 120000 ms per test');
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }
