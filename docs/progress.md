@@ -54,46 +54,54 @@ previously measuring.
 
 Measured by `vitest run --coverage` (v8) over `packages/core`, the only package
 with a coverage gate. The four figures below are the measurement taken at
-**v3.81** (2026-11-10); each round's own copy of them is the `coverage` row of its
+**v3.83** (2026-11-11); each round's own copy of them is the `coverage` row of its
 `### Readings` ledger in the progress log, and that row is written by the round that
 ran the suite. This section is retaken when the residual's *shape*
 changes, not every round -- a table retaken every round is a table whose figures
 get typed rather than measured, which is how the 99.93 this table used to publish
-came to exist (finding 481). v3.81 is such a retake: five branch positions closed
-and the previous decomposition, which claimed four, replaced by the tool's own
-count of nine (finding 514).
+came to exist (finding 481). v3.83 is such a retake: six branch positions closed
+(nine to three), and the residual below re-enumerated one position at a time
+rather than in one sentence (findings 517 and 518).
 
 | Dimension | Result | Gate |
 | --- | --- | --- |
 | Statements | 99.97% | ≥ 95% |
-| Branches | 99.86% | ≥ 95% |
+| Branches | 99.95% | ≥ 95% |
 | Functions | 100% | ≥ 95% |
 | Lines | 99.97% | ≥ 95% |
 
-The residual is three statements and nine branch positions, enumerated by the
+The residual is three statements and three branch positions, enumerated by the
 position the tool counts and not by the source line that carries it: v8 records
 one outcome per conditional, so a `||` whose left side is true on every input
 still leaves its right side unmeasured (the lesson of pass 7, below), and one
 guard can therefore be three positions.
 
-1. The `never` guard at the end of `aggregateFor` (`src/score/official.ts:2007`,
-   three statements and one position). Every member of `ScoreTargetId` returns
-   from a branch above it, so no input reaches it — it is a compile-time
-   backstop, and it is the one group here that a tenth score target trips at
-   *build* time.
-2. Seven positions in the same file, all of them one leftover rather than seven
-   backstops: a case record's `terms` is optional in the type and written by
-   every producer, so `typeof value === 'string'` in `signalKey` (632, twice),
-   `targets.size === 0` (1278), `scored.length === 0` (1399), `terms === undefined`
-   in `rca100Process` (1536), and the `?? 0` reads of `evidenceHits` and `la`
-   (1924, 1929) all guard a shape the data cannot have. The repair is to make
-   `terms` required in the record type and delete them; it is queued as a
-   leftover, because unlike (1) nothing in the type system is what makes these
-   unreachable — the producer is.
+1. The `never` guard at the end of `aggregateFor` (`src/score/official.ts:2056`,
+   three statements and the position at `:2037`, which is the fall-through that
+   reaches it). Every member of `ScoreTargetId` returns from a branch above it, so
+   no input reaches it — it is a compile-time backstop, and it is the one group
+   here that a tenth score target trips at *build* time.
+2. The `?? 0` on `evidenceHits` in the pooled AIOps2025 aggregate
+   (`src/score/official.ts:1973`). Every case of that target writes the count, so
+   no input reaches the fallback, and it stays because its absence is worse than
+   its cost: the count is **summed**, and `undefined` in a sum is `NaN` — a report
+   whose Explainability tenth reads `NaN` while every other figure reads 0..100.
+   The fallback five lines below it, on the compared `la` term, was removed for
+   the opposite reason (finding 518). Closing this last one means a `terms` map
+   typed per target rather than `Record<string, number>`, which is a structural
+   change and is carried as a leftover, not as a coverage figure.
 3. The `Number.isSafeInteger` test in the CLI's `parseInteger`
    (`src/cli/args.ts:240`), provably redundant within every range the CLI
    declares. The measurement is in `audit.md` and the exemption is argued in
    `acceptance.md` §2.39.
+
+Group (1) is a backstop the type system enforces, group (2) is one the type
+system cannot express, and group (3) is an exemption with an argument — three
+different reasons for an uncovered position, and none of them a covered line. A
+guard removed because a test cannot see it is not a covered line; it is a missing
+guarantee. A guard removed because the type makes it impossible is a smaller
+type. And a guard kept because its absence prints `NaN` is a guard that owes a
+reader the sentence saying so, which is why (2) is *one* position and not two.
 
 Groups (1) and (2) are therefore opposite cases and are not allowed to shelter
 each other. A guard removed because a test cannot see it is not a covered line;
@@ -420,10 +428,10 @@ document that described it as downloading the data was describing an intention.
 | Commits (at `d179592`) | 530 |
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 97 |
-| Source lines | 34,010 |
-| Test files | 247 core + 4 cli |
-| Test lines | 105,323 core + 3,242 cli |
-| Tests | 6,293 core + 187 cli |
+| Source lines | 34,059 |
+| Test files | 248 core + 4 cli |
+| Test lines | 105,447 core + 3,242 cli |
+| Tests | 6,299 core + 187 cli |
 | Tracked files | 638 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -508,7 +516,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.82: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.83: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1069,6 +1077,16 @@ is a row about rather than paraphrase one that no `grep` will find.
   `docs:check`, which does not run the suite, so the honest state is that one of the two copies is
   remembered. Either a `docs:check` step reads a report when one exists, or the table says in a
   sentence that the ledger is the only computed copy and this one is a convenience]`
+- **A record's terms are a map of strings to numbers, so nothing can say which keys a rule writes.**
+  The aggregate reads `evidenceHits` and `la` out of `OfficialCaseScore.terms` with index access,
+  and `noUncheckedIndexedAccess` therefore hands it `number | undefined` for a key that target's
+  producer writes every time. One of the two reads keeps a `?? 0` because of it -- the summed one,
+  where absent would be `NaN` -- and the other lost its fallback at v3.83, when the measurement said
+  that absent and `0` answer the same comparison (finding 518).
+  `[open: the type that would say it is a `terms` map discriminated by score target, nine shapes
+  instead of one, and that is a structural change to the record rather than a branch. It is the last
+  position of the coverage residual, and it is here so that a later round decides it on purpose
+  instead of finding it in a percentage]`
 - ~~**G3's two thresholds have no grid.**~~ `minAbsZ` (2.0) and `minSustainedSamples` (3) are
   parameters with no sensitivity reading, and `probe-z-floor` measures epsilon rather than either
   of them.
@@ -1317,7 +1335,7 @@ and this table.
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
-| [volume-13.md](progress/volume-13.md) | 19 | v3.64 | v3.82 |
+| [volume-13.md](progress/volume-13.md) | 20 | v3.64 | v3.83 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

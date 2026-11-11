@@ -993,3 +993,77 @@ And one more that no assertion caught: the async helper's return type was writte
 function whose body contains no spawn, and `publish.test.ts` was reported as declaring
 `publish-cli.mjs` and never spawning it. The repair is a named `ChildResult` interface: a
 return type written as a literal is a brace where a scanner expects a body.
+
+## Finding 517 — "written by every producer" was false, and the repair it named was the wrong one
+
+`## Coverage` carried, from v3.81, this sentence and the plan it implied:
+
+> a case record's `terms` is optional in the type and written by every producer, so … all
+> guard a shape the data cannot have. The repair is to make `terms` required in the record
+> type and delete them.
+
+Measured against the file rather than against the sentence: **four** functions construct an
+`OfficialCaseScore`, and **two of them do not write the map**. `scoreFacetSubset` (the rule the
+three RCAEval anchors use) and `scoreCloudOpsBench` are set comparisons over facets, so they
+have no named terms to carry -- and the field's own doc says "when the target's rule has them".
+The second clause of that sentence is false, and the first clause's error is a consequence of
+it: the optionality is not a leftover, it is **used**, by two producers that are correct.
+
+The decision does not reverse, because the *distinction* the type draws is one no reader can
+observe. `meanOfPresent` drops a term with no denominator whether the term is missing or the
+map is empty, and `rca100Process`'s `terms === undefined` arm returned exactly what an empty map
+returns one line later. A type that says "maybe absent" where the only thing that can happen is
+"maybe empty" buys a fallback at every read and guarantees nothing at any of them -- seventeen
+`?.` reads in the aggregate, plus the arm. So `terms` became required, the two facet rules write
+`{}`, and the empty map is documented as the shape a rule with no named terms carries.
+
+Then the seven positions, one at a time, because they turned out not to be one leftover:
+
+| position | can an input reach it? | what was done |
+| --- | --- | --- |
+| `checkpointToken`'s `typeof value === 'string'` and its `: ''` (two) | **yes**: `value` is `unknown`, read out of the case file, where a JSON array or object is a thing an annotation can contain. Open because every fixture passed `42` | two tests: a string value is carried verbatim (`order\|cpu\|>=\|high\|count/min`), an object contributes nothing (`order\|cpu\|>=\|\|count/min`, not `[object Object]`) |
+| `reachesAny`'s `targets.size === 0` | **no**: one caller, which is guarded by `gt.chain.length === 0` on the outside and by `componentMatches` on the inside, so `from` is non-empty and `targets` is `chainNodes` of a chain whose every token was built from two non-empty names | deleted, with the argument in the doc comment: an empty target set answers `false` from the loop, and so does an empty `from` |
+| `scoreFacetSubset`'s `scored.length === 0` | **yes**, through the reader: `parseRcaEvalDirectory`'s service group is `(.*)`, so a directory named `RE2--adservice_1` parses to an empty service, and the case is then real, counted, and worth zero | a test, not a deletion: the alternative to the guard is `0 / 0`, and `NaN` poisons every mean it enters |
+| `rca100Process`'s `terms === undefined` | **no**, once the map is required | deleted by the type |
+| the two `?? 0` reads in the pooled aggregate | one of each | finding 518 |
+
+Measured, the package went from **9 branch positions to 3**: 99.86 → **99.95** branches, with
+statements, functions and lines unmoved (99.97 / 100 / 99.97). The three that remain are the
+`never` backstop's three statements and the position that reaches it, the CLI's
+`Number.isSafeInteger` (exempt and argued in `acceptance.md` §2.39), and one fallback below.
+
+The lesson is not "read the code before planning" -- the plan was written by a round that had
+just read three positions. It is narrower and worse: **a summary sentence about seven positions
+is a claim about all seven, and it is written at the height where the differences disappear.**
+"Written by every producer" was true of five of the seven and false of two, and the two were
+the two whose repair was different. The positions had to be read one at a time, and the only
+thing that said so was that the sentence had a range.
+
+## Finding 518 — two fallbacks five lines apart, and only one of them changes an answer
+
+The pooled AIOps2025 branch reads two terms the case producer always writes:
+
+```ts
+const em = cases.reduce((sum, c) => sum + (c.terms['evidenceHits'] ?? 0), 0);
+…
+.map((c, i) => ({ la: c.terms['la'] ?? 0, pred: predictions[i] }))
+```
+
+Both were uncovered, and both looked like the same leftover -- a fallback for a term that is
+never missing. They are not the same, and the operator downstream is the whole difference:
+`em` is **added**, so an absent count has to contribute nothing, because `undefined` in a sum is
+`NaN` and `NaN` is the one number an Explainability of one tenth cannot survive -- it would
+print as `NaN` in a report whose every other figure is 0..100. `la` is **compared** to `1`, where
+absent and `0` already answer the same `false`.
+
+So one was a guard and one was a habit. The habit lost its fallback; the guard kept it, and the
+reason is now written between the two rather than left to be inferred by the next reader who
+notices that two adjacent lines do not match. That asymmetry is deliberate and it is the kind a
+tidy-up removes: a reader who makes the pair consistent in either direction either reintroduces
+a `NaN` or adds a branch no input can reach.
+
+What is left is honest and it is one position: `Record<string, number>` cannot say "this rule
+always writes these two keys". Closing it means a per-target typed record -- a discriminated
+`terms` union over the nine targets -- which is a structural change, not a fallback's worth of
+work, and it is recorded as a leftover rather than smuggled in under a coverage number.
+

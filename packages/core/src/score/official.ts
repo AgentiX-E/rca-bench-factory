@@ -175,7 +175,7 @@ export interface OfficialCaseScore {
   /** `score === 1`, i.e. the case is fully correct. */
   readonly correct: boolean;
   /**
-   * The named terms `score` was computed from, when the target's rule has them.
+   * The named terms `score` was computed from; empty when the rule has none.
    *
    * The aggregate averages **these** instead of recomputing the rule from the
    * predictions and the answer key. It used to recompute, and the two
@@ -185,8 +185,17 @@ export interface OfficialCaseScore {
    * A term that is absent from a case (an answer key with no causal chain) is
    * left out of the record rather than set to zero, so the aggregate can keep the
    * "no denominator means no term" rule that `meanOfPresent` states.
+   *
+   * **Required, and possibly empty** (v3.83). It was optional, and the difference
+   * between "no map" and "an empty map" was read by nothing: `meanOfPresent` drops
+   * a missing term either way, so a case whose rule has no named terms -- the two
+   * facet rules, `scoreFacetSubset` and Cloud-OpsBench -- carries `{}` rather than
+   * nothing. The optional form cost seven branch positions in the aggregate, each
+   * one a `?.` or an `undefined` arm no producer could take, and a type that says
+   * "maybe absent" when the only thing it means is "maybe empty" is a type that
+   * buys a fallback at every read and no guarantee at any of them.
    */
-  readonly terms?: Readonly<Record<string, number>>;
+  readonly terms: Readonly<Record<string, number>>;
 }
 
 export interface OfficialScoreReport {
@@ -1217,6 +1226,10 @@ function scoreOpenRcaCase(pred: OfficialPrediction, gt: OfficialGroundTruth): Of
       .map((facet) => ({ facet, matched: facetMatched(facet, pred, gt) })),
     score,
     correct: score === 1,
+    // OpenRCA 1.0's rule is a set comparison over three declared criteria, not a
+    // weighted sum of named terms, so there is no map to carry -- and an empty one
+    // rather than a missing one, so the aggregate reads a single shape (v3.83).
+    terms: {},
   };
 }
 
@@ -1269,13 +1282,29 @@ function setF1(predicted: ReadonlySet<string>, expected: ReadonlySet<string>): n
  * The walk is breadth-first over the edges the submission declares. It does not
  * consult the answer key's edges, because the question is whether *this* graph
  * connects the cause to an alarm node, not whether it reproduces G*.
+ *
+ * ## The two early returns that were here, and why neither is
+ *
+ * This opened with `if (from === '' || targets.size === 0) return false;`. Both
+ * halves are unreachable, and the measurer said so one position at a time: the
+ * single caller (`scoreOpenRca2Case`) calls this only when the answer key declares
+ * an edge and the component matched, so `from` is non-empty, and `targets` is
+ * `chainNodes(gt.chain)`, which is non-empty whenever the chain is -- a token is
+ * only ever built from two non-empty endpoints.
+ *
+ * They were deleted rather than kept as backstops, because unlike a `never` guard
+ * a backstop has to be *the only thing* standing between the code and a wrong
+ * answer, and these were not: an empty `targets` set answers `false` from the
+ * loop below (nothing is ever `has`, and the queue empties), and an empty `from`
+ * finds no adjacency and answers `false` the same way. A guard whose answer
+ * equals the code it guards costs a branch position and buys a reader the
+ * impression that something was checked.
  */
 function reachesAny(
   predicted: readonly string[],
   from: string,
   targets: ReadonlySet<string>,
 ): boolean {
-  if (from === '' || targets.size === 0) return false;
   const adjacency = new Map<string, string[]>();
   for (const token of predicted) {
     const [source, sink] = token.split('->');
@@ -1397,7 +1426,10 @@ function scoreFacetSubset(
   const scored = facets.filter((facet) => gtHasFacet(gt, facet));
   const verdicts = scored.map((facet) => ({ facet, matched: compare(facet, pred, gt) }));
   const score = scored.length === 0 ? 0 : verdicts.filter((v) => v.matched).length / scored.length;
-  return { caseId: gt.caseId, facets: verdicts, score, correct: score === 1 };
+  // No named terms: this rule's terms *are* the facets above, and they are carried
+  // in `facets`. An empty map rather than nothing, so the aggregate reads one
+  // shape (v3.83).
+  return { caseId: gt.caseId, facets: verdicts, score, correct: score === 1, terms: {} };
 }
 
 function gtHasFacet(gt: OfficialGroundTruth, facet: OfficialFacet): boolean {
@@ -1481,7 +1513,7 @@ function scoreCloudOpsBenchCase(pred: OfficialPrediction, gt: OfficialGroundTrut
     });
   }
   const score = verdicts.length === 0 ? 0 : verdicts.filter((v) => v.matched).length / verdicts.length;
-  return { caseId: gt.caseId, facets: verdicts, score, correct: score === 1 };
+  return { caseId: gt.caseId, facets: verdicts, score, correct: score === 1, terms: {} };
 }
 
 /**
@@ -1531,9 +1563,17 @@ export function rca100Terms(pred: OfficialPrediction, gt: OfficialGroundTruth): 
   return terms;
 }
 
-/** The Process pillar of one record: the mean of the terms it actually carries. */
-function rca100Process(terms: Readonly<Record<string, number>> | undefined): number | undefined {
-  if (terms === undefined) return undefined;
+/**
+ * The Process pillar of one record: the mean of the terms it actually carries.
+ *
+ * `terms` is the record's map, which is always present (v3.83). It used to take
+ * `| undefined` as well, because the record's `terms` was optional -- an arm no
+ * producer could reach, since every case of the `rca100` target is scored by
+ * `scoreRca100Case`, which builds the map. A record whose rule has no terms now
+ * carries `{}`, and the empty map answers `undefined` here for the same reason a
+ * missing chain does: no denominator, no term.
+ */
+function rca100Process(terms: Readonly<Record<string, number>>): number | undefined {
   const present = [terms['chain'], terms['checkpoints']].filter(
     (term): term is number => term !== undefined,
   );
@@ -1839,11 +1879,11 @@ function aggregateFor(
     // because the paper's own finding is that the two layers disagree -- a correct
     // service with no verified path is its headline failure, and an average over
     // four facets reports it as three quarters of a success.
-    const em = meanOfPresent(cases.map((c) => c.terms?.['em']));
-    const anySvc = meanOfPresent(cases.map((c) => c.terms?.['anySvc']));
-    const nodeF1 = meanOfPresent(cases.map((c) => c.terms?.['nodeF1']));
-    const edgeF1 = meanOfPresent(cases.map((c) => c.terms?.['edgeF1']));
-    const pr = meanOfPresent(cases.map((c) => c.terms?.['pr']));
+    const em = meanOfPresent(cases.map((c) => c.terms['em']));
+    const anySvc = meanOfPresent(cases.map((c) => c.terms['anySvc']));
+    const nodeF1 = meanOfPresent(cases.map((c) => c.terms['nodeF1']));
+    const edgeF1 = meanOfPresent(cases.map((c) => c.terms['edgeF1']));
+    const pr = meanOfPresent(cases.map((c) => c.terms['pr']));
     return {
       breakdown: {
         em: round2(em),
@@ -1891,10 +1931,10 @@ function aggregateFor(
     // this branch keep paying 0.5 for an adjacent entity after the case rule
     // moved to the published 0.40 -- and the report then carried two numbers for
     // one quantity, `accuracy` from the case rule and `final` from this branch.
-    const entity = meanOfPresent(cases.map((c) => c.terms?.['entity']));
-    const fault = meanOfPresent(cases.map((c) => c.terms?.['fault']));
-    const chain = meanOfPresent(cases.map((c) => c.terms?.['chain']));
-    const checkpoints = meanOfPresent(cases.map((c) => c.terms?.['checkpoints']));
+    const entity = meanOfPresent(cases.map((c) => c.terms['entity']));
+    const fault = meanOfPresent(cases.map((c) => c.terms['fault']));
+    const chain = meanOfPresent(cases.map((c) => c.terms['chain']));
+    const checkpoints = meanOfPresent(cases.map((c) => c.terms['checkpoints']));
     // The headline is the mean of the per-case scores, which is what `accuracy`
     // already reports. Final_B is a linear combination of the terms, so for a
     // target aggregated by mean the two are the same number -- and two numbers
@@ -1916,17 +1956,26 @@ function aggregateFor(
     // The LA term used to be recomputed here with a bare equality, which is how a
     // relaxation added to the case rule would have moved only half the report --
     // the defect finding 183 fixed for rca100, avoided here before it happened.
-    const la = meanOfPresent(cases.map((c) => c.terms?.['la']));
-    const ta = meanOfPresent(cases.map((c) => c.terms?.['ta']));
+    const la = meanOfPresent(cases.map((c) => c.terms['la']));
+    const ta = meanOfPresent(cases.map((c) => c.terms['ta']));
     const et = groundTruth.reduce((sum, gt) => sum + gt.evidence.length, 0);
     // The numerator is the sum of the per-case counts, so the 20-character rule
     // and the intersection are computed once, in the case record.
-    const em = cases.reduce((sum, c) => sum + (c.terms?.['evidenceHits'] ?? 0), 0);
+    //
+    // The `?? 0` stays here and not on the `la` read below, and the difference is
+    // arithmetic rather than style: this one is **added**, so an absent count has
+    // to contribute nothing (`undefined` in a sum is `NaN`, which would replace
+    // the whole report's Explainability with a number no reader can act on),
+    // while `la` is **compared** to 1, where absent and 0 already answer the same
+    // false. A fallback is worth a branch only where its absence changes the
+    // answer, so this is the one position of the two that is a guard rather than
+    // a habit (v3.83).
+    const em = cases.reduce((sum, c) => sum + (c.terms['evidenceHits'] ?? 0), 0);
     // "APL is the mean reasoning_trace length over LA-correct cases" (§4.4), and
     // LA-correct now includes the endpoint relaxation -- which is why this reads
     // the case record's `la` rather than repeating the comparison.
     const correctTraces = cases
-      .map((c, i) => ({ la: c.terms?.['la'] ?? 0, pred: predictions[i] }))
+      .map((c, i) => ({ la: c.terms['la'], pred: predictions[i] }))
       .filter(({ la, pred }) => la === 1 && pred !== undefined)
       .map(({ pred }) => pred!.traceWords);
     const apl = mean(correctTraces);
@@ -1974,14 +2023,14 @@ function aggregateFor(
     // facets matched -- under a name the paper defines as the cause alone, so a
     // submission that named the right cause and nothing else was reported as a
     // failure of pass@1.
-    const passAt1 = meanOfPresent(cases.map((c) => c.terms?.['passAt1']));
-    const strict = meanOfPresent(cases.map((c) => c.terms?.['allMatch']));
+    const passAt1 = meanOfPresent(cases.map((c) => c.terms['passAt1']));
+    const strict = meanOfPresent(cases.map((c) => c.terms['allMatch']));
     return {
       breakdown: {
         passAt1: round2(passAt1),
         strict: round2(strict),
-        chainMatch: round2(meanOfPresent(cases.map((c) => c.terms?.['chain']))),
-        conditionMatch: round2(meanOfPresent(cases.map((c) => c.terms?.['conditions']))),
+        chainMatch: round2(meanOfPresent(cases.map((c) => c.terms['chain']))),
+        conditionMatch: round2(meanOfPresent(cases.map((c) => c.terms['conditions']))),
       },
       headline: round2(strict) * 100,
     };

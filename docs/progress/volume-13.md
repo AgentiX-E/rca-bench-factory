@@ -1907,9 +1907,9 @@ declaring `publish-cli.mjs` and never spawning it -- repaired with a named `Chil
 
 | item | value |
 | --- | --- |
-| `core` test suite | **247 files, 6293 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **251 files, 6480 tests passed** (as of this commit) |
+| `core` test suite | **247 files, 6293 tests passed** (at v3.82) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.82) |
+| repo test suite | **251 files, 6480 tests passed** (at v3.82) |
 | coverage | `core` **99.97 / 99.86 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** (per-file thresholds, no exemption); unchanged, because neither repair added a branch without a test |
 | new tests | **6289 -> 6293, net +4**: one for the budget reader, one for the flag, one for the sentence, one for the printed margin |
 | the stall budget | `publish.test.ts` **61,987 ms blocked / 1,740 ms CPU** before; **0 ms blocked / 13,690 ms of test time alone** after |
@@ -1937,3 +1937,99 @@ catches this class is not a sharper assertion; it is the sentence that names wha
 measured, printed next to the number. That is what the two repairs are: not a longer timeout
 and not an async helper, but a budget a reader can see and a verdict that says which of two
 findings it found.
+
+## v3.83 · seven positions were not one leftover, and the sentence that called them one named the wrong repair
+
+v3.81's `## Coverage` left nine branch positions and one plan for seven of them: "a case
+record's `terms` is optional in the type and written by every producer, so [seven positions]
+all guard a shape the data cannot have. The repair is to make `terms` required and delete
+them." This round read the seven, one at a time, and the plan was wrong for two of them --
+because the sentence it was derived from was wrong in a way only a range can hide.
+
+### 一 · 四个生产者，两个故意不写那个映射（finding 517）
+
+那句话的第二个从句是假的。`OfficialCaseScore` 有四个构造函数，**两个不写 `terms`**：
+`scoreFacetSubset`（三个 RCAEval 锚用的规则）与 `scoreCloudOpsBench` 都是对 facets 的集合
+比较，没有可携带的命名项，而字段自己的文档就写着「when the target's rule has them」。所以
+可选性不是遗留，它是**被用着的**，而且用它的两处都正确。
+
+决定不因此反转，因为类型划出的那个区分**没有读者能看见**：`meanOfPresent` 对一个没有分母的
+项一律丢弃，无论它是缺项还是空映射；而 `rca100Process` 里那条 `terms === undefined` 返回的
+东西，与一行之后的空映射返回的完全相同。一个说「可能不存在」而实际只会「可能为空」的类型，
+在每一次读取处买一个兜底、在每一处都买不到保证——聚合里十七处 `?.` 加那一条臂。于是
+`terms` 改为必填、两个 facet 规则写 `{}`，空映射成为「没有命名项的规则」携带的形状。
+
+然后那七个位置，逐个读，它们**不是一个遗留**：
+
+| 位置 | 有输入能到吗 | 处置 |
+| --- | --- | --- |
+| `checkpointToken` 的 `typeof value === 'string'` 与 `: ''`（两处） | **能**：`value` 是 `unknown`，从案例文件里读出来，JSON 里数组和对象都是标注可能装的东西。一直没被走过，是因为每个夹具都传 `42` | 两条测试：字符串值原样携带（`order\|cpu\|>=\|high\|count/min`），对象什么都不贡献（`order\|cpu\|>=\|\|count/min`，而不是 `[object Object]`） |
+| `reachesAny` 的 `targets.size === 0` | **不能**：唯一调用方外侧有 `gt.chain.length === 0`、内侧有 `componentMatches`，所以 `from` 非空，而 `targets` 是一条每个 token 都由两个非空名字构成的链的 `chainNodes` | 删掉，并把论证写进 doc comment：空目标集在循环里也答 `false`，空 `from` 也一样——一个答案等于它所守代码的守卫，只值一个分支位和一种「检查过了」的错觉 |
+| `scoreFacetSubset` 的 `scored.length === 0` | **能**，且是通过读取器：`parseRcaEvalDirectory` 的 service 组是 `(.*)`，于是名为 `RE2--adservice_1` 的目录解析出空 service，那个案例从此是真实的、被计数的、值零分 | 一条测试，不是删除：这条守卫的另一面是 `0 / 0`，而 `NaN` 会污染它进入的每一个均值 |
+| `rca100Process` 的 `terms === undefined` | **不能**（映射必填之后） | 由类型删除 |
+| 池化聚合里的两个 `?? 0` | 一个能一个不能 | 见第二节 |
+
+结果是 **9 → 3 个分支位**，分支覆盖 99.86 → **99.95**，语句、函数、行不动。剩下的三个
+是：`never` 回退的三条语句与通向它的那个位置、CLI 的 `Number.isSafeInteger`（`acceptance.md`
+§2.39 有论证的豁免），以及下面那一条兜底。
+
+教训不是「先读代码再定计划」——写那个计划的轮次刚读过三个位置。它更窄、也更难受：
+**一句关于七个位置的总结，是对这七个位置的主张，而它是在差异消失的高度上写的。**
+「每个生产者都写」对其中五个为真、对两个为假，而那两个恰好是修法不同的两个。位置必须一个一个
+读，而唯一说出这件事的，是那句话有一个范围。
+
+### 二 · 五个字节之外的两个兜底，只有求和的那个改变答案（finding 518）
+
+```ts
+const em = cases.reduce((sum, c) => sum + (c.terms['evidenceHits'] ?? 0), 0);
+…
+.map((c, i) => ({ la: c.terms['la'] ?? 0, pred: predictions[i] }))
+```
+
+两处都未覆盖，看起来是同一个遗留：为一个从不缺席的项写的兜底。它们不是，而差别全在下游的
+运算符：`em` 是**被加的**，所以缺席的计数必须贡献零，因为求和里的 `undefined` 就是 `NaN`，
+而 `NaN` 是那十分之一的 Explainability 唯一撑不住的数字——它会在一份其余每个数都在 0..100
+的报告里印成 `NaN`。`la` 是**被比较**的（`la === 1`），缺席与 `0` 早已答同一个 `false`。
+
+所以一个是守卫，一个是习惯。习惯失去了兜底，守卫留着，而理由现在写在两者之间，而不是留给
+下一个发现相邻两行不一致的读者去推断。这个不一致是刻意的，而且正是整理时会消失的那一类：
+把这对改成一致，往任何一个方向都是要么请回一个 `NaN`，要么加一条没有输入能到的分支。
+
+剩下的那一处是诚实的，而且只有一个位置：`Record<string, number>` 说不出「这条规则总是写这两个
+键」。要关掉它，需要一张按目标区分的 `terms` 映射——九个形状而不是一个——那是结构变更，
+不是一条兜底的工作量，因此进开放清单，而不是塞进一个覆盖率数字里。
+
+### Readings
+
+> Ledger for `v3.83`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **248 files, 6299 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **252 files, 6486 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** (per-file thresholds, no exemption) |
+| the residual | **3 statements, 3 branch positions** (9 at the start of the round): the `never` backstop and its position, the summed `?? 0`, and the CLI's exempt `Number.isSafeInteger` |
+| new tests | **6293 -> 6299, net +6**: two for the checkpoint value, two for a case whose name parses to no component, two for the shape a record's terms map takes |
+| the count the plan rested on | **four producers, two of which omit the map**: `scoreFacetSubset` and `scoreCloudOpsBench`, both because their rule has no named terms |
+| the reads the type bought | **17 `?.` plus one `undefined` arm** removed by requiring the map, and one of the two `?? 0` fallbacks with them |
+| the P0 | `official-data.yml` **fired at `5c1a8a9`** (run 43085008634, `rcaeval-re2`), still running when this was written; the reading it owes is `ROUNDTRIP cost ... largest ... MB` |
+| list | **26 -> 27** open: the last coverage position is now an entry rather than a sentence in a record |
+
+### Leftovers, in the order that reaches the goal
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| P0 | a round trip that carries all 270 cases | **the instrument is in the shape it needs**: the comparison costs 98 bytes a row and the loop no longer stops for 62 s at a time | read run 43085008634's `ROUNDTRIP cost ... largest ... MB` and compare it with the 12,288 MB budget |
+| P1 | worker count decided by memory rather than by the stall reading | open since v3.80; v3.82 made the nearest file cheap, which is a reason the question is now hypothetical rather than an answer | choose the cap from the stall measurement |
+| P1 | the sensitivity shard's cost against its own bound | **new measurement**: locally the step took **14 min of its 26**, and v3.82 raised the per-test budget from 30,000 to 120,000 ms -- a bound that only pays out when a claimant hangs, so what grew is the worst case rather than the observed cost. `check-ci-budget` reads the recorded runs at 2.1x and is green | record the shard's own duration per run rather than per battery, so a slower runner is a number before it is a timeout |
+| P2 | the index grows every round | unchanged | measure the distance to the ceiling first |
+| P2 | a `terms` map per target, so the aggregate can say which keys a rule writes | **new**: the last position of the coverage residual | nine shapes instead of one, decided as a record change rather than a branch |
+| P3 | coverage numbers have no reader that computes them | unchanged | teach `docs:check` to read a report |
+
+**The lesson.** 这一轮的发现不在代码里，在两句话里，而两句话都是**关于范围的总结**：
+「每个生产者都写」总结了四个生产者，「它们守着一个数据不可能有的形状」总结了七个位置。
+两句都在差异消失的高度上写成，而差异在于处置：有的是补测试、有的是删、有的是换成类型、
+还有一条必须留着并说明为什么。一个范围的声明，只有把范围内的每一个都读一遍才算数——
+而读一遍的代价，这一轮是**六条测试和一次删改**。
+
