@@ -1,6 +1,6 @@
 {
   "rule": "a process.exit(...) call whose argument is not a known zero -- no argument at all is zero; sites and zero partition every process.exit call, whatever position the call sits in; a reference to the exit family that is not a call is refused rather than counted; see scripts/derive-gate-sites.mjs",
-  "scanned": 87,
+  "scanned": 88,
   "excluded": {
     "zero": 18
   },
@@ -203,7 +203,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1640,
       "condition": "invalid.length > 0",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(invalid.length)} case(s) could not be read as a FaultCase",
+      "diagnostic": "check-fault-cases: FAILED — ${String(invalid.length)} case(s) could not be read as a FaultCase",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -211,7 +211,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 2092,
       "condition": "problems.length > 0",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
+      "diagnostic": "check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -219,7 +219,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 2101,
       "condition": "unnamed.length > 0",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
+      "diagnostic": "check-fault-cases: FAILED — ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -227,7 +227,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 2109,
       "condition": "index.cases.length < floor",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(index.cases.length)} four-layer case(s), below the floor of",
+      "diagnostic": "check-fault-cases: FAILED — ${String(index.cases.length)} four-layer case(s), below the floor of",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -400,7 +400,7 @@
       "script": "scripts/check-rulegen-agreement.mjs",
       "line": 77,
       "condition": "catch",
-      "diagnostic": "check-rulegen-agreement: FAILED \u2014 ${String(error.message)}",
+      "diagnostic": "check-rulegen-agreement: FAILED — ${String(error.message)}",
       "status": "proved",
       "provedBy": "packages/core/test/rulegen-agreement.test.ts"
     },
@@ -408,7 +408,7 @@
       "script": "scripts/check-rulegen-agreement.mjs",
       "line": 94,
       "condition": "reading.verdicts.disagreements.length > 0",
-      "diagnostic": "check-rulegen-agreement: FAILED \u2014 ${String(reading.verdicts.disagreements.length)} of",
+      "diagnostic": "check-rulegen-agreement: FAILED — ${String(reading.verdicts.disagreements.length)} of",
       "status": "proved",
       "provedBy": "packages/core/test/rulegen-agreement.test.ts"
     },
@@ -416,7 +416,7 @@
       "script": "scripts/check-rulegen-agreement.mjs",
       "line": 107,
       "condition": "reading.reasons.agreements !== reading.reasons.checked",
-      "diagnostic": "check-rulegen-agreement: FAILED \u2014 '${row.id}' was refused for a reason the answer set does",
+      "diagnostic": "check-rulegen-agreement: FAILED — '${row.id}' was refused for a reason the answer set does",
       "status": "proved",
       "provedBy": "packages/core/test/rulegen-agreement.test.ts"
     },
@@ -591,7 +591,7 @@
       "script": "scripts/install-git-hooks.mjs",
       "line": 41,
       "condition": "result.state === 'missing-hook' || result.state === 'unset'",
-      "diagnostic": "install-git-hooks: FAILED (${result.state}) \u2014 ${result.message}\\n",
+      "diagnostic": "install-git-hooks: FAILED (${result.state}) — ${result.message}\\n",
       "status": "proved",
       "provedBy": "packages/core/test/git-hooks.test.ts"
     },
@@ -599,7 +599,7 @@
       "script": "scripts/measure-ci-baseline.mjs",
       "line": 163,
       "condition": "TOKEN === '' || !/^\\d+$/.test(RUN)",
-      "diagnostic": "usage: GITHUB_TOKEN=\u2026 node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>] [--seed]\\n",
+      "diagnostic": "usage: GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>] [--seed]\\n",
       "status": "proved",
       "provedBy": "packages/core/test/ci-budget.test.ts"
     },
@@ -655,6 +655,22 @@
       "diagnostic": "the decision costs ${total - strictCeiling} sample(s) of headroom:",
       "status": "exempt",
       "reason": "`process.exit(main())`, where `main()` decides from the ceiling it measured. `m1-ceiling-probe.test.ts` drives the probe and asserts on the number it publishes; asserting on this line instead would restate the condition the probe has already evaluated."
+    },
+    {
+      "script": "scripts/probe-modality-memory.mjs",
+      "line": 50,
+      "condition": "!existsSync(BUNDLE)",
+      "diagnostic": "error: ${BUNDLE} is missing.\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/probe-modality-memory.test.ts"
+    },
+    {
+      "script": "scripts/probe-modality-memory.mjs",
+      "line": 60,
+      "condition": "!Number.isSafeInteger(rows) || rows < 1",
+      "diagnostic": "error: '${String(positional[0])}' is not a row count\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/probe-modality-memory.test.ts"
     },
     {
       "script": "scripts/probe-type-misses.mjs",

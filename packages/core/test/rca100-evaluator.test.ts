@@ -313,6 +313,23 @@ describe('one quantity, one number', () => {
     }
   });
 
+  it('composes a term a record does not carry as zero, and not as an unknown', () => {
+    // Final_B is a fixed weighted sum of three terms, so an absent one contributes
+    // nothing. The reading is `?? 0` in the composer and in the mean of the process
+    // terms -- and until this test, no input had ever executed either of those
+    // fallbacks, which meant the statement "an absent term is zero" was a claim about
+    // code no test had run. A record that carries one term is the narrowest input that
+    // separates the three weights: 0.4 for the entity, 0.3 for the fault, and 0.3 for a
+    // process that has nothing to average and is therefore absent too.
+    expect(rca100Score({})).toBe(0);
+    expect(rca100Score({ entity: 1 })).toBeCloseTo(0.4, 12);
+    expect(rca100Score({ fault: 1 })).toBeCloseTo(0.3, 12);
+    expect(rca100Score({ chain: 1 })).toBeCloseTo(0.3, 12);
+    // Half a process pillar is the mean of the one term it has, not half credit for the
+    // term it does not: `[1].mean()` is 1, and the composer pays 0.3 for it.
+    expect(rca100Score({ checkpoints: 1 })).toBeCloseTo(0.3, 12);
+  });
+
   it('drops a term the answer key does not declare instead of crediting it', () => {
     // The free-denominator defect, from the other side: an answer key with no
     // checkpoints must not hand the checkpoint term away.

@@ -1683,9 +1683,9 @@ life of the defect, and the only thing that disagreed was the same property stat
 
 | item | value |
 | --- | --- |
-| `core` test suite | **245 files, 6267 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **249 files, 6454 tests passed** (as of this commit) |
+| `core` test suite | **245 files, 6267 tests passed** (at v3.80) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.80) |
+| repo test suite | **249 files, 6454 tests passed** (at v3.80) |
 | coverage | `core` **99.97 / 99.82 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** |
 | new tests | **6246 -> 6267, net +21**: twelve for `check-repository-table` (every refusal, `--write` idempotence, and a document it cannot read), five for the stall gauge (the CPU split, its attribution to the longest stall, and the verdict naming both numbers), and four for the fixture and the two caches in `gate-sites-are-proven.test.ts` |
 | the four readings | one file, one revision: **11,905 / 11,547 / 14,448 / 23,897 · 43,895 · 47,727** ms for alone / alone+coverage / 2 workers / 4 workers |
@@ -1705,3 +1705,145 @@ is the one worth carrying: its property had been written down correctly, in pros
 the assertion that failed to express it -- so what the round adds is not only the four repairs but
 the observation that **a property in a comment is a claim, and a property in an assertion is the
 only one that can disagree**.
+
+## v3.81 — the comparison that decides 168 cases had never been measured, and it cost 1.9 KB per row
+
+This round started from the dispatch that v3.79 left as the last P0. Run `42707814166` (`d179592`,
+anchor `rcaeval-re2`) was the one that finally carried a TrainTicket case --
+`RE2-TT/ts-auth-service_cpu/1`, `signals=1433140`, against SockShop's 95,000 -- through the case and
+then died **59 seconds later**:
+
+```
+[2695:0x13b5e000] 3094531 ms: Mark-Compact 11992.8 (12322.8) -> 11990.2 (12320.6) MB, allocation failure
+FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory
+```
+
+`NODE_OPTIONS="--max-old-space-size=12288"` was in that command, so the declaration v3.79 raised was
+being spent: 12,005 MB of live heap against a 12,288 MB budget. What the round before it knew was
+that the **ingest** peak was 4,100 MB and flat for 180 cases -- and that no run had ever carried one
+of those cases to the end of the **modality comparison**, which is the function 168 of the 270
+cases' failures were about.
+
+### The number it had never had (finding 511)
+
+`scripts/probe-modality-memory.mjs` builds a table in the corpus's shape and measures the peak heap
+of one comparison. The same probe was run against the shape that shipped and against the shape this
+round wrote, on the same 400,000 rows:
+
+| rows | shape | peak heap | bytes/row | elapsed |
+| --- | --- | --- | --- | --- |
+| 400,000 | both tables materialised, one `Map<string, number>` of signatures a side | **734.4 MB** | 1,925 | 3,845 ms |
+| 400,000 | both tables walked, one sorted signature array a side | **37.2 MB** | 98 | 2,104 ms |
+| 1,433,140 | walked, an export that matches | **313.8 MB** | 230 | 6,245 ms |
+
+The last row is the case the run died on. The old shape was **not** run at that size: 19.7x per row
+is about 2.76 GB, and the machine has to stay usable while the suite runs, so that figure is an
+extrapolation and is written as one. The mechanism was two maps of long strings on top of two
+materialised tables -- a map entry costs roughly three times a slot in a sorted array, and the key
+costs a string either way, so the map was the part that could go.
+
+### One state machine, two entry points
+
+`parseDelimited` is now a thin wrapper over a new `delimitedRows` generator. One parser, because a
+second one would be a second answer to what a quoted field is, and this repository has paid for that
+shape twice (findings 204, 316). The comparison walks both tables, keeps only each row's signature
+and drops the row; a generator rather than a callback because a `derived` column is checked against
+the same row of the *other* side, so the caller advances two walks independently.
+
+The second half is a branch that is a theorem. A per-column multiset difference is a projection of
+the row-level one, so when the two multisets of signatures agree, every `differ` is zero by
+construction and the arrays behind it are never built; on a failing case they are built a column at
+a time and released before the next. That is why the passing path is 40% faster than the failing one
+on the same input, and it is written in the code because a reader who did not know the theorem would
+read the missing measurement as an oversight.
+
+### What holds the shape
+
+A second implementation of the same specification, in the opposite shape -- materialise everything,
+count with maps, index both sides by row number -- drives **60 generated tables** through both and
+compares every field of the verdict. The two share the specification and no line of code. Setting
+`needsDiffer: false`, which looks like an optimisation, makes it fail; that is the only way to know
+the oracle is watching. Six tests hold the walker against the collecting entry point on the fixtures
+the parser already had, and four hold the probe -- that it reaches the comparison on both paths, that
+it names the module it measured, and that both of its refusals fire.
+
+### A table that could not be parsed was reported as empty (finding 512)
+
+Writing the walker's tests found the one table whose first `next()` returns no row: a text whose very
+first character opens a quote. The state machine runs to the end without completing a row and returns
+`unterminated quoted field`, so `openTable` saw `done` on its header step and read the **error list**
+as "no rows": the corpus was reported as `is empty`, a claim about its content where the truth was a
+claim about its syntax. The test that should have caught it asked `problems.length > 0`, which the
+wrong sentence satisfies -- the same shape as findings 496, 504 and 509. `openTable` now carries the
+first step's errors and `drain` returns them, and the assertion is two-sided: the syntax sentence must
+be there and the empty one must not be.
+
+### A check that could not run was reported as a column that agreed (finding 513)
+
+A `derived` column needs four things to be checkable, and the walk tested three of them. The fourth,
+the instant column's presence in the corpus, was not asked about -- and `cellOrEmpty(row, undefined)`
+answers `''` by design, so the check read an absent column as an empty cell, skipped every row, and
+returned `differ: 0`: **the reading a column that was compared and agreed gets**. With the source in
+the plan but not in the corpus, another problem arrived and the case failed anyway; with the source
+in neither, nothing raised anything and a case could pass carrying a column no reader had checked.
+The source is one value now (`DerivedSource { from, unit }`), present exactly when the check can run,
+and every way it can fail reports `differ: rowCount` with one of three sentences -- a plan that does
+not truncate the column, a corpus that does not have it, and an export that came up short send a
+reader to three different files. The 60-table oracle states the same rule in the opposite shape.
+
+### Three positions, and not one of them had ever run (finding 514)
+
+`modalities.ts` came out of the rewrite at `100 | 98.29 | 100 | 100`, and reading the three
+positions was the work: two `=== undefined` tests that no input could reach (deleted -- `delimitedRows`
+always returns its errors, so `headErrors` was `undefined` exactly when a header had been read, and a
+column that reached the paired walk could always be read), and one arm that was **reachable and never
+taken** -- `if (empty)` had no test, because no file of zero bytes had ever been through the
+comparison. Two tests now say `is empty` for each side and pin the ordering, the two table sentences
+ahead of the twelve missing columns an empty header cannot have. The same read found the composer's
+`?? 0` fallbacks unexecuted: a record that omits a term had never been scored.
+
+### Readings
+
+> Ledger for `v3.81`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **247 files, 6289 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **251 files, 6476 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.86 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** (per-file thresholds, no exemption) |
+| `modalities.ts` | **100 / 100 / 100 / 100** (was 100 / 98.29 / 100 / 100: two dead positions deleted, one arm exercised, findings 513 and 514) |
+| the residual | **3 statements, 9 branch positions** out of 6,438 (14 positions at the start of the round); `docs:check`'s table retaken rather than left on a figure the tool never printed |
+| new tests | **6267 -> 6289, net +22**: six for the walker, five for the oracle, four for the probe, three from the built-module guard table, two for the empty table, one for the composer, one for a derived column with no source |
+| the probe, old shape | **734.4 MB / 1,925 bytes per row** at 400,000 rows, 3,845 ms |
+| the probe, new shape | **37.2 MB / 98 bytes per row** at 400,000 rows, 2,104 ms; **313.8 MB / 230 bytes per row** at the 1,433,140 rows of the case the run died on, 6,245 ms |
+| the inventory | **135 sites across 62 script(s)** (133 / 61 at v3.80); `verify-site-proofs` **220 claims across 61 files** |
+| list | **28 -> 27** open: the modality comparison's entry is closed by measurement, and what it leaves is the dispatch |
+
+### Leftovers, in the order that reaches the goal
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| P0 | a round trip that carries all 270 cases | **the reason it did not is measured and repaired**: the comparison's peak on that case was 2.76 GB by extrapolation and is 0.31 GB measured | dispatch `official-data.yml` at `re2` and read the `ROUNDTRIP cost ... largest ... MB` line |
+| P1 | worker count decided by memory rather than by the stall reading | open since v3.80 | choose the cap from the stall measurement |
+| P1 | the next-nearest file at 71% of the stall budget | open since v3.80 (`publish.test.ts`) | look for a cheaper shape for a file whose cost is process starts |
+| P2 | a case record's `terms` is optional in the type and written by every producer | measured at v3.81: **seven of the residual's nine branch positions** | make `terms` required and delete the fallbacks rather than defending a shape the data cannot have |
+| P2 | the index grows every round | unchanged | measure the distance to the ceiling first |
+| P3 | coverage numbers have no reader that computes them | unchanged | teach `docs:check` to read a report |
+
+The priority column is plain rather than bold, and that is not typography: `**P0**` in the first
+cell of a row is what `check-open-list.mjs` reads as a *table-form record's row*, and this table is a
+round's leftovers rather than the live list -- its items are the next steps of the round, and three
+of the five already have an entry of their own in `docs/progress.md`. A bold cell here would be
+counted by the arm that asks whether a record's rows quote a live entry, and the row that does not
+quote one would be reported as a residual a reader of the list is not told about. Round `v3.80` wrote
+the same table under the same heading with bold cells, which is how the difference was found: the
+count of bold priority rows in the corpus stopped equalling the count the guard printed.
+
+
+**The lesson.** This round's finding was not a wrong number -- it was a number **nobody had taken**.
+The budget had a declared ceiling, a refusal that fires inside the loop, a per-case report and a
+census; and the one function that decided 62% of the corpus's cases had no reading at all, so the
+sentence recording it could only say "unmeasured". Measuring it took **four minutes** and changed the
+answer by a factor of 8.8. A stage that is expensive is not the same as a stage that is hard to
+measure, and a round willing to write "unmeasured" is one edit away from writing nothing at all.

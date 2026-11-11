@@ -268,8 +268,13 @@ describe('the two baskets are a partition of the calls, not a remainder', () => 
     // same round added four `throw new Error` statements, and those are counted in the partition
     // below rather than here -- which is what makes this pair the evidence that the two questions
     // are separate questions.
-    expect(calls).toBe(151);
-    expect(sites).toBe(133);
+    //
+    // 153/135 is v3.81's, and it is the same shape twice over: `probe-modality-memory.mjs` owns two
+    // exits -- a build it cannot find and a row count it cannot use -- so both numbers rise by two.
+    // The probe is the reason they are *both* two: a script with two guards, one of which only fires
+    // on a bad argument, is where a call count and a site count could have parted.
+    expect(calls).toBe(153);
+    expect(sites).toBe(135);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

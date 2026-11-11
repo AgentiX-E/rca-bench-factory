@@ -425,6 +425,7 @@ export type { Dimension, MeasurementBounds } from './util/unit.js';
 
 export {
   LAYOUT_REQUIRED_FIELDS,
+  delimitedRows,
   detectFileLayout,
   FILE_FORMATS,
   ingestFile,

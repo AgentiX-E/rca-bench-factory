@@ -250,9 +250,35 @@ describe('modality comparison · a plan that has gone stale is a problem', () =>
       exported: 'time,timestamp\n06:16,1731910619999000000',
     });
     expect(result.problems.some((p) => p.includes("the corpus's traces table has no 'timestamp' column"))).toBe(true);
-    // With no instant on the corpus side there is no minute to hold the export to,
-    // so the cell is skipped rather than counted as a disagreement.
-    expect(result.columns.find((c) => c.column === 'time')).toMatchObject({ differ: 0, lossy: 0 });
+    // With no instant on the corpus side there is no minute to hold the export to. That
+    // is not a column that agreed: nothing was compared, and a reading of zero here is
+    // the same sentence a passing column gets (finding 513). Every way a derived check
+    // can fail to run now says so the same way -- `differ` counts the rows it could not
+    // read -- and the problem names the column, not just the table.
+    expect(result.columns.find((c) => c.column === 'time')).toMatchObject({ differ: 1, lossy: 0 });
+    expect(result.problems.some((p) => p.includes("'time' is derived from 'timestamp'"))).toBe(true);
+    expect(result.rowsMatch).toBe(false);
+  });
+
+  it('names a derived column whose source is neither a corpus column nor a planned one', () => {
+    // The plan points at `stamp`, and nothing in the corpus or the plan is called that.
+    // The coverage checks cross the plan against the corpus and cannot see it: `stamp`
+    // is not a planned column and not a corpus column, so nothing else in this function
+    // had an opinion about the missing source, and the column was reported as agreeing
+    // on every row -- a check that never ran, reading as a check that passed (finding
+    // 513). The assertion on the whole list says no other sentence names it either.
+    const plan: readonly ColumnComparison[] = [
+      { column: 'time', kind: 'derived', from: 'stamp' },
+      { column: 'timestamp', kind: 'truncated', unit: 'ns' },
+    ];
+    const result = compare({
+      table: 'traces',
+      plan,
+      corpus: ['time,timestamp', '06:16,1731910619999000000'].join('\n'),
+      exported: ['time,timestamp', '06:16,1731910619999000000'].join('\n'),
+    });
+    expect(result.problems).toEqual(["'time' is derived from 'stamp', which has no truncated plan entry"]);
+    expect(result.columns.find((c) => c.column === 'time')).toMatchObject({ differ: 1, lossy: 0 });
     expect(result.rowsMatch).toBe(false);
   });
 
@@ -265,9 +291,45 @@ describe('modality comparison · a plan that has gone stale is a problem', () =>
     expect(result.rowsMatch).toBe(false);
   });
 
-  it('reports a table that is not readable as CSV', () => {
+  it('reports a table that is not readable as CSV, and not as an empty one', () => {
+    // A file whose first row never ended is not a file with nothing in it. The walker
+    // learned that distinction the hard way (finding 512): the first `next()` of a table
+    // whose very first cell opens a quote does not return a row, it returns *the error*,
+    // and a walker that dropped that return value went on to report the file as empty --
+    // a sentence about the corpus's content where the truth was a sentence about its
+    // syntax. The assertion used to be `problems.length > 0`, which the wrong sentence
+    // satisfied.
     const result = compare({ corpus: '"unterminated,header\n1,2', exported: LOG_HEADER });
-    expect(result.problems.length).toBeGreaterThan(0);
+    expect(result.problems.some((p) => p.includes('is not readable as CSV'))).toBe(true);
+    expect(result.problems.some((p) => p.includes('is empty'))).toBe(false);
+    expect(result.rowsMatch).toBe(false);
+  });
+
+  it('says a table with no bytes in it is empty, on either side', () => {
+    // A file of zero bytes is the one case the syntax sentence cannot cover: there is no
+    // line to point at and no reason to quote, and "the corpus's logs table is not
+    // readable as CSV: line 0 undefined" would be a sentence about a parser where the
+    // truth is a fetch that wrote nothing. That arm of `unreadable` had no test at all,
+    // so the reading below was a claim about code nobody had run.
+    const result = compare({ corpus: '', exported: [LOG_HEADER, '06:22,1731910960181130857,frontend,hello,p,n'].join('\n') });
+    expect(result.problems).toContain("the corpus's logs table is empty");
+    expect(result.problems.some((p) => p.includes('is not readable as CSV'))).toBe(false);
+    expect(result.corpusRows).toBe(0);
+    expect(result.exportedRows).toBe(1);
+    expect(result.rowCountMatches).toBe(false);
+    expect(result.rowsMatch).toBe(false);
+  });
+
+  it('names the side that is empty when both files arrived with nothing in them', () => {
+    const result = compare({ corpus: '', exported: '' });
+    // Both table defects come first, in the order a reader needs them, before the twelve
+    // columns the empty header cannot have.
+    expect(result.problems.slice(0, 2)).toEqual(["the corpus's logs table is empty", 'the exported logs table is empty']);
+    expect(result.corpusRows).toBe(0);
+    expect(result.exportedRows).toBe(0);
+    expect(result.rowCountMatches).toBe(true);
+    // Same row count, no difference of opinion, and still not a match: two files that
+    // say nothing are not two files that agree.
     expect(result.rowsMatch).toBe(false);
   });
 });

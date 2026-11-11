@@ -87,6 +87,7 @@
     "probe:denial-inventory": "node scripts/probe-denial-inventory.mjs",
     "probe:agreement-baseline": "node scripts/probe-agreement-baseline.mjs",
     "probe:category-derivation": "node scripts/probe-category-derivation.mjs",
+    "probe:modality-memory": "node scripts/probe-modality-memory.mjs",
     "probe:z-floor": "node scripts/probe-z-floor.mjs"
   },
   "devDependencies": {

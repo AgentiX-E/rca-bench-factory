@@ -21,6 +21,7 @@ const DRIVES = [
   'scripts/probe-agreement-baseline.mjs',
   'scripts/probe-category-derivation.mjs',
   'scripts/probe-denial-inventory.mjs',
+  'scripts/probe-modality-memory.mjs',
 ];
 
 
@@ -188,6 +189,10 @@ const PROBES = [
   {
     script: 'probe-denial-inventory.mjs',
     bundle: 'packages/core/dist/fault/denial-inventory.js',
+  },
+  {
+    script: 'probe-modality-memory.mjs',
+    bundle: 'packages/core/dist/score/modalities.js',
   },
 ] as const;
 

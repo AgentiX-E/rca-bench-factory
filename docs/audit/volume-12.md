@@ -756,3 +756,154 @@ is the one a comment cannot carry: **a property written in prose is not a judge 
 the same sentence, expressed as an assertion, fails when the behaviour is removed, and the
 prose version agreed with the code the whole time.
 
+## Finding 511 — the comparison that decides 168 of 270 cases had never been measured, and it cost 1.9 KB per row
+
+Run `42707814166` (`d179592`, `workflow_dispatch`, anchor `rcaeval-re2`) reached case 181 of 270 --
+`RE2-TT/ts-auth-service_cpu/1`, `signals=1433140`, the first TrainTicket case -- and then died:
+
+```
+[2695:0x13b5e000]  3094531 ms: Mark-Compact 11992.8 (12322.8) -> 11990.2 (12320.6) MB, ... allocation failure
+FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory
+```
+
+`NODE_OPTIONS="--max-old-space-size=12288"` was in the command line, so the 12,288 MB that v3.79
+declared was the budget being spent: the run reached 12,005 MB of live heap and V8 killed it 59
+seconds after case 181 passed. What was known about that budget was that the **ingest** peak was
+4,100 MB, flat for 180 cases, and that no run had ever carried a TrainTicket case to the end of the
+**modality comparison**. So the remaining ~8 GB had no reading, and the open entry that said so was
+one round old.
+
+It has a reading now. `scripts/probe-modality-memory.mjs` builds a table in the corpus's shape and
+measures the comparison's peak heap, and the same probe was run against the old shape and the new
+one on the same 400,000 rows:
+
+| rows | shape | peak heap | bytes/row | elapsed |
+| --- | --- | --- | --- | --- |
+| 400,000 | both tables materialised, one `Map<string, number>` of signatures per side | **734.4 MB** | 1,925 | 3,845 ms |
+| 400,000 | both tables walked, one sorted signature array per side | **37.2 MB** | 98 | 2,104 ms |
+| 1,433,140 | walked (an export that matches) | **313.8 MB** | 230 | 6,245 ms |
+
+The 1,433,140-row reading is the corpus's first TrainTicket case. The old shape was not run at that
+size: it is 19.7x the new one per row on the same probe, so 1,433,140 rows would have been about
+2.76 GB -- and the machine it was measured on is the one that has to stay usable while the suite
+runs. The extrapolation is stated as an extrapolation.
+
+**The mechanism was two maps of long strings.** `compareModalityTables` materialised both tables
+(`parseDelimited` into arrays of arrays of cells), then built `Map<string, number>` per side keyed by
+the joined cells of every compared column. For a TrainTicket case that is two row arrays of 1.4
+million rows and two maps of 1.4 million ~90-character keys, on top of the ~170 MB of CSV text each
+side already holds. A map entry costs roughly three times a slot in a sorted array, and the key
+costs a string either way -- so the map was the part that could go.
+
+**The repair is a shape, in two pieces.** `parseDelimited` became a thin wrapper over a new
+`delimitedRows` generator: one state machine, two entry points, because a second parser would be a
+second answer to what a quoted field is and this repository has paid for that twice (findings 204,
+316). The comparison now walks both tables, keeps only each row's signature, and drops the row --
+and it compares the two signature **arrays after sorting** rather than two maps. A generator rather
+than a callback because a `derived` column is checked against the same row of the *other* side, so
+the caller has to advance two walks independently.
+
+**The second piece is a branch that is a theorem.** A per-column multiset difference is a projection
+of the row-level one: if the two multisets of signatures over all compared columns are equal, then
+the multiset of any single column is equal too. So on a passing case the per-column `differ` is zero
+by construction and the arrays behind it are not built at all; on a failing case they are built one
+column at a time and released before the next. That is why the passing path is 40% faster than the
+failing one on the same input, and it is stated in the code because a reader who did not know the
+theorem would read the missing measurement as an oversight.
+
+**What holds the shape.** A second implementation of the same specification, in the opposite shape
+-- materialise everything, count with maps, index both sides by row number -- drives 60 generated
+tables through both and compares every field of the verdict (`modality-comparison-shape.test.ts`).
+The two share the specification and no line of code. Injected `needsDiffer: false` -- a value that
+looks like an optimisation -- makes it fail, which is the only way to know the oracle is watching.
+Six more tests hold the walker against the collecting entry point on the fixtures the parser already
+had (quoted commas, escaped quotes, a multi-line cell, blank lines, CRLF, an unterminated quote,
+empty text, and two independent walks of one string), and four hold the probe: that it reaches the
+comparison on both paths, that it names the module it measured, and that both of its refusals fire.
+
+The number is not in a test. A heap budget asserted on a synthetic table would be a test of the
+allocator; the command that produces the reading is in `package.json` as `probe:modality-memory`,
+and the readings are in the round's ledger with the sizes they were taken at.
+
+
+## Finding 512 — a table that could not be parsed was reported as a table with nothing in it
+
+`delimitedRows` is a generator: it yields rows and **returns** its errors, and the value a generator
+hands back at the end is not a row. `openTable` takes the first `next()` for the header and keeps the
+walk for the rows under it -- but for a text whose very first character opens a quote
+(`"unterminated,header`) that first `next()` is not a row at all. The state machine runs to the end
+of the text without completing one, records `unterminated quoted field` at line 1, and returns the
+error list, so `first.done` is true and `first.value` **is the errors**. `openTable` read that as "no
+header, therefore no rows", and the comparison reported `the corpus's logs table is empty` -- a
+sentence about the corpus's content where the truth was a sentence about its syntax.
+
+The test that should have caught it asserted `problems.length > 0`, which the wrong sentence
+satisfies. That is the shape this repository keeps paying for: an assertion on the presence of *a*
+diagnostic where the question is *which* one (findings 496, 504, 509).
+
+The repair is in `openTable`, which now hands the first step's error list to the caller as
+`headErrors` and derives `empty` from `errors.length === 0` rather than from "there was no first
+row"; `drain` returns that list when the walk is already finished. The assertion is two-sided now --
+the syntax sentence must appear and the empty one must not -- and it is red on the previous
+revision. The arm of `unreadable` that says a table is empty is a different sentence and got its
+first test in the same round (finding 514).
+
+## Finding 513 — a check that could not run was reported as a column that agreed
+
+`compareModalityTables` holds a `derived` column (`time` as `HH:MM`) to the minute of the corpus's
+own instant, and the instant lives in another column (`timestamp`). Four things have to be present
+for that check to run: the derived column on both sides, the instant column in the corpus, and a
+`truncated` plan entry that states the resolution. The walk tested three of them.
+
+`from` is looked up in the corpus's header, and `cellOrEmpty(row, undefined)` answers `''` -- a
+deliberate spelling, because a row short of its header does have an absent cell and `''` is what the
+row says. So a plan whose `from` names a column the corpus does not have read like this:
+`minuteOfInstant('')` returns `undefined`, the row is skipped, `differ` stays at zero, and the column
+was returned with `differ: 0` -- **the reading a column that was compared and agreed gets**. When
+the source was in the plan but not in the corpus, a problem arrived from elsewhere and the case still
+failed. When the source was in neither the plan nor the corpus, nothing raised anything, the column
+reported agreement on every row, and the case could pass with a column in it that no reader had
+checked.
+
+Two changes. The source became one value -- `DerivedSource { from, unit }` -- present exactly when
+the check can run, so the walk is never in the position of asking whether a unit it holds is there;
+and every way the check can fail to run now reports `differ: rowCount`, in three sentences, because a
+plan that does not truncate the column, a corpus that does not have it, and an export that came up
+short send a reader to three different files. The 60-table differential oracle states the same rule,
+so the fix is held by an implementation that shares no line with it (finding 511).
+
+## Finding 514 — three parts of the coverage residual, and not one of them had ever run
+
+After the walker's rewrite `modalities.ts` reported **100 / 98.29 / 100 / 100**. Three positions,
+and reading them was the work:
+
+- `drain`'s `headErrors === undefined ? [] : [...headErrors]` is **dead**. `delimitedRows` always
+  `return`s its error array, so `headErrors` was `undefined` exactly when a header had been read --
+  and a walk with a header has a row or its errors at the next step by construction. `headErrors` is
+  required now, and the fallback is `step.value === undefined ? headErrors : step.value`, whose two
+  arms are the two ways a walk can end.
+- `if (unit === undefined) continue;` inside the paired walk is dead for the reason `skip` existed:
+  the branch was only reached by a column that could be read. It is the `DerivedSource` of finding
+  513 now, and the guard is a type.
+- `if (empty) out.push(...)` is **not** dead and was not covered: a file of zero bytes had never been
+  through `compareModalityTables`. Two tests now do -- one empty table against a table with a row,
+  then both empty -- and they pin the ordering as well, the two table sentences before the twelve
+  missing columns that an empty header cannot have.
+
+The same read found `rca100Score`, whose `?? 0` fallbacks had never been executed: no test had ever
+composed a record that omits a term. `rca100Score({})`, `{ entity: 1 }`, `{ fault: 1 }`,
+`{ chain: 1 }`, `{ checkpoints: 1 }` are one test and two branch positions -- an absent term
+contributes nothing, and half a process pillar is the mean of the term it carries rather than half
+credit for the one it does not.
+
+Coverage retaken over the tree this round ends on: **99.97 / 99.86 / 100 / 99.97** (3 statements, and
+9 branch positions out of 6,438). The tree this round started from printed **99.78**% branches on 14
+positions, so the five that closed are the three above and the composer's two, and the denominator
+moved by the code the round added. `docs/progress.md` claimed two statements and four branch
+positions for the same file set; the tool has never printed four on any revision. What is left,
+measured: the `never` guard at the end of `aggregateFor` (`official.ts:2007-2009`, one branch
+position of its own), seven fallbacks on a case record whose `terms` the type calls optional and
+every producer writes (`official.ts:632` twice, `1278`, `1399`, `1536`, `1924`, `1929`), and the
+`Number.isSafeInteger` test in the CLI's `parseInteger` (`src/cli/args.ts:240`). The seven are a
+single leftover with a single correct fix -- make `terms` required in the record type and delete the
+fallbacks -- and it is queued rather than claimed.

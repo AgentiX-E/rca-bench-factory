@@ -507,6 +507,15 @@ const REGISTER: Record<string, Entry> = {
   'probe-agreement-baseline.mjs': { class: 'probe' },
   'probe-category-derivation.mjs': { class: 'probe' },
   'probe-denial-inventory.mjs': { class: 'probe' },
+  'probe-modality-memory.mjs': {
+    class: 'probe',
+    why:
+      'It measures what one modality comparison costs in bytes per row, on a table built in memory in ' +
+      'the corpus\u2019s shape. That reading is the one the round trip\u2019s 12,288 MB budget died on ' +
+      '(finding 511) and no gate can take it: a suite that allocated 3 GB to answer would be the ' +
+      'defect it was measuring. It exits 1 only when the built module it reads is missing, which is ' +
+      'the one thing it refuses rather than reports.',
+  },
 
   // --- Probes whose verdict is computed rather than literal ---
   //

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  delimitedRows,
   detectFileLayout,
   ingestFile,
   parseDelimited,
@@ -70,6 +71,80 @@ describe('parseDelimited', () => {
 
   it('returns no rows and no errors for empty input', () => {
     expect(parseDelimited('', ',')).toEqual({ rows: [], errors: [] });
+  });
+});
+
+describe('delimitedRows', () => {
+  /** Everything one fixture says, read through both entry points. */
+  const throughBoth = (text: string, delimiter = ','): { rows: string[][]; errors: unknown[] } => {
+    const collected = parseDelimited(text, delimiter);
+    const walked: string[][] = [];
+    const walk = delimitedRows(text, delimiter);
+    let step = walk.next();
+    while (!step.done) {
+      walked.push(step.value);
+      step = walk.next();
+    }
+    // The two entry points are one state machine, so they must not be able to
+    // disagree about a single fixture -- which is the only thing that makes the
+    // second one a repair rather than a second parser.
+    expect(walked).toEqual(collected.rows);
+    expect(step.value).toEqual(collected.errors);
+    return collected;
+  };
+
+  it('reads a simple CSV exactly as the collecting entry point does', () => {
+    expect(throughBoth('a,b\n1,2\n3,4\n').rows).toEqual([
+      ['a', 'b'],
+      ['1', '2'],
+      ['3', '4'],
+    ]);
+  });
+
+  it('agrees on quoted commas, escaped quotes and a multi-line cell', () => {
+    const read = throughBoth('name,msg\norder,"a, b"\ncart,"say ""hi"""\nid,"line1\nline2"\n');
+    expect(read.rows[1]).toEqual(['order', 'a, b']);
+    expect(read.rows[2]).toEqual(['cart', 'say "hi"']);
+    expect(read.rows[3]).toEqual(['id', 'line1\nline2']);
+  });
+
+  it('agrees on blank lines, a tab delimiter and a CRLF pair', () => {
+    expect(throughBoth('a,b\n\n1,2\n   \n').rows).toEqual([
+      ['a', 'b'],
+      ['1', '2'],
+    ]);
+    expect(throughBoth('a\tb\n1\t2\n', '\t').rows).toEqual([
+      ['a', 'b'],
+      ['1', '2'],
+    ]);
+    expect(throughBoth('a,b\r\n1,2\r\n').rows).toEqual([
+      ['a', 'b'],
+      ['1', '2'],
+    ]);
+  });
+
+  it('yields the rows of an unterminated quote and returns the error at the end', () => {
+    // The error arrives with the last `next()`, not before it: the walker cannot
+    // know the text ran out until it has.
+    const read = throughBoth('a,b\n1,"unterminated\n');
+    expect(read.rows).toEqual([['a', 'b']]);
+    expect(read.errors).toHaveLength(1);
+  });
+
+  it('walks empty text to nothing, and says so through the same two channels', () => {
+    expect(throughBoth('')).toEqual({ rows: [], errors: [] });
+  });
+
+  it('keeps two walks over one string independent', () => {
+    // The state machine holds no module state: a second walk of the same text must
+    // see the same rows, which a shared cursor would break.
+    const text = 'a,b\n1,2\n';
+    const first = delimitedRows(text, ',');
+    const second = delimitedRows(text, ',');
+    expect(first.next().value).toEqual(['a', 'b']);
+    expect(second.next().value).toEqual(['a', 'b']);
+    expect(first.next().value).toEqual(['1', '2']);
+    expect(second.next().value).toEqual(['1', '2']);
   });
 });
 

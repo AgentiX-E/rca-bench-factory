@@ -1031,6 +1031,7 @@ const TESTED = [
   'createTarGzip',
   'csvCell',
   'csvColumn',
+  'delimitedRows',
   'detectFileLayout',
   'difficultyFloor',
   'dimensionOf',
@@ -1210,6 +1211,10 @@ const TESTED = [
   // milliseconds, a factor of a thousand no reader could notice (finding 315).
   'DURATION_UNITS',
   'detectFileLayout',
+  // The walker behind `parseDelimited`, exported because the modality comparison
+  // reads two 1.4-million-row tables and holding either costs 2.1 KB per row
+  // (finding 511). One state machine, two entry points.
+  'delimitedRows',
   'ingestFile',
   'parseDelimited',
   'parseJsonArray',

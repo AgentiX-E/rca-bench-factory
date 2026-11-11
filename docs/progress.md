@@ -54,50 +54,51 @@ previously measuring.
 
 Measured by `vitest run --coverage` (v8) over `packages/core`, the only package
 with a coverage gate. The four figures below are the measurement taken at
-**v3.68** (2026-11-08); each round's own copy of them is the `coverage` row of its
+**v3.81** (2026-11-10); each round's own copy of them is the `coverage` row of its
 `### Readings` ledger in the progress log, and that row is written by the round that
 ran the suite. This section is retaken when the residual's *shape*
 changes, not every round -- a table retaken every round is a table whose figures
 get typed rather than measured, which is how the 99.93 this table used to publish
-came to exist (finding 481).
+came to exist (finding 481). v3.81 is such a retake: five branch positions closed
+and the previous decomposition, which claimed four, replaced by the tool's own
+count of nine (finding 514).
 
 | Dimension | Result | Gate |
 | --- | --- | --- |
 | Statements | 99.97% | ≥ 95% |
-| Branches | 99.80% | ≥ 95% |
+| Branches | 99.86% | ≥ 95% |
 | Functions | 100% | ≥ 95% |
 | Lines | 99.97% | ≥ 95% |
 
-The residual is two statements and four branches, all of them documented
-backstops rather than gaps, across four sites (the pass-13 additions are all at
-100% and do not enter this list):
+The residual is three statements and nine branch positions, enumerated by the
+position the tool counts and not by the source line that carries it: v8 records
+one outcome per conditional, so a `||` whose left side is true on every input
+still leaves its right side unmeasured (the lesson of pass 7, below), and one
+guard can therefore be three positions.
 
-1. The `never` guard at the end of `aggregateFor` (`src/score/official.ts`).
-   Every member of `ScoreTargetId` returns from a branch above it, so no input
-   reaches it — it is a compile-time backstop.
-2. The `never` guard at the end of `readGroundTruth` in the same file, added for
-   the same reason and stated as such in the comment above it.
-3. The `typeof value !== 'string'` branch in `asNonBlank`, and the
-   `Number.isSafeInteger` test in `parseInteger`, both added by pass 5. The
-   first is unreachable because every flag read through `asNonBlank` is declared
-   `type: 'string'` and `parseArgs` refuses a string flag with no value; the
-   second is provably redundant within every range the CLI currently declares.
-   The measurements are in `audit.md` and the exemption is argued in
+1. The `never` guard at the end of `aggregateFor` (`src/score/official.ts:2007`,
+   three statements and one position). Every member of `ScoreTargetId` returns
+   from a branch above it, so no input reaches it — it is a compile-time
+   backstop, and it is the one group here that a tenth score target trips at
+   *build* time.
+2. Seven positions in the same file, all of them one leftover rather than seven
+   backstops: a case record's `terms` is optional in the type and written by
+   every producer, so `typeof value === 'string'` in `signalKey` (632, twice),
+   `targets.size === 0` (1278), `scored.length === 0` (1399), `terms === undefined`
+   in `rca100Process` (1536), and the `?? 0` reads of `evidenceHits` and `la`
+   (1924, 1929) all guard a shape the data cannot have. The repair is to make
+   `terms` required in the record type and delete them; it is queued as a
+   leftover, because unlike (1) nothing in the type system is what makes these
+   unreachable — the producer is.
+3. The `Number.isSafeInteger` test in the CLI's `parseInteger`
+   (`src/cli/args.ts:240`), provably redundant within every range the CLI
+   declares. The measurement is in `audit.md` and the exemption is argued in
    `acceptance.md` §2.39.
 
-The count of *sites* and the count of *branch positions* are not the same
-number, and the two were conflated in an earlier revision of this table. v8
-counts a branch **position** — one record per outcome of a conditional — so the
-two `never` guards account for three positions between them, not two, and a
-`||` whose left side is true on every input still leaves its right side
-unmeasured. The table reports the aggregate the tool prints; the enumeration
-above is the reviewable decomposition of it. Listing four sites against a
-figure the tool derives from positions is how the earlier revision came to claim
-two branches where the tool measured four.
-
-The comments on those lines record why they are not deleted to turn the numbers
-green. A guard removed because a test cannot see it is not a covered line; it is
-a missing guarantee.
+Groups (1) and (2) are therefore opposite cases and are not allowed to shelter
+each other. A guard removed because a test cannot see it is not a covered line;
+it is a missing guarantee. A guard removed because the type makes it impossible
+is a smaller type.
 
 Every module touched by an audit pass is at **100% on all four dimensions**:
 `src/ingest/otlp.ts` after pass 2; `src/llm/openai-compat.ts` and
@@ -116,6 +117,9 @@ while the package average read `99.85`** -- and it reached `100 | 100 | 100 | 10
 by four rounds of real tests plus the removal of one unreachable guard. That is
 finding 49's clause and this file's own "a new module must clear the floor on its
 own" section, demonstrated for the third time.
+`src/score/modalities.ts` after the v3.81 rewrite, driven from `100 | 98.29 | 100
+| 100` to `100 × 4` by three positions: two that no input could reach and were
+deleted, and one that was reachable and had never been taken (findings 513, 514).
 
 Pass 2 raised the aggregate branch figure from 99.89% to 99.96%: the
 exact-nanosecond conversion introduced a negative-timestamp path that nothing
@@ -416,11 +420,11 @@ document that described it as downloading the data was describing an intention.
 | Commits (at `d179592`) | 530 |
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 97 |
-| Source lines | 33,706 |
-| Test files | 245 core + 4 cli |
-| Test lines | 104,560 core + 3,242 cli |
-| Tests | 6,267 core + 187 cli |
-| Tracked files | 635 |
+| Source lines | 34,010 |
+| Test files | 247 core + 4 cli |
+| Test lines | 105,191 core + 3,242 cli |
+| Tests | 6,289 core + 187 cli |
+| Tracked files | 638 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -504,7 +508,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.80: **28** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.81: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1199,14 +1203,17 @@ is a row about rather than paraphrase one that no `grep` will find.
   give is the *comparison*: `logs-header` and the plan's columns are checked per case, so SockShop's
   nine columns stay an inheritance until a run reaches an `RE2-SS` case and says otherwise.
   `[open: the first `RE2-SS` `logs-header` check, which the census line cannot stand in for]`
-- **The modality comparison holds two maps of every row's signature.** `compareModalityTables` builds a
-  `Map<string, number>` per side, keyed by the joined cells of the compared columns: for a TrainTicket
-  case that is two maps of 1.4 million long strings, on top of the two row arrays the parse produced,
-  and the heap samples are taken at five stage boundaries so a spike inside this function is invisible
-  until V8 prints one. 168 of the run's failures were `modalities`, so the function that decides them
-  is the busiest in the round trip and the only one whose memory has never been measured.
-  `[open: what the comparison costs on the corpus's largest case, and a shape that does not hold two
-  maps of it]`
+- **~~The modality comparison holds two maps of every row's signature.~~ Closed at v3.81 by measuring
+  it and replacing the shape (finding 511).** The two maps were the mechanism: 1,925 bytes per row on
+  the same probe, 734.4 MB at 400,000 rows, and the comparison is what 168 of one run's 270 failures
+  were about. It now walks both tables through one generator (`delimitedRows`, the same state machine
+  `parseDelimited` wraps), keeps one sorted array of signatures per side, and drops every row: **37.2
+  MB at 400,000 rows** (98 bytes/row) and **313.8 MB at the 1,433,140 rows of
+  `RE2-TT/ts-auth-service_cpu/1`** -- the case the run died on. The old shape was not run at that
+  size, because 19.7x per row is 2.76 GB and the machine has to stay usable; the extrapolation says
+  so. The reading comes from `probe:modality-memory`, which names the module it measured and is
+  driven by four tests. What remains is not this entry: it is the dispatch that would carry a
+  TrainTicket case to the end of 270, which is the round trip's entry and not the comparison's.
 - **The level a case claims still reaches both exports, and the note that defends it does not.** The
   distribution gate stopped reading claims in v3.74, so a corpus can no longer meet its tenth by
   relabelling; `difficultyFor` still projects `FaultCase.difficulty`, so the case with a one-hop chain
@@ -1301,7 +1308,7 @@ and this table.
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
-| [volume-13.md](progress/volume-13.md) | 17 | v3.64 | v3.80 |
+| [volume-13.md](progress/volume-13.md) | 18 | v3.64 | v3.81 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

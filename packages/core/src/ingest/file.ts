@@ -216,6 +216,42 @@ interface ParsedRecord {
  */
 export function parseDelimited(text: string, delimiter: string): DelimitedParseResult {
   const rows: string[][] = [];
+  const walk = delimitedRows(text, delimiter);
+  let step = walk.next();
+  while (!step.done) {
+    rows.push(step.value);
+    step = walk.next();
+  }
+  return { rows, errors: step.value };
+}
+
+/**
+ * Walk the same table one row at a time, without ever holding it.
+ *
+ * ## Why a second entry point rather than a second parser
+ *
+ * The comparison in `score/modalities.ts` reads a corpus table and the export of
+ * the same case. On a TrainTicket case that is two tables of ~1.4 million rows,
+ * and holding both as arrays of arrays of cells costs **2.1 KB per row** --
+ * measured, 809.8 MB for 400,000 rows -- which is about 3 GB for the pair. The
+ * round trip's heap budget is 12,288 MB and V8 died at 12,005: the ingest peak
+ * (4.1 GB) plus this comparison is what leaves the budget, and the run has never
+ * carried one TrainTicket case to the end of a comparison (finding 511).
+ *
+ * The state machine is here, once, and both entry points are it: a second parser
+ * would be a second answer to what a quoted field is, and this repository has
+ * paid for that shape twice (findings 204, 316).
+ *
+ * ## Why a generator and not a callback
+ *
+ * The comparison walks **two** tables at once -- a `derived` column is checked
+ * against the instant on the same row of the other side -- so the caller needs to
+ * advance each independently. The `return` value is the error list, because an
+ * unterminated quote is only known once the text runs out: a walker that reaches
+ * the end reads it back from the final `IteratorReturnResult`, and
+ * `parseDelimited` is exactly that walker.
+ */
+export function* delimitedRows(text: string, delimiter: string): Generator<string[], FileParseError[], void> {
   const errors: FileParseError[] = [];
   let row: string[] = [];
   let cell = '';
@@ -225,7 +261,7 @@ export function parseDelimited(text: string, delimiter: string): DelimitedParseR
   let i = 0;
   const n = text.length;
 
-  const isBlankRow = (r: string[]): boolean => r.every((c) => c.trim() === '');
+  const isBlankRow = (r: readonly string[]): boolean => r.every((c) => c.trim() === '');
 
   while (i < n) {
     const ch = text[i];
@@ -266,7 +302,9 @@ export function parseDelimited(text: string, delimiter: string): DelimitedParseR
       if (ch === '\r' && text[i + 1] === '\n') i += 1;
       row.push(cell);
       cell = '';
-      if (!isBlankRow(row)) rows.push(row);
+      // The row is handed out and then dropped by this frame: the only reference a
+      // walker keeps is the one it chooses to keep.
+      if (!isBlankRow(row)) yield row;
       row = [];
       line += 1;
       rowStartLine = line;
@@ -281,10 +319,10 @@ export function parseDelimited(text: string, delimiter: string): DelimitedParseR
     errors.push({ line: rowStartLine, reason: 'unterminated quoted field' });
   } else if (cell !== '' || row.length > 0) {
     row.push(cell);
-    if (!isBlankRow(row)) rows.push(row);
+    if (!isBlankRow(row)) yield row;
   }
 
-  return { rows, errors };
+  return errors;
 }
 
 function parseJsonlLines(text: string): { records: ParsedRecord[]; errors: FileParseError[] } {
