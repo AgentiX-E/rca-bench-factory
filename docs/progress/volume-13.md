@@ -2077,9 +2077,9 @@ v3.83 发布了 `Tracked files 638`。带着它的那个提交里有 639，下�
 
 | item | value |
 | --- | --- |
-| `core` test suite | **248 files, 6300 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **252 files, 6487 tests passed** (as of this commit) |
+| `core` test suite | **248 files, 6300 tests passed** (at v3.84) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.84) |
+| repo test suite | **252 files, 6487 tests passed** (at v3.84) |
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** (per-file thresholds, no exemption); unchanged, because this round changed no file under `src/` |
 | new tests | **6299 -> 6300, net +1**: one for the rewrite refusing a tree with an untracked file, and the same test's second half proving the way out |
 | the claimant budget | `RULE_TIMEOUT_MS` **30,000 -> 120,000**, which is the ceiling the battery gives each claimant run, so the two numbers are one |
@@ -2106,5 +2106,135 @@ v3.83 发布了 `Tracked files 638`。带着它的那个提交里有 639，下�
 
 能抓住这一类的不是更强的断言，是**让每个数说出自己的来源与时刻**：判词印它实际用的预算（30000），
 拒绝句印第一个未跟踪文件（`notes.md`）。两次修复本身也都是这个形状——把沉默的作用域变成一句话。
+
+## v3.85 · the plan said one table, and the corpus writes two
+
+The 2026-11-11 dispatch (`5c1a8a9`, run `43085008634`) carried **all 270 cases** through the round
+trip for the first time -- 8,075 MB of a 12,336 MB budget, 151.6 minutes, no case killed -- and
+scored **24**. This round is about the other 246, and none of them had anything to do with memory.
+
+### One · a plan keyed on the suite cannot state a header that varies inside the suite (finding 521)
+
+244 cases failed with the same sentence:
+
+> `the exported logs table is not the corpus's - 178461 row(s) against the corpus's 178461; the
+> corpus's logs table has no 'cluster_id' column; the corpus's logs table has no 'log_template'
+> column`
+
+Same row count, and two columns the plan names that the corpus does not have. The counts are
+exact and they name the cause: **24 cases carry `cluster_id` values in their corpus and 244 carry
+none, and 24 is the number that scored.** The archives agree, read directly on 2026-11-12 with
+their sha256 checked against the registry:
+
+| case | `logs.csv` header |
+| --- | --- |
+| `RE2-OB/checkoutservice_cpu/1` | nine columns, ending `,cluster_id,log_template` |
+| `RE2-OB/checkoutservice_cpu/3` | seven columns, ending `,req_path,error` |
+| `RE2-SS/carts_cpu/1` | seven columns |
+
+Two case directories of the **same service and fault type**, eleven apart in the list, two different
+log schemas. The split is inside `RE2-OB`, so `SLICE_MODALITY_PLANS` cannot express it either -- the
+slice entry exists for a slice-level difference, and this is not one.
+
+So the comparison changed, not the plan: a planned `not-carried` column the corpus does not have is
+a **reading**, not a defect. It is a statement about what the *exporter* writes; the export's header
+is the format's nine columns, the IR has no field for four of them, and a corpus that does not carry
+one of them loses nothing. The reading carries `absent: 'corpus' | 'export' | 'both' | undefined`,
+because `lossy: 0` cannot distinguish "the column is there and every cell is empty" from "there is no
+such column", and the run printed the second as if it were the first 244 times. A column the
+comparison *reads values from* is unchanged: a corpus without `message` is a corpus that was re-cut,
+and it still fails.
+
+The absence reaches the log as one line per slice rather than 244 per-case lines, which is the shape
+the absences-per-table census already had:
+
+> `ROUNDTRIP CENSUS columns RE2-SS: logs lacks cluster_id on 90/90 case(s), log_template on 90/90 case(s)`
+
+### Two · an empty cell is not a missing column (finding 522)
+
+The SockShop and TrainTicket cases were also short of rows -- `85020/86592`, `279624/279630` -- with
+signatures only in the corpus of the shape `1705595459383000000 | front-end |  | `. Counting the
+archive: `RE2-SS/carts_cpu/1` has **1,572 rows whose `message` cell is empty** of 86,592, and 1,572
+is the gap. The reader's log branch folded `''` into `undefined` through `asText`, and the sentence
+it produced named a **column** that was there:
+
+> `missing required column 'message' (log body)`
+
+Three facts were one branch: a layout naming no body column, a record without one, and a cell that is
+empty. The refusal was also the odd one out in its own package -- `loki`, `elasticsearch` and
+`clickhouse` all emit `{ kind: 'log', body: '' }` for an empty line, each with a test -- so the branch
+now tests the *presence* of the value and keeps its text. `LogPayload.body: string` is what a line
+with no text is for: it is still a line, at an instant, on a service.
+
+### Three · an empty cell is not the epoch, in the second place that was true (finding 523)
+
+Two cases failed with `the table's first instant is '0' and the injection time is '1708475361'`. That
+case's `simple_metrics.csv` ends in rows of the shape `,,,,,,,,,,,,11028480,43077632,…`: the
+collection stopped writing the clock before it stopped writing readings, 256 rows of it. In the
+adapter, `Number('')` is `0` and `Number.isFinite(0)` is true, so those rows were filed at
+**1970-01-01** and the exported `data.csv` led with an instant of `0`. The guard that existed
+(`cell === undefined`) catches a row *shorter* than the header and not a row whose cell is blank.
+
+`modalities.ts` already carries the sentence for this class -- "An empty cell is not the epoch, and
+`BigInt('')` is `0n`" -- and this is the second module to need it. The row is dropped and **counted**:
+
+> `ROUNDTRIP context 1 case(s) carried 256 row(s) with no instant; a row with no clock is not a
+> sample, and filing it at 1970 would put it on no clock at all`
+
+### Four · the witness could not testify to the one thing it witnesses (finding 524)
+
+`differ` on a `not-carried` column is the number of cells the export **wrote** into a column it
+declares empty, and `rowsMatch` never read it. An exporter that filled `methodName` passed the fourth
+anchor, with the contradiction appearing as `1 written` inside one of 270 lines.
+
+The oracle found it. `modality-comparison-shape.test.ts` holds a second implementation of the same
+specification, that one counts `columns.every(reading => reading.differ === 0)` toward `rowsMatch`,
+and its own comment claims the generator produces "a value in a column declared not carried". It did
+not. Seeding the case the comment promised made the two implementations disagree, and the oracle was
+right. A value in a declared-unfilled column is now a `problem`, so the case fails and the reason
+names the column, the count, and the statement it contradicts. All 270 real cases write 0 values in
+all four columns; nothing in the estate changes, and a future exporter cannot pass by writing one.
+
+### Readings
+
+> Ledger for `v3.85`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **248 files, 6307 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **252 files, 6494 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** (per-file thresholds, no exemption); unchanged, and both changed modules measure 100 of 100 |
+| new tests | **6300 -> 6307, net +7**: four for the absent column (corpus, both, export, read-from column), two for the body (an empty cell is a line, a null one is not), one for a dateless row |
+| the corpus's log schemas | **24 nine-column, 244 seven-column** of the 268 the comparison reached; the two that failed before it are seven-column when read from the archive |
+| rows the reader refused | **1,572 of 86,592** in `RE2-SS/carts_cpu/1` (1.8%), 6 and 16 in the two TrainTicket cases quoted |
+| rows with no clock | **256** in `RE2-OB/checkoutservice_cpu/2`, filed at 1970 until this round |
+| the SS case, on the archive | **86,592 of 86,592 log rows, 0 signatures only in the corpus**, 3.7 s, 962 MB |
+| the OB case, on the archive | **110,067 log rows and 199,960 spans**, 10.5 s, 1,499 MB, `data-csv-time` green |
+| list | **27 -> 25**: the run's readings close the heap entry and the header entry |
+
+### Leftovers, in the order that reaches the goal
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| P0 | a round trip that carries all 270 cases | **the comparison no longer fails a case for its corpus's schema**, and the three causes are repaired; 24 scored last time | one more dispatch, and read `ROUNDTRIP PASSED (270 case(s))` |
+| P1 | worker count decided by memory rather than by the stall reading | open since v3.80 | choose the cap from the stall measurement |
+| P1 | a budget stated as a default and a budget stated by the file | open since v3.84 | make the battery read each claimant's declared budget and report the smaller |
+| P2 | a `terms` map per target, so the aggregate can say which keys a rule writes | open since v3.83 | nine shapes instead of one, decided as a record change |
+| P2 | the index grows every round | unchanged | measure the distance to the ceiling first |
+| P3 | coverage numbers have no reader that computes them | unchanged | teach `docs:check` to read a report |
+
+**The lesson.** A plan is a claim about a corpus, and a claim that a *suite* has one shape is a claim
+about four case directories being identical. They are not: two directories eleven apart differ in
+their log header, and the difference is not a defect in either. The instrument that could have said
+so was the census -- and the census existed, one level up, counting *tables* per slice. It never
+counted *columns*, because the plan was taken to be the answer to that question.
+
+The same shape appears in the other three findings: `message` is a column and an empty cell is a
+value; a time cell is an instant and an empty one is nothing at all; `differ` is a count and it was
+never read. Four times, one fact was read as another because the code had a name for the first. The
+repairs are all the same: give the second fact its own field, its own sentence, and -- for the
+census -- a count.
+
 
 

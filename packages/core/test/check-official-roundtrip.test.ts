@@ -1303,6 +1303,30 @@ describe('scripts/check-official.mjs · a delimited payload that must be refused
     expect(result.stderr).toMatch(/non-numeric time/);
   });
 
+  it('drops a row with no clock instead of filing it at 1970', async () => {
+    // `RE2-OB/checkoutservice_cpu/2` ends in rows of the shape
+    // `,,,,,,,,,,,,11028480,…`: the collection stopped writing the time column
+    // before it stopped writing readings. `Number('')` is `0` and `Number.isFinite(0)`
+    // is true, so those rows became `1970-01-01`, and the exported `data.csv` led
+    // with an instant of `0` beside an injection time of `1708475361` -- refused by
+    // the field contract with `the table's first instant is '0'`, a sentence that
+    // names the symptom rather than the reader.
+    //
+    // Two readings and one dateless row: the case must round-trip with **two**
+    // signals, because a row with no clock is not a sample.
+    const result = await runOneCsv('time,adservice_cpu\n1700000000,0.21\n,0.5\n1700000120,0.95\n', 'csv-dateless');
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(1 case/);
+    expect(result.stdout).toMatch(/signals=2/);
+    // Counted, and named, rather than silently discarded: a reader has to be able to
+    // learn that the corpus has rows with no clock from the run and not from a diff.
+    expect(result.stdout).toContain(
+      'ROUNDTRIP context 1 case(s) carried 1 row(s) with no instant; ' +
+        'a row with no clock is not a sample, and filing it at 1970 would put it on no clock at all',
+    );
+  });
+
   it('refuses a header-only payload, because zero samples is not a case', async () => {
     const result = await runOneCsv('time,adservice_cpu\n', 'csv-empty');
 

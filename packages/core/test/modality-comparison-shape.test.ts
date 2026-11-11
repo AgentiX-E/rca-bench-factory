@@ -269,6 +269,11 @@ describe('the comparison agrees with the same specification in another shape', (
       if (damage === 2) exportedRows.push(exportRow(corpusRows[0] as Row));
       if (damage === 3 && exportedRows[0] !== undefined) exportedRows[0] = { ...exportedRows[0], message: 'rewritten' };
       if (damage === 4 && exportedRows[1] !== undefined) exportedRows[1] = { ...exportedRows[1], level: 'warn' };
+      // The fifth was named in this file's own comment -- "a value in a column
+      // declared not carried" -- and never generated, which is how the module went
+      // on answering `rowsMatch: true` for a table whose export filled a column it
+      // declares empty while the oracle said otherwise. The oracle was right.
+      if (damage === 5 && exportedRows[2] !== undefined) exportedRows[2] = { ...exportedRows[2], error: 'invented' };
       const corpus = render(corpusRows);
       const exported = render(exportedRows);
 

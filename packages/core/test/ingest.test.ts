@@ -643,6 +643,52 @@ describe('ingestFile - branch completeness', () => {
     expect(quarantine[0]?.reason).toContain('(none)');
   });
 
+  it('reads an empty log body as a line with no text, because the corpus has such lines', () => {
+    // 1,572 of `RE2-SS/carts_cpu/1`'s 86,592 log rows have an empty `message`, and
+    // this reader refused every one of them -- so the round trip exported 85,020
+    // rows of an 86,592-row table and reported the gap as a lost row. The three
+    // other log readers in this package (`loki`, `elasticsearch`, `clickhouse`) all
+    // emit `body: ''` for an empty line, which is what the IR's `body: string` is
+    // for: a line that says nothing is still a line, at an instant, on a service.
+    const src = 'timestamp,cmdb_id,message\n2026-09-06T00:00:00Z,order,\n';
+    const l: FileLayout = { timestamp: 'timestamp', service: 'cmdb_id', logBody: 'message' };
+    const { signals, quarantine } = ingestFile(src, { format: 'csv', signalKind: 'log', layout: l });
+    expect(quarantine).toEqual([]);
+    expect(signals[0]?.payload).toEqual({ kind: 'log', body: '' });
+  });
+
+  it('still refuses a log whose body column the file does not have', () => {
+    // The sentence has to keep naming the *column*, and it can only do that if the
+    // two facts stay apart: a file with no `message` column is not a file whose
+    // messages are empty. They were one branch, and the branch's sentence named the
+    // column while the condition that fired most often was the empty cell.
+    const src = 'timestamp,cmdb_id\n2026-09-06T00:00:00Z,order\n';
+    const l: FileLayout = { timestamp: 'timestamp', service: 'cmdb_id', logBody: 'message' };
+    const { signals, quarantine } = ingestFile(src, { format: 'csv', signalKind: 'log', layout: l });
+    expect(signals).toEqual([]);
+    expect(quarantine[0]?.reason).toBe("missing required column 'message' (log body)");
+  });
+
+  it('reads a JSON null body as an absent one, while an empty string is a body', () => {
+    // Three spellings, three facts, and only one of them is a line. `""` is a line
+    // with no text -- a table of the corpus has 1,572 of them -- while `null` is the
+    // record saying it holds no body, and an absent key is the same as `null` for a
+    // reader that has to decide. They arrive through the same `get`, which is why the
+    // branch has to test for the *presence* of the value rather than for emptiness.
+    const layout: FileLayout = { timestamp: 'timestamp', service: 'service', logBody: 'message' };
+    const src = JSON.stringify([
+      { timestamp: '2026-09-06T00:00:00Z', service: 'order', message: '' },
+      { timestamp: '2026-09-06T00:01:00Z', service: 'order', message: null },
+      { timestamp: '2026-09-06T00:02:00Z', service: 'order' },
+    ]);
+    const { signals, quarantine } = ingestFile(src, { format: 'json', signalKind: 'log', layout });
+    expect(signals.map((one) => one.payload)).toEqual([{ kind: 'log', body: '' }]);
+    expect(quarantine.map((one) => one.reason)).toEqual([
+      "missing required column 'message' (log body)",
+      "missing required column 'message' (log body)",
+    ]);
+  });
+
   it('labels a missing service name as "(none)" when no fallback exists', () => {
     const src = 'timestamp,kpi_name,value\n2026-09-06T00:00:00Z,cpu_usage,20\n';
     const l: FileLayout = { timestamp: 'timestamp', metricName: 'kpi_name', metricValue: 'value' };

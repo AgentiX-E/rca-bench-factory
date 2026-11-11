@@ -241,10 +241,32 @@ function adaptDelimitedMetrics(raw, entry, payloadName) {
   }
   const droppedColumns = columns.length - kept.length;
 
+  /**
+   * Rows the corpus writes with no instant.
+   *
+   * `RE2-OB/checkoutservice_cpu/2` ends in rows of the shape
+   * `,,,,,,,,,,,,11028480,…`: the collection stopped writing the clock before it
+   * stopped writing the readings. `Number('')` is `0`, and `Number.isFinite(0)` is
+   * true, so those rows were filed at **1970-01-01**, which on that case put a
+   * `data.csv` whose first instant was `0` beside an injection time of `1708475361`
+   * -- and the field-contract check refused the case with `the table's first instant
+   * is '0'`, which names the symptom and not the reader. It is the same defect
+   * `modalities.ts` guards against one module over, in a sentence worth repeating: an
+   * empty cell is not the epoch.
+   *
+   * A row with no instant is not a sample: nothing can place it on a clock, so
+   * dropping it is the only answer that does not invent one. Counted rather than
+   * silently discarded, because "the corpus has rows with no clock" is a fact about
+   * the corpus that a reader should learn from the run rather than from a diff.
+   */
+  let dateless = 0;
   for (let r = 1; r < rows.length; r += 1) {
     const row = rows[r];
     const cell = row[timeIndex];
-    if (cell === undefined) continue;
+    if (cell === undefined || cell.trim() === '') {
+      dateless += 1;
+      continue;
+    }
     const seconds = Number(cell.trim());
     if (!Number.isFinite(seconds)) {
       return {
@@ -296,6 +318,7 @@ function adaptDelimitedMetrics(raw, entry, payloadName) {
   return {
     ok: true,
     csv: out.join('\n') + '\n',
+    dateless,
     // Reported rather than silently discarded: how much of the table described
     // something other than the case.
     context: entityPrefixed ? { entities: prefixes.size - 1, columns: droppedColumns } : undefined,
@@ -511,9 +534,10 @@ const CASE_LABEL = 'inject_time.txt';
  *
  * ## Why RE2 was not here, and what was measured before it was
  *
- * Its log table is nine columns, four of which the IR has no field for
- * (`req_path`, `error`, `cluster_id`, `log_template`) and one of which -- `level`
- * -- feeds a closed severity vocabulary. The open question was what happens to a
+ * Its log table is nine columns on some cases and seven on most -- 24 of the 88 the
+ * round trip measured are nine, and the split does not follow the slice (finding
+ * 521). Four of the nine have no IR field (`req_path`, `error`, `cluster_id`,
+ * `log_template`) and one of them -- `level` -- feeds a closed severity vocabulary. The open question was what happens to a
  * `level` this reader has never seen, and it was answered by reading all 91
  * `logs.csv` files of `RE2-OB.zip`: 15 224 545 rows, six distinct values --
  * `info` 6 202 823, `debug` 5 105 988, `INFO` 2 138 278, empty 1 768 661,
@@ -726,11 +750,14 @@ const MODALITY_PLANS = {
  *
  * ## Why the logs plan is inherited rather than restated
  *
- * SockShop writes the same nine-column log table (v3.76 reads it for the first
- * time; before this round no run had ever reached a `RE2-SS` case's comparison).
- * Restating the columns here would be a second copy of a fact that a change to one
- * of them would leave behind, and `filter` on `table` says which entry is meant
- * without depending on its position in the list.
+ * SockShop writes a **seven**-column log table -- measured from `RE2-SS.zip` on
+ * 2026-11-12, `time,timestamp,container_name,message,level,req_path,error` -- which is
+ * RE2's plan minus the two columns only some Online Boutique cases carry (finding
+ * 521). The plan is inherited rather than restated because the seven columns it does
+ * have are the same seven, in the same order, under the same names; restating them
+ * would be a second copy of a fact that a change to one of them would leave behind.
+ * The two the corpus does not have are readings now, with a census line, rather than a
+ * defect in 90 cases at a time.
  *
  * A slice that is absent from this map uses the suite's plan, which is the right
  * default: a slice is only here when it differs, and inheriting cannot silently
@@ -902,6 +929,9 @@ function adaptCase(root, entry) {
     plans,
     absent,
     context: metrics.context,
+    // Zero for the `metrics.json` shape, which carries no instants of its own and
+    // synthesises them from the injection time: a row cannot be dateless there.
+    dateless: metrics.dateless ?? 0,
   };
 }
 
@@ -1154,6 +1184,38 @@ const declared = [];
  * them exact is a fact about the IR's clock, and one line is where it belongs.
  */
 const modalityComparisons = [];
+/**
+ * Per slice, table and column, how many cases' tables do not have the column.
+ *
+ * The other half of a fix that would otherwise be silent. RE2's log table is not one
+ * table: 244 of its 270 cases write seven columns and 26 write nine, and the split
+ * does not follow the slice (64 of Online Boutique's 90 are seven-column). The plan
+ * cannot state that -- it is keyed on suite and slice -- so the comparison reads the
+ * absence as a reading rather than as a defect. A reading that appears on 244 cases
+ * and is printed 244 times is a reading nobody totals, which is why the total is
+ * here: one line per slice, and the number a reader compares between runs when a
+ * corpus is re-cut.
+ */
+const columnAbsences = new Map();
+function censusAbsentColumns(entry, verdicts) {
+  const slice = String(entry.caseId).split('/')[0];
+  for (const verdict of verdicts) {
+    for (const column of verdict.columns) {
+      if (column.kind !== 'not-carried') continue;
+      const key = `${slice} ${verdict.table} ${column.column}`;
+      let counts = columnAbsences.get(key);
+      if (counts === undefined) {
+        counts = { slice, table: verdict.table, column: column.column, absent: 0, total: 0, firstAbsent: [] };
+        columnAbsences.set(key, counts);
+      }
+      counts.total += 1;
+      if (column.absent !== undefined) {
+        counts.absent += 1;
+        if (counts.firstAbsent.length < 3) counts.firstAbsent.push(entry.caseId);
+      }
+    }
+  }
+}
 for (const entry of descriptors.cases ?? []) {
   declared.push(entry.caseId);
   if (!files.has(`${entry.caseId}/inject_time.txt`)) {
@@ -1200,6 +1262,15 @@ const contractSkips = [];
  * a measurement a reader can compare between runs (finding 263).
  */
 const droppedContext = { cases: 0, entities: 0, columns: 0 };
+/**
+ * Rows the corpus writes with a metric cell and no clock, per case and in total.
+ *
+ * A separate counter from the one above because it is a different statement about a
+ * different part of the corpus: that one says the table described entities other
+ * than the case's, this one says the collection stopped writing instants before it
+ * stopped writing readings.
+ */
+const datelessRows = { cases: 0, rows: 0 };
 /**
  * Per slice and table, how many cases shipped the table and how many did not.
  *
@@ -1370,6 +1441,10 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
       droppedContext.cases += 1;
       droppedContext.entities += adapted.context.entities;
       droppedContext.columns += adapted.context.columns;
+    }
+    if (adapted.dateless > 0) {
+      datelessRows.cases += 1;
+      datelessRows.rows += adapted.dateless;
     }
 
     // What the corpus says this case's fault is, before anything is stamped on it. Computed
@@ -1596,6 +1671,7 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
     const modality = compareCaseModalities({ entry, adapted, exported });
     sample();
     modalityComparisons.push(...modality.verdicts);
+    censusAbsentColumns(entry, modality.verdicts);
     for (const verdict of modality.verdicts) {
       console.log(`ROUNDTRIP MODALITY ${label} ${describeModalityComparison(verdict)}`);
     }
@@ -1737,6 +1813,18 @@ function emitScoreReport() {
         absent: one.absent,
         firstAbsent: one.firstAbsent,
       })),
+      // The same statement one level down: not "does this case ship the table" but
+      // "does its table have the columns the plan names". Written into the report so
+      // the count survives a run that dies before the epilogue -- which is how the
+      // 244-case version of this stayed invisible for a run (finding 503's shape).
+      columnAbsences: [...columnAbsences.values()].map((one) => ({
+        slice: one.slice,
+        table: one.table,
+        column: one.column,
+        absent: one.absent,
+        total: one.total,
+        firstAbsent: one.firstAbsent,
+      })),
       cost: {
         peakMb: Math.round(caseCost.peakMb),
         peakCase: caseCost.peakCase,
@@ -1761,6 +1849,12 @@ if (droppedContext.cases > 0) {
     `ROUNDTRIP context ${droppedContext.cases} case(s) carried other entities in their table; ` +
       `${droppedContext.columns} column(s) across ${droppedContext.entities} entity reference(s) were ` +
       `not the case's component and were not attributed to it`,
+  );
+}
+if (datelessRows.rows > 0) {
+  console.log(
+    `ROUNDTRIP context ${datelessRows.cases} case(s) carried ${datelessRows.rows} row(s) with no instant; ` +
+      'a row with no clock is not a sample, and filing it at 1970 would put it on no clock at all',
   );
 }
 
@@ -1827,6 +1921,20 @@ if (modalityComparisons.length > 0) {
       `${truncatedCells} cell(s) truncated to the millisecond, ` +
       `${notCarried} value(s) in columns the IR does not carry`,
   );
+  // The columns a slice's tables do not have, once per slice. Silence when every
+  // case has every column, because a line of zeros about a column no case lacks is
+  // a line that says nothing -- and one that would read as a comparison.
+  for (const slice of [...new Set([...columnAbsences.values()].map((one) => one.slice))].sort()) {
+    const parts = [];
+    for (const table of [...new Set([...columnAbsences.values()].map((one) => one.table))].sort()) {
+      const lacking = [...columnAbsences.values()]
+        .filter((one) => one.slice === slice && one.table === table && one.absent > 0)
+        .sort((a, b) => a.column.localeCompare(b.column))
+        .map((one) => `${one.column} on ${String(one.absent)}/${String(one.total)} case(s)`);
+      if (lacking.length > 0) parts.push(`${table} lacks ${lacking.join(', ')}`);
+    }
+    if (parts.length > 0) console.log(`ROUNDTRIP CENSUS columns ${slice}: ${parts.join('; ')}`);
+  }
 }
 
 /**

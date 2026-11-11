@@ -111,11 +111,13 @@ schema of the two files whose *names* match ours. Measured from the archives (fi
 | file | RE2-OB | RE3-OB |
 | --- | --- | --- |
 | `traces.csv` | 11 columns, `time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID` | the same 11, identical |
-| `logs.csv` | 9 columns, `time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template` | 6 columns, `time,timestamp,container_name,message,pod_name,node_name` |
+| `logs.csv` | **9 or 7 columns, per case**: 24 of the 88 cases the round trip measured end `,cluster_id,log_template` and 64 end `,req_path,error`, and `RE2-SS/carts_cpu/1` is seven-column (finding 521) | 6 columns, `time,timestamp,container_name,message,pod_name,node_name` |
 | units | `traces.startTime` is Unix **microseconds** (16 digits); `traces.startTimeMillis` is milliseconds (13); `traces.duration` is microseconds; `logs.timestamp` is **nanoseconds** (19 digits); `time` is `HH:MM` UTC | the same |
 
-So the trace table is one schema across both suites and the log table is two, which is why
-`RCAEVAL_TRACES_COLUMNS` is a list and `RCAEVAL_LOGS_COLUMNS` is a map. The columns the IR does not
+So the trace table is one schema across both suites and the log table is two -- and, inside RE2, a
+third question: the nine-column shape is not every case's. What the export writes is fixed by
+`RCAEVAL_LOGS_COLUMNS`, which is the format's header and not the corpus's, and the round trip states
+the difference per slice rather than failing the case (`ROUNDTRIP CENSUS columns`). The columns the IR does not
 carry (`methodName`; RE2's `req_path`, `error`, `cluster_id`, `log_template`) are emitted empty and
 named in `RCAEVAL_UNFILLED_COLUMNS` rather than filled with an invention.
 

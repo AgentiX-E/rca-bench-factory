@@ -204,10 +204,97 @@ describe('modality comparison · the columns the IR cannot carry', () => {
   it('fails when a declared-unfilled column carries a value', () => {
     // The column is declared empty, so a value here is the export contradicting its
     // own statement -- not a difference of opinion about a truncation.
+    //
+    // It used to be *reported* and not *failing*: `differ` counted the written cells
+    // and `rowsMatch` did not read the count, so an exporter that filled a column it
+    // swears is empty passed the fourth anchor and printed the contradiction on a
+    // line nobody reads 270 of. The round trip is the independent witness to
+    // `RCAEVAL_UNFILLED_COLUMNS`; a witness that cannot testify is a comment.
     const corpus = [header, 'sp-1,Convert,0.0'].join('\n');
     const exported = [header, 'sp-1,Convert,'].join('\n');
     const result = compare({ table: 'traces', plan, corpus, exported });
     expect(result.columns.find((c) => c.column === 'methodName')).toMatchObject({ differ: 1 });
+    expect(result.rowsMatch).toBe(false);
+    expect(result.problems).toContain(
+      "the exported traces table writes 1 value(s) into 'methodName', which its own statement says is empty",
+    );
+  });
+});
+
+describe('modality comparison · a column the corpus does not have', () => {
+  // RE2's log table is not one table. Measured on the archives this round: every
+  // SockShop case and every TrainTicket case writes seven columns, and Online
+  // Boutique writes nine on twenty-four of its ninety and seven on the other
+  // sixty-six. A plan keyed on the suite cannot state that, and a comparator that
+  // treats a planned column the corpus lacks as a defect reports 244 of 270 cases
+  // as broken for a difference that is in the corpus.
+  const SEVEN = 'time,timestamp,container_name,message,level,req_path,error';
+  const NINE = `${SEVEN},cluster_id,log_template`;
+  const PLAN: readonly ColumnComparison[] = [
+    { column: 'time', kind: 'derived', from: 'timestamp' },
+    { column: 'timestamp', kind: 'truncated', unit: 'ns' },
+    { column: 'container_name', kind: 'exact' },
+    { column: 'message', kind: 'exact' },
+    { column: 'level', kind: 'not-carried' },
+    { column: 'req_path', kind: 'not-carried' },
+    { column: 'error', kind: 'not-carried' },
+    { column: 'cluster_id', kind: 'not-carried' },
+    { column: 'log_template', kind: 'not-carried' },
+  ];
+  const corpus = [
+    SEVEN,
+    '16:30,1705595459012034902,carts,request handled,,/carts,false',
+    '16:30,1705595459383106225,front-end,,,,',
+  ].join('\n');
+  const exported = [
+    NINE,
+    '16:30,1705595459012000000,carts,request handled,,,,,',
+    '16:30,1705595459383000000,front-end,,,,,',
+  ].join('\n');
+
+  it('reads absence as absence rather than as a defect, and says which side is short', () => {
+    const result = compare({ corpus, exported, plan: PLAN });
+    expect(result.problems).toEqual([]);
+    expect(result.rowsMatch).toBe(true);
+    // Two facts, two fields: "the column is not there" and "the column is there and
+    // holds nothing" both leave `lossy` at zero, and a reader told only the count
+    // cannot tell which table the corpus is.
+    expect(result.columns.find((c) => c.column === 'cluster_id')).toEqual({
+      column: 'cluster_id',
+      kind: 'not-carried',
+      differ: 0,
+      lossy: 0,
+      absent: 'corpus',
+    });
+    // `req_path` is in the corpus and holds a value in one row: present, with the
+    // loss the declared-unfilled column cannot avoid. The two are different facts and
+    // the fixture carries both so that neither can be read for the other.
+    expect(result.columns.find((c) => c.column === 'req_path')).toMatchObject({ lossy: 1, absent: undefined });
+    expect(describeModalityComparison(result)).toContain('cluster_id (absent from the corpus, 0 written)');
+  });
+
+  it('says so when neither table has the column the plan names', () => {
+    const neither = 'time,timestamp,container_name,message';
+    const result = compare({
+      corpus: [neither, '16:30,1705595459012034902,carts,request handled'].join('\n'),
+      exported: [neither, '16:30,1705595459012000000,carts,request handled'].join('\n'),
+      plan: PLAN,
+    });
+    expect(result.columns.find((c) => c.column === 'level')).toMatchObject({ absent: 'both' });
+    expect(describeModalityComparison(result)).toContain('level (absent from both tables, 0 written)');
+  });
+
+  it('still refuses a column it reads values from', () => {
+    // The asymmetry is the point: `not-carried` is a claim about what the *exporter*
+    // writes, so a corpus without it loses nothing. `message` is a claim about what
+    // the corpus holds, and a corpus without it is a corpus that was re-cut.
+    const result = compare({
+      corpus: 'time,timestamp,container_name\n16:30,1705595459012034902,carts',
+      exported,
+      plan: PLAN,
+    });
+    expect(result.problems).toContain("the corpus's logs table has no 'message' column");
+    expect(result.rowsMatch).toBe(false);
   });
 });
 
@@ -490,14 +577,28 @@ describe('modality comparison · a stale plan still produces a report', () => {
     expect(result.rowsMatch).toBe(false);
   });
 
-  it('survives a not-carried column the export does not have', () => {
+  it('reports a not-carried column the export does not have, and does not fail on it', () => {
+    // This test used to hold the opposite, and v3.85 changed it on the archive's
+    // evidence. A `not-carried` column is a statement about what the exporter writes
+    // -- the format fixes the header and the IR has no field -- so the only thing it
+    // can be wrong about is *writing something*. A header that lacks it writes
+    // nothing, which is the statement, satisfied.
+    //
+    // What must not happen is silence: `absent` says which side is short, and this is
+    // the arm for the export. The other arm is the corpus's, and it is the one that
+    // 244 of 270 round-trip cases take -- a case is not broken because its corpus has
+    // seven columns where the plan names nine.
     const result = compare({
       corpus: ROWS,
       exported: 'a\n1',
       plan: [{ column: 'a', kind: 'exact' }, { column: 'b', kind: 'not-carried' }],
     });
-    expect(result.problems.some((p) => p.includes("no 'b' column"))).toBe(true);
-    expect(result.rowsMatch).toBe(false);
+    expect(result.problems).toEqual([]);
+    expect(result.rowsMatch).toBe(true);
+    // The corpus's `2` is still counted as lost: the column is not in the export at
+    // all, and a reader has to be able to see that the two facts are different.
+    expect(result.columns.find((c) => c.column === 'b')).toMatchObject({ absent: 'export', differ: 0, lossy: 1 });
+    expect(describeModalityComparison(result)).toContain('b (1 value(s) in the corpus, column absent from the export)');
   });
 
   it('survives a derived column the export does not have, and says which side is short', () => {

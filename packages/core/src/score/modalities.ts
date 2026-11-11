@@ -132,6 +132,18 @@ export interface ColumnReading {
    * an instant, or a value in a column the IR does not carry.
    */
   readonly lossy: number;
+  /**
+   * Which side's header does not name this column, when one does not.
+   *
+   * A third field rather than a reading of `differ` and `lossy`, because those two
+   * numbers cannot tell "the corpus has this column and every cell is empty" from
+   * "the corpus has no such column": both are `lossy: 0`. The two facts call for
+   * different sentences -- one says the corpus is what the plan said, the other says
+   * the plan described a table this case does not have -- and the round trip spent
+   * 244 of 270 cases failing on the second while printing something that read like
+   * the first.
+   */
+  readonly absent: 'corpus' | 'export' | 'both' | undefined;
 }
 
 export interface ModalityComparison {
@@ -412,6 +424,8 @@ interface ColumnState {
   readonly planned: ColumnComparison;
   readonly at: number | undefined;
   readonly ot: number | undefined;
+  /** Which header lacks the column, said once here rather than at each return. */
+  readonly absent: ColumnReading['absent'];
   /** `derived` columns only: the source, present exactly when the check can run. */
   readonly derived: DerivedSource | undefined;
   /** The two sides' cells, built only when a per-column difference is asked for. */
@@ -470,10 +484,19 @@ function readColumns(args: {
       args.problems.push(derivedProblem({ column: planned.column, from: planned.from, unit, fromIndex }));
     }
     const compared = planned.kind === 'exact' || planned.kind === 'truncated' || planned.kind === 'normalised';
+    const absent: ColumnReading['absent'] =
+      at === undefined && ot === undefined
+        ? 'both'
+        : at === undefined
+          ? 'corpus'
+          : ot === undefined
+            ? 'export'
+            : undefined;
     return {
       planned,
       at,
       ot,
+      absent,
       derived,
       pair: compared && args.needsDiffer ? { mine: [], theirs: [] } : undefined,
       lossy: 0,
@@ -545,15 +568,27 @@ function readColumns(args: {
       // A check that could not run is not a check that passed: the column is reported
       // as differing on every row, and the problem raised before the walk says why.
       return state.derived === undefined
-        ? { column: planned.column, kind: planned.kind, differ: args.rowCount, lossy: 0 }
-        : { column: planned.column, kind: planned.kind, differ: state.differ, lossy: state.disagreed };
+        ? { column: planned.column, kind: planned.kind, differ: args.rowCount, lossy: 0, absent: state.absent }
+        : {
+            column: planned.column,
+            kind: planned.kind,
+            differ: state.differ,
+            lossy: state.disagreed,
+            absent: state.absent,
+          };
     }
     if (planned.kind === 'not-carried') {
-      return { column: planned.column, kind: planned.kind, differ: state.written, lossy: state.lost };
+      return {
+        column: planned.column,
+        kind: planned.kind,
+        differ: state.written,
+        lossy: state.lost,
+        absent: state.absent,
+      };
     }
     const pair = state.pair;
     if (pair === undefined) {
-      return { column: planned.column, kind: planned.kind, differ: 0, lossy: state.lossy };
+      return { column: planned.column, kind: planned.kind, differ: 0, lossy: state.lossy, absent: state.absent };
     }
     pair.mine.sort();
     pair.theirs.sort();
@@ -562,7 +597,7 @@ function readColumns(args: {
     // two differences -- a diagnostic that reads as "twice as many cells are wrong as
     // there are rows".
     const differ = Math.max(asymmetricSorted(pair.theirs, pair.mine), asymmetricSorted(pair.mine, pair.theirs));
-    return { column: planned.column, kind: planned.kind, differ, lossy: state.lossy };
+    return { column: planned.column, kind: planned.kind, differ, lossy: state.lossy, absent: state.absent };
   });
 }
 
@@ -588,6 +623,21 @@ export function compareModalityTables(args: {
   const exportIndex = new Map(exported.header.map((name, index) => [name, index]));
 
   for (const planned of args.plan) {
+    // A `not-carried` column is a statement about what **the exporter** writes, not
+    // about what the corpus holds: the format fixes the header at nine columns and
+    // the IR has no field for the four RE2-only ones, so those cells are written
+    // empty. A corpus that does not have the column loses nothing by it, and the
+    // absence is reported in the column's own reading rather than here.
+    //
+    // This is not a general licence: RE2's log table is *not* one table. Of the 268
+    // cases the round trip's comparison reached, 244 write seven columns and 24 write
+    // nine, and the split does not follow the slice -- 64 of Online Boutique's 90 are
+    // seven-column, eleven cases apart from one that is nine. A plan keyed on the
+    // suite therefore cannot state the header, and a comparator that treated every
+    // difference from it as a defect failed those 244 cases for a property of the
+    // corpus. A column the comparison *reads values from* is the other case and still
+    // a problem below: a corpus without `message` is a corpus that was re-cut.
+    if (planned.kind === 'not-carried') continue;
     if (!corpusIndex.has(planned.column)) {
       problems.push(`the corpus's ${args.table} table has no '${planned.column}' column`);
     }
@@ -702,6 +752,23 @@ export function compareModalityTables(args: {
   // notice.
   const derivedDiffer = columns.some((column) => column.kind === 'derived' && column.differ > 0);
 
+  // The other reading the signature cannot see. A `not-carried` column is declared
+  // empty by `RCAEVAL_UNFILLED_COLUMNS`, which is the exporter's own statement about
+  // itself; a value here is the export contradicting that statement, and the round
+  // trip is the independent witness to it. It used to be counted and printed and not
+  // gated -- `differ` for this kind is the number of written cells, and `rowsMatch`
+  // did not read it -- so an exporter that filled a column it swears is empty passed
+  // the anchor that exists to catch exactly that (the seed-5 table of
+  // `modality-comparison-shape.test.ts` is the oracle disagreeing with this module
+  // about it, which is how it was found).
+  for (const column of columns) {
+    if (column.kind !== 'not-carried' || column.differ === 0) continue;
+    problems.push(
+      `the exported ${args.table} table writes ${String(column.differ)} value(s) into ` +
+        `'${column.column}', which its own statement says is empty`,
+    );
+  }
+
   const corpusLabel = `the corpus's ${args.table} table`;
   const exportLabel = `the exported ${args.table} table`;
 
@@ -746,7 +813,16 @@ export function describeModalityComparison(comparison: ModalityComparison): stri
     .map((c) => `${c.column} normalised (${c.lossy} of ${comparison.corpusRows} cell(s) spelled differently)`);
   const lost = comparison.columns
     .filter((c) => c.kind === 'not-carried')
-    .map((c) => `${c.column} (${c.lossy} value(s) in the corpus, ${c.differ} written)`);
+    .map((c) => {
+      // The absence first, because it is the fact that changes what the numbers
+      // mean: a corpus without the column has nothing to lose, and a reader who sees
+      // `0 value(s) in the corpus` on 244 cases reads a corpus that is empty rather
+      // than a corpus that is shaped differently.
+      if (c.absent === 'corpus') return `${c.column} (absent from the corpus, ${String(c.differ)} written)`;
+      if (c.absent === 'both') return `${c.column} (absent from both tables, ${String(c.differ)} written)`;
+      if (c.absent === 'export') return `${c.column} (${String(c.lossy)} value(s) in the corpus, column absent from the export)`;
+      return `${c.column} (${String(c.lossy)} value(s) in the corpus, ${String(c.differ)} written)`;
+    });
   return (
     `${comparison.table}: ${comparison.exportedRows}/${comparison.corpusRows} row(s); ` +
     `exact ${exact.length}/${comparison.columns.length}` +

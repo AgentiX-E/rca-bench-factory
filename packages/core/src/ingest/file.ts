@@ -629,10 +629,24 @@ function buildSignal(record: Record<string, unknown>, options: FileIngestOptions
     };
     payload = metric;
   } else if (signalKind === 'log') {
-    const body = asText(get(layout.logBody));
-    if (body === undefined) {
+    // An empty cell is a *body*, not an absence, and this branch used to say
+    // otherwise: `asText` folds `''` into `undefined`, and the sentence it produced
+    // -- `missing required column 'message' (log body)` -- named a column that was
+    // there. The cost was measured on the corpus: `RE2-SS/carts_cpu/1` has 86,592
+    // log rows of which 1,572 carry an empty message, so the round trip exported
+    // 85,020 and reported the difference as rows it had lost. The three other log
+    // readers in this package (`loki`, `elasticsearch`, `clickhouse`) all emit
+    // `body: ''` for an empty line, which is what `LogPayload.body: string` is for --
+    // a line with no text is still a line, at an instant, on a service.
+    //
+    // What stays a rejection is the two facts that made the sentence true: a layout
+    // that names no body column, and a record without one. They are distinguishable
+    // here only because the cell is read without `asText`.
+    const rawBody = get(layout.logBody);
+    if (rawBody === undefined || rawBody === null) {
       return { ok: false, kind: 'reject', reason: `missing required column '${layout.logBody ?? '(none)'}' (log body)` };
     }
+    const body = String(rawBody).trim();
     const rawSeverity = asText(get(layout.severity));
     let severityText: LogSeverity | undefined;
     if (rawSeverity !== undefined) {

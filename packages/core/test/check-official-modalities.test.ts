@@ -81,11 +81,11 @@ describe('scripts/check-official.mjs · the log and trace tables as input', () =
   // numbers is what let the nanosecond conversion keep a defect for as long as it
   // had one (finding 316), and a round fixture would let the truncation path here
   // go untested end to end.
-  function logsCsv(secondMessage: string): string {
+  function logsCsv(secondMessage: string, secondTimestamp = '1700000060987654321'): string {
     return [
       LOG_HEADER,
       `${at(1_700_000_000)},1700000000123456789,emailservice,started,emailservice-1,node-a`,
-      `${at(1_700_000_060)},1700000060987654321,emailservice,${secondMessage},emailservice-1,node-a`,
+      `${at(1_700_000_060)},${secondTimestamp},emailservice,${secondMessage},emailservice-1,node-a`,
     ].join('\n');
   }
 
@@ -147,11 +147,15 @@ describe('scripts/check-official.mjs · the log and trace tables as input', () =
   });
 
   it('fails when a row the corpus has does not reach the export', () => {
-    // An empty `message` is a record this reader refuses, and refusing it makes the
-    // exported table shorter than the corpus's. Before the tables were read there
-    // was nothing to be short of.
+    // The cause is an instant the reader cannot parse. It used to be an empty
+    // `message`, and v3.85 changed that on the evidence: 1,572 rows of
+    // `RE2-SS/carts_cpu/1` have an empty message, and the three other log readers in
+    // this package already emit `body: ''` for one. What this test is for is
+    // unchanged -- a row that does not reach the export has to fail the case, and the
+    // sentence has to give the two counts -- so the cause is a refusal that is still
+    // a refusal.
     const root = freshRoot();
-    const { cases } = writeCaseWith(root, { logs: logsCsv(''), traces: TRACES });
+    const { cases } = writeCaseWith(root, { logs: logsCsv('still here', 'not-an-instant'), traces: TRACES });
     const result = run(['--official-dir', root, '--cases', cases]);
     expect(result.status).toBe(1);
     expect(result.stdout).toMatch(/ROUNDTRIP MODALITY .*logs: 1\/2 row\(s\)/);
@@ -187,6 +191,13 @@ describe('scripts/check-official.mjs · the log and trace tables as input', () =
     // plan, both failed with the sentence above, one line each, on a corpus that had
     // not changed. The plan now says logs, the cases round-trip their logs, and the
     // census says the thing a reader needs: this slice carries no spans.
+    //
+    // The header here is the archive's own, read out of `RE2-SS.zip` on 2026-11-12:
+    // seven columns, no `cluster_id` and no `log_template`, while the export writes
+    // nine because `RCAEVAL_LOGS_COLUMNS.RE2` is the format's header and not the
+    // corpus's. This fixture used to write nine -- a shape no SockShop case has --
+    // which is why a plan claiming nine passed here and failed on all 270 cases of
+    // the round trip.
     const root = freshRoot();
     const caseId = 'RE2-SS/carts_cpu/1';
     const dir = join(root, caseId);
@@ -195,8 +206,8 @@ describe('scripts/check-official.mjs · the log and trace tables as input', () =
     writeFileSync(join(dir, 'simple_metrics.csv'), 'time,carts_cpu\n1699999999,0.2\n1700000001,0.95\n');
     writeFileSync(
       join(dir, 'logs.csv'),
-      `time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template\n` +
-        `${at(1_700_000_000)},1700000000123456789,carts,request handled,info,/carts,false,c-1,tpl-1\n`,
+      `time,timestamp,container_name,message,level,req_path,error\n` +
+        `${at(1_700_000_000)},1700000000123456789,carts,request handled,,,\n`,
     );
     const cases = join(scratch, 'ss-slice.json');
     writeFileSync(
@@ -223,6 +234,12 @@ describe('scripts/check-official.mjs · the log and trace tables as input', () =
     expect(result.stdout).toMatch(/ROUNDTRIP MODALITY .*logs: 1\/1 row\(s\)/);
     expect(result.stdout).toMatch(/ROUNDTRIP modalities 1 table\(s\) over 1 modality\(ies\)/);
     expect(result.stdout).toContain('ROUNDTRIP CENSUS modalities RE2-SS: logs 1/1, traces 0/1');
+    // And the two columns the plan names and this corpus does not have are reported
+    // once, as a count, rather than as a case that is wrong.
+    expect(result.stdout).toContain(
+      'ROUNDTRIP CENSUS columns RE2-SS: logs lacks cluster_id on 1/1 case(s), log_template on 1/1 case(s)',
+    );
+    expect(result.stdout).toContain('cluster_id (absent from the corpus, 0 written)');
     // And no trace table was silently claimed: the summary's span count is zero of
     // zero, which reads as "nothing to compare", not as "compared and matched".
     expect(result.stdout).toMatch(/0 of 0 span\(s\)/);

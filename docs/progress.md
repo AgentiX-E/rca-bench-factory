@@ -428,10 +428,10 @@ document that described it as downloading the data was describing an intention.
 | Commits (at `d179592`) | 530 |
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 97 |
-| Source lines | 34,059 |
+| Source lines | 34,152 |
 | Test files | 248 core + 4 cli |
-| Test lines | 105,517 core + 3,242 cli |
-| Tests | 6,300 core + 187 cli |
+| Test lines | 105,710 core + 3,242 cli |
+| Tests | 6,307 core + 187 cli |
 | Tracked files | 639 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -516,7 +516,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.84: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.85: **25** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1198,29 +1198,41 @@ is a row about rather than paraphrase one that no `grep` will find.
   which read two of them from run `42674673341`. The check id is `data-csv-time`: cases
   `2/270` and `14/270` (`checkoutservice_cpu/2` and `checkoutservice_mem/2`) fail with *"the table's
   first instant is '0' and the injection time is '1708475361', which have to be on the same clock"* --
-  two cases out of 270, and a corpus shape rather than an export defect. The other 168 failures carry
+  two cases out of 270, and a corpus shape rather than an export defect -- half right, and
+  v3.85 measured which half (finding 523): the corpus does have rows with no clock (256 of them in
+  `checkoutservice_cpu/2`), and the export filing them at 1970 was the reader's invention, not the
+  corpus's shape. The other 168 failures carry
   the id `modalities` with no sentence after it, which is a second-order version of the same complaint:
   their reason is the `ROUNDTRIP MODALITY` line above, so the case line says *which* check failed and
   nothing about *why*. What the round did with the answer is finding 505's subject: the two readings
   that would have made the run legible were both written after the loop.
-- **The heap this corpus needs is measured now, and the number was wrong.** The job was sized at
+- ~~**The heap this corpus needs is measured now, and the number was wrong.~~ Closed by a run that
+  finished (finding 511's rewrite, and `ROUNDTRIP cost` from run `43085008634`).** The job was sized at
   7168 MB from 17 MB of heap per MB of CSV, taken on a synthetic case in the corpus's own shape. Run
   `42674673341` reached **6,960 MB of it (96%) at case 182** -- the first TrainTicket case, 1,433,140
   spans against SockShop's 95,000 -- and V8 killed it. The largest case before that was 4,100 MB at
   case 54, so the curve is flat at 4.1 GB for 180 cases and then leaves the budget in one step. v3.79
   raised the declaration to 12288 and moved the refusal to where it fires while the process is alive
-  (finding 504). What is still not measured is the peak the *modality comparison* needs, because the
-  run has never held a TrainTicket case to the end of one.
-  `[open: a `ROUNDTRIP cost … largest … MB …` line from a run that finishes, and the peak the modality
-  comparison needs rather than the peak the ingest needed]`
-- **`RE2-TT`'s tables and SockShop's log header are still unmeasured, and the reason was placement.**
-  TrainTicket starts at case 182 and the one run that reached it died there, so the census line that
-  would have said what TrainTicket ships was never printed -- it was written in the epilogue, after a
-  loop that did not finish (finding 505). The line now prints before the first case, from the walk's
-  file set, so the next dispatch reads it whether or not it survives TrainTicket. What that does not
-  give is the *comparison*: `logs-header` and the plan's columns are checked per case, so SockShop's
-  nine columns stay an inheritance until a run reaches an `RE2-SS` case and says otherwise.
-  `[open: the first `RE2-SS` `logs-header` check, which the census line cannot stand in for]`
+  (finding 504). The dispatch of 2026-11-11 finished all 270 cases instead of dying at 182:
+  `ROUNDTRIP cost 270 case(s) in 151.6 min; largest 8075 MB of
+  the 12336 MB this run was given (65%) at RE2-TT/ts-route-service_mem/3; slowest 120.5 s at
+  RE2-TT/ts-train-service_loss/1`. The peak the modality comparison needs is that 8,075 MB, and it is
+  measured rather than extrapolated: v3.81's rewrite of the comparison (finding 511) took the pair of
+  tables from 1,925 bytes a row to 98, so the 1,433,140-span case that used to end the run now fits
+  with a third of the budget to spare.
+- ~~**`RE2-TT`'s tables and SockShop's log header are still unmeasured, and the reason was
+  placement.~~ Closed by the same dispatch, and the answer was not the one the entry predicted
+  (finding 521).** TrainTicket starts at case 182 and the one run that reached it died there, so the
+  census line that would have said what TrainTicket ships was never printed -- it was written in the
+  epilogue, after a loop that did not finish (finding 505). The line now prints before the first case,
+  from the walk's file set, so the next dispatch reads it whether or not it survives TrainTicket.
+  `ROUNDTRIP CENSUS modalities` reads `RE2-SS: logs 90/90, traces 0/90` and `RE2-TT: logs 90/90,
+  traces 90/90`, and the *comparison* then failed 244 cases with `the corpus's logs table has no
+  'cluster_id' column`. SockShop's "nine columns" was an inheritance from RE2-OB and it was false:
+  `RE2-SS/carts_cpu/1` writes seven, and so do 64 of Online Boutique's 90 -- two directories of the
+  same service eleven apart, one nine-column and one seven. A planned `not-carried` column the corpus
+  does not have is a reading now, with its own field and a per-slice census line, and the entry's
+  question is answered by the archive rather than by a run.
 - **~~The modality comparison holds two maps of every row's signature.~~ Closed at v3.81 by measuring
   it and replacing the shape (finding 511).** The two maps were the mechanism: 1,925 bytes per row on
   the same probe, 734.4 MB at 400,000 rows, and the comparison is what 168 of one run's 270 failures
@@ -1335,7 +1347,7 @@ and this table.
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
-| [volume-13.md](progress/volume-13.md) | 21 | v3.64 | v3.84 |
+| [volume-13.md](progress/volume-13.md) | 22 | v3.64 | v3.85 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

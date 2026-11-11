@@ -1129,3 +1129,131 @@ disagreed: a fixture reproduces the measurement its author made, and this author
 way the round did. The number became 8 the moment the guard learned to refuse.
 
 
+
+## Finding 521 — RE2's log table is not one table, and the plan said it was
+
+The 2026-11-11 dispatch (`5c1a8a9`, run `43085008634`) carried 270 cases through the round trip
+for the first time and scored **24**. Two hundred and forty-four failed, and every one of them
+with the same sentence:
+
+> `RE2-OB/checkoutservice_cpu/3: the exported logs table is not the corpus's - 178461 row(s)
+> against the corpus's 178461; the corpus's logs table has no 'cluster_id' column; the corpus's
+> logs table has no 'log_template' column`
+
+Same row count, and two columns the plan names that the corpus does not have. The count is the
+evidence and it is exact: **24 cases have `cluster_id` values in their corpus and 244 have zero,
+and 24 is the number that scored.**
+
+The archives say the same thing, read directly (`RE2-SS.zip`, `RE2-OB.zip`, 2026-11-12, sha256
+matched against `golden-master/official-assets.json`):
+
+| Case | `logs.csv` header |
+| --- | --- |
+| `RE2-OB/checkoutservice_cpu/1` | `time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template` |
+| `RE2-OB/checkoutservice_cpu/3` | `time,timestamp,container_name,message,level,req_path,error` |
+| `RE2-SS/carts_cpu/1` | `time,timestamp,container_name,message,level,req_path,error` |
+
+Two case directories of the **same service and fault type**, eleven apart in the case list, and
+different log schemas. The split does not follow the suite (`RE2` is four characters over three
+corpora) and it does not follow the slice (64 of Online Boutique's 90 are seven-column). So no
+plan keyed on suite or slice can state the header, and the design that said "the plan is the
+claim" had a claim the corpus does not have.
+
+The sentence that had to go is the one this module's own comparison raised: *a planned column the
+corpus does not have is a defect*. That is right for a column the comparison reads values from
+-- a corpus without `message` is a corpus that was re-cut -- and wrong for a `not-carried` column,
+which is a statement about what the **exporter** writes. The export's header is the format's
+(nine columns for RE2, from `RCAEVAL_LOGS_COLUMNS`), the IR has no field for those four, and a
+corpus that does not carry one of them loses nothing by it. The absence is now a field on the
+reading (`absent: 'corpus' | 'export' | 'both' | undefined`) and a census line, not a failure:
+
+> `ROUNDTRIP CENSUS columns RE2-SS: logs lacks cluster_id on 90/90 case(s), log_template on 90/90 case(s)`
+
+Verified on the archive rather than on a fixture: `RE2-SS/carts_cpu/1` through the local round
+trip, **86,592 of 86,592 log rows, 0 signatures only in the corpus**, and the two absent columns
+named once in the census.
+
+## Finding 522 — 1,572 rows of one SockShop case were refused as "missing column" when the column was there
+
+The same run reported, for every SockShop and TrainTicket case, an export shorter than the corpus
+(`85020/86592`, `279624/279630`) and signatures only in the corpus of the shape
+
+> `corpus only: 1705595459383000000 | front-end |  | `
+
+Counting the archive: `RE2-SS/carts_cpu/1`'s `logs.csv` has **1,572 rows whose `message` cell is
+empty** out of 86,592, and 1,572 is the gap. The reader's log branch was
+
+```ts
+const body = asText(get(layout.logBody));
+if (body === undefined) {
+  return { ok: false, kind: 'reject', reason: `missing required column '${layout.logBody}' (log body)` };
+}
+```
+
+and `asText` folds `''` into `undefined`, so an empty **cell** was reported as a missing **column**.
+Three things were one branch: a layout that names no body column, a record that has none, and a
+cell that is empty. The sentence named the column in all three cases, which is how a corpus with
+1,572 blank log lines reads as a file whose header is wrong.
+
+The refusal was also inconsistent with the rest of the package: `loki`, `elasticsearch` and
+`clickhouse` all emit `{ kind: 'log', body: '' }` for an empty line, and each has a test that
+says so. `LogPayload.body: string` is what an empty line is for -- a line with no text is still
+a line, at an instant, on a service. The branch now tests the *presence* of the value and keeps
+its text, so `''` is a body and a null or absent one is still a refusal.
+
+The test that had to change said the opposite ("An empty `message` is a record this reader
+refuses"), and it was right about the code and wrong about the corpus. It survives with a cause
+that is still a refusal -- an instant that cannot be parsed -- so the invariant it exists for (a
+row that does not reach the export fails the case) is still held by a test.
+
+## Finding 523 — an empty cell is not the epoch, in the second place it was true
+
+Two of the 270 failed with a different sentence:
+
+> `RE2-OB/checkoutservice_cpu/2: the export does not match rcaeval-re2's field contract -
+> data-csv-time (the table's first instant is '0' and the injection time is '1708475361', which
+> have to be on the same clock)`
+
+The corpus explains it. That case's `simple_metrics.csv` ends in rows of the shape
+`,,,,,,,,,,,,11028480,43077632,…`: the collection stopped writing the clock before it stopped
+writing the readings -- 256 such rows. In the adapter,
+
+```js
+const cell = row[timeIndex];
+if (cell === undefined) continue;
+const seconds = Number(cell.trim());
+```
+
+`Number('')` is `0` and `Number.isFinite(0)` is true, so 256 rows were filed at **1970-01-01**,
+and the exported `data.csv` led with an instant of `0`. The guard that was there (`cell ===
+undefined`) catches a row *shorter* than the header and not a row whose cell is blank.
+
+`modalities.ts` already carries the sentence for this class -- "An empty cell is not the epoch, and
+`BigInt('')` is `0n`" -- and it is the second module in this tree to need it. The row is now
+dropped and **counted**, because "the corpus has rows with no clock" is a fact about the corpus
+that the run should say rather than one a diff should reveal:
+
+> `ROUNDTRIP context 1 case(s) carried 256 row(s) with no instant; a row with no clock is not a
+> sample, and filing it at 1970 would put it on no clock at all`
+
+Verified on the archive: `RE2-OB/checkoutservice_cpu/2` passes locally, 110,067 log rows and
+199,960 spans, 10.5 s, 1,499 MB.
+
+## Finding 524 — the round trip could not testify to the one thing it is the witness for
+
+`compareModalityTables` reads a `not-carried` column's `differ` as the number of cells the export
+**wrote** into a column it declares empty, and `rowsMatch` did not read that number. So an export
+that filled `methodName` or `cluster_id` -- contradicting `RCAEVAL_UNFILLED_COLUMNS`, the
+exporter's own statement about itself -- passed the fourth anchor, and the contradiction appeared
+only as `1 written` inside a line a reader sees 270 of.
+
+It was found by the *oracle*, not by a test of the module: `modality-comparison-shape.test.ts`
+carries a second implementation of the same specification, that one counts `columns.every(reading
+=> reading.differ === 0)` toward `rowsMatch`, and its own comment claims the generator produces "a
+value in a column declared not carried". The generator did not. Adding the case it claimed to have
+(seed 5, `damage === 5`) made the two implementations disagree, and the oracle was right.
+
+The repair is the sentence the failure list needed anyway: a value in a declared-unfilled column
+is now a `problem`, so the case fails and the reason names the column, the count, and the statement
+it contradicts. Two hundred and seventy real cases write 0 values in all four columns, so nothing
+in the estate changes; what changes is that a future exporter cannot pass by writing one.

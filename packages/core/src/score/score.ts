@@ -452,8 +452,11 @@ export function checkRcaEvalStructure(
     ),
   );
 
-  // The log header is per suite because the corpora disagree about it: RE2-OB
-  // ships nine columns and RE3-OB six, sharing only the first four.
+  // The log header is per suite because the corpora disagree about it: RE3-OB
+  // ships six columns, and RE2 ships nine on some cases and seven on most (24 of the
+  // 88 the round trip measured), sharing only the first four. The header this check
+  // reads is the *export's*, which is the format's and is nine for every RE2 case --
+  // the corpus's variable header is the round trip's question, not this one's.
   const expectedLogs = expectsLogs ? RCAEVAL_LOGS_COLUMNS[suite as RcaEvalLogsSuite].join(',') : '';
   const logHeader = first(files, logFiles);
   checks.push(
