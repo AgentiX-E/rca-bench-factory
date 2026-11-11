@@ -430,9 +430,9 @@ document that described it as downloading the data was describing an intention.
 | Source files | 97 |
 | Source lines | 34,059 |
 | Test files | 248 core + 4 cli |
-| Test lines | 105,447 core + 3,242 cli |
-| Tests | 6,299 core + 187 cli |
-| Tracked files | 638 |
+| Test lines | 105,517 core + 3,242 cli |
+| Tests | 6,300 core + 187 cli |
+| Tracked files | 639 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -516,7 +516,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.83: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.84: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1335,7 +1335,7 @@ and this table.
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
-| [volume-13.md](progress/volume-13.md) | 20 | v3.64 | v3.83 |
+| [volume-13.md](progress/volume-13.md) | 21 | v3.64 | v3.84 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

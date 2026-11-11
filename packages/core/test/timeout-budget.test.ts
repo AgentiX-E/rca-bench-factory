@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest';
  * pass is over the default budget, so the test's verdict was a function of machine
  * load rather than of the code. Same defect F-43 fixed in
  * `gate-sites-are-proven.test.ts`, whose rule-7 corpus check timed out on CI at
- * 5000 ms and was given a budget of its own -- `RULE_TIMEOUT_MS`, now `30_000` and
+ * 5000 ms and was given a budget of its own -- `RULE_TIMEOUT_MS`, now `120_000` and
  * now applied to that file's whole suite, for the reason the second arm below
  * records.
  *
@@ -97,7 +97,7 @@ import { describe, expect, it } from 'vitest';
  * A table of per-file costs cannot see that, because the quantity that blew the
  * budget was not the file's cost. What it *could* see, and did not, is where the
  * file wrote the number down: `gate-sites-are-proven.test.ts` had already decided
- * the default was too small -- it declares `30_000` -- and applied it to one test
+ * the default was too small -- it declared `30_000` then, and declares more now -- and applied it to one test
  * of thirty-three. The other thirty-two inherited the default, and a stall does
  * not respect test boundaries.
  *
@@ -466,7 +466,7 @@ function suiteBudget(source: string): number {
  * That is why no row in `STANDALONE_MS` could have caught it: the trigger is not
  * the file's cost, and a table of costs answers a question this failure does not
  * ask. The file had *already decided* the default was too small -- it declares
- * `RULE_TIMEOUT_MS = 30_000` -- and applied it to one test of thirty-three. A
+ * `RULE_TIMEOUT_MS = 30_000`, the value at the time -- and applied it to one test of thirty-three. A
  * budget that is applied where a stall happened to be noticed protects that test
  * and leaves the next one written on the default.
  *
@@ -487,7 +487,11 @@ const SUITE_BUDGET_MS: Readonly<Record<string, { measured: string }>> = {
   'gate-sites-are-proven.test.ts': {
     measured:
       '4 / 50 / 44 ms per test and 476 ms per file standalone under v8 coverage; ' +
-      'all three reported over 5000 ms on CI 40796343743, green on 29b4987d9',
+      'all three reported over 5000 ms on CI 40796343743, green on 29b4987d9; and four copies ' +
+      'run concurrently at v3.83 took 8.22 / 8.32 / 8.33 / 8.22 s each, 69 of 69 passing -- ' +
+      'while the sensitivity battery reported one of these tests past its 30,000 ms budget, ' +
+      'against a 47,727 ms stall this repository has measured (finding 507). The budget is ' +
+      '120,000 now, which is the ceiling the battery gives each claimant run',
   },
   'reader-against-backend.test.ts': {
     measured:

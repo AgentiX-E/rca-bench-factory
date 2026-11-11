@@ -405,6 +405,28 @@ function check() {
     // two ways it fails -- a document with no table to rewrite, and a table whose dated
     // revision does not resolve -- are both states a reader can act on, and a trace would
     // bury the one line that says which.
+    //
+    // And one way the *measurement* fails, which is not about the document at all: every
+    // file row is cut from `git ls-files`, so a file that exists and is not staged is a file
+    // the numbers do not count. Measured, at v3.83: a round added one test file, ran
+    // `--write` before `git add`, published `Tracked files 638`, committed, and the next
+    // check read `639` -- a number that was wrong the moment it was written and that nothing
+    // could have caught, because deriving and publishing happened in one mode and the
+    // contradiction arrived in the next. The repair is to refuse while the index disagrees
+    // with the worktree, because "the tree it was just rewritten from" has to be the tree the
+    // commit will contain.
+    const untracked = git(['ls-files', '--others', '--exclude-standard', '-z'])
+      .split('\u0000')
+      .filter((path) => path !== '');
+    if (untracked.length > 0) {
+      console.error(
+        `  - ${String(untracked.length)} file(s) exist and are not tracked (first: ${untracked[0]}), so ` +
+          'the counts this rewrite would publish are counts of a tree the commit will contradict; ' +
+          'stage them first (`git add -A`) or remove them',
+      );
+      console.error('check-repository-table: FAILED');
+      return 1;
+    }
     let rewritten;
     try {
       rewritten = rewrite(text);

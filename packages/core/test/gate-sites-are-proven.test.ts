@@ -201,6 +201,29 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
  * this file goes back to per-test budgets, so the decision is asserted rather
  * than remembered.
  *
+ * ## The size of it, re-measured because 30,000 turned out to be inside the range
+ *
+ * The constant was `30_000` and it fired for the reason it was chosen to survive:
+ * the whole sensitivity battery runs thirty claimant files four at a time, and
+ * `verify:local` at v3.83 reported this file as "did not finish inside its own
+ * 30,000 ms of test budget", with 68 of its 69 tests passing. Two readings taken
+ * before the number was changed:
+ *
+ *   - four copies of this file run **concurrently** took 8.22 / 8.32 / 8.33 /
+ *     8.22 s each, 69 of 69 passing in every one. So the file is not slow, and
+ *     four-way contention between its own copies does not approach 30 s.
+ *   - the same repository measured a **47,727 ms** event-loop stall for a test
+ *     that costs 9.6 s of work (finding 507, v3.80). That is the size of the
+ *     disturbance this box produces, and it is larger than the budget that was
+ *     supposed to absorb it.
+ *
+ * A budget below a stall this repository has already observed measures the
+ * machine, not the test. `120_000` matches the ceiling
+ * `verify-sites-are-sensitive.mjs` gives each claimant run, so the file's own
+ * budget and the battery's are the same number rather than two numbers a reader
+ * has to compare -- and the battery's verdict line prints which of the two it
+ * used, which is how this one was found.
+ *
  * ## The earlier defect this constant already carried
  *
  * It was **missing** on the first version of the dotfile test, which passed the
@@ -215,7 +238,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
  * a missing declaration is invisible to a reader that looks for declarations,
  * and only a second input (the suite run itself) can see it.
  */
-const RULE_TIMEOUT_MS = 30_000;
+const RULE_TIMEOUT_MS = 120_000;
 const INVENTORY = resolve(ROOT, 'golden-master', 'gate-sites.json');
 
 /**

@@ -1067,3 +1067,65 @@ always writes these two keys". Closing it means a per-target typed record -- a d
 `terms` union over the nine targets -- which is a structural change, not a fallback's worth of
 work, and it is recorded as a leftover rather than smuggled in under a coverage number.
 
+## Finding 519 — a flag that sets a *default* does not reach a test that declares its own
+
+v3.82 gave every claimant in the sites battery its own budget:
+
+```js
+spawn('pnpm', ['exec', 'vitest', 'run', '--root', …, `--testTimeout=${CLAIMANT_TIMEOUT_MS}`])
+```
+
+and the sentence beside it said the battery now gives each claimant 120,000 ms. The next full
+run reported:
+
+> `packages/core/test/gate-sites-are-proven.test.ts did not finish inside its own 30000 ms of
+> test budget (exit 1), so its claims are unmeasured rather than unproven`
+
+**30,000, not 120,000.** `--testTimeout` sets the default a test inherits; a file that states
+its own -- and this one does, `describe(…, { timeout: RULE_TIMEOUT_MS })` -- keeps it. So the
+flag reached every claimant except the slowest one, which is the only one it was written for.
+
+Whether 30,000 was ever a statement about the work is a measurement, and it says no:
+
+| reading | value |
+| --- | --- |
+| the three tests that time out, under v8 coverage | 4 / 50 / 44 ms |
+| the whole file, standalone | 476 ms |
+| four copies run **concurrently**, at v3.83 | 8.22 / 8.32 / 8.33 / 8.22 s, 69 of 69 passing in every copy |
+| the largest event-loop stall this repository has measured for a cheap test | **47,727 ms** (finding 507) |
+
+The budget was below a disturbance the repository had already recorded. So the number moved to
+**120,000**, chosen to equal the battery's own ceiling -- not because the file needs two
+minutes, but because two numbers that are meant to be one number should be one number, and
+because a budget under a measured stall is a budget that measures the machine.
+
+The verdict line is what made this findable: it printed the budget it used (`30000`), not the
+budget the battery passed on the command line. Had it printed 120,000 -- the number in the
+flag -- the file's own declaration would have stayed invisible for another round.
+
+## Finding 520 — a count derived before `git add` is a count of a tree that never existed
+
+v3.83 published `Tracked files 638`. The commit that carried it contained 639, and the next
+`docs:check` refused:
+
+> `## Repository` says '638' for Tracked files; the tree says '639'
+
+Every file row is cut from `git ls-files`, which reads the **index**. The new test file existed
+on disk and was not staged when `--write` ran, so the derivation counted a tree that the commit
+was about to make untrue -- and the guard's own success line says "every one derived from the
+tree it was just rewritten from", which was true and useless: the tree it was rewritten from was
+not the tree the commit would contain.
+
+A number that is wrong the moment it is written, and that nothing can catch until one mode
+later, is the class this repository calls a claim with no reader. The repair is a refusal rather
+than a warning, because the workflow stages with `git add -A`: while the index disagrees with the
+worktree, `--write` refuses, names the first untracked file, and names the way out.
+
+The interesting part is the fixture. `check-repository-table.test.ts` builds a five-file-repository
+and asserts `| Tracked files | 7 |` -- and its document was written **after** the commit, so it was
+untracked in every fixture, and 7 was the count of a tree that omitted the very document the table
+lives in. The fixture had encoded the defect for as long as the guard existed, which is why no test
+disagreed: a fixture reproduces the measurement its author made, and this author made it the same
+way the round did. The number became 8 the moment the guard learned to refuse.
+
+

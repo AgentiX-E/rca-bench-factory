@@ -2005,9 +2005,9 @@ const em = cases.reduce((sum, c) => sum + (c.terms['evidenceHits'] ?? 0), 0);
 
 | item | value |
 | --- | --- |
-| `core` test suite | **248 files, 6299 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **252 files, 6486 tests passed** (as of this commit) |
+| `core` test suite | **248 files, 6299 tests passed** (at v3.83) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.83) |
+| repo test suite | **252 files, 6486 tests passed** (at v3.83) |
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** (per-file thresholds, no exemption) |
 | the residual | **3 statements, 3 branch positions** (9 at the start of the round): the `never` backstop and its position, the summed `?? 0`, and the CLI's exempt `Number.isSafeInteger` |
 | new tests | **6293 -> 6299, net +6**: two for the checkpoint value, two for a case whose name parses to no component, two for the shape a record's terms map takes |
@@ -2032,4 +2032,79 @@ const em = cases.reduce((sum, c) => sum + (c.terms['evidenceHits'] ?? 0), 0);
 两句都在差异消失的高度上写成，而差异在于处置：有的是补测试、有的是删、有的是换成类型、
 还有一条必须留着并说明为什么。一个范围的声明，只有把范围内的每一个都读一遍才算数——
 而读一遍的代价，这一轮是**六条测试和一次删改**。
+
+## v3.84 · v3.82 的那个开关没有到它唯一是为它写的那个文件
+
+v3.83 提交之后的第一趟全量门禁**又一次**在同一个步骤红了，而这次它说出的话是被 v3.82 换上去的
+那一句：`gate-sites-are-proven.test.ts did not finish inside its own 30000 ms of test budget`。
+**30,000，不是 120,000**——而 v3.82 的开关传的是 120,000。
+
+### 一 · 一个设定默认值的开关，到不了一个自己声明预算的文件（finding 519）
+
+`--testTimeout` 设的是**测试继承的默认值**；一个自己写了
+`describe(…, { timeout: RULE_TIMEOUT_MS })` 的文件保留自己的数。于是那个旗子到达了每一个申报者，
+**除了最慢的那一个**——而它是唯一一个旗子为它而写的。
+
+30,000 是不是关于工作量的陈述，要量：那三个超时的测试在覆盖率下是 **4 / 50 / 44 ms**，整份文件
+单跑 **476 ms**，四份并发（v3.83 实测）各 **8.22 / 8.32 / 8.33 / 8.22 s** 且每份 69/69 全绿，
+而本仓已经量到过一次 **47,727 ms** 的停摆（finding 507）。预算落在了一个已经观测过的扰动之下。
+
+于是数改成 **120,000**，与电池给每个申报者的上限**相等**——不是因为这份文件需要两分钟，而是
+因为两个本该是同一个数的数应该是同一个数，而一个低于已测停摆的预算，量的是机器。
+
+让这件事被发现的是那句判词：它印的是**它用的**预算（30000），不是旗子上的 120,000。若它印后者，
+那份文件自己的声明会再隐身一轮。
+
+### 二 · 在 `git add` 之前派生的计数，是一棵从未存在过的树的计数（finding 520）
+
+v3.83 发布了 `Tracked files 638`。带着它的那个提交里有 639，下一次 `docs:check` 直接拒绝。
+机制不新鲜：文件行都切自 `git ls-files`，也就是**索引**，而那个新测试文件在跑 `--write` 时还没被
+暂存。守卫自己的成功句写着「every one derived from the tree it was just rewritten from」——真的，
+而且没用：它派生自的那棵树不是提交将要包含的那棵树。
+
+修法是拒绝而不是警告：本仓的流程是 `git add -A`，所以只要索引与工作树不一致，`--write` 就拒绝，
+点名第一个未跟踪文件，并说出出路。
+
+有意思的是夹具。`check-repository-table.test.ts` 建一个五文件的仓库并断言 `Tracked files | 7`，
+而它的文档是在**提交之后**写的，于是在每一个夹具里它都是未跟踪的——7 是一棵**漏掉了那张表所住的
+文档本身**的树的计数。夹具把这个缺陷复刻了整整一个守卫的生命周期，所以从来没有测试反对过它：
+夹具复现的是作者做过的那次测量，而这位作者和那一轮做的是同一个测量。守卫学会拒绝的那一刻，
+这个数变成了 8。
+
+### Readings
+
+> Ledger for `v3.84`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **248 files, 6300 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **252 files, 6487 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** (per-file thresholds, no exemption); unchanged, because this round changed no file under `src/` |
+| new tests | **6299 -> 6300, net +1**: one for the rewrite refusing a tree with an untracked file, and the same test's second half proving the way out |
+| the claimant budget | `RULE_TIMEOUT_MS` **30,000 -> 120,000**, which is the ceiling the battery gives each claimant run, so the two numbers are one |
+| the claimant's cost | 4 / 50 / 44 ms per test, 476 ms per file standalone, and **8.22 / 8.32 / 8.33 / 8.22 s** for four copies run at once, 69 of 69 green in each |
+| the derived count | **638 -> 639** tracked files: the number v3.83 published was a count of a tree that omitted the file the commit added |
+| the fixture's own number | **7 -> 8**: it had been counting a tree that omitted the document the table lives in |
+| list | **27 open**, unchanged: both repairs closed a defect rather than an entry |
+
+### Leftovers, in the order that reaches the goal
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| P0 | a round trip that carries all 270 cases | the run fired at `5c1a8a9` (43085008634) reached the round-trip step with fetch, pins and derive green | read `ROUNDTRIP cost ... largest ... MB` off that run and compare it with the 12,288 MB budget |
+| P1 | worker count decided by memory rather than by the stall reading | open since v3.80 | choose the cap from the stall measurement |
+| P1 | a budget stated as a default and a budget stated by the file | **new**: two claimants now agree, but nothing checks that a file's declared budget is at least the battery's | make the battery read each claimant's declared budget and report the smaller of the two |
+| P2 | a `terms` map per target, so the aggregate can say which keys a rule writes | open since v3.83 | nine shapes instead of one, decided as a record change |
+| P2 | the index grows every round | unchanged | measure the distance to the ceiling first |
+| P3 | coverage numbers have no reader that computes them | unchanged | teach `docs:check` to read a report |
+
+**The lesson.** 两轮的修复都在**正确的文件**里，而对**正确的文件**来说都是无效的：v3.82 的旗子
+设的是默认值，而唯一需要它的那份文件自己声明了预算；v3.83 的派生读的是索引，而那个数是在索引
+被更新之前取的。两次都不是写错了，而是**在错误的位置上正确**——而这正是「读者」这个概念的边界：
+一个开关有一个作用域，一次派生有一个发生时刻，两者都不在自己的名字里。
+
+能抓住这一类的不是更强的断言，是**让每个数说出自己的来源与时刻**：判词印它实际用的预算（30000），
+拒绝句印第一个未跟踪文件（`notes.md`）。两次修复本身也都是这个形状——把沉默的作用域变成一句话。
+
 

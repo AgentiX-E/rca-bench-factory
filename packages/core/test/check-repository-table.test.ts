@@ -82,6 +82,15 @@ function makeTree(name: string, overrides: { table?: (rev: string) => string; co
   );
   writeFileSync(join(root, 'packages/cli/test/b.test.ts'), "it('one', () => {});\n// padding\n// padding\n// padding\n");
 
+  // The document is written before the commit as well as after it, and that ordering is
+  // the fix to this fixture rather than tidiness: it used to be created after the commit,
+  // so it was an *untracked* file every time, and `| Tracked files | 7 |` counted a tree
+  // the commit did not contain. The guard now refuses to derive over an untracked file, so
+  // the fixture has to be the shape a real round is in -- document tracked, table rewritten
+  // afterwards -- and the count below is 8 because the document is one of the eight.
+  const doc = join(root, 'docs/progress.md');
+  writeFileSync(doc, '# Progress\n\nPlaceholder; the table is written after the commit.\n');
+
   const snapshot = join(root, 'golden-master/doc-counts.json');
   writeFileSync(
     snapshot,
@@ -98,7 +107,6 @@ function makeTree(name: string, overrides: { table?: (rev: string) => string; co
   }
   const rev = spawnSync('git', ['-C', root, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
 
-  const doc = join(root, 'docs/progress.md');
   writeFileSync(doc, `# Progress\n\nIntro.\n\n${(overrides.table ?? defaultTable)(rev)}\n\n## Next section\n\nText.\n`);
   return { root, rev, doc, snapshot };
 }
@@ -117,7 +125,7 @@ function defaultTable(rev: string): string {
     '| Test files | 1 core + 1 cli |',
     '| Test lines | 5 core + 4 cli |',
     '| Tests | 7 core + 3 cli |',
-    '| Tracked files | 7 |',
+    '| Tracked files | 8 |',
   ].join('\n');
 }
 
@@ -242,7 +250,7 @@ describe('scripts/check-repository-table.mjs · the table is derived, not typed'
     const fixture = makeTree('write');
     const stale = defaultTable(fixture.rev)
       .replace('| Source lines | 5 |', '| Source lines | 999 |')
-      .replace('| Tracked files | 7 |', '| Tracked files | 6 |');
+      .replace('| Tracked files | 8 |', '| Tracked files | 6 |');
     withTable(fixture, stale);
 
     const repaired = run(fixture, '--write');
@@ -252,7 +260,7 @@ describe('scripts/check-repository-table.mjs · the table is derived, not typed'
     expect(written).toContain('# Progress\n\nIntro.\n\n## Repository');
     expect(written).toContain('\n\n## Next section\n\nText.\n');
     expect(written).toContain('| Source lines | 5 |');
-    expect(written).toContain('| Tracked files | 7 |');
+    expect(written).toContain('| Tracked files | 8 |');
 
     const again = run(fixture, '--write');
     expect(again.status).toBe(0);
@@ -306,5 +314,40 @@ describe('scripts/check-repository-table.mjs · the refusals inside the derivati
     expect(rejected.status).toBe(1);
     expect(rejected.err).toContain('the revision `deadbeef` does not resolve to a commit');
     expect(readFileSync(fixture.doc, 'utf8')).toBe(before);
+  });
+
+  it('refuses to publish counts for a tree with a file the index does not hold', () => {
+    // The fifth way a rewrite goes wrong, and the only one that is not about the document or
+    // a cell: the **measurement** is taken from `git ls-files`, so a file that exists and is
+    // not staged is a file the rows do not count. Measured at v3.83: a round added one test
+    // file, ran `--write` before `git add`, published `Tracked files 638`, committed, and the
+    // next check read `639`. The number was wrong the moment it was written and nothing could
+    // have caught it, because the contradiction arrived one mode later.
+    //
+    // The assertion is deliberately both-sided: the refusal names the file, and the document
+    // is byte-identical afterwards -- a refusal that wrote the other seven cells first would
+    // be the same half-repair the test above exists for.
+    const fixture = makeTree('write-untracked');
+    withTable(fixture, defaultTable(fixture.rev).replace('| Tracked files | 8 |', '| Tracked files | 6 |'));
+    const before = readFileSync(fixture.doc, 'utf8');
+    // A file that is not a test and not a source file: it moves exactly one row, so the
+    // second half of this test measures the refusal's exit rather than four derivations at
+    // once -- and staging a *test* file would also make the guard's glob disagree with the
+    // suite's own count, which is a different refusal.
+    writeFileSync(join(fixture.root, 'notes.md'), 'A file the round has not staged yet.\n');
+
+    const rejected = run(fixture, '--write');
+    expect(rejected.status).toBe(1);
+    expect(rejected.err).toContain('1 file(s) exist and are not tracked (first: notes.md)');
+    expect(rejected.err).toContain('stage them first');
+    expect(readFileSync(fixture.doc, 'utf8')).toBe(before);
+
+    // And the way out of the refusal is the one the sentence names: stage it, and the same
+    // command publishes a count that includes the file.
+    const staged = spawnSync('git', ['-C', fixture.root, 'add', '-A'], { encoding: 'utf8' });
+    expect(staged.status, staged.stderr).toBe(0);
+    const accepted = run(fixture, '--write');
+    expect(accepted.status).toBe(0);
+    expect(readFileSync(fixture.doc, 'utf8')).toContain('| Tracked files | 9 |');
   });
 });

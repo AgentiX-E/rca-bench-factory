@@ -375,7 +375,7 @@
     },
     {
       "script": "scripts/check-repository-table.mjs",
-      "line": 444,
+      "line": 466,
       "condition": "check() !== 0",
       "diagnostic": "check-repository-table: FAILED",
       "status": "proved",
