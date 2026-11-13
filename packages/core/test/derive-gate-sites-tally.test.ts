@@ -303,8 +303,14 @@ describe('the two baskets are a partition of the calls, not a remainder', { time
     // exits -- a build it cannot find and a row count it cannot use -- so both numbers rise by two.
     // The probe is the reason they are *both* two: a script with two guards, one of which only fires
     // on a bad argument, is where a call count and a site count could have parted.
-    expect(calls).toBe(153);
-    expect(sites).toBe(135);
+    //
+    // 154/136 is v3.90's, and it is the pair moving together again for the same reason: the
+    // aggregate-table gate gained one exit -- a run in which no case at all could be reproduced,
+    // which is not a pass -- because a *refusal* stopped being a failure in that round. A step whose
+    // title is "either reproduced or refused" needs one sentence for each of the three states, and
+    // the state with no case in it is the one that had nowhere to be said.
+    expect(calls).toBe(154);
+    expect(sites).toBe(136);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

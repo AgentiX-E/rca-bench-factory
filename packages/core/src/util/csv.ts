@@ -58,9 +58,26 @@ export function renderCsv(header: string[], rows: CsvCell[][]): string {
   return [header.join(','), ...rows.map((r) => r.map(csvCell).join(','))].join('\n') + '\n';
 }
 
-/** Split one CSV text into rows of raw field values. */
-export function parseCsvRows(text: string): string[][] {
-  const rows: string[][] = [];
+/**
+ * Split one CSV text into rows of raw field values, one record at a time.
+ *
+ * ## Why the parser is a generator
+ *
+ * `parseCsvRows` returned an array, which made every caller hold every record
+ * before it could look at the first one. The corpus's largest `logs.csv` is
+ * **202 258 338 bytes** -- 274 621 records of seven fields, one of them a log
+ * message -- and turning that into an array of arrays costs several times the
+ * text. `scripts/check-aggregate-tables.mjs` did exactly that, on every case, and
+ * the first TrainTicket case took the process past a 4 GB heap (finding 533) --
+ * before it had discovered that the file has no `log_template` column, which is
+ * the only thing it wanted to know.
+ *
+ * The rule itself is unchanged: this is the same loop, with `yield` where it used
+ * to be `rows.push`, and `parseCsvRows` is now `[...iterateCsvRows(text)]`. One
+ * parser under two drivers rather than two copies of the quoting rules, because a
+ * second copy is a second thing that can disagree about `""`.
+ */
+export function* iterateCsvRows(text: string): Generator<string[]> {
   let row: string[] = [];
   let field = '';
   let quoted = false;
@@ -99,7 +116,7 @@ export function parseCsvRows(text: string): string[][] {
     }
     if (ch === '\n') {
       row.push(field);
-      rows.push(row);
+      yield row;
       row = [];
       field = '';
       started = false;
@@ -112,10 +129,20 @@ export function parseCsvRows(text: string): string[][] {
   // A file that does not end with a newline still ends a row.
   if (started || field !== '' || row.length > 0) {
     row.push(field);
-    rows.push(row);
+    yield row;
   }
+}
 
-  return rows;
+/**
+ * Split one CSV text into rows of raw field values.
+ *
+ * The whole file at once, for the callers that want it: a Golden Master fixture is
+ * a kilobyte and an evaluator's `record.csv` is a page. A caller reading corpus-scale
+ * telemetry wants `iterateCsvRows` instead, and the difference is the reason that
+ * function exists.
+ */
+export function parseCsvRows(text: string): string[][] {
+  return [...iterateCsvRows(text)];
 }
 
 /**

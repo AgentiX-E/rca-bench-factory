@@ -702,6 +702,10 @@ const TESTED = [
   'buildGroundTruthJson',
   // export/rcaeval-logts.ts -- the reduction the corpus performs on its own logs.
   'LOGTS_BUCKET_SECONDS',
+  'LOGTS_TIME_COLUMN',
+  'reduceLogts',
+  'logtsHeader',
+  'logtsCells',
   'buildLogtsCsv',
   // export/rcaeval.ts
   'RCAEVAL_TARGET_ID',

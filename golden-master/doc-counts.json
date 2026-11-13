@@ -1,7 +1,7 @@
 {
   "core": {
     "files": 249,
-    "tests": 6338
+    "tests": 6349
   },
   "cli": {
     "files": 4,
@@ -9,6 +9,6 @@
   },
   "repo": {
     "files": 253,
-    "tests": 6525
+    "tests": 6536
   }
 }

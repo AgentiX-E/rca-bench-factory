@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { csvCell, csvColumn, parseCsvObjects, parseCsvRows, renderCsv } from '../src/util/csv.js';
+import {
+  csvCell,
+  csvColumn,
+  iterateCsvRows,
+  parseCsvObjects,
+  parseCsvRows,
+  renderCsv,
+} from '../src/util/csv.js';
 
 /**
  * CSV reader tests.
@@ -77,6 +84,53 @@ describe('parseCsvRows', () => {
 
   it('does not treat a quote in the middle of a field as a quote opener', () => {
     expect(parseCsvRows('a\n5" pipe')).toEqual([['a'], ['5" pipe']]);
+  });
+});
+
+/**
+ * The record-at-a-time driver, which exists for one file in the corpus.
+ *
+ * `RE2-TT/ts-train-service_socket/2/logs.csv` is 202 258 338 bytes in 274 621
+ * records. `parseCsvRows` is `[...iterateCsvRows(text)]`, so every rule below is
+ * also a rule of that function -- what these tests add is the property the array
+ * version could not have: a caller can take the first record and stop.
+ */
+describe('iterateCsvRows', () => {
+  it('agrees with the array driver on every shape the reader supports', () => {
+    const texts = [
+      'a,b\n1,2\n',
+      'a,b\r\n1,2\r\n',
+      'a,b\n"x,y",2\n',
+      'a,b\n"say ""hi""",2\n',
+      'a,b\n"one\ntwo",2\n',
+      'a,b\n1,2',
+      'a,\n,2\n',
+      '\n',
+      '',
+    ];
+    for (const text of texts) expect([...iterateCsvRows(text)]).toEqual(parseCsvRows(text));
+  });
+
+  it('hands back the first record before the rest of the file has been looked at', () => {
+    // The proof of laziness is that the iterator can be abandoned: a generator that
+    // had parsed the whole text would have produced the same first record, so the
+    // assertion is what happens *after* one `next()` -- the second record is still
+    // there, unread, and the caller chooses not to take it.
+    const text = ['a,b', ...Array.from({ length: 1000 }, (_, i) => `${i},${i}`)].join('\n');
+    const records = iterateCsvRows(text);
+    expect(records.next().value).toEqual(['a', 'b']);
+    expect(records.next().value).toEqual(['0', '0']);
+    expect(records.next().done).toBe(false);
+  });
+
+  it('yields a record whose field holds a newline as one record', () => {
+    // The reason this cannot be `text.split('\n')`: a quoted message with a newline
+    // in it is one field of one record, and a line-oriented reader would count it as
+    // two records and shift every column after it.
+    expect([...iterateCsvRows('a,b\n"one\ntwo",2\n')]).toEqual([
+      ['a', 'b'],
+      ['one\ntwo', '2'],
+    ]);
   });
 });
 

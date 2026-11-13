@@ -38,10 +38,15 @@
  *   node scripts/check-aggregate-tables.mjs --official-dir <dir>
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync, readdirSync, readSync, statSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
-import { buildLogtsCsv } from '../packages/core/dist/export/rcaeval-logts.js';
-import { parseCsvObjects, parseCsvRows } from '../packages/core/dist/util/csv.js';
+import {
+  LOGTS_BUCKET_SECONDS,
+  logtsCells,
+  logtsHeader,
+  reduceLogts,
+} from '../packages/core/dist/export/rcaeval-logts.js';
+import { iterateCsvRows } from '../packages/core/dist/util/csv.js';
 
 const LOGTS = 'logts.csv';
 const CLUSTERS = 'cluster_info.json';
@@ -79,6 +84,159 @@ function casesWithLogts(root) {
 }
 
 /**
+ * The first record of a file, without reading the rest of it.
+ *
+ * ## Why this is separate from reading the file
+ *
+ * This script needs three columns out of a corpus `logs.csv`, and the corpus's
+ * largest one is **202 258 338 bytes** with 274 621 records. The first version read
+ * the whole file, parsed it into 274 621 objects and *then* looked at the header to
+ * decide whether it could use them -- so the first TrainTicket case died of a 4 GB
+ * heap (finding 533) before it could report that the file has no `log_template`
+ * column, which was the only thing it needed to know. Sixty-four kilobytes answer
+ * that question for every case in the corpus.
+ *
+ * A header longer than the window is a header this reader cannot see; that is a
+ * refusal rather than a truncation, because a truncated header would report the
+ * wrong set of columns and the sentence that followed would be about the wrong
+ * file.
+ */
+function firstRecord(path, problems) {
+  const window = Buffer.alloc(64 * 1024);
+  let read = 0;
+  const fd = openSync(path, 'r');
+  try {
+    read = readSync(fd, window, 0, window.length, 0);
+  } finally {
+    closeSync(fd);
+  }
+  const text = window.subarray(0, read).toString('utf8');
+  for (const cells of iterateCsvRows(text)) return cells;
+  return [];
+}
+
+/**
+ * The corpus's log rows, at the precision the reduction needs, one at a time.
+ *
+ * ## The columns the rule keys on
+ *
+ * `log_template` is the rendered template the corpus's cluster table quotes -- the
+ * rule matches it exactly (`docs/targets/rcaeval.md`, finding 307). It is present in
+ * **25 of the 91** Online Boutique case directories in `RE2-OB` and in none of
+ * `RE2-SS` or `RE2-TT`, whose `cluster_info.json` holds Drain's **masked** templates
+ * (`..., pageNum=<:NUM:>, ...`) and whose log rows carry only `message`. Those cases
+ * are refused, and the refusal is why `firstRecord` exists: it is cheaper to say so
+ * than to parse two hundred megabytes first.
+ *
+ * ## Why this is a generator
+ *
+ * `timestamp` is nanoseconds -- a 19-digit integer a double does not hold -- so it
+ * is floored to whole seconds at the boundary where the record is parsed, once, and
+ * the reduction keeps only counts. Nothing here builds an array of rows.
+ */
+function* logRows(path, columns, refusal) {
+  const text = readFileSync(path, 'utf8');
+  const at = {
+    timestamp: columns.indexOf('timestamp'),
+    container: columns.indexOf('container_name'),
+    template: columns.indexOf('log_template'),
+  };
+
+  let index = 0;
+  for (const cells of iterateCsvRows(text)) {
+    index += 1;
+    if (index === 1) continue;
+    if (cells.length !== columns.length) {
+      // A record that does not match the header is a file this rule cannot read:
+      // the rule reads cells by position, and a shifted row would be counted into
+      // the wrong column and then reported as the corpus's mistake.
+      refusal.why =
+        `record ${index} has ${cells.length} cell(s) and the header has ${columns.length}, ` +
+        'so the reduction cannot read this file by position';
+      refusal.reason = 'ragged-records';
+      return;
+    }
+    yield {
+      container: cells[at.container],
+      template: cells[at.template],
+      atSeconds: Math.floor(Number(cells[at.timestamp]) / 1_000_000_000),
+    };
+  }
+}
+
+/**
+ * The corpus's published table, compared with the reduction one record at a time.
+ *
+ * The reduction is a fold, so the expected row for a bucket is computed when the
+ * published row that should equal it is read. Nothing here holds a table: peak
+ * memory is the reduction's counts -- one entry per (bucket, column) that was
+ * actually observed -- plus one record of each file.
+ */
+function comparePublished(text, grid, label) {
+  const problems = [];
+  const expectedHeader = logtsHeader(grid.columns);
+
+  let rows = 0;
+  let columns = 0;
+  let cells = 0;
+  let wrong = 0;
+  let bucket = grid.lowest;
+  let header = true;
+
+  for (const published of iterateCsvRows(text)) {
+    if (header) {
+      header = false;
+      columns = Math.max(0, published.length - 1);
+      if (published.join(',') !== expectedHeader.join(',')) {
+        problems.push(
+          `${label}: the published header is '${published.join(',')}' and the reduction produces ` +
+            `'${expectedHeader.join(',')}'; the column rule is <container>_<cluster key> ordered by the ` +
+            'key as an integer',
+        );
+        return { problems, cells: 0, rows: 0, columns: 0 };
+      }
+      continue;
+    }
+
+    rows += 1;
+    const expected = logtsCells(grid, bucket);
+    bucket += LOGTS_BUCKET_SECONDS;
+    for (let c = 0; c < Math.max(published.length, expected.length); c += 1) {
+      if (c > 0) cells += 1;
+      const have = published[c] ?? '';
+      const produced = `${expected[c] ?? ''}`;
+      if (have === produced) continue;
+      wrong += 1;
+      if (wrong <= 5) {
+        problems.push(
+          `${label}: time=${published[0]} column='${expectedHeader[c] ?? '?'}' published=${have} ` +
+            `reduced=${produced}`,
+        );
+      }
+    }
+  }
+
+  // The grid is dense from the first log to the last, so the row count is not a
+  // free parameter: it is `(highest - lowest) / 15 + 1`, and a table that stops
+  // early or runs on is the same defect stated from either side.
+  const expectedRows = grid.seen === 0 ? 0 : (grid.highest - grid.lowest) / LOGTS_BUCKET_SECONDS + 1;
+  if (rows < expectedRows) {
+    problems.push(
+      `${label}: the reduction produces ${expectedRows - rows} more row(s) than the corpus publishes; ` +
+        'the grid is every 15 seconds from the first log to the last, with no gaps',
+    );
+  } else if (rows > expectedRows) {
+    problems.push(
+      `${label}: the corpus publishes ${rows - expectedRows} more row(s) than the reduction produces; ` +
+        'the grid is every 15 seconds from the first log to the last, with no gaps',
+    );
+  }
+  if (wrong > 5) problems.push(`${label}: ${wrong - 5} further cell(s) differ`);
+
+  return { problems, cells, rows, columns, wrong };
+}
+
+/**
  * `cluster_info.json` flattened to one record per (key, container).
  *
  * The corpus's shape is `{ "<key>": { "template": "...", "container": ["..."] } }`,
@@ -86,24 +244,28 @@ function casesWithLogts(root) {
  * guess: this file's whole purpose is to compare a reduction against the file the
  * corpus wrote, so a cluster table it cannot read is a case it cannot check.
  */
-function readClusters(dir, problems) {
+function readClusters(dir, refusal) {
   const at = join(dir, CLUSTERS);
   if (!existsSync(at)) {
-    problems.push(`${at}: ${LOGTS} is present and ${CLUSTERS} is not, so the reduction has no column names`);
+    refusal.why = `${at}: ${LOGTS} is present and ${CLUSTERS} is not, so the reduction has no column names`;
+    refusal.reason = 'no-cluster-table';
     return undefined;
   }
   let parsed;
   try {
     parsed = JSON.parse(readFileSync(at, 'utf8'));
   } catch (error) {
-    problems.push(`${at}: not JSON (${error.message})`);
+    refusal.why = `${at}: not JSON (${error.message})`;
+    refusal.reason = 'unreadable-cluster-table';
     return undefined;
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    problems.push(`${at}: expected an object keyed by cluster id`);
+    refusal.why = `${at}: expected an object keyed by cluster id`;
+    refusal.reason = 'unreadable-cluster-table';
     return undefined;
   }
   const clusters = [];
+  const problems = [];
   for (const [key, value] of Object.entries(parsed)) {
     const containers = value?.container;
     const template = value?.template;
@@ -123,176 +285,57 @@ function readClusters(dir, problems) {
       clusters.push({ key, container, template });
     }
   }
+  if (problems.length > 0) {
+    refusal.why = problems[0];
+    refusal.reason = 'unreadable-cluster-table';
+    return undefined;
+  }
   return clusters;
 }
 
 /**
- * The corpus's log rows, at the precision the reduction needs.
+ * One case, read as far as it can be, and its outcome named.
  *
- * `timestamp` is **nanoseconds** in both archives that ship a log file, which is
- * the unit finding 306 is about: this repository's exporter wrote microseconds
- * into that column until a measurement said otherwise. Floored to whole seconds
- * here because a 19-digit integer is not a number a double holds, and the bucket
- * width is 15 seconds -- there is nothing above the second to lose.
+ * Three outcomes, and the difference between them is the point of the step's title:
+ *
+ *  - **reproduced** -- the reduction equals the corpus's table, cell for cell;
+ *  - **refused** -- this rule cannot read this case, for a reason the caller is
+ *    given, and the number of refusals is reported;
+ *  - **disagreed** -- the rule applied and produced a different table, which is a
+ *    defect in this repository and fails the step.
  */
-function readLogRows(dir, problems) {
-  const at = join(dir, 'logs.csv');
-  if (!existsSync(at)) {
-    problems.push(`${at}: ${LOGTS} is present and logs.csv is not, so there is nothing to reduce`);
-    return undefined;
-  }
-  const rows = parseCsvObjects(readFileSync(at, 'utf8'));
-  if (rows.length === 0) return [];
-  const columns = new Set(Object.keys(rows[0]));
-  for (const needed of ['timestamp', 'container_name', 'log_template']) {
-    if (!columns.has(needed)) {
-      problems.push(`${at}: no '${needed}' column, so the reduction cannot be applied to it`);
-      return undefined;
-    }
-  }
-  return rows.map((row) => ({
-    container: row.container_name,
-    template: row.log_template,
-    atSeconds: Math.floor(Number(row.timestamp) / 1_000_000_000),
-  }));
-}
-
-/**
- * The lines of a text, one at a time, with the trailing `\r` removed.
- *
- * A generator rather than `text.split('\n')` because the tables this script reads are
- * the largest files in the corpus: splitting first materialises one string per row
- * before a single cell has been compared, which is the allocation this file died of.
- */
-function* lines(text) {
-  let at = 0;
-  while (at < text.length) {
-    let end = text.indexOf('\n', at);
-    if (end < 0) end = text.length;
-    const line = text.slice(at, end);
-    at = end + 1;
-    yield line.endsWith('\r') ? line.slice(0, -1) : line;
-  }
-}
-
-/** The cells of one CSV line, with the quote handling `parseCsvRows` already has. */
-function cellsOf(line) {
-  return parseCsvRows(line)[0] ?? [];
-}
-
-/**
- * Compare the corpus's table with the reduction, cell for cell, one line at a time.
- *
- * ## The failure this replaces
- *
- * On the 2026-11-13 `rcaeval-re2` run the round trip finished **270 of 270 with
- * `oracle=1.00`** and this step then died at 13:11:07 with
- *
- *     FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed --
- *     JavaScript heap out of memory
- *     Process completed with exit code 134
- *
- * after 90 Online Boutique cases, on the first SockShop one. Nothing was wrong with
- * the corpus or the reduction. The script held the same table **four times**: the
- * published text, a parse tree of it, the reduction's text, and a parse tree of that --
- * and then, to print a row and column count, it re-read and re-parsed the published
- * file twice more. A parse tree of a table with tens of millions of cells is one array
- * of arrays of strings per copy, which is several times the text it came from; four of
- * them do not fit in a 4 GB heap, and the heap it chose was not the corpus's fault.
- *
- * ## What it does instead
- *
- * Two texts, both held because both are the subject, and one line of each at a time.
- * The cells of a line are compared and then dropped, so peak memory is the two texts
- * plus one row -- proportional to the input rather than a multiple of it -- and the row
- * and column counts come out of the same pass rather than from a second and third
- * reading.
- *
- * The five-difference cap and the sentences are unchanged: a reader comparing this
- * version's output with an older one should see the same text for the same corpus.
- */
-function compareGrids(publishedText, reducedText, label) {
-  const problems = [];
-  const published = lines(publishedText);
-  const reduced = lines(reducedText);
-
-  let header = null;
-  let rows = 0;
-  let columns = 0;
-  let cells = 0;
-  let wrong = 0;
-  let extraPublished = 0;
-  let extraReduced = 0;
-
-  for (;;) {
-    const want = published.next();
-    const got = reduced.next();
-    if (want.done === true && got.done === true) break;
-    if (want.done === true) {
-      extraReduced += 1;
-      continue;
-    }
-    if (got.done === true) {
-      extraPublished += 1;
-      continue;
-    }
-    // An empty last line is how a file that ends in a newline ends, not a row.
-    if (want.value === '' && got.value === '') break;
-
-    const publishedCells = cellsOf(want.value);
-    const reducedCells = cellsOf(got.value);
-    if (header === null) {
-      header = publishedCells;
-      columns = Math.max(0, publishedCells.length - 1);
-      if (publishedCells.join(',') !== reducedCells.join(',')) {
-        problems.push(
-          `${label}: the published header is '${publishedCells.join(',')}' and the reduction produces ` +
-            `'${reducedCells.join(',')}'; the column rule is <container>_<cluster key> ordered by the ` +
-            'key as an integer',
-        );
-        return { problems, cells: 0, rows: 0, columns: 0 };
-      }
-      continue;
-    }
-
-    rows += 1;
-    for (let c = 1; c < Math.max(publishedCells.length, reducedCells.length); c += 1) {
-      cells += 1;
-      const have = publishedCells[c] ?? '';
-      const produced = reducedCells[c] ?? '';
-      if (have === produced) continue;
-      wrong += 1;
-      if (wrong <= 5) {
-        problems.push(
-          `${label}: time=${publishedCells[0]} column='${header[c]}' published=${have} reduced=${produced}`,
-        );
-      }
-    }
-  }
-
-  if (extraReduced > 0 || extraPublished > 0) {
-    const what =
-      extraReduced > 0
-        ? `the reduction produces ${extraReduced} more row(s) than the corpus publishes`
-        : `the corpus publishes ${extraPublished} more row(s) than the reduction produces`;
-    problems.push(
-      `${label}: ${what}; the grid is every 15 seconds from the first log to the last, with no gaps`,
-    );
-  }
-  if (wrong > 5) problems.push(`${label}: ${wrong - 5} further cell(s) differ`);
-  return { problems, cells, rows, columns };
-}
-
 function checkCase(dir, label) {
-  const problems = [];
-  const clusters = readClusters(dir, problems);
-  const rows = readLogRows(dir, problems);
-  if (clusters === undefined || rows === undefined) return { problems, cells: 0, rows: 0, columns: 0, notes: [] };
+  const refusal = { why: '', reason: '' };
+  const clusters = readClusters(dir, refusal);
+  if (clusters === undefined) return { outcome: 'refused', ...refusal };
 
-  const table = buildLogtsCsv(rows, clusters);
-  const grid = compareGrids(readFileSync(join(dir, LOGTS), 'utf8'), table.csv, label);
-  for (const problem of grid.problems) problems.push(problem);
+  const logs = join(dir, 'logs.csv');
+  if (!existsSync(logs)) {
+    return {
+      outcome: 'refused',
+      reason: 'no-logs',
+      why: `${logs}: ${LOGTS} is present and logs.csv is not, so there is nothing to reduce`,
+    };
+  }
 
+  const headerProblems = [];
+  const columns = firstRecord(logs, headerProblems);
+  const needed = ['timestamp', 'container_name', 'log_template'];
+  const missing = needed.filter((name) => !columns.includes(name));
+  if (missing.length > 0) {
+    return {
+      outcome: 'refused',
+      reason: 'no-template-column',
+      why:
+        `${logs}: no '${missing.join("', '")}' column, so the reduction cannot be applied to it; ` +
+        `its columns are ${columns.join(', ')}`,
+    };
+  }
+
+  const grid = reduceLogts(logRows(logs, columns, refusal), clusters);
+  if (refusal.why !== '') return { outcome: 'refused', ...refusal };
+
+  const published = comparePublished(readFileSync(join(dir, LOGTS), 'utf8'), grid, label);
   const notes = [];
   for (const refused of ['tracets_lat.csv', 'tracets_err.csv']) {
     if (!existsSync(join(dir, refused))) continue;
@@ -301,11 +344,29 @@ function checkCase(dir, label) {
         `of traces.csv (seven candidate reductions, 0 of 1649 cells, finding 307)`,
     );
   }
-  if (table.dropped > 0) {
-    notes.push(`${label}: ${table.dropped} log row(s) match no cluster and appear in no column`);
+  if (grid.dropped > 0) {
+    notes.push(`${label}: ${grid.dropped} log row(s) match no cluster and appear in no column`);
   }
-  return { problems, cells: grid.cells, rows: grid.rows, columns: grid.columns, notes };
+
+  return {
+    outcome: published.problems.length === 0 ? 'reproduced' : 'disagreed',
+    cells: published.cells,
+    rows: published.rows,
+    columns: published.columns,
+    wrong: published.wrong ?? 0,
+    problems: published.problems,
+    notes,
+  };
 }
+
+/** One sentence per refusal reason, for the tally in the summary. */
+const REFUSAL_REASONS = {
+  'no-cluster-table': 'no cluster table',
+  'unreadable-cluster-table': 'a cluster table that is not a table',
+  'no-logs': 'no logs.csv',
+  'no-template-column': 'no rendered template column',
+  'ragged-records': 'records that do not match the header',
+};
 
 function main() {
   const options = args(process.argv.slice(2));
@@ -327,23 +388,39 @@ function main() {
   }
 
   const problems = [];
+  const refusedBy = new Map();
   let cells = 0;
-  let cases = 0;
+  let reproduced = 0;
+  let refused = 0;
+
   for (const dir of dirs) {
     const label = basename(dir) === dir ? dir : relative(root, dir) || dir;
     const result = checkCase(dir, label);
-    for (const problem of result.problems) problems.push(problem);
+
+    if (result.outcome === 'refused') {
+      refused += 1;
+      refusedBy.set(result.reason, (refusedBy.get(result.reason) ?? 0) + 1);
+      console.log(`${label}: refused -- ${result.why}`);
+      continue;
+    }
+
     for (const note of result.notes) console.log(note);
-    if (result.cells > 0) {
-      // The counts come out of the comparison's own pass. They used to be re-read and
-      // re-parsed from the file twice, for a sentence printed once -- two more copies
-      // of the largest table in the corpus, in a script that was already at its heap
-      // limit (finding 529).
+    for (const problem of result.problems) problems.push(problem);
+    if (result.wrong > 0) {
+      // Not "all equal": a case that disagrees with the corpus is the one case where
+      // the sentence must not say it agrees. It said so until v3.90.
+      console.log(
+        `${label}: ${result.rows} row(s) x ${result.columns} column(s) = ${result.cells} cell(s), ` +
+          `${result.wrong} differ`,
+      );
+    } else {
       console.log(
         `${label}: ${result.rows} row(s) x ${result.columns} column(s) = ${result.cells} cell(s), all equal`,
       );
+    }
+    if (result.outcome === 'reproduced') {
       cells += result.cells;
-      cases += 1;
+      reproduced += 1;
     }
   }
 
@@ -352,9 +429,26 @@ function main() {
     console.error(`check-aggregate-tables: FAILED (${problems.length} problem(s))`);
     process.exit(1);
   }
+
+  // A run that reproduced nothing has checked nothing, and "nothing was wrong" and
+  // "nothing was compared" print the same number of failures.
+  if (reproduced === 0) {
+    console.error(
+      `check-aggregate-tables: FAILED (0 of ${dirs.length} case(s) could be reproduced, which is not a ` +
+        'pass -- the refusals above say why each one could not be read)',
+    );
+    process.exit(1);
+  }
+
+  const tally = [...refusedBy.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([reason, count]) => `${count} for ${REFUSAL_REASONS[reason] ?? reason}`)
+    .join(', ');
   console.log(
-    `check-aggregate-tables: OK (${cases} case(s), ${cells} cell(s) reduced from logs.csv and equal ` +
-      `to the corpus's own logts.csv)`,
+    `check-aggregate-tables: OK (${reproduced} case(s) reproduced, ${cells} cell(s) reduced from ` +
+      `logs.csv and equal to the corpus's own ${LOGTS}` +
+      (refused > 0 ? `; ${refused} refused, ${tally}` : '') +
+      ')',
   );
 }
 

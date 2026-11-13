@@ -428,10 +428,10 @@ document that described it as downloading the data was describing an intention.
 | Commits (at `e22e2de`) | 536 |
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 97 |
-| Source lines | 34,152 |
+| Source lines | 34,266 |
 | Test files | 249 core + 4 cli |
-| Test lines | 106,586 core + 3,242 cli |
-| Tests | 6,338 core + 187 cli |
+| Test lines | 106,871 core + 3,242 cli |
+| Tests | 6,349 core + 187 cli |
 | Tracked files | 641 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -516,7 +516,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.89: **28** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.90: **29** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -542,14 +542,32 @@ prints both counts and had never asked whether they were talking about one set. 
 which is why this list is longer rather than shorter, and the newest round's record must quote an entry it
 is a row about rather than paraphrase one that no `grep` will find.
 
-- **The aggregate-table comparison has not been re-run against the corpus.** Run
-  `43406267321` round-tripped `rcaeval-re2` **270 of 270 at `oracle=1.00`** in 154.4 minutes and
-  then died in the step after it: `check-aggregate-tables.mjs` held the same table four times and
-  ran out of a 4 GB heap on the first SockShop case (finding 529). The repair is a single streaming
-  pass, and it is proved where the failure was never observed -- on a fixture of the corpus's shape,
-  4 500 000 cells inside a 96 MB heap, which the old shape cannot do and this one does. What is not
-  proved is the corpus itself: no run has reached step 13 since.
-  `[open: dispatch official-data.yml on rcaeval-re2 and read step 13, because a fixture of the corpus's shape is a model of the corpus and this project has been wrong about one of those before]`
+- ~~**The aggregate-table comparison has not been re-run against the corpus.** **Closed by finding 533 and finding
+  534, which are what the re-run found.**~~ Run `43444874640` round-tripped `rcaeval-re2`
+  **270 of 270 at `oracle=1.00`** in 2 h 40 m and then failed step 13 with
+  `FATAL ERROR: Reached heap limit` and `Aborted (core dumped)` after ninety-six seconds of silence.
+  The memory was not in the comparison v3.88 repaired: the reader parsed a 202 258 338-byte
+  TrainTicket `logs.csv` into 274 621 records and *then* discovered the file has no `log_template`
+  column, which is everything it needed to know and costs 64 KiB to learn. Reproduced locally at
+  4 307 128 KB peak RSS and 29.72 s; after the repair, 92 300 KB and 0.53 s. The same reading found
+  the larger defect behind it: the step counted every refusal as a failure, and **156 of the 181**
+  case directories in `rcaeval-re2` are refusals, so the step could never have passed and had never
+  reported a verdict on the 25 cases it can read.
+
+- **The 156 masked-template cases have no exact check, and the only available statement is weaker
+  than the gate's.** `RE2-SS` and `RE2-TT` hold Drain's masked templates
+  (`pageNum=<:NUM:>`) while their log rows carry only `message`, so the exact reduction cannot be
+  applied -- three attempts at a rule are measured in finding 534, and the second one makes one row
+  match three clusters at once. What *is* derivable in both formats is an inequality: per container
+  and bucket, the marginals of `logts.csv` cannot exceed the log rows of that container. That is a
+  real statement and a strictly weaker one, and it is not a reproduction.
+  `[open: decide whether a weaker claim gets its own name and its own gate, rather than being bolted onto a step whose sentence is "reproduced"]`
+
+- **The repaired aggregate step has not been run on the corpus.** The repair is proved on three real
+  case directories inflated by range request (`RE2-OB/checkoutservice_cpu/1` reproduced cell for
+  cell, `RE2-SS/carts_cpu/1` and `RE2-TT/ts-train-service_socket/2` refused with their columns named)
+  and on four fixtures, and it has not been run over 181 directories.
+  `[open: dispatch official-data.yml on rcaeval-re2 and read step 13's census, then record the run in golden-master/roundtrip.json]`
 
 - ~~**The real-corpus runs are diagnosed, and the mechanism was named wrong twice
   before it was named right.**~~ **Closed without a finding: the third naming came from
@@ -1393,7 +1411,7 @@ and this table.
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
-| [volume-14.md](progress/volume-14.md) | 17 | v3.73 | v3.89 |
+| [volume-14.md](progress/volume-14.md) | 18 | v3.73 | v3.90 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

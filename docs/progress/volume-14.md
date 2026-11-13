@@ -1698,9 +1698,9 @@ declares.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **249 files, 6338 tests passed** (as of this commit) |
+| `core` test suite | **249 files, 6349 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **253 files, 6525 tests passed** (as of this commit) |
+| repo test suite | **253 files, 6536 tests passed** (as of this commit) |
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100**; per-file thresholds, no exemption, unchanged -- this round changed no file under `src/` |
 | new tests | **6329 -> 6338, net +9**: three for the cgroup v1 parser (a quota, `-1`, a reading it cannot use), four for the fallback chain (v2 wins, v1 when v2 says `max`, v1 when there is no v2 file, neither layout speaking), one for the ceiling premise (`workerCount(8, null)` is 7) and one that reads this machine -- all nine in `worker-count-follows-the-cpu-quota.test.ts`. The four budget declarations are data the existing rule reads, so they add no test |
 | the cap | **12 full-suite runs** at 2 / 4 / 6 / 8 workers (10 counted): wall 174 / 109 / 108-111 / 111-115 s, peak 6.5 / 6.9 / 7.1 / 7.6 GiB, worst stall 14.4 / 14.8 / 24.1 / 39.9 s -- **32 / 33 / 54 / 89%** of the 45 000 ms budget. The count the formula produces here is 3 |
@@ -1732,3 +1732,198 @@ reader that compared it with this one's -- which is the same shape as finding 52
 earlier, where a percentage divided a file's clock by a test's budget. The repair in both cases
 was to measure first and let the number follow: the four files got the numbers their own runs
 produced, and the allowance got a second reader rather than a lower ceiling.
+
+## v3.90 · the first reading from the corpus says the step died in its reader, and had never had a verdict
+
+The leftovers table v3.88 left began with a line: the aggregate-table step had not been re-run since its
+repair. This round's re-run answered with two facts, neither of them "pass". It **died of a four-gigabyte
+heap after the thirtieth case**, and **it could not have passed even if it had not**: the gate counted
+"cannot be read" as "failure", and 156 of the corpus's case directories cannot be read.
+
+### One · step 13's reading: exit 134 after ninety-six seconds of silence
+
+`official-data.yml` run `43444874640`, step 12: **270 of 270 round-tripped at `oracle=1.00`** in 2 h 40 m.
+Step 13:
+
+```
+17:49:43  RE2-OB/recommendationservice_socket/1: 97 row(s) x 30 column(s) = 2910 cell(s), all equal
+17:51:19  FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory
+17:51:53  Aborted (core dumped)  node scripts/check-aggregate-tables.mjs --official-dir "$OFFICIAL_DIR"
+```
+
+Both dispatches died in this step (13:11 was finding 529's four copies). After v3.88 the comparison itself
+was streaming -- the per-case "all equal" lines are that repair working -- so **the memory was not in the
+comparison**.
+
+### Two · the repair is in the reader: two hundred megabytes parsed to answer a question 64 KiB answers
+
+`readLogRows()` was:
+
+```js
+const rows = parseCsvObjects(readFileSync(at, 'utf8'));   // every record, as an object
+const columns = new Set(Object.keys(rows[0]));
+for (const needed of ['timestamp','container_name','log_template'])
+  if (!columns.has(needed)) { problems.push(...); return undefined; }   // the cheap check
+```
+
+That cheap check is the point of the function: the reduction keys on `log_template`, the rendered template
+the corpus's cluster table quotes, and a file without it cannot be reduced at all. The check is three
+`Set.has` calls. The parse in front of it is proportional to the file.
+
+From the archives' central directories (`read-remote-index.mjs`: 202 186 bytes fetched of 2 801 345 134)
+and one case of each inflated by range request:
+
+| case | `logs.csv` | records | columns |
+| --- | --- | --- | --- |
+| `RE2-OB/checkoutservice_cpu/1` | 23 515 107 B | 171 322 | 9, with `log_template` |
+| `RE2-TT/ts-train-service_socket/2` | **202 258 338 B** | **274 621** | 7, **without** it |
+
+8.6 times the file with two columns fewer, so the parse built 274 621 seven-field records -- each field a
+separate string -- and threw every one of them away. Reproduced here, on that case, with the runner's heap:
+
+```
+node --max-old-space-size=4096 scripts/check-aggregate-tables.mjs --case /tmp/corpus/RE2-TT/...
+Command terminated by signal 6     peak RSS 4 307 128 KB     wall 29.72 s
+```
+
+The same directory, after the repair, in a heap eight times smaller:
+
+```
+check-aggregate-tables: OK (1 case(s) reproduced, 2910 cell(s) ...)
+peak RSS 92 300 KB     wall 0.53 s
+```
+
+**Ask first, fold second.** Three pieces, each one rule under two drivers rather than a second copy of a
+rule:
+
+- `firstRecord()` opens the file and reads **64 KiB**. The longest header in the corpus is 82 bytes.
+- `iterateCsvRows()` is the CSV reader as a generator, and `parseCsvRows()` is now
+  `[...iterateCsvRows(text)]` -- one parser under two drivers, because a second copy of the quoting rules
+  is a second thing that can disagree about `""`.
+- `reduceLogts()` is the reduction as a fold over any `Iterable<LogRow>`: one entry per (bucket, column)
+  actually observed, and no record at all. `buildLogtsCsv()` is its materialising caller;
+  `logtsCells(grid, bucket)` reads one row without building the table.
+
+The fourth piece is the one that would have caught this. The comparison no longer holds a table either: it
+walks the corpus's own `logts.csv` and computes the expected row for each bucket as that row arrives, so a
+case costs its counts plus one record of each file. Four new tests hold the three shapes: 16 MB of
+unusable log refused in a 64 MB heap, 200 000 records folded into a four-row table in a 64 MB heap, and the
+fold's rendering equal to the materialising caller's text, bucket for bucket.
+
+### Three · a gate that never had a verdict: 25 readable, 156 not
+
+Step 13 is named "Every aggregate table the corpus ships is either **reproduced or refused**". Its
+behaviour was: every case it could not read became an entry in `problems`, and any problem exited 1. On the
+real corpus that is not a corner case, it is nearly all of them:
+
+| suite | case directories holding `logts.csv` | holding a rendered `log_template` |
+| --- | --- | --- |
+| `RE2-OB` | 91 | **25** |
+| `RE2-SS` | 90 | 0 |
+| `RE2-TT` | 90 | 0 |
+
+The corpus ships **two log formats**. The one the reduction was written against is
+`time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template`: nine columns, the last
+one the rendered template text. The other is the same seven columns without the last two, and its
+`cluster_info.json` holds **Drain's masked templates** (`catalogue ts=<:TIMESTAMP:> caller=logging.go:<:NUM:>
+method=List ...`) while the log row carries only `message` -- the message with the template's leading
+container word removed.
+
+Three reductions of that second format were tried against `RE2-SS/carts_cpu/1` (86 592 records, 51
+clusters), and all three fail in a way that says the table was produced by a parser rather than by a rule
+this repository could state:
+
+| rule | rows matching exactly one cluster | matching none | matching several |
+| --- | --- | --- | --- |
+| mask tokens as an open run (`.+?`), whole message | 45 623 / 86 592 | 40 969 | **0** |
+| the same, allowing the template's leading container word to be absent | 24 632 | 16 337 | **45 623** |
+| the same by prefix-stripping only | 45 623 | 40 969 | 0 |
+
+The second row is the informative one: as soon as the prefix may be absent, a row matches up to **three**
+clusters at once -- 4 413 rows match keys 14, 19 and 40 together. Choosing between them is not a detail of
+the rule, it is the corpus's own clustering pass, and any rule written here would be a guess that lands in
+the wrong column and looks like a number. Refusing is right.
+
+What was wrong is that a refusal was indistinguishable from a defect. A gate that fails whenever the corpus
+holds a shape it cannot read cannot pass on the corpus it was built for -- and this one never had: it went
+red twice on 2026-11-13 (13:11 with finding 529's heap, 17:51 with finding 533's) and neither run reported a
+verdict on the 25 cases it **can** read.
+
+**The repair gives the step the three outcomes its title always claimed**, each printed as it happens:
+
+- **reproduced** -- the reduction equals the corpus's table and the case's cells are added up;
+- **refused** -- this rule cannot read this case, with the reason on the same line, tallied by reason in
+  the summary;
+- **disagreed** -- the rule applied and produced a different table, which fails the step.
+
+A run that reproduced **nothing** still fails, with its own sentence: "0 of N case(s) could be reproduced,
+which is not a pass". That is the half of the old behaviour worth keeping -- "nothing was wrong" and
+"nothing was compared" print the same number of failures -- and it is why the three single-case refusal
+tests still go red for the right reason. What changed is that a corpus with 156 unreadable cases and 25
+readable ones now says so:
+
+```
+check-aggregate-tables: OK (25 case(s) reproduced, <cells> cell(s) reduced from logs.csv and equal to
+the corpus's own logts.csv; 156 refused, 156 for no rendered template column)
+```
+
+The refusal sentence also names what the file does ship (`its columns are time, timestamp, container_name,
+message, level, req_path, error`), because "no log_template column" leaves a reader wondering whether the
+column is spelled differently elsewhere in the corpus. It is not.
+
+### Four · the line on the failing path used to be false
+
+`checkCase()` returned the comparison's cell count whether or not it had found differences, and `main()`
+printed `... = N cell(s), all equal` for every case with a non-zero count. A case that disagreed printed:
+
+```
+RE2-OB/x/1: 2 row(s) x 2 column(s) = 4 cell(s), all equal
+check-aggregate-tables: RE2-OB/x/1: time=0 column='currencyservice_1' published=3 reduced=2
+check-aggregate-tables: FAILED (1 problem(s))
+```
+
+Two sentences about the same four cells, one of them false. Nobody wrote a lie: the line was added to report
+a count, "all equal" was the shape every passing case printed, and **nobody read the pair together** because
+the failing path is the one nobody reads. The repair counts the wrong cells and uses them -- `N differ` for
+`all equal` -- with a test that asserts both the new sentence and the absence of the old one.
+
+### Readings
+
+> Ledger for `v3.90`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **249 files, 6349 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **253 files, 6536 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines); `cli` **100 / 100 / 100 / 100**; per-file thresholds, no exemption |
+| new tests | **6338 -> 6349, net +11**: three for the generator (it agrees with the array driver on nine shapes including a quoted newline, it hands back the first record before reading the rest, and a field holding a newline is one record), four for the fold (its rendering equals the materialising caller's bucket for bucket, it consumes an iterable rather than collecting one, it tells "no rows" from "no matches", and a bucket nobody wrote reads as zeros), and four for the gate (a refusal counted beside a reproduction, 16 MB of unusable log refused in a 64 MB heap, 200 000 rows folded into a four-row table in a 64 MB heap, and `N differ` where the old line said `all equal`) |
+| the corpus, measured | **181 case directories** hold a `logts.csv` (91 OB / 90 SS / 90 TT), of which **25** carry a rendered `log_template`; the largest `logs.csv` is **202 258 338 bytes** in **274 621** records; the longest header is **82 bytes** |
+| before | `--max-old-space-size=4096` on `RE2-TT/ts-train-service_socket/2`: **signal 6**, peak RSS **4 307 128 KB**, wall **29.72 s** |
+| after | `--max-old-space-size=512` on the same case: **OK**, peak RSS **92 300 KB**, wall **0.53 s** |
+| the mask experiment | three reductions of the seven-column format against `RE2-SS/carts_cpu/1` (86 592 rows): 45 623 / 40 969 / 0, then 24 632 / 16 337 / **45 623** with an optional container prefix, then the first again by prefix-stripping |
+| gate sites | **136 across 62 of 88 scripts** (was 135): the one new exit is "a run in which no case could be reproduced", which the old step had no way to say because every refusal was already a failure |
+| the battery | **221 of 221** claim(s) across 61 file(s), after the two shards were re-run on the finished tree |
+| list | **28 -> 29**: the "aggregate table has not been re-run" entry closed by this round's reading, and two entries opened for what the reading could not reach |
+| LLM calls | **0**: this round's instruments are the archives' central directories, three range requests and the corpus's own files; no provider was called |
+
+### Leftovers, in the order that reaches the goal
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| P0 | The repaired step has not been run on the corpus | new at v3.90: the repair is proved on three real case directories and four fixtures, not on 181 | dispatch `official-data.yml` on `rcaeval-re2`, read step 13's census, and record the run in `golden-master/roundtrip.json` |
+| P1 | 156 case directories are refused, and the only exact statement available for them is an inequality | new at v3.90: per container and bucket the marginals of `logts.csv` cannot exceed the log rows of that container -- true in both formats, strictly weaker than a reproduction | decide whether a weaker claim gets its own name and its own gate rather than being bolted onto one whose sentence is "reproduced" |
+| P1 | The timeout table cannot discover a row it does not have | unchanged since v3.89 | a reader that computes each test's share of its own budget from a run's report |
+| P2 | The ceiling of 8 has never been measured where it is not oversubscription | unchanged | one full-suite run on nine or more usable CPUs |
+| P2 | The margin is the baseline's | open since v3.87 | whether a refused mutant should name the test that hung |
+| P2 | A record's terms are a map of strings to numbers | open since v3.83 | nine shapes instead of one |
+| P2 | The live list grows whatever the bound is | unchanged | measure the distance to the ceiling first |
+| P3 | The coverage figure has no reader that computes it | unchanged | teach `docs:check` to read a report |
+
+**The lesson.** v3.88 repaired the copy of the table it could see, and this round's reading says the memory
+was a layer out -- in a reader that parsed two hundred megabytes to answer a question sixty-four kilobytes
+would answer. The same reading found the larger defect behind it: **a gate whose name states two outcomes,
+which implemented one.** A step that fails whenever the corpus holds a shape it cannot read is not strict,
+it is mute -- and this one had been mute for its whole life, twice dying before it could say a word about
+the twenty-five cases it *can* read. The repair that matters is not the heap figure; it is that the step now
+prints a verdict per case, in the three states its title always claimed.

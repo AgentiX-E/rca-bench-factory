@@ -53,16 +53,24 @@
     },
     {
       "script": "scripts/check-aggregate-tables.mjs",
-      "line": 52,
+      "line": 57,
       "diagnostic": "usage: check-aggregate-tables.mjs (--case <dir> | --official-dir <dir>)",
       "status": "proved",
       "provedBy": "packages/core/test/check-aggregate-tables.test.ts"
     },
     {
       "script": "scripts/check-aggregate-tables.mjs",
-      "line": 353,
+      "line": 430,
       "condition": "problems.length > 0",
       "diagnostic": "check-aggregate-tables: FAILED (${problems.length} problem(s))",
+      "status": "proved",
+      "provedBy": "packages/core/test/check-aggregate-tables.test.ts"
+    },
+    {
+      "script": "scripts/check-aggregate-tables.mjs",
+      "line": 440,
+      "condition": "reproduced === 0",
+      "diagnostic": "check-aggregate-tables: FAILED (0 of ${dirs.length} case(s) could be reproduced, which is not a",
       "status": "proved",
       "provedBy": "packages/core/test/check-aggregate-tables.test.ts"
     },

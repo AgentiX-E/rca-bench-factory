@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   LOGTS_BUCKET_SECONDS,
   buildLogtsCsv,
+  logtsCells,
+  logtsHeader,
+  reduceLogts,
   type LogCluster,
   type LogRow,
 } from '../src/export/rcaeval-logts.js';
@@ -148,6 +151,86 @@ describe('logts.csv · the reduction the corpus performs', () => {
     ]);
     expect(cells(table.csv)[0]).toEqual(['time', 'frontend_1']);
     expect(cells(table.csv)[1]).toEqual(['0', '1']);
+  });
+
+  /**
+   * The fold, which is the same rule with a different driver.
+   *
+   * `buildLogtsCsv` is a materialising caller of `reduceLogts`: it has an array of
+   * rows and wants text. The gate has neither -- it has a 202 MB file and wants to
+   * compare one bucket at a time -- so the rule has to be expressible without ever
+   * holding the rows or the grid. These four tests are that statement, and they are
+   * what makes the corpus's largest case a 92 MB run instead of a 4 GB one
+   * (finding 533).
+   */
+  describe('the fold behind it', () => {
+    it('renders what the materialising caller writes, bucket for bucket', () => {
+      const many = rows(
+        ['frontend', 'request started', 0],
+        ['frontend', 'request started', 15],
+        ['frontend', 'serving product page', 30],
+        ['redis', '', 45],
+        ['frontend', 'request started', 60],
+      );
+      const grid = reduceLogts(many, clusters);
+      const rendered = [];
+      for (let bucket = grid.lowest; bucket <= grid.highest; bucket += LOGTS_BUCKET_SECONDS) {
+        rendered.push(logtsCells(grid, bucket).join(','));
+      }
+      const [header, ...body] = cells(buildLogtsCsv(many, clusters).csv);
+      expect(logtsHeader(grid.columns)).toEqual(header);
+      expect(rendered).toEqual(body.map((one) => one.join(',')));
+    });
+
+    it('consumes an iterable, so a caller never has to collect the rows', () => {
+      // A generator that refuses to be asked for more than it holds is the smallest
+      // possible statement that the fold drives the sequence rather than the other
+      // way round: an implementation that called `[...rows]` twice, or that asked
+      // for an array, would pull one row too many and throw.
+      let given = 0;
+      function* once(): Generator<LogRow> {
+        for (const row of rows(['frontend', 'request started', 0], ['frontend', 'request started', 15])) {
+          if (given === 2) throw new Error('the fold asked for a row it did not need');
+          given += 1;
+          yield row;
+        }
+      }
+      const grid = reduceLogts(once(), clusters);
+      expect(grid.seen).toBe(2);
+      expect(grid.lowest).toBe(0);
+      expect(grid.highest).toBe(15);
+      expect(logtsCells(grid, 0)).toEqual([0, 0, 1, 0]);
+    });
+
+    it('tells "no rows at all" apart from "no row matched a cluster"', () => {
+      // The two produce the same table -- a header and no body -- and different
+      // sentences. The gate needs the difference: one case has no logs, the other
+      // has logs whose templates the cluster table does not name, and only the
+      // second is worth saying out loud.
+      const empty = reduceLogts([], clusters);
+      expect(empty.seen).toBe(0);
+      expect(empty.lowest).toBe(Infinity);
+      expect(empty.highest).toBe(-Infinity);
+
+      const unmatched = reduceLogts(rows(['redis', '', 0]), clusters);
+      expect(unmatched.seen).toBe(1);
+      expect(unmatched.dropped).toBe(1);
+      expect(unmatched.lowest).toBe(0);
+      expect(unmatched.highest).toBe(0);
+      expect(unmatched.counts.size).toBe(0);
+    });
+
+    it('reads a bucket nothing was written into as a row of zeros', () => {
+      // Density is the reason the grid is not a list of observed buckets: a quiet
+      // fifteen seconds is a row of zeros, and a caller reading the table by bucket
+      // -- rather than from an array -- has to get the same answer.
+      const grid = reduceLogts(
+        rows(['frontend', 'request started', 0], ['frontend', 'request started', 30]),
+        clusters,
+      );
+      expect(logtsCells(grid, 15)).toEqual([15, 0, 0, 0]);
+      expect(logtsCells(grid, 0)).toEqual([0, 0, 1, 0]);
+    });
   });
 
   it('keeps a count exact past the width a 32-bit counter would hold', () => {

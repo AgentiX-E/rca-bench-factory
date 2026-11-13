@@ -105,7 +105,7 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
     });
     const { status, out } = run('--case', dir);
     expect(out).toContain('2 row(s) x 2 column(s) = 4 cell(s), all equal');
-    expect(out).toContain('check-aggregate-tables: OK (1 case(s), 4 cell(s)');
+    expect(out).toContain('check-aggregate-tables: OK (1 case(s) reproduced, 4 cell(s)');
     expect(status).toBe(0);
   });
 
@@ -220,7 +220,7 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
     const { status, out } = run('--official-dir', root);
     expect(out).toContain('RE2-OB/checkoutservice_cpu/1: 2 row(s) x 2 column(s) = 4 cell(s), all equal');
     expect(out).toContain('RE2-OB/checkoutservice_cpu/2: 2 row(s) x 2 column(s) = 4 cell(s), all equal');
-    expect(out).toContain('OK (2 case(s), 8 cell(s)');
+    expect(out).toContain('OK (2 case(s) reproduced, 8 cell(s)');
     expect(status).toBe(0);
   });
 
@@ -311,6 +311,144 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  /**
+   * A refusal is an outcome, and the difference between the two outcomes is the step.
+   *
+   * ## Why this is not the same test as the three refusals above
+   *
+   * Each of those invokes the gate on **one** case, so "refused" and "nothing was
+   * compared" are the same run and both must fail. On the corpus they are not: of the
+   * 181 case directories in `RE2-OB`, `RE2-SS` and `RE2-TT`, **25** carry a rendered
+   * `log_template` and can be reproduced; the other 156 ship Drain's masked templates
+   * and a `message`-only log, which this rule cannot match. Counting those as
+   * failures makes the step red for a property of the corpus rather than a defect in
+   * this repository, which is what it did until v3.90 -- and what made its title
+   * ("either reproduced or refused") untrue of its behaviour.
+   */
+  it('counts a refusal instead of failing, when another case was reproduced', () => {
+    const root = mkdtempSync(join(tmpdir(), 'aggregate-mixed-'));
+    dirs.push(root);
+    const good = join(root, 'RE2-OB/checkoutservice_cpu/1');
+    const masked = join(root, 'RE2-TT/ts-train-service_socket/2');
+    mkdirSync(good, { recursive: true });
+    mkdirSync(masked, { recursive: true });
+    writeFileSync(join(good, 'cluster_info.json'), JSON.stringify(CLUSTERS));
+    writeFileSync(join(good, 'logs.csv'), LOGS);
+    writeFileSync(join(good, 'logts.csv'), LOGTS);
+    // The shape `RE2-SS` and `RE2-TT` actually ship: seven columns, no rendered template.
+    writeFileSync(join(masked, 'cluster_info.json'), JSON.stringify(CLUSTERS));
+    writeFileSync(
+      join(masked, 'logs.csv'),
+      'time,timestamp,container_name,message,level,req_path,error\n00:00,1,frontend,request started,,,',
+    );
+    writeFileSync(join(masked, 'logts.csv'), LOGTS);
+
+    const { status, out } = run('--official-dir', root);
+    expect(out).toContain('RE2-TT/ts-train-service_socket/2: refused -- ');
+    expect(out).toContain("no 'log_template' column");
+    expect(out).toContain(
+      'OK (1 case(s) reproduced, 4 cell(s) reduced from logs.csv and equal to the corpus\'s own logts.csv; ' +
+        '1 refused, 1 for no rendered template column)',
+    );
+    expect(status).toBe(0);
+  });
+
+  /**
+   * The header is read before the body, and the corpus is 202 MB wide.
+   *
+   * `RE2-TT/ts-train-service_socket/2/logs.csv` is 202 258 338 bytes in 274 621
+   * records. Until v3.90 the gate read it whole, parsed it into 274 621 objects, and
+   * then looked at the header to discover that the file has no `log_template` column
+   * -- the only thing it wanted. The first TrainTicket case took the process past a
+   * 4 GB heap and the step never reported a verdict at all (finding 533).
+   *
+   * The fixture below is 16 MB of a shape that is refused, in a 64 MB heap. Reading
+   * the body would need several times the file; reading 64 KiB of it needs nothing.
+   */
+  it('refuses a log table it cannot use without reading past its header', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'aggregate-wide-refused-'));
+    dirs.push(dir);
+    writeFileSync(join(dir, 'cluster_info.json'), JSON.stringify(CLUSTERS));
+    writeFileSync(join(dir, 'logts.csv'), LOGTS);
+    const filler = '00:00,1705595459012034902,frontend,request started,,,\n';
+    const records = Math.ceil((16 * 1024 * 1024) / filler.length);
+    writeFileSync(
+      join(dir, 'logs.csv'),
+      `time,timestamp,container_name,message,level,req_path,error\n${filler.repeat(records)}`,
+    );
+
+    const result = spawnSync(process.execPath, ['--max-old-space-size=64', SCRIPT, '--case', dir], {
+      encoding: 'utf8',
+    });
+    const out = `${result.stdout}${result.stderr}`;
+    expect(out).toContain("no 'log_template' column");
+    expect(out).toContain('its columns are time, timestamp, container_name, message, level, req_path, error');
+    // One case, refused, so nothing was reproduced: this is still not a pass.
+    expect(out).toContain('0 of 1 case(s) could be reproduced, which is not a pass');
+    expect(result.status).toBe(1);
+    rmSync(join(dir, 'logs.csv'), { force: true });
+  });
+
+  /**
+   * A quarter of a million rows is a count, not a table.
+   *
+   * The reduction is a fold: `reduceLogts` keeps one entry per (bucket, column) that
+   * was observed, so a log file with many records in few buckets costs the buckets
+   * and not the records. The fixture is 200 000 records of 9 columns -- about 20 MB --
+   * reduced into a 4-row table inside a 64 MB heap, which is less than the row
+   * objects alone would take.
+   */
+  it('reduces two hundred thousand rows in a heap that could not hold the rows', () => {
+    const buckets = 4;
+    const dir = mkdtempSync(join(tmpdir(), 'aggregate-tall-'));
+    try {
+      writeFileSync(join(dir, 'cluster_info.json'), JSON.stringify(CLUSTERS));
+      const records = 200_000;
+      const lines = [LOGS_HEADER];
+      for (let index = 0; index < records; index += 1) {
+        lines.push(logLine((index % buckets) * 15, 'currencyservice', 'conversion request successful'));
+      }
+      writeFileSync(join(dir, 'logs.csv'), lines.join('\n'));
+      const perBucket = records / buckets;
+      writeFileSync(
+        join(dir, 'logts.csv'),
+        [
+          'time,currencyservice_1,frontend_2',
+          ...[0, 15, 30, 45].map((second) => `${second},${perBucket},0`),
+        ].join('\n'),
+      );
+
+      const result = spawnSync(process.execPath, ['--max-old-space-size=64', SCRIPT, '--case', dir], {
+        encoding: 'utf8',
+      });
+      const out = `${result.stdout}${result.stderr}`;
+      expect(out).toContain(`4 row(s) x 2 column(s) = 8 cell(s), all equal`);
+      expect(result.status).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * The sentence on the failing path, which used to lie.
+   *
+   * A case with one wrong cell printed "… = 4 cell(s), all equal" and then failed,
+   * because the line was emitted whenever the comparison had counted cells and nobody
+   * had asked it whether any of them differed. A reader skimming the log of a red run
+   * met the disagreement and the claim that there was none in the same line.
+   */
+  it('says how many cells differ rather than saying they are all equal', () => {
+    const dir = makeCase({
+      'cluster_info.json': JSON.stringify(CLUSTERS),
+      'logs.csv': LOGS,
+      'logts.csv': ['time,currencyservice_1,frontend_2', '0,3,1', '15,0,1'].join('\n'),
+    });
+    const { status, out } = run('--case', dir);
+    expect(out).toContain('2 row(s) x 2 column(s) = 4 cell(s), 1 differ');
+    expect(out).not.toContain('all equal');
+    expect(status).toBe(1);
   });
 });
 
