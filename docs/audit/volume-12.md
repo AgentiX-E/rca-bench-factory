@@ -1543,3 +1543,98 @@ One case also records a rule that was nearly wrong: the `verify` job carries a *
 version of the rule read the comment and demanded full history for a job that resolves nothing.
 Comments are stripped before the scan; a comment is a sentence about the workflow, not an
 instruction to it.
+
+## Finding 531 — the suite's verdict was decided by a 5 000 ms budget nobody in this repository set
+
+The suite has carried two budgets since v3.12. One is deliberate: `STALL_BUDGET_MS`, 45 000 ms,
+measured against the bridge's 60 000 ms deadline and held to it by `stall-budget.test.ts`.
+The other is vitest's default per-test timeout, **5 000 ms**, inherited because nothing in
+`vitest.config.ts` sets `testTimeout` -- and the measured distribution says it is below the
+suite's own legitimate maximum by a factor of two and a half.
+
+That is the whole defect, and it was found by measuring rather than by reading: the suite was run
+at 2, 4, 6 and 8 workers with vitest's JSON report kept, and the slowest single test per run is
+**12 281 ms** (`typecheck-entrypoint.test.ts`, at 4 workers) against a 5 000 ms budget. Nine
+files survive that gap by declaring 30 000 ms themselves; the files that do not declare one are
+the ones whose verdict is a function of the machine.
+
+Four of them, measured, none of which stated a budget:
+
+| file | 2 workers | 4 workers | 6 workers | 8 workers |
+| --- | --- | --- | --- | --- |
+| `derive-gate-sites-tally.test.ts` | 2 710 / 2 628 / 2 705 | 2 837 / 3 528 / 3 364 | 4 700 / **5 449** | 7 597 / 9 876 |
+| `derive-gate-sites-throws.test.ts` | 2 834 / 2 561 / 2 542 | 3 327 / 3 722 / 3 406 | 4 301 / 4 718 | 9 493 / 10 521 |
+| `derive-gate-sites-annotations.test.ts` | 838 / 860 / 887 | 1 334 / 1 379 / 1 154 | 1 810 / 1 902 | 2 921 / 2 666 |
+| `check-aggregate-tables.test.ts` | 1 509 / 1 223 / 1 229 | 1 274 / 1 460 / 1 260 | 2 300 / 2 617 | 2 709 / 3 135 |
+
+Bold is `Test timed out in 5000ms`. `throws` at 6 workers is the row that settles the argument:
+**4 718 ms of a 5 000 ms budget is 94%**, green by 282 milliseconds, on a run where the same file
+went red at 8.
+
+Two facts about the instrument came out of the same table and neither was written down anywhere:
+
+- **A synchronous test cannot be interrupted by a timer.** The durations recorded for the red rows
+  are *larger* than the budget they blew -- 9 876 and 10 521 ms against 5 000 -- because the check
+  happens when the event loop turns, which is after the work has finished. The verdict says "timed
+  out" and the report says ten seconds; both are true, and it is why the report is the number a
+  table can be built from.
+- **94% is not a margin.** The difference between a file that reports itself and a file that does
+  not is 282 milliseconds on one machine and one width.
+
+**The repair is four constants and eight table rows.** Each file declares `SUITE_BUDGET_MS =
+30 000` -- the estate's tightest existing declaration, in nine other files -- and applies it to a
+`describe`, not to a test, for the reason `timeout-budget.test.ts` already records: a budget on the
+test where a stall was noticed leaves the next test written on the default, and every one of these
+four files is a walk over the shipped tree rather than one expensive call.
+`SUITE_BUDGET_MS` in `timeout-budget.test.ts` grew from four rows to eight, each carrying its
+readings, and the rule that reads them is unchanged: a row's file must state a suite budget larger
+than the default, and a row with no measurement is an opinion with a filename attached.
+
+The discovery gap is **not** closed by this and is recorded rather than papered over: the table
+checks every row it has, and it cannot discover a row it does not. What the round adds is a
+measurement that can be re-taken in twenty minutes (the harness is in the progress volume's
+readings) and four rows found with it. A new tree-walking file will be discovered by a red run,
+which is how five of the eight rows got here.
+
+## Finding 532 — the CPU allowance was read from cgroup v2 only, and used on v1 hosts too
+
+`workerCount(reported, quota)` is `max(2, min(8, usable - 1))`, and the whole of its safety rests
+on `usable` being right: eight workers implies nine usable CPUs, so the ceiling of 8 is only ever
+in force on a machine that can feed it. `usable` came from `availableParallelism()` capped by a
+quota read from **`/sys/fs/cgroup/cpu.max`** -- which exists in cgroup **v2** and nowhere else.
+
+On the v1 layout -- `cpu/cpu.cfs_quota_us` and `cpu/cpu.cfs_period_us`, still the default for
+many Docker installations and for any kernel before 4.15 -- the reader returned `null`, and
+`workerCount` treats `null` as "no limit stated", so the count followed the host's number.
+`availableParallelism()` reads the CPU affinity mask, and a cgroup **CPU quota** is not part of
+that mask on Linux; this box is the standing proof of the general shape, reporting 32 CPUs while
+its cgroup allows 4 (finding 317). So a v1 container with a 4-CPU quota on a 32-CPU host ran
+**8 workers on 4 CPUs**, and the suite's two instruments were both nearly spent:
+
+| 8 workers on 4 CPUs, measured | reading | of its limit |
+| --- | --- | --- |
+| worst file holding the event loop | 37 785 / 39 874 / 40 065 ms | 84 / 89 / 89% of the 45 000 ms budget |
+| peak `memory.current` | 7 594 / 7 625 / 7 891 MiB | 93 / 93 / 96% of the 8 GiB limit |
+| wall clock | 110.8 / 114.9 / 114.6 s | worse than 4 workers (108.3 / 109.2 / 108.9) |
+
+**The repair is the reader, not the ceiling.** `cpuAllowance()` asks the v2 file first and falls
+back to the v1 pair, and `quotaFromV1()` reads `-1` as "no limit" -- the v1 spelling of v2's `max`
+-- rather than as a negative number of CPUs. Both are driven with an injected filesystem in
+`worker-count-follows-the-cpu-quota.test.ts`, so the v1 layout is tested without a v1 host: the
+case that produced the finding is a `cpu.max` that says `max 100000` beside a v1 quota of
+`400000 100000`, which used to answer `null` and 8 workers and now answers 4 CPUs and 3.
+
+Two further assertions hold the reasoning rather than the spelling:
+
+- `workerCount(8, null)` is **7**. The ceiling of 8 is unreachable on a machine with eight CPUs,
+  which is the premise the stall measurement's 8-worker row is admissible under.
+- An unreadable pair leaves `null`, so the reported count stays in charge. Reading "no quota" as
+  "no CPU" would make a one-core container's floor the only reachable answer, which is the
+  opposite defect and was the one the first version of this reader was written to avoid.
+
+One level down, the same class of mistake appeared in this round's own edit and is recorded
+because it will recur: the path constants were declared *after* the `defineConfig` call that
+consumes them, so `maxWorkers` evaluated `cpuAllowance()` while `CPU_MAX_PATH` was in its temporal
+dead zone, and the whole suite failed to collect with
+`Cannot access 'CPU_MAX_PATH' before initialization`. The constants now sit above the config object
+and the comment says why.

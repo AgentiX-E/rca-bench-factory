@@ -430,8 +430,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 97 |
 | Source lines | 34,152 |
 | Test files | 249 core + 4 cli |
-| Test lines | 106,355 core + 3,242 cli |
-| Tests | 6,329 core + 187 cli |
+| Test lines | 106,586 core + 3,242 cli |
+| Tests | 6,338 core + 187 cli |
 | Tracked files | 641 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -516,7 +516,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.88: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.89: **28** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1300,16 +1300,31 @@ is a row about rather than paraphrase one that no `grep` will find.
   history, and the index can stay under `MAX_BYTES` only because that volume cannot exceed it.
   `[open: the round that reaches the ceiling will have to move the closed part of the list into a volume,
   and nothing measures how far away that is]`
-- **The worker count decides the stall verdict, and it was chosen by memory alone.** `workerCount()` reads
-  the CPUs the process may use and a ceiling measured on the container's memory; nothing in it consults
-  the one measurement that turned the suite red. Measured on a five-CPU box, same tree, same command:
-  **2 workers -> worst file 14,448 ms** and 153 s of wall clock; **4 workers -> 23,897 / 43,895 / 47,727
-  ms** and 91-99 s. The budget is 45,000, so the count is the difference between a file at a third of it
-  and a file past it -- and the suite is faster at the count that reddens it.
-  `[open: a cap chosen against the stall measurement as well -- the largest count whose worst file stays
-  under half the budget -- with the wall clock it costs measured rather than traded, and the fact that
-  the worst file is now cheap enough to make the question hypothetical kept as a reason rather than an
-  answer]`
+- ~~**The worker count decides the stall verdict, and it was chosen by memory alone.**~~ **Closed by finding
+  532, which measured it at four widths.** `workerCount()` reads the CPUs the process may use and a ceiling
+  measured on the container's memory; nothing in it consulted the one measurement that turned the suite red.
+  Measured then on a five-CPU box: **2 workers -> worst file 14,448 ms** and 153 s of wall clock; **4 workers
+  -> 23,897 / 43,895 / 47,727 ms** and 91-99 s. v3.89 ran the whole suite at 2 / 4 / 6 / 8 workers, ten times
+  over: the worst file held the loop **14.4 / 14.8 / 24.1 / 39.9 s -- 32 / 33 / 54 / 89%** of the 45,000 ms
+  budget -- and the wall clock was **174 / 109 / 108 / 113 s**, so the count the formula produces here (3) is
+  at a third of the budget and nothing above 4 buys a second. The ceiling of 8 is the memory's, and it is
+  admissible because it is unreachable below nine CPUs; what was wrong was reading the allowance from one
+  cgroup layout while using it on both, and 532 is that repair.
+
+- **The timeout table cannot discover a row it does not have.** `timeout-budget.test.ts` checks every row it
+  holds and cannot find a new one: v3.89 found four files at 38-94% of a 5,000 ms default that had never
+  declared a budget, by running the suite at four widths and reading vitest's JSON report -- two of them
+  red at 6 and 8 workers. The four are fixed and the table grew 4 -> 8 rows, but the ninth tree-walking file
+  will be found the same way the first five of the eight were: by a red run.
+  `[open: a reader that takes each test's share of its own budget from a run's report and refuses one past
+  half of it, in a place that runs the whole suite -- the sensitivity battery reads a report already, and
+  its baseline runs one claimant at a time rather than the tree]`
+- **The ceiling of 8 has never been measured where it is not oversubscription.** Every reading of eight
+  workers in this repository is on a 4-CPU quota, where eight is 2x and the row is the *cost* of getting the
+  allowance wrong (89% of the stall budget, 93% of the memory limit). On a machine that can feed it, eight
+  workers is not oversubscription and the row would be a different number -- and no such machine has run
+  this suite.
+  `[open: one full-suite run on nine or more usable CPUs, with the same harness and the same report]`
 - ~~**The next-nearest file is at 71% of the stall budget.**~~ **Closed by finding 516, and the
   question it asked had the wrong subject.** `publish.test.ts` measured 28,183 ms without
   coverage and 31,855 ms under it in the four-worker runs, against 45,000 -- and its cost is `git`
@@ -1378,7 +1393,7 @@ and this table.
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
-| [volume-14.md](progress/volume-14.md) | 16 | v3.73 | v3.88 |
+| [volume-14.md](progress/volume-14.md) | 17 | v3.73 | v3.89 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

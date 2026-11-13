@@ -55,6 +55,36 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const SCRIPT = resolve(ROOT, 'scripts', 'derive-gate-sites.mjs');
 const SCRIPTS = resolve(ROOT, 'scripts');
 
+/**
+ * The budget this file's tree walk is given, in milliseconds.
+ *
+ * ## The reading, taken before this constant existed
+ *
+ * `accounts for every call in every script` parses all 89 shipped scripts twice -- once
+ * with `forEachChild`, once with `getChildren()` -- inside the test process. Measured
+ * over ten full-suite runs on the tree before this constant existed, on a box whose
+ * cgroup allows 4 CPUs:
+ *
+ *     2 workers   2 710 / 2 628 / 2 705 ms   green
+ *     4 workers   2 837 / 3 528 / 3 364 ms   green
+ *     6 workers   4 700 / 5 449 ms           green once, `Test timed out in 5000ms` once
+ *     8 workers   7 597 / 9 876 ms           red twice of two
+ *
+ * So the file's verdict was a function of how many other files were running: green at
+ * the two counts the suite normally uses, a coin flip at 6, and red at 8. The budget
+ * below is the estate's tightest declaration (30 000 ms in nine other files), which
+ * leaves 3x headroom over the worst reading here rather than the zero the inherited
+ * 5 000 ms default left.
+ *
+ * ## Why the suite and not the test
+ *
+ * The sentence above is per *file*, but the number that ran out is per *process*: the
+ * same walk is what the file is for, so a budget applied to that one test would leave
+ * the next test added to this file on the default. `timeout-budget.test.ts` carries the
+ * rule and the rows; this constant is the number those rows read.
+ */
+const SUITE_BUDGET_MS = 30_000;
+
 interface Read {
   sites: Array<{ line: number; condition?: string; diagnostic?: string }>;
   excluded: Record<string, number>;
@@ -191,7 +221,7 @@ process.exit(
   });
 });
 
-describe('the two baskets are a partition of the calls, not a remainder', () => {
+describe('the two baskets are a partition of the calls, not a remainder', { timeout: SUITE_BUDGET_MS }, () => {
   it('adds up on a fixture that exercises both', () => {
     const source = [
       'process.exit(1);',

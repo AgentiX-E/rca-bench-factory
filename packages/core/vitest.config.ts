@@ -3,6 +3,18 @@ import { availableParallelism } from 'node:os';
 import { defineConfig } from 'vitest/config';
 import { instrumentThrows } from '../../scripts/throw-witness.mjs';
 
+/**
+ * The cgroup v2 file that states a CPU quota, and the cgroup v1 pair that states the same.
+ *
+ * Declared above the config object because `maxWorkers` below is evaluated while this
+ * module is being loaded: a `const` after `defineConfig` is in its temporal dead zone at
+ * that moment, and the failure is `Cannot access 'CPU_MAX_PATH' before initialization` at
+ * the first run rather than in a comment. A test caught it.
+ */
+export const CPU_MAX_PATH = '/sys/fs/cgroup/cpu.max';
+export const CPU_V1_QUOTA_PATH = '/sys/fs/cgroup/cpu/cpu.cfs_quota_us';
+export const CPU_V1_PERIOD_PATH = '/sys/fs/cgroup/cpu/cpu.cfs_period_us';
+
 export default defineConfig({
   // The suite reaches `scripts/*.mjs` two ways, and until this plugin existed the
   // throw witness saw only one of them.
@@ -147,7 +159,7 @@ export default defineConfig({
     // decision, not the *container's* overstatement of it. `usableParallelism()`
     // reads the quota, so the number in the argument is the number this process
     // can actually use.
-    maxWorkers: workerCount(availableParallelism(), quotaFromCpuMax(readCpuMax())),
+    maxWorkers: workerCount(availableParallelism(), cpuAllowance()),
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
@@ -226,6 +238,22 @@ export function quotaFromCpuMax(text: string): number | null {
  * it. One CPU is left to the main process so the reporter stays responsive; the
  * floor of 2 exists for a one-core container, and the ceiling of 8 is the memory
  * measurement earlier in this file.
+ *
+ * ## The ceiling, read against the stall gauge (v3.89)
+ *
+ * `max(2, min(8, usable - 1))` means eight workers implies `usable >= 9`, so the
+ * ceiling is only ever in force on a machine with more CPUs than workers. That is
+ * what makes it admissible: measured on a box whose cgroup allows 4 CPUs, at 2, 4, 6
+ * and 8 workers, twice each, the worst file held the event loop for 14.4 s, 14.8 s,
+ * 22.0-24.1 s and 37.8-39.9 s -- and the 8-worker row is 2x oversubscription, the
+ * cost of reaching the ceiling on a machine that cannot feed it. 84% of the 45 s
+ * budget and 7 594 MiB of the 8 GiB limit, with the wall clock the same as at 4
+ * (111 s against 108 s). At the counts the formula actually produces here (3), the
+ * worst file is at a third of the budget.
+ *
+ * So the ceiling is not what decides the stall verdict; the *allowance* is, and a
+ * `-1` from an unreadable cgroup used to hand the report's number the whole decision.
+ * The two readers below are that repair.
  */
 export function workerCount(reported: number, quota: number | null): number {
   const usable = quota === null ? reported : Math.min(reported, quota);
@@ -234,8 +262,60 @@ export function workerCount(reported: number, quota: number | null): number {
 
 /** `/sys/fs/cgroup/cpu.max`, or `''` where there is no such file (macOS, cgroup v1). */
 export function readCpuMax(): string {
+  return readCpuFile(CPU_MAX_PATH);
+}
+
+/**
+ * The CPU allowance a **cgroup v1** pair states, or `null` when it states none.
+ *
+ * ## Why the second reader exists
+ *
+ * `availableParallelism()` reads the CPU affinity mask, and a cgroup CPU quota is not
+ * part of it on Linux -- which is finding 317's measurement: this box reports 32 while
+ * its cgroup allows 4. The v2 file was the only place that number was read from, so a
+ * container running the v1 layout (still the default for many Docker installations, and
+ * for anything on a pre-4.15 kernel) had **no readable quota at all**, and the count
+ * fell back to the host's: 8 workers on 4 CPUs.
+ *
+ * What that costs was measured at v3.89 rather than assumed -- the 8-worker rows in
+ * `workerCount`'s comment are that configuration: 84% of the stall budget and 93% of the
+ * memory limit, against a third of the budget at the count the formula produces when the
+ * quota is read. The reader is the repair; the ceiling did not have to move, because
+ * eight workers on eight CPUs is not oversubscription.
+ *
+ * `-1` is v1's "no limit", the same fact `max` states in v2, and it is read as `null`
+ * rather than as a negative number of CPUs.
+ */
+export function quotaFromV1(quotaText: string, periodText: string): number | null {
+  const quota = Number(quotaText.trim());
+  const period = Number(periodText.trim());
+  if (!Number.isFinite(quota) || !Number.isFinite(period)) return null;
+  if (quota <= 0 || period <= 0) return null;
+  return Math.max(1, Math.floor(quota / period));
+}
+
+/**
+ * The CPU allowance this machine states, whichever cgroup layout it uses.
+ *
+ * v2 wins where it exists, because it is the layout whose semantics are exact (a single
+ * `max` token for "no limit"); v1 is the fallback, and `null` means neither layout spoke
+ * -- which is the case the reported count is the best available answer to, not a case to
+ * read as zero.
+ *
+ * `read` is injectable so both layouts can be tested without owning the files: a test
+ * that had to be root, or to live on a specific kernel, to check a parse would be a test
+ * about the machine rather than about the parser.
+ */
+export function cpuAllowance(read: (path: string) => string = readCpuFile): number | null {
+  const v2 = quotaFromCpuMax(read(CPU_MAX_PATH));
+  if (v2 !== null) return v2;
+  return quotaFromV1(read(CPU_V1_QUOTA_PATH), read(CPU_V1_PERIOD_PATH));
+}
+
+/** A file's text, or `''` where it cannot be read: an absent reading must not throw. */
+function readCpuFile(path: string): string {
   try {
-    return readFileSync('/sys/fs/cgroup/cpu.max', 'utf8');
+    return readFileSync(path, 'utf8');
   } catch {
     return '';
   }

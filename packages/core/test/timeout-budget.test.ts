@@ -507,6 +507,40 @@ const SUITE_BUDGET_MS: Readonly<Record<string, { measured: string }>> = {
       'passing, on a commit that changed documentation only. Every case spawns `git` once per ' +
       'commit, per tree and per blob, so the file is a sum of process starts',
   },
+  // The four rows below were found by a **measurement rather than by a red run**, which is
+  // the first time this table grew that way. v3.89 ran the whole suite at 2, 4, 6 and 8
+  // workers, twice each, with the per-test durations written to vitest's own JSON report;
+  // the four files here are the ones that reached 2 000 ms at some width and stated no
+  // budget at all. Two of them were red at 6 and 8 workers, and the durations the report
+  // holds for those two are *larger* than the 5 000 ms they were given -- 9 876 and
+  // 10 521 ms -- because a synchronous test cannot be interrupted by a timer: the timeout
+  // fires when the loop turns, which is after the work has finished. That is why the
+  // verdict says "timed out" and the measurement says ten seconds, and why the number in
+  // the report is the one that can be compared with a budget.
+  'derive-gate-sites-tally.test.ts': {
+    measured:
+      '2 710 / 2 628 / 2 705 ms at 2 workers, 2 837 / 3 528 / 3 364 at 4, 4 700 / 5 449 at 6 ' +
+      '(green once, `Test timed out in 5000ms` once), 7 597 / 9 876 at 8 (red twice). Parses all ' +
+      '89 shipped scripts twice inside the test process, so its cost follows the tree and not the test',
+  },
+  'derive-gate-sites-throws.test.ts': {
+    measured:
+      '2 834 / 2 561 / 2 542 ms at 2 workers, 3 327 / 3 722 / 3 406 at 4, 4 301 / 4 718 at 6 ' +
+      '(94% of the default), 9 493 / 10 521 at 8 (red twice). Two tests here read every shipped ' +
+      'script, so a budget on either of them would leave the third one somebody adds on the default',
+  },
+  'derive-gate-sites-annotations.test.ts': {
+    measured:
+      '838 / 860 / 887 ms at 2 workers, 1 334 / 1 379 / 1 154 at 4, 1 810 / 1 902 at 6, ' +
+      '2 921 / 2 666 at 8 (58% of the default, never red). It runs the same gate over the same tree ' +
+      'as the two rows above, and it is the row that says the table is about the shape rather than the history',
+  },
+  'check-aggregate-tables.test.ts': {
+    measured:
+      '1 509 / 1 223 / 1 229 ms at 2 workers, 1 274 / 1 460 / 1 260 at 4, 2 300 / 2 617 at 6, ' +
+      '2 709 / 3 135 at 8 (63% of the default, never red). Every test spawns the gate and one of ' +
+      'them writes a 4 500 000-cell corpus, so the file is a sum of process starts plus one large write',
+  },
 };
 
 describe('the suite · a file whose cost reaches the default states a larger budget', () => {

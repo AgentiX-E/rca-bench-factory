@@ -31,6 +31,27 @@ const DRIVES = [
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = resolve(HERE, '../../../scripts/check-aggregate-tables.mjs');
 
+/**
+ * The budget this file's suite is given, in milliseconds.
+ *
+ * ## The reading, taken before this constant existed
+ *
+ * Every test here spawns the gate, and one of them builds a corpus of 4 500 000 cells
+ * and then runs it through a 96 MB heap, so the file is a sum of process starts plus one
+ * large write. Measured over ten full-suite runs on the tree before this constant
+ * existed, on a box whose cgroup allows 4 CPUs:
+ *
+ *     2 workers   1 509 / 1 223 / 1 229 ms     green
+ *     4 workers   1 274 / 1 460 / 1 260 ms     green
+ *     6 workers   2 300 / 2 617 ms             green, 52% of the 5 000 ms default
+ *     8 workers   2 709 / 3 135 ms             green, 63% of it
+ *
+ * It never went red. The row that puts it in this table is the one above it at 6 -- 52%
+ * of an inherited budget is the shape three sibling files were carrying when they did go
+ * red at 8 -- and the budget is the estate's tightest declaration, 30 000 ms.
+ */
+const SUITE_BUDGET_MS = 30_000;
+
 const LOGS_HEADER = 'time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template';
 
 const CLUSTERS = {
@@ -75,7 +96,7 @@ function run(...argv: string[]): { status: number | null; out: string } {
   return { status: result.status, out: `${result.stdout}${result.stderr}` };
 }
 
-describe('check-aggregate-tables · the gate', () => {
+describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () => {
   it('reports the cell count when the reduction reproduces the corpus', () => {
     const dir = makeCase({
       'cluster_info.json': JSON.stringify(CLUSTERS),

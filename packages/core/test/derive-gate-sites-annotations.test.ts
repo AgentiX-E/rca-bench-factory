@@ -50,6 +50,28 @@ import { afterAll, describe, expect, it } from 'vitest';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const SCRIPT = resolve(ROOT, 'scripts', 'derive-gate-sites.mjs');
 
+/**
+ * The budget this file's table re-derivation is given, in milliseconds.
+ *
+ * ## The reading, taken before this constant existed
+ *
+ * `re-derives a copy of the committed table without losing a single proof` runs the gate
+ * over the shipped tree, so its cost follows the tree rather than the test. Measured over
+ * ten full-suite runs on the tree before this constant existed, on a box whose cgroup
+ * allows 4 CPUs:
+ *
+ *     2 workers     838 /   860 /   887 ms     green
+ *     4 workers   1 334 / 1 379 / 1 154 ms     green
+ *     6 workers   1 810 / 1 902 ms             green, 38% of the 5 000 ms default
+ *     8 workers   2 921 / 2 666 ms             green, 58% of it
+ *
+ * It never went red, and it is in this table because of what its two neighbours did
+ * rather than because of its own reading: a file at 58% of an inherited budget under load
+ * is a coin flip whose turn has not come yet, and the two fields this file reads are the
+ * two that turned it for them.
+ */
+const SUITE_BUDGET_MS = 30_000;
+
 interface Site {
   script: string;
   line: number;
@@ -187,7 +209,7 @@ describe('an annotation is carried by what the guard says, not by where it sits'
   });
 });
 
-describe('the shipped table is the evidence that main() calls the carry', () => {
+describe('the shipped table is the evidence that main() calls the carry', { timeout: SUITE_BUDGET_MS }, () => {
   it('re-derives a copy of the committed table without losing a single proof', () => {
     // The end-to-end half of this file's subject, and it runs against a **copy**:
     // `--out` is both where the deriver reads its prior and where it writes, so

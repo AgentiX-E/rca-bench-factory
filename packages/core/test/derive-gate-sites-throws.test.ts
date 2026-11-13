@@ -63,6 +63,33 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const SCRIPTS = join(ROOT, 'scripts');
 
 /**
+ * The budget this file's tree walks are given, in milliseconds.
+ *
+ * ## The reading, taken before this constant existed
+ *
+ * Two tests here read every shipped script -- `accounts for every throw in every
+ * script, by an independent traversal` and `names every throw that ends a process…` --
+ * and the first of them parses all 89. Measured over ten full-suite runs on the tree
+ * before this constant existed, on a box whose cgroup allows 4 CPUs:
+ *
+ *     2 workers   2 834 / 2 561 / 2 542 ms   green
+ *     4 workers   3 327 / 3 722 / 3 406 ms   green
+ *     6 workers   4 301 / 4 718 ms           green, 94% of the 5 000 ms default
+ *     8 workers   9 493 / 10 521 ms          red twice of two
+ *
+ * The 6-worker row is the one worth keeping: 94% of a budget is not a margin, it is a
+ * coin flip, and the row below it is what the coin came up -- twice. The budget below is
+ * the estate's tightest declaration (30 000 ms in nine other files).
+ *
+ * ## Why the suite and not the two tests
+ *
+ * Both slow tests walk the same tree, and so will the third one somebody adds. A budget
+ * on each test protects the two that are known and leaves the next on the default --
+ * which is the shape `timeout-budget.test.ts` records for `gate-sites-are-proven`.
+ */
+const SUITE_BUDGET_MS = 30_000;
+
+/**
  * The reading under test, loaded through its path rather than by a static import.
  *
  * `scripts-are-classified.test.ts` forbids a static import of a gate, and the reason
@@ -188,7 +215,7 @@ describe('a throw is classified by what it ends, not by where it sits', () => {
   });
 });
 
-describe('the four baskets are a partition of the throws, not a remainder', () => {
+describe('the four baskets are a partition of the throws, not a remainder', { timeout: SUITE_BUDGET_MS }, () => {
   it('adds up on a fixture that exercises all four', () => {
     const source = [
       "try { throw new Error('guarded'); } catch { /* handled */ }",
