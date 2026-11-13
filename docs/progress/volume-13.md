@@ -2201,9 +2201,9 @@ all four columns; nothing in the estate changes, and a future exporter cannot pa
 
 | item | value |
 | --- | --- |
-| `core` test suite | **248 files, 6307 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **252 files, 6494 tests passed** (as of this commit) |
+| `core` test suite | **248 files, 6307 tests passed** (at v3.85) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.85) |
+| repo test suite | **252 files, 6494 tests passed** (at v3.85) |
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** (per-file thresholds, no exemption); unchanged, and both changed modules measure 100 of 100 |
 | new tests | **6300 -> 6307, net +7**: four for the absent column (corpus, both, export, read-from column), two for the body (an empty cell is a line, a null one is not), one for a dateless row |
 | the corpus's log schemas | **24 nine-column, 244 seven-column** of the 268 the comparison reached; the two that failed before it are seven-column when read from the archive |
@@ -2238,3 +2238,114 @@ census -- a count.
 
 
 
+
+## v3.86 · the battery published one budget for 61 claimants, and nine of them are held to another
+
+The line the round started from is the one this battery prints when everything is green:
+
+> `verify-sites-are-sensitive: PASSED (135 claim(s) across 61 file(s) …)`
+> `slowest claimant … 23 000 ms (budget 120000 ms per test)`
+
+`--testTimeout=120000` is what the gate passes, and it sets the **inherited** default. A file that
+writes `describe(…, { timeout: 30_000 }, …)` keeps 30 000, because replacing a default is what a
+declaration is for. Finding 519 met this one file deep -- a claimant kept its own 30 000 for a whole
+round while the flag had been raised -- and the repair raised both numbers, the file's constant and the
+flag, because two numbers that should be one should be one. Nobody asked how many other files state a
+number.
+
+### One · ten claimants declare a budget, and nine of them are below the battery's
+
+Read over the 61 files `golden-master/gate-sites.json` calls claimants (finding 525):
+
+| claimant | its own declaration |
+| --- | --- |
+| `check-cli-reference.test.ts:153` | 30 000 |
+| `check-fault-cases.test.ts:384` | 30 000 |
+| `check-no-unsafe-shell.test.ts:465` | 30 000 |
+| `check-official-roundtrip.test.ts:330` | 30 000 |
+| `check-user-guide.test.ts:278` | 30 000 |
+| `fetch-official.test.ts:613` | 30 000 |
+| `probe-built-module-guards.test.ts:367` | 30 000 |
+| `publish.test.ts:221` | 30 000 |
+| `reader-against-backend.test.ts:199` | 30 000 |
+| `gate-sites-are-proven.test.ts:1115` | 120 000 |
+
+Nine of the ten are below the battery's number, the tightest by a factor of four. The direction is
+what makes it a defect: a claimant that runs out of *its own* budget is reported as **unmeasured**, so
+the claims that file proves stop being proved -- and the reason is a number nothing compared with the
+one that furnished it.
+
+The reader is `testBudgetDeclarations`, in `site-proofs.mjs`: the options object, the positional third
+argument, and `vi.setConfig({ testTimeout })`, each resolved against a `const NAME = N;` in the same
+file. The number a claimant will be held to is `governingTestBudget`'s answer, and the battery now
+prints both:
+
+> `verify-sites-are-sensitive: 10 of 61 claimant(s) declare a test budget of their own against the
+> battery's 120000 ms, and 9 of those are below it: …`
+
+### Two · the sentence could not say whose number it was quoting
+
+A timed-out claimant printed `Test timed out in 30000ms` and the gate said *"its own 30000 ms of test
+budget"* -- which is a number from the output and a claim about its provenance that had never been
+checked. Three provenances now, and the third one is reachable:
+
+| what the number is | what the sentence says |
+| --- | --- |
+| the file's declaration | `its own declaration furnishes (line 153; the battery furnishes 120000 ms)` |
+| the battery's flag | `the battery furnishes, and this file declares none of its own` |
+| neither | `neither the battery nor any declaration in this file furnishes` |
+
+The third is what this battery's own fixture printed before it was a state the gate could name: 30 000
+in the output, 120 000 on the flag, no declaration in the file. Something the gate cannot see gave that
+run its ceiling -- an environment variable, or a `vi.setConfig` executed at runtime.
+
+### Three · the reader's first reading was its own fixture (finding 526)
+
+The first run over the claimant set reported **eleven** files and a tightest of **15 000 ms**, in
+`site-proofs.test.ts` -- the file whose tests are about this reader. It carries a dozen fixture sources
+as string literals, one of which is `vi.setConfig({ testTimeout: 15_000 })`. The scan now runs over a
+copy with comments and string bodies blanked to spaces, offsets preserved so every printed line number
+still opens the file. Re-measured: ten files, tightest 30 000, phantom gone -- and the *declined* count
+becomes a number with meaning, 8 `timeout:` keys that belong to `spawnSync` and to a top-level object.
+
+### Four · what the gate refuses, and what it only says
+
+The nine are reported and not refused. A claimant's declaration is that file's statement about its own
+work: `fetch-official.test.ts` gives one test 60 s and another 30 s because it knows which of them
+waits on a socket, and there is no measurement here saying 30 s is wrong for those tests. What the gate
+*does* refuse is a budget it cannot price -- a name with no `const` -- because the census would then be
+a guess published as the battery's number.
+
+### Readings
+
+> Ledger for `v3.86`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **248 files, 6316 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **252 files, 6503 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100**; per-file thresholds, no exemption, unchanged -- this round changed no file under `src/` |
+| new tests | **6307 -> 6316, net +9**: six for the reader (literal and named, a child's budget declined, an unresolvable name, the positional form, the `vi.setConfig` form, which side governs), three for the battery (a claimant below the battery, a census with no declaration, a budget that cannot be priced) |
+| claimants read | **61**: 10 declare a budget of their own, **9 below** the battery's 120 000, **0** unpriceable, **8** `timeout:` keys declined as a child's |
+| the tightest declaration | **30 000 ms** at `check-cli-reference.test.ts:153`, against 120 000 furnished |
+| gate sites | **135 across 62 of 88 scripts**; the round's own edits moved **5** sites in `verify-sites-are-sensitive.mjs`, and all five annotations were re-attached by their content rather than their line |
+| the 270-case dispatch | **triggered, not read** -- `official-data.yml` run `43406267321` on `rcaeval-re2` was opened at the start of the round and was still running when this was written |
+| list | **25 -> 26**: the ordering of the two budgets is reported and not required, which is a residual rather than a repair |
+
+### Leftovers, in the order that reaches the goal
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| P0 | Anchor 4 is closed for the three RCAEval anchors only | run `43406267321` dispatched this round against `rcaeval-re2` | read its `ROUNDTRIP` line, and the `cost` line beside it |
+| P1 | The worker count decides the stall verdict | open since v3.80; the cap still follows the CPU quota and the memory measurement, not a stall reading | choose the cap from the stall measurement |
+| P2 | A claimant's budget is compared and the comparison refuses nothing | new at v3.86: nine claimants are named below the battery and the run is green | decide a ceiling for the direction that costs a claim |
+| P2 | A record's terms are a map of strings to numbers | open since v3.83 | nine shapes instead of one, decided as a record change |
+| P2 | The live list grows whatever the bound is | unchanged | measure the distance to the ceiling first |
+| P3 | The coverage figure has no reader that computes it | unchanged | teach `docs:check` to read a report |
+
+**The lesson.** The battery had a number for the machine and a number for the file, and it published
+the first as if it were the second. The repair is not a stricter rule -- nine files at 30 000 are making
+a considered statement about their own work -- it is that a number a gate prints has to name the
+population it was taken over, and a number read out of a claimant's own output has to say *whose* it is.
+Both repairs are one sentence longer, and both make a sentence that was already true narrower.

@@ -1257,3 +1257,106 @@ The repair is the sentence the failure list needed anyway: a value in a declared
 is now a `problem`, so the case fails and the reason names the column, the count, and the statement
 it contradicts. Two hundred and seventy real cases write 0 values in all four columns, so nothing
 in the estate changes; what changes is that a future exporter cannot pass by writing one.
+
+## Finding 525 — the battery published one budget for 61 claimants, and nine of them are held to another
+
+`verify-sites-are-sensitive.mjs` starts each claimant with `--testTimeout=120000` and closes its run
+with a sentence about that number:
+
+> `verify-sites-are-sensitive: slowest claimant … (budget 120000 ms per test)`
+
+`--testTimeout` sets the **inherited** default. A file that writes `describe(…, { timeout: 30_000 }, …)`
+keeps 30 000, because replacing a default is what a declaration is for. Finding 519 met this one file
+deep: a claimant kept its own 30 000 for a whole round while the flag had been raised to 120 000, and
+the repair raised both numbers -- that file's constant and the flag -- on the principle that two
+numbers which should be one should be one. What the repair did not do was ask how many *other* files
+state a number.
+
+Measured over the 61 files `golden-master/gate-sites.json` names as claimants:
+
+| claimant | its own declaration | line |
+| --- | --- | --- |
+| `check-cli-reference.test.ts` | **30 000** | 153 |
+| `check-fault-cases.test.ts` | **30 000** | 384 |
+| `check-no-unsafe-shell.test.ts` | **30 000** | 465 |
+| `check-official-roundtrip.test.ts` | **30 000** | 330 |
+| `check-user-guide.test.ts` | **30 000** | 278 |
+| `fetch-official.test.ts` | **30 000** | 613 |
+| `probe-built-module-guards.test.ts` | **30 000** | 367 |
+| `publish.test.ts` | **30 000** | 221 |
+| `reader-against-backend.test.ts` | **30 000** | 199 |
+| `gate-sites-are-proven.test.ts` | 120 000 | 1115 |
+
+**Ten declare a budget of their own, and nine of them are below the battery's** -- the tightest by a
+factor of four. So the number in the log was a statement about the flag, read as a statement about
+every claimant.
+
+The direction is what makes it a defect rather than a curiosity. A claimant that runs out of *its own*
+budget is reported as **unmeasured**:
+
+> `… did not finish inside its own 30000 ms of test budget (exit 1), so its claims are unmeasured rather
+> than unproven`
+
+Unmeasured is the expensive verdict: the claims that file proves stop being proved, the battery goes
+red, and the round that meets it starts from a sentence about the machine. A budget that is merely
+tighter than the flag has to be discovered by a timeout, and until this round no instrument in the tree
+had read one.
+
+**The repair reads every claimant and prints what it found.** `testBudgetDeclarations` (in
+`site-proofs.mjs`) resolves the three spellings vitest accepts -- the options object, the positional
+third argument, and `vi.setConfig({ testTimeout })` -- against a `const NAME = N;` in the same file,
+and `governingTestBudget` answers which of the two numbers a claimant will be held to. The battery now
+prints, on every run:
+
+> `verify-sites-are-sensitive: 10 of 61 claimant(s) declare a test budget of their own against the
+> battery's 120000 ms, and 9 of those are below it: …:153=30000, …:384=30000, …`
+
+and reports the slowest claimant against the budget it is actually held to, as a share of it
+(`slowest claimant … 8 000 ms of the 120000 ms it is given (7%)`), where it used to print the flag.
+
+**And a timed-out claimant's sentence now says whose number it was given.** The run already read the
+number out of the output; it could not say where that number came from, and the two repairs -- raise a
+declaration, raise the flag -- are different files. Three provenances, each said:
+
+| what the number is | what the sentence says |
+| --- | --- |
+| the file's own declaration | `its own declaration furnishes (line 153; the battery furnishes 120000 ms)` |
+| the battery's flag | `the battery furnishes, and this file declares none of its own` |
+| neither | `neither the battery nor any declaration in this file furnishes` |
+
+The third row is reachable and was reached by this battery's own fixtures before it was a state the
+gate could name: a run that prints `Test timed out in 30000ms` while the flag furnishes 120 000 and the
+file declares nothing was given its ceiling by something the gate cannot see -- an environment variable,
+or a `vi.setConfig` executed at runtime.
+
+**What the repair declines, and why.** The nine are reported, not refused. A claimant's declaration is
+that file's statement about its own work -- `fetch-official.test.ts` gives one test 60 s and another
+30 s because it knows which of them waits on a socket -- and there is no measurement in this tree
+saying 30 s is wrong for those tests. The one state the gate *does* refuse is the one where the census
+itself would be a guess: a budget written as a name with no `const` in the file, which would otherwise
+be read as "no declaration" and published as the battery's number. Measured: 0 of 61 today, which is
+why the refusal had to be built as a fixture rather than found in the estate.
+
+## Finding 526 — the reader's first reading was its own fixture
+
+The first run of `testBudgetDeclarations` over the claimant set reported **eleven** files, the tightest
+at **15 000 ms**, and the tightest was `site-proofs.test.ts` -- the file whose tests are *about* this
+reader. It holds a dozen fixture sources as string literals, and one of them is
+
+```ts
+"vi.setConfig({ testTimeout: 15_000 });"
+```
+
+a sentence about a budget that the reader read as a budget. Its own 120 000 ms declaration, three
+hundred lines away, was the number it should have reported.
+
+A text reader has to say what text is not code before it counts anything, so the scan now runs over a
+copy in which comments and string bodies are replaced by spaces -- offsets preserved, so every line
+number it prints still points at the character a reader will find. Template literals are blanked whole,
+interpolations included: a budget inside `${…}` is an expression's value, not a declaration's.
+
+Re-measured on the same tree: **ten** files, the tightest 30 000 in `check-cli-reference.test.ts:153`,
+and the phantom gone. The blanking also makes the *declined* count mean something: 8 `timeout:` keys in
+the claimant set belong to `spawnSync` and to a top-level object, and they are counted rather than
+silently skipped, because "no budget declared" and "a budget declared somewhere this reader does not
+look" are two different sentences and only one of them is true.

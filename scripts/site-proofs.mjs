@@ -671,6 +671,306 @@ export function checkShardPlan(byFile, specs) {
   return errors;
 }
 
+/* ------------------------------------------------------- the budget a file states */
+
+/**
+ * The calls whose options object states a **test** budget, and nothing else does.
+ *
+ * The distinction is not cosmetic: this tree passes `{ timeout: 30_000 }` to
+ * `spawnSync` in the same files where it passes `{ timeout: 30_000 }` to `describe`,
+ * so a reader that matched the key alone would report a file as giving its tests a
+ * budget it never gave them. The key is the same, the subject is not.
+ */
+const BUDGET_CALLEES = new Set([
+  'it',
+  'test',
+  'describe',
+  'beforeAll',
+  'beforeEach',
+  'afterAll',
+  'afterEach',
+  'vi.setConfig',
+]);
+
+/** The modifiers vitest allows between the callee and its argument list. */
+const BUDGET_MODIFIERS = new Set([
+  'each',
+  'only',
+  'skip',
+  'skipIf',
+  'runIf',
+  'concurrent',
+  'sequential',
+  'todo',
+  'fails',
+  'shuffle',
+  'for',
+]);
+
+/** A numeric literal vitest accepts as a budget, underscores and all. */
+const BUDGET_NUMBER = /^\d[\d_]*$/;
+
+const lineAt = (source, index) => source.slice(0, index).split('\n').length;
+
+/**
+ * The source with comments and string bodies replaced by spaces, offsets unchanged.
+ *
+ * Two reasons, and the second is the one a measurement produced. A reader that parses
+ * text instead of a syntax tree cannot tell a budget from a sentence about one, and this
+ * repository's test files carry **both**: `site-proofs.test.ts` holds a dozen fixture
+ * sources as string literals, and every claimant's header explains its budget in prose.
+ * Measured on the tree this reader was written for, the unblanked scan reported that
+ * file as declaring a **15 000 ms** budget -- it was reading its own fixture.
+ *
+ * Spaces rather than deletion so that every index a caller reports still points at the
+ * character a reader would find in the file: the line numbers this module prints are
+ * meant to be opened.
+ *
+ * A template literal is blanked whole, interpolations included: a budget inside `${…}`
+ * is an expression's value, not a declaration's.
+ */
+function blankLiterals(source) {
+  const out = [...source];
+  const blank = (from, to) => {
+    for (let at = from; at < to; at += 1) if (out[at] !== '\n') out[at] = ' ';
+  };
+  let at = 0;
+  while (at < source.length) {
+    const ch = source[at];
+    const next = source[at + 1];
+    if (ch === '/' && next === '/') {
+      const end = source.indexOf('\n', at);
+      const stop = end === -1 ? source.length : end;
+      blank(at, stop);
+      at = stop;
+    } else if (ch === '/' && next === '*') {
+      const end = source.indexOf('*/', at + 2);
+      const stop = end === -1 ? source.length : end + 2;
+      blank(at, stop);
+      at = stop;
+    } else if (ch === "'" || ch === '"' || ch === '`') {
+      let cursor = at + 1;
+      while (cursor < source.length) {
+        if (source[cursor] === '\\') {
+          cursor += 2;
+          continue;
+        }
+        if (source[cursor] === ch) break;
+        // A single- or double-quoted string does not span a line; an unterminated one is
+        // a file this reader should stop pretending to read rather than swallow.
+        if (ch !== '`' && source[cursor] === '\n') break;
+        cursor += 1;
+      }
+      blank(at + 1, Math.min(cursor, source.length));
+      at = Math.min(cursor + 1, source.length);
+    } else {
+      at += 1;
+    }
+  }
+  return out.join('');
+}
+
+/** The index of the last non-space character before `index`, or -1. */
+function beforeSpace(source, index) {
+  let at = index;
+  while (at >= 0 && /\s/.test(source[at])) at -= 1;
+  return at;
+}
+
+/**
+ * The index of the `(` that closes the bracket walked back from `from`, or -1.
+ *
+ * Three characters end the walk without an answer, and the reason each one ends it is
+ * that it marks a boundary the call cannot be on the other side of: `;` ends a
+ * statement, `}` ends a block, and a `{` that is not the literal's own would mean the
+ * key belongs to an object the call never saw. Reading past any of them is how a
+ * `timeout:` in one statement comes to be attributed to a call in the previous one.
+ */
+function enclosingCallOpen(source, from) {
+  let depth = 0;
+  for (let at = from; at >= 0; at -= 1) {
+    const ch = source[at];
+    if (ch === ')') depth += 1;
+    else if (ch === '(') {
+      if (depth === 0) return at;
+      depth -= 1;
+    } else if (ch === ';' || ch === '}' || ch === '{') return -1;
+  }
+  return -1;
+}
+
+/** The identifier chain that ends at `end`, so `describe.each` reads as one callee. */
+function calleeEndingAt(source, end) {
+  let at = end;
+  while (at >= 0 && /[\w$.]/.test(source[at])) at -= 1;
+  return source.slice(at + 1, end + 1);
+}
+
+/** Whether a callee names a vitest declaration rather than some other function. */
+function isDeclarationCallee(callee) {
+  if (callee === 'vi.setConfig') return true;
+  const [base, ...modifiers] = callee.split('.');
+  if (!BUDGET_CALLEES.has(base)) return false;
+  return modifiers.every((modifier) => BUDGET_MODIFIERS.has(modifier));
+}
+
+/**
+ * A budget the file states for its own tests, and what it costs a reader to trust it.
+ *
+ * ## The measurement this exists for
+ *
+ * `verify-sites-are-sensitive.mjs` runs each claimant with `--testTimeout=120000` and
+ * prints, at the end, `budget 120000 ms per test`. That flag sets the **inherited**
+ * default, and an inherited default loses to a declaration -- which is what finding 519
+ * found one file later: a claimant that writes `describe(…, { timeout: RULE_TIMEOUT_MS })`
+ * kept its own 30 000 for a whole round while the battery's sentence said 120 000.
+ * Aligning that file fixed the file and left the class: **seven claimants in this tree
+ * declare a budget of their own, and nothing had ever read them.**
+ *
+ * ## What the reader can see, and what it cannot
+ *
+ * It sees three spellings — the options object (`{ timeout: N }`), the positional third
+ * argument (`it('…', fn, N)`), and the suite-wide default (`vi.setConfig({ testTimeout: N })`)
+ * — and it resolves a value written as a name against a `const NAME = N;` in the same
+ * file, because that is how every claimant here writes it. A name with no such
+ * declaration is reported as `unresolved` rather than skipped: a budget the reader knows
+ * exists and cannot price is the one state where saying nothing would publish the
+ * battery's number as the file's.
+ *
+ * It does not parse JavaScript. A `timeout:` inside a callback body that a declaration
+ * call encloses is attributed to that call, which is wrong in the direction of reporting
+ * a tighter budget than the file has; and a budget built by an expression
+ * (`{ timeout: BASE * 2 }`) is `unresolved` for the same reason. Both are stated here
+ * rather than left for the first reader who disagrees with a number to discover.
+ */
+export function testBudgetDeclarations(source) {
+  const text = blankLiterals(String(source));
+  const constants = {};
+  for (const match of text.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(\d[\d_]*)\s*;/g)) {
+    constants[match[1]] = Number(match[2].replaceAll('_', ''));
+  }
+
+  const declarations = [];
+  const unresolved = [];
+  let attributedKeys = 0;
+
+  // Every declaration call, found by its callee rather than by its `timeout:`. The
+  // second search is the one that would miss `describe(…, { timeout })` inside a
+  // callback, and it would also miss a file whose budget is the positional argument.
+  const calleePattern = /(^|[^\w$.])(it|test|describe|beforeAll|beforeEach|afterAll|afterEach|vi\.setConfig)\b/g;
+  for (const found of text.matchAll(calleePattern)) {
+    const start = found.index + found[1].length;
+    // Walk over `.each`, and over a `.each([...])` group, to the argument list.
+    let at = start + found[2].length;
+    for (;;) {
+      const probe = /^(\.[A-Za-z_$][\w$]*)/.exec(text.slice(at));
+      if (probe === null) break;
+      const modifier = probe[1].slice(1);
+      if (!BUDGET_MODIFIERS.has(modifier)) break;
+      at += probe[1].length;
+      const after = beforeSpace(text, at);
+      if (text[after] !== '(') continue;
+      // A `.each([...])` group: skip it, the argument list comes after.
+      let depth = 0;
+      let cursor = after;
+      for (; cursor < text.length; cursor += 1) {
+        if (text[cursor] === '(') depth += 1;
+        else if (text[cursor] === ')') {
+          depth -= 1;
+          if (depth === 0) break;
+        }
+      }
+      at = cursor + 1;
+    }
+    const open = beforeSpace(text, at);
+    if (text[open] !== '(') continue;
+    const callee = calleeEndingAt(text, open - 1).replace(/^.*[^\w$.]/, '');
+    if (!isDeclarationCallee(callee)) continue;
+
+    // The argument list, split at its own top-level commas. Only the depth-0 text
+    // between them can be an options object; a `timeout:` deeper than that belongs to
+    // something the argument evaluates.
+    let depth = 0;
+    let from = open + 1;
+    const args = [];
+    let close = text.length;
+    for (let cursor = open + 1; cursor < text.length; cursor += 1) {
+      const ch = text[cursor];
+      if (ch === '(' || ch === '[' || ch === '{') depth += 1;
+      else if (ch === ')' && depth === 0) {
+        close = cursor;
+        break;
+      } else if (ch === ']' || ch === '}' || ch === ')') depth -= 1;
+      else if (ch === ',' && depth === 0) {
+        args.push({ from, to: cursor });
+        from = cursor + 1;
+      }
+    }
+    args.push({ from, to: close });
+
+    for (const [position, arg] of args.entries()) {
+      const body = text.slice(arg.from, arg.to);
+      const leading = arg.from + (body.length - body.trimStart().length);
+      const trimmed = body.trim();
+      if (trimmed.startsWith('{')) {
+        for (const key of trimmed.matchAll(/\b(timeout|testTimeout)\s*:\s*([A-Za-z_$][\w$]*|\d[\d_]*)/g)) {
+          attributedKeys += 1;
+          const value = key[2];
+          const where = leading + key.index;
+          if (/^\d/.test(value)) {
+            declarations.push({ ms: Number(value.replaceAll('_', '')), line: lineAt(text, where), callee });
+          } else if (Object.hasOwn(constants, value)) {
+            declarations.push({ ms: constants[value], line: lineAt(text, where), callee });
+          } else {
+            unresolved.push({ name: value, line: lineAt(text, where) });
+          }
+        }
+      } else if (BUDGET_NUMBER.test(trimmed) && position === args.length - 1) {
+        // The positional third argument, which only a test carries: `describe` has no
+        // such parameter and a number there would be an argument the call ignores.
+        if (!/^(it|test)\b/.test(callee)) continue;
+        declarations.push({ ms: Number(trimmed.replaceAll('_', '')), line: lineAt(text, leading), callee });
+      }
+    }
+  }
+
+  const keys = [...text.matchAll(/\b(timeout|testTimeout)\s*:/g)].length;
+  const tightest =
+    declarations.length === 0
+      ? null
+      : declarations.reduce((worst, one) => (one.ms < worst.ms ? one : worst), declarations[0]);
+
+  return {
+    declarations,
+    constants,
+    unresolved,
+    // The keys this reader declined: a child process's budget, a top-level object, a
+    // property whose value it could not name. Counted so that "no budget declared" and
+    // "budget declared somewhere it does not read" are different sentences.
+    otherTimeouts: keys - attributedKeys,
+    tightest: tightest === null ? null : { ms: tightest.ms, line: tightest.line },
+  };
+}
+
+/**
+ * Which of the two budgets a claimant will actually be held to.
+ *
+ * The file's declaration wins over the flag — that is a fact about vitest, not a policy
+ * here — so the number to report is the file's when there is one. `below` is the half a
+ * reader needs: it is true exactly when the file has cut the headroom the battery
+ * measured, and that is the direction in which a claim goes **unmeasured** rather than
+ * failing, which is the expensive way to learn it.
+ */
+export function governingTestBudget(batteryMs, declared) {
+  if (declared.tightest === null) return { ms: batteryMs, from: 'battery', line: null, below: false };
+  return {
+    ms: declared.tightest.ms,
+    from: 'file',
+    line: declared.tightest.line,
+    below: declared.tightest.ms < batteryMs,
+  };
+}
+
 /**
  * The claims a run did not honour, as sentences.
  *

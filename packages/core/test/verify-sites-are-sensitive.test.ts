@@ -54,6 +54,8 @@ interface FixtureOptions {
   timedOut?: boolean;
   /** Writes the arguments it was given, so a case can read what the gate asked for. */
   argv?: boolean;
+  /** A budget the claimant states for its own tests, written the way vitest accepts it. */
+  budget?: string;
 }
 
 /** A repository the gate can be pointed at: an inventory, a gate, and a runner. */
@@ -107,11 +109,18 @@ function fixture(claims: { line: 1 | 2; file: string }[], options: FixtureOption
   ]
     .filter((one) => one !== '')
     .join(' ');
+  // The declaration a claimant states for itself, if the case is about one. It is
+  // appended rather than modelled: the runner reads the file as text, and what the gate
+  // reads is the same text.
+  const declared =
+    options.budget === undefined
+      ? ''
+      : `\ndescribe('a fixture', { timeout: ${options.budget} }, () => {});\n`;
   const written = new Set<string>();
   for (const claim of claims) {
     if (written.has(claim.file)) continue;
     written.add(claim.file);
-    writeFileSync(join(tree, claim.file), `${directive}\n`);
+    writeFileSync(join(tree, claim.file), `${directive}\n${declared}`);
   }
 
   // The stand-in for vitest. It reads the directive, starts the gate the way every
@@ -370,7 +379,13 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
     try {
       const result = runGate(tree);
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain('did not finish inside its own 30000 ms of test budget');
+      // The number is the one the run printed, and the sentence now also says **whose**
+      // number it is. This fixture's claimant declares no budget while the battery
+      // furnishes 120 000, so a run that reports 30 000 was given its ceiling by
+      // something neither of them states -- which is the third provenance, and the one
+      // that used to be indistinguishable from the other two.
+      expect(result.stderr).toContain('did not finish inside the 30000 ms of test budget');
+      expect(result.stderr).toContain('neither the battery nor any declaration in this file furnishes');
       expect(result.stderr).toContain('unmeasured rather than unproven');
       expect(result.stderr).not.toContain('does not pass on its own');
     } finally {
@@ -386,7 +401,10 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
       const result = runGate(tree);
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('slowest claimant packages/core/test/one.test.ts');
-      expect(result.stdout).toContain('budget 120000 ms per test');
+      // Against the budget the file is actually held to, and as a share of it: "of
+      // 120000 ms per test" was a sentence about the flag, and the flag is not what a
+      // claimant that declares its own budget is measured against.
+      expect(result.stdout).toContain('of the 120000 ms it is given');
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }
@@ -550,6 +568,70 @@ describe('scripts/verify-sites-are-sensitive.mjs · the reading it publishes', (
       expect(result.status).toBe(1);
       const runs = readFileSync(join(tree, 'runs.log'), 'utf8').trim().split('\n');
       expect(runs).toHaveLength(3);
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * The budget the battery prints, and the budget the claimant actually gets.
+ *
+ * `--testTimeout=120000` is the flag the gate passes, and it sets the **inherited**
+ * default: a file that declares `{ timeout: 30_000 }` keeps 30 000, because a default is
+ * what a declaration replaces. Measured on the tree this case was written for, **9 of 61
+ * claimants declare a budget below the battery's**, and the run's closing sentence named
+ * the flag for all 61 -- so the one number a reader could see was not the one nine of
+ * them were held to.
+ *
+ * The verdict is not to refuse them. A claimant's declaration is a statement about that
+ * file's own work, and this gate has no measurement that says those numbers are wrong.
+ * What it can do is say the two differ, and say whose number a timed-out claimant was
+ * given -- which is what these three cases hold in place. The one state it refuses is a
+ * budget it cannot price, because there the census itself would be a guess.
+ */
+describe('sensitivity battery · the two budgets', () => {
+  it('names a claimant that furnishes less than the battery, and does not refuse it', () => {
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      pick: 'one',
+      assert: true,
+      budget: '30_000',
+    });
+    try {
+      const result = runGate(tree, []);
+      // The claim still holds: this case is about the sentence, not about the proof.
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('1 of 1 claimant(s) declare a test budget of their own');
+      expect(result.stdout).toContain('packages/core/test/one.test.ts:3=30000');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('says every claimant got the battery number when none of them declares one', () => {
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], { pick: 'one', assert: true });
+    try {
+      const result = runGate(tree, []);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('none of the 1 claimant(s) declares a test budget of its own');
+      expect(result.stdout).toContain('120000 ms is the one every one of them gets');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a budget it cannot price, because the census would be a guess', () => {
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      pick: 'one',
+      assert: true,
+      budget: 'FROM_THE_ENVIRONMENT',
+    });
+    try {
+      const result = runGate(tree, []);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("states a test budget named 'FROM_THE_ENVIRONMENT'");
+      expect(result.stderr).toContain('what the claimant furnishes is unknown');
+      expect(result.stderr).toContain('FAILED');
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }

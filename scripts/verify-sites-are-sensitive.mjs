@@ -96,12 +96,14 @@ import {
   claimsByFile,
   exhaustedTestBudget,
   failureSummary,
+  governingTestBudget,
   outputTail,
   hookFile,
   parseHollows,
   parseShard,
   parseTrace,
   shardClaims,
+  testBudgetDeclarations,
 } from './site-proofs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -225,6 +227,38 @@ if (everything.length === 0 || byFile.length === 0) {
 const claimed = byFile.flatMap(([, claims]) => claims);
 /** The same entries, by file, for the run phase. */
 const claimsOf = new Map(byFile);
+
+/**
+ * The budget each claimant will actually be held to, read from its own source.
+ *
+ * `--testTimeout` is passed on the command line below and it sets the **inherited**
+ * default; a file that writes `describe(…, { timeout: N })` keeps its own N, and an
+ * inherited default loses to a declaration. So the sentence this battery published --
+ * `budget 120000 ms per test` -- was a statement about the flag, and this tree has
+ * **nine claimants that declare less than that**, one of them by a factor of four.
+ *
+ * That is finding 519's shape one layer out. There, one file kept 30 000 while the flag
+ * said 120 000 and the alignment was applied to the flag and to that file, and every
+ * other claimant's declaration went on being unread. The consequence is not symmetric:
+ * a file that furnishes *more* than the battery's number only costs wall clock on a
+ * hang, while a file that furnishes *less* re-introduces the failure the flag was raised
+ * for -- a claimant that runs out of its own budget is reported as **unmeasured**, so
+ * its claims stop being proved, and the reason is a number nobody was comparing.
+ */
+const budgets = new Map();
+function budgetOf(file) {
+  if (budgets.has(file)) return budgets.get(file);
+  const absolute = resolve(ROOT, file);
+  let value = null;
+  try {
+    const declared = testBudgetDeclarations(readFileSync(absolute, 'utf8'));
+    value = { declared, governing: governingTestBudget(CLAIMANT_TIMEOUT_MS, declared) };
+  } catch {
+    value = null;
+  }
+  budgets.set(file, value);
+  return value;
+}
 
 if (listOnly) {
   // Written once, synchronously, and only then exited (finding 432).
@@ -375,6 +409,25 @@ function pool(items, limit, job) {
   return Promise.all(workers).then(() => results);
 }
 
+/**
+ * Which of the two numbers a timed-out claimant's sentence came from.
+ *
+ * The sentence already named the number it read out of the output; what it could not say
+ * was whose number that is. The two repairs are different -- raise a declaration, or raise
+ * the flag -- so a reader who cannot tell them apart has to open the file to find out.
+ */
+function budgetProvenance(file, budget) {
+  const known = budgetOf(file);
+  if (known !== null && known.declared.tightest !== null && known.declared.tightest.ms === budget) {
+    return (
+      `its own declaration furnishes (line ${String(known.declared.tightest.line)}; ` +
+      `the battery furnishes ${String(CLAIMANT_TIMEOUT_MS)} ms)`
+    );
+  }
+  if (budget === CLAIMANT_TIMEOUT_MS) return 'the battery furnishes, and this file declares none of its own';
+  return 'neither the battery nor any declaration in this file furnishes';
+}
+
 const startedAt = Date.now();
 
 const baselines = await pool(
@@ -402,7 +455,8 @@ for (const outcome of baselines) {
         budget === null
           ? `${outcome.file} does not pass on its own (exit ${String(outcome.status)}), so its claims are ` +
             'unmeasured'
-          : `${outcome.file} did not finish inside its own ${String(budget)} ms of test budget ` +
+          : `${outcome.file} did not finish inside the ${String(budget)} ms of test budget ` +
+            `${budgetProvenance(outcome.file, budget)} ` +
             `(exit ${String(outcome.status)}), so its claims are unmeasured rather than unproven`,
       // A run whose output carries no report at all -- the shape vitest takes when its
       // worker's RPC deadline expires, with every test passing -- leaves the summary
@@ -417,6 +471,38 @@ for (const outcome of baselines) {
     runnable.push(outcome.file);
   }
 }
+
+/**
+ * The claimants that furnish their tests less than the battery does.
+ *
+ * Reported rather than repaired here: the file's number is the one vitest enforces, and
+ * this gate's business is to say that the two disagree before a claim goes unmeasured
+ * rather than after. The order is by budget and then by name so that the list a round
+ * reads is the list the next round reads.
+ */
+const undercuts = [];
+const unpriced = [];
+for (const [file] of byFile) {
+  const known = budgetOf(file);
+  if (known === null) continue;
+  for (const one of known.declared.unresolved) {
+    unpriced.push({
+      head:
+        `${file}:${String(one.line)} states a test budget named '${one.name}', which is not a \`const\` ` +
+        'in that file, so what the claimant furnishes is unknown',
+      detail: [`read it here: ${file}:${String(one.line)}`],
+    });
+  }
+  if (known.governing.below) {
+    undercuts.push({
+      file,
+      ms: known.governing.ms,
+      line: known.governing.line,
+      declared: known.declared.declarations.length,
+    });
+  }
+}
+undercuts.sort((left, right) => left.ms - right.ms || left.file.localeCompare(right.file));
 
 const claims = runnable.flatMap((file) => (claimsOf.get(file) ?? []).map((claim) => ({ file, claim })));
 const mutants = await pool(claims, CONCURRENCY, ({ file, claim }) => runOnce(file, claim));
@@ -449,7 +535,7 @@ rmSync(scratch, { recursive: true, force: true });
 
 const runs = baselines.length + mutants.length;
 const minutes = ((Date.now() - startedAt) / 60000).toFixed(1);
-const failures = survivors.length + problems.length + unmeasured.length;
+const failures = survivors.length + problems.length + unmeasured.length + unpriced.length;
 
 // The margin, printed rather than implied. Each claimant is one file run alone, and the
 // ceiling it is given is 120,000 ms per test; a file that needs a large share of it is a
@@ -460,12 +546,44 @@ const slowest = baselines.reduce(
   baselines[0],
 );
 if (slowest !== undefined) {
+  const other = slowest.problem === undefined ? budgetOf(slowest.file) : null;
+  const budget = other === null ? CLAIMANT_TIMEOUT_MS : other.governing.ms;
+  const share = Math.round((slowest.elapsedMs / budget) * 100);
   process.stdout.write(
-    `verify-sites-are-sensitive: slowest claimant ${slowest.file} ${String(slowest.elapsedMs)} ms, ` +
-      `of ${String(baselines.length)} run ${String(CONCURRENCY)} at a time ` +
-      `(budget ${String(CLAIMANT_TIMEOUT_MS)} ms per test)\n`,
+    `verify-sites-are-sensitive: slowest claimant ${slowest.file} ${String(slowest.elapsedMs)} ms of the ` +
+      `${String(budget)} ms it is given (${String(share)}%), of ${String(baselines.length)} run ` +
+      `${String(CONCURRENCY)} at a time\n`,
   );
 }
+
+// The census, always: how many claimants state a budget of their own, and which one is
+// the tightest. A run that prints nothing about this leaves the reader to assume the
+// battery's number is the one every claimant got, which is the assumption this reader
+// was added to replace with a count.
+const declaring = [...byFile].filter(([file]) => {
+  const known = budgetOf(file);
+  return known !== null && known.declared.tightest !== null;
+});
+const tightest = undercuts[0] ?? null;
+process.stdout.write(
+  declaring.length === 0
+    ? `verify-sites-are-sensitive: none of the ${String(byFile.length)} claimant(s) declares a test budget ` +
+        `of its own, so the battery's ${String(CLAIMANT_TIMEOUT_MS)} ms is the one every one of them gets\n`
+    : `verify-sites-are-sensitive: ${String(declaring.length)} of ${String(byFile.length)} claimant(s) declare a ` +
+        `test budget of their own against the battery's ${String(CLAIMANT_TIMEOUT_MS)} ms` +
+        (tightest === null
+          ? ', and none of them is below it\n'
+          : `, and ${String(undercuts.length)} of those are below it: ` +
+            `${undercuts
+              .map((one) => `${one.file}:${String(one.line)}=${String(one.ms)}`)
+              .join(', ')}\n`),
+);
+// Not a refusal. A claimant's declaration is a statement about that file's own work --
+// `fetch-official` gives one test 60 s and another 30 s because it knows which one waits
+// on a socket -- and this gate has no measurement that says those numbers are wrong. What
+// it can say is that they exist, which the run above now does, and that the flag's number
+// is not the one they were held to. Only an unpriceable budget is refused, because there
+// the census itself would be a guess.
 
 if (failures > 0) {
   if (survivors.length > 0) {
@@ -477,6 +595,13 @@ if (failures > 0) {
     }
     process.stderr.write('  The witness reaches the exit. It does not depend on it, so it is not a proof\n');
     process.stderr.write('  of that exit -- it is a proof that the gate ran.\n');
+  }
+  if (unpriced.length > 0) {
+    process.stderr.write('verify-sites-are-sensitive: some claimants state a budget this gate cannot price:\n');
+    for (const problem of unpriced) {
+      process.stderr.write(`  ${problem.head}\n`);
+      for (const line of problem.detail) process.stderr.write(`    ${line}\n`);
+    }
   }
   if (problems.length > 0) {
     process.stderr.write('verify-sites-are-sensitive: some claimants could not be measured at all:\n');

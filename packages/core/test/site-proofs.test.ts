@@ -17,6 +17,8 @@ import {
   parseSpawns,
   parseThrows,
   parseTrace,
+  governingTestBudget,
+  testBudgetDeclarations,
   unprovenClaims,
 } from '../../../scripts/site-proofs.mjs';
 
@@ -1021,5 +1023,106 @@ describe('scripts/verify-site-proofs.mjs · the experiment, end to end', () => {
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * A budget stated by the file that is run, and a budget stated by the run that runs it.
+ *
+ * The battery furnishes `--testTimeout=120000`, and a file that writes
+ * `describe('…', { timeout: 30_000 }, …)` keeps its own number: the flag sets the
+ * *inherited* default, and an inherited default loses to a declaration. So the sentence
+ * the battery published -- "budget 120000 ms per test" -- was true of the files that
+ * declare nothing and false of every file that declares less, and nothing read the
+ * declarations to say which was which.
+ *
+ * These fixtures hold the two halves apart. A `timeout:` inside a test declaration is
+ * that test's budget; a `timeout:` inside `spawnSync` is the child's, and reading the
+ * second as the first would report a file as giving its tests 30 s when it gives the
+ * process it starts 30 s. Both appear in this tree, often in one file.
+ */
+describe('site-proofs · the budget a claimant declares', () => {
+  it('reads a literal budget and a named one, and reports the tighter', () => {
+    const source = [
+      "import { describe, it } from 'vitest';",
+      'const FILE_TIMEOUT_MS = 30_000;',
+      "describe('a file', { timeout: FILE_TIMEOUT_MS }, () => {",
+      "  it('a test', { timeout: 60_000 }, () => {});",
+      '});',
+    ].join('\n');
+    const declared = testBudgetDeclarations(source);
+    expect(declared.constants).toEqual({ FILE_TIMEOUT_MS: 30_000 });
+    expect(declared.declarations).toEqual([
+      { ms: 30_000, line: 3, callee: 'describe' },
+      { ms: 60_000, line: 4, callee: 'it' },
+    ]);
+    expect(declared.tightest).toEqual({ ms: 30_000, line: 3 });
+  });
+
+  it('does not read the budget of a process the test starts', () => {
+    // The shape that would make a reader wrong in the safe direction -- it would raise
+    // a number that was never a test budget -- and it is in the same file as the real
+    // one often enough that a filter by value would not separate them.
+    const source = [
+      "import { it } from 'vitest';",
+      'const CHILD_MS = 30_000;',
+      "it('starts a gate', { timeout: 90_000 }, () => {",
+      "  spawnSync('node', ['gate.mjs'], { encoding: 'utf8', timeout: CHILD_MS });",
+      '});',
+    ].join('\n');
+    const declared = testBudgetDeclarations(source);
+    expect(declared.declarations).toEqual([{ ms: 90_000, line: 3, callee: 'it' }]);
+    expect(declared.otherTimeouts).toBe(1);
+    expect(declared.tightest).toEqual({ ms: 90_000, line: 3 });
+  });
+
+  it('names a budget it cannot resolve instead of reading it as absent', () => {
+    // An unresolved name is the one state where the reader knows a budget exists and
+    // cannot say what it is. Skipping it would publish the battery's number as the
+    // file's, which is the defect this reader was written for.
+    const source = ["describe('a file', { timeout: FROM_THE_ENVIRONMENT }, () => {});"].join('\n');
+    const declared = testBudgetDeclarations(source);
+    expect(declared.declarations).toEqual([]);
+    expect(declared.unresolved).toEqual([{ name: 'FROM_THE_ENVIRONMENT', line: 1 }]);
+    expect(declared.tightest).toBeNull();
+  });
+
+  it('reads a per-test budget written as the third argument', () => {
+    // The older spelling, and the one vitest still accepts. A reader that only knew the
+    // options object would report this file as declaring nothing.
+    const source = ["it('a slow test', async () => {}, 45_000);"].join('\n');
+    expect(testBudgetDeclarations(source).tightest).toEqual({ ms: 45_000, line: 1 });
+  });
+
+  it('reads a suite-wide default set through the vi API', () => {
+    const source = ["vi.setConfig({ testTimeout: 15_000 });"].join('\n');
+    expect(testBudgetDeclarations(source).declarations).toEqual([
+      { ms: 15_000, line: 1, callee: 'vi.setConfig' },
+    ]);
+  });
+
+  it('says which half of the pair governs, and when the file is the tighter one', () => {
+    const declared = testBudgetDeclarations("describe('a file', { timeout: 30_000 }, () => {});");
+    expect(governingTestBudget(120_000, declared)).toEqual({
+      ms: 30_000,
+      from: 'file',
+      line: 1,
+      below: true,
+    });
+    expect(governingTestBudget(120_000, testBudgetDeclarations('const x = 1;'))).toEqual({
+      ms: 120_000,
+      from: 'battery',
+      line: null,
+      below: false,
+    });
+    // A file that asks for more than the battery furnishes does not get it: the flag is
+    // the default, and a default is what the declaration replaces. `below` is false and
+    // the governing number is the file's, because that is what will be enforced.
+    expect(governingTestBudget(120_000, testBudgetDeclarations("it('t', { timeout: 600_000 }, () => {});"))).toEqual({
+      ms: 600_000,
+      from: 'file',
+      line: 1,
+      below: false,
+    });
   });
 });
