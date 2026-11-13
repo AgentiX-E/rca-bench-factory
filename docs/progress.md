@@ -429,10 +429,10 @@ document that described it as downloading the data was describing an intention.
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 97 |
 | Source lines | 34,152 |
-| Test files | 248 core + 4 cli |
-| Test lines | 106,062 core + 3,242 cli |
-| Tests | 6,323 core + 187 cli |
-| Tracked files | 639 |
+| Test files | 249 core + 4 cli |
+| Test lines | 106,355 core + 3,242 cli |
+| Tests | 6,329 core + 187 cli |
+| Tracked files | 641 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -516,7 +516,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.87: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.88: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -541,6 +541,15 @@ below, so a residual that is not an entry is not a residual as far as the stamp 
 prints both counts and had never asked whether they were talking about one set. The four are entries now,
 which is why this list is longer rather than shorter, and the newest round's record must quote an entry it
 is a row about rather than paraphrase one that no `grep` will find.
+
+- **The aggregate-table comparison has not been re-run against the corpus.** Run
+  `43406267321` round-tripped `rcaeval-re2` **270 of 270 at `oracle=1.00`** in 154.4 minutes and
+  then died in the step after it: `check-aggregate-tables.mjs` held the same table four times and
+  ran out of a 4 GB heap on the first SockShop case (finding 529). The repair is a single streaming
+  pass, and it is proved where the failure was never observed -- on a fixture of the corpus's shape,
+  4 500 000 cells inside a 96 MB heap, which the old shape cannot do and this one does. What is not
+  proved is the corpus itself: no run has reached step 13 since.
+  `[open: dispatch official-data.yml on rcaeval-re2 and read step 13, because a fixture of the corpus's shape is a model of the corpus and this project has been wrong about one of those before]`
 
 - ~~**The real-corpus runs are diagnosed, and the mechanism was named wrong twice
   before it was named right.**~~ **Closed without a finding: the third naming came from
@@ -1368,7 +1377,8 @@ and this table.
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
-| [volume-13.md](progress/volume-13.md) | 24 | v3.64 | v3.87 |
+| [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
+| [volume-14.md](progress/volume-14.md) | 16 | v3.73 | v3.88 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

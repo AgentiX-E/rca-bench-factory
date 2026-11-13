@@ -666,8 +666,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # Full history, because `check-repository-table` resolves the revision its
+      # `Commits` row names. The default checkout is one commit, so `e22e2de` was
+      # a revision this job did not have and the guard refused the row -- on the
+      # runner only, for four rounds, while every local run was green because a
+      # developer's clone holds the whole history (finding 530).
+      #
+      # The cost is the whole repository's history, and this repository is source
+      # and documents: 536 commits of it. `docs-guards-need-history.test.ts`
+      # refuses a job that runs a docs guard with the default depth, so the two
+      # cannot drift apart again.
       - name: Check out
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -782,8 +794,13 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Full history for the same reason as the job above: `docs:check:cold`
+      # contains `check-repository-table`, whose `Commits` row names a revision
+      # and refuses one that does not resolve (finding 530).
       - name: Check out
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

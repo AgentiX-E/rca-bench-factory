@@ -50,10 +50,10 @@
     {
       "anchor": "rcaeval-re2",
       "run": {
-        "id": 40400190945,
-        "headSha": "fe871088b",
+        "id": 43406267321,
+        "headSha": "e22e2de61",
         "event": "workflow_dispatch",
-        "finishedAt": "2026-10-26T21:28:40Z",
+        "finishedAt": "2026-11-13T13:07:44Z",
         "artifact": "rcaeval-rcaeval-re2-round-trip"
       },
       "corpus": {
@@ -73,7 +73,7 @@
             "1": 270
           }
         },
-        "source": "the run's own score report (`--report`, uploaded as `rcaeval-scores.json` in the run's artifact), which prints `270 scored, 0 skipped, 0 failed`; every per-case `ROUNDTRIP` line printed `oracle=1.00`"
+        "source": "the run's own score report (`--report`, uploaded as `rcaeval-scores.json` in the run's artifact), which prints `270 scored, 0 skipped, 0 failed`; every per-case `ROUNDTRIP` line printed `oracle=1.00`, and the epilogue printed `ROUNDTRIP cost 270 case(s) in 154.4 min; largest 8015 MB of the 12336 MB this run was given (65%) at RE2-TT/ts-travel-service_loss/3; slowest 118.2 s`. The step after it -- the aggregate-table comparison -- died of a 4 GB heap limit on that same corpus (finding 529); the round trip itself finished, which is what this record is a reading of."
       },
       "pins": [
         {

@@ -157,51 +157,141 @@ function readLogRows(dir, problems) {
   }));
 }
 
-function checkCase(dir, label) {
+/**
+ * The lines of a text, one at a time, with the trailing `\r` removed.
+ *
+ * A generator rather than `text.split('\n')` because the tables this script reads are
+ * the largest files in the corpus: splitting first materialises one string per row
+ * before a single cell has been compared, which is the allocation this file died of.
+ */
+function* lines(text) {
+  let at = 0;
+  while (at < text.length) {
+    let end = text.indexOf('\n', at);
+    if (end < 0) end = text.length;
+    const line = text.slice(at, end);
+    at = end + 1;
+    yield line.endsWith('\r') ? line.slice(0, -1) : line;
+  }
+}
+
+/** The cells of one CSV line, with the quote handling `parseCsvRows` already has. */
+function cellsOf(line) {
+  return parseCsvRows(line)[0] ?? [];
+}
+
+/**
+ * Compare the corpus's table with the reduction, cell for cell, one line at a time.
+ *
+ * ## The failure this replaces
+ *
+ * On the 2026-11-13 `rcaeval-re2` run the round trip finished **270 of 270 with
+ * `oracle=1.00`** and this step then died at 13:11:07 with
+ *
+ *     FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed --
+ *     JavaScript heap out of memory
+ *     Process completed with exit code 134
+ *
+ * after 90 Online Boutique cases, on the first SockShop one. Nothing was wrong with
+ * the corpus or the reduction. The script held the same table **four times**: the
+ * published text, a parse tree of it, the reduction's text, and a parse tree of that --
+ * and then, to print a row and column count, it re-read and re-parsed the published
+ * file twice more. A parse tree of a table with tens of millions of cells is one array
+ * of arrays of strings per copy, which is several times the text it came from; four of
+ * them do not fit in a 4 GB heap, and the heap it chose was not the corpus's fault.
+ *
+ * ## What it does instead
+ *
+ * Two texts, both held because both are the subject, and one line of each at a time.
+ * The cells of a line are compared and then dropped, so peak memory is the two texts
+ * plus one row -- proportional to the input rather than a multiple of it -- and the row
+ * and column counts come out of the same pass rather than from a second and third
+ * reading.
+ *
+ * The five-difference cap and the sentences are unchanged: a reader comparing this
+ * version's output with an older one should see the same text for the same corpus.
+ */
+function compareGrids(publishedText, reducedText, label) {
   const problems = [];
-  const clusters = readClusters(dir, problems);
-  const rows = readLogRows(dir, problems);
-  if (clusters === undefined || rows === undefined) return { problems, cells: 0, notes: [] };
+  const published = lines(publishedText);
+  const reduced = lines(reducedText);
 
-  const table = buildLogtsCsv(rows, clusters);
-  const published = parseCsvRows(readFileSync(join(dir, LOGTS), 'utf8'));
-  const reduced = parseCsvRows(table.csv);
-  const publishedHeader = published[0] ?? [];
-  const reducedHeader = reduced[0] ?? [];
-
-  if (publishedHeader.join(',') !== reducedHeader.join(',')) {
-    problems.push(
-      `${label}: the published header is '${publishedHeader.join(',')}' and the reduction produces ` +
-        `'${reducedHeader.join(',')}'; the column rule is <container>_<cluster key> ordered by the ` +
-        `key as an integer`,
-    );
-    return { problems, cells: 0, notes: [] };
-  }
-  if (published.length !== reduced.length) {
-    problems.push(
-      `${label}: the published table has ${published.length - 1} row(s) and the reduction produces ` +
-        `${reduced.length - 1}; the grid is every 15 seconds from the first log to the last, with no gaps`,
-    );
-    return { problems, cells: 0, notes: [] };
-  }
-
+  let header = null;
+  let rows = 0;
+  let columns = 0;
   let cells = 0;
   let wrong = 0;
-  for (let r = 1; r < published.length; r += 1) {
-    for (let c = 1; c < publishedHeader.length; c += 1) {
+  let extraPublished = 0;
+  let extraReduced = 0;
+
+  for (;;) {
+    const want = published.next();
+    const got = reduced.next();
+    if (want.done === true && got.done === true) break;
+    if (want.done === true) {
+      extraReduced += 1;
+      continue;
+    }
+    if (got.done === true) {
+      extraPublished += 1;
+      continue;
+    }
+    // An empty last line is how a file that ends in a newline ends, not a row.
+    if (want.value === '' && got.value === '') break;
+
+    const publishedCells = cellsOf(want.value);
+    const reducedCells = cellsOf(got.value);
+    if (header === null) {
+      header = publishedCells;
+      columns = Math.max(0, publishedCells.length - 1);
+      if (publishedCells.join(',') !== reducedCells.join(',')) {
+        problems.push(
+          `${label}: the published header is '${publishedCells.join(',')}' and the reduction produces ` +
+            `'${reducedCells.join(',')}'; the column rule is <container>_<cluster key> ordered by the ` +
+            'key as an integer',
+        );
+        return { problems, cells: 0, rows: 0, columns: 0 };
+      }
+      continue;
+    }
+
+    rows += 1;
+    for (let c = 1; c < Math.max(publishedCells.length, reducedCells.length); c += 1) {
       cells += 1;
-      const want = published[r][c] ?? '';
-      const got = reduced[r][c] ?? '';
-      if (want === got) continue;
+      const have = publishedCells[c] ?? '';
+      const produced = reducedCells[c] ?? '';
+      if (have === produced) continue;
       wrong += 1;
       if (wrong <= 5) {
         problems.push(
-          `${label}: time=${published[r][0]} column='${publishedHeader[c]}' published=${want} reduced=${got}`,
+          `${label}: time=${publishedCells[0]} column='${header[c]}' published=${have} reduced=${produced}`,
         );
       }
     }
   }
+
+  if (extraReduced > 0 || extraPublished > 0) {
+    const what =
+      extraReduced > 0
+        ? `the reduction produces ${extraReduced} more row(s) than the corpus publishes`
+        : `the corpus publishes ${extraPublished} more row(s) than the reduction produces`;
+    problems.push(
+      `${label}: ${what}; the grid is every 15 seconds from the first log to the last, with no gaps`,
+    );
+  }
   if (wrong > 5) problems.push(`${label}: ${wrong - 5} further cell(s) differ`);
+  return { problems, cells, rows, columns };
+}
+
+function checkCase(dir, label) {
+  const problems = [];
+  const clusters = readClusters(dir, problems);
+  const rows = readLogRows(dir, problems);
+  if (clusters === undefined || rows === undefined) return { problems, cells: 0, rows: 0, columns: 0, notes: [] };
+
+  const table = buildLogtsCsv(rows, clusters);
+  const grid = compareGrids(readFileSync(join(dir, LOGTS), 'utf8'), table.csv, label);
+  for (const problem of grid.problems) problems.push(problem);
 
   const notes = [];
   for (const refused of ['tracets_lat.csv', 'tracets_err.csv']) {
@@ -214,7 +304,7 @@ function checkCase(dir, label) {
   if (table.dropped > 0) {
     notes.push(`${label}: ${table.dropped} log row(s) match no cluster and appear in no column`);
   }
-  return { problems, cells, notes };
+  return { problems, cells: grid.cells, rows: grid.rows, columns: grid.columns, notes };
 }
 
 function main() {
@@ -245,9 +335,13 @@ function main() {
     for (const problem of result.problems) problems.push(problem);
     for (const note of result.notes) console.log(note);
     if (result.cells > 0) {
-      const rows = parseCsvRows(readFileSync(join(dir, LOGTS), 'utf8')).length - 1;
-      const columns = (parseCsvRows(readFileSync(join(dir, LOGTS), 'utf8'))[0] ?? []).length - 1;
-      console.log(`${label}: ${rows} row(s) x ${columns} column(s) = ${result.cells} cell(s), all equal`);
+      // The counts come out of the comparison's own pass. They used to be re-read and
+      // re-parsed from the file twice, for a sentence printed once -- two more copies
+      // of the largest table in the corpus, in a script that was already at its heap
+      // limit (finding 529).
+      console.log(
+        `${label}: ${result.rows} row(s) x ${result.columns} column(s) = ${result.cells} cell(s), all equal`,
+      );
       cells += result.cells;
       cases += 1;
     }

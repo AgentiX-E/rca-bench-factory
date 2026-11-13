@@ -1453,3 +1453,93 @@ that state is exercised by every fixture case, whose stand-in runner writes no v
 than by one hand-written test. The reader also accepts **only** a number for `duration`: a JSON string
 there is a report from something else, and coercing it would be the same mistake one field down (a
 test caught it: `'4000'` became a 4 000 ms measurement).
+
+## Finding 529 — the round trip finished 270 of 270 and the step after it died of a 4 GB heap
+
+The `rcaeval-re2` dispatch of 2026-11-13 (`43406267321`) is the first run of this
+repository in which the largest anchor was read end to end. Its round-trip step succeeded:
+
+> `ROUNDTRIP PASSED (270 case(s) round-tripped through the official layout)`
+> `ROUNDTRIP report …/rcaeval-scores.json: 270 scored, 0 skipped, 0 failed`
+> `ROUNDTRIP cost 270 case(s) in 154.4 min; largest 8015 MB of the 12336 MB this run was given
+> (65%) at RE2-TT/ts-travel-service_loss/3; slowest 118.2 s`
+
+and the step after it, `check-aggregate-tables.mjs`, ended the job:
+
+```
+FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed -- JavaScript heap out of memory
+/home/runner/work/_temp/….sh: line 2:  4458 Aborted (core dumped)
+##[error]Process completed with exit code 134.
+```
+
+after ninety Online Boutique cases, on the **first SockShop** one. The script's own last printed
+case was `RE2-OB/recommendationservice_socket/1`.
+
+Nothing was wrong with the corpus or the reduction. `checkCase` held the same table **four
+times**: the published text, a parse tree of it (`parseCsvRows(readFileSync(...))`), the
+reduction's text (`buildLogtsCsv`), and a parse tree of that -- and then, to print one sentence's
+row and column count, it re-read and re-parsed the published file **twice more**. A parse tree of
+a table with tens of millions of cells is one array of arrays of strings, several times the text
+it came from; four of them do not fit in the heap Node gives a 16 GB runner's default old space,
+and the corpus is what made the arithmetic visible rather than wrong.
+
+**The repair is one pass.** `compareGrids` walks both texts a line at a time -- cells compared,
+then dropped -- so peak memory is the two texts plus one row, proportional to the input rather
+than a multiple of it, and the row and column counts come out of the same pass. The
+five-difference cap and every sentence are unchanged, so a reader comparing this output with an
+older run sees the same text for the same corpus.
+
+**Measured, on a fixture of the corpus's shape** (3000 buckets by 1500 cluster keys, 4 500 000
+cells, 9 MB as text, produced by the repository's own reducer):
+
+| `--max-old-space-size` | the old shape | this shape |
+| --- | --- | --- |
+| 96 MB | `FATAL ERROR: Reached heap limit` | `4 500 000 cell(s), all equal`, exit 0 |
+
+The case is in `check-aggregate-tables.test.ts` and it is the heap bound that is the assertion,
+so a future rewrite that brings a fourth copy back fails at 96 MB rather than on a runner.
+
+What the round trip itself measured, for the record: **43 911 094 log rows and 101 806 286 spans**
+across 450 tables, 1620 of 4410 columns carried exactly, 129 696 576 cells truncated to the
+millisecond, 78 768 011 values in columns the IR does not carry, and the two context sentences
+that are already in the epilogue (270 cases carrying other entities in their table; 2 cases
+carrying 511 rows with no instant).
+
+## Finding 530 — the guard required a revision that resolves, and every job that runs it checked out one commit
+
+CI had not been green since **2026-11-10**. Two jobs failed on every push with the same sentence:
+
+```
+## Repository 'Commits': the revision `d179592` does not resolve to a commit
+```
+
+`check-repository-table.mjs` refuses a `Commits (at \`<rev>\`)` row whose revision does not
+resolve, and that refusal is right: the row exists to date a number. The row cannot name the
+commit that writes it -- that commit does not exist yet -- so it names its parent. CI's default
+checkout is `fetch-depth: 1`, so the parent **is not there**, while a developer's clone has the
+whole history and the same revision resolves. Every local run was green; four rounds of runner
+runs were red, and `verify:local` could not see it because the checkout it runs in is the full
+one.
+
+That is this project's recurring shape one layer out: a check whose *precondition* holds in one
+environment and not the other, published as a check that passed. Nothing in the tree compared the
+guard's requirement with the workflow that runs it.
+
+**Two repairs, one file each.**
+
+- `ci.yml`'s `artefacts` and `cold-tree` jobs -- the two that run `pnpm docs:check` and
+  `pnpm docs:check:cold`, both of which contain `check-repository-table` -- now check out with
+  `fetch-depth: 0`. The cost is the history of a repository that is source and documents: 536
+  commits.
+- `docs-guards-need-history.test.ts` reads the workflow as text and refuses a job that runs a docs
+  guard with a shallow checkout, so the two cannot drift apart again. It is proved in both
+  directions: the three cases on a two-job fixture (a shallow job is named; a `fetch-depth: 1` is
+  named; a guard inside a multi-line `run:` block is read), the real file's property, and a
+  measurement of the mechanism itself -- a real `git clone --depth 1` of a real two-commit
+  repository, where `rev-parse <parent>` exits non-zero and `rev-parse HEAD` succeeds.
+
+One case also records a rule that was nearly wrong: the `verify` job carries a *comment* naming
+`docs:check` three steps above a command that runs only `measure-doc-counts`, and the first
+version of the rule read the comment and demanded full history for a job that resolves nothing.
+Comments are stripped before the scan; a comment is a sentence about the workflow, not an
+instruction to it.

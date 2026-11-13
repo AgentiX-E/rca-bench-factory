@@ -60,7 +60,7 @@
     },
     {
       "script": "scripts/check-aggregate-tables.mjs",
-      "line": 259,
+      "line": 353,
       "condition": "problems.length > 0",
       "diagnostic": "check-aggregate-tables: FAILED (${problems.length} problem(s))",
       "status": "proved",

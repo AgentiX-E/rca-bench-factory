@@ -1,9 +1,10 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { buildLogtsCsv } from '../src/export/rcaeval-logts.js';
 
 /**
  * The corpus-scale proof that `logts.csv` is a reduction, driven through the gate.
@@ -223,4 +224,72 @@ describe('check-aggregate-tables · the gate', () => {
     expect(out).toContain('no such directory');
     expect(status).toBe(1);
   });
+
+  /**
+   * A table the size of a SockShop case, in a heap that could not hold two copies of it.
+   *
+   * ## The measurement this case is
+   *
+   * On the 2026-11-13 `rcaeval-re2` run, 270 of 270 cases round-tripped with
+   * `oracle=1.00` and this gate then died:
+   *
+   *     FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed --
+   *     JavaScript heap out of memory
+   *     Process completed with exit code 134
+   *
+   * after ninety Online Boutique cases, on the first SockShop one (finding 529). It held
+   * the table four times -- two texts and two parse trees -- and then re-read and
+   * re-parsed the published file twice more to print a row and column count.
+   *
+   * The fixture below is 3000 buckets by 1500 cluster keys: 4 500 000 cells, 9 MB as
+   * text. Measured against the two shapes of the script on this machine:
+   *
+   *     --max-old-space-size=96   old: heap out of memory   new: OK, 4 500 000 cells
+   *
+   * so the heap bound is the whole assertion. The corpus file is produced by the
+   * repository's own reducer, which is what makes this a fixture about *size* rather
+   * than about a hand-written table -- and the case is deleted afterwards because a
+   * 30 MB directory per run is not something a test should leave behind.
+   */
+  it('compares four and a half million cells inside a heap that cannot hold two copies', () => {
+    const buckets = 3000;
+    const keys = 1500;
+    const dir = mkdtempSync(join(tmpdir(), 'aggregate-wide-'));
+    try {
+      const clusters: { key: string; container: string; template: string }[] = [];
+      for (let key = 1; key <= keys; key += 1) {
+        clusters.push({ key: String(key), container: 'a', template: 't' });
+      }
+      const table = buildLogtsCsv(
+        [
+          { container: 'a', template: 't', atSeconds: 0 },
+          { container: 'a', template: 't', atSeconds: (buckets - 1) * 15 },
+        ],
+        clusters,
+      );
+      writeFileSync(
+        join(dir, 'cluster_info.json'),
+        JSON.stringify(
+          Object.fromEntries(clusters.map((one) => [one.key, { template: one.template, container: [one.container] }])),
+        ),
+      );
+      writeFileSync(
+        join(dir, 'logs.csv'),
+        [LOGS_HEADER, logLine(0, 'a', 't'), logLine((buckets - 1) * 15, 'a', 't')].join('\n'),
+      );
+      writeFileSync(join(dir, 'logts.csv'), table.csv);
+
+      const result = spawnSync(
+        process.execPath,
+        ['--max-old-space-size=96', SCRIPT, '--case', dir],
+        { encoding: 'utf8' },
+      );
+      const out = `${result.stdout}${result.stderr}`;
+      expect(out).toContain(`${buckets} row(s) x ${keys} column(s) = ${buckets * keys} cell(s), all equal`);
+      expect(result.status).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
+
