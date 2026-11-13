@@ -1018,7 +1018,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 172,
+      "line": 173,
       "condition": "unknown.length > 0 || (shard !== null && !shard.ok)",
       "diagnostic": "usage: node scripts/verify-sites-are-sensitive.mjs [--list] [--shard <i>/<n>]\\n",
       "status": "proved",
@@ -1026,7 +1026,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 181,
+      "line": 182,
       "condition": "!Number.isInteger(CONCURRENCY) || CONCURRENCY < 1",
       "diagnostic": "verify-sites-are-sensitive: RCA_SENSITIVE_CONCURRENCY must be a positive integer,",
       "status": "proved",
@@ -1034,7 +1034,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 191,
+      "line": 192,
       "condition": "catch",
       "diagnostic": "verify-sites-are-sensitive: cannot read ${relative(ROOT, INVENTORY) || INVENTORY} -- ${String(error)}\\n",
       "status": "proved",
@@ -1042,7 +1042,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 224,
+      "line": 225,
       "condition": "everything.length === 0 || byFile.length === 0",
       "diagnostic": "verify-sites-are-sensitive: ${what}, so this run would pass while measuring nothing\\n",
       "status": "proved",
@@ -1050,7 +1050,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 622,
+      "line": 764,
       "condition": "failures > 0",
       "diagnostic": "verify-sites-are-sensitive: FAILED -- ${String(failures)} problem(s)\\n",
       "status": "proved",

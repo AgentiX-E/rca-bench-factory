@@ -56,6 +56,17 @@ interface FixtureOptions {
   argv?: boolean;
   /** A budget the claimant states for its own tests, written the way vitest accepts it. */
   budget?: string;
+  /**
+   * Crashes as soon as a mutant is armed, before the gate is ever started.
+   *
+   * The shape the old reader could not tell from a catch: the file goes red, the
+   * mutation never arrived, and the exit code is the same one a witness produces.
+   */
+  crashOnMutant?: boolean;
+  /** Starts the gate, then reports a vitest budget kill: the mutant arrived, the run was cut. */
+  hangOnMutant?: boolean;
+  /** The longest test, in ms, that this claimant's JSON report claims: the margin's subject. */
+  report?: number;
 }
 
 /** A repository the gate can be pointed at: an inventory, a gate, and a runner. */
@@ -105,6 +116,9 @@ function fixture(claims: { line: 1 | 2; file: string }[], options: FixtureOption
     options.red === true ? 'RED' : '',
     options.silent === true ? 'SILENT' : '',
     options.timedOut === true ? 'TIMEDOUT' : '',
+    options.crashOnMutant === true ? 'CRASH' : '',
+    options.hangOnMutant === true ? 'HANG' : '',
+    options.report === undefined ? '' : 'REPORT',
     options.argv === true ? 'ARGV' : '',
   ]
     .filter((one) => one !== '')
@@ -144,6 +158,19 @@ function fixture(claims: { line: 1 | 2; file: string }[], options: FixtureOption
     // should change.
     '  writeFileSync(process.env.FIXTURE_ARGV, process.argv.slice(2).join(" "));',
     '}',
+    // The report vitest's json reporter would have written. Only the baseline gets the
+    // flag, so a mutant run finds nothing and writes nothing -- which is the property
+    // the margin sentence relies on when it says a run wrote no per-test report.
+    'if (text.includes("REPORT")) {',
+    '  const asked = process.argv.slice(2).find((one) => one.startsWith("--outputFile=")) || "";',
+    '  if (asked !== "") {',
+    '    const where = asked.slice("--outputFile=".length);',
+    '    writeFileSync(where, JSON.stringify({ testResults: [{ assertionResults: [',
+    '      { fullName: "a short one", duration: 4.5 },',
+    '      { fullName: "the long one", duration: ' + String(options.report ?? 0) + ' },',
+    '    ] }] }));',
+    '  }',
+    '}',
     'if (text.includes("SILENT")) {',
     '  process.stdout.write("[vitest-worker]: Timeout calling " + String.fromCharCode(34) + "onTaskUpdate" + String.fromCharCode(34) + "\\n");',
     '  process.exit(1);',
@@ -160,6 +187,14 @@ function fixture(claims: { line: 1 | 2; file: string }[], options: FixtureOption
     '  process.stdout.write("\\n      Tests  1 failed (1)\\n");',
     '  process.exit(1);',
     '}',
+    // Armed-and-crashed: the gate is never reached, so nothing is recorded, and the
+    // exit code is the one a witness would also produce.
+    'if (text.includes("CRASH") && (process.env.RCA_HOLLOW_SITE || process.env.RCA_HOLLOW_THROW)) {',
+    '  process.stdout.write(" FAIL  " + file + " > drives the gate\\n");',
+    '  process.stdout.write("TypeError: Cannot read properties of undefined (reading " + String.fromCharCode(39) + "status" + String.fromCharCode(39) + ")\\n");',
+    '  process.stdout.write("\\n      Tests  1 failed (1)\\n");',
+    '  process.exit(1);',
+    '}',
     "const gate = resolve(here, 'scripts', 'fake-gate.mjs');",
     'const env = text.includes("BLIND")',
     '  ? { PATH: process.env.PATH, FIXTURE_PICK: pick }',
@@ -168,6 +203,14 @@ function fixture(claims: { line: 1 | 2; file: string }[], options: FixtureOption
     'if (text.includes("ASSERT") && child.status !== want) {',
     '  process.stdout.write(" FAIL  " + file + " > drives the gate\\n");',
     '  process.stdout.write("AssertionError: expected " + String(want) + " to be " + String(child.status) + "\\n");',
+    '  process.stdout.write("\\n      Tests  1 failed (1)\\n");',
+    '  process.exit(1);',
+    '}',
+    // The mutant arrived and the run was then cut by a budget: red, recorded, and
+    // still not a failure -- nothing above this line asserted anything.
+    'if (text.includes("HANG") && (process.env.RCA_HOLLOW_SITE || process.env.RCA_HOLLOW_THROW)) {',
+    '  process.stdout.write(" FAIL  " + file + " > drives the gate\\n");',
+    '  process.stdout.write("Error: Test timed out in 2500ms.\\n");',
     '  process.stdout.write("\\n      Tests  1 failed (1)\\n");',
     '  process.exit(1);',
     '}',
@@ -262,6 +305,11 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
       // both -- and the fixture holds one exit claim, so both numbers are known here.
       expect(result.stdout).toContain('1 exit(s) hollowed, 0 throw(s) removed');
       expect(result.stdout).toContain('some test goes red');
+      // And the census: the one run that is credited is counted in a basket, so the
+      // summary's "caught" is a number a reader can check rather than a total that
+      // could be made of crashes.
+      expect(result.stdout).toContain('1 of 1 mutant run(s) are credited');
+      expect(result.stdout).toContain('0 truncated by a budget, 0 exited without recording the mutant');
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }
@@ -298,6 +346,50 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
       expect(result.stderr).toContain('never');
       expect(result.stderr).toContain('recorded the mutant');
       expect(result.stderr).not.toContain('can stop failing and no test minds');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('credits nothing for a claimant that goes red as soon as a mutant is armed', () => {
+    // The false half of this gate's sentence, and the shape it could not see until
+    // v3.87: a file that crashes whenever `RCA_HOLLOW_SITE` is set exits non-zero for
+    // every claim it makes and would be credited with every one of them. Nothing was
+    // asserted about the mutation, and the mutation never even arrived.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      assert: true,
+      crashOnMutant: true,
+    });
+    try {
+      const result = runGate(tree);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('went red without the mutant');
+      expect(result.stderr).toContain('scripts/fake-gate.mjs:3');
+      expect(result.stderr).toContain('never recorded the mutant');
+      expect(result.stderr).not.toContain('can stop failing and no test minds');
+      expect(result.stdout).toContain('1 exited without recording the mutant');
+      expect(result.stdout).not.toContain('1 of 1 mutant run(s) are credited');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('credits nothing for a claimant the budget stopped after the mutant arrived', () => {
+    // Red, recorded, and still not a failure: the run was cut by a test budget, so
+    // nothing asserted that the mutation made a difference. A claimant's own
+    // declaration is the ordinary way this happens, which is why the sentence names
+    // the number and whose it is.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      hangOnMutant: true,
+    });
+    try {
+      const result = runGate(tree);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('stopped by a test budget instead of failing');
+      expect(result.stderr).toContain('did not finish inside the 2500 ms of test budget');
+      expect(result.stderr).toContain('a run the harness ended is a claim nobody read');
+      expect(result.stdout).toContain('1 truncated by a budget');
+      expect(result.stdout).not.toContain('1 of 1 mutant run(s) are credited');
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }
@@ -393,18 +485,41 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
     }
   });
 
-  it('prints the slowest claimant, so the margin is a number a reader sees', () => {
-    // The budget is 24x the slowest file today. A margin nobody prints is a margin that
-    // is discovered by the next timeout, which is how this one arrived.
+  it('says a run that wrote no per-test report did not measure a margin', () => {
+    // The stand-in runner writes no vitest report, which is the shape of a vitest that
+    // died before its reporter wrote. Reporting a share of a budget from a file's wall
+    // clock is the arithmetic finding 528 removed: it divides a file's total by a
+    // per-test ceiling and prints a percentage, and a reader then raises a number that
+    // was never near it.
     const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], { assert: true });
     try {
       const result = runGate(tree);
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('slowest claimant packages/core/test/one.test.ts');
-      // Against the budget the file is actually held to, and as a share of it: "of
-      // 120000 ms per test" was a sentence about the flag, and the flag is not what a
-      // claimant that declares its own budget is measured against.
-      expect(result.stdout).toContain('of the 120000 ms it is given');
+      expect(result.stdout).toContain('no run wrote a per-test report');
+      expect(result.stdout).toContain('unmeasured');
+      expect(result.stdout).not.toContain('the longest single test');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('prints the longest single test against the budget that test is given', () => {
+    // The margin that has a ceiling: vitest's own per-test duration, not the file's
+    // wall clock. Two tests in the report and the longer one is second, so a reader
+    // that took the first would report 4 ms against 120 000.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      assert: true,
+      report: 2400,
+    });
+    try {
+      const result = runGate(tree);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(
+        'the longest single test of any claimant is 2400 ms of the 120000 ms it is given (2%)',
+      );
+      expect(result.stdout).toContain('packages/core/test/one.test.ts: the long one');
+      expect(result.stdout).not.toContain('wall clock');
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }
@@ -427,6 +542,10 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
       // And the file it was asked about, relative to the package the run happens in,
       // so the flag is not asserted on a run that measured something else.
       expect(argv).toContain('run test/one.test.ts');
+      // The last run the fixture made is the mutant's, and it carries no report flag:
+      // only the baseline needs per-test durations, and asking a mutant run for a JSON
+      // file would pay for a report nothing reads.
+      expect(argv).not.toContain('--reporter=json');
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }

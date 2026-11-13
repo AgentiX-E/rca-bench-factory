@@ -11,6 +11,7 @@ import {
   claimsByFile,
   exhaustedTestBudget,
   failureSummary,
+  longestTest,
   outputTail,
   hookFile,
   parseHollows,
@@ -1041,6 +1042,53 @@ describe('scripts/verify-site-proofs.mjs · the experiment, end to end', () => {
  * second as the first would report a file as giving its tests 30 s when it gives the
  * process it starts 30 s. Both appear in this tree, often in one file.
  */
+describe('site-proofs · the longest test a report names', () => {
+  /** The shape vitest's json reporter writes, cut to the three fields this reader uses. */
+  const report = (tests: { name: string; duration: unknown }[]): string =>
+    JSON.stringify({
+      numTotalTests: tests.length,
+      testResults: [{ assertionResults: tests.map((one) => ({ fullName: one.name, duration: one.duration })) }],
+    });
+
+  it('picks the longest test across every suite in the report', () => {
+    const text = JSON.stringify({
+      testResults: [
+        { assertionResults: [{ fullName: 'first suite > slow', duration: 981.4 }] },
+        { assertionResults: [{ fullName: 'second suite > slower', duration: 2400.6 }] },
+      ],
+    });
+    expect(longestTest(text)).toEqual({ ms: 2401, name: 'second suite > slower' });
+  });
+
+  it('keeps the test name, because the margin a reader acts on is one test', () => {
+    // A duration without a name is a number a reader cannot go and look at, and the
+    // repair for a margin that is too thin is almost always inside one test.
+    const text = report([{ name: 'drives the gate through a pipe', duration: 12.5 }]);
+    expect(longestTest(text)).toEqual({ ms: 13, name: 'drives the gate through a pipe' });
+  });
+
+  it('skips an assertion whose duration is not a number rather than reporting it', () => {
+    const text = report([
+      { name: 'pending, so undated', duration: undefined },
+      { name: 'dated', duration: 100 },
+      { name: 'a string, which is not a measurement', duration: '4000' },
+    ]);
+    expect(longestTest(text)).toEqual({ ms: 100, name: 'dated' });
+  });
+
+  it('returns null for a report it cannot parse, and for one with no test in it', () => {
+    // The caller's sentence has a branch for this state -- "no run wrote a per-test
+    // report" -- and reporting a margin of zero instead would be a measurement that
+    // failed dressed as a margin that is comfortable.
+    expect(longestTest('not json')).toBeNull();
+    expect(longestTest('')).toBeNull();
+    expect(longestTest('{}')).toBeNull();
+    expect(longestTest(JSON.stringify({ testResults: [] }))).toBeNull();
+    expect(longestTest(JSON.stringify({ testResults: [{ assertionResults: [] }] }))).toBeNull();
+    expect(longestTest(JSON.stringify({ testResults: [{}, null] }))).toBeNull();
+  });
+});
+
 describe('site-proofs · the budget a claimant declares', () => {
   it('reads a literal budget and a named one, and reports the tighter', () => {
     const source = [

@@ -430,8 +430,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 97 |
 | Source lines | 34,152 |
 | Test files | 248 core + 4 cli |
-| Test lines | 105,895 core + 3,242 cli |
-| Tests | 6,316 core + 187 cli |
+| Test lines | 106,062 core + 3,242 cli |
+| Tests | 6,323 core + 187 cli |
 | Tracked files | 639 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -516,7 +516,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.86: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.87: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1318,14 +1318,26 @@ is a row about rather than paraphrase one that no `grep` will find.
   rose 1.5 s rather than fell, which is the reading the entry's last clause asked for.
 
 
-- **A claimant's budget is compared and the comparison refuses nothing.** `verify-sites-are-sensitive.mjs`
-  now reads every claimant's own `{ timeout }` and prints how many declare one and which are below the
-  battery's, and a timed-out claimant's sentence says whose number it was given -- the file's, the flag's,
-  or neither. What it does not do is make the two agree: **nine** of the 61 claimants furnish 30 000 ms
-  where the battery furnishes 120 000, and a claimant that runs out of its own budget is still reported as
-  **unmeasured**, so its claims stop being proved and this report is the only thing that said so
-  beforehand. `[open: the direction that costs a claim needs a ceiling, and the one measurement in this
-  tree is a single file's timeout at 30 000 ms]`
+- ~~**A claimant's budget is compared and the comparison refuses nothing.**~~ **Closed by finding 527.**
+  The ceiling turned out to be a rule rather than a number, and finding 528 moved the number it was
+  going to be read against. `verify-sites-are-sensitive.mjs`
+  reads every claimant's own `{ timeout }` and prints how many declare one and which are below the
+  battery's; what it did not do was make the two agree, and **nine** of the 61 claimants furnish
+  30 000 ms where the battery furnishes 120 000. The direction that costs a claim is now refused: a
+  mutant run a test budget stopped proves nothing, so the basket that used to be credited as a catch
+  is now its own refusal, and no declaration may be the thing that ends a run whose whole product is
+  a failure. The number the entry was looking for was not the answer -- measured per test, the widest
+  single test in the estate is **5 227 ms of its 30 000 (17%)**, five times the headroom the previous
+  round's *"29 590 ms of the 30000 ms it is given (99%)"* implied, because that quotient divided a
+  file's wall clock by a per-test ceiling.
+
+- **The margin is the baseline's.** The per-test durations the margin now prints come from vitest's
+  own JSON report, written for the 61 baseline runs; the 220 runs that must fail are not asked for one,
+  because their verdict is the exit code. So a mutant that hangs is refused with the budget that
+  stopped it and not with the test that hung, and how close the failing runs come to their ceiling is
+  unmeasured. `[open: whether the refused basket should name the test as well, which needs the report
+  on the 220 runs it currently saves nothing on -- the cost is one JSON file per mutant run and the
+  reading it buys is which test a mutation makes wait]`
 
 ## Pass log
 
@@ -1356,7 +1368,7 @@ and this table.
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
-| [volume-13.md](progress/volume-13.md) | 23 | v3.64 | v3.86 |
+| [volume-13.md](progress/volume-13.md) | 24 | v3.64 | v3.87 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

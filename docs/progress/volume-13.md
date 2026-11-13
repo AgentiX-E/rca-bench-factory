@@ -2322,9 +2322,9 @@ a guess published as the battery's number.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **248 files, 6316 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **252 files, 6503 tests passed** (as of this commit) |
+| `core` test suite | **248 files, 6316 tests passed** (at v3.86) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.86) |
+| repo test suite | **252 files, 6503 tests passed** (at v3.86) |
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100**; per-file thresholds, no exemption, unchanged -- this round changed no file under `src/` |
 | new tests | **6307 -> 6316, net +9**: six for the reader (literal and named, a child's budget declined, an unresolvable name, the positional form, the `vi.setConfig` form, which side governs), three for the battery (a claimant below the battery, a census with no declaration, a budget that cannot be priced) |
 | claimants read | **61**: 10 declare a budget of their own, **9 below** the battery's 120 000, **0** unpriceable, **8** `timeout:` keys declined as a child's |
@@ -2349,3 +2349,117 @@ the first as if it were the second. The repair is not a stricter rule -- nine fi
 a considered statement about their own work -- it is that a number a gate prints has to name the
 population it was taken over, and a number read out of a claimant's own output has to say *whose* it is.
 Both repairs are one sentence longer, and both make a sentence that was already true narrower.
+
+## v3.87 · the battery credited every red run with a catch, and its margin was a share of the wrong denominator
+
+The previous round left two sentences in this gate and one leftover. The leftover was *"a claimant's
+budget is compared and the comparison refuses nothing"*, and the sentences were the census and the
+margin. Reading the margin line on the shipped tree is what started this round:
+
+> `verify-sites-are-sensitive: slowest claimant packages/core/test/check-fault-cases.test.ts 29590 ms
+> of the 30000 ms it is given (99%), of 61 run 4 at a time`
+
+*One hiccup from a red gate* -- and the reflex is to raise a declaration. The arithmetic is between a
+file's wall clock and a per-test ceiling, and that file runs fifty-odd tests (finding 528).
+
+### One · the catch was a fact about the file, and the claim is a fact about the mutation
+
+The verdict was one line:
+
+```js
+if (outcome.status !== 0) continue;   // credited
+```
+
+Three different events produce that exit code, and only the first is the proof (finding 527): the
+mutant arrived and the witness failed; the mutant arrived and a test budget stopped the run; the file
+went red without the mutant ever arriving. A claimant that throws as soon as `RCA_HOLLOW_SITE` is set
+-- a preload that cannot load in that child, a mutated statement that breaks an import -- would have
+been credited with **every** claim it makes. The gate's published sentence is *"some test goes red for
+every one of them"*, and the instrument could not tell *the test noticed* from *the file crashed*.
+
+### Two · two facts the run already had, and two baskets
+
+`hollowed` (from the trace) says the mutant arrived at the claimed line; `exhaustedTestBudget` (from
+the output) says the run was not stopped by a budget. A red run missing either is reported in its own
+basket with its own sentence and is **not** a proof:
+
+| basket | the sentence it produces |
+| --- | --- |
+| exited without recording the mutant | `which exited 1 with the exit hollowed but never recorded the mutant, so the failure was not the mutant's and this claim is not proved by it` |
+| truncated by a budget | `which did not finish inside the 30000 ms of test budget its own declaration furnishes (line 384), so the run was stopped rather than failed` |
+
+and the counts are printed on every run, because a total that could be made of crashes is not a
+reading:
+
+> `220 of 220 mutant run(s) are credited -- each exited non-zero, recorded its mutant, and finished
+> inside the budget it was given (0 truncated by a budget, 0 exited without recording the mutant, 0
+> survived, 0 unmeasured)`
+
+Measured on this tree the hole was **open and unexercised**, which is why it is proved by fixtures: the
+crashing claimant and the truncated claimant both leave the gate **green** on the old reader -- two
+claims, status 0 -- and the census assertion in the healthy case fails there too. Three of the suite's
+cases would have to be deleted rather than adjusted for the old reader to pass.
+
+### Three · the ceiling the leftover asked for is a rule, not a number
+
+v3.86 declined to refuse the nine declarations below the battery, on the argument that no measurement
+here says 30 s is wrong for a test that waits on a socket. That is still true and it was not the whole
+question: a truncated mutant run proves nothing, so a declaration below the battery **can cost the
+claim it was meant to prove**. The rule is the answer to *which ceiling*: no declaration may be the
+thing that ends a run whose whole product is a failure. The direction that costs a claim is refused;
+the direction that costs only wall clock (a declaration above the battery) is still reported and still
+not refused.
+
+### Four · the margin, measured per test because that is what the ceiling applies to
+
+Baseline runs now also write vitest's own JSON report, into the scratch directory, so nothing lands in
+the tree; the 220 mutant runs do not pay for a file nothing reads, since their verdict is the exit code.
+`longestTest` picks the longest `assertionResults[].duration`, keeps the test's name, and the sentence
+becomes:
+
+> `the longest single test of any claimant is 5227 ms of the 30000 ms it is given (17%), in
+> packages/core/test/fetch-official.test.ts: scripts/fetch-official.mjs · the digest pin reports the
+> digest of a small asset alongside a large one in the same run`
+
+17% of the tightest declaration in the estate, in a different file from the one the old line named --
+five times the headroom the 99% implied. A run that wrote no report says so instead of reporting a share
+of a number nobody measured, and that branch is exercised by every fixture case, whose stand-in runner
+writes no vitest report. The reader accepts only a **number** for `duration`; a string there is a report
+from something else, and coercing it would be the same mistake one field down (a test caught it:
+`'4000'` became a 4 000 ms measurement).
+
+### Readings
+
+> Ledger for `v3.87`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **248 files, 6323 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **252 files, 6510 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100**; per-file thresholds, no exemption, unchanged -- this round changed no file under `src/` |
+| new tests | **6316 -> 6323, net +7**: four for the report reader (the longest across suites, the name kept, a non-numeric duration skipped, an unparseable report), three for the battery (a claimant that crashes when armed, a claimant the budget stopped, and the margin split into its two readings -- the per-test sentence and the no-report one) |
+| claimants read | **61**, 220 claims, 281 runs in **8.0 min**: **220 of 220 credited**, 0 truncated, 0 unrecorded, 0 survived, 0 unmeasured |
+| the widest test | **5 227 ms of 30 000 (17%)** in `fetch-official.test.ts`, against the previous round's `29 590 of 30 000 (99%)` read off a file's clock |
+| the tightest declaration | **30 000 ms** in nine of the 61 claimants, unchanged: the rule replaced the ceiling, so no number had to move |
+| gate sites | **135 across 62 of 88 scripts**; the round's edits moved **5** sites, all in `verify-sites-are-sensitive.mjs`, re-derived rather than hand-edited |
+| the 270-case dispatch | **triggered, not read**: `official-data.yml` run `43406267321` (`rcaeval-re2`) was still inside its round-trip step when this was written, two and a half hours into a 300-minute bound |
+| list | **26 -> 26**: one entry closed by the rule, one opened for the measurement the margin still does not take |
+
+### Leftovers, in the order that reaches the goal
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| P0 | Anchor 4 is closed for the three RCAEval anchors only | run `43406267321` dispatched at v3.86 against `rcaeval-re2` | read its `ROUNDTRIP` line, and the `cost` line beside it |
+| P1 | The worker count decides the stall verdict | open since v3.80; the cap still follows the CPU quota and the memory measurement, not a stall reading | choose the cap from the stall measurement |
+| P2 | The margin is the baseline's | new at v3.87: the 220 runs that must fail are not asked for a per-test report | whether a mutant that hangs should say *which* test hung, since the budget kill is now refused without that |
+| P2 | A record's terms are a map of strings to numbers | open since v3.83 | nine shapes instead of one, decided as a record change |
+| P2 | The live list grows whatever the bound is | unchanged | measure the distance to the ceiling first |
+| P3 | The coverage figure has no reader that computes it | unchanged | teach `docs:check` to read a report |
+
+**The lesson.** Both defects this round are the same mistake at different distances from the subject:
+a number that describes one thing published as the number that describes another. An exit code
+describes a process; the claim is about a mutation. A file's wall clock describes a file; the ceiling is
+per test. Neither repair needed a new measurement -- the trace already said whether the mutant arrived,
+and vitest already knew each test's duration -- only the decision to read the thing the sentence is
+about.

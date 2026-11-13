@@ -97,6 +97,7 @@ import {
   exhaustedTestBudget,
   failureSummary,
   governingTestBudget,
+  longestTest,
   outputTail,
   hookFile,
   parseHollows,
@@ -319,6 +320,11 @@ function runOnce(file, site) {
     });
   }
   const trace = join(scratch, `${String(traceCount)}.log`);
+  // The baseline's per-test durations, which is the only reading the margin can be
+  // computed from. Written by vitest's own JSON reporter into the same scratch
+  // directory as the trace, and read back in `close` below: a file's wall clock
+  // divided by a per-test budget is a percentage of nothing (finding 528).
+  const report = join(scratch, `${String(traceCount)}.json`);
   traceCount += 1;
   const env = {
     ...process.env,
@@ -354,6 +360,10 @@ function runOnce(file, site) {
       'run',
       relative(TESTS, absolute),
       '--reporter=dot',
+      // The baseline also writes a machine-readable report, because the margin this
+      // gate prints is a per-test fact and the dot reporter only says how long the
+      // file took. Mutant runs do not need it: their verdict is the exit code.
+      ...(site === null ? ['--reporter=json', `--outputFile=${report}`] : []),
       '--maxWorkers=1',
       `--testTimeout=${String(CLAIMANT_TIMEOUT_MS)}`,
     ],
@@ -388,6 +398,10 @@ function runOnce(file, site) {
         elapsedMs: Date.now() - launchedAt,
         fired: parseTrace(text),
         hollowed: parseHollows(text),
+        // `null` when the run wrote no report -- a claimant replaced by a stand-in,
+        // or a vitest that died before its reporter could write. The margin sentence
+        // says which of the two it is looking at rather than reporting zero.
+        longest: existsSync(report) ? longestTest(readFileSync(report, 'utf8')) : null,
         output,
       });
     });
@@ -509,13 +523,70 @@ const mutants = await pool(claims, CONCURRENCY, ({ file, claim }) => runOnce(fil
 
 const survivors = [];
 const unmeasured = [];
+/**
+ * The two ways a red mutant run is not a proof, and why the loop below asks at all.
+ *
+ * Until v3.87 this loop credited **any** non-zero exit with a catch. That is a
+ * statement about the *file* -- "it went red" -- doing duty for a statement about the
+ * *mutation* -- "it went red because of the mutation", and the two are not the same
+ * sentence. A claimant that crashes whenever a mutant is armed (a preload that cannot
+ * load in this child, a mutated statement that throws before the test asserts
+ * anything, a body that hangs until the test budget kills it) exits non-zero for a
+ * reason that says nothing about whether the test would notice the difference. Under
+ * the old reader such a claimant was credited with every claim it made, including
+ * claims about gates it never runs -- the false half of the very sentence this gate
+ * exists to make true.
+ *
+ * Two facts are cheap and between them they separate the two sentences: the run
+ * recorded the mutant (`hollowed`), and the run was not truncated by a budget
+ * (`Test timed out in Nms`). A red run missing either is reported in its own basket
+ * rather than credited, because the census cannot be honest about a catch it cannot
+ * distinguish from a crash.
+ *
+ * The second basket is also the answer to the leftover the previous round left open --
+ * a claimant's declaration was compared and the comparison refused nothing. It refuses
+ * this now: a declaration below the battery's number is the ordinary way a mutant run
+ * gets truncated, and a truncated run proves nothing, so the number a claimant states
+ * for itself can cost it the claim it was meant to prove. That is a ceiling stated as a
+ * rule rather than a threshold: no declaration may be the thing that ends a run whose
+ * whole product is a failure.
+ */
+const truncated = [];
+const unrecorded = [];
+let credited = 0;
 for (const [index, outcome] of mutants.entries()) {
   const { file, claim } = claims[index];
   if (outcome.problem !== undefined) {
     unmeasured.push({ head: outcome.problem, detail: outcome.detail });
     continue;
   }
-  if (outcome.status !== 0) continue;
+  if (outcome.status !== 0) {
+    if (!outcome.hollowed.includes(claim.site)) {
+      unrecorded.push({
+        head:
+          `${claim.site} is claimed by ${file}, which exited ${String(outcome.status)} with ` +
+          `${claim.kind === 'throw' ? 'the throw removed' : 'the exit hollowed'} but never recorded the ` +
+          'mutant, so the failure was not the mutant\'s and this claim is not proved by it',
+        detail: [rerun(file)],
+      });
+      continue;
+    }
+    const budget = exhaustedTestBudget(outcome.output);
+    if (budget !== null) {
+      truncated.push({
+        head:
+          `${claim.site} is claimed by ${file}, which did not finish inside the ${String(budget)} ms of ` +
+          `test budget ${budgetProvenance(file, budget)}, so the run was stopped rather than failed`,
+        detail: [
+          'a claim is proved by a test that fails, not by a run the harness ended: nothing here asserted anything',
+          rerun(file),
+        ],
+      });
+      continue;
+    }
+    credited += 1;
+    continue;
+  }
   if (outcome.hollowed.includes(claim.site)) {
     survivors.push({ site: claim.site, file, detail: rerun(file) });
   } else {
@@ -535,24 +606,66 @@ rmSync(scratch, { recursive: true, force: true });
 
 const runs = baselines.length + mutants.length;
 const minutes = ((Date.now() - startedAt) / 60000).toFixed(1);
-const failures = survivors.length + problems.length + unmeasured.length + unpriced.length;
+const failures =
+  survivors.length +
+  problems.length +
+  unmeasured.length +
+  unpriced.length +
+  truncated.length +
+  unrecorded.length;
 
-// The margin, printed rather than implied. Each claimant is one file run alone, and the
-// ceiling it is given is 120,000 ms per test; a file that needs a large share of it is a
-// margin that is going away, and the number that says so is measured here on every run
-// instead of being discovered by the next timeout.
+// The margin, printed rather than implied -- and this time as the quantity that has a
+// ceiling.
+//
+// Until v3.87 this line divided the slowest **file**'s wall clock by a budget that
+// applies **per test** and printed the quotient as a percentage. On this tree it read
+// `check-fault-cases.test.ts 29590 ms of the 30000 ms it is given (99%)`, and the round
+// that added it read that as "one hiccup from a red gate" and went looking for a
+// declaration to raise. The arithmetic is between two different things: that file runs
+// fifty-odd tests in those 29 590 ms, and its longest single test is a fraction of them.
+// A percentage of the wrong denominator is worse than no percentage, because it names a
+// repair -- raise the number -- for a ceiling nothing was near.
+//
+// The per-test duration is measured by vitest and reported by it, so the reading is one
+// line: `--reporter=json` into the scratch directory for the baseline runs, and the
+// longest `assertionResults[].duration` becomes the margin. A run that wrote no report
+// (the fixture stand-in, or a vitest that died before its reporter wrote) says so
+// instead of reporting a share of a number nobody measured.
+const margins = baselines
+  .filter(
+    (outcome) => outcome.problem === undefined && outcome.longest !== null && outcome.longest !== undefined,
+  )
+  .map((outcome) => {
+    const known = budgetOf(outcome.file);
+    const ms = known === null ? CLAIMANT_TIMEOUT_MS : known.governing.ms;
+    return {
+      file: outcome.file,
+      ms,
+      elapsed: outcome.longest.ms,
+      test: outcome.longest.name,
+      share: outcome.longest.ms / ms,
+    };
+  })
+  .sort((left, right) => right.share - left.share || right.elapsed - left.elapsed);
+const widest = margins.length > 0 ? margins[0] : null;
 const slowest = baselines.reduce(
   (worst, outcome) => (outcome.elapsedMs > worst.elapsedMs ? outcome : worst),
   baselines[0],
 );
-if (slowest !== undefined) {
+const field = `of ${String(baselines.length)} claimant(s) run ${String(CONCURRENCY)} at a time`;
+if (widest !== null) {
+  process.stdout.write(
+    `verify-sites-are-sensitive: the longest single test of any claimant is ${String(widest.elapsed)} ms of the ` +
+      `${String(widest.ms)} ms it is given (${String(Math.round(widest.share * 100))}%), in ${widest.file}: ` +
+      `${widest.test} -- ${field}\n`,
+  );
+} else if (slowest !== undefined) {
   const other = slowest.problem === undefined ? budgetOf(slowest.file) : null;
   const budget = other === null ? CLAIMANT_TIMEOUT_MS : other.governing.ms;
-  const share = Math.round((slowest.elapsedMs / budget) * 100);
   process.stdout.write(
-    `verify-sites-are-sensitive: slowest claimant ${slowest.file} ${String(slowest.elapsedMs)} ms of the ` +
-      `${String(budget)} ms it is given (${String(share)}%), of ${String(baselines.length)} run ` +
-      `${String(CONCURRENCY)} at a time\n`,
+    `verify-sites-are-sensitive: slowest claimant ${slowest.file} ${String(slowest.elapsedMs)} ms of wall clock, ` +
+      `and no run wrote a per-test report, so how much of the ${String(budget)} ms any one test used is ` +
+      `unmeasured -- ${field}\n`,
   );
 }
 
@@ -584,6 +697,17 @@ process.stdout.write(
 // it can say is that they exist, which the run above now does, and that the flag's number
 // is not the one they were held to. Only an unpriceable budget is refused, because there
 // the census itself would be a guess.
+//
+// What the declaration *can* cost is stated one line below: a truncated run is not a
+// proof, so a claimant that gives its own test less room than the battery would have
+// loses the claim rather than the wall clock. That is the one direction with a victim,
+// and it is the direction this line measures.
+process.stdout.write(
+  `verify-sites-are-sensitive: ${String(credited)} of ${String(mutants.length)} mutant run(s) are credited -- ` +
+    'each exited non-zero, recorded its mutant, and finished inside the budget it was given ' +
+    `(${String(truncated.length)} truncated by a budget, ${String(unrecorded.length)} exited without recording ` +
+    `the mutant, ${String(survivors.length)} survived, ${String(unmeasured.length)} unmeasured)\n`,
+);
 
 if (failures > 0) {
   if (survivors.length > 0) {
@@ -616,6 +740,24 @@ if (failures > 0) {
       process.stderr.write(`  ${problem.head}\n`);
       for (const line of problem.detail) process.stderr.write(`    ${line}\n`);
     }
+  }
+  if (unrecorded.length > 0) {
+    process.stderr.write('verify-sites-are-sensitive: these claimants went red without the mutant, so the red is not theirs:\n');
+    for (const problem of unrecorded) {
+      process.stderr.write(`  ${problem.head}\n`);
+      for (const line of problem.detail) process.stderr.write(`    ${line}\n`);
+    }
+    process.stderr.write('  A non-zero exit is a fact about the file. The claim is about the mutation, and a\n');
+    process.stderr.write('  run that never recorded the mutant has not been told the difference.\n');
+  }
+  if (truncated.length > 0) {
+    process.stderr.write('verify-sites-are-sensitive: these claimants were stopped by a test budget instead of failing:\n');
+    for (const problem of truncated) {
+      process.stderr.write(`  ${problem.head}\n`);
+      for (const line of problem.detail) process.stderr.write(`    ${line}\n`);
+    }
+    process.stderr.write('  Raise the declaration to the battery\'s number, or make the mutated path fail rather\n');
+    process.stderr.write('  than wait: a run the harness ended is a claim nobody read.\n');
   }
   process.stderr.write('');
   process.stderr.write(`verify-sites-are-sensitive: FAILED -- ${String(failures)} problem(s)\n`);

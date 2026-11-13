@@ -459,6 +459,53 @@ export function exhaustedTestBudget(text) {
 }
 
 /**
+ * The longest single test in a run, read from vitest's own JSON report.
+ *
+ * ## Why this is not computed from the file's wall clock
+ *
+ * The battery publishes a margin, and until v3.87 it published the wrong one: the
+ * slowest *file*'s elapsed time divided by a budget that applies **per test**. A file
+ * with forty tests that takes thirty seconds has, on that reading, "used 99% of its
+ * budget" while its longest test may be one second -- and the reader who acts on the
+ * sentence (this round's reader did, in a paragraph) raises a number that was never
+ * near its ceiling. The two quantities differ by the number of tests in the file, which
+ * is exactly the factor the reading cannot supply and vitest can.
+ *
+ * `duration` is what vitest measures around each test and reports in milliseconds as a
+ * float; `fullName` names the test, so the sentence can point at it. Both are read
+ * defensively: a report this reader cannot parse is a measurement that failed, and the
+ * caller says so rather than reporting a margin of zero.
+ *
+ * Returns `{ ms, name }` or `null`.
+ */
+export function longestTest(report) {
+  let parsed;
+  try {
+    parsed = JSON.parse(String(report));
+  } catch {
+    return null;
+  }
+  const suites = Array.isArray(parsed?.testResults) ? parsed.testResults : [];
+  let best = null;
+  for (const suite of suites) {
+    const results = Array.isArray(suite?.assertionResults) ? suite.assertionResults : [];
+    for (const one of results) {
+      // A number, not something that converts to one: `duration` is defined as
+      // milliseconds and vitest writes a float. A string here is a report from
+      // something else, and reading it as a measurement is the guess this reader
+      // exists to avoid.
+      const ms = one?.duration;
+      if (typeof ms !== 'number' || !Number.isFinite(ms)) continue;
+      if (best === null || ms > best.ms) {
+        best = { ms: Math.round(ms), name: String(one?.fullName ?? one?.title ?? '') };
+      }
+    }
+  }
+  return best;
+}
+
+
+/**
  * Every site the inventory claims is proved, as `{ site, file }`.
  *
  * Exempt sites are not claims and are left out: their argument is that no input can

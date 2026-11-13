@@ -1360,3 +1360,96 @@ and the phantom gone. The blanking also makes the *declined* count mean somethin
 the claimant set belong to `spawnSync` and to a top-level object, and they are counted rather than
 silently skipped, because "no budget declared" and "a budget declared somewhere this reader does not
 look" are two different sentences and only one of them is true.
+
+## Finding 527 — a claimant that went red when it was armed was credited with every claim it made
+
+The battery's verdict for a claim came from one question:
+
+```js
+if (outcome.status !== 0) continue;   // credited
+```
+
+A non-zero exit is a fact about **the file**. The claim is a fact about **the mutation** -- "this
+witness fails when that exit stops failing" -- and three different things produce the same exit code:
+
+| what happened | what the exit code says | what it proves |
+| --- | --- | --- |
+| the mutant arrived and the witness failed | non-zero | the claim |
+| the mutant arrived and a test budget stopped the run | non-zero | nothing: no assertion ran to its end |
+| the file went red without the mutant ever arriving | non-zero | nothing, and about a claim it may never exercise |
+
+All three were credited. A claimant that throws as soon as `RCA_HOLLOW_SITE` is set -- a preload that
+cannot load in that child, a mutated statement that breaks an import, a fixture whose stand-in runner
+dies before it starts the gate -- would have been credited with every claim it makes, including claims
+about gates it never runs. The gate's published sentence is *"some test goes red for every one of
+them"*, and the instrument could not tell "the test noticed" from "the file crashed".
+
+**The repair is two facts, both already in the run.** `hollowed` (from the trace) says the mutant
+arrived at the claimed line; `exhaustedTestBudget` (from the output) says the run was not stopped by a
+budget. A red run missing either goes to its own basket with its own sentence, and neither basket is a
+proof:
+
+> `scripts/x.mjs:412 is claimed by packages/core/test/y.test.ts, which exited 1 with the exit hollowed
+> but never recorded the mutant, so the failure was not the mutant's and this claim is not proved by it`
+
+> `scripts/x.mjs:412 is claimed by packages/core/test/y.test.ts, which did not finish inside the
+> 30000 ms of test budget its own declaration furnishes (line 384), so the run was stopped rather than
+> failed`
+
+**And the census prints the basket counts on every run**, because a total that could be made of crashes
+is not a reading:
+
+> `verify-sites-are-sensitive: 220 of 220 mutant run(s) are credited -- each exited non-zero, recorded
+> its mutant, and finished inside the budget it was given (0 truncated by a budget, 0 exited without
+> recording the mutant, 0 survived, 0 unmeasured)`
+
+Measured on the shipped tree: 220 of 220 credited, 0 in either new basket, so the hole was **open and
+unexercised** -- which is why it is proved by fixtures rather than by an incident. Both fixtures go red
+on the old reader (the gate *passed* them: two claims, status 0) and are refused now, and the census
+assertion in the healthy case fails on the old script, so the three sentences are held by tests that
+would have to be deleted rather than adjusted.
+
+**This is also the answer to the previous round's leftover.** v3.86 compared a claimant's declaration
+against the battery's number and refused nothing, on the argument that no measurement in this tree says
+30 s is wrong for a test that waits on a socket. That is still true, and it is no longer the whole
+question: a truncated mutant run proves nothing, so a declaration below the battery **can cost the
+claim it was meant to prove**. The ceiling is stated as a rule rather than a threshold -- no
+declaration may be the thing that ends a run whose whole product is a failure -- and the direction that
+costs a claim is the one now refused. The direction that only costs wall clock (a declaration above
+the battery) is still reported and still not refused.
+
+## Finding 528 — the margin divided a file's wall clock by a per-test budget
+
+Finding 525 replaced the battery's one published budget with the budget each claimant is actually
+held to, and added the share:
+
+> `verify-sites-are-sensitive: slowest claimant packages/core/test/check-fault-cases.test.ts 29590 ms
+> of the 30000 ms it is given (99%), of 61 run 4 at a time`
+
+Read by the next round's author, that sentence says *one hiccup from a red gate*, and it sends the
+reader looking for a declaration to raise. It is not what it looks like. `29590 ms` is the file's
+**wall clock**; `30000 ms` is a ceiling that applies **per test**; that file runs fifty-odd tests, and
+its longest single test is a fraction of the total. The quotient is between two different quantities
+and the factor between them is the number of tests in the file, so a file with forty tests can never
+look better than `40 × budget` however fast its tests are. A percentage of the wrong denominator is
+worse than no percentage: it names a repair for a ceiling nothing was near.
+
+**The measurement was available and unused.** Vitest reports each test's duration in its own JSON
+report, and the baseline runs now write it -- `--reporter=json --outputFile=…` into the scratch
+directory, so nothing lands in the tree and the 220 mutant runs do not pay for a file nothing reads
+(the mutant's verdict is its exit code). `longestTest` in `site-proofs.mjs` picks the longest
+`assertionResults[].duration` and keeps the test's name, and the sentence becomes:
+
+> `the longest single test of any claimant is 5227 ms of the 30000 ms it is given (17%), in
+> packages/core/test/fetch-official.test.ts: scripts/fetch-official.mjs · the digest pin reports the
+> digest of a small asset alongside a large one in the same run`
+
+17% of the tightest declaration in the estate, in a different file from the one the old line named.
+The margin is real, and it is five times the headroom the old number implied.
+
+A run that wrote no report says so instead of reporting a share of a number nobody measured --
+`no run wrote a per-test report, so how much of the 120000 ms any one test used is unmeasured` -- and
+that state is exercised by every fixture case, whose stand-in runner writes no vitest report, rather
+than by one hand-written test. The reader also accepts **only** a number for `duration`: a JSON string
+there is a report from something else, and coercing it would be the same mistake one field down (a
+test caught it: `'4000'` became a 4 000 ms measurement).
