@@ -242,4 +242,94 @@ describe('logts.csv · the reduction the corpus performs', () => {
     const [header, first] = cells(table.csv);
     expect((first as string[])[(header as string[]).indexOf('frontend_2')]).toBe('70000');
   });
+
+  /**
+   * The cluster id, which is the column the corpus's own table groups by.
+   *
+   * ## Why the template alone was not enough
+   *
+   * The rule matched the row's `log_template` against the cluster table exactly, and
+   * reproduced the corpus for 20 of the 24 cases that carry one. The four it missed
+   * were all `_loss` cases, by 37, 6, 3 and 12 cells of 4559, 3395, 7008 and 6305 --
+   * and the reason was that some of their rows carry a Drain-**masked** template
+   * (`... for product <:*:> rpc error ...`) rather than the rendered text the cluster
+   * table quotes. Their `cluster_id` column named the cluster all along (finding
+   * 536). These tests are the rule, at four rows.
+   */
+  describe('the cluster id, when the row carries one', () => {
+    const twoFrontendKeys: LogCluster[] = [
+      { key: '1', container: 'currencyservice', template: 'conversion request successful' },
+      { key: '2', container: 'frontend', template: 'request started' },
+      { key: '3', container: 'frontend', template: 'serving product page' },
+    ];
+
+    it('counts a row into the column its id names, not the one its text does', () => {
+      // The corpus's own file does this, and it is not a tie-break: a masked
+      // template names no column at all, so the fallback would drop the row.
+      const table = buildLogtsCsv(
+        [{ container: 'frontend', template: '<:*:> masked', atSeconds: 0, clusterId: '3' }],
+        twoFrontendKeys,
+      );
+      const [header, row] = cells(table.csv);
+      expect((row as string[])[(header as string[]).indexOf('frontend_3')]).toBe('1');
+      expect(table.dropped).toBe(0);
+    });
+
+    it('says how many rows came in under a masked template', () => {
+      const grid = reduceLogts(
+        [
+          { container: 'frontend', template: 'request started', atSeconds: 0, clusterId: '2' },
+          { container: 'frontend', template: '<:*:> masked', atSeconds: 0, clusterId: '2' },
+        ],
+        twoFrontendKeys,
+      );
+      expect(grid.byClusterId).toBe(2);
+      expect(grid.maskedTemplate).toBe(1);
+      expect(grid.dropped).toBe(0);
+      expect(grid.contradicted).toBe(0);
+      expect(logtsCells(grid, 0)).toEqual([0, 0, 2, 0]);
+    });
+
+    it('counts a row whose id and text name different clusters, rather than choosing', () => {
+      // Both columns resolve and disagree. Counting it into one of them silently is
+      // how a corpus that contradicts itself would pass a gate; the grid reports the
+      // row so the gate can fail on it.
+      const grid = reduceLogts(
+        [{ container: 'frontend', template: 'serving product page', atSeconds: 0, clusterId: '2' }],
+        twoFrontendKeys,
+      );
+      expect(grid.contradicted).toBe(1);
+      expect(grid.byClusterId).toBe(1);
+      expect(grid.maskedTemplate).toBe(0);
+      // The id speaks, so the row lands in one column and not in two.
+      expect(logtsCells(grid, 0)).toEqual([0, 0, 1, 0]);
+    });
+
+    it('falls back to the text when the id names no cluster at all', () => {
+      // A `cluster_id` the cluster table does not list for that container is an id
+      // this rule cannot use. The rendered text still can, so the row is counted
+      // rather than dropped -- and the tally says which path it took.
+      const grid = reduceLogts(
+        [{ container: 'frontend', template: 'request started', atSeconds: 0, clusterId: '99' }],
+        twoFrontendKeys,
+      );
+      expect(grid.byClusterId).toBe(0);
+      expect(grid.byTemplate).toBe(1);
+      expect(grid.contradicted).toBe(0);
+      expect(grid.dropped).toBe(0);
+      expect(logtsCells(grid, 0)).toEqual([0, 0, 1, 0]);
+    });
+
+    it('treats an empty id as no id, which is how the corpus files an unclustered row', () => {
+      // The corpus's `redis` lines carry an empty `cluster_id` and an empty
+      // `log_template`; they are in no column of its own table either.
+      const grid = reduceLogts(
+        [{ container: 'redis', template: '', atSeconds: 0, clusterId: '' }],
+        twoFrontendKeys,
+      );
+      expect(grid.dropped).toBe(1);
+      expect(grid.byClusterId).toBe(0);
+      expect(grid.byTemplate).toBe(0);
+    });
+  });
 });

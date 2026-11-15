@@ -428,10 +428,10 @@ document that described it as downloading the data was describing an intention.
 | Commits (at `e22e2de`) | 536 |
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 97 |
-| Source lines | 34,266 |
+| Source lines | 34,369 |
 | Test files | 249 core + 4 cli |
-| Test lines | 106,871 core + 3,242 cli |
-| Tests | 6,349 core + 187 cli |
+| Test lines | 107,086 core + 3,242 cli |
+| Tests | 6,358 core + 187 cli |
 | Tracked files | 641 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -516,7 +516,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.90: **29** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.91: **29** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -554,20 +554,30 @@ is a row about rather than paraphrase one that no `grep` will find.
   case directories in `rcaeval-re2` are refusals, so the step could never have passed and had never
   reported a verdict on the 25 cases it can read.
 
-- **The 156 masked-template cases have no exact check, and the only available statement is weaker
-  than the gate's.** `RE2-SS` and `RE2-TT` hold Drain's masked templates
+- **The 246 cases with neither an id nor a rendered template have no exact check, and the only
+  available statement is weaker than the gate's.** `RE2-SS` and `RE2-TT` hold Drain's masked templates
   (`pageNum=<:NUM:>`) while their log rows carry only `message`, so the exact reduction cannot be
   applied -- three attempts at a rule are measured in finding 534, and the second one makes one row
   match three clusters at once. What *is* derivable in both formats is an inequality: per container
   and bucket, the marginals of `logts.csv` cannot exceed the log rows of that container. That is a
-  real statement and a strictly weaker one, and it is not a reproduction.
+  real statement and a strictly weaker one, and it is not a reproduction. The count is 246 of the 270
+  case directories the last run walked; the 24 that carry `cluster_id` are reproduced exactly and are
+  no longer part of this entry.
   `[open: decide whether a weaker claim gets its own name and its own gate, rather than being bolted onto a step whose sentence is "reproduced"]`
 
-- **The repaired aggregate step has not been run on the corpus.** The repair is proved on three real
-  case directories inflated by range request (`RE2-OB/checkoutservice_cpu/1` reproduced cell for
-  cell, `RE2-SS/carts_cpu/1` and `RE2-TT/ts-train-service_socket/2` refused with their columns named)
-  and on four fixtures, and it has not been run over 181 directories.
-  `[open: dispatch official-data.yml on rcaeval-re2 and read step 13's census, then record the run in golden-master/roundtrip.json]`
+- ~~**The repaired aggregate step has not been run on the corpus.**~~ **Closed by finding 536 and
+  finding 537, which is what the run found.** Run `43501279961` reached step 13 with
+  **270 of 270** round-tripped and step 13 failed on four of the twenty-four case directories it can
+  read -- all four `_loss`, by 37, 6, 3 and 12 cells of 4559, 3395, 7008 and 6305 -- because the rule
+  matched `log_template` exactly and those four cases carry rows whose template is Drain-masked
+  (`... product <:*:> ...`) while the `cluster_id` beside it names the right cluster. The rule now
+  reads the id first, keeps the template as the fallback and as a second opinion, and fails on a row
+  whose two columns disagree.
+
+- **The repaired reduction has not been run over the corpus.** It is proved on the four directories
+  that failed step 13 -- the same bytes that produced 37, 6, 3 and 12 differing cells, now 0 of
+  21 267 -- and on nine fixtures, and it has not been run over all 270.
+  `[open: dispatch official-data.yml on rcaeval-re2, read step 13's census for 24 case(s) reproduced and 0 named two different clusters, and record the run in golden-master/roundtrip.json]`
 
 - ~~**The real-corpus runs are diagnosed, and the mechanism was named wrong twice
   before it was named right.**~~ **Closed without a finding: the third naming came from
@@ -1411,7 +1421,7 @@ and this table.
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
-| [volume-14.md](progress/volume-14.md) | 18 | v3.73 | v3.90 |
+| [volume-14.md](progress/volume-14.md) | 19 | v3.73 | v3.91 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

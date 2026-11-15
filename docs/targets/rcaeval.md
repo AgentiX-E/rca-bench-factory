@@ -153,8 +153,13 @@ every row of all three files, and 1705353840 is a multiple of 15, so the bucket 
 
 The first of the three is reproduced by `buildLogtsCsv` and checked cell for cell by
 `scripts/check-aggregate-tables.mjs`, which runs in `official-data.yml` against the fetched corpus.
-The other two are not produced by this repository and cannot be: their input is not in the archive.
-RE3 ships none of the three, so nothing in that corpus can be checked against them.
+What a row counts into is its own **`cluster_id`** when the file carries that column, and an exact
+match of `log_template` against the cluster's `template` when it does not: `log_template` is a
+*rendering* of the cluster, and in the four `_loss` cases that ship both columns a handful of rows
+carry a Drain-masked rendering (`... product <:*:> rpc error ...`) that names no key at all while
+their `cluster_id` names the right one (finding 536). The other two tables are not produced by this
+repository and cannot be: their input is not in the archive. RE3 ships none of the three, so nothing
+in that corpus can be checked against them.
 
 ### The status column is not OTel's
 
@@ -305,8 +310,8 @@ anomalous window. Unix seconds, no trailing newline.
 | `level` | string | no | `LogPayload.severityText ?? ""` | RE2 only. |
 | `req_path` | string | no | `(not carried)` | RE2 only. Empty; see RCAEVAL_UNFILLED_COLUMNS. |
 | `error` | string | no | `(not carried)` | RE2 only. Empty. |
-| `cluster_id` | string | no | `(not carried)` | RE2 only. Empty. |
-| `log_template` | string | no | `(not carried)` | RE2 only. The corpus writes rendered template text; the IR carries an id. |
+| `cluster_id` | string | no | `(not carried)` | RE2 only. The column the corpus's own `logts.csv` groups by; empty on the rows it does not count. |
+| `log_template` | string | no | `(not carried)` | RE2 only. The corpus writes the rendered template text, and in the `_loss` cases occasionally a Drain-masked one (`... <:*:> ...`) that names no cluster -- which is why the reduction reads `cluster_id` first (finding 536). |
 | `pod_name` | string | no | `resource['k8s.pod.name'] ?? ''` | RE3 only. |
 | `node_name` | string | no | `resource['k8s.node.name'] ?? ''` | RE3 only. |
 <!-- /fields -->

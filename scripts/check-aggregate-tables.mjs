@@ -120,12 +120,13 @@ function firstRecord(path, problems) {
  *
  * ## The columns the rule keys on
  *
- * `log_template` is the rendered template the corpus's cluster table quotes -- the
- * rule matches it exactly (`docs/targets/rcaeval.md`, finding 307). It is present in
- * **25 of the 91** Online Boutique case directories in `RE2-OB` and in none of
- * `RE2-SS` or `RE2-TT`, whose `cluster_info.json` holds Drain's **masked** templates
- * (`..., pageNum=<:NUM:>, ...`) and whose log rows carry only `message`. Those cases
- * are refused, and the refusal is why `firstRecord` exists: it is cheaper to say so
+ * `cluster_id` is the column the corpus groups by, and `log_template` is the
+ * rendering of it -- read first when present, and read always as the fallback and
+ * as a second opinion (finding 536). Both are absent from `RE2-SS` and `RE2-TT`,
+ * whose `cluster_info.json` holds Drain's **masked** templates
+ * (`..., pageNum=<:NUM:>, ...`) and whose log rows carry only `message`: with no id
+ * and no rendered text there is nothing to reduce with, so those cases are
+ * refused, and the refusal is why `firstRecord` exists -- it is cheaper to say so
  * than to parse two hundred megabytes first.
  *
  * ## Why this is a generator
@@ -140,6 +141,7 @@ function* logRows(path, columns, refusal) {
     timestamp: columns.indexOf('timestamp'),
     container: columns.indexOf('container_name'),
     template: columns.indexOf('log_template'),
+    cluster: columns.indexOf('cluster_id'),
   };
 
   let index = 0;
@@ -160,6 +162,7 @@ function* logRows(path, columns, refusal) {
       container: cells[at.container],
       template: cells[at.template],
       atSeconds: Math.floor(Number(cells[at.timestamp]) / 1_000_000_000),
+      clusterId: at.cluster < 0 ? undefined : cells[at.cluster],
     };
   }
 }
@@ -320,15 +323,26 @@ function checkCase(dir, label) {
 
   const headerProblems = [];
   const columns = firstRecord(logs, headerProblems);
-  const needed = ['timestamp', 'container_name', 'log_template'];
-  const missing = needed.filter((name) => !columns.includes(name));
-  if (missing.length > 0) {
+  const missingPosition = ['timestamp', 'container_name'].filter((name) => !columns.includes(name));
+  if (missingPosition.length > 0) {
     return {
       outcome: 'refused',
-      reason: 'no-template-column',
+      reason: 'no-position-column',
       why:
-        `${logs}: no '${missing.join("', '")}' column, so the reduction cannot be applied to it; ` +
-        `its columns are ${columns.join(', ')}`,
+        `${logs}: no '${missingPosition.join("', '")}' column, so a row cannot be placed on the ` +
+        `grid; its columns are ${columns.join(', ')}`,
+    };
+  }
+  // Either column will do, and the id is the one the corpus groups by: `RE2-SS` and
+  // `RE2-TT` carry neither, which is a refusal rather than a table of zeros.
+  const keyed = ['cluster_id', 'log_template'].filter((name) => columns.includes(name));
+  if (keyed.length === 0) {
+    return {
+      outcome: 'refused',
+      reason: 'no-cluster-column',
+      why:
+        `${logs}: no 'cluster_id' column and no 'log_template' column, so nothing in this file ` +
+        `says which cluster a row belongs to; its columns are ${columns.join(', ')}`,
     };
   }
 
@@ -336,6 +350,17 @@ function checkCase(dir, label) {
   if (refusal.why !== '') return { outcome: 'refused', ...refusal };
 
   const published = comparePublished(readFileSync(join(dir, LOGTS), 'utf8'), grid, label);
+  const problems = [...published.problems];
+  // The two columns are two statements about the same row, and a row whose text
+  // names one cluster and whose id names another is a corpus this rule would hide
+  // by preferring one of them.
+  if (grid.contradicted > 0) {
+    problems.unshift(
+      `${label}: ${grid.contradicted} row(s) name one cluster by 'cluster_id' and a different one by ` +
+        "'log_template'; the two columns are two statements about the same row and this one disagrees " +
+        'with itself',
+    );
+  }
   const notes = [];
   for (const refused of ['tracets_lat.csv', 'tracets_err.csv']) {
     if (!existsSync(join(dir, refused))) continue;
@@ -344,18 +369,25 @@ function checkCase(dir, label) {
         `of traces.csv (seven candidate reductions, 0 of 1649 cells, finding 307)`,
     );
   }
+  if (grid.maskedTemplate > 0) {
+    notes.push(
+      `${label}: ${grid.maskedTemplate} of ${grid.byClusterId} row(s) counted by id carried a template ` +
+        'that matches no key -- a masked template, not a different cluster',
+    );
+  }
   if (grid.dropped > 0) {
-    notes.push(`${label}: ${grid.dropped} log row(s) match no cluster and appear in no column`);
+    notes.push(`${label}: ${grid.dropped} log row(s) name no cluster and appear in no column`);
   }
 
   return {
-    outcome: published.problems.length === 0 ? 'reproduced' : 'disagreed',
+    outcome: problems.length === 0 ? 'reproduced' : 'disagreed',
     cells: published.cells,
     rows: published.rows,
     columns: published.columns,
     wrong: published.wrong ?? 0,
-    problems: published.problems,
+    problems,
     notes,
+    grid,
   };
 }
 
@@ -364,7 +396,8 @@ const REFUSAL_REASONS = {
   'no-cluster-table': 'no cluster table',
   'unreadable-cluster-table': 'a cluster table that is not a table',
   'no-logs': 'no logs.csv',
-  'no-template-column': 'no rendered template column',
+  'no-position-column': 'no timestamp or container column',
+  'no-cluster-column': 'no cluster id and no rendered template',
   'ragged-records': 'records that do not match the header',
 };
 
@@ -392,6 +425,13 @@ function main() {
   let cells = 0;
   let reproduced = 0;
   let refused = 0;
+  let differingCells = 0;
+  let disagreeing = 0;
+  let countedById = 0;
+  let countedByTemplate = 0;
+  let masked = 0;
+  let dropped = 0;
+  let contradicted = 0;
 
   for (const dir of dirs) {
     const label = basename(dir) === dir ? dir : relative(root, dir) || dir;
@@ -406,18 +446,28 @@ function main() {
 
     for (const note of result.notes) console.log(note);
     for (const problem of result.problems) problems.push(problem);
-    if (result.wrong > 0) {
-      // Not "all equal": a case that disagrees with the corpus is the one case where
-      // the sentence must not say it agrees. It said so until v3.90.
-      console.log(
-        `${label}: ${result.rows} row(s) x ${result.columns} column(s) = ${result.cells} cell(s), ` +
-          `${result.wrong} differ`,
-      );
-    } else {
-      console.log(
-        `${label}: ${result.rows} row(s) x ${result.columns} column(s) = ${result.cells} cell(s), all equal`,
-      );
+    countedById += result.grid.byClusterId;
+    countedByTemplate += result.grid.byTemplate;
+    masked += result.grid.maskedTemplate;
+    dropped += result.grid.dropped;
+    contradicted += result.grid.contradicted;
+    if (result.outcome === 'disagreed') {
+      disagreeing += 1;
+      differingCells += result.wrong;
     }
+    // Not "all equal": a case that disagrees with the corpus is the one case where
+    // the sentence must not say it agrees. It said so until v3.90, and a case whose
+    // cells all agree while its two columns contradict each other said so again
+    // until v3.91 -- hence the trailing clause.
+    const verdict =
+      result.wrong > 0
+        ? `${result.wrong} differ`
+        : result.problems.length === 0
+          ? 'all equal'
+          : `all equal, but ${result.problems.length} problem(s) remain`;
+    console.log(
+      `${label}: ${result.rows} row(s) x ${result.columns} column(s) = ${result.cells} cell(s), ${verdict}`,
+    );
     if (result.outcome === 'reproduced') {
       cells += result.cells;
       reproduced += 1;
@@ -426,7 +476,14 @@ function main() {
 
   if (problems.length > 0) {
     for (const problem of problems) console.error(`check-aggregate-tables: ${problem}`);
-    console.error(`check-aggregate-tables: FAILED (${problems.length} problem(s))`);
+    // The count of sentences is not the count of anything wrong: five cells in one
+    // case produce five sentences and one further-cell sentence, so a run that says
+    // "21 problem(s)" over 58 differing cells names a number nobody can act on
+    // (finding 537). Both counts are printed now, and they are both counted.
+    console.error(
+      `check-aggregate-tables: FAILED (${differingCells} cell(s) differ across ${disagreeing} case(s); ` +
+        `${problems.length} problem(s) reported)`,
+    );
     process.exit(1);
   }
 
@@ -444,9 +501,24 @@ function main() {
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
     .map(([reason, count]) => `${count} for ${REFUSAL_REASONS[reason] ?? reason}`)
     .join(', ');
+  // How a row was counted, not only how many were: a run where every row came in
+  // through a masked template is a run whose table agrees with the corpus for a
+  // reason nobody would have guessed from a cell count.
+  const provenance = [
+    `${countedById} row(s) counted by their own cluster id`,
+    masked > 0 ? `${masked} of them under a masked template` : '',
+    countedByTemplate > 0 ? `${countedByTemplate} by their rendered template` : '',
+    dropped > 0 ? `${dropped} named no cluster` : '',
+    // Said even when it is zero, because a zero here is the claim that the two
+    // columns agree everywhere they both speak -- which is what makes preferring one
+    // of them a reading of the corpus rather than a choice made about it.
+    `${contradicted} named two different clusters`,
+  ]
+    .filter((clause) => clause !== '')
+    .join(', ');
   console.log(
     `check-aggregate-tables: OK (${reproduced} case(s) reproduced, ${cells} cell(s) reduced from ` +
-      `logs.csv and equal to the corpus's own ${LOGTS}` +
+      `logs.csv and equal to the corpus's own ${LOGTS}; ${provenance}` +
       (refused > 0 ? `; ${refused} refused, ${tally}` : '') +
       ')',
   );

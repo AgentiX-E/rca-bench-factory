@@ -54,6 +54,9 @@ const SUITE_BUDGET_MS = 30_000;
 
 const LOGS_HEADER = 'time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template';
 
+/** The same file without the column the corpus groups by, which `RE2-SS` ships. */
+const LOGS_HEADER_NO_ID = 'time,timestamp,container_name,message,level,req_path,error,log_template';
+
 const CLUSTERS = {
   '1': { template: 'conversion request successful', container: ['currencyservice'] },
   '2': { template: 'request started', container: ['frontend'] },
@@ -77,16 +80,29 @@ function at(seconds: number): string {
   return String(seconds * 1_000_000_000 + 123_456_789);
 }
 
-function logLine(seconds: number, container: string, template: string): string {
-  return `00:00,${at(seconds)},${container},message,info,,,1,${template}`;
+/**
+ * One log line, carrying both columns the corpus's own file carries.
+ *
+ * The id is a parameter rather than a constant because the corpus's is: a fixture
+ * that filed a `frontend` line under the `currencyservice` cluster would be a case
+ * whose two columns disagree, and every test below would then be measuring the
+ * fallback path without saying so.
+ */
+function logLine(seconds: number, container: string, template: string, clusterId = '1'): string {
+  return `00:00,${at(seconds)},${container},message,info,,,${clusterId},${template}`;
+}
+
+/** The same line in a file that has no `cluster_id` column, as `RE2-SS` ships it. */
+function logLineNoId(seconds: number, container: string, template: string): string {
+  return `00:00,${at(seconds)},${container},message,info,,,${template}`;
 }
 
 const LOGS = [
   LOGS_HEADER,
-  logLine(0, 'currencyservice', 'conversion request successful'),
-  logLine(0, 'currencyservice', 'conversion request successful'),
-  logLine(0, 'frontend', 'request started'),
-  logLine(15, 'frontend', 'request started'),
+  logLine(0, 'currencyservice', 'conversion request successful', '1'),
+  logLine(0, 'currencyservice', 'conversion request successful', '1'),
+  logLine(0, 'frontend', 'request started', '2'),
+  logLine(15, 'frontend', 'request started', '2'),
 ].join('\n');
 
 const LOGTS = ['time,currencyservice_1,frontend_2', '0,2,1', '15,0,1'].join('\n');
@@ -166,14 +182,31 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
     expect(status).toBe(1);
   });
 
-  it('refuses a case whose logs.csv is missing a column the reduction needs', () => {
+  it('refuses a case in which nothing says which cluster a row belongs to', () => {
+    // Both columns or neither: `RE2-SS` and `RE2-TT` ship `message` alone, and with
+    // no id and no rendered text there is nothing to count a row into. Naming both
+    // in the sentence is the point -- until v3.91 the gate asked only for
+    // `log_template`, which made a file carrying a usable `cluster_id` and no
+    // template look unreadable (finding 536).
     const dir = makeCase({
       'cluster_info.json': JSON.stringify(CLUSTERS),
-      'logs.csv': 'time,timestamp,container_name\n00:00,1,frontend',
+      'logs.csv': 'time,timestamp,container_name,message\n00:00,1,frontend,request started',
       'logts.csv': LOGTS,
     });
     const { status, out } = run('--case', dir);
-    expect(out).toContain("no 'log_template' column");
+    expect(out).toContain("no 'cluster_id' column and no 'log_template' column");
+    expect(out).toContain('its columns are time, timestamp, container_name, message');
+    expect(status).toBe(1);
+  });
+
+  it('refuses a case it cannot even place on the grid, and names the column', () => {
+    const dir = makeCase({
+      'cluster_info.json': JSON.stringify(CLUSTERS),
+      'logs.csv': 'time,container_name,cluster_id,log_template\n00:00,frontend,2,request started',
+      'logts.csv': LOGTS,
+    });
+    const { status, out } = run('--case', dir);
+    expect(out).toContain("no 'timestamp' column, so a row cannot be placed on the grid");
     expect(status).toBe(1);
   });
 
@@ -199,7 +232,7 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
       'logts.csv': LOGTS,
     });
     const { status, out } = run('--case', dir);
-    expect(out).toContain('1 log row(s) match no cluster and appear in no column');
+    expect(out).toContain('1 log row(s) name no cluster and appear in no column');
     expect(status).toBe(0);
   });
 
@@ -281,13 +314,16 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
       for (let key = 1; key <= keys; key += 1) {
         clusters.push({ key: String(key), container: 'a', template: 't' });
       }
-      const table = buildLogtsCsv(
-        [
-          { container: 'a', template: 't', atSeconds: 0 },
-          { container: 'a', template: 't', atSeconds: (buckets - 1) * 15 },
-        ],
-        clusters,
-      );
+      // One row per cluster at each end: every column is 1, the table is full width,
+      // and the log file names each row's own cluster -- which is what the corpus's
+      // `cluster_id` column does. A fixture that left the id off would be a file the
+      // gate reads through its fallback, and this test would then be measuring the
+      // narrow path.
+      const wide = clusters.flatMap((one) => [
+        { container: 'a', template: 't', atSeconds: 0, clusterId: one.key },
+        { container: 'a', template: 't', atSeconds: (buckets - 1) * 15, clusterId: one.key },
+      ]);
+      const table = buildLogtsCsv(wide, clusters);
       writeFileSync(
         join(dir, 'cluster_info.json'),
         JSON.stringify(
@@ -296,7 +332,9 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
       );
       writeFileSync(
         join(dir, 'logs.csv'),
-        [LOGS_HEADER, logLine(0, 'a', 't'), logLine((buckets - 1) * 15, 'a', 't')].join('\n'),
+        [LOGS_HEADER, ...wide.map((row) => logLine(row.atSeconds, row.container, row.template, row.clusterId))].join(
+          '\n',
+        ),
       );
       writeFileSync(join(dir, 'logts.csv'), table.csv);
 
@@ -320,12 +358,12 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
    *
    * Each of those invokes the gate on **one** case, so "refused" and "nothing was
    * compared" are the same run and both must fail. On the corpus they are not: of the
-   * 181 case directories in `RE2-OB`, `RE2-SS` and `RE2-TT`, **25** carry a rendered
-   * `log_template` and can be reproduced; the other 156 ship Drain's masked templates
-   * and a `message`-only log, which this rule cannot match. Counting those as
-   * failures makes the step red for a property of the corpus rather than a defect in
-   * this repository, which is what it did until v3.90 -- and what made its title
-   * ("either reproduced or refused") untrue of its behaviour.
+   * 181 case directories in `RE2-OB`, `RE2-SS` and `RE2-TT`, **24** carry a
+   * `cluster_id` column and can be reproduced; the other 157 ship a `message`-only
+   * log against Drain's masked templates, and no id, which this rule cannot reduce.
+   * Counting those as failures makes the step red for a property of the corpus
+   * rather than a defect in this repository, which is what it did until v3.90 -- and
+   * what made its title ("either reproduced or refused") untrue of its behaviour.
    */
   it('counts a refusal instead of failing, when another case was reproduced', () => {
     const root = mkdtempSync(join(tmpdir(), 'aggregate-mixed-'));
@@ -337,7 +375,8 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
     writeFileSync(join(good, 'cluster_info.json'), JSON.stringify(CLUSTERS));
     writeFileSync(join(good, 'logs.csv'), LOGS);
     writeFileSync(join(good, 'logts.csv'), LOGTS);
-    // The shape `RE2-SS` and `RE2-TT` actually ship: seven columns, no rendered template.
+    // The shape `RE2-SS` and `RE2-TT` actually ship: seven columns, no id and no
+    // rendered template.
     writeFileSync(join(masked, 'cluster_info.json'), JSON.stringify(CLUSTERS));
     writeFileSync(
       join(masked, 'logs.csv'),
@@ -347,12 +386,93 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
 
     const { status, out } = run('--official-dir', root);
     expect(out).toContain('RE2-TT/ts-train-service_socket/2: refused -- ');
-    expect(out).toContain("no 'log_template' column");
+    expect(out).toContain("no 'cluster_id' column and no 'log_template' column");
     expect(out).toContain(
       'OK (1 case(s) reproduced, 4 cell(s) reduced from logs.csv and equal to the corpus\'s own logts.csv; ' +
-        '1 refused, 1 for no rendered template column)',
+        '4 row(s) counted by their own cluster id, 0 named two different clusters; 1 refused, 1 for no ' +
+        'cluster id and no rendered template)',
     );
     expect(status).toBe(0);
+  });
+
+  /**
+   * The column the corpus groups by, which is not the column this rule used to read.
+   *
+   * ## The measurement behind this fixture
+   *
+   * On the 2026-11-13 `rcaeval-re2` run the gate reproduced 20 of the 24 Online
+   * Boutique cases and disagreed on four -- all four `_loss` cases -- by 37, 6, 3 and
+   * 12 cells. None of those four is wrong in the corpus: a few of its rows carry a
+   * Drain-**masked** template (`... for product <:*:> rpc error ...`) while their
+   * `cluster_id` column names the cluster perfectly well, so a rule that matched
+   * only the rendered text dropped rows the corpus had counted (finding 536).
+   *
+   * This fixture is that shape at its smallest: one row whose template is masked and
+   * whose id is not, in a table that counts it. The old rule produced 1 and the
+   * corpus says 2.
+   */
+  it('reproduces a case whose row carries a masked template, because the id is the column', () => {
+    const dir = makeCase({
+      'cluster_info.json': JSON.stringify(CLUSTERS),
+      'logs.csv': [
+        LOGS_HEADER,
+        logLine(0, 'frontend', 'request started', '2'),
+        logLine(0, 'frontend', '<:*:> masked beyond recognition', '2'),
+      ].join('\n'),
+      'logts.csv': ['time,currencyservice_1,frontend_2', '0,0,2'].join('\n'),
+    });
+    const { status, out } = run('--case', dir);
+    expect(out).toContain('1 row(s) x 2 column(s) = 2 cell(s), all equal');
+    expect(out).toContain(
+      '1 of 2 row(s) counted by id carried a template that matches no key -- a masked template, ' +
+        'not a different cluster',
+    );
+    expect(status).toBe(0);
+  });
+
+  it('reproduces a case with no id column, by the rendered template', () => {
+    // The fallback has to be exercised on its own: every other fixture here carries
+    // both columns, so a reducer that ignored the template entirely would pass them.
+    const dir = makeCase({
+      'cluster_info.json': JSON.stringify(CLUSTERS),
+      'logs.csv': [LOGS_HEADER_NO_ID, logLineNoId(0, 'frontend', 'request started')].join('\n'),
+      'logts.csv': ['time,currencyservice_1,frontend_2', '0,0,1'].join('\n'),
+    });
+    const { status, out } = run('--case', dir);
+    expect(out).toContain('1 row(s) x 2 column(s) = 2 cell(s), all equal');
+    expect(out).toContain('0 row(s) counted by their own cluster id, 1 by their rendered template');
+    expect(status).toBe(0);
+  });
+
+  /**
+   * The case where the two columns disagree with each other.
+   *
+   * `cluster_id` and `log_template` are two statements about the same row. Every one
+   * of the 24 corpus cases has them agree on every row, so the gate can afford to
+   * treat a disagreement as a defect -- and it must, because otherwise "which column
+   * wins" is a decision this repository made for the corpus rather than learned from
+   * it.
+   */
+  it('fails when a row names one cluster by id and another by its template', () => {
+    // Two clusters of the *same* container, so that both columns resolve and the
+    // disagreement is between two columns rather than between a column and nothing.
+    const twoFrontendKeys = {
+      ...CLUSTERS,
+      '3': { template: 'serving product page', container: ['frontend'] },
+    };
+    const dir = makeCase({
+      'cluster_info.json': JSON.stringify(twoFrontendKeys),
+      'logs.csv': [
+        LOGS_HEADER,
+        logLine(0, 'frontend', 'serving product page', '2'),
+        logLine(0, 'frontend', 'request started', '2'),
+      ].join('\n'),
+      'logts.csv': ['time,currencyservice_1,frontend_2,frontend_3', '0,0,2,0'].join('\n'),
+    });
+    const { status, out } = run('--case', dir);
+    expect(out).toContain("1 row(s) name one cluster by 'cluster_id' and a different one by 'log_template'");
+    expect(out).toContain('all equal, but 1 problem(s) remain');
+    expect(status).toBe(1);
   });
 
   /**
@@ -448,6 +568,11 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
     const { status, out } = run('--case', dir);
     expect(out).toContain('2 row(s) x 2 column(s) = 4 cell(s), 1 differ');
     expect(out).not.toContain('all equal');
+    // The last line counts cells and cases, not sentences: one differing cell in one
+    // case reports two sentences ("time=0 …" and "… further cell(s) differ") and the
+    // run that said "21 problem(s)" over 58 cells named a number nobody could act on
+    // (finding 537).
+    expect(out).toContain('FAILED (1 cell(s) differ across 1 case(s); 1 problem(s) reported)');
     expect(status).toBe(1);
   });
 });

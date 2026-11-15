@@ -1798,3 +1798,97 @@ caller ever looked at the pair together because the failing path was the one nob
 The repair counts the wrong cells and uses them: `1 differ` in place of `all equal`, with a test
 that asserts both the new sentence and the absence of the old one. A run of the gate on a red case
 is the only place this sentence matters, which is exactly why it had never been looked at.
+
+## Finding 536 — the aggregate rule read a column the corpus sometimes masks, and four cases said so
+
+The 2026-11-13 `rcaeval-re2` run of `official-data.yml` (run `43501279961`) reached step 13 and
+step 13 failed:
+
+```
+RE2-OB/currencyservice_loss/1: 97 row(s) x 47 column(s) = 4559 cell(s), 37 differ
+RE2-OB/emailservice_loss/1: 97 row(s) x 35 column(s) = 3395 cell(s), 6 differ
+RE2-OB/productcatalogservice_loss/1: 96 row(s) x 73 column(s) = 7008 cell(s), 3 differ
+RE2-OB/recommendationservice_loss/1: 97 row(s) x 65 column(s) = 6305 cell(s), 12 differ
+check-aggregate-tables: FAILED (21 problem(s))
+```
+
+Four cases of the twenty-four the rule can read, and all four of them `_loss`. Twenty agreeing cases
+and four disagreeing ones is the shape of a rule that is right about the easy cases, so the question
+was not "is the gate broken" but "which sentence in it is false". The reduced table was short by
+cells, never long:
+
+```
+check-aggregate-tables: RE2-OB/currencyservice_loss/1: time=1705389075 column='frontend_33' published=5 reduced=2
+```
+
+Reading that bucket out of the case's own `logs.csv` -- 131 837 records, 15 seconds wide -- gives the
+answer in one line. Six hundred and eighty-two `frontend` rows fall in it, and the cluster-33 rows
+are not all spelled the same way:
+
+```
+3  33 | frontend request error failed to do currency conversion for product <:*:> rpc error: code = Unavailable ...
+2  33 | frontend request error failed to do currency conversion for product LS4PSXUNUM: rpc error: code = Unavailable ...
+```
+
+Both groups carry `cluster_id` **33**. Only the second carries the rendered template that
+`cluster_info.json` quotes for key 33. The first carries a Drain-masked rendering -- `<:*:>` where
+the product id was -- which matches no key, so the rule that matched `log_template` exactly dropped
+those rows, and the corpus's own file had counted them. The column the corpus groups by is
+`cluster_id`; `log_template` is a rendering of it, and the rendering is inconsistent in exactly the
+cases a fault injector re-clustered.
+
+**The measurement, one case each, against the archive's own bytes:**
+
+| case | rows carrying a masked template | cells different, template rule | cells different, id rule |
+| --- | --- | --- | --- |
+| `RE2-OB/currencyservice_loss/1` | 162 of 131 811 | 37 of 4559 | **0** |
+| `RE2-OB/emailservice_loss/1` | 6 of 169 891 | 6 of 3395 | **0** |
+| `RE2-OB/productcatalogservice_loss/1` | 5 of 117 581 | 3 of 7008 | **0** |
+| `RE2-OB/recommendationservice_loss/1` | 548 of 147 388 | 12 of 6305 | **0** |
+| `RE2-OB/checkoutservice_cpu/1` (control) | 0 of 171 302 | 0 of 2910 | **0** |
+
+The reproductions are exact on the same files that produced 37, 6, 3 and 12: the four cases that
+failed step 13 pass `--case` with 0 differing cells of 21 267. So this was never a corpus defect and
+never a rounding question -- it was the rule reading the wrong column of two that the file carries.
+
+**The repair keeps both columns and makes the disagreement a failure.** `reduceLogts` now reads
+`cluster_id` first when the row has one, counts into the column that key names, and reads
+`log_template` in two roles: the fallback for files that have no id column (`RE2-SS` and `RE2-TT`
+have neither, and are still refused), and a second opinion on every row where both speak. A row
+whose text names one cluster and whose id names another is counted in `contradicted`, and the gate
+fails on it -- "the two columns are two statements about the same row and this one disagrees with
+itself". Measured, `contradicted` is zero on all five cases above, which is what makes the check
+affordable: it costs nothing on a corpus that does not have the defect.
+
+Two sentences follow from the same reading and both are printed by the run rather than described
+here. The refusal reason is no longer "no rendered template column" but "no cluster id and no
+rendered template", because a file that carries a usable `cluster_id` and no template was being
+refused as unreadable while the corpus's own table counted it. And each case that counts rows under
+a masked template says so:
+
+```
+RE2-OB/currencyservice_loss/1: 162 of 131 811 row(s) counted by id carried a template that matches no
+key -- a masked template, not a different cluster
+```
+
+A reader who meets that line has the whole finding in one sentence, which is the point: the number
+of masked rows is a property of the archive, and the gate is where the archive is.
+
+## Finding 537 — the failure line counted sentences, and every sentence was capped at five cells
+
+The same run ended with `FAILED (21 problem(s))` while **58** cells differed. Neither number was
+wrong by accident. `comparePublished` names at most five differing cells per case and then adds one
+`N further cell(s) differ`, so a case contributes at most six sentences however many cells disagree;
+four cases at 37, 6, 3 and 12 differing cells produce 6 + 6 + 3 + 6 = 21. The line was a function of
+the cap, not of the disagreement, and two cases that differed by 37 cells and by 12 reported the same
+"6 problem(s)".
+
+The cap itself is right: a 4559-cell comparison that printed every differing cell would bury the
+first one. What was wrong is that the only number in the summary was the capped one. The line now
+counts what a reader needs -- `FAILED (58 cell(s) differ across 4 case(s); 21 problem(s) reported)`
+-- so the two quantities are both present and neither is standing in for the other.
+
+The same repair, one step earlier, is why a case can now print `all equal, but 1 problem(s) remain`:
+a row that contradicts itself by id and by template leaves every cell equal and the case still not
+reproduced. That sentence is the v3.90 lesson (finding 535) stated a second time: the line about the
+cells may not be the line that decides the verdict.

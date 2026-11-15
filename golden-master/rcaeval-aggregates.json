@@ -23,7 +23,8 @@
       "derivable": "exact",
       "reducedFrom": ["logs.csv", "cluster_info.json"],
       "columnRule": "<container>_<cluster key>, ordered by the key as an integer; the key is a decimal string in cluster_info.json and the container is the one that cluster names",
-      "valueRule": "count of log rows in the bucket whose container_name and log_template match that cluster exactly; a row matching no cluster is dropped (twenty `redis` rows with an empty log_template in this case) and the grid still spans its instant",
+      "valueRule": "count of log rows in the bucket filed under that cluster: by the row's own cluster_id when the file carries the column (it does here), and by an exact match of log_template against the cluster's template when it does not; a row that names no cluster is dropped (twenty `redis` rows with an empty cluster_id and log_template in this case) and the grid still spans its instant",
+      "maskedTemplateNote": "log_template is not always the rendered text: in the four `_loss` cases that carry the column, a few of their rows carry Drain-masked templates (`... product <:*:> rpc error ...`) that match no key in cluster_info.json, and the corpus's own table counted them anyway -- 162 of 131 811 rows in RE2-OB/currencyservice_loss/1, 6 in emailservice_loss/1, 5 in productcatalogservice_loss/1 and 548 in recommendationservice_loss/1. Reducing by cluster_id reproduces all four exactly (0 of 4559, 3395, 7008 and 6305 cells differ); reducing by the template alone missed 37, 6, 3 and 12 cells respectively (finding 536).",
       "verified": "2910 of 2910 cells equal, by scripts/check-aggregate-tables.mjs",
       "verifiedAt": "2026-10-30, against the archive described above"
     },
