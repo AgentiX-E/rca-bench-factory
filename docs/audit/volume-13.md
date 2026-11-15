@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–544, from the rounds recorded in `progress/volume-14.md`.
+Findings 542–545, from the rounds recorded in `progress/volume-15.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -183,3 +183,69 @@ line of five sites in `golden-master/gate-sites.json` and adds none: 140 sites a
 before and after. Two tests were added to `verify-sites-are-sensitive.test.ts` (one of them driving a
 new `namelessTimeout` fixture) and three to `site-proofs.test.ts`. The suite is 251 files and 6 388
 tests in `core`.
+
+## Finding 545 — the weak claim was reading two clocks, and a fixture cannot see a bucketing rule it never crosses
+
+The `Official data` dispatch on 2026-11-15 (`43735099650`) took the inequality that finding 542 named
+to the corpus for the first time. Step 13 printed **246 of 246** directories `over the bound` and
+exited 1. The first line is enough to see that the gate, not the corpus, is the subject:
+
+```
+RE2-OB/checkoutservice_cpu/2: container 'cartservice' in bucket 1708474635 publishes 131 log cell(s)
+and logs.csv holds 0 row(s) for it; a table that summarizes a log file cannot count more lines than
+the file holds
+```
+
+Zero rows in a bucket the container demonstrably logged in, on all six containers of that case, on
+ninety-seven consecutive buckets, and in every one of the 246 directories. The same case's totals
+disagreed by **20**: 110 047 published cells against 110 067 log rows, which is exactly the number of
+rows that name no cluster. A table whose total is right and whose every bucket is wrong is not a table
+that double-counted; it is a reader that filed the rows somewhere else.
+
+**The clock.** `logts.csv`'s time column is the second a fifteen-second window **starts** at, and
+`reduceLogts` places a row with `Math.floor(atSeconds / LOGTS_BUCKET_SECONDS) * LOGTS_BUCKET_SECONDS`.
+The marginal side -- `countRowsByContainer`, added by finding 542 -- keyed its map by `row.atSeconds`,
+the second the row fell on. Those are the same number only when a row lands exactly on a window
+boundary, which is what every fixture in `check-aggregate-tables.test.ts` did: `at(0)`, `at(15)`,
+`at(30)`. Six rows in a window produced one row in the map, the published cell said six, and the gate
+refused. The rows that made it to `0` spare row(s) are the ones whose timestamp happened to be the
+window's first second.
+
+**The measurement, on the corpus rather than on a fixture.** `RE2-SS` was fetched locally
+(`245 629 018` bytes, digest `7aff9a3a…`, both matching the registry pin) and expanded to 90 case
+directories. Before the fix:
+
+```
+$ node scripts/check-aggregate-tables.mjs --official-dir /tmp/official/RE2-SS ; echo $?
+check-aggregate-tables: FAILED (90 case(s) publish more log cell(s) than their own logs.csv holds; ...)
+1
+```
+
+63 441 refusal lines across the 90 directories; `carts_cpu/1` alone reported 715 problems over 720
+pairs. After the one-line repair:
+
+```
+check-aggregate-tables: OK (0 case(s) reproduced; 90 case(s) bounded, not reproduced: the marginals of
+logts.csv hold no more log cell(s) than logs.csv has rows for that container, 63 663 (container,
+bucket) pair(s), 0 spare row(s) at the tightest over 7 308 948 published cell(s) against 7 566 220 log
+row(s))
+```
+
+**The guards.** Two tests, both red before the repair and green after: one writes six rows at seconds
+`0…5` inside a single window against a published cell of 6 (a log side keyed by the second answers 1),
+and one writes `14`, `15`, `15` across a boundary against cells of 1 and 2 (a log side keyed by the
+second answers 0 and 0, and the refusal it printed named `bucket 0` with `0 row(s)` -- the corpus's
+sentence, in six lines). The second test is the one that matters for the *class*: it crosses a
+boundary rather than sitting on one, and the previous fourteen fixtures did not.
+
+**What this changes about the claim.** Nothing about the inequality; everything about what its first
+run proved. Finding 542's entry in the Open list said "the inequality has run on fixtures only", and
+that sentence was doing more work than it looked: a fixture can agree with a bug for as long as the
+fixture is written at the numbers the bug assumes. The corpus read is now the evidence, and it is a
+local one -- the 246 directories are `RE2-SS` (90) and `RE2-TT` (156), which the pin makes
+reproducible on any machine with 20 GB of disk.
+
+**What is not closed.** The failure this finding repairs was *found by* the run that was supposed to
+confirm the claim, and the run's verdict was reported as a corpus failure for one push. A gate whose
+first real reading is a failure of the gate is the shape finding 543's coverage row had one instrument
+earlier, and the repair is the same in both: run the reading before the release that cites it.

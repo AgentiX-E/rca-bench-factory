@@ -1955,8 +1955,8 @@ under 100 ms, which is what makes a floor defensible. Without that reading the r
 
 ## Finding 539 — the same tree, two percentages, and the ledger quoting the one nobody runs
 
-The v3.91 ledger's coverage row reads `99.98 / 99.95 / 100 / 99.97`. Every other round in
-`docs/progress/volume-14.md` reads `99.97 / 99.95 / 100 / 99.97`, and this round measured the v3.91
+The v3.91 ledger's coverage row reads `99.98 / 99.95 / 100 / 99.97`. Every other round around it in
+the progress log reads `99.97 / 99.95 / 100 / 99.97`, and this round measured the v3.91
 tree twice -- once at `9364bea` with the working tree stashed, once with its own changes in place --
 and got `99.97` both times.
 

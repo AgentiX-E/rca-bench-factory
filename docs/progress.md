@@ -440,9 +440,9 @@ document that described it as downloading the data was describing an intention.
 | Source files | 97 |
 | Source lines | 34,369 |
 | Test files | 251 core + 4 cli |
-| Test lines | 107,887 core + 3,242 cli |
-| Tests | 6,388 core + 187 cli |
-| Tracked files | 646 |
+| Test lines | 107,941 core + 3,242 cli |
+| Tests | 6,390 core + 187 cli |
+| Tracked files | 647 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -526,7 +526,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.94: **25** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.95: **28** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -539,6 +539,18 @@ v3.93 is the round that closed two entries by making their subject a sentence th
 report and names the instrument (finding 543). Both closures are guarded, and neither closure is a
 measurement of the corpus: the inequality has run on fixtures only, and that is written in the entry
 itself rather than left for the next round to discover.
+
+v3.95 is the round that turned that last sentence into a number, and the number refused everything.
+The inequality's first reading of the corpus failed step 13 with **246 of 246** directories over the
+bound, because its log side was keyed by the second a row fell on while the table is keyed by the
+fifteen-second window that second starts (finding 545). Every fixture had written its rows on a
+boundary, which is the one instant where the two clocks agree. After the floor, the same 271
+directories read 25 reproduced and 246 bounded with nothing refused, in 2 m 13 s, from three archives
+whose digests match the registry. The entry that asked for that reading is struck below, and the three
+entries this round adds are what the reading left behind: the workflow that found the defect has not
+run since the repair, the gate compares buckets without asking whether the table's time column is on
+the grid -- 0 of 26 116 published rows are off it, so the refusal is available and unbuilt -- and three
+rounds in this log are prose in a language the rest of it is not written in.
 
 v3.63 is the round that found the number itself was counting a **rule** that had gone wrong. Two entries
 below used half of a shape this log has used since v2.44 -- the reason struck through, the closure named
@@ -589,6 +601,10 @@ is a row about rather than paraphrase one that no `grep` will find.
   What this closure does **not** contain is the corpus reading: the inequality has run on fixtures and
   not on the archive, and the number that will be quoted beside `bounded` is the one the next
   `official-data.yml` run prints.
+  **That residual is closed by finding 545.** The run printed its number and the number was 246 refusals
+  out of 246; the clock the log side read was the second a row fell on, and the table is keyed by the
+  window that second starts. After the floor the archive reads 25 reproduced and 246 bounded, which is
+  the partition this entry was written about.
 
 - ~~**The repaired aggregate step has not been run on the corpus.**~~ **Closed by finding 536 and
   finding 537, which is what the run found.** Run `43501279961` reached step 13 with
@@ -1477,6 +1493,34 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: a per-test duration from runs whose verdict is the exit code, which is one report per mutant
   run -- the name is free now (finding 544), the duration is not]`
 
+- **The workflow that found the bucketing defect has not run since the repair.** The evidence for
+  finding 545 is a local read of the three `rcaeval-re2` archives -- 271 directories, 2 m 13 s, every
+  digest equal to the registry's -- and the step it repairs is step 13 of `official-data.yml`, which
+  has not been dispatched on a commit that carries the floor. A local read and a workflow read are the
+  same script on the same bytes, and they are not the same evidence: the workflow also proves that the
+  fetch, the round trip and the heap budget still leave the step the 2 m 13 s it needs.
+  `[open: one dispatch of official-data.yml on the commit that carries finding 545, and step 13's own
+  line recorded in the round that reads it]`
+
+- **The inequality compares buckets without asking whether the table is on the grid.** A published time
+  is read as a bucket key and floored against nothing: the log side floors its instants to the grid the
+  reduction uses, while the table's own times are taken as given. Measured over the 271 directories:
+  **0 of 26 116** published rows are off the 15-second grid, so a table on another origin would be
+  reported as publishing cells the container never logged, which is a true sentence about the wrong
+  subject -- the shape finding 545 was about, one step upstream. The corpus says the refusal is safe to
+  write and nothing has written it.
+  `[open: a refusal that names the grid when a published time is not on it, with the 0 of 26 116 in the
+  test that holds it]`
+
+- **Three rounds in this log are prose in a language the rest of it is not written in.** `v3.69`,
+  `v3.83` and `v3.84` are Chinese: 43, 40 and 33 lines respectively, headings included. Every other
+  round is English, the code comments are English, and no gate reads a document's language -- so the
+  three are unreadable to a reader of the other 240 rounds and invisible to `docs:check`. The record
+  they carry is intact and the numbers in them are the numbers their ledgers state; what is wrong is
+  the language of the record, and translating it is a rewrite of prose rather than of a measurement.
+  `[open: translate the three against the record, keeping every number, finding reference and heading
+  level, and make the language of the newest volume checkable]`
+
 ## Pass log
 
 The rounds are recorded in the volumes below, in the order they were run. They were one
@@ -1507,7 +1551,8 @@ and this table.
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
-| [volume-14.md](progress/volume-14.md) | 22 | v3.73 | v3.94 |
+| [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
+| [volume-15.md](progress/volume-15.md) | 12 | v3.84 | v3.95 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
