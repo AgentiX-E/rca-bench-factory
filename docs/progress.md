@@ -63,6 +63,16 @@ came to exist (finding 481). v3.83 is such a retake: six branch positions closed
 (nine to three), and the residual below re-enumerated one position at a time
 rather than in one sentence (findings 517 and 518).
 
+**What reads these four numbers now.** `scripts/check-coverage-readings.mjs` compares them
+with the `total.<dimension>.pct` of that run's own `coverage-summary.json` -- v8's counters,
+which is the instrument the table names -- at two decimal places, and prints the figure with
+the instrument in the same sentence. CI runs it with `--require` in the step that already
+reads that run's reports, immediately after `pnpm test:coverage`; `docs:check` does not run
+the suite, so it does not carry that guard, and where there is no report the script says
+`UNCHECKED` rather than passing on nothing (finding 543). The two instruments differ by 0.01
+on this tree -- clover's XML says 99.980, v8 says 99.97 -- which is why the sentence names
+one of them instead of saying "coverage" (finding 539).
+
 | Dimension | Result | Gate |
 | --- | --- | --- |
 | Statements | 99.97% | ≥ 95% |
