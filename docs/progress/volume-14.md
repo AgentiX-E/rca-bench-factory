@@ -2296,7 +2296,7 @@ count; they were counting different sets, and neither said so.
 | its first CI run | on `815e739`: started and completed at `13:29:52`, so **under a second** of a 3-minute bound, and **failed** on `build-example-bundle.test.ts` -- slowest test **1 128 ms**, no budget. The runner reports **19** files with a test at or above 1 000 ms where this container reports **12**, and that test measures 400-600 ms here, so no local run could have named it |
 | its recording | run **`43720087959`** on `72e46b8`, the first green run to carry the step: **1 s** measured against the 3-minute floor, written by `measure-ci-baseline.mjs`, and `golden-master/ci-declarations.json` deleted in the same round that created it |
 | the bound the recording moved | the gate-test battery: **231 s** measured, 7 min (420 s) bound, which is under twice the reading, so **8 min** now -- finding 540 |
-| list | **29 -> 29**: the "timeout table cannot discover a row it does not have" entry closed by this reader, and an entry opened for the new step's bound, which is a promise until a run measures it |
+| list | **29 -> 27**: the timeout table that could not discover a row it did not have, the repaired rule that had not been run over the corpus, and the new step's bound that was a promise -- three entries closed, and one opened and closed inside the round, so the count fell by two |
 | LLM calls | **0** |
 
 ### Leftovers, in the order that reaches the goal
