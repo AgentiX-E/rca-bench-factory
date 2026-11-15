@@ -432,7 +432,7 @@ document that described it as downloading the data was describing an intention.
 | Test files | 250 core + 4 cli |
 | Test lines | 107,412 core + 3,242 cli |
 | Tests | 6,373 core + 187 cli |
-| Tracked files | 644 |
+| Tracked files | 643 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -516,7 +516,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.92: **28** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.92: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -560,9 +560,10 @@ is a row about rather than paraphrase one that no `grep` will find.
   applied -- three attempts at a rule are measured in finding 534, and the second one makes one row
   match three clusters at once. What *is* derivable in both formats is an inequality: per container
   and bucket, the marginals of `logts.csv` cannot exceed the log rows of that container. That is a
-  real statement and a strictly weaker one, and it is not a reproduction. The count is 246 of the 270
-  case directories the last run walked; the 24 that carry `cluster_id` are reproduced exactly and are
-  no longer part of this entry.
+  real statement and a strictly weaker one, and it is not a reproduction. The count is 246 of the
+  **271** case directories the last run walked (finding 541 -- this read "of the 270" until the census
+  added its own two numbers up); the 25 that carry a cluster id or a rendered template are reproduced
+  exactly and are no longer part of this entry.
   `[open: decide whether a weaker claim gets its own name and its own gate, rather than being bolted onto a step whose sentence is "reproduced"]`
 
 - ~~**The repaired aggregate step has not been run on the corpus.**~~ **Closed by finding 536 and
@@ -574,10 +575,15 @@ is a row about rather than paraphrase one that no `grep` will find.
   reads the id first, keeps the template as the fallback and as a second opinion, and fails on a row
   whose two columns disagree.
 
-- **The repaired reduction has not been run over the corpus.** It is proved on the four directories
-  that failed step 13 -- the same bytes that produced 37, 6, 3 and 12 differing cells, now 0 of
-  21 267 -- and on nine fixtures, and it has not been run over all 270.
-  `[open: dispatch official-data.yml on rcaeval-re2, read step 13's census for 24 case(s) reproduced and 0 named two different clusters, and record the run in golden-master/roundtrip.json]`
+- ~~**The repaired reduction has not been run over the corpus.**~~ **Closed by finding 541, which is what
+  the run said.** Run `43706694417` on `81f0fd6` walked the whole corpus and passed: **25 of 271**
+  directories reproduced, **83 742** cells equal, **4 073 602** rows counted by their own cluster id,
+  **721** of them under a masked template, **575** named no cluster and **0** named two different
+  clusters. The census was also the first thing to divide `25 + 246` and get `271`, which is how the
+  corpus's 271st directory -- `RE2-OB/checkoutservice_cpu/multi-source-data`, the one whose last
+  component is not a number -- was found, four rounds after every document had settled on 270. The run
+  is recorded in `golden-master/roundtrip.json`.
+  ~~`[open: dispatch official-data.yml on rcaeval-re2, read step 13's census, and record the run]`~~
 
 - ~~**The real-corpus runs are diagnosed, and the mechanism was named wrong twice
   before it was named right.**~~ **Closed without a finding: the third naming came from

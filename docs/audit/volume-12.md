@@ -2010,3 +2010,29 @@ run may raise somebody else's bound, and the round has to be willing to raise it
 tightening ran in the safe direction and the gate still refused it, which is what `R6` says it should
 do: a bound under twice its reading is refused whichever way it moved, because the rule is about the
 argument, not about the direction a change happens to point.
+
+## Finding 541 — the corpus has 271 case directories, and every document said 270
+
+The first census that printed both halves of its own arithmetic printed this:
+
+```
+check-aggregate-tables: OK (25 case(s) reproduced, 83742 cell(s) ...; 246 refused, 246 for no cluster
+id and no rendered template)
+```
+
+25 + 246 is **271**. Every document in this corpus, since v3.90, has said the corpus holds **270**
+directories with a `logts.csv` -- and that number was not invented: it is the count the round trip
+scores, and the round trip enumerates directories whose last component is a number.
+
+The 271st is `RE2-OB/checkoutservice_cpu/multi-source-data`. Its name is not a number, it sits one
+level deeper than the numbered cases, and the aggregate step's walk finds it like any other: it
+reproduced **2 910 cells**. So the two counts were never of the same set. 270 is what the scorer
+scores; 271 is what the gate walks; both are right, and until this run no sentence said which one it
+meant.
+
+Two consequences. The entry that has said "246 of the 270 case directories" since v3.90 says **246 of
+271** now, and the twenty-five reproduced include the named directory -- a case that no anchor scores
+and that no document had mentioned. And the arithmetic in a summary line is a cheap reader: two
+numbers that add up to the size of a set are a check on the set, and this pair had been adding up to a
+number that was one too small for four rounds without anything comparing it to the size of the thing
+it described.

@@ -50,10 +50,10 @@
     {
       "anchor": "rcaeval-re2",
       "run": {
-        "id": 43406267321,
-        "headSha": "e22e2de61",
+        "id": 43706694417,
+        "headSha": "81f0fd65b",
         "event": "workflow_dispatch",
-        "finishedAt": "2026-11-13T13:07:44Z",
+        "finishedAt": "2026-11-15T13:50:38Z",
         "artifact": "rcaeval-rcaeval-re2-round-trip"
       },
       "corpus": {
@@ -73,7 +73,7 @@
             "1": 270
           }
         },
-        "source": "the run's own score report (`--report`, uploaded as `rcaeval-scores.json` in the run's artifact), which prints `270 scored, 0 skipped, 0 failed`; every per-case `ROUNDTRIP` line printed `oracle=1.00`, and the epilogue printed `ROUNDTRIP cost 270 case(s) in 154.4 min; largest 8015 MB of the 12336 MB this run was given (65%) at RE2-TT/ts-travel-service_loss/3; slowest 118.2 s`. The step after it -- the aggregate-table comparison -- died of a 4 GB heap limit on that same corpus (finding 529); the round trip itself finished, which is what this record is a reading of."
+        "source": "the run's own score report (`--report`, uploaded as `rcaeval-scores.json` in the run's artifact), which printed `270 scored, 0 skipped, 0 failed`; every per-case `ROUNDTRIP` line printed `oracle=1.00`, and the epilogue printed `ROUNDTRIP cost 270 case(s) in 138.7 min; largest 7833 MB of the 12336 MB this run was given (63%) at RE2-TT/ts-route-service_socket/1; slowest 131.4 s at RE2-TT/ts-travel-service_loss/2`. This is the first run in which the step after it -- the aggregate-table comparison -- passed: `check-aggregate-tables: OK (25 case(s) reproduced, 83742 cell(s) reduced from logs.csv and equal to the corpus's own logts.csv; 4073602 row(s) counted by their own cluster id, 721 of them under a masked template, 575 named no cluster, 0 named two different clusters; 246 refused, 246 for no cluster id and no rendered template)`, on the rule v3.91 repaired (finding 536). 25 reproduced + 246 refused = 271, which is not a discrepancy: the corpus holds 271 directories with a logts.csv, the 270 numbered ones this record scores plus `RE2-OB/checkoutservice_cpu/multi-source-data`, and the aggregate step walks one level deeper than the round trip does."
       },
       "pins": [
         {

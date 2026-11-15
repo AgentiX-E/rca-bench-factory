@@ -2248,6 +2248,33 @@ the safe direction of a budget change. The message cannot be edited and a force-
 watching is a worse idea than one wrong number in a log, so it is corrected here, where a reader
 looking up the finding will arrive.
 
+### Eight · the repaired rule, over the whole corpus, at last
+
+Run **`43706694417`** on `81f0fd6` -- dispatched at the start of v3.92 -- finished green in 2 h 51 min,
+and its thirteenth step is the first time the repaired aggregate rule has been run over the corpus:
+
+```
+check-aggregate-tables: OK (25 case(s) reproduced, 83742 cell(s) reduced from logs.csv and equal to the
+corpus's own logts.csv; 4073602 row(s) counted by their own cluster id, 721 of them under a masked
+template, 575 named no cluster, 0 named two different clusters; 246 refused, 246 for no cluster id and
+no rendered template)
+```
+
+**0 named two different clusters** is the number this round was waiting for: v3.91 made a row whose two
+columns disagree a failure, and 4 073 602 rows later the corpus has none. **721** rows carried a masked
+template and were counted by their id -- the repair doing the thing it was made for, at a scale no
+fixture could reach.
+
+The round trip above it is unchanged from v3.90's reading: **270 of 270 at `oracle=1.00`**, 0 skipped,
+0 failed, **138.7 min**, largest 7 833 MB of the 12 336 MB the run was given (63%), slowest 131.4 s.
+
+**25 reproduced + 246 refused is 271, and the corpus has 271 case directories** (finding 541), which
+corrects a figure this corpus has carried since v3.90: the 271st is
+`RE2-OB/checkoutservice_cpu/multi-source-data`, a directory whose last component is not a number, and
+it reproduced 2 910 cells like any other. The round trip scores the **270** numbered ones; the
+aggregate step walks one level deeper and finds the named one too. Nothing was wrong with either
+count; they were counting different sets, and neither said so.
+
 ### Readings
 
 > Ledger for `v3.92`.
@@ -2260,6 +2287,8 @@ looking up the finding will arrive.
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines, quoted from vitest's table, which is the instrument the step prints and the thresholds are enforced against); `cli` **100 / 100 / 100 / 100**; unchanged, because this round changed no file under `src/` -- measured twice, at `9364bea` with the tree stashed and with this round's changes in place, which is how the row above came to move |
 | new tests | **6358 -> 6373, +15**, all in `check-test-budgets.test.ts`: the fraction rule both ways, the floor both ways, the suite budget preferred to a larger child-process timeout, all four spellings, two reports in one run, an unreadable report, a report naming no test, a missing `--report`, three unusable knob values, a result with no file name, a duration that is not a number, a report naming a file it cannot read, and the summary sentence that had no budget to be about |
 | the file it found | `gates-are-testable-is-enumerated.test.ts`, slowest test **1 015 ms**, no budget; now `{ timeout: SUITE_BUDGET_MS }` at 30 000 ms |
+| the corpus, at last | run `43706694417` on `81f0fd6`: **25 of 271** directories reproduced, **83 742** cells equal, **4 073 602** rows counted by their own cluster id, **721** of them under a masked template, **575** named no cluster, **0** named two different clusters; **246** refused, every one for having neither a cluster id nor a rendered template |
+| the corpus's 271st directory | `RE2-OB/checkoutservice_cpu/multi-source-data` -- whose last component is not a number -- reproduced 2 910 cells; the round trip scores the 270 numbered ones, so the two counts were never of the same set |
 | its reading on the finished tree | `repo` 254 files, 6 560 tests; **36** state a budget. The other two figures move with the machine and are given as ranges over four runs: **12-13** tests at or above 1 000 ms, and the closest at **16-26%** of a 30 000 ms budget. On the runner: **19** |
 | gate sites | **136 -> 139** across **62 -> 63 of 89** scripts: the usage exit, the problems exit, and "the report named no test", all three proved by the new test file |
 | the battery | **221 -> 224** claim(s) across **61 -> 62** file(s) |
@@ -2274,9 +2303,9 @@ looking up the finding will arrive.
 
 | priority | item | state | next step |
 | --- | --- | --- | --- |
-| P0 | The repaired aggregate rule has not been run over the corpus | open since v3.91: run `43706694417` is in flight on `81f0fd6` | read step 13's census for `24 case(s) reproduced` and `0 named two different clusters`, then record the run in `golden-master/roundtrip.json` |
+| ~~P0~~ | ~~The repaired aggregate rule has not been run over the corpus~~ | **closed by this round's reading**: run `43706694417` on `81f0fd6` reproduced **25 of 271** directories and **0** rows named two clusters, after 4 073 602 rows counted by id; the run is recorded in `golden-master/roundtrip.json` | -- |
 | ~~P1~~ | ~~The new step's bound is a promise, not a measurement~~ | **closed by finding 540** in the round that opened it: `43720087959` measured it at 1 s and the declarations file is gone | -- |
-| P1 | 246 case directories are refused, and the only exact statement available for them is an inequality | unchanged since v3.91 | decide whether a weaker claim gets its own name and its own gate |
+| P1 | 246 case directories are refused, and the only exact statement available for them is an inequality | unchanged since v3.91, now counted against **271** rather than 270 (finding 541) | decide whether a weaker claim gets its own name and its own gate |
 | P2 | The ceiling of 8 has never been measured where it is not oversubscription | unchanged | one full-suite run on nine or more usable CPUs |
 | P2 | The margin is the baseline's | open since v3.87 | whether a refused mutant should name the test that hung |
 | P2 | A record's terms are a map of strings to numbers | open since v3.83 | nine shapes instead of one |
