@@ -266,8 +266,24 @@ function containerOfColumn(name) {
  *
  * This is the right-hand side of the only statement `RE2-SS` and `RE2-TT` can support.
  * It is a fold over the same generator the exact reduction uses, so the two paths read
- * a log file the same way; what differs is what they do with a row -- the reduction
- * needs its cluster, and this needs only the container and the instant.
+ * a log file with one set of rules; what differs is what they do with a row -- the
+ * reduction needs its cluster, and this needs only the container and the instant.
+ *
+ * ## The instant is floored to the bucket, and this is the bug that says so
+ *
+ * `atSeconds` is the second the row fell on, and a published bucket is the second the
+ * window *starts* at. Keying the log side by the raw second is therefore keying two
+ * sides by two different clocks, and it is invisible for as long as a fixture writes
+ * its rows at `0`, `15`, `30` -- where the two are the same number. Every fixture in
+ * this repository's suite did, so the first corpus run of the weak claim reported
+ * **246 of 246** directories over the bound (`RE2-OB/checkoutservice_cpu/2`: 131 log
+ * cells published in bucket `1708474635` against `0` rows, while the case's own totals
+ * agreed to within the 20 rows no cluster names), and a claim that disagrees with
+ * every case it is pointed at is measuring itself (finding 545).
+ *
+ * The floor is the reduction's, not a second opinion about it: `reduceLogts` computes
+ * `Math.floor(atSeconds / LOGTS_BUCKET_SECONDS) * LOGTS_BUCKET_SECONDS`, and this side
+ * is only comparable with the table that function rendered.
  */
 function countRowsByContainer(rows) {
   const counts = new Map();
@@ -278,7 +294,8 @@ function countRowsByContainer(rows) {
       byBucket = new Map();
       counts.set(row.container, byBucket);
     }
-    byBucket.set(row.atSeconds, (byBucket.get(row.atSeconds) ?? 0) + 1);
+    const bucket = Math.floor(row.atSeconds / LOGTS_BUCKET_SECONDS) * LOGTS_BUCKET_SECONDS;
+    byBucket.set(bucket, (byBucket.get(bucket) ?? 0) + 1);
     total += 1;
   }
   return { counts, total };

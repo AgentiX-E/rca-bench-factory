@@ -60,7 +60,7 @@
     },
     {
       "script": "scripts/check-aggregate-tables.mjs",
-      "line": 741,
+      "line": 758,
       "condition": "problems.length > 0",
       "diagnostic": "check-aggregate-tables: FAILED (${causes === '' ? '' :",
       "status": "proved",
@@ -68,7 +68,7 @@
     },
     {
       "script": "scripts/check-aggregate-tables.mjs",
-      "line": 753,
+      "line": 770,
       "condition": "reproduced === 0 && bounded === 0",
       "diagnostic": "check-aggregate-tables: FAILED (0 of ${dirs.length} case(s) could be reproduced or bounded, which is",
       "status": "proved",

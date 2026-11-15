@@ -447,6 +447,60 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
   });
 
   /**
+   * A bucket holds every row of its fifteen seconds, not the rows of its first second.
+   *
+   * ## The measurement that produced this fixture
+   *
+   * The 2026-11-15 `Official data` run (`43735099650`, step 13) took the weak claim to the
+   * corpus for the first time, and **246 of 246** directories came back over the bound:
+   * `RE2-OB/checkoutservice_cpu/2` had `cartservice` publishing 131 log cells in bucket
+   * `1708474635` against `0` log rows, and its totals agreed to within the rows no cluster
+   * names (110 047 cells against 110 067 rows). A gate that disagrees with every case it
+   * is pointed at is not measuring the corpus.
+   *
+   * The clock was the defect. Rows arrive at arbitrary instants -- `1708474643` is inside
+   * the bucket that starts at `1708474635` -- and the log side was keyed by the second
+   * the row fell on while the published side is keyed by the bucket. Every fixture before
+   * this one wrote its rows at `0`, `15`, `30`, which are both the bucket and the second,
+   * so the two clocks agreed for the only reason a fixture can: it was shaped like the
+   * implementation (finding 545).
+   */
+  it('counts a row at any second of a bucket into that bucket', () => {
+    // Six rows inside one fifteen-second window, and a published table that says so.
+    // A log side keyed by the second sees exactly one of them.
+    const dir = makeCase({
+      'cluster_info.json': JSON.stringify(CLUSTERS),
+      'logs.csv': [
+        LOGS_HEADER_MESSAGE_ONLY,
+        ...[0, 1, 2, 3, 4, 5].map((second) => logLineMessageOnly(second, 'frontend')),
+      ].join('\n'),
+      'logts.csv': ['time,currencyservice_1,frontend_2', '0,0,6'].join('\n'),
+    });
+    const { status, out } = run('--case', dir);
+    expect(out).toContain('0 spare row(s) at the tightest');
+    expect(out).not.toContain('cannot count more lines than the file holds');
+    expect(status).toBe(0);
+  });
+
+  it('places the last second of a bucket in it, and the first second of the next in the next', () => {
+    // `14` and `15` straddle the boundary. A table keyed by the second finds no row at
+    // either: the first is filed under `14` and the published bucket is `0`.
+    const dir = makeCase({
+      'cluster_info.json': JSON.stringify(CLUSTERS),
+      'logs.csv': [
+        LOGS_HEADER_MESSAGE_ONLY,
+        logLineMessageOnly(14, 'frontend'),
+        logLineMessageOnly(15, 'frontend'),
+        logLineMessageOnly(15, 'frontend'),
+      ].join('\n'),
+      'logts.csv': ['time,currencyservice_1,frontend_2', '0,0,1', '15,0,2'].join('\n'),
+    });
+    const { status, out } = run('--case', dir);
+    expect(out).toContain('2 (container, bucket) pair(s), 0 spare row(s) at the tightest');
+    expect(status).toBe(0);
+  });
+
+  /**
    * The inequality is the gate: a table cannot summarize more lines than the file holds.
    *
    * This is the direction that makes the claim falsifiable. The corpus could publish a
