@@ -139,9 +139,16 @@ jobs:
       # and `--from` derives the same three scopes from those reports in ~0.1 s.
       # Measured: 80.09 s for the spawn path against 0.12 s for this one, on the
       # same trees and the same numbers.
+      #
+      # The same run also wrote `coverage-summary.json`, and the second half of this
+      # step reads it: the four figures in `## Coverage` had no reader that computed
+      # them (findings 481 and 539), so they are compared with this run's own v8
+      # counters and the sentence names the instrument. `--require` is what makes the
+      # comparison happen: `docs:check` runs the same script without it, because that
+      # gate does not run the suite and a cold tree has no report to read.
       - name: Published suite counts, read from that run rather than taken again
         timeout-minutes: 3
-        run: node scripts/measure-doc-counts.mjs --check --from packages/core/node_modules/.cache/vitest-report.json,packages/cli/node_modules/.cache/vitest-report.json
+        run: node scripts/measure-doc-counts.mjs --check --from packages/core/node_modules/.cache/vitest-report.json,packages/cli/node_modules/.cache/vitest-report.json && node scripts/check-coverage-readings.mjs --require
 
       - name: Mutation suite (gate + export, 100% interception)
         timeout-minutes: 3

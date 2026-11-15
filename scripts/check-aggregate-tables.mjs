@@ -240,6 +240,164 @@ function comparePublished(text, grid, label) {
 }
 
 /**
+ * `<container>_<cluster key>`, the only spelling the corpus's published table uses.
+ *
+ * ## Why this is a parser and not a `lastIndexOf('_')`
+ *
+ * A container name may contain an underscore and a cluster key is a decimal integer,
+ * so `checkoutservice_12` is one column of `checkoutservice` and `checkout_service_12`
+ * is one column of `checkout_service`. Splitting at the last underscore would answer
+ * the second case correctly and the first by luck; requiring the suffix to be all
+ * digits answers both, and refuses `frontend_notanumber` -- which is the shape a table
+ * would carry if its author had written a pod name into the column header, and a
+ * header this rule guessed the container out of would be a comparison with a file
+ * nobody described.
+ *
+ * The empty container is refused too: `_12` names no container, and a column that
+ * belongs to nothing cannot be attributed to a container's row count.
+ */
+function containerOfColumn(name) {
+  const match = /^(.+)_(\d+)$/.exec(name);
+  return match === null || match[1] === '' ? undefined : match[1];
+}
+
+/**
+ * The log rows of a file, counted by (container, 15-second bucket).
+ *
+ * This is the right-hand side of the only statement `RE2-SS` and `RE2-TT` can support.
+ * It is a fold over the same generator the exact reduction uses, so the two paths read
+ * a log file the same way; what differs is what they do with a row -- the reduction
+ * needs its cluster, and this needs only the container and the instant.
+ */
+function countRowsByContainer(rows) {
+  const counts = new Map();
+  let total = 0;
+  for (const row of rows) {
+    let byBucket = counts.get(row.container);
+    if (byBucket === undefined) {
+      byBucket = new Map();
+      counts.set(row.container, byBucket);
+    }
+    byBucket.set(row.atSeconds, (byBucket.get(row.atSeconds) ?? 0) + 1);
+    total += 1;
+  }
+  return { counts, total };
+}
+
+/**
+ * The published table's marginals, against the log rows they summarize.
+ *
+ * ## The claim, stated so that it can be false
+ *
+ * For every container `c` and bucket `b`:
+ *
+ *     sum over the columns of `c` of logts.csv[c, b]  <=  number of logs.csv rows
+ *                                                        with container `c` in bucket `b`
+ *
+ * A table of per-cluster counts is a partition of the container's lines, so its
+ * marginals can never exceed the lines. The inequality is therefore *derivable* from
+ * what the file claims to be -- and it is not free: a table bucketed on a different
+ * clock, generated from a different log file, or counted twice fails it. What it
+ * cannot see is a misattribution *within* a container, which is exactly what the 246
+ * directories have no column to check. So this is a weaker claim than reproduction,
+ * and it is reported under its own name (`bounded`) rather than as one.
+ *
+ * ## Why the empty cell is zero
+ *
+ * The corpus writes `0`, and a reader that treated an empty cell as a missing
+ * measurement would have to decide what "missing" means for a table it is summing.
+ * An empty cell in a count column is zero, and the check is that the number is a
+ * non-negative integer -- a cell holding `''` or `0` adds nothing, and a cell holding
+ * `1.5` or `-2` is a table this rule refuses rather than one it rounds.
+ *
+ * ## Why the comparison is a fold and not two tables
+ *
+ * The published side is accumulated into the same (container, bucket) shape as the
+ * log side, so peak memory is two maps of the buckets the corpus actually wrote --
+ * a few thousand entries for a 202 MB log file, not the file. Every corpus case with
+ * this shape is TrainTicket-sized, which is why this is not decoration.
+ */
+function compareMarginals(text, containers, logCounts, label) {
+  const problems = [];
+  const published = new Map();
+  let header = true;
+  let rows = 0;
+  let cells = 0;
+  let publishedTotal = 0;
+
+  for (const line of iterateCsvRows(text)) {
+    if (header) {
+      // The caller has already read and validated this row from the same file's first
+      // 64 KiB; it is skipped here rather than re-checked, because two decisions about
+      // one header are two chances to disagree with each other.
+      header = false;
+      continue;
+    }
+
+    rows += 1;
+    const bucket = Number(line[0]);
+    if (!Number.isInteger(bucket)) {
+      problems.push(
+        `${label}: row ${rows} has time='${line[0] ?? ''}', which is not a whole second; every bucket in the ` +
+          'corpus is written as one',
+      );
+      continue;
+    }
+    for (let c = 1; c < line.length; c += 1) {
+      const raw = line[c] ?? '';
+      const value = raw === '' ? 0 : Number(raw);
+      if (!Number.isInteger(value) || value < 0) {
+        problems.push(
+          `${label}: row ${rows} column '${containers[c - 1] ?? '?'}' holds '${raw}', which is not a ` +
+            'non-negative integer count',
+        );
+        continue;
+      }
+      if (value === 0) continue;
+      cells += 1;
+      publishedTotal += value;
+      const container = containers[c - 1];
+      let byBucket = published.get(container);
+      if (byBucket === undefined) {
+        byBucket = new Map();
+        published.set(container, byBucket);
+      }
+      byBucket.set(bucket, (byBucket.get(bucket) ?? 0) + value);
+    }
+  }
+
+  let pairs = 0;
+  let tightest = Infinity;
+  for (const [container, byBucket] of published) {
+    for (const [bucket, value] of byBucket) {
+      pairs += 1;
+      const held = logCounts.get(container)?.get(bucket) ?? 0;
+      const slack = held - value;
+      if (slack < tightest) tightest = slack;
+      if (slack < 0) {
+        problems.push(
+          `${label}: container '${container}' in bucket ${bucket} publishes ${value} log cell(s) and ` +
+            `logs.csv holds ${held} row(s) for it; a table that summarizes a log file cannot count more ` +
+            'lines than the file holds',
+        );
+      }
+    }
+  }
+
+  return {
+    problems,
+    pairs,
+    publishedTotal,
+    // Two row counts that are not the same number and were confused once: the table's
+    // own rows are its buckets, and the log file's rows are what the bound is against.
+    publishedRows: rows,
+    columns: containers.length,
+    cells,
+    tightest: pairs === 0 ? 0 : tightest,
+  };
+}
+
+/**
  * `cluster_info.json` flattened to one record per (key, container).
  *
  * The corpus's shape is `{ "<key>": { "template": "...", "container": ["..."] } }`,
@@ -333,17 +491,69 @@ function checkCase(dir, label) {
         `grid; its columns are ${columns.join(', ')}`,
     };
   }
-  // Either column will do, and the id is the one the corpus groups by: `RE2-SS` and
-  // `RE2-TT` carry neither, which is a refusal rather than a table of zeros.
+  // Either column will do, and the id is the one the corpus groups by. `RE2-SS` and
+  // `RE2-TT` carry neither -- 246 of the corpus's 271 directories -- and until v3.93
+  // that made them refusals, which said nothing about them. What the shape does
+  // support is the marginal inequality: the published table is a partition of each
+  // container's lines, so its column sums cannot exceed the lines it summarizes.
   const keyed = ['cluster_id', 'log_template'].filter((name) => columns.includes(name));
   if (keyed.length === 0) {
-    return {
-      outcome: 'refused',
-      reason: 'no-cluster-column',
-      why:
-        `${logs}: no 'cluster_id' column and no 'log_template' column, so nothing in this file ` +
-        `says which cluster a row belongs to; its columns are ${columns.join(', ')}`,
-    };
+    const published = firstRecord(join(dir, LOGTS));
+    if (published.length === 0) {
+      return {
+        outcome: 'refused',
+        reason: 'unreadable-logts-header',
+        why: `${join(dir, LOGTS)}: the published table has no header, so no column can be attributed to a container`,
+      };
+    }
+    if ((published[0] ?? '') !== 'time') {
+      return {
+        outcome: 'refused',
+        reason: 'unreadable-logts-header',
+        why:
+          `${join(dir, LOGTS)}: its first column is '${published[0] ?? ''}' and every corpus table starts ` +
+          "with 'time', so the buckets cannot be aligned with the log rows",
+      };
+    }
+    const containers = [];
+    for (const name of published.slice(1)) {
+      const container = containerOfColumn(name);
+      if (container === undefined) {
+        return {
+          outcome: 'refused',
+          reason: 'unreadable-logts-column',
+          why:
+            `${join(dir, LOGTS)}: '${name}' is not '<container>_<cluster key>', so the inequality cannot ` +
+            `say which container it counts; its columns are ${published.join(', ')}`,
+        };
+      }
+      containers.push(container);
+    }
+    const counted = countRowsByContainer(logRows(logs, columns, refusal));
+    if (refusal.why !== '') return { outcome: 'refused', ...refusal };
+
+    const marginal = compareMarginals(
+      readFileSync(join(dir, LOGTS), 'utf8'),
+      containers,
+      counted.counts,
+      label,
+    );
+    // The bound is against the file's rows, so the row count belongs beside the
+    // comparison rather than inside it: `compareMarginals` reads the published table
+    // and never opens `logs.csv`.
+    marginal.logRows = counted.total;
+    if (marginal.pairs === 0) {
+      // A table with no non-zero cell is not a weak pass: nothing was compared, and
+      // "the claim held" and "there was no claim" print the same number of failures.
+      return {
+        outcome: 'refused',
+        reason: 'no-published-cells',
+        why:
+          `${join(dir, LOGTS)} has no non-zero cell, so the inequality was never asked; a table of zeros ` +
+          'is not a bound on anything',
+      };
+    }
+    return { outcome: marginal.problems.length === 0 ? 'bounded' : 'disagreed', marginal };
   }
 
   const grid = reduceLogts(logRows(logs, columns, refusal), clusters);
@@ -397,7 +607,9 @@ const REFUSAL_REASONS = {
   'unreadable-cluster-table': 'a cluster table that is not a table',
   'no-logs': 'no logs.csv',
   'no-position-column': 'no timestamp or container column',
-  'no-cluster-column': 'no cluster id and no rendered template',
+  'unreadable-logts-header': 'a published table whose first column is not a bucket',
+  'unreadable-logts-column': 'a published column that is not <container>_<cluster key>',
+  'no-published-cells': 'a published table with no non-zero cell',
   'ragged-records': 'records that do not match the header',
 };
 
@@ -432,6 +644,12 @@ function main() {
   let masked = 0;
   let dropped = 0;
   let contradicted = 0;
+  let bounded = 0;
+  let boundedBreaches = 0;
+  let boundedPairs = 0;
+  let boundedCells = 0;
+  let boundedRows = 0;
+  let boundedTightest = Infinity;
 
   for (const dir of dirs) {
     const label = basename(dir) === dir ? dir : relative(root, dir) || dir;
@@ -441,6 +659,34 @@ function main() {
       refused += 1;
       refusedBy.set(result.reason, (refusedBy.get(result.reason) ?? 0) + 1);
       console.log(`${label}: refused -- ${result.why}`);
+      continue;
+    }
+
+    // The weak claim is a different statement about a different set of files, so it
+    // is counted and printed in its own clause rather than folded into the exact
+    // one. A reviewer reading `25 reproduced` beside `81 342 cells` needs to know
+    // that 246 more directories were checked and what was checked about them.
+    if (result.marginal !== undefined) {
+      const marginal = result.marginal;
+      for (const problem of marginal.problems) problems.push(problem);
+      if (marginal.problems.length > 0) {
+        boundedBreaches += 1;
+        console.log(
+          `${label}: bounded -- ${marginal.publishedTotal} published log cell(s) against ${marginal.logRows} ` +
+            `row(s), ${marginal.problems.length} (container, bucket) pair(s) over the bound`,
+        );
+        continue;
+      }
+      bounded += 1;
+      boundedPairs += marginal.pairs;
+      boundedCells += marginal.publishedTotal;
+      boundedRows += marginal.logRows;
+      if (marginal.tightest < boundedTightest) boundedTightest = marginal.tightest;
+      console.log(
+        `${label}: bounded -- ${marginal.pairs} (container, bucket) pair(s), ` +
+          `${marginal.publishedTotal} published log cell(s) against ${marginal.logRows} row(s) of ` +
+          `${marginal.columns} column(s), ${marginal.tightest} spare row(s) at the tightest`,
+      );
       continue;
     }
 
@@ -480,19 +726,29 @@ function main() {
     // case produce five sentences and one further-cell sentence, so a run that says
     // "21 problem(s)" over 58 differing cells names a number nobody can act on
     // (finding 537). Both counts are printed now, and they are both counted.
+    // Each cause is named only when it happened. A bounded-only run that breached the
+    // inequality would otherwise print `0 cell(s) differ across 0 case(s)`, which reads
+    // as "nothing was wrong" at the head of a failure line.
+    const causes = [
+      disagreeing > 0 ? `${differingCells} cell(s) differ across ${disagreeing} case(s)` : '',
+      boundedBreaches > 0 ? `${boundedBreaches} case(s) publish more log cell(s) than their own logs.csv holds` : '',
+    ]
+      .filter((clause) => clause !== '')
+      .join('; ');
     console.error(
-      `check-aggregate-tables: FAILED (${differingCells} cell(s) differ across ${disagreeing} case(s); ` +
-        `${problems.length} problem(s) reported)`,
+      `check-aggregate-tables: FAILED (${causes === '' ? '' : `${causes}; `}${problems.length} problem(s) reported)`,
     );
     process.exit(1);
   }
 
   // A run that reproduced nothing has checked nothing, and "nothing was wrong" and
-  // "nothing was compared" print the same number of failures.
-  if (reproduced === 0) {
+  // "nothing was compared" print the same number of failures. A bounded case is a
+  // check, so it keeps this run from being vacuous -- but it is not a reproduction,
+  // and the summary below says so in the clause that counts it (finding 542).
+  if (reproduced === 0 && bounded === 0) {
     console.error(
-      `check-aggregate-tables: FAILED (0 of ${dirs.length} case(s) could be reproduced, which is not a ` +
-        'pass -- the refusals above say why each one could not be read)',
+      `check-aggregate-tables: FAILED (0 of ${dirs.length} case(s) could be reproduced or bounded, which is ` +
+        'not a pass -- the refusals above say why each one could not be read)',
     );
     process.exit(1);
   }
@@ -503,22 +759,43 @@ function main() {
     .join(', ');
   // How a row was counted, not only how many were: a run where every row came in
   // through a masked template is a run whose table agrees with the corpus for a
-  // reason nobody would have guessed from a cell count.
-  const provenance = [
-    `${countedById} row(s) counted by their own cluster id`,
-    masked > 0 ? `${masked} of them under a masked template` : '',
-    countedByTemplate > 0 ? `${countedByTemplate} by their rendered template` : '',
-    dropped > 0 ? `${dropped} named no cluster` : '',
-    // Said even when it is zero, because a zero here is the claim that the two
-    // columns agree everywhere they both speak -- which is what makes preferring one
-    // of them a reading of the corpus rather than a choice made about it.
-    `${contradicted} named two different clusters`,
-  ]
-    .filter((clause) => clause !== '')
-    .join(', ');
+  // reason nobody would have guessed from a cell count. A run that walked no exact
+  // case at all says nothing here rather than printing the zeroes of a path it never
+  // entered -- `0 row(s) counted by their own cluster id` in a bounded-only run reads
+  // as a defect in the id column, which is not what happened.
+  const provenance =
+    countedById + countedByTemplate + dropped + contradicted === 0
+      ? ''
+      : [
+          `${countedById} row(s) counted by their own cluster id`,
+          masked > 0 ? `${masked} of them under a masked template` : '',
+          countedByTemplate > 0 ? `${countedByTemplate} by their rendered template` : '',
+          dropped > 0 ? `${dropped} named no cluster` : '',
+          // Said even when it is zero, because a zero here is the claim that the two
+          // columns agree everywhere they both speak -- which is what makes preferring
+          // one of them a reading of the corpus rather than a choice made about it.
+          `${contradicted} named two different clusters`,
+        ]
+          .filter((clause) => clause !== '')
+          .join(', ');
+  // The exact claim and the weak one are counted apart, and the weak one says what it
+  // is in the same sentence that gives its number: `bounded` is a marginal inequality
+  // over the container, not a reproduction of the cluster columns (finding 542).
+  const exact =
+    reproduced === 0
+      ? '0 case(s) reproduced'
+      : `${reproduced} case(s) reproduced, ${cells} cell(s) reduced from logs.csv and equal to the corpus's own ${LOGTS}`;
+  const withinBound =
+    bounded === 0
+      ? ''
+      : `; ${bounded} case(s) bounded, not reproduced: the marginals of logts.csv hold no more log cell(s) ` +
+        `than logs.csv has rows for that container, ${boundedPairs} (container, bucket) pair(s), ` +
+        `${boundedTightest} spare row(s) at the tightest over ${boundedCells} published cell(s) against ` +
+        `${boundedRows} log row(s)`;
   console.log(
-    `check-aggregate-tables: OK (${reproduced} case(s) reproduced, ${cells} cell(s) reduced from ` +
-      `logs.csv and equal to the corpus's own ${LOGTS}; ${provenance}` +
+    `check-aggregate-tables: OK (${exact}` +
+      (provenance === '' ? '' : `; ${provenance}`) +
+      withinBound +
       (refused > 0 ? `; ${refused} refused, ${tally}` : '') +
       ')',
   );

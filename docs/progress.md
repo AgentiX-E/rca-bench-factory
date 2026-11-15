@@ -429,10 +429,10 @@ document that described it as downloading the data was describing an intention.
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 97 |
 | Source lines | 34,369 |
-| Test files | 250 core + 4 cli |
-| Test lines | 107,412 core + 3,242 cli |
-| Tests | 6,373 core + 187 cli |
-| Tracked files | 643 |
+| Test files | 251 core + 4 cli |
+| Test lines | 107,765 core + 3,242 cli |
+| Tests | 6,384 core + 187 cli |
+| Tracked files | 646 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -516,12 +516,19 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.92: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.93: **25** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
 that needed it: the list had said "open" about a page that had been made a page, about a flag whose other
 half had been read, and about a creation path a real push had already paid for.
+
+v3.93 is the round that closed two entries by making their subject a sentence the tree can check: the
+246 directories with no cluster column now have a *weak* claim with a name and a failure path
+(finding 542), and the four coverage figures now have a reader that computes them from the run's own
+report and names the instrument (finding 543). Both closures are guarded, and neither closure is a
+measurement of the corpus: the inequality has run on fixtures only, and that is written in the entry
+itself rather than left for the next round to discover.
 
 v3.63 is the round that found the number itself was counting a **rule** that had gone wrong. Two entries
 below used half of a shape this log has used since v2.44 -- the reason struck through, the closure named
@@ -554,17 +561,24 @@ is a row about rather than paraphrase one that no `grep` will find.
   case directories in `rcaeval-re2` are refusals, so the step could never have passed and had never
   reported a verdict on the 25 cases it can read.
 
-- **The 246 cases with neither an id nor a rendered template have no exact check, and the only
-  available statement is weaker than the gate's.** `RE2-SS` and `RE2-TT` hold Drain's masked templates
+- ~~**The 246 cases with neither an id nor a rendered template have no exact check, and the only
+  available statement is weaker than the gate's.**~~ **Closed by finding 542, which is the name and the
+  gate the entry asked for, and by the fixtures that make the inequality fail.** The step now has a
+  fourth outcome, `bounded`, and it is printed in its own clause with `not reproduced` in the sentence:
+  the marginals of `logts.csv` hold no more log cells than `logs.csv` has rows for that container, per
+  15-second bucket. It is checked on a breach (a table publishing 3 cells in a bucket of 2 rows fails
+  with both numbers named), on a table whose column is not `<container>_<cluster key>`, and on a
+  published table of zeros, which is refused rather than passed because "the claim held" and "there was
+  no claim" print the same number of failures. `RE2-SS` and `RE2-TT` hold Drain's masked templates
   (`pageNum=<:NUM:>`) while their log rows carry only `message`, so the exact reduction cannot be
   applied -- three attempts at a rule are measured in finding 534, and the second one makes one row
-  match three clusters at once. What *is* derivable in both formats is an inequality: per container
-  and bucket, the marginals of `logts.csv` cannot exceed the log rows of that container. That is a
-  real statement and a strictly weaker one, and it is not a reproduction. The count is 246 of the
-  **271** case directories the last run walked (finding 541 -- this read "of the 270" until the census
-  added its own two numbers up); the 25 that carry a cluster id or a rendered template are reproduced
-  exactly and are no longer part of this entry.
-  `[open: decide whether a weaker claim gets its own name and its own gate, rather than being bolted onto a step whose sentence is "reproduced"]`
+  match three clusters at once. The count is 246 of the **271** case directories the last run walked
+  (finding 541); the 25 that carry a cluster id or a rendered template are reproduced exactly and are
+  no longer part of this entry.
+  ~~`[open: decide whether a weaker claim gets its own name and its own gate, rather than being bolted onto a step whose sentence is "reproduced"]`~~
+  What this closure does **not** contain is the corpus reading: the inequality has run on fixtures and
+  not on the archive, and the number that will be quoted beside `bounded` is the one the next
+  `official-data.yml` run prints.
 
 - ~~**The repaired aggregate step has not been run on the corpus.**~~ **Closed by finding 536 and
   finding 537, which is what the run found.** Run `43501279961` reached step 13 with
@@ -1110,16 +1124,26 @@ is a row about rather than paraphrase one that no `grep` will find.
   reproduce; the figure it can is 0.25, and a test asserts it. The entry was also wrong about where
   the risk sat: the guard fed G5 **one case per bundle**, so even a working pairwise arm would have
   been silent, and the ten identical copies in `check-fault-cases.test.ts` passed for that reason.
-- **The coverage figure has no reader that computes it.** `docs/progress.md` publishes the
-  four-dimension reading under a sentence beginning "Measured by `vitest run --coverage`", and the
-  per-round copy of it lives in a `### Readings` ledger. `check-doc-counts` holds the suite counts to
-  a run and `derive-gate-sites --check` holds the gate-site count to a derivation; nothing holds this
-  one to anything, which is why it published **99.93** branches for at least eight rounds while every
-  ledger read 99.80 (finding 481).
-  `[open: the repair corrected the figure, not the gap -- a guard would need a coverage report during
+- ~~**The coverage figure has no reader that computes it.**~~ **Closed by finding 543, which is the reader
+  and the instrument name.** `test:coverage` writes vitest's `json-summary` beside the reporters it
+  already wrote, and `scripts/check-coverage-readings.mjs` compares the four published figures with
+  `total.<dimension>.pct` at two decimals -- the precision the page publishes -- and prints the number
+  with the instrument that produced it: `equal to the v8 counters in …coverage-summary.json`. It refuses
+  a stale figure (naming the dimension, both numbers and the report), a missing `## Coverage` table, a
+  dimension that is not one of the four, a dimension published twice, a result that is not `NN.NN%`, and
+  a report without one of the four totals. CI runs it with `--require` in the step that already reads
+  that run's reports; where there is no report at all it prints `UNCHECKED` rather than passing
+  silently or failing a table that may be perfect. `docs/progress.md` publishes the four-dimension
+  reading under a sentence beginning "Measured by `vitest run --coverage`", and the per-round copy of it
+  lives in a `### Readings` ledger; `check-doc-counts` holds the suite counts to a run and
+  `derive-gate-sites --check` holds the gate-site count to a derivation. Nothing held this one to
+  anything, which is why it published **99.93** branches for at least eight rounds while every ledger
+  read 99.80 (finding 481) -- and why the retaken figures could be 99.980 on one instrument and 99.97 on
+  the other with the prose naming neither (finding 539).
+  ~~`[open: the repair corrected the figure, not the gap -- a guard would need a coverage report during
   `docs:check`, which does not run the suite, so the honest state is that one of the two copies is
   remembered. Either a `docs:check` step reads a report when one exists, or the table says in a
-  sentence that the ledger is the only computed copy and this one is a convenience]`
+  sentence that the ledger is the only computed copy and this one is a convenience]`~~
 - **A record's terms are a map of strings to numbers, so nothing can say which keys a rule writes.**
   The aggregate reads `evidenceHits` and `la` out of `OfficialCaseScore.terms` with index access,
   and `noUncheckedIndexedAccess` therefore hands it `number | undefined` for a key that target's
@@ -1443,7 +1467,7 @@ and this table.
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
-| [volume-14.md](progress/volume-14.md) | 20 | v3.73 | v3.92 |
+| [volume-14.md](progress/volume-14.md) | 21 | v3.73 | v3.93 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

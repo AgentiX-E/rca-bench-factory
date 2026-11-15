@@ -1,6 +1,6 @@
 {
   "rule": "a process.exit(...) call whose argument is not a known zero -- no argument at all is zero; sites and zero partition every process.exit call, whatever position the call sits in; a reference to the exit family that is not a call is refused rather than counted; see scripts/derive-gate-sites.mjs",
-  "scanned": 89,
+  "scanned": 90,
   "excluded": {
     "zero": 18
   },
@@ -60,17 +60,17 @@
     },
     {
       "script": "scripts/check-aggregate-tables.mjs",
-      "line": 487,
+      "line": 741,
       "condition": "problems.length > 0",
-      "diagnostic": "check-aggregate-tables: FAILED (${differingCells} cell(s) differ across ${disagreeing} case(s);",
+      "diagnostic": "check-aggregate-tables: FAILED (${causes === '' ? '' :",
       "status": "proved",
       "provedBy": "packages/core/test/check-aggregate-tables.test.ts"
     },
     {
       "script": "scripts/check-aggregate-tables.mjs",
-      "line": 497,
-      "condition": "reproduced === 0",
-      "diagnostic": "check-aggregate-tables: FAILED (0 of ${dirs.length} case(s) could be reproduced, which is not a",
+      "line": 753,
+      "condition": "reproduced === 0 && bounded === 0",
+      "diagnostic": "check-aggregate-tables: FAILED (0 of ${dirs.length} case(s) could be reproduced or bounded, which is",
       "status": "proved",
       "provedBy": "packages/core/test/check-aggregate-tables.test.ts"
     },
@@ -152,6 +152,13 @@
       "diagnostic": "- ${failure}",
       "status": "proved",
       "provedBy": "packages/core/test/check-cli-reference.test.ts"
+    },
+    {
+      "script": "scripts/check-coverage-readings.mjs",
+      "line": 76,
+      "diagnostic": "check-coverage-readings: FAILED",
+      "status": "proved",
+      "provedBy": "packages/core/test/check-coverage-readings.test.ts"
     },
     {
       "script": "scripts/check-data-model-vocabularies.mjs",

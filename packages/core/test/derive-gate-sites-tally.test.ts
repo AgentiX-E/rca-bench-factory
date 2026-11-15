@@ -316,8 +316,16 @@ describe('the two baskets are a partition of the calls, not a remainder', { time
     // call count and the site count both rise by three. That last exit is the round's own subject one
     // level up: "nothing was over the line" and "nothing was read" print the same number of failures,
     // which is exactly why the aggregate gate's empty corpus needed a sentence and this needed one too.
-    expect(calls).toBe(157);
-    expect(sites).toBe(139);
+    //
+    // 158/140 is v3.93's, and it is the ninth round in which the two move together, for one exit: the
+    // coverage table's reader refuses a stale figure, a missing dimension, a duplicate row, a report
+    // without one of the four totals, and a required report that is not there -- all of them through
+    // one `fail()`, because a guard whose refusals are one paragraph each is a guard whose exit code
+    // says the same thing five ways. The pair moving together is not the interesting part; the
+    // interesting part is that this is the first site in the tree whose *subject* is a figure the
+    // documents publish about their own measurement.
+    expect(calls).toBe(158);
+    expect(sites).toBe(140);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

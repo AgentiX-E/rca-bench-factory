@@ -57,6 +57,19 @@ const LOGS_HEADER = 'time,timestamp,container_name,message,level,req_path,error,
 /** The same file without the column the corpus groups by, which `RE2-SS` ships. */
 const LOGS_HEADER_NO_ID = 'time,timestamp,container_name,message,level,req_path,error,log_template';
 
+/**
+ * The seven columns `RE2-SS` and `RE2-TT` actually ship: no id, no rendered text.
+ *
+ * The pair is what makes 246 of the corpus's 271 directories unreadable to the exact
+ * rule -- and, since v3.93, the shape the marginal inequality is asked about instead.
+ */
+const LOGS_HEADER_MESSAGE_ONLY = 'time,timestamp,container_name,message,level,req_path,error';
+
+/** One log line in the seven-column shape, carrying only what the inequality counts. */
+function logLineMessageOnly(seconds: number, container: string): string {
+  return `00:00,${at(seconds)},${container},message,info,,`;
+}
+
 const CLUSTERS = {
   '1': { template: 'conversion request successful', container: ['currencyservice'] },
   '2': { template: 'request started', container: ['frontend'] },
@@ -182,21 +195,21 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
     expect(status).toBe(1);
   });
 
-  it('refuses a case in which nothing says which cluster a row belongs to', () => {
-    // Both columns or neither: `RE2-SS` and `RE2-TT` ship `message` alone, and with
-    // no id and no rendered text there is nothing to count a row into. Naming both
-    // in the sentence is the point -- until v3.91 the gate asked only for
-    // `log_template`, which made a file carrying a usable `cluster_id` and no
-    // template look unreadable (finding 536).
+  it('asks the inequality of a file that carries only time, container and message', () => {
+    // `RE2-SS` and `RE2-TT` ship exactly these four columns in the corpus, and with no
+    // id and no rendered text there is nothing to count a row into a *cluster* with.
+    // Until v3.93 that made the case a refusal, and a refusal is silent about the
+    // corpus. The container is still there, so the one statement the shape supports is
+    // that the published table cannot hold more lines than the container emitted.
     const dir = makeCase({
       'cluster_info.json': JSON.stringify(CLUSTERS),
-      'logs.csv': 'time,timestamp,container_name,message\n00:00,1,frontend,request started',
-      'logts.csv': LOGTS,
+      'logs.csv': `time,timestamp,container_name,message\n00:00,${at(0)},frontend,request started`,
+      'logts.csv': ['time,currencyservice_1,frontend_2', '0,0,1'].join('\n'),
     });
     const { status, out } = run('--case', dir);
-    expect(out).toContain("no 'cluster_id' column and no 'log_template' column");
-    expect(out).toContain('its columns are time, timestamp, container_name, message');
-    expect(status).toBe(1);
+    expect(out).toContain(': bounded -- 1 (container, bucket) pair(s)');
+    expect(out).toContain('0 spare row(s) at the tightest');
+    expect(status).toBe(0);
   });
 
   it('refuses a case it cannot even place on the grid, and names the column', () => {
@@ -365,7 +378,7 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
    * rather than a defect in this repository, which is what it did until v3.90 -- and
    * what made its title ("either reproduced or refused") untrue of its behaviour.
    */
-  it('counts a refusal instead of failing, when another case was reproduced', () => {
+  it('counts a bounded case beside a reproduced one, and keeps the two numbers apart', () => {
     const root = mkdtempSync(join(tmpdir(), 'aggregate-mixed-'));
     dirs.push(root);
     const good = join(root, 'RE2-OB/checkoutservice_cpu/1');
@@ -376,23 +389,111 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
     writeFileSync(join(good, 'logs.csv'), LOGS);
     writeFileSync(join(good, 'logts.csv'), LOGTS);
     // The shape `RE2-SS` and `RE2-TT` actually ship: seven columns, no id and no
-    // rendered template.
+    // rendered template. Four rows whose container/bucket marginals equal the
+    // published table's, which is the strongest thing this shape can be asked.
     writeFileSync(join(masked, 'cluster_info.json'), JSON.stringify(CLUSTERS));
     writeFileSync(
       join(masked, 'logs.csv'),
-      'time,timestamp,container_name,message,level,req_path,error\n00:00,1,frontend,request started,,,',
+      [
+        LOGS_HEADER_MESSAGE_ONLY,
+        logLineMessageOnly(0, 'currencyservice'),
+        logLineMessageOnly(0, 'currencyservice'),
+        logLineMessageOnly(0, 'frontend'),
+        logLineMessageOnly(15, 'frontend'),
+      ].join('\n'),
     );
     writeFileSync(join(masked, 'logts.csv'), LOGTS);
 
     const { status, out } = run('--official-dir', root);
-    expect(out).toContain('RE2-TT/ts-train-service_socket/2: refused -- ');
-    expect(out).toContain("no 'cluster_id' column and no 'log_template' column");
+    expect(out).toContain('RE2-TT/ts-train-service_socket/2: bounded -- ');
     expect(out).toContain(
       'OK (1 case(s) reproduced, 4 cell(s) reduced from logs.csv and equal to the corpus\'s own logts.csv; ' +
-        '4 row(s) counted by their own cluster id, 0 named two different clusters; 1 refused, 1 for no ' +
-        'cluster id and no rendered template)',
+        '4 row(s) counted by their own cluster id, 0 named two different clusters; ' +
+        '1 case(s) bounded, not reproduced: the marginals of logts.csv hold no more log cell(s) than ' +
+        'logs.csv has rows for that container, 3 (container, bucket) pair(s), 0 spare row(s) at the tightest ' +
+        'over 4 published cell(s) against 4 log row(s))',
     );
     expect(status).toBe(0);
+  });
+
+  /**
+   * The weak claim has its own name, and it can pass on its own.
+   *
+   * The 246 corpus directories this applies to cannot be *reproduced* -- their logs
+   * carry neither a cluster id nor a rendered template -- so a gate that only knew
+   * "reproduced" had to count them as refusals, and a refusal says nothing about the
+   * corpus. What can be said about them is an inequality, and a statement that can
+   * only be true is not a check: this one fails when the corpus publishes more log
+   * cells in a bucket than the container has rows in it.
+   */
+  it('passes a case on the inequality alone, while saying it was not reproduced', () => {
+    const dir = makeCase({
+      'cluster_info.json': JSON.stringify(CLUSTERS),
+      'logs.csv': [
+        LOGS_HEADER_MESSAGE_ONLY,
+        logLineMessageOnly(0, 'currencyservice'),
+        logLineMessageOnly(0, 'frontend'),
+        logLineMessageOnly(0, 'frontend'),
+      ].join('\n'),
+      // One cell against two rows, so the assertion is about the bound rather than
+      // about equality.
+      'logts.csv': ['time,currencyservice_1,frontend_2', '0,0,1'].join('\n'),
+    });
+    const { status, out } = run('--case', dir);
+    expect(out).toContain('bounded -- ');
+    expect(out).toContain('1 (container, bucket) pair(s), 1 spare row(s) at the tightest');
+    expect(out).toContain('0 case(s) reproduced');
+    expect(status).toBe(0);
+  });
+
+  /**
+   * The inequality is the gate: a table cannot summarize more lines than the file holds.
+   *
+   * This is the direction that makes the claim falsifiable. The corpus could publish a
+   * table whose marginals exceed its own log rows only by summarizing a different file,
+   * by bucketing on a different clock, or by double-counting -- and each of those is a
+   * defect this repository would otherwise inherit as "the corpus says so".
+   */
+  it('fails when a published marginal counts more log cells than the container has rows', () => {
+    const dir = makeCase({
+      'cluster_info.json': JSON.stringify(CLUSTERS),
+      'logs.csv': [
+        LOGS_HEADER_MESSAGE_ONLY,
+        logLineMessageOnly(0, 'frontend'),
+        logLineMessageOnly(0, 'frontend'),
+      ].join('\n'),
+      // Three cells in a bucket that holds two rows.
+      'logts.csv': ['time,currencyservice_1,frontend_2', '0,0,3'].join('\n'),
+    });
+    const { status, out } = run('--case', dir);
+    expect(out).toContain(
+      "container 'frontend' in bucket 0 publishes 3 log cell(s) and logs.csv holds 2 row(s) for it",
+    );
+    expect(out).toContain('a table that summarizes a log file cannot count more lines than the file holds');
+    expect(out).toContain('FAILED');
+    expect(status).toBe(1);
+  });
+
+  /**
+   * A column name nobody can read is a refusal, not a container named `frontend_notanumber`.
+   *
+   * The inequality needs one thing from `logts.csv` that the corpus does not state
+   * anywhere else: which container a column belongs to. The spelling is
+   * `<container>_<cluster key>` with the key a decimal integer, so a column that does
+   * not end in `_<digits>` is a table this rule cannot attribute -- and reading its
+   * container off the left of the last underscore would be a guess about a file whose
+   * whole purpose is to be compared with.
+   */
+  it('refuses a published column that does not name a container and a key', () => {
+    const dir = makeCase({
+      'cluster_info.json': JSON.stringify(CLUSTERS),
+      'logs.csv': [LOGS_HEADER_MESSAGE_ONLY, logLineMessageOnly(0, 'frontend')].join('\n'),
+      'logts.csv': ['time,frontend_notanumber', '0,1'].join('\n'),
+    });
+    const { status, out } = run('--case', dir);
+    expect(out).toContain("'frontend_notanumber' is not '<container>_<cluster key>'");
+    expect(out).toContain('0 of 1 case(s) could be reproduced or bounded, which is not a pass');
+    expect(status).toBe(1);
   });
 
   /**
@@ -484,14 +585,18 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
    * -- the only thing it wanted. The first TrainTicket case took the process past a
    * 4 GB heap and the step never reported a verdict at all (finding 533).
    *
-   * The fixture below is 16 MB of a shape that is refused, in a 64 MB heap. Reading
-   * the body would need several times the file; reading 64 KiB of it needs nothing.
+   * The fixture below is 16 MB of a shape whose *published* table already says the
+   * reduction cannot be attempted, in a 64 MB heap. The 64 KiB header of the log file
+   * and the 64 KiB header of `logts.csv` answer it; reading either body would need
+   * several times the file.
    */
-  it('refuses a log table it cannot use without reading past its header', () => {
+  it('refuses a case without reading past its headers', () => {
     const dir = mkdtempSync(join(tmpdir(), 'aggregate-wide-refused-'));
     dirs.push(dir);
     writeFileSync(join(dir, 'cluster_info.json'), JSON.stringify(CLUSTERS));
-    writeFileSync(join(dir, 'logts.csv'), LOGTS);
+    // A column whose name does not end in `_<digits>`, so the inequality has no
+    // container to attribute it to -- and that is decided from the header.
+    writeFileSync(join(dir, 'logts.csv'), ['time,frontend_notanumber', '0,1'].join('\n'));
     const filler = '00:00,1705595459012034902,frontend,request started,,,\n';
     const records = Math.ceil((16 * 1024 * 1024) / filler.length);
     writeFileSync(
@@ -503,10 +608,10 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
       encoding: 'utf8',
     });
     const out = `${result.stdout}${result.stderr}`;
-    expect(out).toContain("no 'log_template' column");
-    expect(out).toContain('its columns are time, timestamp, container_name, message, level, req_path, error');
-    // One case, refused, so nothing was reproduced: this is still not a pass.
-    expect(out).toContain('0 of 1 case(s) could be reproduced, which is not a pass');
+    expect(out).toContain("'frontend_notanumber' is not '<container>_<cluster key>'");
+    expect(out).toContain('its columns are time, frontend_notanumber');
+    // One case, refused, so nothing was reproduced or bounded: this is still not a pass.
+    expect(out).toContain('0 of 1 case(s) could be reproduced or bounded, which is not a pass');
     expect(result.status).toBe(1);
     rmSync(join(dir, 'logs.csv'), { force: true });
   });

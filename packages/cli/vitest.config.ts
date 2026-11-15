@@ -7,6 +7,10 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/**/*.ts'],
       exclude: ['src/main.ts'],
+      // Same list, same reason as `packages/core/vitest.config.ts`: `json-summary` is
+      // the form a reader compares, and the page publishes this package's four figures
+      // beside the core ones.
+      reporter: ['text', 'html', 'clover', 'json', 'json-summary'],
       // See `packages/core/vitest.config.ts` for why the function dimension is
       // held to 100 while the others are held to 95: an uncalled function is a
       // symbol no other file names, so 95 would permit one in twenty to be dead.

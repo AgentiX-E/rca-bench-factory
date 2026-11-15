@@ -2281,9 +2281,9 @@ count; they were counting different sets, and neither said so.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **250 files, 6373 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **254 files, 6560 tests passed** (as of this commit) |
+| `core` test suite | **250 files, 6373 tests passed** (at v3.92) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.92) |
+| repo test suite | **254 files, 6560 tests passed** (at v3.92) |
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines, quoted from vitest's table, which is the instrument the step prints and the thresholds are enforced against); `cli` **100 / 100 / 100 / 100**; unchanged, because this round changed no file under `src/` -- measured twice, at `9364bea` with the tree stashed and with this round's changes in place, which is how the row above came to move |
 | new tests | **6358 -> 6373, +15**, all in `check-test-budgets.test.ts`: the fraction rule both ways, the floor both ways, the suite budget preferred to a larger child-process timeout, all four spellings, two reports in one run, an unreadable report, a report naming no test, a missing `--report`, three unusable knob values, a result with no file name, a duration that is not a number, a report naming a file it cannot read, and the summary sentence that had no budget to be about |
 | the file it found | `gates-are-testable-is-enumerated.test.ts`, slowest test **1 015 ms**, no budget; now `{ timeout: SUITE_BUDGET_MS }` at 30 000 ms |
@@ -2332,3 +2332,165 @@ bound in the workflow is sized from the worst day in one shared history, so the 
 round's promise about a three-minute bound also made another step's seven-minute bound too tight by 42
 seconds, without changing a line of it. That is the rule working, not failing -- and it means a round
 that records a measurement should expect to pay for somebody else's bound.
+
+
+## v3.93 · the weak claim got a name, and the coverage table got a reader
+
+Two leftovers had been carried, unchanged, since v3.91 and v3.83 respectively. They look unrelated and
+they are the same defect at two distances: a published number with nothing that computes it. The first
+is `246 refused` -- a count of directories the gate could not read, printed where a reader expects a
+statement about the corpus. The second is the four coverage figures, which had a sentence above them
+naming a *command* and no sentence naming an *instrument*.
+
+### One · what can be said about a file with no id and no rendered template
+
+`RE2-SS` and `RE2-TT` ship Drain's **masked** templates in `cluster_info.json` and a `message`-only
+`logs.csv`. There is no column that names the cluster a row belongs to, so the exact reduction has
+nothing to key on; three attempts at a rule that infers the key are measured in finding 534, and the
+second makes one row match three clusters at once. The honest conclusion, taken in v3.90, was to count
+those directories as refusals and say why.
+
+What that leaves is a line that cannot distinguish two corpora: one whose `logts.csv` is a faithful
+summary of `logs.csv`, and one whose `logts.csv` is random numbers. Both print `246 refused`. A refusal
+is a fact about this repository's reader, and the step's title had promised a fact about the corpus.
+
+**The claim that is available is an inequality, and it is the only one the shape supports.** A table of
+per-cluster counts is a partition of each container's lines, so its marginals cannot exceed them:
+
+    for every container c and bucket b:   sum of logts.csv[c, *] at b  <=  rows of logs.csv with c in b
+
+Derivable from what the file claims to be, and falsifiable: a different clock, a different log file, or
+a double count fails it. What it cannot see is a misattribution *within* a container -- precisely the
+thing these 246 directories have no column to check -- so it is a weaker claim than reproduction, and
+the repair is to say so in the name.
+
+### Two · `bounded`, and the sentence that keeps it apart
+
+The gate now has four outcomes and the summary prints the exact count and the weak count in separate
+clauses:
+
+```
+check-aggregate-tables: OK (1 case(s) reproduced, 4 cell(s) reduced from logs.csv and equal to the
+corpus's own logts.csv; 4 row(s) counted by their own cluster id, 0 named two different clusters;
+1 case(s) bounded, not reproduced: the marginals of logts.csv hold no more log cell(s) than logs.csv
+has rows for that container, 3 (container, bucket) pair(s), 0 spare row(s) at the tightest over
+4 published cell(s) against 4 log row(s))
+```
+
+`not reproduced` is in the sentence on purpose. A weak claim that reports itself as weak is worth
+having; a weak claim counted in the same number as a strong one is findings 481, 520 and 537 wearing a
+fourth outcome. A run in which nothing could be reproduced **or** bounded still fails, with its own
+sentence, because "nothing was wrong" and "nothing was compared" print the same number of failures --
+that is v3.90's exit, re-worded rather than re-argued.
+
+Three refusals are all that is left of the shape, and each is decided from a 64 KiB header rather than
+from a body: a table whose first column is not `time`, a column that is not `<container>_<cluster key>`,
+and a table with no non-zero cell. The second is the interesting one. `containerOfColumn` requires the
+suffix to be all digits, so `checkout_service_12` splits correctly and `frontend_notanumber` is refused
+instead of being read as a container named `frontend_notanumber`; splitting at the last underscore would
+have guessed at both.
+
+### Three · two row counts, one field apart, in the round that introduced both
+
+The first implementation printed `4 published log cell(s) against 2 row(s)` for a case whose `logs.csv`
+held four rows. The `2` was the *published table's* row count, and the bound is against the log file's.
+The two numbers were one property apart in a return object and were about different files. They are now
+`publishedRows` and `logRows`, and `against N log row(s)` is the second.
+
+This is the class of defect a new outcome is good at exposing. Nothing had ever asked this step "which
+number is this, and which file is it a number about?", because it had never had two numbers of the same
+shape. The test that caught it was the one asserting `1 spare row(s) at the tightest` and receiving
+`0` -- a fixture of three rows and a table of one cell.
+
+### Four · the coverage table had a sentence about a command, not about an instrument
+
+`docs/progress.md` publishes four figures under "Measured by `vitest run --coverage`". The cost was
+measured twice: finding 481 published **99.93** branches for eight rounds while every ledger read 99.80,
+and finding 539 found that the retaken figures had two instruments behind them -- clover's XML said
+99.980, v8's counters said 99.97 -- with the prose naming neither.
+
+`test:coverage` now asks vitest for `json-summary` beside the reporters it already wrote, and
+`scripts/check-coverage-readings.mjs` compares the four published figures with
+`total.<dimension>.pct` at two decimals -- the precision the page writes -- and prints the number with
+the instrument:
+
+```
+check-coverage-readings: OK (4 dimension(s) equal to the v8 counters in
+packages/core/coverage/coverage-summary.json: statements 99.97%, branches 99.95%, functions 100%,
+lines 99.97%)
+```
+
+`clover` stays in the reporter list rather than being replaced. It is the second instrument the 0.01
+disagreement was measured with, and removing it would remove the ability to notice that the two differ.
+
+### Five · `UNCHECKED` is an outcome, and the duplicate wiring was refused by a test
+
+`docs:check` does not run the suite, so on a cold tree there is no report. Two dishonest answers are
+available -- pass silently, or fail on a table that may be perfect -- and the script takes neither: it
+parses the table, refuses every structural defect, and prints `UNCHECKED (no coverage report at …)`.
+CI runs the same script with `--require` in the step that already reads that run's reports, so a missing
+report there is a broken pipeline rather than a cold tree.
+
+The first wiring put the script in `docs:check` **and** named it in the CI step, and
+`ci-reaches-doc-guards.test.ts` rejected the pair: a guard inside the aggregate must reach the pipeline
+through the aggregate, never by a hand-maintained list, because the duplicate list is what silently
+stops tracking the aggregate. The resolution keeps the strict half where the report exists. It was the
+right refusal -- a guard that runs in two places and compares nothing in one of them is the page's own
+defect with a green tick.
+
+What it deliberately does not compare is the `Gate` column. That column restates
+`packages/core/vitest.config.ts`'s thresholds, and `coverage-thresholds.test.ts` already holds those two
+numbers equal; a second reader of one claim is how this repository has twice ended up with two numbers
+that were both green.
+
+### Six · the tallies the round moved
+
+| what | before | after | why |
+| --- | --- | --- | --- |
+| gate sites | 139 across 63 of 89 scripts | **140 across 64 of 90** | the new reader's `fail()` is a failure exit, so the deriver counts it and the proofs table gains one `provedBy` |
+| gate calls | 157 | **158** | same site, `process.exit(1)` once |
+| the battery | 224 claims across 62 files | **225 across 63** | `check-coverage-readings.test.ts` declares the script it drives |
+| the suite | 250 files / 6 373 tests (core) | **251 / 6 384** | one file and eight tests, plus three in the aggregate gate's own file: the equal case, a stale figure named with both numbers, no table, a missing dimension, a duplicate row, a report without a total, `UNCHECKED`, and `--require` with no report |
+| the corpus gate's exits | 2 | **2** | the bounded refusals are `return`s, not exits -- they are outcomes, and only a run with no outcome at all exits |
+
+### Readings
+
+> Ledger for `v3.93`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **251 files, 6384 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **255 files, 6571 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines, from `packages/core/coverage/coverage-summary.json`, which is v8's counters -- the instrument the new reader names); `cli` **100 / 100 / 100 / 100**; unchanged, because this round changed no file under `src/` |
+| new tests | **6373 -> 6384, +11**: eight in `check-coverage-readings.test.ts`, three in `check-aggregate-tables.test.ts` (22 -> 25), and one test of that file rewritten in place rather than added -- the inequality's pass, its breach with both numbers named, a column that names no container, a file refused from its header alone, and the mixed run where a bounded case sits beside a reproduced one |
+| the instrument | `v8` counters, `json-summary`; `clover` kept as the second instrument, because the 0.01 disagreement of finding 539 is only observable while both are written |
+| gate sites | **139 -> 140** across **63 -> 64 of 90** scripts: one failure exit, the coverage reader's `fail()` |
+| the battery | **224 -> 225** claim(s) across **62 -> 63** file(s) |
+| list | **27 -> 25**: the 246 directories that had only an inequality, and the coverage figure that had no reader |
+| LLM calls | **0** |
+
+### Leftovers, in the order that reaches the goal
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| ~~P1~~ | ~~246 case directories are refused, and the only exact statement available is an inequality~~ | **closed by finding 542**: the inequality has a name (`bounded`), its own clause in the summary, and a failure path that is a `disagreed` case. Proved on four fixtures; **not yet run over the corpus** | dispatch `official-data.yml` on `rcaeval-re2` and record what step 13 prints |
+| P2 | The ceiling of 8 has never been measured where it is not oversubscription | unchanged: every reading here is on a 4-CPU cgroup quota, where 8 is 2x | one full-suite run on nine or more usable CPUs |
+| P2 | The margin is the baseline's | open since v3.87 | whether a refused mutant should name the test that hung |
+| P2 | A record's terms are a map of strings to numbers | open since v3.83 | nine shapes instead of one |
+| P2 | The live list grows whatever the bound is | unchanged | measure the distance to the ceiling first |
+| ~~P3~~ | ~~The coverage figure has no reader that computes it~~ | **closed by finding 543**: `check-coverage-readings.mjs` compares the four figures with the run's own v8 counters and names the instrument; CI runs it with `--require` | -- |
+
+**The lesson.** Both leftovers were the same sentence with different nouns: *a number printed beside a
+measurement, with nothing that recomputes it*. `246 refused` is the gate's own count standing where a
+fact about the corpus belongs, and 99.93 is a figure typed from a run that no longer exists. The repair
+in each case was not a better number. It was to name what the number is about -- `bounded, not
+reproduced` for the first, `the v8 counters in this file` for the second -- because a claim that says
+what it is can be checked, and a claim that does not will be read as the stronger one.
+
+The second half of the lesson is about where a guard may live. The coverage reader was written to run
+in two places, and a test refused it, correctly: an aggregate guard that is also named by hand in the
+pipeline is a list that stops tracking the aggregate the moment someone edits one of them. The strict
+mode went to the place that has a report; the aggregate kept the part that a cold tree can answer. That
+is not a compromise -- it is the same division the suite counts already use, and the reason it looked
+like one is that the page had been publishing a figure it never divided.

@@ -235,6 +235,16 @@ const REGISTER: Record<string, Entry> = {
       'that table were uncheckable, and one of them ("one row a minute") is false by a factor of four.',
   },
   'check-doc-counts.mjs': { class: 'gate' },
+  'check-coverage-readings.mjs': {
+    class: 'gate',
+    why:
+      'The reader the coverage table never had. `check-doc-counts.mjs` holds the suite counts to a run and ' +
+      '`derive-gate-sites.mjs` holds the site count to a derivation; the four coverage figures were held ' +
+      'to nothing, which is how the page published 99.93 branches for eight rounds while every ledger read ' +
+      '99.80 (finding 481) -- and why two instruments, clover and v8, could answer 99.980 and 99.97 with ' +
+      'the prose naming neither (finding 539). It refuses a stale figure, a missing dimension, a duplicate ' +
+      'row and a report without one of the four totals, and it prints the instrument beside the number.',
+  },
   'check-test-budgets.mjs': {
     class: 'gate',
     why:

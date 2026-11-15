@@ -163,6 +163,16 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
+      // `json-summary` is the machine-readable form of the same v8 counters the `text`
+      // reporter prints, and it is what `scripts/check-coverage-readings.mjs` reads.
+      // The four figures in `docs/progress.md` had no reader that computed them, so the
+      // page published 99.93 branches for eight rounds while every ledger read 99.80
+      // (finding 481) -- and when they were retaken, clover's XML and v8's counters
+      // disagreed by 0.01 and the prose did not say which instrument it meant
+      // (finding 539). The other reporters are kept unchanged: `clover` is the second
+      // instrument that disagreement was measured with, and removing it would remove
+      // the ability to notice the two differ.
+      reporter: ['text', 'html', 'clover', 'json', 'json-summary'],
       // `src/index.ts` re-exports only, and the `provider` module declares
       // interfaces that erase to nothing at runtime. v8 would report them as
       // 0% because they contain no statement it can execute.
