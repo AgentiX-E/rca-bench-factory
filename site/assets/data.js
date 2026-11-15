@@ -1020,14 +1020,14 @@ window.RBF_DATA = {
               "type": "string",
               "required": false,
               "source": "(not carried)",
-              "notes": "RE2 only. Empty."
+              "notes": "RE2 only. The column the corpus's own `logts.csv` groups by; empty on the rows it does not count."
             },
             {
               "name": "log_template",
               "type": "string",
               "required": false,
               "source": "(not carried)",
-              "notes": "RE2 only. The corpus writes rendered template text; the IR carries an id."
+              "notes": "RE2 only. The corpus writes the rendered template text, and in the `_loss` cases occasionally a Drain-masked one (`... <:*:> ...`) that names no cluster -- which is why the reduction reads `cluster_id` first (finding 536)."
             },
             {
               "name": "pod_name",

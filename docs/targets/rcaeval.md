@@ -311,7 +311,7 @@ anomalous window. Unix seconds, no trailing newline.
 | `req_path` | string | no | `(not carried)` | RE2 only. Empty; see RCAEVAL_UNFILLED_COLUMNS. |
 | `error` | string | no | `(not carried)` | RE2 only. Empty. |
 | `cluster_id` | string | no | `(not carried)` | RE2 only. The column the corpus's own `logts.csv` groups by; empty on the rows it does not count. |
-| `log_template` | string | no | `(not carried)` | RE2 only. The corpus writes the rendered template text, and in the `_loss` cases occasionally a Drain-masked one (`... <:*:> ...`) that names no cluster -- which is why the reduction reads `cluster_id` first (finding 536). |
+| `log_template` | string | no | `(not carried)` | RE2 only. The corpus writes the rendered template text, and in the `_loss` cases occasionally a Drain-masked one (`... &lt;:*:&gt; ...`) that names no cluster -- which is why the reduction reads `cluster_id` first (finding 536). |
 | `pod_name` | string | no | `resource['k8s.pod.name'] ?? ''` | RE3 only. |
 | `node_name` | string | no | `resource['k8s.node.name'] ?? ''` | RE3 only. |
 <!-- /fields -->
