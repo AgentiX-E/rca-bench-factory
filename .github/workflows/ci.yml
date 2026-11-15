@@ -587,7 +587,7 @@ jobs:
       # in the battery's `EXPECTED_SURVIVORS` with its reason, and the run fails
       # if it ever turns into a genuine survivor.
       - name: Gate-test battery (each gate's test provably fails when its guard is removed)
-        timeout-minutes: 7
+        timeout-minutes: 8
         run: python3 scripts/injection/gate-tests-battery.py
 
       # `check-doc-counts.mjs` read three shapes of a published count while the

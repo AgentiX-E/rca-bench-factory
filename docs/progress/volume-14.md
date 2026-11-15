@@ -2149,13 +2149,17 @@ check-test-budgets: OK (253 file(s), 6545 test(s); 34 state a budget, 12 have a 
 That reading is the v3.91 tree with one declaration added, and 216 files state nothing there. Every
 one of their 216 files' tests is under 100 ms, which is the other half of the evidence: without it the
 rule would be "every file states a budget", and 216 numbers nobody will ever look at is how a gate
-stops being read. On the finished tree -- which carries the new test file and therefore one more
-declaration -- the same reader says:
+stops being read. With the new test file in the tree -- so one more declaration -- the same reader says:
 
 ```
 check-test-budgets: OK (254 file(s), 6560 test(s); 35 state a budget, 12 have a test at or above
 1000 ms, and the closest to its budget is ingest-report.test.ts at 21% of 30000 ms)
 ```
+
+and after the first CI run named one more file, **36** state a budget. The last two numbers move with
+the machine: across four runs here, 12 or 13 tests sat at or above 1 000 ms and the closest file was
+anywhere from 16% to 26% of its 30 000 ms budget. The runner's own count was **19**, which is the
+reading that matters and the one the section after this is about.
 
 ### Four · the step is last in its job, and that is the budget rule talking
 
@@ -2217,6 +2221,26 @@ that the next reader who divides 14 996 by 14 999 finds out why the table disagr
 "correcting" it back. That is the smaller of the two repairs available and the honest one: making the
 guard compute the figure is a suite run inside `docs:check`, which is the entry below, not this round.
 
+### Seven · the recording answered one promise and handed another step a slower day (finding 540)
+
+The green run on `72e46b8` measured the new step at **1 s** against its 3-minute floor, and
+`measure-ci-baseline.mjs` recorded it. What nobody had priced is that a recording is not only the answer
+to the promise it settles: it is **a new day for every bound in the workflow**, and `R10` sizes every
+bound from the worst day in the history. The same command came back refused:
+
+```
+check-ci-budget: `Gate-test battery (each gate's test provably fails when its guard is removed)` is
+bounded at 7 min and measured 231 s: the bound is under 2 times the measurement, so a runner twice as
+slow is refused for being slow rather than for hanging
+```
+
+7 minutes is 420 s and twice 231 is 462, so the bound this round inherited was, on the day this round
+recorded, **too tight by 42 seconds**, and nothing about that step had changed. It is 8 minutes now.
+Two things follow: a round that records a run cannot scope its diff to the step it was curious about,
+because the recording is one file of seconds and every bound reads all of it; and the gate refused a
+change that moved in the safe direction, which is `R6` doing what it says -- a bound under twice its
+reading is refused whichever way it moved, because the rule is about the argument, not the direction.
+
 **One correction, in the record rather than in the commit.** The commit that carried the row below
 (`815e739`) says in its message that the tracked-file defect is finding 421. It is finding 520, "a
 count derived before `git add` is a count of a tree that never existed" (v3.83); 421 is `R6` refusing
@@ -2236,11 +2260,13 @@ looking up the finding will arrive.
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines, quoted from vitest's table, which is the instrument the step prints and the thresholds are enforced against); `cli` **100 / 100 / 100 / 100**; unchanged, because this round changed no file under `src/` -- measured twice, at `9364bea` with the tree stashed and with this round's changes in place, which is how the row above came to move |
 | new tests | **6358 -> 6373, +15**, all in `check-test-budgets.test.ts`: the fraction rule both ways, the floor both ways, the suite budget preferred to a larger child-process timeout, all four spellings, two reports in one run, an unreadable report, a report naming no test, a missing `--report`, three unusable knob values, a result with no file name, a duration that is not a number, a report naming a file it cannot read, and the summary sentence that had no budget to be about |
 | the file it found | `gates-are-testable-is-enumerated.test.ts`, slowest test **1 015 ms**, no budget; now `{ timeout: SUITE_BUDGET_MS }` at 30 000 ms |
-| its reading on the finished tree | `repo` 254 files, 6 560 tests; **35** state a budget, **12** have a test at or above 1 000 ms, closest is `ingest-report.test.ts` at **21%** of 30 000 ms -- the closest moved between runs, because it is the one figure here that depends on how loaded the machine was |
+| its reading on the finished tree | `repo` 254 files, 6 560 tests; **36** state a budget. The other two figures move with the machine and are given as ranges over four runs: **12-13** tests at or above 1 000 ms, and the closest at **16-26%** of a 30 000 ms budget. On the runner: **19** |
 | gate sites | **136 -> 139** across **62 -> 63 of 89** scripts: the usage exit, the problems exit, and "the report named no test", all three proved by the new test file |
 | the battery | **221 -> 224** claim(s) across **61 -> 62** file(s) |
 | the CI step | `Every test's cost against the budget it declares`, **3 min**, last in the `verify` job, with `golden-master/ci-declarations.json` naming it as unmeasured |
 | its first CI run | on `815e739`: started and completed at `13:29:52`, so **under a second** of a 3-minute bound, and **failed** on `build-example-bundle.test.ts` -- slowest test **1 128 ms**, no budget. The runner reports **19** files with a test at or above 1 000 ms where this container reports **12**, and that test measures 400-600 ms here, so no local run could have named it |
+| its recording | run **`43720087959`** on `72e46b8`, the first green run to carry the step: **1 s** measured against the 3-minute floor, written by `measure-ci-baseline.mjs`, and `golden-master/ci-declarations.json` deleted in the same round that created it |
+| the bound the recording moved | the gate-test battery: **231 s** measured, 7 min (420 s) bound, which is under twice the reading, so **8 min** now -- finding 540 |
 | list | **29 -> 29**: the "timeout table cannot discover a row it does not have" entry closed by this reader, and an entry opened for the new step's bound, which is a promise until a run measures it |
 | LLM calls | **0** |
 
@@ -2249,7 +2275,7 @@ looking up the finding will arrive.
 | priority | item | state | next step |
 | --- | --- | --- | --- |
 | P0 | The repaired aggregate rule has not been run over the corpus | open since v3.91: run `43706694417` is in flight on `81f0fd6` | read step 13's census for `24 case(s) reproduced` and `0 named two different clusters`, then record the run in `golden-master/roundtrip.json` |
-| P1 | The new step's bound is a promise, not a measurement | its first run answered the duration -- under a second of a 3-minute floor -- but that run failed at the step, and the recording wants one whose step passed | record the next green run with `measure-ci-baseline.mjs`, then delete `golden-master/ci-declarations.json` |
+| ~~P1~~ | ~~The new step's bound is a promise, not a measurement~~ | **closed by finding 540** in the round that opened it: `43720087959` measured it at 1 s and the declarations file is gone | -- |
 | P1 | 246 case directories are refused, and the only exact statement available for them is an inequality | unchanged since v3.91 | decide whether a weaker claim gets its own name and its own gate |
 | P2 | The ceiling of 8 has never been measured where it is not oversubscription | unchanged | one full-suite run on nine or more usable CPUs |
 | P2 | The margin is the baseline's | open since v3.87 | whether a refused mutant should name the test that hung |
@@ -2271,3 +2297,9 @@ reason it did not is that the corpus has two instruments for that figure and the
 A repository that has spent four thousand lines of guard on the counts a suite prints still publishes
 one percentage it has never divided itself. Correcting the digit is the small repair; naming the
 instrument is the one that stops the next reader from correcting it back.
+
+And the third shape, which is the one that will keep arriving: **a recording is not a local act.** Every
+bound in the workflow is sized from the worst day in one shared history, so the run that answered this
+round's promise about a three-minute bound also made another step's seven-minute bound too tight by 42
+seconds, without changing a line of it. That is the rule working, not failing -- and it means a round
+that records a measurement should expect to pay for somebody else's bound.

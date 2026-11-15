@@ -516,7 +516,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.92: **29** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.92: **28** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1352,14 +1352,17 @@ is a row about rather than paraphrase one that no `grep` will find.
   have every test under 100 ms, which is what makes the floor a reading rather than a style.
   ~~`[open: a reader that takes each test's share of its own budget from a run's report and refuses one past
   half of it, in a place that runs the whole suite]`~~
-- **The new step's bound is a promise, not a measurement.** `Every test's cost against the budget it
-  declares` runs in the `verify` job with `timeout-minutes: 3`, and no recording has measured it: 3 is
-  `check-ci-budget.mjs`'s floor, which is the honest number for a step nobody has timed. The step sits
-  last in its job because a bound placed after a step no recording has measured would be argued from a sum
-  with a hole in it. `golden-master/ci-declarations.json` holds the promise, and it is expected to be
-  absent most of the time -- which is why the case about it asserts a biconditional rather than a shape.
-  `[open: read its duration from the next green run, record it with measure-ci-baseline.mjs, and delete
-  golden-master/ci-declarations.json -- the round whose run measures it is the round that deletes it]`
+- ~~**The new step's bound is a promise, not a measurement.**~~ **Closed by finding 540, in the round
+  that opened it and by the first run that carried it.** `Every test's cost against the budget it declares` ran on `815e739`
+  and finished inside the second it started -- and failed, naming `build-example-bundle.test.ts` at
+  1 128 ms, which no local run could see (the runner has 19 files with a test at or above 1 000 ms
+  against this container's 12). The fixed tree went green on `72e46b8`, `measure-ci-baseline.mjs`
+  recorded that run (**1 s** against a 3-minute floor), and `golden-master/ci-declarations.json` is
+  deleted. Recording it also cost something: the same run measured the gate-test battery at **231 s**,
+  past half of its 7-minute bound, so that bound is **8 minutes** now -- R10's worst-day rule doing the
+  job it exists for, on the day it was handed a slower one.
+  ~~`[open: read its duration from the next green run, record it with measure-ci-baseline.mjs, and delete
+  golden-master/ci-declarations.json]`~~
 - **The ceiling of 8 has never been measured where it is not oversubscription.** Every reading of eight
   workers in this repository is on a 4-CPU quota, where eight is 2x and the row is the *cost* of getting the
   allowance wrong (89% of the stall budget, 93% of the memory limit). On a machine that can feed it, eight

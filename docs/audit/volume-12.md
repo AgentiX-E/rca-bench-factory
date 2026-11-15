@@ -1977,3 +1977,36 @@ The repair is not to pick a number; it is that the row now says which instrument
 ledger's `99.97` is vitest's, because that is what the step prints and what the per-file thresholds
 are enforced against, and the clover figure is stated beside it here so the next reader who computes
 `14 996 / 14 999` and gets `99.98` finds out why the table disagrees instead of "fixing" it back.
+
+## Finding 540 — the recording that answered one promise handed another step a slower day
+
+The step this round added declared `timeout-minutes: 3` -- `check-ci-budget.mjs`'s floor, which is the
+honest number for a step nobody has timed -- and `golden-master/ci-declarations.json` carried the
+sentence saying so. Two runs settled it.
+
+The first, on `815e739`, measured the step at **under a second** (started and completed at
+`13:29:52`) and failed, naming `build-example-bundle.test.ts` at 1 128 ms with no budget. The second,
+on `72e46b8`, was green: `1 s` against a 3-minute floor, and `measure-ci-baseline.mjs` recorded that
+run.
+
+What nobody had priced is that a recording is not only the answer to the promise it settles. It is
+**a new day for every bound in the workflow**, and `R10` sizes each bound from the worst day in the
+history:
+
+```
+check-ci-budget: `Gate-test battery (each gate's test provably fails when its guard is removed)` is
+bounded at 7 min and measured 231 s: the bound is under 2 times the measurement, so a runner twice as
+slow is refused for being slow rather than for hanging
+```
+
+7 minutes is 420 s and twice 231 is 462, so the bound this round inherited was, on the day this round
+recorded, too tight by 42 seconds. It is 8 minutes now. Nothing about that step changed; the reading
+did.
+
+Two things follow, and they are the reason this is a finding rather than a line in a ledger. First,
+**a round that records a run cannot scope its diff to the step it was curious about** -- the recording
+is one file of seconds and every bound reads all of it, so the honest expectation is that recording a
+run may raise somebody else's bound, and the round has to be willing to raise it. Second, the
+tightening ran in the safe direction and the gate still refused it, which is what `R6` says it should
+do: a bound under twice its reading is refused whichever way it moved, because the rule is about the
+argument, not about the direction a change happens to point.
