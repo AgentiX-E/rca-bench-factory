@@ -309,8 +309,15 @@ describe('the two baskets are a partition of the calls, not a remainder', { time
     // which is not a pass -- because a *refusal* stopped being a failure in that round. A step whose
     // title is "either reproduced or refused" needs one sentence for each of the three states, and
     // the state with no case in it is the one that had nowhere to be said.
-    expect(calls).toBe(154);
-    expect(sites).toBe(136);
+    //
+    // 157/139 is v3.92's, and it is the pair moving together for the eighth round running: the reader
+    // that compares a run's own per-test durations with the budget each file states has three exits --
+    // an argument it cannot use, a set of problems, and a report that named no test at all -- so the
+    // call count and the site count both rise by three. That last exit is the round's own subject one
+    // level up: "nothing was over the line" and "nothing was read" print the same number of failures,
+    // which is exactly why the aggregate gate's empty corpus needed a sentence and this needed one too.
+    expect(calls).toBe(157);
+    expect(sites).toBe(139);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

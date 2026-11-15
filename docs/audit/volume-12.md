@@ -1892,3 +1892,88 @@ The same repair, one step earlier, is why a case can now print `all equal, but 1
 a row that contradicts itself by id and by template leaves every cell equal and the case still not
 reproduced. That sentence is the v3.90 lesson (finding 535) stated a second time: the line about the
 cells may not be the line that decides the verdict.
+
+## Finding 538 — the table that could not see a row it did not have, and the reader that could
+
+`test/timeout-budget.test.ts` says this about itself, twice, in different words:
+
+> Found by a red run rather than by this table, which is the honest description of how the table is
+> maintained: it can check every row it has and cannot discover a row it does not.
+
+That sentence is accurate and it was written after the third time it had been true. Three of the
+table's rows -- `reader-against-backend.test.ts`, `publish.test.ts`, and
+`check-official-roundtrip.test.ts` before them -- arrived as red CI runs on commits that changed
+nothing relevant, each one a test decided by vitest's inherited 5 000 ms default.
+
+The missing reader is the obvious one, and the reason nobody had written it is the interesting part:
+**both quantities were already in the pipeline.** `test:coverage` writes vitest's JSON report beside
+its coverage output, and that report holds a `duration` for every one of the 6 545 tests. Every test
+file states the budget it expects, in one of four spellings the repository already documents at
+length. Nothing compared them, because the comparison had no home: the table is a list of *files*,
+and the quantity is per test; the report is an artefact of the run, and the table is a document.
+
+`scripts/check-test-budgets.mjs` is that home. It takes the reports, reads each file's budget, and
+asks two questions:
+
+| the file | the rule |
+| --- | --- |
+| states a budget | its slowest test takes at most **half** it -- a file at 94% of its budget was green by 282 ms on the run before it went red |
+| states none | its slowest test is under a fifth of the 5 000 ms default (1 000 ms), because at a fifth the default is what will decide the verdict |
+
+The denominator is the budget a `describe` states, not the largest number in the file, and that
+distinction is not pedantry: `typecheck-entrypoint.test.ts` states `RUN_TIMEOUT_MS = 180_000`, which
+bounds a spawned `pnpm` rather than the test, and taking the largest number would hand that test a
+180-second budget it does not have -- measuring the wrong clock in the flattering direction. Where a
+file states no suite budget, the largest stated number stands in, and where the file states nothing
+at all the answer is `0`, which is "inherits the default" and a question for the floor rather than
+for the fraction.
+
+**Its first run against a real report named exactly one file**, and not a file anyone had been
+worrying about:
+
+```
+check-test-budgets: gates-are-testable-is-enumerated.test.ts: its slowest test takes 1015 ms and the
+file states no budget, so its verdict is decided by vitest's 5000 ms default; state one on the
+suite -- 'scripts/verify-gates-are-testable.mjs · the audit of the audits leaves a group a' is the
+test that will decide it
+check-test-budgets: FAILED (1 problem(s) across 253 file(s); 33 state a budget and 12 have a test at
+or above 1000 ms)
+```
+
+That file spawns the gate audit against temporary trees, which is the exact shape of the three rows
+that arrived by red run. It now declares `SUITE_BUDGET_MS = 30_000`, and the run is green with 34
+files stating a budget:
+
+```
+check-test-budgets: OK (253 file(s), 6545 test(s); 34 state a budget, 12 have a test at or above
+1000 ms, and the closest to its budget is typecheck-entrypoint.test.ts at 26% of 30000 ms)
+```
+
+The 216 files that state nothing are the other half of the measurement: every one of their tests is
+under 100 ms, which is what makes a floor defensible. Without that reading the rule would be
+"everything states a budget", a demand that produces 216 numbers nobody will ever look at.
+
+## Finding 539 — the same tree, two percentages, and the ledger quoting the one nobody runs
+
+The v3.91 ledger's coverage row reads `99.98 / 99.95 / 100 / 99.97`. Every other round in
+`docs/progress/volume-14.md` reads `99.97 / 99.95 / 100 / 99.97`, and this round measured the v3.91
+tree twice -- once at `9364bea` with the working tree stashed, once with its own changes in place --
+and got `99.97` both times.
+
+Both numbers are defensible, which is the finding. `coverage/clover.xml` for that tree says
+**14 996 covered of 14 999 statements**, and 14 996 / 14 999 is 99.980%, which rounds to `99.98`.
+Vitest's own table, printed by the step that runs the suite, says `99.97` for the same tree, because
+v8's statement counter and clover's are two counters: clover reports 14 999 statements in 93 files,
+and v8 counts different ranges. So the document holds a percentage produced by one instrument, in a
+paragraph whose neighbours hold the percentage produced by another, and neither of them says which.
+
+That this was survivable is the open entry this round's leftovers table already carries: **the
+coverage figure has no reader that computes it.** Every other published count in this corpus has a
+guard -- `check-doc-counts.mjs` re-derives the suite counts, `derive-gate-sites.mjs` re-derives the
+site counts, `measure-doc-counts.mjs --check` fails on a stale row -- and the coverage percentage has
+none. One digit, in the one row nothing recomputes, for four rounds.
+
+The repair is not to pick a number; it is that the row now says which instrument printed it. The
+ledger's `99.97` is vitest's, because that is what the step prints and what the per-file thresholds
+are enforced against, and the clover figure is stated beside it here so the next reader who computes
+`14 996 / 14 999` and gets `99.98` finds out why the table disagrees instead of "fixing" it back.

@@ -147,6 +147,24 @@ jobs:
         timeout-minutes: 3
         run: pnpm exec vitest run --root packages/core mutation.test.ts
 
+      # Every test's cost, against the budget its own file declares.
+      #
+      # `test/timeout-budget.test.ts` keeps a table of the files close to vitest's
+      # default and says of itself that it cannot discover a row it does not have:
+      # three of its rows arrived as red runs on commits that changed nothing
+      # relevant. The report the coverage step wrote already holds every test's
+      # duration, so the missing reader is two file reads rather than a second
+      # suite (finding 538).
+      #
+      # It is last in this job while no recording has measured it: every bound after
+      # an unmeasured step would be argued from a sum with a hole in it. On its first
+      # run against a real report it named one file the table did not have --
+      # `gates-are-testable-is-enumerated.test.ts`, slowest test 1 015 ms and no
+      # budget -- which is this reader finding the thing before a red run had to.
+      - name: Every test's cost against the budget it declares
+        timeout-minutes: 3
+        run: node scripts/check-test-budgets.mjs --report packages/core/node_modules/.cache/vitest-report.json,packages/cli/node_modules/.cache/vitest-report.json
+
       # One reader, against a server this repository did not write.
       #
       # `docs/progress.md` carried this from pass 48: six readers are certified by a fixture the

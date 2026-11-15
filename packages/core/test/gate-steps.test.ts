@@ -1906,7 +1906,7 @@ describe('scripts/verify-local.mjs as a command', () => {
     expect(result.stdout).toContain('artefacts 15m across 9 step(s)');
     expect(result.stdout).toContain('cold-tree 20m across 4 step(s)');
     expect(result.stdout).not.toContain('verify 15m across');
-    expect(result.stdout).toContain('verify bounds all 7 of its step(s) on its own');
+    expect(result.stdout).toContain('verify bounds all 8 of its step(s) on its own');
     expect(result.stdout).toContain("largest 14m of the job's 18m");
     // 3 -> 4 in v3.52: the sensitivity job's one battery became two, because a step can
     // now be declared for one recording instead of being folded into a neighbour's name.

@@ -1341,7 +1341,7 @@ a guess published as the battery's number.
 | P2 | A claimant's budget is compared and the comparison refuses nothing | new at v3.86: nine claimants are named below the battery and the run is green | decide a ceiling for the direction that costs a claim |
 | P2 | A record's terms are a map of strings to numbers | open since v3.83 | nine shapes instead of one, decided as a record change |
 | P2 | The live list grows whatever the bound is | unchanged | measure the distance to the ceiling first |
-| P3 | The coverage figure has no reader that computes it | unchanged | teach `docs:check` to read a report |
+| P3 | The coverage figure has no reader that computes it | unchanged, and now demonstrated: finding 539 is a ledger row that quoted the second instrument for four rounds, because nothing divides 14 996 by 14 999 in a gate | teach `docs:check` to read a report, and to say which instrument printed the number |
 
 **The lesson.** The battery had a number for the machine and a number for the file, and it published
 the first as if it were the second. The repair is not a stricter rule -- nine files at 30 000 are making
@@ -1454,7 +1454,7 @@ from something else, and coercing it would be the same mistake one field down (a
 | P2 | The margin is the baseline's | new at v3.87: the 220 runs that must fail are not asked for a per-test report | whether a mutant that hangs should say *which* test hung, since the budget kill is now refused without that |
 | P2 | A record's terms are a map of strings to numbers | open since v3.83 | nine shapes instead of one, decided as a record change |
 | P2 | The live list grows whatever the bound is | unchanged | measure the distance to the ceiling first |
-| P3 | The coverage figure has no reader that computes it | unchanged | teach `docs:check` to read a report |
+| P3 | The coverage figure has no reader that computes it | unchanged, and now demonstrated: finding 539 is a ledger row that quoted the second instrument for four rounds, because nothing divides 14 996 by 14 999 in a gate | teach `docs:check` to read a report, and to say which instrument printed the number |
 
 **The lesson.** Both defects this round are the same mistake at different distances from the subject:
 a number that describes one thing published as the number that describes another. An exit code
@@ -1548,7 +1548,7 @@ the mechanism itself -- a real `git clone --depth 1` of a real two-commit reposi
 | P2 | The margin is the baseline's | new at v3.87 | whether a refused mutant should name the test that hung |
 | P2 | A record's terms are a map of strings to numbers | open since v3.83 | nine shapes instead of one, decided as a record change |
 | P2 | The live list grows whatever the bound is | unchanged | measure the distance to the ceiling first |
-| P3 | The coverage figure has no reader that computes it | unchanged | teach `docs:check` to read a report |
+| P3 | The coverage figure has no reader that computes it | unchanged, and now demonstrated: finding 539 is a ledger row that quoted the second instrument for four rounds, because nothing divides 14 996 by 14 999 in a gate | teach `docs:check` to read a report, and to say which instrument printed the number |
 
 **The lesson.** Both of this round's defects were a **precondition that held where it was measured and
 not where it mattered**: a heap that was large enough for Online Boutique and not for SockShop, a clone
@@ -1721,7 +1721,7 @@ declares.
 | P2 | The margin is the baseline's | open since v3.87 | whether a refused mutant should name the test that hung |
 | P2 | A record's terms are a map of strings to numbers | open since v3.83 | nine shapes instead of one, decided as a record change |
 | P2 | The live list grows whatever the bound is | unchanged | measure the distance to the ceiling first |
-| P3 | The coverage figure has no reader that computes it | unchanged | teach `docs:check` to read a report |
+| P3 | The coverage figure has no reader that computes it | unchanged, and now demonstrated: finding 539 is a ledger row that quoted the second instrument for four rounds, because nothing divides 14 996 by 14 999 in a gate | teach `docs:check` to read a report, and to say which instrument printed the number |
 
 **The lesson.** Both defects this round are budgets that were **inherited from a tool and never
 compared with the readings they govern**: a 5 000 ms per-test timeout that sits two and a half
@@ -1918,7 +1918,7 @@ the failing path is the one nobody reads. The repair counts the wrong cells and 
 | P2 | The margin is the baseline's | open since v3.87 | whether a refused mutant should name the test that hung |
 | P2 | A record's terms are a map of strings to numbers | open since v3.83 | nine shapes instead of one |
 | P2 | The live list grows whatever the bound is | unchanged | measure the distance to the ceiling first |
-| P3 | The coverage figure has no reader that computes it | unchanged | teach `docs:check` to read a report |
+| P3 | The coverage figure has no reader that computes it | unchanged, and now demonstrated: finding 539 is a ledger row that quoted the second instrument for four rounds, because nothing divides 14 996 by 14 999 in a gate | teach `docs:check` to read a report, and to say which instrument printed the number |
 
 **The lesson.** v3.88 repaired the copy of the table it could see, and this round's reading says the memory
 was a layer out -- in a reader that parsed two hundred megabytes to answer a question sixty-four kilobytes
@@ -2050,10 +2050,10 @@ stated where the verdict has stopped being about cells.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **249 files, 6358 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **253 files, 6545 tests passed** (as of this commit) |
-| coverage | `core` **99.98 / 99.95 / 100 / 99.97** (statements / branches / functions / lines); `cli` **100 / 100 / 100 / 100**; per-file thresholds, no exemption; the three uncovered statements are the pre-existing ones in `src/score/official.ts` |
+| `core` test suite | **249 files, 6358 tests passed** (at v3.91) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.91) |
+| repo test suite | **253 files, 6545 tests passed** (at v3.91) |
+| coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines, as vitest's own table prints them); `cli` **100 / 100 / 100 / 100**; per-file thresholds, no exemption; the three uncovered statements are the pre-existing ones in `src/score/official.ts`. This row read `99.98` until v3.92 measured the tree twice: `clover.xml` says 14 996 of 14 999, which is 99.98, and v8's counter says 99.97, and the row did not say which instrument it was quoting -- finding 539 |
 | new tests | **6349 -> 6358, net +9**: five for the rule (a row counted by its id rather than its text, the masked count, a row that contradicts itself, the fallback when the id names no cluster, an empty id treated as no id) and four for the gate (a masked row reproduced because of its id, a case with no id column reproduced by its template, a contradiction failing with every cell equal, and a case with no `timestamp` refused by name) |
 | the corpus, measured | **270** case directories hold a `logts.csv`; **24** of them carry `cluster_id` and `log_template` (`RE2-OB`); the four that failed step 13 differ by **58 cells of 21 267**; the masked rows are 162, 6, 5 and 548 of 131 811, 169 891, 117 581 and 147 388 |
 | the archive, fetched | **1.73 MiB of 1135.85 MiB** (0.15%) per case directory: central directory plus three entries by range request |
@@ -2075,7 +2075,7 @@ stated where the verdict has stopped being about cells.
 | P2 | The margin is the baseline's | open since v3.87 | whether a refused mutant should name the test that hung |
 | P2 | A record's terms are a map of strings to numbers | open since v3.83 | nine shapes instead of one |
 | P2 | The live list grows whatever the bound is | unchanged | measure the distance to the ceiling first |
-| P3 | The coverage figure has no reader that computes it | unchanged | teach `docs:check` to read a report |
+| P3 | The coverage figure has no reader that computes it | unchanged, and now demonstrated: finding 539 is a ledger row that quoted the second instrument for four rounds, because nothing divides 14 996 by 14 999 in a gate | teach `docs:check` to read a report, and to say which instrument printed the number |
 
 **The lesson.** v3.90 ended by saying the important repair was that the step could speak, and this
 round is what the step said with its voice: *the rule is reading the wrong column.* The four failing
@@ -2085,3 +2085,156 @@ The reading that said it took one bucket of one log file and three range request
 second defect is the quieter one and the more general: **a summary that counts the sentences a
 comparison prints is a summary about the printing.** Both numbers are now in the line, and neither
 is standing in for the other.
+
+## v3.92 · the pipeline held both numbers, and nothing compared them
+
+The leftovers table v3.90 and v3.91 both carried the same P1, unchanged since v3.89: the timeout
+table cannot discover a row it does not have. This round is that reader.
+
+### One · the table says it about itself, three times over
+
+`test/timeout-budget.test.ts` keeps the files whose cost reaches vitest's 5 000 ms default, and it
+says of how it grows:
+
+> Found by a red run rather than by this table, which is the honest description of how the table is
+> maintained: it can check every row it has and cannot discover a row it does not.
+
+Three rows arrived that way -- `reader-against-backend.test.ts`, `publish.test.ts`, and
+`check-official-roundtrip.test.ts` before them -- each as a red run on a commit that changed nothing
+relevant.
+
+The interesting part is not that the reader was missing. It is that **both quantities were already in
+the pipeline**: `test:coverage` writes vitest's JSON report beside its coverage output, and that
+report holds a `duration` for each of the 6 545 tests; each test file states the budget it expects,
+in one of four spellings this repository documents at length. Nothing compared them, because the
+comparison had no home -- the table is a list of files and the quantity is per test, the report is an
+artefact of a run and the table is a document.
+
+### Two · the reader, and the denominator that is not the largest number
+
+`scripts/check-test-budgets.mjs` takes the reports and asks two questions:
+
+| the file | the rule |
+| --- | --- |
+| states a budget | its slowest test takes at most **half** it |
+| states none | its slowest test is under a fifth of the default (1 000 ms) |
+
+Half, because a file at 94% of its budget was green by 282 milliseconds on the run before it went
+red. The denominator is the budget a `describe` states rather than the largest number in the file,
+and that is not pedantry: `typecheck-entrypoint.test.ts` states `RUN_TIMEOUT_MS = 180_000`, which
+bounds a spawned `pnpm` and not the test, so the largest number would hand that test a 180-second
+budget it does not have -- the wrong clock, in the flattering direction. With no suite budget the
+largest stated number stands in, and with none at all the answer is `0`, which is "inherits the
+default" and a question for the floor.
+
+### Three · its first run named one file, and not one anybody was watching
+
+```
+check-test-budgets: gates-are-testable-is-enumerated.test.ts: its slowest test takes 1015 ms and the
+file states no budget, so its verdict is decided by vitest's 5000 ms default; state one on the suite
+-- 'scripts/verify-gates-are-testable.mjs · the audit of the audits leaves a group a' is the test
+that will decide it
+check-test-budgets: FAILED (1 problem(s) across 253 file(s); 33 state a budget and 12 have a test at
+or above 1000 ms)
+```
+
+That file spawns the gate audit against temporary trees -- the shape of the three rows that arrived by
+red run. It declares `SUITE_BUDGET_MS = 30_000` now, and the reading is:
+
+```
+check-test-budgets: OK (253 file(s), 6545 test(s); 34 state a budget, 12 have a test at or above
+1000 ms, and the closest to its budget is typecheck-entrypoint.test.ts at 26% of 30000 ms)
+```
+
+That reading is the v3.91 tree with one declaration added, and 216 files state nothing there. Every
+one of their 216 files' tests is under 100 ms, which is the other half of the evidence: without it the
+rule would be "every file states a budget", and 216 numbers nobody will ever look at is how a gate
+stops being read. On the finished tree -- which carries the new test file and therefore one more
+declaration -- the same reader says:
+
+```
+check-test-budgets: OK (254 file(s), 6560 test(s); 35 state a budget, 12 have a test at or above
+1000 ms, and the closest to its budget is ingest-report.test.ts at 21% of 30000 ms)
+```
+
+### Four · the step is last in its job, and that is the budget rule talking
+
+The step runs after the mutation suite rather than beside the coverage step it depends on, because a
+bound placed after a step **no recording has measured** would be argued from a sum with a hole in it
+(the rule `check-ci-budget.mjs` states, and it is right). `golden-master/ci-declarations.json` holds
+the promise -- 3 minutes, which is the floor -- and the round whose run measures the step deletes the
+file. That file is expected to be absent most of the time, which is why the case about it asserts a
+biconditional rather than a shape.
+
+### Five · the row nothing recomputes had a digit no run produces (finding 539)
+
+Writing this round's ledger meant copying the one above it, and the copy did not survive being
+checked. v3.91's coverage row reads **99.98**; the ten rounds before it read **99.97**; this round
+measured the v3.91 tree twice -- once at `9364bea` with the working tree stashed, once with its own
+changes in place -- and got **99.97** both times.
+
+Both percentages turn out to be real, which is the finding rather than a puzzle:
+
+```
+coverage/clover.xml   14 996 covered of 14 999 statements   ->  99.980%  ->  99.98
+vitest's own table    99.97 / 99.95 / 100 / 99.97                        ->  99.97
+```
+
+Two instruments, one tree. Clover reports 14 999 statements across 93 files; v8 counts different
+ranges. Every other round quoted vitest, because vitest is what the step prints and what the per-file
+thresholds are enforced against -- and v3.91 quoted the other one, without saying so. The document
+held a percentage from one counter in a paragraph whose neighbours held the other, and **nothing here
+recomputes it**, which is the open P3 entry this round did not create but did demonstrate: one digit,
+in the one row with no reader, for four rounds.
+
+The ledger's row now names its instrument, and finding 539 states the clover arithmetic beside it so
+that the next reader who divides 14 996 by 14 999 finds out why the table disagrees rather than
+"correcting" it back. That is the smaller of the two repairs available and the honest one: making the
+guard compute the figure is a suite run inside `docs:check`, which is the entry below, not this round.
+
+### Readings
+
+> Ledger for `v3.92`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **250 files, 6373 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **254 files, 6560 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines, quoted from vitest's table, which is the instrument the step prints and the thresholds are enforced against); `cli` **100 / 100 / 100 / 100**; unchanged, because this round changed no file under `src/` -- measured twice, at `9364bea` with the tree stashed and with this round's changes in place, which is how the row above came to move |
+| new tests | **6358 -> 6373, +15**, all in `check-test-budgets.test.ts`: the fraction rule both ways, the floor both ways, the suite budget preferred to a larger child-process timeout, all four spellings, two reports in one run, an unreadable report, a report naming no test, a missing `--report`, three unusable knob values, a result with no file name, a duration that is not a number, a report naming a file it cannot read, and the summary sentence that had no budget to be about |
+| the file it found | `gates-are-testable-is-enumerated.test.ts`, slowest test **1 015 ms**, no budget; now `{ timeout: SUITE_BUDGET_MS }` at 30 000 ms |
+| its reading on the finished tree | `repo` 254 files, 6 560 tests; **35** state a budget, **12** have a test at or above 1 000 ms, closest is `ingest-report.test.ts` at **21%** of 30 000 ms -- the closest moved between runs, because it is the one figure here that depends on how loaded the machine was |
+| gate sites | **136 -> 139** across **62 -> 63 of 89** scripts: the usage exit, the problems exit, and "the report named no test", all three proved by the new test file |
+| the battery | **221 -> 224** claim(s) across **61 -> 62** file(s) |
+| the CI step | `Every test's cost against the budget it declares`, **3 min**, last in the `verify` job, with `golden-master/ci-declarations.json` naming it as unmeasured |
+| list | **29 -> 29**: the "timeout table cannot discover a row it does not have" entry closed by this reader, and an entry opened for the new step's bound, which is a promise until a run measures it |
+| LLM calls | **0** |
+
+### Leftovers, in the order that reaches the goal
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| P0 | The repaired aggregate rule has not been run over the corpus | open since v3.91: run `43706694417` is in flight on `81f0fd6` | read step 13's census for `24 case(s) reproduced` and `0 named two different clusters`, then record the run in `golden-master/roundtrip.json` |
+| P1 | The new step's bound is a promise, not a measurement | new at v3.92 | read its duration from the next green run, record it with `measure-ci-baseline.mjs`, and delete `golden-master/ci-declarations.json` |
+| P1 | 246 case directories are refused, and the only exact statement available for them is an inequality | unchanged since v3.91 | decide whether a weaker claim gets its own name and its own gate |
+| P2 | The ceiling of 8 has never been measured where it is not oversubscription | unchanged | one full-suite run on nine or more usable CPUs |
+| P2 | The margin is the baseline's | open since v3.87 | whether a refused mutant should name the test that hung |
+| P2 | A record's terms are a map of strings to numbers | open since v3.83 | nine shapes instead of one |
+| P2 | The live list grows whatever the bound is | unchanged | measure the distance to the ceiling first |
+| P3 | The coverage figure has no reader that computes it | unchanged, and now demonstrated: finding 539 is a ledger row that quoted the second instrument for four rounds, because nothing divides 14 996 by 14 999 in a gate | teach `docs:check` to read a report, and to say which instrument printed the number |
+
+**The lesson.** A table that grows only by failing is a table that has failed, and this one had said
+so about itself three times -- in prose, in a file whose whole subject is that a published number with
+no reader is a number nobody can trust. The repair was not a better table. It was noticing that the
+run already measured the quantity and that the table already held the bound, and that the only thing
+missing was a place where the two meet. **A gate that needs a new measurement is expensive; a gate
+that needs two numbers the pipeline already produces is a file read**, and the reason it took five
+rounds to write is that the two numbers lived in different kinds of artefact.
+
+The round's other half is the same shape one level up, and it is the one to carry forward: the number
+this round wrote into the table about its own coverage did not survive being measured twice, and the
+reason it did not is that the corpus has two instruments for that figure and the row never said which.
+A repository that has spent four thousand lines of guard on the counts a suite prints still publishes
+one percentage it has never divided itself. Correcting the digit is the small repair; naming the
+instrument is the one that stops the next reader from correcting it back.

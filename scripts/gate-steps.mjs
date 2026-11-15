@@ -535,6 +535,10 @@ export const STEP_PLAN = {
     local: true,
     note: 'the slowest step; it also writes the reports the counts step reads',
   },
+  'verify / Every test\'s cost against the budget it declares': {
+    local: true,
+    note: 'reads the reports the coverage step wrote, and nothing else',
+  },
   'verify / Published suite counts, read from that run rather than taken again': {
     local: true,
     note: 'depends on the coverage step having written both reports, which the order guarantees',

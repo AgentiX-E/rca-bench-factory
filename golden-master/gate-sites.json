@@ -1,6 +1,6 @@
 {
   "rule": "a process.exit(...) call whose argument is not a known zero -- no argument at all is zero; sites and zero partition every process.exit call, whatever position the call sits in; a reference to the exit family that is not a call is refused rather than counted; see scripts/derive-gate-sites.mjs",
-  "scanned": 88,
+  "scanned": 89,
   "excluded": {
     "zero": 18
   },
@@ -442,6 +442,29 @@
       "diagnostic": "check-staged-mutation: FAILED (${String(problems.length)} problem(s))",
       "status": "proved",
       "provedBy": "packages/core/test/staged-mutation.test.ts"
+    },
+    {
+      "script": "scripts/check-test-budgets.mjs",
+      "line": 70,
+      "diagnostic": "usage: check-test-budgets.mjs --report <path>[,<path>] [--floor <ms>] [--share <n>]",
+      "status": "proved",
+      "provedBy": "packages/core/test/check-test-budgets.test.ts"
+    },
+    {
+      "script": "scripts/check-test-budgets.mjs",
+      "line": 346,
+      "condition": "problems.length > 0",
+      "diagnostic": "check-test-budgets: FAILED (${problems.length} problem(s) across ${files.length} file(s);",
+      "status": "proved",
+      "provedBy": "packages/core/test/check-test-budgets.test.ts"
+    },
+    {
+      "script": "scripts/check-test-budgets.mjs",
+      "line": 357,
+      "condition": "files.length === 0 || tests === 0",
+      "diagnostic": "check-test-budgets: FAILED (the report(s) named no test at all, so nothing was measured and this is",
+      "status": "proved",
+      "provedBy": "packages/core/test/check-test-budgets.test.ts"
     },
     {
       "script": "scripts/check-user-guide.mjs",

@@ -1,0 +1,10 @@
+{
+  "declared": [
+    {
+      "job": "verify",
+      "step": "Every test's cost against the budget it declares",
+      "minutes": 3,
+      "why": "Added in v3.92 and not yet measured by a recording: it reads the two vitest reports the coverage step wrote and compares each test's duration with the budget its file declares, so its cost is two file reads and a walk over 253 names. It is the last step of its job for the reason the rule gives -- a bound after an unmeasured step would be argued from a sum with a hole. The round that measures it deletes this sentence."
+    }
+  ]
+}

@@ -235,6 +235,16 @@ const REGISTER: Record<string, Entry> = {
       'that table were uncheckable, and one of them ("one row a minute") is false by a factor of four.',
   },
   'check-doc-counts.mjs': { class: 'gate' },
+  'check-test-budgets.mjs': {
+    class: 'gate',
+    why:
+      'The reader `timeout-budget.test.ts` said it could not be. That table checks every row it holds ' +
+      'and grows only when a run goes red, which it wrote about itself three times; three of its eight ' +
+      'rows arrived that way. The two numbers were already in the pipeline -- `test:coverage` writes a ' +
+      '`duration` for every test, each file states its budget in one of four spellings -- and nothing ' +
+      'compared them. Its first run named `gates-are-testable-is-enumerated.test.ts` at 1 015 ms with ' +
+      'no budget, which is the shape of all three rows a red run had to find.',
+  },
   'check-l4-status.mjs': { class: 'gate' },
   'check-repository-table.mjs': {
     class: 'gate',

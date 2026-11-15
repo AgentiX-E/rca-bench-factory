@@ -206,7 +206,26 @@ function audit(tree: string): Outcome {
   return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 }
 
-describe('scripts/verify-gates-are-testable.mjs · the audit of the audits', () => {
+/**
+ * The budget this file's suite is given, in milliseconds.
+ *
+ * ## Why it states one, and what said so
+ *
+ * Every test here spawns `verify-gates-are-testable.mjs` against a temporary tree,
+ * so the file is a sum of process starts rather than one slow call -- the shape
+ * three sibling files were carrying when their verdicts were decided by vitest's
+ * inherited 5 000 ms default. It stated nothing until v3.92, when the reader in
+ * `scripts/check-test-budgets.mjs` -- which reads a run's own durations against the
+ * budget each file declares -- named this file as its only offender: slowest test
+ * **1 015 ms**, no budget anywhere, which is a fifth of the default and therefore
+ * the point at which the rule asks for a declaration.
+ *
+ * `scripts/check-test-budgets.mjs` is that reader, and this constant is what makes
+ * the file pass it rather than what the reader was tuned to.
+ */
+const SUITE_BUDGET_MS = 30_000;
+
+describe('scripts/verify-gates-are-testable.mjs · the audit of the audits', { timeout: SUITE_BUDGET_MS }, () => {
   it('takes its subjects from the inventory, in both directions', () => {
     // The rule the register in `scripts-are-classified.test.ts` states for itself:
     // a list that must be updated when a file is added is a check that cannot see
