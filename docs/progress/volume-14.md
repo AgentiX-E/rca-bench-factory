@@ -2459,9 +2459,9 @@ that were both green.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **251 files, 6384 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **255 files, 6571 tests passed** (as of this commit) |
+| `core` test suite | **251 files, 6384 tests passed** (at v3.93) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.93) |
+| repo test suite | **255 files, 6571 tests passed** (at v3.93) |
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines, from `packages/core/coverage/coverage-summary.json`, which is v8's counters -- the instrument the new reader names); `cli` **100 / 100 / 100 / 100**; unchanged, because this round changed no file under `src/` |
 | new tests | **6373 -> 6384, +11**: eight in `check-coverage-readings.test.ts`, three in `check-aggregate-tables.test.ts` (22 -> 25), and one test of that file rewritten in place rather than added -- the inequality's pass, its breach with both numbers named, a column that names no container, a file refused from its header alone, and the mixed run where a bounded case sits beside a reproduced one |
 | the instrument | `v8` counters, `json-summary`; `clover` kept as the second instrument, because the 0.01 disagreement of finding 539 is only observable while both are written |
@@ -2494,3 +2494,129 @@ pipeline is a list that stops tracking the aggregate the moment someone edits on
 mode went to the place that has a report; the aggregate kept the part that a cold tree can answer. That
 is not a compromise -- it is the same division the suite counts already use, and the reason it looked
 like one is that the page had been publishing a figure it never divided.
+
+
+## v3.94 · the refusal named the budget, and the test was in the output all along
+
+One leftover, carried since v3.87, and it was the smallest kind of wrong: a sentence that is true,
+specific, and points at the wrong object. `verify-sites-are-sensitive` refuses a run that did not
+finish, and it named the number that ended the run -- `did not finish inside the 2500 ms of test
+budget` -- which is a ceiling the whole file shares. The line to change is the test that hangs.
+
+### One · a sentence with a number and no subject
+
+Two refusals fire when a run does not finish. The baseline that never passed says `so its claims are
+unmeasured rather than unproven`; the mutant run that was cut says `so the run was stopped rather than
+failed`. Both are careful about the distinction they were written for -- a red test and a stopped run
+are different findings -- and both stop at the budget.
+
+The second path had nothing else at all: its `detail` was two fixed sentences, so a stopped mutant run
+contributed a number and no evidence. The first path quoted the run's summary, which includes `FAIL`
+lines, capped at 160 characters -- a cap a deep suite name reaches before it reaches the test name --
+but the head sentence, the one that goes into the annotation, named only the budget.
+
+### Two · the name was under the sentence the gate already read
+
+Vitest 3.2.4 prints, for a test that exceeds its budget, a block in which the budget sentence sits
+directly under a `FAIL` line naming the file and the test. The bytes in `site-proofs.test.ts` are a real
+run: a two-test suite with a 1 500 ms budget and one test that sleeps for 60 s, placed in
+`packages/core/test/` for one command so the include pattern would take it.
+
+`exhaustedTestBudget` matched `Test timed out in \d+ms` and returned the number; nothing looked at the
+line above. So the repair is a second reader over a string the gate already held -- `outcome.output`,
+captured for every run for the summary and the tail -- and it costs nothing per run. The leftover had
+estimated the price as "one JSON file per mutant run" and the reading as "which test a mutation makes
+wait". Both were wrong in the same direction: the fact was already there, and the file would have been
+a second copy of it. The report's `duration` would have answered a different question -- how long the
+test ran before the ceiling -- and the output answers that too, in the summary line above the block.
+
+### Three · the case that must not be silent, and why it is blocks rather than the first `FAIL`
+
+A run holds several failures, so "the first `FAIL` line" is a specific claim that can be false: an
+assertion in one test beside a budget kill in another is one `FAIL` line each. `hungTests` scopes the
+timeout sentence to the block that carries it, from a `FAIL` line to the next, and a run with two kills
+answers with two names; the clause prints the count rather than the first name and the word "a test".
+
+The third case is the one this repository keeps finding one level down. A run whose reporter printed the
+budget and no `FAIL` line has no test to name, and a refusal that stayed silent there would be
+indistinguishable from a reader that did not look -- "no test hung" and "no test was named" would print
+the same number of names. The clause says `its own output names no test, only the budget`, and a new
+`namelessTimeout` fixture makes that sentence failable: it emits the budget with no `FAIL` line beside
+it, and the gate has to produce the honest sentence rather than the silent one.
+
+### Four · what the `terms` type would cost, decided rather than deferred
+
+The other leftover this round touched is the one that has been carried since v3.83 and is the last
+position of the coverage residual: `OfficialCaseScore.terms` is `Readonly<Record<string, number>>`, so
+`noUncheckedIndexedAccess` hands every read `number | undefined` even for a key the target's producer
+writes every time. One of those reads keeps a `?? 0` for it (at `official.ts:1973`, where the term is
+*added*, and absent would be `NaN`); the other lost its fallback at v3.83 when the measurement said
+absent and `0` answer the same comparison.
+
+Two cast-free designs were derived this round, and both fail for a reason worth writing down rather than
+rediscovering.
+
+- **A generic record plus a total dispatch table.** `OfficialCaseScore<K>` with
+  `terms: TermsOf<K>`, and `{[K in ScoreTargetId]: (ctx) => Aggregation}`. The table is total by
+  construction, which is the property the `never`-assignment buys today. But the dispatch indexes it with
+  a `target` of the *union* type, so the value is `Aggregator<'openrca-1.0'> | … | Aggregator<'itbench'>`,
+  and calling a union of function types requires the argument to satisfy every member -- a wider case
+  array is not assignable to the narrower parameter. One `as` at the lookup is the only way through, and
+  a cast is a promise where the leftover asks for a proof.
+- **A discriminated report.** `OfficialScoreReport` as a union over `target`, each member carrying
+  `cases: readonly OfficialCaseScore<K>[]`. Narrowing works -- `switch (report.target)` narrows the
+  whole object, so the reads inside each arm are total -- but only if the *pair* is constructed inside
+  the arm. A report assembled as `{ target, cases }` from a union-typed target and a
+  `A[] | B[]`-typed array has lost the correlation, and narrowing one does not narrow the other. So the
+  cast-free version does not annotate the existing shape: it collapses the case scorer, the aggregator
+  and the report assembly into one per-target builder, nine times over.
+
+That is a rewrite of the module that computes every published number, in exchange for one branch. The
+risk it would guard is already guarded at run time: `official.test.ts:876` asserts
+`report.breakdown.evidenceHits` on a real export, so a producer that stopped writing the key fails a
+test today. What the type would buy is that it fails at build time instead -- a real gain, at a price
+this round declines to pay, and the entry stays open with the price written into it. Two things would
+reopen the decision: a second target reading a key another target writes, which is the shape where a
+wrong key silently answers `0` and no report test pins it; or a `?? 0` appearing in a sum whose `0` is
+a wrong answer rather than a no-op.
+
+### Readings
+
+> Ledger for `v3.94`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **251 files, 6388 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **255 files, 6575 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** -- unchanged, because this round changed no file under `src/` |
+| new tests | **6384 -> 6388, +4**: three in `site-proofs.test.ts` (the recorded run, the mixed run and the two-kill run, and the three shapes that must name nobody), one in `verify-sites-are-sensitive.test.ts` for the nameless case, plus the two existing refusal cases extended in place to require the name |
+| gate sites | **140** across **64 of 90** scripts: unchanged, and five of them moved by the two import lines -- re-derived, not edited |
+| the battery | **225** claim(s) across **63** file(s): unchanged |
+| list | **25**, with one closed and one opened: the stopped run that named nobody (finding 544), and the failing run whose ceiling is still unmeasured |
+| LLM calls | **0** |
+| cost of the repair | one `FAIL`-block scan of a string already in memory, per stopped run: no new spawns and no new files |
+
+### Leftovers, in the order that reaches the goal
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| P1 | The corpus reading the `bounded` outcome still owes | run `43735099650` dispatched at v3.93; step 13 pending while the round trip runs | read step 13's census, and record it in `golden-master/roundtrip.json` and the baseline page |
+| P2 | The ceiling of 8 has never been measured where it is not oversubscription | unchanged: every reading here is on a 4-CPU cgroup quota, where 8 is 2x | one full-suite run on nine or more usable CPUs |
+| P2 | How close a *failing* run comes to its ceiling | the surviving half of the entry finding 544 closed, now an entry of its own: a mutant's verdict is its exit code, and nobody asks it for per-test durations | a per-test reading from a run whose product is a failure |
+| P2 | A record's terms are a map of strings to numbers | **decided this round (finding 544)**: both cast-free designs are a rewrite for one branch, and the runtime witness already exists; the entry stays open with the price in it | a second target reading another target's key |
+| P2 | The live list grows whatever the bound is | unchanged | measure the distance to the ceiling first |
+
+This volume is at 197,151 of its 200,000 bytes: the next round opens `progress/volume-15.md`.
+
+**The lesson.** This was the cheapest kind of defect and it had survived seven rounds: the evidence was
+inside the string the gate was already holding, and the sentence beside it named something else. The
+leftover that recorded it had even costed the repair -- "one JSON file per mutant run" -- and the cost
+was zero. A leftover is a hypothesis about what a repair costs, and it is written by the round that
+declined to make it; that is exactly the situation in which an estimate is least likely to be checked.
+
+The second thing is about what "deciding" looks like for a type. The `terms` entry had been carried for
+eleven rounds with the sentence "it is here so that a later round decides it on purpose". A decision
+that is only a sentence is not distinguishable from the deferral it replaces, so this round derived the
+two designs that would actually work, measured what each costs, and wrote down what would reopen it. The
+entry is still open. It is now open with the reason it has been open.

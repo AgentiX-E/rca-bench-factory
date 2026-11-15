@@ -11,6 +11,7 @@ import {
   claimsByFile,
   exhaustedTestBudget,
   failureSummary,
+  hungTests,
   longestTest,
   outputTail,
   hookFile,
@@ -404,6 +405,89 @@ describe('site-proofs · what a red run says about itself', () => {
     expect(exhaustedTestBudget(REPORT)).toBeNull();
     expect(exhaustedTestBudget('boom')).toBeNull();
     expect(exhaustedTestBudget('')).toBeNull();
+  });
+
+  it('names the test a run was still running when its budget ended', () => {
+    // The bytes below are a real run, not a sketch of one. They were produced by
+    // placing this file in `packages/core/test/` for one command and reading what
+    // vitest 3.2.4 printed:
+    //
+    //     describe('a suite that never finishes', { timeout: 1500 }, () => {
+    //       it('answers immediately', () => { expect(1).toBe(1); });
+    //       it('waits for something that never arrives', async () => {
+    //         await new Promise((resolve) => setTimeout(resolve, 60000));
+    //       });
+    //     });
+    //
+    // The shape matters because it is what the refusal now has to read: the budget
+    // sentence names the number, the `FAIL` line names the test, and they are two
+    // halves of one event in one block of one run.
+    const hung = [
+      '',
+      ' RUN  v3.2.4 /workspace/rca-bench-factory/packages/core',
+      '',
+      ' \u276f test/hang.test.ts (2 tests | 1 failed) 1505ms',
+      '   \u2713 a suite that never finishes > answers immediately 1ms',
+      '   \u00d7 a suite that never finishes > waits for something that never arrives 1503ms',
+      '     \u2192 Test timed out in 1500ms.',
+      'If this is a long-running test, pass a timeout value as the last argument.',
+      '',
+      ' FAIL  test/hang.test.ts > a suite that never finishes > waits for something that never arrives',
+      'Error: Test timed out in 1500ms.',
+      'If this is a long-running test, pass a timeout value as the last argument.',
+      ' \u276f test/hang.test.ts:8:3',
+      '',
+      ' Test Files  1 failed (1)',
+      '',
+    ].join('\n');
+    expect(hungTests(hung)).toEqual([
+      {
+        file: 'test/hang.test.ts',
+        name: 'a suite that never finishes > waits for something that never arrives',
+      },
+    ]);
+  });
+
+  it('names the run that timed out, not every test the run reported failing', () => {
+    // A run can hold both shapes at once, and the reader must not hand the budget's
+    // finding the first failure's name. The blocks are what the scoping is for: an
+    // assertion in one test and a budget kill in another are one `FAIL` line each,
+    // and only the second block carries the sentence.
+    const mixed = [
+      ' FAIL  test/a.test.ts > adds up',
+      'AssertionError: expected 1 to be 2 // Object.is equality',
+      ' FAIL  test/b.test.ts > waits forever',
+      'Error: Test timed out in 2500ms.',
+      '',
+    ].join('\n');
+    expect(hungTests(mixed)).toEqual([{ file: 'test/b.test.ts', name: 'waits forever' }]);
+    // Two timeouts are two names. A sentence that printed the first and said "a test"
+    // would be a count of one standing in for a count of two -- the defect the
+    // aggregate gate's summary was rewritten for at v3.93.
+    const two = [
+      ' FAIL  test/a.test.ts > waits once',
+      'Error: Test timed out in 2500ms.',
+      ' FAIL  test/b.test.ts > waits twice',
+      'Error: Test timed out in 2600ms.',
+      '',
+    ].join('\n');
+    expect(hungTests(two).map((one) => one.name)).toEqual(['waits once', 'waits twice']);
+  });
+
+  it('names nothing when the output names no test at all', () => {
+    // Three shapes that must not produce a name, each for its own reason.
+    //
+    // 1. The budget sentence with no `FAIL` line: a reporter that prints totals and
+    //    no names. Returning a guess here would be the defect one level down -- a
+    //    refusal that names a test nobody named.
+    expect(hungTests('Error: Test timed out in 30000ms.')).toEqual([]);
+    // 2. A failing test that did not time out. It is a failure with a name, and the
+    //    sentence that prints it is not this one.
+    expect(hungTests(' FAIL  test/a.test.ts > adds up\nAssertionError: expected 1 to be 2')).toEqual([]);
+    // 3. The worker's RPC deadline, in which every test passed.
+    expect(hungTests('[vitest-worker]: Timeout calling "onTaskUpdate"')).toEqual([]);
+    expect(hungTests(REPORT)).toEqual([]);
+    expect(hungTests('')).toEqual([]);
   });
 
   it('invents nothing when the report carries none of those lines', () => {

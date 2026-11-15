@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–543, from the rounds recorded in `progress/volume-14.md`.
+Findings 542–544, from the rounds recorded in `progress/volume-14.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -126,3 +126,60 @@ strict half where the report exists -- the CI step names it with `--require` -- 
 without it, which is why the table now says in one sentence where its reader is. A guard that runs in
 both places and compares nothing in one of them would have been the same defect as the page: a number
 with a reader that does not compute it.
+
+## Finding 544 — a stopped run was refused with the budget that ended it, and not with the test it was inside
+
+Two refusals in `verify-sites-are-sensitive.mjs` fire when a run did not finish: the baseline that never
+passed (`did not finish inside the 30000 ms of test budget …, so its claims are unmeasured rather than
+unproven`) and the mutant run that was cut (`… so the run was stopped rather than failed`). Both named a
+number and neither named a test. The number is a ceiling the whole file shares; the test is the one line
+of that file that hangs, and it is the thing to change. A reader given only the first raises a budget
+that was never the problem.
+
+The second path is the worse of the two: its `detail` was two fixed sentences and no output at all, so
+the run that was stopped contributed nothing but the number. On the first path the name could appear in
+the quoted `FAIL` line of the summary -- to a 160-character cap, which a deep suite name can reach
+before it reaches the test name -- but never in the head sentence, which is the line that goes into the
+annotation.
+
+**The reading was already in the string the gate held.** Vitest 3.2.4 prints, for a test that exceeds
+its budget:
+
+```
+ ❯ test/hang.test.ts (2 tests | 1 failed) 1505ms
+   ✓ a suite that never finishes > answers immediately 1ms
+   × a suite that never finishes > waits for something that never arrives 1503ms
+     → Test timed out in 1500ms.
+
+ FAIL  test/hang.test.ts > a suite that never finishes > waits for something that never arrives
+Error: Test timed out in 1500ms.
+```
+
+That block is a real run, recorded verbatim in the test that reads it. `exhaustedTestBudget` looked for
+`Test timed out in \d+ms` and stopped there; the `FAIL` line under it names the file and the test, and
+`outcome.output` -- captured for every run already, for the summary and the tail -- carries both.
+
+**The entry's own repair estimate was for a fact the gate already had.** The leftover proposed buying a
+JSON report on the 220 runs that currently save none: "the cost is one JSON file per mutant run and the
+reading it buys is which test a mutation makes wait". The reading needed no file. It also needed no
+parse of the report's `duration`, which would have answered a different question (how long the test ran
+before the ceiling, not which test it was).
+
+**Blocks, not the first `FAIL`.** A run holds several failures, and an assertion in one test beside a
+budget kill in another is one `FAIL` line each. `hungTests` therefore scopes the timeout sentence to
+the block that carries it -- from a `FAIL` line to the next -- so a mixed run answers with the second
+test only, and a run with two kills answers with two names. `hungTestClause` renders the three cases as
+one sentence each: one name, N names with the count, and -- the case that must not be silent -- a run
+that printed the budget and no `FAIL` line at all, which reads `its own output names no test, only the
+budget`. Silence there would be this finding one level down: "no test hung" and "no test was named"
+would print the same number of names.
+
+**What is not closed.** The entry was also about the margin: how close a *failing* run comes to its
+ceiling is still unmeasured, because a run's verdict is its exit code and nobody asks it for per-test
+durations. That half stays open, narrowed to the question it never answered.
+
+**The numbers.** `hungTests` and `hungTestClause` are in `scripts/site-proofs.mjs`, which shifts the
+line of five sites in `golden-master/gate-sites.json` and adds none: 140 sites across 64 of 90 scripts
+before and after. Two tests were added to `verify-sites-are-sensitive.test.ts` (one of them driving a
+new `namelessTimeout` fixture) and three to `site-proofs.test.ts`. The suite is 251 files and 6 388
+tests in `core`.

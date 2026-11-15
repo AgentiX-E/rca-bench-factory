@@ -440,8 +440,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 97 |
 | Source lines | 34,369 |
 | Test files | 251 core + 4 cli |
-| Test lines | 107,765 core + 3,242 cli |
-| Tests | 6,384 core + 187 cli |
+| Test lines | 107,887 core + 3,242 cli |
+| Tests | 6,388 core + 187 cli |
 | Tracked files | 646 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -526,7 +526,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.93: **25** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.94: **25** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1160,10 +1160,21 @@ is a row about rather than paraphrase one that no `grep` will find.
   producer writes every time. One of the two reads keeps a `?? 0` because of it -- the summed one,
   where absent would be `NaN` -- and the other lost its fallback at v3.83, when the measurement said
   that absent and `0` answer the same comparison (finding 518).
-  `[open: the type that would say it is a `terms` map discriminated by score target, nine shapes
-  instead of one, and that is a structural change to the record rather than a branch. It is the last
-  position of the coverage residual, and it is here so that a later round decides it on purpose
-  instead of finding it in a percentage]`
+  **Decided at v3.94 (finding 544), and still open.** Both cast-free designs were derived and both are
+  a rewrite rather than an annotation. A generic record plus a `{[K in ScoreTargetId]: Aggregator<K>}`
+  table is total by construction, but the dispatch indexes it with a target of the *union* type, so the
+  value is a union of function types and calling one requires the argument to satisfy every member --
+  one `as` at the lookup is the only way through. A discriminated report narrows correctly, but only
+  when the `{ target, cases }` pair is *constructed* inside the arm: assembled from a union-typed
+  target and an `A[] | B[]` array the correlation is gone, so the cast-free version collapses the case
+  scorer, the aggregator and the report assembly into one per-target builder, nine times over. That is
+  a rewrite of the module every published number comes from, for one branch -- the summed `?? 0` at
+  `official.ts:1973` -- and the risk is already covered at run time: `official.test.ts` asserts
+  `report.breakdown.evidenceHits` on a real export, so a producer that stopped writing the key fails
+  a test today. What the type would add is that it fails at build time instead.
+  `[open: one of the two things that would make the price worth paying -- a second target reading a key
+  another target writes, which is the shape where a wrong key silently answers 0 and no report test
+  pins it, or a `?? 0` in a sum whose 0 is a wrong answer rather than a no-op]`
 - ~~**G3's two thresholds have no grid.**~~ `minAbsZ` (2.0) and `minSustainedSamples` (3) are
   parameters with no sensitivity reading, and `probe-z-floor` measures epsilon rather than either
   of them.
@@ -1439,13 +1450,23 @@ is a row about rather than paraphrase one that no `grep` will find.
   round's *"29 590 ms of the 30000 ms it is given (99%)"* implied, because that quotient divided a
   file's wall clock by a per-test ceiling.
 
-- **The margin is the baseline's.** The per-test durations the margin now prints come from vitest's
-  own JSON report, written for the 61 baseline runs; the 220 runs that must fail are not asked for one,
-  because their verdict is the exit code. So a mutant that hangs is refused with the budget that
-  stopped it and not with the test that hung, and how close the failing runs come to their ceiling is
-  unmeasured. `[open: whether the refused basket should name the test as well, which needs the report
-  on the 220 runs it currently saves nothing on -- the cost is one JSON file per mutant run and the
-  reading it buys is which test a mutation makes wait]`
+- ~~**A stopped run was refused with the budget that ended it, and not with the test it was inside.**~~
+  The per-test durations the margin prints come from vitest's own JSON report, written for the 61
+  baseline runs, and the 220 runs that must fail are not asked for one because their verdict is the
+  exit code -- so a mutant that hung was refused with the budget and nothing named the test.
+  **Closed by finding 544.** The name was in the run's own captured output, under the sentence the gate
+  already read: vitest prints the timeout inside the block that begins with a `FAIL` line naming the
+  file and the test. `hungTests` scopes the sentence to its block, so a run with an assertion in one
+  test and a kill in another answers with the second, and a run that named nobody is made to say so.
+  The report the entry proposed buying would have been a second copy of a fact already in memory, at
+  one file per mutant run across 220 runs.
+- **How close a *failing* run comes to its ceiling is unmeasured.** The margin divides a per-test
+  duration by the budget that governs it, and the duration comes from a vitest JSON report that only
+  baseline runs are asked for. A run whose product is a failure is read for its exit code, so the
+  question the margin answers for the 61 witnesses is unanswered for the 220 mutants -- including the
+  runs that were stopped, once they finish inside their budget without failing.
+  `[open: a per-test duration from runs whose verdict is the exit code, which is one report per mutant
+  run -- the name is free now (finding 544), the duration is not]`
 
 ## Pass log
 
@@ -1477,7 +1498,7 @@ and this table.
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
-| [volume-14.md](progress/volume-14.md) | 21 | v3.73 | v3.93 |
+| [volume-14.md](progress/volume-14.md) | 22 | v3.73 | v3.94 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

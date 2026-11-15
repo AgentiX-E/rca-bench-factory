@@ -97,6 +97,8 @@ import {
   exhaustedTestBudget,
   failureSummary,
   governingTestBudget,
+  hungTestClause,
+  hungTests,
   longestTest,
   outputTail,
   hookFile,
@@ -471,7 +473,8 @@ for (const outcome of baselines) {
             'unmeasured'
           : `${outcome.file} did not finish inside the ${String(budget)} ms of test budget ` +
             `${budgetProvenance(outcome.file, budget)} ` +
-            `(exit ${String(outcome.status)}), so its claims are unmeasured rather than unproven`,
+            `(exit ${String(outcome.status)}), so its claims are unmeasured rather than unproven` +
+            `, and ${hungTestClause(hungTests(outcome.output))}`,
       // A run whose output carries no report at all -- the shape vitest takes when its
       // worker's RPC deadline expires, with every test passing -- leaves the summary
       // empty. The tail is quoted rather than summarised: it is evidence, and the
@@ -576,7 +579,8 @@ for (const [index, outcome] of mutants.entries()) {
       truncated.push({
         head:
           `${claim.site} is claimed by ${file}, which did not finish inside the ${String(budget)} ms of ` +
-          `test budget ${budgetProvenance(file, budget)}, so the run was stopped rather than failed`,
+          `test budget ${budgetProvenance(file, budget)}, so the run was stopped rather than failed` +
+          `, and ${hungTestClause(hungTests(outcome.output))}`,
         detail: [
           'a claim is proved by a test that fails, not by a run the harness ended: nothing here asserted anything',
           rerun(file),

@@ -52,6 +52,14 @@ interface FixtureOptions {
   silent?: boolean;
   /** Fails the way vitest does when a test exceeds its own budget: one sentence, exit 1. */
   timedOut?: boolean;
+  /**
+   * Emits the budget sentence with no `FAIL` line beside it.
+   *
+   * The shape a reporter that prints totals and no test names produces. The refusal
+   * still has to say something, and what it says must be that the run named nobody
+   * rather than nothing.
+   */
+  namelessTimeout?: boolean;
   /** Writes the arguments it was given, so a case can read what the gate asked for. */
   argv?: boolean;
   /** A budget the claimant states for its own tests, written the way vitest accepts it. */
@@ -116,6 +124,7 @@ function fixture(claims: { line: 1 | 2; file: string }[], options: FixtureOption
     options.red === true ? 'RED' : '',
     options.silent === true ? 'SILENT' : '',
     options.timedOut === true ? 'TIMEDOUT' : '',
+    options.namelessTimeout === true ? 'NAMELESS' : '',
     options.crashOnMutant === true ? 'CRASH' : '',
     options.hangOnMutant === true ? 'HANG' : '',
     options.report === undefined ? '' : 'REPORT',
@@ -176,7 +185,7 @@ function fixture(claims: { line: 1 | 2; file: string }[], options: FixtureOption
     '  process.exit(1);',
     '}',
     'if (text.includes("TIMEDOUT")) {',
-    '  process.stdout.write(" FAIL  " + file + " > drives the gate\\n");',
+    '  if (!text.includes("NAMELESS")) process.stdout.write(" FAIL  " + file + " > drives the gate\\n");',
     '  process.stdout.write("Error: Test timed out in 30000ms.\\n");',
     '  process.stdout.write("\\n      Tests  1 failed (1)\\n");',
     '  process.exit(1);',
@@ -387,6 +396,9 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('stopped by a test budget instead of failing');
       expect(result.stderr).toContain('did not finish inside the 2500 ms of test budget');
+      // The mutant side asked the same question and had the same answer available: the
+      // run it stopped had printed which test it was inside.
+      expect(result.stderr).toContain('the test still running when the budget ended was `drives the gate`');
       expect(result.stderr).toContain('a run the harness ended is a claim nobody read');
       expect(result.stdout).toContain('1 truncated by a budget');
       expect(result.stdout).not.toContain('1 of 1 mutant run(s) are credited');
@@ -479,7 +491,33 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
       expect(result.stderr).toContain('did not finish inside the 30000 ms of test budget');
       expect(result.stderr).toContain('neither the battery nor any declaration in this file furnishes');
       expect(result.stderr).toContain('unmeasured rather than unproven');
+      // And **which test** was still running. A refusal that names the budget and not
+      // the test sends its reader to a number that is almost never the thing to change:
+      // the budget is a ceiling the whole file shares, the test is the one line of it
+      // that hangs. The name is in the run's own `FAIL` line, which this gate already
+      // captured and did not read.
+      expect(result.stderr).toContain('the test still running when the budget ended was `drives the gate`');
       expect(result.stderr).not.toContain('does not pass on its own');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('says a stopped run named no test, when its output carries no name to read', () => {
+    // The sentence above and this one are not the same number of failures apart. A run
+    // whose reporter printed the budget and no names is the one case where the refusal
+    // has nothing to point at, and silence there is indistinguishable from a reader that
+    // did not look -- the defect class this repository keeps finding one level down.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      assert: true,
+      timedOut: true,
+      namelessTimeout: true,
+    });
+    try {
+      const result = runGate(tree);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('did not finish inside the 30000 ms of test budget');
+      expect(result.stderr).toContain('and its own output names no test, only the budget');
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }

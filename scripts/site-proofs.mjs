@@ -459,6 +459,80 @@ export function exhaustedTestBudget(text) {
 }
 
 /**
+ * The tests a run was still running when one of them ran out of time.
+ *
+ * ## Why the budget sentence is not enough
+ *
+ * `exhaustedTestBudget` answers "which number ended this run" and the refusal for a
+ * stopped run printed exactly that. A reader who acts on it has one number and no
+ * subject: the budget is a ceiling the whole file shares, and raising it is the wrong
+ * repair whenever the test that hangs is the one line of the file that should not take
+ * that long. Measured at v3.94: the sites battery refuses a stopped mutant run with
+ * `did not finish inside the 2500 ms of test budget ...`, and the run's own output --
+ * already captured, already in the string this function reads -- says
+ *
+ *     FAIL  test/hang.test.ts > a suite that never finishes > waits for something that never arrives
+ *
+ * The name was there and nothing read it. This is the same defect as
+ * `check-aggregate-tables` printing a fact about its reader where a fact about the
+ * corpus belonged: a refusal whose sentence and whose evidence are about different
+ * things.
+ *
+ * ## Why blocks, and not "the first FAIL line"
+ *
+ * A run holds several failures. An assertion in one test and a budget kill in another
+ * are one `FAIL` line each, and taking the first would name the wrong test -- a
+ * sentence that is specific and false, which is worse than one that is vague and true.
+ * The timeout sentence belongs to a block: it is printed under the `FAIL` line of the
+ * test it killed, so the rule is "the `FAIL` line whose own block carries the timeout",
+ * and a run with two of them answers with two names.
+ *
+ * A run that printed the budget and no `FAIL` line answers with nothing, and the
+ * caller says so in words. Returning a guess, or nothing without saying it, would be
+ * the same defect one level down: "no test hung" and "no test was named" would print
+ * the same number of names.
+ *
+ * Returns `[{ file, name }]`, in the order the run reported them.
+ */
+export function hungTests(text) {
+  const lines = String(text).split('\n');
+  const starts = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (/^\s*FAIL\s+\S/.test(lines[i])) starts.push(i);
+  }
+  const found = [];
+  for (const [index, start] of starts.entries()) {
+    const end = starts[index + 1] ?? lines.length;
+    const block = lines.slice(start, end).join('\n');
+    if (!/Test timed out in \d+ms/.test(block)) continue;
+    const rest = lines[start].trim().slice('FAIL'.length).trim();
+    const file = rest.split(/\s+/)[0] ?? '';
+    const marker = rest.indexOf(' > ');
+    found.push({ file, name: marker === -1 ? '' : rest.slice(marker + ' > '.length) });
+  }
+  return found;
+}
+
+/**
+ * The clause a refusal appends after the budget it was stopped by.
+ *
+ * One function for both refusals -- the baseline that never passed and the mutant run
+ * that was cut -- because two copies of a sentence is the drift this repository keeps
+ * writing findings about, and the two used to differ only in their prefix.
+ *
+ * The empty case is stated rather than omitted. A stopped run whose reporter printed
+ * totals and no names leaves the reader with a budget and no subject, and a sentence
+ * that stayed silent there would be indistinguishable from a reader that never looked.
+ */
+export function hungTestClause(hung) {
+  if (hung.length === 0) return 'its own output names no test, only the budget';
+  const names = hung.map((one) => `\`${one.name === '' ? one.file : one.name}\``);
+  return hung.length === 1
+    ? `the test still running when the budget ended was ${names[0]}`
+    : `the ${String(hung.length)} tests still running when the budget ended were ${names.join(', ')}`;
+}
+
+/**
  * The longest single test in a run, read from vitest's own JSON report.
  *
  * ## Why this is not computed from the file's wall clock
