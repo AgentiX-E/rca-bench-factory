@@ -2166,7 +2166,32 @@ the promise -- 3 minutes, which is the floor -- and the round whose run measures
 file. That file is expected to be absent most of the time, which is why the case about it asserts a
 biconditional rather than a shape.
 
-### Five · the row nothing recomputes had a digit no run produces (finding 539)
+### Five · the step's first run measured it, and then found a file this machine cannot see
+
+The step ran on `815e739` and finished **inside the second it started** -- its timestamps are
+`13:29:52` and `13:29:52` -- so the 3-minute promise held by `golden-master/ci-declarations.json` is
+not a close call: the file read costs a fraction of the floor `check-ci-budget.mjs` imposes. And it
+failed, on a file no local run had named:
+
+```
+check-test-budgets: build-example-bundle.test.ts: its slowest test takes 1128 ms and the file states
+no budget, so its verdict is decided by vitest's 5000 ms default; state one on the suite -- 'the
+pack and the tree · the tool, not only the test lists a nested file the tree' is the test that will
+decide it
+check-test-budgets: FAILED (1 problem(s) across 254 file(s); 35 state a budget and 19 have a test at
+or above 1000 ms)
+```
+
+**19** files have a test at or above 1 000 ms on the runner against **12** on a four-CPU container, and
+the test it names measures 400-600 ms here. That is not a defect in the reader: it is the reader
+reading the report the *runner* wrote, which is the machine whose verdicts are the ones that go red.
+What it means for the rule is that the floor is a statement about a machine, and the only reading that
+can act on it is CI's. `build-example-bundle.test.ts` declares `SUITE_BUDGET_MS = 30_000` now.
+
+So the P1 entry below changes state rather than closing: the bound **has** a measurement, but the
+recording `measure-ci-baseline.mjs` writes wants a run whose step passed, and this one did not.
+
+### Six · the row nothing recomputes had a digit no run produces (finding 539)
 
 Writing this round's ledger meant copying the one above it, and the copy did not survive being
 checked. v3.91's coverage row reads **99.98**; the ten rounds before it read **99.97**; this round
@@ -2192,6 +2217,13 @@ that the next reader who divides 14 996 by 14 999 finds out why the table disagr
 "correcting" it back. That is the smaller of the two repairs available and the honest one: making the
 guard compute the figure is a suite run inside `docs:check`, which is the entry below, not this round.
 
+**One correction, in the record rather than in the commit.** The commit that carried the row below
+(`815e739`) says in its message that the tracked-file defect is finding 421. It is finding 520, "a
+count derived before `git add` is a count of a tree that never existed" (v3.83); 421 is `R6` refusing
+the safe direction of a budget change. The message cannot be edited and a force-push to a branch CI is
+watching is a worse idea than one wrong number in a log, so it is corrected here, where a reader
+looking up the finding will arrive.
+
 ### Readings
 
 > Ledger for `v3.92`.
@@ -2208,6 +2240,7 @@ guard compute the figure is a suite run inside `docs:check`, which is the entry 
 | gate sites | **136 -> 139** across **62 -> 63 of 89** scripts: the usage exit, the problems exit, and "the report named no test", all three proved by the new test file |
 | the battery | **221 -> 224** claim(s) across **61 -> 62** file(s) |
 | the CI step | `Every test's cost against the budget it declares`, **3 min**, last in the `verify` job, with `golden-master/ci-declarations.json` naming it as unmeasured |
+| its first CI run | on `815e739`: started and completed at `13:29:52`, so **under a second** of a 3-minute bound, and **failed** on `build-example-bundle.test.ts` -- slowest test **1 128 ms**, no budget. The runner reports **19** files with a test at or above 1 000 ms where this container reports **12**, and that test measures 400-600 ms here, so no local run could have named it |
 | list | **29 -> 29**: the "timeout table cannot discover a row it does not have" entry closed by this reader, and an entry opened for the new step's bound, which is a promise until a run measures it |
 | LLM calls | **0** |
 
@@ -2216,7 +2249,7 @@ guard compute the figure is a suite run inside `docs:check`, which is the entry 
 | priority | item | state | next step |
 | --- | --- | --- | --- |
 | P0 | The repaired aggregate rule has not been run over the corpus | open since v3.91: run `43706694417` is in flight on `81f0fd6` | read step 13's census for `24 case(s) reproduced` and `0 named two different clusters`, then record the run in `golden-master/roundtrip.json` |
-| P1 | The new step's bound is a promise, not a measurement | new at v3.92 | read its duration from the next green run, record it with `measure-ci-baseline.mjs`, and delete `golden-master/ci-declarations.json` |
+| P1 | The new step's bound is a promise, not a measurement | its first run answered the duration -- under a second of a 3-minute floor -- but that run failed at the step, and the recording wants one whose step passed | record the next green run with `measure-ci-baseline.mjs`, then delete `golden-master/ci-declarations.json` |
 | P1 | 246 case directories are refused, and the only exact statement available for them is an inequality | unchanged since v3.91 | decide whether a weaker claim gets its own name and its own gate |
 | P2 | The ceiling of 8 has never been measured where it is not oversubscription | unchanged | one full-suite run on nine or more usable CPUs |
 | P2 | The margin is the baseline's | open since v3.87 | whether a refused mutant should name the test that hung |

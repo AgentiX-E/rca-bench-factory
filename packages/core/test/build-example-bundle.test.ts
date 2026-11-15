@@ -63,6 +63,21 @@ const DRIVES = [
  */
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
+/**
+ * The budget every suite in this file is given, in milliseconds.
+ *
+ * This file states none until v3.93, and `scripts/check-test-budgets.mjs` found it on
+ * its first CI run: the test that lists a nested file measured **1 128 ms** on the
+ * runner, past a fifth of vitest's 5 000 ms default, which is the line where the
+ * inherited default starts deciding the verdict. The same test measures 400-600 ms on
+ * a four-CPU container, so no local run would have said it -- 19 files have a test at
+ * or above 1 000 ms on the runner against 12 here, which is why the reading this gate
+ * acts on is the one CI writes.
+ *
+ * The estate's tightest declaration, as for its siblings.
+ */
+const SUITE_BUDGET_MS = 30_000;
 const SCRIPT = 'build-example-bundle.mjs';
 const REAL_EXAMPLES = resolve(ROOT, 'examples/order-prod');
 
@@ -117,7 +132,7 @@ function run(tree: string, args: string[] = []): Outcome {
   return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 }
 
-describe('scripts/build-example-bundle.mjs · the build', () => {
+describe('scripts/build-example-bundle.mjs · the build', { timeout: SUITE_BUDGET_MS }, () => {
   it('writes both artefacts and reports the size, the count and the digest', () => {
     // The precondition. A gate that failed everything would satisfy every
     // negative below and would also make the pack undownloadable.
@@ -212,7 +227,7 @@ describe('scripts/build-example-bundle.mjs · the build', () => {
   });
 });
 
-describe('scripts/build-example-bundle.mjs · what it refuses', () => {
+describe('scripts/build-example-bundle.mjs · what it refuses', { timeout: SUITE_BUDGET_MS }, () => {
   it('refuses a stale archive', () => {
     // The guarantee that makes the committed artefact meaningful: an example
     // directory that changed without the pack being rebuilt is a download that
@@ -331,7 +346,7 @@ describe('scripts/build-example-bundle.mjs · what it refuses', () => {
  * that, and it is the reason the statement is about the tree rather than about
  * the archive.
  */
-describe('the pack invariants · held by the shipped tree, not by a sentence', () => {
+describe('the pack invariants · held by the shipped tree, not by a sentence', { timeout: SUITE_BUDGET_MS }, () => {
   const exampleFiles = (): Record<string, string> => {
     // Recursive, because the claim is about the *tree* and the shipped reader now
     // walks it: a listing that stopped at the top level would agree with the old
@@ -422,7 +437,7 @@ describe('the pack invariants · held by the shipped tree, not by a sentence', (
  * three generated files larger than the tree, which is a relationship two independent
  * enumerations can disagree about and one enumeration cannot.
  */
-describe('the pack and the tree · the tool, not only the test', () => {
+describe('the pack and the tree · the tool, not only the test', { timeout: SUITE_BUDGET_MS }, () => {
   it('lists a nested file the tree holds, by descending rather than by a recursive readdir', async () => {
     const { treeListing } = (await import(
       pathToFileURL(resolve(ROOT, 'scripts', SCRIPT)).href
@@ -488,7 +503,7 @@ describe('the pack and the tree · the tool, not only the test', () => {
  * The test is here because a check that cannot be shown to fire is a check whose silence
  * means nothing, and this is the one input the shipped tree can produce that reaches it.
  */
-describe('the pack and the tree · the disagreement the build refuses', () => {
+describe('the pack and the tree · the disagreement the build refuses', { timeout: SUITE_BUDGET_MS }, () => {
   it('refuses a tree the two enumerations read differently, and names both counts', () => {
     const tree = treeWithExamples((dir) => {
       symlinkSync(resolve(dir, 'bundle.json'), join(dir, 'linked.json'));
