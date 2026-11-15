@@ -1377,8 +1377,17 @@ is a row about rather than paraphrase one that no `grep` will find.
   bytes every round, and the index would reach the volume budget in roughly fifty rounds at the rate it has
   been growing. The rule now bounds the index against the volume that is still open rather than against
   history, and the index can stay under `MAX_BYTES` only because that volume cannot exceed it.
-  `[open: the round that reaches the ceiling will have to move the closed part of the list into a volume,
-  and nothing measures how far away that is]`
+  **Measured at v3.94, and the distance is not what the entry estimated.** The open volume is **197,523 of
+  200,000** bytes -- **2,477**, which is **0.28 of a round** at the 8,978 bytes a round has averaged over its
+  22 -- so the ceiling is not "roughly fifty rounds" away; it is the next round. But `MAX_BYTES` is not what
+  binds first. The guard compares the index with the volume that is **still open**, and `docs/progress.md` is
+  **114,034** bytes: a volume holding one round is born at about 9 KB, which is smaller than the index, and
+  that relation is refused on the spot. So the repair is not "start the next volume", it is a **split**: the
+  new volume has to be born larger than 114,034 bytes, which means moving twelve or thirteen rounds of
+  the open volume into it rather than drawing a line and starting to write.
+  `[open: perform the split -- the next volume born larger than the index, the closed part of `## Open` moved
+  into a volume, and the two index rows plus the audit volume 13 back-reference retaken -- and the measurement
+  above says the round after this one cannot proceed without it]`
 - ~~**The worker count decides the stall verdict, and it was chosen by memory alone.**~~ **Closed by finding
   532, which measured it at four widths.** `workerCount()` reads the CPUs the process may use and a ceiling
   measured on the container's memory; nothing in it consulted the one measurement that turned the suite red.

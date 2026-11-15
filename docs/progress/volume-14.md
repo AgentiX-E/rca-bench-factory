@@ -1340,7 +1340,7 @@ a guess published as the battery's number.
 | P1 | The worker count decides the stall verdict | open since v3.80; the cap still follows the CPU quota and the memory measurement, not a stall reading | choose the cap from the stall measurement |
 | P2 | A claimant's budget is compared and the comparison refuses nothing | new at v3.86: nine claimants are named below the battery and the run is green | decide a ceiling for the direction that costs a claim |
 | P2 | A record's terms are a map of strings to numbers | open since v3.83 | nine shapes instead of one, decided as a record change |
-| P2 | The live list grows whatever the bound is | unchanged | measure the distance to the ceiling first |
+| P2 | The live list grows whatever the bound is | **measured this round**: the open volume is 197,246 of 200,000 bytes (0.3 of a round away), but the binding constraint is `index < openBytes` -- the index is 113,067, so the next volume cannot be born from one round | perform the split: a new volume born larger than the index, and the closed part of `## Open` moved into a volume |
 | P3 | The coverage figure has no reader that computes it | unchanged, and now demonstrated: finding 539 is a ledger row that quoted the second instrument for four rounds, because nothing divides 14 996 by 14 999 in a gate | teach `docs:check` to read a report, and to say which instrument printed the number |
 
 **The lesson.** The battery had a number for the machine and a number for the file, and it published
