@@ -235,6 +235,17 @@ describe('ingestPrimeDataset · a source larger than the argument limit', { time
    * 4-CPU quota, and was measured throttled in about a quarter of all periods --
    * so the contention factor is a property of the scheduler, not of this test,
    * and a tight margin would be re-tuned every time the load changed.
+   *
+   * ## Which clock the gate reads
+   *
+   * This one, since v3.104. CI run 43944379177 reported the slower test at
+   * **15 199 ms against a stated budget of 30 000 ms, which is 0.51 of it** -- the
+   * suite's number, which these two tests had already replaced -- and failed the
+   * build on a file with eight times the headroom the message claimed. What the
+   * gate read was `FILE_TIMEOUT_MS`, so what the gate knew was wrong; a test that
+   * states a timeout does not run under its suite's. `check-test-budgets.mjs` now
+   * reads the test's own number first (finding 557), and this is the number it
+   * reads.
    */
   const ROWS_TIMEOUT_MS = 120_000;
 

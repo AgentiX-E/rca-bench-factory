@@ -52,7 +52,9 @@ function fixture(dir: string, name: string, source: string): string {
   return file;
 }
 
-function reportOf(entries: { file: string; durations: number[]; title?: string }[]): string {
+function reportOf(
+  entries: { file: string; durations: number[]; title?: string; names?: string[] }[],
+): string {
   return JSON.stringify({
     testResults: entries.map((entry) => ({
       name: entry.file,
@@ -62,8 +64,12 @@ function reportOf(entries: { file: string; durations: number[]; title?: string }
       message: '',
       assertionResults: entry.durations.map((duration, index) => ({
         ancestorTitles: [],
-        fullName: `${entry.title ?? 'a test'} ${index}`,
-        title: `${entry.title ?? 'a test'} ${index}`,
+        // `names` is for the fixtures that have to be found by the title a reader
+        // reads out of the source: vitest prints a test as its ancestors and its
+        // title joined by spaces, and the default here appends an index that no
+        // source spells.
+        fullName: entry.names?.[index] ?? `${entry.title ?? 'a test'} ${index}`,
+        title: entry.names?.[index] ?? `${entry.title ?? 'a test'} ${index}`,
         status: 'passed',
         duration,
         failureMessages: [],
@@ -107,7 +113,9 @@ describe('check-test-budgets · the reader', { timeout: SUITE_BUDGET_MS }, () =>
     const report = join(dir, 'report.json');
     writeFileSync(report, reportOf([{ file, durations: [5_500] }]));
     const { status, out } = run('--report', report);
-    expect(out).toContain('its slowest test takes 5500 ms against a stated budget of 10000 ms, which is 0.55 of it');
+    expect(out).toContain(
+      'its slowest test takes 5500 ms against a stated budget of 10000 ms, the one its suite states, which is 0.55 of it',
+    );
     expect(out).toContain('the rule asks for 2x');
     expect(out).toContain('FAILED (1 problem(s) across 1 file(s)');
     expect(status).toBe(1);
@@ -182,6 +190,152 @@ describe('check-test-budgets · the reader', { timeout: SUITE_BUDGET_MS }, () =>
       expect(out, `${name}: ${out}`).toContain('FAILED (1 problem(s)');
       expect(status, name).toBe(1);
     }
+  });
+
+  /**
+   * The clock the slowest test is actually on.
+   *
+   * Until v3.104 the suite's number was the denominator unconditionally, and CI run
+   * 43944379177 showed what that costs: `ingest-report.test.ts` was reported at
+   * **15 199 ms against a stated budget of 30 000 ms, which is 0.51 of it** while the
+   * two tests that cost that much each state `ROWS_TIMEOUT_MS = 120_000` on
+   * themselves -- 8x of headroom, printed as a 2x shortfall. `it(name, fn, ms)`
+   * replaces the suite's number for that test, so the rule was measuring a clock the
+   * test had already replaced.
+   *
+   * The last of these is the half that makes the repair a repair and not a
+   * relaxation: a test that states a *smaller* budget than its suite was invisible
+   * before, and is now the first thing the rule sees.
+   */
+  it('holds a test to the budget it states itself, rather than its suite’s', () => {
+    const dir = scratch();
+    const source = [
+      'const SUITE_BUDGET_MS = 30_000;',
+      'const ROWS_TIMEOUT_MS = 120_000;',
+      "describe('a suite', { timeout: SUITE_BUDGET_MS }, () => {",
+      "  it('the slow one', () => {}, ROWS_TIMEOUT_MS);",
+      '});',
+    ].join('\n');
+    const file = fixture(dir, 'g.test.ts', source);
+    const report = join(dir, 'report.json');
+    // 20 000 of 30 000 is 0.67 -- red before the repair, and 0.17 of the number the
+    // test states for itself.
+    writeFileSync(report, reportOf([{ file, durations: [20_000], names: ['a suite the slow one'] }]));
+    const { status, out } = run('--report', report);
+    expect(out).toContain('check-test-budgets: OK (1 file(s), 1 test(s)');
+    expect(out).toContain('1 state a budget, 1 of them on the test that is slowest');
+    expect(status).toBe(0);
+  });
+
+  it('holds a test that states a tighter budget than its suite to the tighter one', () => {
+    // 6 000 of the suite's 60 000 is 0.10 and was green; 6 000 of the 10 000 the test
+    // states is 0.60 and is the verdict this test was really on.
+    const dir = scratch();
+    const source = [
+      'const SUITE_BUDGET_MS = 60_000;',
+      'const TIGHT_MS = 10_000;',
+      "describe('a suite', { timeout: SUITE_BUDGET_MS }, () => {",
+      "  it('the tight one', () => {}, TIGHT_MS);",
+      '});',
+    ].join('\n');
+    const file = fixture(dir, 'h.test.ts', source);
+    const report = join(dir, 'report.json');
+    writeFileSync(report, reportOf([{ file, durations: [6_000], names: ['a suite the tight one'] }]));
+    const { status, out } = run('--report', report);
+    expect(out).toContain(
+      'its slowest test takes 6000 ms against a stated budget of 10000 ms, the one that test states, which is 0.60 of it',
+    );
+    expect(status).toBe(1);
+  });
+
+  it('reads the budget a test states in its options, past comments that would shift a position', () => {
+    // Three reasons this fixture is shaped this way. The options form is a second
+    // spelling on the test itself; the comments are what the reader's offsets have to
+    // survive, since a reader that counts positions in a stripped copy and then reads
+    // the title out of the original lands in the wrong place by the length of every
+    // comment above it; and the comma inside the title is what a reader that splits
+    // the argument list on commas alone would cut in half.
+    const dir = scratch();
+    const source = [
+      '/**',
+      ' * A suite, with the kind of block comment this repository writes.',
+      ' */',
+      "describe('a suite', { timeout: 30_000 }, () => {",
+      '  // one comment, then the test',
+      "  it('the slower one, with a comma in it', { timeout: 8_000 }, () => {",
+      '    // a body, so the options object is not the last argument',
+      '  });',
+      '});',
+    ].join('\n');
+    const file = fixture(dir, 'i.test.ts', source);
+    const report = join(dir, 'report.json');
+    writeFileSync(
+      report,
+      reportOf([{ file, durations: [5_000], names: ['a suite the slower one, with a comma in it'] }]),
+    );
+    const { status, out } = run('--report', report);
+    expect(out).toContain('against a stated budget of 8000 ms, the one that test states');
+    expect(status).toBe(1);
+  });
+
+  it('does not read a timeout inside the test’s body as the test’s budget', () => {
+    // `typecheck-entrypoint.test.ts` states `RUN_TIMEOUT_MS = 180_000` for the `pnpm`
+    // it spawns. The number sits in a `{ timeout: ... }` object inside the test's own
+    // body, so a reader that took the first `timeout:` it found in the argument list
+    // would hand that test a three-minute budget it never asked for -- the flattering
+    // direction. Its suite's 30 000 is the number in force.
+    const dir = scratch();
+    const source = [
+      'const RUN_TIMEOUT_MS = 180_000;',
+      "describe('a suite', { timeout: 30_000 }, () => {",
+      "  it('spawns', () => {",
+      "    spawnSync('pnpm', [], { timeout: RUN_TIMEOUT_MS });",
+      '  });',
+      '});',
+    ].join('\n');
+    const file = fixture(dir, 'j.test.ts', source);
+    const report = join(dir, 'report.json');
+    writeFileSync(report, reportOf([{ file, durations: [20_000], names: ['a suite spawns'] }]));
+    const { status, out } = run('--report', report);
+    expect(out).toContain(
+      'its slowest test takes 20000 ms against a stated budget of 30000 ms, the one its suite states',
+    );
+    expect(status).toBe(1);
+  });
+
+  it('names the largest number in the file when neither the test nor its suite states one', () => {
+    const dir = scratch();
+    const source = [
+      'const RUN_TIMEOUT_MS = 180_000;',
+      "describe('a suite', () => {",
+      "  it('spawns', () => {});",
+      '});',
+    ].join('\n');
+    const file = fixture(dir, 'k.test.ts', source);
+    const report = join(dir, 'report.json');
+    writeFileSync(report, reportOf([{ file, durations: [100_000], names: ['a suite spawns'] }]));
+    const { status, out } = run('--report', report);
+    expect(out).toContain('against a stated budget of 180000 ms, the largest number the file states');
+    expect(status).toBe(1);
+  });
+
+  it('takes the smaller of two budgets when one title states two', () => {
+    // A file that writes `it('a test', …)` twice gives two different clocks to two
+    // tests the report names identically. The smaller one is the one that can go red
+    // first, so it is the one that answers for the title.
+    const dir = scratch();
+    const source = [
+      "describe('a suite', { timeout: 30_000 }, () => {",
+      "  it('a test', () => {}, 10_000);",
+      "  it('a test', () => {}, 40_000);",
+      '});',
+    ].join('\n');
+    const file = fixture(dir, 'l.test.ts', source);
+    const report = join(dir, 'report.json');
+    writeFileSync(report, reportOf([{ file, durations: [6_000], names: ['a suite a test'] }]));
+    const { status, out } = run('--report', report);
+    expect(out).toContain('against a stated budget of 10000 ms, the one that test states');
+    expect(status).toBe(1);
   });
 
   it('counts every report it is given, rather than the first', () => {
