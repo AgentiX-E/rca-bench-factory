@@ -2440,9 +2440,9 @@ arithmetic a list of boundaries has.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **254 files, 6468 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **258 files, 6655 tests passed** (as of this commit) |
+| `core` test suite | **254 files, 6468 tests passed** (at v3.100) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.100) |
+| repo test suite | **258 files, 6655 tests passed** (at v3.100) |
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** -- unchanged: the new code is in `scripts/`, which the four dimensions do not measure |
 | new tests | **6446 -> 6468, +22**: five document fixtures, ten comment fixtures and the property, seven workflow fixtures |
 | the measurement before the rule | **0** row breaks between two Han characters, stripped and raw, across all three surfaces; longest crossing run **0** |
@@ -2470,3 +2470,141 @@ is, decided where the surface is legible, and one rule about what a break does t
 wait on something outside this sandbox. The two P3 items are boundaries with a stated cost each -- one about a
 language YAML does not name, one about a markdown rule that would have to be applied to comments as well. The
 corpus figure, the coverage table and the battery's per-claim witness are where v3.99 left them.
+
+## v3.101 · a deletion is either a hole or a marker, and the two surfaces disagree about which
+
+The Open list carried one decision and three readers: *decide whether a trailing backslash is punctuation or text --
+one decision, three readers, and a fixture on each side*. The answer is that it is both, and which one depends on
+whether a renderer stands between the bytes and the reader. That is one decision more than the entry priced, and
+the extra one is the finding.
+
+The same round carried a second question with the same shape, found while measuring the first: a code span is
+deleted outright, and deleting text that is not text lets the two words on its sides touch. Both defects are about
+what a removal leaves behind -- nothing, because a marker occupies no position, or a hole, because a quotation is
+not a word.
+
+### One · the marker, measured before the rule
+
+Markdown has two spellings for a break that does not end a paragraph. The two-space form was already handled, and by
+accident: every row is trimmed at both ends, so the spaces were gone before anything was joined. The backslash form
+was joined as `…\…`, and a backslash between two rows is a character no run crosses.
+
+Measured on the tree before the rule: **one** row ends in a backslash, at `docs/progress/volume-10.md:1098`, and it
+is not a marker -- it is a fragment left behind by removing a code span from the middle of the row, which is the
+second defect below. **Zero** rows are a hard break. So the rule costs nothing today and its whole proof is in the
+fixtures, the same conclusion v3.100 reached for the paragraph and for the same reason: a tree written in English
+cannot carry a rule about breaks inside Chinese prose.
+
+That fragment is also where the two repairs of this round meet, and it is why the order of two operations is part of
+the rule rather than an implementation detail. With the gap the second repair leaves, the byte after the fragment is
+a space, so the marker pattern -- looked for before the trim -- does not match and the row keeps a backslash that is
+text. Without the gap the fragment is the row's last byte, the byte before it is `)`, and the same pattern would
+consume it as punctuation. Both halves are asserted, in a fixture each.
+
+### Two · one decision per surface, which is one more than the entry asked for
+
+The entry assumed one answer for three readers. There are two answers, and the split is at the renderer.
+
+- **The document surface.** A trailing backslash is punctuation. The renderer consumes it and breaks the line, so
+  the two rows join with nothing between them and a run crosses -- which is what the two-space spelling already did.
+  The rule lives in a `markdownRowOf` that only `proseReport` calls.
+- **The comment surfaces.** A trailing backslash is text. JavaScript, shell and YAML have no renderer between the
+  bytes and the reader, so `// …\` ends in a backslash and that backslash stands between the two rows exactly as
+  any other character does. `textRowOf` is what both comment readers call and it does not know the marker exists.
+
+The two readers therefore disagree about identical bytes, on purpose, and each has a fixture in the direction that
+costs something: the markdown one must go red without the rule, and the two comment ones must go red *with* it.
+
+### Three · how narrow the marker is, and why trimming first would invent one
+
+Exactly one backslash, and not itself escaped. The three conditions are asserted as a table rather than described,
+because a rule about a run length is a rule with four cases and a prose paragraph about it is a rule with one:
+
+| trailing run | what it renders as | the two rows |
+| --- | --- | --- |
+| `\` | a break, marker consumed | joined |
+| `\\` | one literal backslash | held apart |
+| `\\\` | a break and one literal backslash | held apart |
+| `\\\\` | two literal backslashes | held apart |
+| `\` + one space | a backslash and a space | held apart |
+
+The last row is the one that fixes the order of operations: the marker is looked for **before** the row is trimmed,
+because trimming first turns `\ ` into `\` and reads a break nobody wrote. Every approximation in these readers is
+chosen towards a break rather than across one, and this is that principle applied to a question about order rather
+than about membership.
+
+A backslash anywhere else in a row needs no rule, and that is an argument rather than an omission. An escape removes
+one backslash and leaves the character it escaped: `\*` renders as `*`, and `*` stands between two Han runs exactly
+as `\*` did. Only a row's last backslash has nothing after it, so only that one is a question about punctuation.
+
+### Four · the defect the marker's only instance pointed at
+
+The one row that ends in a backslash is a fragment: `withoutCodeSpans` deletes a code span, and in
+`docs/progress/volume-10.md:1098` the span ended mid-row leaving a stray backslash at the end. Chasing why it was
+there turned up the reader's second fabricated join.
+
+`withoutCodeSpans` deleted a span and returned what was left. That is what its name says, and it was right until
+the span stopped being at the edge of a row: four Han characters, a citation, four more is two citations, and
+deleting the citation outright left eight characters in succession, which the search read as one run of prose.
+Nothing in that row is written in Chinese; the join was invented by the reader.
+
+The repair is that a removal leaves a gap -- a quotation is not a word, so it does not let the words on its two
+sides meet, which is the paragraph rule stated from the other end. The gap is inserted only where the byte before
+the span is not already whitespace, so `a `b` c` returns the two spaces it returned before this rule existed, and a
+row holding nothing but a span still comes back blank, because a blank row is how all three surfaces say "new
+paragraph" and a citation must not turn a boundary into a line.
+
+**965** spans in **873** rows of this tree have a non-whitespace byte on both sides and **0** of them have Han on
+both sides. The number says the shape is ordinary -- the neighbours are `(`, `)`, `[`, `]`, `/`, `,` -- which is why
+the condition is stated on whitespace rather than on Han: a rule keyed to the character the reader is looking for
+would only work on the language it was written for.
+
+### Five · six falsifications, and one of the seven attempts that proved nothing
+
+| mutation | red |
+| --- | --- |
+| the strip removed | 5 |
+| a strip that ignores the preceding byte (`/\\+$/`) | 4 |
+| the strip placed after the trim | 5 |
+| the markdown rule moved into `textRowOf` | 2 |
+| no gap where a span was removed | 4 |
+| a gap after every span | 2 |
+
+Twenty-two red fixtures across six removals. The first attempt at the second mutation replaced with `'$1'` a
+pattern that has no capture group, so the row became `…$1` and the tests went red for a reason that had nothing to
+do with the rule -- the seventh attempt, and it proved nothing. Replaced with `/\\+$`, which is the wrong reader a
+person would actually write, and the four that should fail do.
+
+### Readings
+
+> Ledger for `v3.101`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **254 files, 6484 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **258 files, 6671 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** -- unchanged: both rules are in `scripts/`, which the four dimensions do not measure |
+| new tests | **6468 -> 6484, +16**: thirteen document fixtures, two comment fixtures, one workflow fixture |
+| the measurement before the rule | **1** row ends in a backslash and **0** are markers; **965** spans in **873** rows sit between two non-whitespace bytes and **0** sit between two Han characters |
+| the breaks held | **37 839** documents, **30 453** comments, **808** workflow, **69 090** total, of which **0** fall between two Han characters |
+| the falsifications | six removals, twenty-two red; a seventh attempt replaced with a literal `$1` and proved nothing |
+| gate sites | **143 / 67 of 96 scripts**, call tally **161** -- unchanged: no new gate |
+| the battery | **228 claims across 66 files** -- unchanged |
+| `docs:check` | **21 steps** -- unchanged |
+| list | **27 -> 26**: the trailing-backslash entry closed, nothing opened in its place |
+
+### What is left, in the order it has to happen
+
+| priority | item | state | next |
+| --- | --- | --- | --- |
+| P2 | the ceiling of 8 workers has never been measured where it is not oversubscription | unchanged: every reading is on a four-CPU quota | one full run on a box with nine or more available CPUs |
+| P2 | how close a **failing** run comes to its ceiling | unchanged | one run whose artefact is a failure, read per test |
+| P2 | a record's `terms` is a map, so nothing can say which keys a rule writes | unchanged: priced at v3.94 | the trigger, or nothing |
+| P3 | an in-row `#` inside a block scalar is read by nothing | unchanged: 13 marks, all shell strings | nothing until a block holds a language whose comments are not row-leading |
+
+**Where this leaves the campaign.** The language axis has no open question left about what a break does: the unit is
+the paragraph, the marker is punctuation on the one surface that has a renderer, and a removal leaves a hole. The
+three P2 items wait on something outside this sandbox. The one P3 item is about a language YAML does not name. What
+the last two rounds bought is not a change in the verdict -- the tree was green before and after -- but the
+disappearance of three ways the rule could have been wrong without anything saying so.

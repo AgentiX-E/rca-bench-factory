@@ -440,8 +440,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 97 |
 | Source lines | 34,369 |
 | Test files | 254 core + 4 cli |
-| Test lines | 109,228 core + 3,242 cli |
-| Tests | 6,468 core + 187 cli |
+| Test lines | 109,398 core + 3,242 cli |
+| Tests | 6,484 core + 187 cli |
 | Tracked files | 656 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -526,7 +526,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.100: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.101: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1571,11 +1571,18 @@ is a row about rather than paraphrase one that no `grep` will find.
   test was unreachable -- rebuilt, and red. Three defects fell out of the fixtures: the space a `//` leaves at
   the break, `kind` meaning two different things in the two scanners (now an explicit `family` of delimiter and
   column), and a spread append the guard refused.
-- **A hard break written as a trailing backslash is one paragraph to CommonMark and two to this reader.** The
-  backslash sits between the two characters of the run, so the join does not cross it. The two-space form, which
-  is the one an editor inserts, is handled; this one would need a markdown rule applied to comments as well.
-  `[open: decide whether a trailing backslash is punctuation or text -- one decision, three readers, and a
-  fixture on each side]`
+- ~~**A hard break written as a trailing backslash is one paragraph to CommonMark and two to this reader.**~~
+  **Closed at v3.101 by deciding it per surface, which is one more decision than the entry expected.** The
+  backslash is punctuation to a renderer and text to a comment, so the same bytes mean opposite things: the
+  document reader now drops a row's last backslash when it is exactly one and not itself escaped, and the two
+  comment readers do not know the marker exists -- a `// …\` line ends in a backslash and that backslash stands
+  between the rows. `\\` is a literal backslash and holds the rows apart, three or more leave a literal backslash
+  behind, and `\ ` is not a break at all, which is why the marker is looked for before the row is trimmed. One
+  row in this tree ends in a backslash and it is a fragment left by removing a span, so the rule costs nothing
+  today; the proof is eight shapes in a table, each in both directions, and six falsifications. The round also
+  found and closed the defect the fragment pointed at: a citation deleted outright joined the two halves of the
+  word around it, so a removal now leaves a gap -- **965** spans in **873** rows have a word on both sides and
+  **0** have Han on both sides.
 
 ## Pass log
 
@@ -1608,7 +1615,7 @@ and this table.
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
-| [volume-15.md](progress/volume-15.md) | 17 | v3.84 | v3.100 |
+| [volume-15.md](progress/volume-15.md) | 18 | v3.84 | v3.101 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

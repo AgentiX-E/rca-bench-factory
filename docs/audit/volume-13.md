@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–550, from the rounds recorded in `progress/volume-15.md`.
+Findings 542–552, from the rounds recorded in `progress/volume-15.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -597,3 +597,97 @@ holds.
 suite **6 446 -> 6 468** in `core` and **187** in `cli`; coverage unchanged at **99.97 / 99.95 / 100 / 99.97**
 and **100 / 100 / 100 / 100**, because the new code is in `scripts/`; gate sites **143 / 67 of 96** and the
 battery **228 claims across 66 files** unchanged, since this round added no gate and no exit.
+
+## Finding 551 — a hard break written with a backslash was one paragraph to CommonMark and two to this reader
+
+The Open list had carried this as a decision rather than a defect -- *decide whether a trailing backslash is
+punctuation or text* -- because the same byte does two different jobs on two different surfaces. The measurement
+says the answer is both, in different places, and the rule is what separates them.
+
+**The defect.** Markdown has two spellings for a break that does not end the paragraph: two or more trailing
+spaces, and a trailing backslash. The first was already handled, and by accident rather than by rule: every row is
+trimmed at both ends, so the spaces were gone before anything was joined. The second was joined as `…\…` -- a
+backslash between the two rows, which no run of Han characters crosses. On a document of two rows of four
+characters, `hanProseIn` returned two runs of four and the gate reported two citations; the same two rows written
+with two trailing spaces returned one run of eight spanning two rows. One rule, two spellings, two answers.
+
+**The decision, per surface.** A backslash at the end of a row is punctuation on the markdown surface -- the
+renderer consumes it and breaks the line -- and text everywhere else: a JavaScript, shell or YAML comment has no
+renderer between the bytes and the reader, so `// …\` ends in a backslash and that backslash stands between the
+two rows exactly as any other character does. The rule therefore lives in a `markdownRowOf` that only the document
+reader calls; `textRowOf` is what the two comment readers call and it does not know the marker exists. The entry
+asked for one decision and three readers; it is two decisions, because the surfaces disagree, and the disagreement
+is the finding.
+
+**How narrow the marker is.** Exactly one backslash, and not itself escaped. `\\` at the end of a row is one
+literal backslash after parsing and it does stay between the rows; three or more leaves an escaped pair behind, so
+a literal backslash is still in the text; and `\ ` is a backslash followed by a space, which CommonMark does not
+read as a break at all. The last one forces the order of operations: the marker is looked for **before** the row is
+trimmed, because trimming first turns `\ ` into `\` and reads a break nobody wrote -- the direction every
+approximation in these readers is chosen against.
+
+**What is not a question.** A backslash anywhere else in a row needs no rule, and that is an argument rather than
+an omission: an escape removes one backslash and leaves the character it escaped, which is a character. `\*`
+renders as `*`, and `*` stands between two Han runs exactly as `\*` did. Only a row's last backslash has nothing
+after it, which is why only that one is a question about punctuation.
+
+**The measurement.** One row in this tree ends in a backslash after its spans are removed --
+`docs/progress/volume-10.md:1098` -- and it is not a marker: it is a fragment left behind by removing a code span,
+which is finding 552's subject. **Zero** rows are a hard break, so the rule costs nothing today and its whole proof
+is in the fixtures. They are a table rather than a sample: the backslash run is 1, 2, 3 or 4 long and the row
+either ends there or holds one more space, all eight shapes asserted, each in the direction that costs something --
+one fixture that must go red, one that must stay green -- plus the two-space form as an equality rather than a
+second claim.
+
+**Where the two repairs meet.** That fragment is the one place the two rules touch, and it shows why the order of
+the two operations is part of the rule. With the gap finding 552 leaves, the byte after the fragment is a space, so
+the marker pattern -- looked for before the trim -- does not match and the row keeps a backslash that is text.
+Without the gap the fragment is the row's last byte and the byte before it is `)`, which is not a backslash, so the
+same pattern would consume it as punctuation. Both halves are asserted: `withoutCodeSpans` returns the gap, and
+`markdownRowOf` looks for the marker before it trims.
+
+**Six falsifications, twenty-two red.** The strip removed: 5. A strip that ignores the preceding byte (`/\\+$/`):
+4, and those four are the escaped pair, the three-backslash form, the four-backslash form and the table. The strip
+placed after the trim: 5, because `/\\+$/` applied there also eats the escaped pairs. The markdown rule moved into
+`textRowOf`: 2, one in each comment reader -- the mirror image of the markdown fixture, on the surface where the
+same bytes mean text. A gap after every span: 2. No gap at all: 4. **One of the seven attempts proved nothing**:
+the first version of the second mutation replaced with `'$1'` a pattern that has no capture group, so the row
+became `…$1` and the tests went red for a reason that had nothing to do with the rule; replaced with `/\\+$/`,
+which is the wrong reader a person would actually write, and the four that should fail do.
+
+## Finding 552 — a quotation removed outright joined the two halves of the word around it
+
+**The shape.** `withoutCodeSpans` deletes a code span and returns what is left. That is what its name says, and it
+was what its three callers wanted until the span stopped being at the edge of a row: four Han characters, a
+citation, four more is a row of two citations, and deleting the citation outright left eight characters in
+succession, which the search read as one run of prose.
+
+Nothing in that row is written in Chinese. The join was fabricated by the reader, and this file's header says
+every join it makes is one a reader could defend -- a removal that lets two words touch is not.
+
+**The repair.** A removal leaves a gap. A quotation is not a word, so it does not let the words on its two sides
+meet -- the same sentence the paragraph rule states from the other end: what is not text cannot be crossed by a
+run. The gap is inserted only where the byte before the span is not already whitespace, so `a `b` c` returns the
+two spaces it returned before this rule existed and the fixture that pins that shape still pins it. A row holding
+nothing but a span still comes back blank, because a blank row is how all three surfaces say "new paragraph" and
+a citation must not turn a boundary into a line.
+
+**The measurement.** **965** spans in **873** rows of this tree have a non-whitespace byte on both sides, and
+**0** of them have Han on both sides, so this rule costs nothing today either. What the number does say is that
+the shape is ordinary rather than exotic -- the neighbours are `(` and `)`, `[` and `]`, `/` and `,` -- which is
+why the condition is stated on whitespace rather than on Han: a rule keyed to the character the reader is looking
+for would be a rule that only works on the language it was written for.
+
+**Two falsifications.** No gap: 4 red, one in each reader that shares the function plus the two fixtures that pin
+the glued shape. A gap after every span, whitespace or not: 2 red, one of which is the span-delimiter fixture that
+predates this round.
+
+**What it does not fix.** A code span or a fence broken across rows still leaves its contents in "prose", which is
+the false positive finding 550 recorded and left open. This finding is about the two bytes beside a span, not
+about a span that fails to close on its row.
+
+**The measurement for both.** 16 new tests (13 documents, 2 comments, 1 workflow); suite **6 468 -> 6 484** in
+`core`, **187** in `cli`, **6 655 -> 6 671** across the repository; coverage unchanged at **99.97 / 99.95 / 100 /
+99.97** and **100 / 100 / 100 / 100**, because both rules are in `scripts/`, which the four dimensions do not
+measure; gate sites **143 / 67 of 96** and the battery **228 claims across 66 files** unchanged, since this round
+added no gate and no exit; `docs:check` still 21 steps.
