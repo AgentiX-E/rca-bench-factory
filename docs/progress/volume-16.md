@@ -2103,4 +2103,4 @@ by callee (any call, which is the same defect with a narrower net).
 | the copy, deleted | `timeout-budget.test.ts` **888 -> 709** lines; `scripts/budget-readings.mjs` **458** lines new; the gate **622 -> 272** |
 | gate sites / scripts / throws | **143** sites, **97** scripts (was 96), **99** throw statements -- all three re-derived and proved |
 | the falsifications | six removals, **6** red, **0** survivors |
-| gate sites tally | **143 / 67 of 97 scripts**, call tally **161** |
+| gate sites, proved | **143** failure sites across **67 of 97** scripts, and `verify-site-proofs` **PASSED (228 claim(s) across 66 file(s))** -- both re-derived after the move |
