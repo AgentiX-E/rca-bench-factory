@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–556, from the rounds recorded in `progress/volume-15.md` and `progress/volume-16.md`.
+Findings 542–557, from the rounds recorded in `progress/volume-15.md` and `progress/volume-16.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -858,3 +858,63 @@ the deliberate half: it makes no claim. The asymmetry is now visible in the run'
 sentence about the rule -- `0 time-valued parameter(s)` is printed, so a case that lost its lengths
 entirely is a corpus fact a reader can see, and `fault/parameter-role.ts` refuses only the case that holds
 a length and declines to say what it is.
+
+## Finding 557 — the gate that compared a test's cost with its budget read the wrong budget, in both directions
+
+**The shape.** `check-test-budgets.mjs` asked every file one question: how long did your slowest test take,
+against what did you declare? The declaration it read was the one a `describe` states, and only when a file
+stated none did the file's largest number stand in. The four spellings it knew for the *discovery* rule --
+`const … _MS`, an options literal, an options name, a positional number -- were not applied to the *fraction*
+rule: `it('…', () => { … }, 120_000)` states a budget for one test, and `ingest-report.test.ts` writes exactly
+that for the two tests that ingest 130 000 rows, while its suite states 30 000 for the ten beside them that
+take 31 ms. In vitest a test-level timeout replaces the suite's, so those two tests never ran under 30 000 at
+all. The reader knew a spelling existed and did not read it -- the failure mode this file's four spellings
+were built to prevent, one level up.
+
+**The falsification, from a run rather than from reading.** CI run 43944379177:
+
+    check-test-budgets: ingest-report.test.ts: its slowest test takes 15199 ms against a stated budget of
+    30000 ms, which is 0.51 of it; the rule asks for 2x
+
+The number the test states for itself is 120 000, so the truth was 0.13 -- 7.9x of headroom -- and the build
+went red on a file that could not go red for the reason printed. Nothing about the measurement was wrong; the
+denominator was a number the test had already replaced. Reproduced here without CI by setting that
+assertion's duration to 15 199 in the report read from the local coverage run: one problem before the repair,
+`OK` after it.
+
+**The repair.** The denominator is the budget in force where the test is written: the timeout the test states
+itself, then the one its suite states, then the file's largest stated number, then nothing. `testBudgets`
+reads the two spellings that attach to a test (positional, and an options object that *starts* the argument)
+and associates each with the title the report prints -- which is the test's ancestors and its title joined by
+spaces, so the match is a suffix, longest title first, and a title written twice answers with the smaller of
+its two numbers. `budgetInForce` returns `{ ms, statedBy }` rather than a number, and the failure sentence
+names the declaration it read -- *the one that test states*, *the one its suite states*, *the largest number
+the file states* -- because a reader who disagrees with a verdict needs to know which line to argue with. The
+summary line counts the files judged by their slowest test's own number -- **11 of 44** in the run this round
+published and **12** in the run before it, because which test is slowest moves with the load. The stable number
+is structural: **13 of 250** test files state a budget on a test, **52** tests in all.
+
+**It is a repair and not a relaxation, in one measurement.** A test that states 10 000 inside a suite that
+states 60 000 was invisible before: 6 000 ms read as 0.10 of the wrong clock. It is 0.60 of the clock it runs
+under, and that is now the first thing the rule sees. The new direction has a test of its own, and the CI case
+has one too, so neither half of the pair can be reverted without the other going red.
+
+**What the reader had to give up to read a position.** The scanner now blanks rather than removes: comments
+and the bodies of string and regex literals become spaces at the same length, with the quote characters kept.
+It had to become positional because a title is read out of the *file*, not out of the stripped copy, and an
+offset in a text whose comments are gone is not an offset in the source. Keeping the quotes keeps the
+last-significant-character rule exactly as it was -- a `/` after a string is still a division -- and the two
+readers that existed before were compared against the old scanner over **250** test files: **0** differences
+in suite budgets, **0** in stated budgets, so the change moved offsets and nothing else.
+
+**What it refuses to guess.** An options object is read only when the argument begins with `{`:
+`typecheck-entrypoint.test.ts` calls `spawnSync(cmd, args, { timeout: RUN_TIMEOUT_MS })` inside a test body,
+and a reader that took the first `timeout:` in the argument list would hand that test a 180-second budget it
+never asked for -- the flattering direction. A title `it.each` formats is not matched against the printed
+title, so such a test falls back to its suite's number: the strict direction, which is loud, rather than the
+quiet one.
+
+**What it does not fix.** The rule still cannot tell a budget raised because CI failed from one raised because
+the test earns it; the number and the prose that justifies it live in the same file, and only one of them is
+prose. What it can do is name the declaration it read, which is the difference between a verdict a reader can
+check and one they can only trust.

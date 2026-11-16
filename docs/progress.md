@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 255 core + 4 cli |
-| Test lines | 109,881 core + 3,242 cli |
-| Tests | 6,523 core + 187 cli |
+| Test lines | 110,046 core + 3,242 cli |
+| Tests | 6,529 core + 187 cli |
 | Tracked files | 659 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -527,7 +527,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.103: **25** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.104: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1609,6 +1609,18 @@ is a row about rather than paraphrase one that no `grep` will find.
   word around it, so a removal now leaves a gap -- **965** spans in **873** rows have a word on both sides and
   **0** have Han on both sides.
 
+- **The scanner's fidelity to the quote characters is a claim no test can prove.** `stripCommentsAndStrings`
+  blanks comments and the bodies of string and regex literals at the same length and keeps the quote
+  characters, because the last-significant-character rule reads them: a `/` after a string literal is a
+  division, and a scanner that blurred the quotes would read the character *before* the string instead and
+  open a regex that runs to the next `/`. That reasoning is derived, not observed. The sixth falsification of
+  v3.104 blanked the quotes too and **nothing went red**, and the measurement agrees: all three readings
+  (suite budget, stated budgets, per-test budgets) are identical over **440** files -- every test, every
+  script, every source file -- under both scanners. What would close it is a file that divides by a string,
+  or a `/` directly after a closed literal outside an arithmetic context; this tree has none, so the fidelity
+  is carried because the rule it protects is derived rather than because a fixture forces it.
+  `[open: a fixture or a census that discriminates the two scanners -- the census is the cheaper half, since it asks how many files hold a `/` immediately after a closed literal]`
+
 ## Pass log
 
 The rounds are recorded in the volumes below, in the order they were run. They were one
@@ -1641,7 +1653,7 @@ and this table.
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
-| [volume-16.md](progress/volume-16.md) | 13 | v3.91 | v3.103 |
+| [volume-16.md](progress/volume-16.md) | 14 | v3.91 | v3.104 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

@@ -1891,12 +1891,91 @@ neither` -- so the third number is counted rather than assumed to be zero.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **255 files, 6523 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **259 files, 6710 tests passed** (as of this commit) |
+| `core` test suite | **255 files, 6523 tests passed** (at `v3.103`) |
+| `cli` test suite | **4 files, 187 tests passed** (at `v3.103`) |
+| repo test suite | **259 files, 6710 tests passed** (at `v3.103`) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** |
 | new tests | **6509 -> 6523, +14**: twelve on the vocabulary and its four faults, one on the guard's refusal of a length that answers neither, one on the partition the run prints, and three the enumeration suite writes for the new module -- it is in three lists there, and `it.each` writes one test per entry |
 | the corpus the rule is measured on | **17** lengths across **15** cases: **5** episodes, **12** knobs, **0** silent |
 | the migration | **15** case files, **17** words, **5** `durationParameter` fields deleted |
 | the falsifications | seven removals, **13** red, no survivor |
 | gate sites | **143 / 67 of 96 scripts**, call tally **161** -- unchanged: no new gate; four `throw` sites in `check-fault-cases.mjs` moved with the insert |
+
+## v3.104 · the budget the gate compared against was one the test had already replaced
+
+The round before this one ended with a single red step in CI, and the step was right about the cost and wrong
+about the clock it held that cost to. The reader knew the spelling -- it counted it for the discovery rule --
+and read a different number for the fraction.
+
+### One · the denominator was a number the test had replaced (finding 557)
+
+`check-test-budgets` asks every file one question: how long did your slowest test take, against what did you
+declare? The declaration it read was the one a `describe` states. `ingest-report.test.ts` states 30 000 on its
+four suites and writes `}, ROWS_TIMEOUT_MS);` on the two tests that ingest 130 000 rows, with
+`ROWS_TIMEOUT_MS = 120_000` above them. In vitest a test-level timeout replaces the suite's, so those two
+tests never ran under 30 000 at all -- and the run said otherwise:
+
+    ingest-report.test.ts: its slowest test takes 15199 ms against a stated budget of 30000 ms, which is
+    0.51 of it; the rule asks for 2x
+
+8x of headroom, printed as a 2x shortfall, on a commit that changed documentation. Nothing about the
+measurement was wrong; the denominator was a number the test had already replaced. This file's four spellings
+exist because "a reader that knows fewer spellings than the language fails in the direction of a false red",
+and the reader knew this spelling for *discovery* and not for *fraction*: the same defect one level up.
+
+Reproduced without CI by writing 15 199 into that assertion's duration in the report of the local coverage
+run -- one problem before, `OK` after -- and the repair is not a relaxation in the other direction either. A
+test that states 10 000 inside a suite that states 60 000 used to be measured against 60 000: 6 000 ms read
+as 0.10 of the wrong clock, invisible. It is 0.60 of the one it runs under, and that is now the first thing
+the rule sees. Six tests were added for the pair, and either half of the pair going away turns the other red.
+
+### Two · to read a position, the reader had to stop deleting
+
+The scanner blanked rather than removed: comments and the bodies of string and regex literals become spaces
+at the same length, with the quote characters kept. It had to, because a title is read out of the *file* --
+`it('…', fn, 120_000)` is associated with the name the report prints, which is the test's ancestors and its
+title joined by spaces -- and an offset in a text whose comments are gone is not an offset in the source.
+Keeping the quotes keeps the last-significant-character rule exactly as it was: a `/` after a string is still
+a division, and that rule is why the old scanner emitted `""` and `/re/` instead of nothing.
+
+Two measurements say this moved offsets and nothing else. The two readers that existed before were compared
+against the pre-round scanner over **250** test files: **0** differences in suite budgets, **0** in stated
+budgets. And the one mutation that blanks the quotes too -- the fidelity this paragraph spends words on --
+changed **nothing** on **440** files (every test, every script, every source file), for all three readings.
+That survivor is below, unimproved.
+
+### Three · six falsifications, eleven red, one that proved nothing
+
+| removal | red |
+| --- | --- |
+| the suite's number first, as before v3.104 | **4** |
+| a repeated title keeps the larger of its two numbers | **1** |
+| an options object is read anywhere in the argument list | **1** |
+| the title must match exactly, with no suffix | **4** |
+| the argument list is split on every comma | **1** |
+| the quotes are blanked with the literals | **0** |
+
+The fourth is the largest: with no suffix match, `a suite the slow one` finds no title and every fixture falls
+back to the suite's number, which is the defect itself. The third is the flattering direction --
+`typecheck-entrypoint.test.ts` calls `spawnSync(cmd, args, { timeout: RUN_TIMEOUT_MS })` inside a test body,
+and a reader that took the first `timeout:` it found would hand that test 180 seconds it never asked for --
+so the anchor `^\{` is load-bearing and its fixture is that exact shape. The sixth proves nothing on this
+tree, and says so in the finding rather than in a comment: whether the quote characters survive changes no
+reading, because no file in it divides by a string.
+
+### Readings
+
+> Ledger for `v3.104`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **255 files, 6529 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **259 files, 6716 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
+| new tests | **6523 -> 6529, +6**: the test's own number preferred to its suite's, a tighter test number that was invisible before, the options form past comments, a `timeout:` in the test's body refused, the file's largest number when neither states one, and a title that appears twice |
+| the CI reading this round repairs | `15199 ms against a stated budget of 30000 ms, which is 0.51 of it` -- the test states **120 000**, so **0.13**, and the step is green |
+| budgets on a test, in the tree | **13 of 250** test files state one, **52** tests in all; the run names how many budgeted files were judged by one -- **11 of 44** this run, **12** the run before it, because which test is slowest moves with the load |
+| the reader's own equivalence | **0** differences over **250** files for the two older readers, **0** over **440** for the quote-keeping |
+| the falsifications | six removals, **11** red, **1** survivor |
+| gate sites | **143 / 67 of 96 scripts**, call tally **161** -- unchanged: no new gate, no new exit; three lines moved in `check-test-budgets.mjs` (85 -> 104, 361 -> 592, 372 -> 603) and the inventory was re-derived |
