@@ -526,7 +526,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.97: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.97: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1493,14 +1493,15 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: a per-test duration from runs whose verdict is the exit code, which is one report per mutant
   run -- the name is free now (finding 544), the duration is not]`
 
-- **The workflow that found the bucketing defect has not run since the repair.** The evidence for
-  finding 545 is a local read of the three `rcaeval-re2` archives -- 271 directories, 2 m 13 s, every
-  digest equal to the registry's -- and the step it repairs is step 13 of `official-data.yml`, which
-  has not been dispatched on a commit that carries the floor. A local read and a workflow read are the
-  same script on the same bytes, and they are not the same evidence: the workflow also proves that the
-  fetch, the round trip and the heap budget still leave the step the 2 m 13 s it needs.
-  `[open: one dispatch of official-data.yml on the commit that carries finding 545, and step 13's own
-  line recorded in the round that reads it]`
+- ~~**The workflow that found the bucketing defect has not run since the repair.**~~ **Closed at v3.97 by
+  the dispatch the entry asked for: run `43776772029`, on `56b9bbc`, whose step 13 came back green.**
+  It reached step 13 at `02:40:14` and finished it at `02:43:51` -- **3 m 37 s** against the 2 m 13 s the same
+  script takes locally -- with the census it exists to print: `OK (25 case(s) reproduced, 83742 cell(s)
+  reduced from logs.csv and equal to the corpus's own logts.csv; ... 246 case(s) bounded, not reproduced:
+  the marginals of logts.csv hold no more log cell(s) than logs.csv has rows for that container, 270445
+  (container, bucket) pair(s), 0 spare row(s) at the tightest over 35462054 published cell(s) against
+  40008239 log row(s))`. The 63 441 refusal lines finding 545 repaired printed as zero, on the runner, after
+  the fetch and the 2.5-hour round trip -- which is the part a local read cannot say.
 
 - ~~**The inequality compares buckets without asking whether the table is on the grid.**~~ **Closed by
   finding 547, which asks it and refuses.** A published time was read as a bucket key and floored against

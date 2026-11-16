@@ -1924,6 +1924,30 @@ a function of the machine, in the direction of a false red rather than a false g
 the safe direction, and the one that produces a declaration every time instead of an
 excuse. `39 -> 41` files state a budget across the round.
 
+### Five · the workflow's own step 13, and the number a local read cannot print
+
+The dispatch the Open list has been asking for since v3.95 landed while this round was being written.
+Run **`43776772029`**, dispatched on `56b9bbc` -- the commit that carries finding 545 -- reached step 13 at
+`02:40:14` and finished it at `02:43:51`, so the step has **3 m 37 s** inside a job that had already spent
+the fetch and a 2.5-hour round trip. Its own line:
+
+```
+check-aggregate-tables: OK (25 case(s) reproduced, 83742 cell(s) reduced from logs.csv and equal to the
+corpus's own logts.csv; 4073602 row(s) counted by their own cluster id, 721 of them under a masked
+template, 575 named no cluster, 0 named two different clusters; 246 case(s) bounded, not reproduced: the
+marginals of logts.csv hold no more log cell(s) than logs.csv has rows for that container, 270445
+(container, bucket) pair(s), 0 spare row(s) at the tightest over 35462054 published cell(s) against
+40008239 log row(s))
+```
+
+**Every number in it is the local one** -- 25 / 246 / 0, 83 742 cells, 270 445 pairs, 35 462 054 against
+40 008 239 -- and the sentence is worth a round of its own for the two things it settles. The 63 441
+refusal lines finding 545 repaired printed as **zero** there, on the runner, which is what a local read
+cannot say; and the step finished **2.5x** slower than the same script locally on a four-CPU quota, which
+is the reading the plan needed to know that 3 m 37 s sits inside the job's own budget rather than beside
+it. The off-grid refusal of finding 547 is not in this run -- the commit predates it -- and it does not
+change the line, because it refuses nothing on this corpus.
+
 ### Readings
 
 > Ledger for `v3.97`.
@@ -1940,14 +1964,14 @@ excuse. `39 -> 41` files state a budget across the round.
 | gate sites | **141** across **65 of 92** scripts: no new site, because a refusal is a `return` and the gate's one exit already carries the verdict |
 | the battery | **226** claim(s) across **64** file(s): unchanged |
 | budget declarations | **38 -> 41** files, from CI's own reading of a file the floor named and a second reading of the same test alone (1 820 against 214 ms, 8.5x) -- the declarations are what stop a busy box from deciding those files' verdicts |
-| list | **28 -> 27**: the grid entry is closed by the refusal it asked for |
+| list | **28 -> 26**: two closed -- the grid entry by the refusal it asked for, and the workflow entry by the dispatch whose step 13 came back green with this round's census |
 | LLM calls | **0** |
 
 ### Leftovers, in the order that reaches the goal
 
 | priority | item | state | next step |
 | --- | --- | --- | --- |
-| P1 | The workflow that found the bucketing defect has not run since the repair | run `43776772029` was dispatched on `56b9bbc` and is inside its 2.5-hour round trip | read step 13's line and close the entry |
+| ~~P1~~ | ~~The workflow that found the bucketing defect has not run since the repair~~ | **closed**: run `43776772029` finished step 13 green in 3 m 37 s with 25 / 246 / 0 and 0 spare row(s) at the tightest | next is P2 |
 | P2 | The ceiling of 8 has never been measured where it is not oversubscription | unchanged: every reading is on a 4-CPU cgroup quota, where 8 is 2x | one full-suite run on nine or more usable CPUs |
 | P2 | How close a *failing* run comes to its ceiling | unchanged | a per-test reading from a run whose product is a failure |
 | P2 | A record's terms are a map of strings to numbers | unchanged | a second target reading another target's key |
