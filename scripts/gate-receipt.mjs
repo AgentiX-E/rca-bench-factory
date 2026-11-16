@@ -133,13 +133,42 @@ export function verifiedTree({ root, run = gitIn(root) }) {
  * A subset run withholds: `--only docs` proves the documentation guards and says
  * nothing about the coverage step, and a receipt that says "the gate ran" would
  * be the same sentence whether thirty-one commands ran or one.
+ *
+ * ## The tree at the end, because the name is resolved at the start
+ *
+ * The receipt is filed under the tree the run *began* on -- resolved before the first
+ * step, so a step that rewrites the tree cannot move the name it is filed under. That
+ * is the right key and an incomplete question: a run that begins on one tree and ends
+ * on another has measured neither, and its verdict names the first.
+ *
+ * Measured in v3.105. A battery hollows a gate while it measures it, and a commit made
+ * while the gate ran swept the hollowed file in: the published tree carried
+ * `process.exit(0);` on the second line of `scripts/check-official.mjs`, and the gate
+ * reported `OK` with a receipt for the tree it had started on. The exit-site inventory
+ * caught it -- the extra line moved six of that file's sites by one -- and the suite
+ * catches it too (68 tests fail against the hollow form, measured). What did not catch
+ * it is the sentence a reader trusts.
+ *
+ * So a caller that can read the tree again passes `ended`, and a tree that moved
+ * withholds the receipt. It does not turn the run red: a new exit needs a test that
+ * reaches it, and the only way to reach this one from a test is to rewrite the tree
+ * underneath a running gate, which is the thing being refused.
  */
-export function receiptDecision({ tree, full }) {
+export function receiptDecision({ tree, full, ended }) {
   if (tree.state !== 'clean') return { state: 'withhold', why: tree.why };
   if (!full) {
     return {
       state: 'withhold',
       why: 'this run selected a subset of the steps, and a receipt says the gate ran',
+    };
+  }
+  if (ended !== undefined && (ended.state !== 'clean' || ended.tree !== tree.tree)) {
+    const after = ended.state === 'clean' ? `on ${ended.tree.slice(0, 7)}` : 'with uncommitted changes';
+    return {
+      state: 'withhold',
+      why:
+        `the tree moved while the gate ran -- it started on ${tree.tree.slice(0, 7)} and ended ${after}, ` +
+        'so the verdict names a tree that no longer exists',
     };
   }
   return { state: 'issue', tree: tree.tree };

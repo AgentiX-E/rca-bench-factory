@@ -159,7 +159,11 @@ async function main() {
   // it, so the same verdict is also filed as a fact keyed on the tree it is about.
   // `receiptDecision` is pure and holds the rule -- a subset run and a dirty tree
   // both withhold, because neither names content that can be published.
-  const decision = receiptDecision({ tree, full: only === null });
+  // Read again after the steps: the receipt is filed under the tree the run started
+  // on, and a tree that moved while it ran makes that name a claim about content
+  // nothing measured. v3.105 published a gate with `process.exit(0)` on its second
+  // line that way, on a run that printed `OK`.
+  const decision = receiptDecision({ tree, full: only === null, ended: verifiedTree({ root: ROOT }) });
   const receipt =
     decision.state === 'issue'
       ? writeReceipt({ root: ROOT, tree: decision.tree, note: `verify:local ${coverage}` })

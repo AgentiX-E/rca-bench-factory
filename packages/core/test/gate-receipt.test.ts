@@ -220,6 +220,44 @@ describe('gate-receipt · the decision the gate obeys', () => {
     expect(receiptDecision({ tree, full: true })).toEqual({ state: 'withhold', why: tree.why });
   });
 
+  it('withholds when the tree moved while the gate ran', () => {
+    // The name is resolved before the first step, so a step that rewrites the tree
+    // leaves the receipt describing content nothing measured. v3.105 published a gate
+    // with `process.exit(0)` on its second line exactly this way, on a run whose
+    // verdict said `OK`: a battery hollows a gate while it measures it, a commit made
+    // during the run swept the hollowed file in, and the receipt named the tree the
+    // run had started on.
+    const decision = receiptDecision({
+      tree: { state: 'clean', tree: TREE_A },
+      full: true,
+      ended: { state: 'clean', tree: TREE_B },
+    });
+    expect(decision.state).toBe('withhold');
+    expect(decision.why).toContain('the tree moved while the gate ran');
+    expect(decision.why).toContain(TREE_A.slice(0, 7));
+    expect(decision.why).toContain(TREE_B.slice(0, 7));
+  });
+
+  it('withholds when the tree it ended on has uncommitted changes', () => {
+    const decision = receiptDecision({
+      tree: { state: 'clean', tree: TREE_A },
+      full: true,
+      ended: { state: 'dirty', tree: TREE_A, why: 'the working tree differs from aaaaaaa' },
+    });
+    expect(decision.state).toBe('withhold');
+    expect(decision.why).toContain('with uncommitted changes');
+  });
+
+  it('issues when the tree it ended on is the one it started on', () => {
+    expect(
+      receiptDecision({
+        tree: { state: 'clean', tree: TREE_A },
+        full: true,
+        ended: { state: 'clean', tree: TREE_A },
+      }),
+    ).toEqual({ state: 'issue', tree: TREE_A });
+  });
+
   it('withholds when there is no repository, even on a full run', () => {
     const tree = { state: 'absent', tree: null, why: 'this directory is not a git checkout with a HEAD' };
     expect(receiptDecision({ tree, full: true }).state).toBe('withhold');
