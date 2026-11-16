@@ -1954,9 +1954,9 @@ change the line, because it refuses nothing on this corpus.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **252 files, 6405 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **256 files, 6592 tests passed** (as of this commit) |
+| `core` test suite | **252 files, 6405 tests passed** (at v3.97) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.97) |
+| repo test suite | **256 files, 6592 tests passed** (at v3.97) |
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** -- unchanged: the change is in `scripts/` and the two new tests drive a script |
 | new tests | **6403 -> 6405, +2**: the off-grid table refused, and the table one window away still compared |
 | the off-grid measurement | **0 of 26 116** published rows across the 271 directories are off the 15-second grid, which is what makes the refusal safe rather than loud |
@@ -1983,3 +1983,141 @@ exactly like a mismatch of *numbers* -- both print "publishes N cells, holds 0 r
 tell them apart is to ask which question was asked. A rule that reads one side of a comparison in a unit
 it never verifies on the other side is the general shape, and the fix is a check on the unit rather than a
 better sentence about the numbers.
+
+## v3.98 · the comments were English and nothing read them, and a line scan would have read text as prose
+
+The Open list has carried this since v3.96, when the document reader was written and the note beside it said
+what it did not cover: `src/`, `scripts/` and the 246 test files were held to English by the reviewer and by
+nothing else. The ask was one line -- *a reader for comment bodies, with the three shapes above as fixtures*
+-- and the parenthesis is the round: a comment is not a line that starts with `//`, it is a region, and the
+four ways a reader gets the region wrong all print a sentence about a subject that is not there.
+
+### One · what a line scan would have said, measured on this tree
+
+The obvious reader is a line that begins with `//` or `/*`. It is right about 23 671 of this tree's 23 768
+comments and wrong about the rest, and the wrong ones are not exotic: **331 comment openers sit inside a
+string, a template literal or a regex**, across **90 of the 462 files**. The largest single file is
+`scripts/site-proofs.mjs`, which builds a page by concatenating JavaScript source into string literals -- 44
+of those openers. A line scan would read the generated script's comments as this file's comments, and they
+*are* comments: the sentence would be true and about another file.
+
+Two of the four shapes were turned into the gate with the scanner's state removed, and both print the defect
+this round exists to prevent. With string state removed, a fixture holding `'https://<ten Han characters>…'`
+is refused:
+
+```
+src/a.ts:1: `本段说明只记录实测值` -- 10 Han character(s) of prose: this repository's comments are
+written in English, and the comments that are not are quotations, which a code span carries verbatim
+```
+
+That is a sentence about a URL. With regex state removed, a fixture holding `/x\/*/` and one real comment
+after it reads the pattern's `/*` as an opener, walks to the end of the file, and reports:
+
+```
+check-comments-language: FAILED — 1 file(s), 0 comment(s) (0 line, 0 block), 0 run(s) of Han prose
+outside a code span; 0 comment opener(s) skipped inside a string, a template or a regex; first:
+src/a.ts:1: opens a block comment that never closes, …
+```
+
+**Zero comments read, zero runs found, and a refusal** -- which is the shape this log has recorded since
+finding 528: the census is right about what it read and silent about what it could not. The exit code is the
+same and the reason is not, and a file whose block *does* close would have passed with its comment unread.
+
+### Two · the four shapes, and the fixture that fails without each
+
+| shape | what a reader without state does | fixture | without it |
+| --- | --- | --- | --- |
+| a `//` inside a string | reads the URL's authority as prose | `'https://…'` with ten Han characters | refused as prose |
+| a `/*` inside a regex | opens a block that never closes | `/x\/*/` then a real comment | 0 comments, refusal at a file that is fine |
+| a template literal | loses the text *and* the code in `${}` | a query with `//`, and a comment inside the interpolation | refused as prose, or the interpolation missed |
+| a shebang | offers the interpreter path's `/` to the regex branch | `#!/usr/bin/env node` then a comment | nothing observable -- see §Four |
+
+The first three were verified the same way: the state was removed from the scanner, the fixture's test was
+run, and it failed; the state was restored and it passed. The fourth is the honest one in the table, because
+removing it changes no output on any fixture or file in this tree, and the reason is written down rather than
+implied: `#!` is consumed before the loop so that the interpreter's path is never offered to the regex
+branch, and whether that matters depends on a shebang nobody here has written yet.
+
+### Three · the measurement, and the witness that the scanner distinguished
+
+```
+check-comments-language: OK — 462 file(s), 23768 comment(s) (19838 line, 3930 block), 0 run(s) of Han
+prose outside a code span; 331 comment opener(s) skipped inside a string, a template or a regex
+```
+
+**That second clause is the instrument's witness**, and it is in the summary for the reason finding 547's 0
+of 26 116 was written into a refusal: a reader that stopped telling a string from a comment would still
+report zero violations -- on a tree that had fewer comments than it has -- and the number that moves when it
+breaks is this one. It is also the number that says the round measured rather than assumed: 331 openers,
+none of them read as prose.
+
+**The agreement test.** A predicate that knows nothing about strings -- *every line whose first characters
+are `//` must be recorded as a comment on that line* -- is a different instrument, so their agreement over
+the whole tree is evidence rather than a tautology: **19 741** line openers and **3 930** block openers,
+**0** lost. The predicate has exactly two shapes that would make it wrong rather than the scanner, a template
+whose line begins `//` and a line inside a block that begins `//`, both stated in the test with the repair
+each would need (a named exemption), because deleting the assertion is the one repair that would hide a
+scanner that stopped recording what it read.
+
+The six files in this tree that carry Han characters are all citations -- a Chinese file name in a code span,
+a quoted query, a quoted table cell -- and the rule that says so is *imported* from the document reader
+rather than restated: one threshold, one code-span rule, two subjects. A second copy would be the
+third-source defect `validity.test.ts` names, and no test could catch it.
+
+### Four · what this reader does not read
+
+**The workflow files.** A `#` in YAML is three grammars (plain, single-quoted, double-quoted) plus block
+scalars that hold shell, so reading one correctly needs the YAML scanner rather than this one. Measured
+before deciding: five files hold **1 172** `#` marks, and **none** of them carries Han characters. The reader
+for them is the next instrument, and the entry below is what it is for.
+
+**A run broken by a line break.** Each line of a comment is judged on its own, which is what the document
+reader does, so a comment wrapped mid-run in a narrow column evades both. One boundary shared by two readers
+rather than two boundaries, stated here so the next person does not have to find it.
+
+### Five · what the gate is worth
+
+One more exit and two more scripts -- the verdict and the scanner behind it, the second of which has no exit
+at all. `derive-gate-sites` re-derives to **142 failure sites across 66 of 94 scripts**, and the battery moves
+to **227 claims across 65 files** because a claim is a site credited to the proving test file, and the new
+site has one. `docs:check` is twenty steps.
+
+Eighteen tests: fourteen drive the gate over a throwaway tree and four read the real one, and the four
+falsifications in §Two are the reason the fixtures are not decoration. The census cannot collapse silently --
+`files > 400`, `comments > 20 000`, `markers > 100` are floors taken below this round's readings, so a reader
+that stopped walking half the tree fails a test rather than publishing a smaller number as a pass.
+
+### Readings
+
+> Ledger for `v3.98`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **253 files, 6423 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **257 files, 6610 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** -- unchanged: the new code is two files under `scripts/`, which the four dimensions do not measure |
+| new tests | **6405 -> 6423, +18**: fourteen fixtures through the gate, four over the reading and the real tree |
+| the comments read | **462 file(s), 23 768 comment(s) (19 838 line, 3 930 block), 0 run(s) of Han prose**; **331** comment openers skipped inside a string, a template or a regex, in **90** files |
+| the agreement reading | **19 741** line openers and **3 930** block openers, **0** lost against a predicate that knows nothing about strings |
+| the exclusion readings | three of the four shapes falsified by removing the state and watching the fixture fail; the shebang recorded as unobservable |
+| gate sites | **142 / 66 of 94 scripts** (was 141 / 65 of 92); the call tally **160** |
+| the battery | **227 claims across 65 files** (was 226 / 64) |
+| `docs:check` | **19 -> 20 steps** |
+| list | **26 -> 26**: the comment entry closed, the workflow reader opened, unchanged in number and not in content |
+
+### What is left, in the order it has to happen
+
+| priority | item | state | next |
+| --- | --- | --- | --- |
+| P2 | the ceiling of 8 workers has never been measured where it is not oversubscription | unchanged: every reading is on a four-CPU quota, so 8 is 2x | one full run on a box with nine or more available CPUs |
+| P2 | how close a **failing** run comes to its ceiling | unchanged | one run whose artefact is a failure, read per test |
+| P2 | a record's `terms` is a map, so nothing can say which keys a rule writes | unchanged: priced at v3.94, waiting on its trigger -- a second target reading a key another writes, or a `?? 0` in a sum whose 0 is a wrong answer | the trigger, or nothing |
+| P3 | the workflow files' `#` comments are read by nothing | **new**: five files, 1 172 `#` marks, 0 Han characters; reading one needs the YAML scanner | three fixtures -- a `#` in a quoted scalar, a `#` inside a `run: |` block, and a block scalar that contains a quote |
+| P3 | a run broken by a line break evades both language readers | **new**: a boundary, not a defect, measured by neither reader | decide whether a paragraph is a unit, which changes the document reader too |
+
+**Where this leaves the campaign.** The language axis is done for the files this tree writes in JavaScript and
+TypeScript, with the two boundaries above stated rather than hidden. The three P2 items all wait on something
+outside this sandbox — a machine with nine CPUs, a run that fails, a second score target — and the P3 items
+are instruments whose subjects are strings inside another grammar. Nothing in the round changed a published
+figure: the corpus read, the coverage, and the battery's per-claim witness are where v3.97 left them.

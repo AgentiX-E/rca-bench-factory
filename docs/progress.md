@@ -439,10 +439,10 @@ document that described it as downloading the data was describing an intention.
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 97 |
 | Source lines | 34,369 |
-| Test files | 252 core + 4 cli |
-| Test lines | 108,220 core + 3,242 cli |
-| Tests | 6,405 core + 187 cli |
-| Tracked files | 650 |
+| Test files | 253 core + 4 cli |
+| Test lines | 108,543 core + 3,242 cli |
+| Tests | 6,423 core + 187 cli |
+| Tracked files | 653 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -526,7 +526,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.97: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.98: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1523,13 +1523,26 @@ is a row about rather than paraphrase one that no `grep` will find.
   more of English across them -- and `check-docs-language.mjs` now refuses a run of eight Han characters
   of prose anywhere in the tree, with fences, code spans and block quotes read as the quotations they
   are. Measured before: **96 lines** of Han prose across five documents. After: **zero**.
-- **The tree's comments are English and nothing reads them.** The gate above reads markdown; `src/`,
-  `scripts/` and the workflows are held to English by the reviewer and by nothing else, and this round
-  found the markdown case only because it went looking. A comment is a smaller document with the same
-  property, and a reader for it needs a lexer rather than a line scan -- a `//` inside a string, a
-  docstring inside a template literal, and a regex holding `/\*` are all cases a line scan gets wrong in
-  the direction of passing.
-  `[open: a reader for comment bodies, with the three shapes above as fixtures]`
+- ~~**The tree's comments are English and nothing reads them.**~~ **Closed at v3.98 by the reader this
+  entry asked for, and the measurement is the reason it was asked for.** `scripts/comment-language.mjs`
+  scans 462 files and reads **23 768** comments (19 838 line, 3 930 block); **0** carry a run of eight Han
+  characters outside a code span. The four shapes the entry named as a line scan's failures are fixtures,
+  three of them falsified by removing the scanner's state and watching the fixture fail: with string state
+  removed, `'https://<ten Han characters>'` is refused as prose; with regex state removed, `/x\/*/` opens a
+  block comment that never closes and the file reports **0 comments, 0 runs, and a refusal** -- the shape
+  finding 528 named, right about what it read and silent about what it could not. The witness that the
+  scanner distinguished is in the census rather than in a claim: **331** comment openers sit inside a
+  string, a template or a regex, across **90** files, and none of them was read as prose. The threshold and
+  the code-span rule are imported from the document reader rather than copied, so the two readers share one
+  definition of a citation. Two boundaries are stated rather than hidden: the workflow files are not read,
+  and a run broken by a line break evades both readers.
+- **The workflow files' `#` comments are read by nothing.** The language reader above covers JavaScript and
+  TypeScript, and a `#` in YAML is three grammars -- plain, single-quoted, double-quoted -- plus the block
+  scalars that hold shell, so reading one correctly needs the YAML scanner rather than the one this round
+  wrote. Measured before deciding: five files hold **1 172** `#` marks and **none** of them carries a Han
+  character, so the rule costs nothing today and the reader is what would keep it that way.
+  `[open: a reader for the workflow comments, with three fixtures -- a `#` inside a quoted scalar, a `#`
+  inside a `run: |` block that is a shell comment, and a block scalar whose content contains a quote]`
 
 ## Pass log
 
@@ -1562,7 +1575,7 @@ and this table.
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
-| [volume-15.md](progress/volume-15.md) | 14 | v3.84 | v3.97 |
+| [volume-15.md](progress/volume-15.md) | 15 | v3.84 | v3.98 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–547, from the rounds recorded in `progress/volume-15.md`.
+Findings 542–548, from the rounds recorded in `progress/volume-15.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -384,3 +384,87 @@ for the comparison to mean anything. A corpus bucketing on two-second windows is
 one that wrote `7` by mistake. That is the right verdict for a claim about fifteen-second windows and
 it is a statement about this rule's reach, so it is written here rather than discovered by the next
 corpus that disagrees.
+
+## Finding 548 — the comments were English and nothing read them, and a reader for them is a scanner before it is a rule
+
+`docs-language.mjs` reads markdown. The code was held to English by the reviewer, which is a different
+instrument with a different failure mode: a reviewer reading a diff sees the lines that changed, and a
+comment in another language is invisible to every gate in this tree. The Open list carried that sentence for
+five rounds with the same parenthesis -- a reader for the comment body needs a lexer -- and the parenthesis
+is the finding.
+
+**A comment is a region, not a line.** The obvious reader is a line whose first characters are `//` or `/*`,
+and on this tree it is right about 23 671 of 23 768 comments. The rest are not exotic: **331 comment openers
+sit inside a string, a template literal or a regex**, across **90 of 462 files**. The largest single file is
+`scripts/site-proofs.mjs`, which builds a page by concatenating JavaScript source into string literals -- 44
+of those openers. A line scan would read the generated script's comments as that file's comments, and they
+*are* comments: the sentence would be true and about another file.
+
+Two of the shapes were turned into the gate by removing the scanner's state, and each prints a sentence about
+a subject that is not there -- finding 545's shape and finding 547's, one instrument over:
+
+```
+src/a.ts:1: `本段说明只记录实测值` -- 10 Han character(s) of prose: this repository's comments are written
+in English, and the comments that are not are quotations, which a code span carries verbatim
+```
+
+That is a sentence about a URL, produced by a reader that did not know a string had begun. The other
+direction is worse than a wrong sentence, because it is a wrong *census*:
+
+```
+check-comments-language: FAILED — 1 file(s), 0 comment(s) (0 line, 0 block), 0 run(s) of Han prose
+outside a code span; 0 comment opener(s) skipped inside a string, a template or a regex; first:
+src/a.ts:1: opens a block comment that never closes, so every comment after it cannot be told from text
+```
+
+A regex holding the two characters that open a block comment was read as an opener, the walk ran to the end
+of the file, and the file reported **zero comments and zero runs**. The exit code happens to be the same and
+the reason is not: a file whose block did close would have passed, with its comment unread, and the census
+would have said so in a number nobody could question. That is finding 528's shape -- a count that is right
+about what it read and silent about what it could not -- reached through a lexer instead of a failure line.
+
+**The repair is a scanner, and the rule is imported.** `scripts/comment-language.mjs` walks code with a mode
+stack: strings, template literals with their interpolations, regexes, and a shebang consumed before the loop
+so the interpreter path's `/` is never offered to the regex branch. Regex-versus-division is the only
+heuristic, and it is exact in the direction that matters -- after an identifier, a number, a string, a
+template, a regex, `)` or `]` a `/` divides -- because a regex read as a division costs one character and the
+comment after it survives, while a division read as a regex swallows everything to the next `/`. The
+threshold and the code-span rule are **imported** from the document reader rather than restated: one run of
+eight, one definition of a citation, two subjects. A second copy would be the third-source-of-truth defect
+`validity.test.ts` names, and no test could catch it.
+
+**The measurement, and the witness.** 462 files, **23 768** comments (19 838 line, 3 930 block), **0** runs
+of Han prose outside a code span. The six files in this tree that carry Han characters are all citations --
+a Chinese file name in a code span, a quoted query, a quoted table cell -- which is the real-corpus half of
+the evidence and the part a fixture cannot supply. The census carries the instrument's own witness beside the
+verdict: **331** comment openers skipped inside a string, a template or a regex. A reader that stopped
+telling a string from a comment would still report zero violations, on a tree with fewer comments than it
+has; the number that moves when it breaks is this one, and a test holds it above a floor.
+
+**The agreement that is not a tautology.** A predicate that knows nothing about strings -- every line whose
+first characters are `//` must be recorded as a comment on that line -- is a different instrument, so its
+agreement with the scanner over the whole tree is evidence: **19 741** line openers and **3 930** block
+openers, **0** lost. The predicate has exactly two shapes that would make it wrong rather than the scanner, a
+template whose line begins `//` and a line inside a block that begins `//`; both are written into the test
+with the repair each would need, because the one repair that would hide a scanner that stopped recording what
+it read is deleting the assertion.
+
+**What the gate is worth.** One exit and two scripts -- the verdict and the scanner behind it, the second of
+which has no exit at all -- so `derive-gate-sites` moves to **142 failure sites across 66 of 94 scripts**, the
+call tally to **160**, and the battery to **227 claims across 65 files**, because a claim is a site credited
+to the proving test file. `docs:check` is twenty steps. Eighteen tests: fourteen drive the gate over a
+throwaway tree, four read the real one, and the census cannot collapse silently -- the floors are on files,
+comments and skipped openers, so a reader that stopped walking half the tree fails a test rather than
+publishing a smaller number as a pass.
+
+**What is not closed.** Two boundaries, both stated rather than hidden. The **workflow files** are not read: a
+`#` in YAML is three grammars plus the block scalars that hold shell, so it needs the YAML scanner rather than
+this one, and the five files hold **1 172** `#` marks with **no** Han character between them -- measured
+before deciding, and the reader is the entry that replaces this one. And a **run broken by a line break** is
+not a run: each line of a comment is judged on its own, which is what the document reader does, so a comment
+wrapped mid-run in a narrow column evades both. That is one boundary shared by two readers rather than two
+boundaries, and fixing it means deciding whether a paragraph is a unit -- which changes the document reader
+too, and is why it is a round rather than a paragraph. Also stated: the shebang branch is the one piece of
+state whose removal no fixture catches, because no shebang in this tree puts anything after the interpreter
+path that a scanner would misread. It is kept and named rather than tested, and that asymmetry is the honest
+part of the table.
