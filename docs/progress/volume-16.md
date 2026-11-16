@@ -1969,9 +1969,9 @@ reading, because no file in it divides by a string.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **255 files, 6529 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **259 files, 6716 tests passed** (as of this commit) |
+| `core` test suite | **255 files, 6529 tests passed** (at `v3.104`) |
+| `cli` test suite | **4 files, 187 tests passed** (at `v3.104`) |
+| repo test suite | **259 files, 6716 tests passed** (at `v3.104`) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6523 -> 6529, +6**: the test's own number preferred to its suite's, a tighter test number that was invisible before, the options form past comments, a `timeout:` in the test's body refused, the file's largest number when neither states one, and a title that appears twice |
 | the CI reading this round repairs | `15199 ms against a stated budget of 30000 ms, which is 0.51 of it` -- the test states **120 000**, so **0.13**, and the step is green |
@@ -1979,3 +1979,128 @@ reading, because no file in it divides by a string.
 | the reader's own equivalence | **0** differences over **250** files for the two older readers, **0** over **440** for the quote-keeping |
 | the falsifications | six removals, **11** red, **1** survivor |
 | gate sites | **143 / 67 of 96 scripts**, call tally **161** -- unchanged: no new gate, no new exit; three lines moved in `check-test-budgets.mjs` (85 -> 104, 361 -> 592, 372 -> 603) and the inventory was re-derived |
+
+## v3.105 · the gate read the shape of a budget, and the copy that knew the rule was the one nobody ran
+
+The last round closed with one survivor and one open item: a mutation that changed nothing, explained as "no
+file in this tree divides by a string". Both were wrong in the same direction -- the mutation changed nothing
+because *nothing read what it changed* -- and looking for the reason turned up two readers of one rule that
+disagreed about what the rule was.
+
+### One · a pattern does not end at a slash inside a class (finding 558)
+
+The header of `check-test-budgets.mjs` says the scanner is the one `test/timeout-budget.test.ts` documents. The
+document's scanner has tracked **character classes** since the repair that added its fourth mode -- `/['"]/`
+holds a quotation, and reading that quotation as the start of a string swallowed the rest of the file. The
+gate's `literalEnd` took the first unescaped `/` whatever came before it, so `/[/"]/` ended inside the brackets
+and the `"]/` after it was read as code; the quotation there opened a string that ran to the next quotation in
+the file, and every budget below it disappeared. A source in the shape the document names:
+
+    const EITHER = /[/'"]/;
+    const SUITE_BUDGET_MS = 30_000;
+    describe('a suite', { timeout: SUITE_BUDGET_MS }, () => { it('a test', () => {}); });
+
+was reported as `its slowest test takes 16500 ms and the file states no budget, so its verdict is decided by
+vitest's 5000 ms default; state one on the suite` -- a false red, in the sentence, telling a file that declared
+30 000 ms to declare a budget.
+
+**Why nobody saw it.** A census over the **467** tracked code files finds **eight** patterns holding a slash
+inside a class -- `[^/]` in `test/run.test.ts`, `[-_./]` in `src/gates/gates.ts`, a star-and-slash class in
+`check-no-absolute-paths.mjs`, and five more -- and **not one of them sits above a stated budget**, so both
+scanners returned the same three readings for every file. The tree never combines the shape with the thing the
+reading is for; the repair changes **0 of 467** readings, which is what a repair to a latent defect should do.
+
+### Two · a number in an argument list is not a budget (finding 559)
+
+The fourth spelling is positional -- `it('a test', () => {}, 120_000)` -- and it was read with `/, <number>)/`,
+a shape that also matches an ordinary call. `buildAnthropicRequest('p', 'claude-3-opus-latest', 8192)`,
+`Math.imul(state, 1664525)` and a timestamp written `1700000000` all matched, and only numbers under a thousand
+were dropped, so the four-digit arguments were the ones it invented budgets from.
+
+| file | what the reader said it declared | what it writes |
+| --- | --- | --- |
+| `gen-rcaeval-cases.test.ts` | **1 700 000 000 ms** (19 days) | nothing |
+| `modality-comparison-shape.test.ts` | 1 664 525 ms | nothing |
+| `battery-journal-node.test.ts` | 20 000 ms | nothing |
+| eight more | 1 024 – 15 000 ms | nothing |
+
+Ten of the 259 test files declared a budget they never wrote, and the **floor rule did not fire for any of
+them** -- a file that "declares" a budget is not asked to declare one. Nothing was green or red wrongly on the
+day: every invented number is larger than the slowest test beside it and all ten are under 1 000 ms. One
+three-second test in any of them would have been read as hours of headroom.
+
+The stronger half is that this file's own test named the right rule and pinned the wrong fixture: *does not
+mistake an ordinary numeric argument for a budget* asserted `f(x, 2)` and `slice(a, 3)`, both already excluded
+by the `>= 1000` filter, so it passed for a reason it did not state. `8192` and `1664525` turned it red.
+
+**The repair.** The positional form is read by `testBudgets`, which finds it **inside a test call** and can
+therefore tell a timeout from an argument; `statedBudgets` composes that instead of matching the shape. Files
+that state a budget fell **44 → 34**, and the verdict changed for **10 of 259** files, every one from a number
+the file never wrote to none. Nine more keep their real declaration and lose only the invented extras.
+
+### Three · the kept quotes had no reader, so last round's survivor proved nothing anywhere (finding 560)
+
+v3.104 blanked the bodies of literals and kept the two characters that delimit them, with a paragraph
+explaining why: the last-significant-character rule reads them. The same round replaced that rule's
+implementation -- it now carries `last` and `word` while scanning instead of rescanning its output -- and the
+new form reads the **source**, not the emitted text. From that commit on, nothing read the quotes. The
+paragraph described the previous scanner.
+
+The mutation that blanked them too returned identical readings for **467** files and identical verdicts on the
+**259** files of the real run, because the emitted quotes feed no reader at all. v3.104 read that as "this tree
+has no such shape" and opened an item about a fidelity no test could prove; the census agrees there are **0**
+files with a `/` after a closed literal, but that is the second reason, not the first. The literal is now
+blanked whole, the paragraph is replaced by the rule as implemented, and the rule has the test it lacked: the
+file is never compiled -- it is input to a lexer, and at the token level `"a" / 2` is a division -- so the
+fixture is `const ratio = "a" / 2;` with a budget below it.
+
+### Four · one rule, two copies, and a meta-gate that says the copy cannot be the gate (finding 561)
+
+Three findings, one defect: the rule for "what a file states about its own clock" lived in `scripts/` and in
+`test/`, agreed on every file in the tree, and disagreed on what the rule *was*. The copy existed because a
+gate may not be imported: `verify-gates-are-testable.mjs` proves a gate by emptying it and requiring the suite
+to go red **and to name a failing test**, which an imported gate makes impossible. The first attempt at this
+repair was the obvious one -- import the gate -- and `scripts-are-classified.test.ts` refused it in under a
+second with the remedy in the message: *move the reading into a data module and leave the verdict in the gate*.
+
+`scripts/budget-readings.mjs` is that module: the scanner, the four spellings, `budgetInForce`, and the
+sentences that name a declaration. The gate imports it and keeps the verdict; `timeout-budget.test.ts` imports
+it and keeps the rule; **179 lines** left the test file and **none** were restated. The gate's `main()` also
+gained the `invokedDirectly` guard the deriver and the doc-counter already carry, without which an import runs
+a gate over the test runner's own arguments. The register gained a row for the module, the site inventory moved
+from **96 to 97** scripts, and sites (**143**) and throw statements (**99**) did not move.
+
+### Five · six falsifications, all red
+
+| removal | red |
+| --- | --- |
+| classes tracked for strings too | **1** |
+| a class never closes | **1** |
+| a pattern ends at the first slash, as before v3.105 | **1** |
+| a literal's delimiter is not noted | **1** |
+| the positional spelling read by shape, as before v3.105 | **1** |
+| the positional spelling read in a call of any name | **1** |
+
+The first is the guard that keeps a bracket inside a string from opening a class it never closes; the second
+is the closing bracket; the third is finding 558 itself; the fourth is the rule that a value cannot be followed
+by a pattern. The last two are the two ways to be wrong about the positional form: by shape (finding 559) and
+by callee (any call, which is the same defect with a narrower net).
+
+### Readings
+
+> Ledger for `v3.105`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **255 files, 6533 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **259 files, 6720 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
+| new tests | **6529 -> 6533, +4**: a pattern holding a slash inside a class with a budget below it, a division that follows a literal, a string holding a bracket, and an argument that is not a budget |
+| tests strengthened | **1**: `does not mistake an ordinary numeric argument for a budget` pinned two numbers the `>= 1000` filter had already excluded |
+| the census | **467** code files scanned; **8** patterns hold a slash inside a class; **0** files hold a `/` after a closed literal |
+| what the repair changed | **0 of 467** readings for the class fix; **10 of 259** verdicts for the positional one, all from a number never written to none; files that state a budget **44 -> 34** |
+| the copy, deleted | `timeout-budget.test.ts` **888 -> 709** lines; `scripts/budget-readings.mjs` **458** lines new; the gate **622 -> 272** |
+| gate sites / scripts / throws | **143** sites, **97** scripts (was 96), **99** throw statements -- all three re-derived and proved |
+| the falsifications | six removals, **6** red, **0** survivors |
+| gate sites tally | **143 / 67 of 97 scripts**, call tally **161** |
