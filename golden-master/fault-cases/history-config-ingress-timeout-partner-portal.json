@@ -19,11 +19,13 @@
       "ingressRule": "partner-portal",
       "upstreamReadTimeout": {
         "value": 1,
-        "unit": "s"
+        "unit": "s",
+        "role": "knob"
       },
       "previousUpstreamReadTimeout": {
         "value": 600,
-        "unit": "s"
+        "unit": "s",
+        "role": "knob"
       }
     },
     "parameterNotes": {

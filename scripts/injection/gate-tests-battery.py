@@ -1273,7 +1273,7 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
     ),
     # ------------------------------------------------------------ the length a case claims
     #
-    # `fault.durationParameter` names the one parameter that states how long the fault lasted, and
+    # A parameter's own `role` says which of the case's numbers is how long the fault lasted, and
     # `hold x spacing` is how long the samples say it lasted. The five ways to read that rule wrongly
     # are all silent: each one returns a verdict where the file deserved a refusal, or a refusal
     # where the file was honest.
@@ -1300,8 +1300,8 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         "duration-claim.test.ts",
         lambda t: rename(
             t,
-            "  if (episode.lengths.length > 1) {",
-            "  if (episode.lengths.length > 2) {",
+            "  if (measured.lengths.length > 1) {",
+            "  if (measured.lengths.length > 2) {",
         ),
         "the test that refuses one number for a case whose series hold for two different lengths",
     ),
@@ -1327,24 +1327,26 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         "duration-claim.test.ts",
         lambda t: rename(
             t,
-            "  if (Math.abs(statedMs - measuredMs) <= 1) return { parameter, episode, fault: null };",
-            "  if (Math.abs(statedMs - measuredMs) > 1) return { parameter, episode, fault: null };",
+            "  if (Math.abs(statedMs - drawnMs) <= 1) return { parameter, measured, fault: null };",
+            "  if (Math.abs(statedMs - drawnMs) > 1) return { parameter, measured, fault: null };",
         ),
         "the test that accepts a stated length the samples draw",
     ),
     (
-        # A unit of time is what makes a parameter a length. Inverted, every duration is refused as
-        # a count and every count is handed to the converter, which throws rather than answering --
-        # so the refusal stops being a sentence and becomes a crash in the guard.
+        # A unit of time is what makes a parameter a length. Inverted, a count is read as a length
+        # and `min` as a count, so the word `episode` lands on a parameter nothing can measure and
+        # the word `knob` on one that states the fault's own span -- the two answers exchange
+        # meanings. The predicate moved to `fault/parameter-role.ts` at v3.103, which is where the
+        # question "is this a length" now lives; the claim and its inversion are unchanged.
         "CLAIM 5. a time unit is refused and every other unit is compared as time",
-        "packages/core/src/fault/duration-claim.ts",
-        "duration-claim.test.ts",
+        "packages/core/src/fault/parameter-role.ts",
+        "parameter-role.test.ts",
         lambda t: rename(
             t,
-            "!isConvertible(stated.unit, 's')",
-            "isConvertible(stated.unit, 's')",
+            "const lengthUnit = unit !== undefined && isConvertible(unit, 's') ? unit : null;",
+            "const lengthUnit = unit !== undefined && !isConvertible(unit, 's') ? unit : null;",
         ),
-        "the test that refuses a parameter that is not a quantity in a unit of time",
+        "the test that refuses a role on a parameter that is not a length",
     ),
     # ------------------------------------------------------------ the level a case claims
     #
@@ -1713,12 +1715,12 @@ EXPECTATIONS: dict[str, tuple[str, ...]] = {
     'CLAIM 4. the comparison is inverted, so agreement is refused and disagreement accepted': (
         'accepts a stated length the samples draw',
     ),
-    # Two witnesses because the inversion breaks both directions: the count that should be refused
-    # for having no length is handed to the converter, and the duration that should be accepted is
-    # refused for being one.
+    # Two witnesses because the inversion breaks both ends: a count is read as a length and a length
+    # as a count, so the sentence that refuses a role on a count stops appearing and the reading that
+    # expects no fault starts finding one.
     'CLAIM 5. a time unit is refused and every other unit is compared as time': (
-        'refuses a parameter that is not a quantity in a unit of time',
-        'accepts a stated length the samples draw',
+        'refuses a role on a parameter that is not a length',
+        'reads the parameter that says it is the episode and the ones that say they are knobs',
     ),
     'LEVEL 1. a case standing on its floor counts as claiming above it': (
         'says nothing about a case at its floor with no note',

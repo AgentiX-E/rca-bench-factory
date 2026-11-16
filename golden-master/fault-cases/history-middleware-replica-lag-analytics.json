@@ -19,7 +19,8 @@
       "service": "analytics-replica",
       "lagSeconds": {
         "value": 2400,
-        "unit": "s"
+        "unit": "s",
+        "role": "knob"
       }
     },
     "parameterNotes": {

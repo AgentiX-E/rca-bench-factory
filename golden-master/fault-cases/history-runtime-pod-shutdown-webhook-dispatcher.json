@@ -19,11 +19,13 @@
       "service": "webhook-dispatcher",
       "terminationGracePeriodSeconds": {
         "value": 30,
-        "unit": "s"
+        "unit": "s",
+        "role": "knob"
       },
       "drainSeconds": {
         "value": 120,
-        "unit": "s"
+        "unit": "s",
+        "role": "knob"
       }
     },
     "parameterNotes": {

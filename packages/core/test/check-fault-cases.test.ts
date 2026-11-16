@@ -2631,10 +2631,13 @@ describe('check-fault-cases · a key nothing cites has to say why it is there', 
 });
 
 describe('check-fault-cases · how long a case says its fault lasted', { timeout: SUITE_BUDGET_MS }, () => {
-  // The rule's own module is `fault/duration-claim.ts`, and `duration-claim.test.ts` holds its six
-  // refusals apart from any corpus. What these check is the wiring: that the guard asks every case
-  // which of its parameters is the episode, that a number the samples contradict reaches the reader
-  // as a problem, and that a case which names a length needs no sentence about it.
+  // The rule's own modules are `fault/parameter-role.ts` -- which of a case's numbers is the episode
+  // -- and `fault/duration-claim.ts`, which compares that number with the length the samples draw.
+  // Their refusals are held apart from any corpus in `parameter-role.test.ts` and
+  // `duration-claim.test.ts`, and what these check is the wiring: that the guard asks every case
+  // which of its lengths is the episode, that a number the samples contradict reaches the reader as
+  // a problem, that a length saying neither word is refused rather than counted, and that the field
+  // the word replaced is refused where a file still writes it.
   //
   // The fixture is the real checkout annotation: an eight-sample post side of twenty-two minutes, so
   // a duration parameter has exactly one number that agrees with it.
@@ -2642,13 +2645,12 @@ describe('check-fault-cases · how long a case says its fault lasted', { timeout
     readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
   ) as Record<string, unknown>;
 
-  function declaring(value: number): string {
+  function declaring(value: number, role = 'episode'): string {
     return corpus({
       signals: JSON.parse(JSON.stringify(SIGNALS)) as Record<string, unknown>,
       mutate: (faultCase) => {
         const fault = faultCase.fault as Record<string, unknown>;
-        (fault.parameters as Record<string, unknown>).burstMinutes = { value, unit: 'min' };
-        fault.durationParameter = 'burstMinutes';
+        (fault.parameters as Record<string, unknown>).burstMinutes = { value, unit: 'min', role };
       },
     });
   }
@@ -2659,8 +2661,8 @@ describe('check-fault-cases · how long a case says its fault lasted', { timeout
     const result = await run(['--cases', declaring(21)]);
     expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
-      "fault.durationParameter names 'burstMinutes', which states 21 min as the length of this " +
-        'episode, and its 8 sample(s) at 2.75 min each are 22 min',
+      'fault.parameters.burstMinutes states 21 min as the length of this episode, and its 8 ' +
+        'sample(s) at 2.75 min each are 22 min',
     );
   });
 
@@ -2673,31 +2675,71 @@ describe('check-fault-cases · how long a case says its fault lasted', { timeout
     expect(result.out).not.toContain('and no reading cites it');
   });
 
-  it('refuses a declaration that names a parameter the case does not declare', async () => {
+  it('refuses a length that says neither which it is, which is how the old field was dodged', async () => {
+    // The defect this round closes: before it, this case answered the length rule by writing no
+    // field, and the run printed a count of the cases that had answered -- a silence reported as a
+    // reading. The number is now refused, and the sentence names the unit it was written in.
+    const bare = corpus({
+      signals: JSON.parse(JSON.stringify(SIGNALS)) as Record<string, unknown>,
+      mutate: (faultCase) => {
+        const fault = faultCase.fault as Record<string, unknown>;
+        (fault.parameters as Record<string, unknown>).burstMinutes = { value: 22, unit: 'min' };
+      },
+    });
+    const result = await run(['--cases', bare]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain(
+      'fault.parameters.burstMinutes is a length in `min` and says neither `knob` nor `episode`',
+    );
+    // The third number of the partition is computed rather than assumed: this run holds one length,
+    // none of them answers, and the line has to say so on its way to being red. Hardcoding it as
+    // zero would pass every green corpus, which is why the witness is a red one.
+    expect(result.out).toContain('lengths 1 time-valued parameter(s): 0 state the episode, 0 name a knob, 1 say neither');
+  });
+
+  it('refuses the field the role replaced, so one fact is not written twice', async () => {
     const dir = corpus({
       signals: JSON.parse(JSON.stringify(SIGNALS)) as Record<string, unknown>,
       mutate: (faultCase) => {
-        (faultCase.fault as Record<string, unknown>).durationParameter = 'burstSecond';
+        (faultCase.fault as Record<string, unknown>).durationParameter = 'burstMinutes';
       },
     });
     const result = await run(['--cases', dir]);
     expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
-      "fault.durationParameter names 'burstSecond', and fault.parameters declares no such key " +
-        '(it declares: container, cpuLimit)',
+      "'history-checkout-cpu-saturation' declares 'durationParameter', and the field is gone",
     );
   });
 
-  it('says nothing about a case that states no length, which is not a claim rather than a silence', async () => {
-    // The optional field has to stay optional: most cases state a span of time that is a knob
-    // (`terminationGracePeriodSeconds`) rather than the episode, and refusing them for not naming one
-    // would be a rule about the author's honesty rather than about the file's arithmetic.
+  it('says nothing about a case whose parameters hold no length at all', async () => {
+    // The optional half has to stay optional: most cases state no span of time, and refusing them
+    // for not naming one would be a rule about the author's honesty rather than about the file's
+    // arithmetic. The checkout case declares a core limit and a name, and neither is a length.
     const result = await run([
       '--cases',
       corpus({ signals: JSON.parse(JSON.stringify(SIGNALS)) as Record<string, unknown> }),
     ]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toContain('0 named as the length of their episode');
+    expect(result.out).toContain('lengths 0 time-valued parameter(s): 0 state the episode, 0 name a knob');
+  });
+
+  it('prints the two answers as a partition of the lengths the corpus declares', async () => {
+    // The partition is what makes the line a reading rather than a share: a length that fell
+    // between the two answers would be a silence, and the third number is printed so that it is
+    // counted rather than assumed to be zero.
+    const result = await run([]);
+    expect(result.status, result.out).toBe(0);
+    const line = /lengths (\d+) time-valued parameter\(s\): (\d+) state the episode, (\d+) name a knob, (\d+) say neither/.exec(
+      result.out,
+    );
+    expect(line, 'the lengths line is missing from the report').not.toBeNull();
+    const [, timed, episodes, knobs, neither] = line!;
+    expect(Number(timed)).toBeGreaterThan(0);
+    expect(Number(episodes) + Number(knobs) + Number(neither)).toBe(Number(timed));
+    expect(Number(neither), 'a length that answers neither word is a silence, not a reading').toBe(0);
+    expect(Number(episodes)).toBeGreaterThan(0);
+    expect(Number(knobs)).toBeGreaterThan(0);
   });
 });
 

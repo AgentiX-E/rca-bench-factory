@@ -515,6 +515,16 @@ export interface FaultCase {
     type: string;
     category: FaultCategory;
     injectionMethod?: 'chaos-mesh' | 'litmus' | 'chaosblade' | 'historical' | 'manual';
+    /**
+     * The case's own facts: the injection's knobs, and the lengths it states.
+     *
+     * A parameter written as a quantity in a unit of time carries one of two words -- `role: "knob"`
+     * for a setting the case ran under, `role: "episode"` for the length of the fault itself -- and a
+     * case that leaves the word out of one is refused, because the silence is what used to let a case
+     * answer the length rule by deleting a field (`fault/parameter-role.ts`). A parameter in any other
+     * unit says nothing about roles: a count and a share are not lengths, and neither word could
+     * describe them.
+     */
     parameters?: Record<string, unknown>;
     /**
      * One sentence per parameter nothing cites, saying what the fact is for.
@@ -525,20 +535,6 @@ export interface FaultCase {
      * the question finding 300 could not put to a rule (`fault/parameter-notes.ts`).
      */
     parameterNotes?: Record<string, string>;
-    /**
-     * Which of those parameters states how long this fault lasted, if the case states it at all.
-     *
-     * The corpus writes a duration in two vocabularies -- `hold` counts post-onset samples and a
-     * parameter such as `burstMinutes` names a span of time -- and until this field existed nothing
-     * said which parameter was the episode rather than a knob (`terminationGracePeriodSeconds` is a
-     * setting, not a length). Naming it turns the number into a claim: `fault/duration-claim.ts`
-     * reads it against `hold x spacing` and refuses a case whose sentence and samples disagree.
-     *
-     * Read from the file as written rather than through the schema, for the reason `parameterNotes`
-     * is: the module that refuses a bad value is the module that can say why in a sentence, and a
-     * schema refusal would say `Invalid input`.
-     */
-    durationParameter?: string;
   };
   groundTruth: GroundTruth;
   /**

@@ -20,7 +20,8 @@
       "datastore": "session-redis",
       "keysIntervalSeconds": {
         "value": 30,
-        "unit": "s"
+        "unit": "s",
+        "role": "knob"
       },
       "command": "KEYS",
       "issuedBy": "an-unrelated-debugging-script"

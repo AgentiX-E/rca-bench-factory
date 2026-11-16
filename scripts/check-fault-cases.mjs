@@ -308,6 +308,16 @@ const parameterUse = {
   duration: 0,
   /** Keys that are both cited by a reading and named as the length of their episode. */
   namedAlsoCited: 0,
+  /**
+   * Every parameter written in a unit of time, and how each one answered the question.
+   *
+   * `knob` and `duration` are the two answers and they partition `timed`; the three are printed
+   * together so that the partition is checked by the run rather than assumed by the sentence. Before
+   * v3.103 the answer was one optional field, and the sentence that defended it -- *fourteen
+   * time-valued parameters, of which five are the episode* -- counted cases.
+   */
+  timed: 0,
+  knob: 0,
 };
 
 /**
@@ -884,17 +894,29 @@ for (const entry of index.cases) {
 
     // How long the fault lasted, as the case claims it and as its samples draw it. `hold` counts
     // samples, `readPostSampleSpacing` turns one into wall-clock time, and the product is the only
-    // length in the file rather than a claim about one. The case names which parameter is that
-    // length (`fault.durationParameter`), and the number is then read against the episode -- not
-    // against another number that happens to equal it, which is what the rule below did and why
-    // `burstMinutes: 5` beside a fourteen-minute episode said nothing to it (finding 492).
+    // length in the file rather than a claim about one. Which parameter states that length is now
+    // the parameter's own answer (`role: "episode"`), read for every length the case declares -- so
+    // the rule below is asked about a number the file has to name rather than about one it may
+    // withdraw by deleting a field.
     //
-    // A case that names no length is not refused: it makes no claim, and a claim nobody makes cannot
-    // be wrong. The guard prints how many cases answer instead, so a corpus drifting towards silence
-    // is visible in the run's own output.
+    // A case whose parameters hold no length at all is not refused: it makes no claim, and a claim
+    // nobody makes cannot be wrong. What it may not do is write a length and say nothing about it,
+    // which is the silence `fault/parameter-role.ts` refuses; the run prints the three counts
+    // (`timed`, `episode`, `knob`) so the partition is visible in its own output.
+    const roles = core.readParameterRoles(parameters);
+    for (const problem of roles.faults) {
+      problems.push(`'${caseId}' ${core.describeParameterRoleFault(problem)}`);
+    }
+    if (Object.hasOwn(rawCase?.fault ?? {}, 'durationParameter')) {
+      problems.push(
+        `'${caseId}' declares 'durationParameter', and the field is gone: the parameter's own ` +
+          '`role` says whether it is the episode, and two statements of one fact are two that can drift',
+      );
+    }
+    parameterUse.timed += roles.timed.length;
+    parameterUse.knob += roles.knobs.length;
     const durationClaim = core.readDurationClaim({
-      declaration: rawCase?.fault?.durationParameter,
-      parameters,
+      declared: roles.episode,
       series: series.map((one) => resolvedDeclaration(one, resolvedReadings)),
       when,
     });
@@ -902,7 +924,7 @@ for (const entry of index.cases) {
       problems.push(`'${caseId}' ${core.describeDurationClaim(durationClaim.fault)}`);
     } else if (durationClaim.parameter !== null) {
       parameterUse.duration += 1;
-      // Naming the length speaks for the number more strongly than a note does: the case says what
+      // Declaring the length speaks for the number more strongly than a note does: the case says what
       // the parameter is, and the samples are required to agree. The key is added to the set the
       // note rule reads, not to the set a reading fills, because the two are different routes and
       // the run's output counts them apart -- a key that is both a citation and a stated length is
@@ -1673,6 +1695,14 @@ function logParameterUse() {
       `${String(parameterUse.namedAlsoCited)} of them both), ` +
       `${String(parameterUse.noted)} explained by a note, shortest ${String(parameterUse.shortest)} ` +
       'character(s)',
+  );
+  // The lengths, counted apart from the keys: a time-valued parameter is the only shape the
+  // episode/knob question applies to, and the two answers must partition `timed` -- a key that fell
+  // between them is a length nothing asked about, which is the silence v3.103 closed.
+  console.log(
+    `check-fault-cases: lengths ${String(parameterUse.timed)} time-valued parameter(s): ` +
+      `${String(parameterUse.duration)} state the episode, ${String(parameterUse.knob)} name a knob, ` +
+      `${String(parameterUse.timed - parameterUse.duration - parameterUse.knob)} say neither`,
   );
 }
 

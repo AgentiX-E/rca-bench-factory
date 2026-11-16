@@ -19,7 +19,8 @@
       "service": "notification-worker",
       "containerEntrypointWaitSeconds": {
         "value": 20,
-        "unit": "s"
+        "unit": "s",
+        "role": "knob"
       },
       "rollbackRestoresTraffic": {
         "value": 1,

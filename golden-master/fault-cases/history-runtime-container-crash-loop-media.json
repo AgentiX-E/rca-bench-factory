@@ -23,7 +23,8 @@
       },
       "windowHours": {
         "value": 12,
-        "unit": "h"
+        "unit": "h",
+        "role": "knob"
       },
       "signal": "SIGSEGV"
     },

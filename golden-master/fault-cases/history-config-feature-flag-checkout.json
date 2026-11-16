@@ -24,7 +24,8 @@
       },
       "flagFlipMinutesBeforeOnset": {
         "value": 1,
-        "unit": "min"
+        "unit": "min",
+        "role": "knob"
       }
     },
     "parameterNotes": {

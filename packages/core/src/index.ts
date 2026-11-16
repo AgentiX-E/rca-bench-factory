@@ -1000,10 +1000,10 @@ export { describeReadingProblem, resolveReading } from './fault/reading-referenc
 export { MIN_NOTE_LENGTH, checkParameterNotes, describeParameterNoteFault } from './fault/parameter-notes.js';
 export type { ParameterNoteFault, ParameterNotesReport } from './fault/parameter-notes.js';
 
-// How long the fault lasted: a parameter the case names as its own length, read against the episode
-// its `hold` samples draw. `hold` counts samples and a parameter states a span of time, and nothing
-// said which parameter was the episode -- so `burstMinutes: 5` beside a four-sample episode of
-// fourteen minutes said nothing to anyone (finding 492).
+// How long the fault lasted: a parameter the case declares as its own length, read against the
+// episode its `hold` samples draw. `hold` counts samples and a parameter states a span of time, and
+// nothing said which parameter was the episode -- so `burstMinutes: 5` beside a four-sample episode
+// of fourteen minutes said nothing to anyone (finding 492).
 export { describeDurationClaim, readDurationClaim, readEpisodeLength } from './fault/duration-claim.js';
 export type {
   DurationClaimFault,
@@ -1011,6 +1011,16 @@ export type {
   DurationClaimReport,
   EpisodeLength,
 } from './fault/duration-claim.js';
+// Which of those parameters is the episode and which is a knob. The field that used to name one of
+// them was optional, so a case could answer the length rule by deleting it; the word now sits on the
+// parameter, where a case that leaves it out is refused rather than counted.
+export { PARAMETER_ROLES, describeParameterRoleFault, readParameterRoles } from './fault/parameter-role.js';
+export type {
+  EpisodeDeclaration,
+  ParameterRole,
+  ParameterRoleFault,
+  ParameterRoleReading,
+} from './fault/parameter-role.js';
 export {
   ABSENCE_FIELDS,
   EVIDENCE_MODALITIES,

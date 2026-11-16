@@ -20,7 +20,8 @@
       "offsetSource": "read-once-at-process-start",
       "shiftMinutes": {
         "value": 60,
-        "unit": "min"
+        "unit": "min",
+        "role": "knob"
       },
       "affectedReminders": "created-after-the-daylight-saving-change"
     },

@@ -24,14 +24,14 @@
       },
       "durationMinutes": {
         "value": 18,
-        "unit": "min"
+        "unit": "min",
+        "role": "episode"
       }
     },
     "parameterNotes": {
       "dependency": "the upstream that answered 503; the pricing service's error ratios are per dependency in the source, and this is the one that moved.",
       "answeredWith": "the status the upstream answered with; the ratio series counts the responses, and a status code says which failure rather than how many."
-    },
-    "durationParameter": "durationMinutes"
+    }
   },
   "groundTruth": {
     "rootCauseEntityId": "external:synthetic-storefront/tax-calculation",

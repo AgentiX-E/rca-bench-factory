@@ -157,6 +157,7 @@ const ENUMERATED_MODULES = [
   'fault/expression.ts',
   'fault/derived-telemetry.ts',
   'fault/duration-claim.ts',
+  'fault/parameter-role.ts',
   'fault/miss-adjudication.ts',
   'fault/miss-distractor.ts',
   'fault/denial-inventory.ts',
@@ -898,10 +899,15 @@ const TESTED = [
   // A span as a short decimal, shared by the two modules that print one (v3.73).
   'trimNumber',
   // How long the fault lasted, as the case claims it and as its samples draw it: the parameter the
-  // file names as its own length, read against `hold x spacing` (v3.73).
+  // file declares as its own length, read against `hold x spacing` (v3.73).
   'readDurationClaim',
   'readEpisodeLength',
   'describeDurationClaim',
+  // Which of a case's lengths is the episode and which is a knob, asked of every parameter rather
+  // than of one field a case could delete (v3.103).
+  'PARAMETER_ROLES',
+  'readParameterRoles',
+  'describeParameterRoleFault',
   // fault/expression.ts -- the arithmetic a derived checkpoint states, evaluated rather than
   // believed (finding 245).
   'MAX_EXPRESSION_DEPTH',

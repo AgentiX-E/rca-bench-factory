@@ -20,7 +20,8 @@
       "volumePath": "/var/lib/collector",
       "retentionGapHours": {
         "value": 31,
-        "unit": "h"
+        "unit": "h",
+        "role": "knob"
       },
       "dataVolumeBytes": {
         "value": 21474836480,
