@@ -2703,7 +2703,7 @@ is synthetic; it is an open entry rather than a rule.
 | repo test suite | **258 files, 6696 tests passed** (as of this commit) |
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** |
 | new tests | **6484 -> 6509, +25**: six in `cloudopsbench`, five in `itbench`, four on the projection, one on the shipped corpus, nine in the two structure checks |
-| the measurement before the rule | **34** cases: six pairs differ, zero shortfalls, zero unlabelled; the example bundle is one of the six |
+| the measurement before the rule | **34** cases: six pairs differ, zero shortfalls, zero unlabelled; the example bundle carries the same shape |
 | the falsifications | eight removals, **125** red, no survivor |
 | gate sites | **143 / 67 of 96 scripts**, call tally **161** -- unchanged: no new gate; one `throw` in `format-spec.mjs` moved from line 758 to 760 |
 | the battery | **228 claims across 66 files** -- unchanged |
