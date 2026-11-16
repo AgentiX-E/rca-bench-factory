@@ -370,6 +370,30 @@ describe('a row break inside a comment', { timeout: SUITE_BUDGET_MS }, () => {
     expect(commentsReport(body.comments).pairs).toBe(1);
     expect(check(ROOT).pairs).toBeGreaterThan(20_000);
   });
+
+  it('does not cross a row that ends in a backslash, because there a backslash is text', () => {
+    // The identical bytes mean the opposite on the two surfaces, and this is the fixture
+    // that says so. Markdown has a renderer that consumes a trailing `\` and breaks the
+    // row inside the paragraph; JavaScript, shell and YAML have none, so `// …\` ends in a
+    // backslash and the backslash stands between the two rows. A reader that applied the
+    // markdown rule here would report eight characters nobody wrote -- and the mirror of
+    // this fixture, on the markdown side, is the one that must stay red when this one is
+    // green.
+    const dir = treeOf({ 'src/a.ts': `// ${HAN(4)}\\\n// ${HAN(4)}.\nconst a = 1;\n` });
+    const { status, out } = run(dir);
+    expect(out).toContain('0 run(s)');
+    expect(status).toBe(0);
+  });
+
+  it('does not let a citation inside a comment join the two halves of a word', () => {
+    // `withoutCodeSpans` is shared with the markdown reader, so the gap it leaves is
+    // asserted here too: the same citation that does not join two Han runs in a page does
+    // not join them in a doc block.
+    const dir = treeOf({ 'src/a.ts': `/** ${HAN(4)}\`x\`${HAN(4)} */\nconst a = 1;\n` });
+    const { status, out } = run(dir);
+    expect(out).toContain('0 run(s)');
+    expect(status).toBe(0);
+  });
 });
 
 /**

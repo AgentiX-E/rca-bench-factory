@@ -93,7 +93,7 @@ export function documentsIn(root = ROOT) {
 }
 
 /**
- * One line with every code span removed.
+ * One line with every code span removed, and a gap left where each one was.
  *
  * Any run of backticks opens a span and the same-length run closes it, which is the rule
  * CommonMark states and the reason ``…`…`` exists: a span whose content contains a
@@ -103,6 +103,21 @@ export function documentsIn(root = ROOT) {
  * hand-written lexer in this tree exists: `(`+)(.*?)\1` matches the *first* run of the
  * same length, which is right, but it also matches across an unterminated span to the
  * end of the line, which turns a stray backtick into a silenced line.
+ *
+ * ## Why a span leaves a space rather than nothing
+ *
+ * A span is a quotation -- a file name, a path, a term lifted from another document --
+ * and a quotation is not this repository's prose. Removing it is the point. Removing it
+ * *silently* is not: `` 甲甲甲甲`x`甲甲甲甲 `` was four characters, a quotation and four
+ * more, and with the quotation deleted outright the eight characters on its two sides are
+ * one word to the search, so a citation quoted in the middle of a Chinese sentence became
+ * a reported run of prose. That is a fabricated join, and every join in this file is
+ * supposed to be one a reader could defend.
+ *
+ * The gap is inserted only when the byte before the span is not already whitespace, so
+ * `a `b` c` returns `a  c` -- the shape it returned before this rule existed, which keeps
+ * a caller's comparison where it was and keeps a span at the start of a row from
+ * producing a leading space that `trim` would then have to explain.
  */
 export function withoutCodeSpans(line) {
   let out = '';
@@ -124,6 +139,7 @@ export function withoutCodeSpans(line) {
       at += run;
       continue;
     }
+    if (out !== '' && !/\s/u.test(out.at(-1) ?? '')) out += ' ';
     at = close + run;
   }
   return out;
@@ -145,9 +161,50 @@ const ATX_HEADING = /^ {0,3}#{1,6}(\s|$)/;
  * Han characters would never cross one in a line comment at all. The same accident makes a
  * hard break written as two trailing spaces, and a CRLF file's carriage return, into a
  * character of the prose. Layout is not text, so it is dropped before the join.
+ *
+ * This is the **comment** surface, and it is the one place where a trailing backslash is
+ * a character rather than a marker: JavaScript, shell and YAML have no renderer between
+ * the bytes and the reader, so `// the end of a line\` ends with a backslash in the
+ * comment, and it stands between the two rows the way any other character does.
  */
-function rowOf(line, raw) {
+function textRowOf(line, raw) {
   return { line, body: withoutCodeSpans(raw).trim() };
+}
+
+/**
+ * A row of a markdown paragraph, where one more marker is consumed than in a comment.
+ *
+ * Markdown has a renderer, and two of the things it does to a row end are consumed
+ * markers -- they are punctuation, not text, so they do not stand between two rows:
+ *
+ *   - **two or more trailing spaces** are a hard break. Both ends are trimmed, so this
+ *     form -- the one an editor inserts -- costs nothing to get right: the spaces are
+ *     gone before anything is joined.
+ *   - **a trailing backslash** is the other spelling of the same break, and it is the one
+ *     this function had to be told about: CommonMark removes it and breaks the line, so
+ *     the eight characters before it and the eight after it render as a break inside one
+ *     paragraph, while this reader was joining them as `…\…` -- a backslash in the middle
+ *     of a word, which no run crosses.
+ *
+ * The conditions are as narrow as the rule is: **exactly one** backslash, and not itself
+ * escaped. `\\` at the end of a row is a literal backslash, which is a character and does
+ * stay between the two rows; three or more ends with an escaped pair and a marker, so a
+ * literal backslash is still in the text and still stands between them; and `\ ` is a
+ * backslash followed by a space, which CommonMark does not read as a break at all. All
+ * three keep the row whole -- the direction this file takes everywhere, towards a break
+ * rather than across one -- and the last one is why the marker is looked for *before* the
+ * row is trimmed, since trimming first would turn `\ ` into `\` and invent a transfer.
+ *
+ * A backslash anywhere else needs no rule, and that is not an omission. An escape removes
+ * one backslash and leaves the character it escaped, which is a character; `\*` renders as
+ * `*`, and `*` stands between two Han runs exactly as `\*` did. Only a row's last
+ * backslash has nothing after it, so only that one is a question about punctuation.
+ */
+function markdownRowOf(line, raw) {
+  const body = withoutCodeSpans(raw.replace(/\r$/u, ''))
+    .replace(/(^|[^\\])\\$/u, '$1')
+    .trim();
+  return { line, body };
 }
 
 /**
@@ -243,7 +300,7 @@ export function proseReport(text) {
       flush();
       return;
     }
-    const row = rowOf(index + 1, raw);
+    const row = markdownRowOf(index + 1, raw);
     if (row.body.trim() === '') {
       flush();
       return;
@@ -277,7 +334,7 @@ export function hanProseIn(text) {
  */
 function rowsOfComment(comment) {
   return comment.text.split('\n').map((raw, index) =>
-    rowOf(comment.line + index, raw.replace(/^\s*\*+ ?/, '')),
+    textRowOf(comment.line + index, raw.replace(/^\s*\*+ ?/, '')),
   );
 }
 

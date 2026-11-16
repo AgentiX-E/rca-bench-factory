@@ -420,4 +420,14 @@ describe('a row break inside a workflow comment', { timeout: SUITE_BUDGET_MS }, 
   it('reports the row breaks it held, and the real tree holds hundreds', () => {
     expect(check(ROOT).pairs).toBeGreaterThan(400);
   });
+
+  it('does not cross a row that ends in a backslash, because there a backslash is text', () => {
+    // A workflow comment is a YAML comment and YAML has no renderer, so the trailing
+    // backslash is a character: `# …\` above `# …` is two rows with a backslash between
+    // them, not a hard break. Same bytes as the markdown fixture that must be red.
+    const dir = treeOf({ 'a.yml': `# ${HAN(4)}\\\n# ${HAN(4)}.\njobs:\n  a: 1\n` });
+    const { status, out } = run(dir);
+    expect(out).toContain('0 run(s)');
+    expect(status).toBe(0);
+  });
 });

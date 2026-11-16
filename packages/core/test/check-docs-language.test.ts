@@ -236,3 +236,139 @@ describe('the reading, at its edges', () => {
     expect(real.summary).toContain('0 run(s) of Han prose');
   });
 });
+
+/**
+ * The second spelling of a hard break, and the eight shapes it has to be told apart in.
+ *
+ * Markdown has two ways to end a row without ending a paragraph, and this reader knew one
+ * of them: two trailing spaces, which `trim` removes, so the two rows joined and a run
+ * crossed. The other is a trailing backslash, and it was joined as `…\…` -- a backslash
+ * between the two rows, which no run crosses -- so a sentence hard-wrapped that way was two
+ * citations to this reader and one paragraph to CommonMark. Nothing in the tree writes one
+ * today (measured: one row ends in a backslash and it is a fragment left by removing a
+ * span), so the fixtures are the whole of the proof, and they are a table rather than a
+ * sample: the backslash run is 1, 2, 3 or 4 long and the row either ends there or holds one
+ * more space, and every one of the eight is asserted in both directions.
+ */
+describe('a hard break written with a backslash', { timeout: 30_000 }, () => {
+  /** The row as written, so the fixture states the bytes and not a derivation of them. */
+  const wrapped = (marker: string) => `# Page\n\n${HAN(4)}${marker}\n${HAN(4)}.\n`;
+
+  it('crosses the break, because the renderer consumes the marker', () => {
+    const dir = treeOf({ 'docs/page.md': wrapped('\\') });
+    const { status, out } = run(dir);
+    expect(out).toContain('docs/page.md:3:');
+    expect(out).toContain('8 Han character(s) of prose across 2 row(s)');
+    expect(status).toBe(1);
+  });
+
+  it('reads the backslash form and the two-space form as the same break', () => {
+    // The two are one rule in CommonMark, so they are one reading here: the assertion is
+    // that the reports are equal, not that each is right on its own.
+    expect(proseReport(wrapped('\\'))).toEqual(proseReport(wrapped('  ')));
+  });
+
+  it('crosses it in a document written with CRLF', () => {
+    const dir = treeOf({ 'docs/page.md': `# Page\r\n\r\n${HAN(4)}\\\r\n${HAN(4)}.\r\n` });
+    expect(run(dir).status).toBe(1);
+  });
+
+  it('does not cross an escaped backslash, which is a character', () => {
+    // `\\` is one literal backslash after parsing, and it sits between the two rows. A
+    // reader that looked only at the last byte would call this a marker and invent a run.
+    const dir = treeOf({ 'docs/page.md': wrapped('\\\\') });
+    const { out } = run(dir);
+    expect(out).toContain('0 run(s)');
+    expect(run(dir).status).toBe(0);
+  });
+
+  it('does not cross three backslashes, which leave one literal backslash behind', () => {
+    const dir = treeOf({ 'docs/page.md': wrapped('\\\\\\') });
+    expect(run(dir).status).toBe(0);
+  });
+
+  it('does not cross four backslashes, which leave two', () => {
+    const dir = treeOf({ 'docs/page.md': wrapped('\\\\\\\\') });
+    expect(run(dir).status).toBe(0);
+  });
+
+  it('does not treat a backslash followed by a space as a marker', () => {
+    // CommonMark wants the backslash against the line ending. Trimming first would turn
+    // `\ ` into `\` and read a break nobody wrote, so the marker is looked for before the
+    // trim -- which is the order this fixture exists to hold.
+    const dir = treeOf({ 'docs/page.md': wrapped('\\ ') });
+    expect(run(dir).status).toBe(0);
+  });
+
+  it('states the table it asserts, so a shape with no fixture is visible', () => {
+    // Eight shapes, eight answers, in one place: the run length down the rows and the
+    // trailing space across the columns. A row added to the rule without a column here
+    // would show up as a missing entry rather than as a silent pass.
+    const table = [1, 2, 3, 4].map((run) =>
+      ['', ' '].map((tail) => {
+        const report = proseReport(`# Page\n\n${HAN(4)}${'\\'.repeat(run)}${tail}\n${HAN(4)}.\n`);
+        return report.hits.length === 1 ? 'crosses' : 'holds';
+      }),
+    );
+    expect(table).toEqual([
+      ['crosses', 'holds'],
+      ['holds', 'holds'],
+      ['holds', 'holds'],
+      ['holds', 'holds'],
+    ]);
+  });
+
+  it('leaves the marker out of the prose it reports', () => {
+    // The reported text is what a reader would quote, so it must not carry the marker:
+    // eight characters here, and the two rows as they were written.
+    expect(hanProseIn(`# Page\n\n${HAN(4)}\\\n${HAN(4)}\n`)).toEqual([
+      { line: 3, text: `${HAN(4)}${HAN(4)}`, length: 8, spanning: 2 },
+    ]);
+  });
+});
+
+/**
+ * What removing a quotation leaves behind.
+ *
+ * A code span is a citation -- a file name, a path, a term -- and the reader removes it so
+ * that the citation is not judged as this repository's prose. Removing it *silently* was
+ * the defect: `` 甲甲甲甲`x`甲甲甲甲 `` is four characters, a citation and four more, and with
+ * the citation deleted outright the two sides became one eight-character run. That is a
+ * fabricated join, in the direction these readers are chosen against, and the fix is that a
+ * removal leaves a gap -- a quotation is not a word, so it does not let two words touch.
+ *
+ * The gap is inserted only where the byte before the span is not already whitespace, so
+ * the shape `a `b` c` returned before this rule is the shape it returns after it.
+ */
+describe('a quotation, and the gap it leaves', { timeout: 30_000 }, () => {
+  it('does not let a span join the two halves of a word around it', () => {
+    const dir = treeOf({ 'docs/page.md': `# Page\n\n${HAN(4)}\`x\`${HAN(4)}.\n` });
+    const { status, out } = run(dir);
+    expect(out).toContain('0 run(s)');
+    expect(status).toBe(0);
+  });
+
+  it('reads the same whether the span is spaced or glued', () => {
+    // The two shapes have one answer, because a citation is not a word either way.
+    expect(hanProseIn(`${HAN(4)}\`x\`${HAN(4)}`)).toEqual([]);
+    expect(hanProseIn(`${HAN(4)} \`x\` ${HAN(4)}`)).toEqual([]);
+  });
+
+  it('leaves one gap, not one per byte removed, and only where a word ends', () => {
+    expect(withoutCodeSpans('(x)`y`(z)')).toBe('(x) (z)');
+    expect(withoutCodeSpans('`x`abc')).toBe('abc');
+    expect(withoutCodeSpans('abc`x`')).toBe('abc ');
+    // The shapes this function returned before the gap existed, unchanged: a caller that
+    // compared against them still compares against them.
+    expect(withoutCodeSpans('a `b` c')).toBe('a  c');
+    expect(withoutCodeSpans('a ``b ` c`` d')).toBe('a  d');
+  });
+
+  it('does not turn a row holding only a span into a paragraph row', () => {
+    // The gap is what makes a citation safe, and it must not make an empty row look like
+    // text: a blank row is how all three surfaces say "new paragraph", so a row that is
+    // one span has to come back blank and stay a boundary.
+    expect(withoutCodeSpans('`x`').trim()).toBe('');
+    expect(proseReport(`${HAN(4)}\`x\`\n\n${HAN(4)}\n`).hits).toEqual([]);
+  });
+});
