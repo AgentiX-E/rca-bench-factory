@@ -440,8 +440,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 97 |
 | Source lines | 34,369 |
 | Test files | 252 core + 4 cli |
-| Test lines | 108,128 core + 3,242 cli |
-| Tests | 6,403 core + 187 cli |
+| Test lines | 108,171 core + 3,242 cli |
+| Tests | 6,405 core + 187 cli |
 | Tracked files | 650 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -526,7 +526,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.96: **28** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.97: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1502,15 +1502,15 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: one dispatch of official-data.yml on the commit that carries finding 545, and step 13's own
   line recorded in the round that reads it]`
 
-- **The inequality compares buckets without asking whether the table is on the grid.** A published time
-  is read as a bucket key and floored against nothing: the log side floors its instants to the grid the
-  reduction uses, while the table's own times are taken as given. Measured over the 271 directories:
-  **0 of 26 116** published rows are off the 15-second grid, so a table on another origin would be
-  reported as publishing cells the container never logged, which is a true sentence about the wrong
-  subject -- the shape finding 545 was about, one step upstream. The corpus says the refusal is safe to
-  write and nothing has written it.
-  `[open: a refusal that names the grid when a published time is not on it, with the 0 of 26 116 in the
-  test that holds it]`
+- ~~**The inequality compares buckets without asking whether the table is on the grid.**~~ **Closed by
+  finding 547, which asks it and refuses.** A published time was read as a bucket key and floored against
+  nothing while the log side floors every instant to a window, so a table on another origin was reported
+  as publishing cells the container never logged -- a true sentence about the wrong subject, the shape
+  finding 545 was about one step upstream. Measured over the 271 directories: **0 of 26 116** published
+  rows are off the 15-second grid, which is what made the refusal safe to write; a time that is not a
+  multiple of fifteen is now recorded once and refused rather than counted ninety-seven times and reported
+  as a breach. A second fixture keeps it honest -- a table one window away is on the grid, is compared,
+  and fails on its numbers -- and the corpus line did not move: 25 reproduced, 246 bounded, 0 refused.
 
 - ~~**Three rounds in this log are prose in a language the rest of it is not written in.**~~ **Closed
   by finding 546, which translated them and built the reader that would have refused them.** `v3.69`,
@@ -1561,7 +1561,7 @@ and this table.
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
-| [volume-15.md](progress/volume-15.md) | 13 | v3.84 | v3.96 |
+| [volume-15.md](progress/volume-15.md) | 14 | v3.84 | v3.97 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

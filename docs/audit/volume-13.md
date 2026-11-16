@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–546, from the rounds recorded in `progress/volume-15.md`.
+Findings 542–547, from the rounds recorded in `progress/volume-15.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -314,8 +314,73 @@ is now a double-backtick span: the bytes stay verbatim and stop reading as prose
 would have been the wrong repair -- it is another document's sentence, and the other document is Chinese
 by design.
 
-**What the gate is worth.** One more script with one more exit: `derive-gate-sites` moves to **141 failure
-sites across 65 of 90 scripts**, and the battery does not move at all (225 claims over 63 files), because
-a language rule has nothing to mutate. The thirteen tests are eight fixtures driven through the gate and
-five over the reading; the three exclusion fixtures are written so that removing their exclusion makes
-them fail, which is the only thing that distinguishes an exclusion from a rule that never runs.
+**What the gate is worth.** One more exit and two more scripts -- the gate and the reading behind it, the
+second of which has no exit at all: `derive-gate-sites` moves to **141 failure sites across 65 of 92
+scripts**, and the battery moves by one claim (226 across 64 files) because it credits a site's script
+rather than the site's subject. A language rule has nothing to mutate. The thirteen tests are eight
+fixtures driven through the gate and five over the reading; the three exclusion fixtures are written so
+that removing their exclusion makes them fail, which is the only thing that distinguishes an exclusion
+from a rule that never runs.
+
+## Finding 547 — the grid was assumed and never read, so a table on another origin would have been answered with a breach
+
+The inequality finding 542 named compares per-window totals: `logts.csv`'s cell for container `c` in
+bucket `b` against the number of `logs.csv` rows for `c` in that window. Finding 545 repaired the side
+that decides which window a row falls in. The other side -- the table's own time column -- was read as
+a bucket key and never as a claim: `Number(line[0])`, used to key the published map directly, so the
+two sides agreed about the grid only because the corpus happens to write its window starts on it.
+
+A table written on another origin -- times of `7`, `22`, `37` -- was compared against the window that
+number names, which is a window the log side never fills, because the log side floors. The verdict
+would have been:
+
+```
+container 'frontend' in bucket 7 publishes 1 log cell(s) and logs.csv holds 0 row(s) for it;
+a table that summarizes a log file cannot count more lines than the file holds
+```
+
+Every clause of that is true and the subject is wrong: the corpus is not publishing cells it cannot
+have, this rule is comparing two origins and reporting the difference as a defect in the file. It is
+finding 545 one step upstream -- the same disagreement between a floored side and a raw one, in the
+place where a reader of the gate's output takes a sentence about the corpus at face value. 545 printed
+246 refusals in total; this would have printed one per published row, and it would have been believed.
+
+**The measurement that makes the refusal safe.** Before writing one, the corpus was read for the
+property: **0 of 26 116** published rows across the 271 directories carry a time that is not a multiple
+of fifteen. Every table in `RE2-OB`, `RE2-SS` and `RE2-TT` starts its windows at `0` and steps by 15, so
+a rule that refuses an off-grid time refuses nothing the corpus ships, and puts the sentence where the
+next corpus will read it rather than where this one would have been misdescribed.
+
+**The repair, and why it is once per case.** `compareMarginals` records the first off-grid time it sees
+and skips the row; `checkCase` turns a recorded time into `refused` / `off-grid-table`, with the number
+in the sentence rather than a count beside it:
+
+```
+logts.csv: its time column reads 7, which is not on the 15-second grid the reduction buckets on;
+the inequality compares per-window totals, so a table written on another origin would be answered
+with cells the log file never fills rather than with a fact about the corpus
+```
+
+One refusal per case rather than ninety-seven: an origin is a property of the file, and a line per row
+would be 26 116 copies of one fact -- the count-capping shape finding 528 found in a failure line, one
+instrument over.
+
+**The guard that keeps the refusal from being over-broad.** A refusal is a larger claim than a breach,
+so the second fixture is the one that stays a breach: a table one window away -- `15` where the log has
+a row at `0` -- is on the grid, so it is compared, and it fails on its numbers. Without that case a
+rule that refused whenever the two sides disagreed would satisfy the first fixture and destroy the
+claim it was added to protect. Both fixtures are red before the repair and green after, and the red is
+the sentence this finding exists to stop printing: `FAILED (1 case(s) publish more log cell(s) than
+their own logs.csv holds; 1 problem(s) reported)`.
+
+**What the corpus read said afterwards.** Nothing moved, which is what a refusal that fires nowhere is
+for: **25 reproduced, 246 bounded, 0 refused**, 83 742 cells and 270 445 pairs in 2 m 22 s. The gate
+gained no failure site -- a refusal is a `return`, and the one exit already carries the verdict -- so
+`derive-gate-sites` holds at 141 sites across 65 of 92 scripts and the battery at 226 claims.
+
+**What is not closed.** The module can now say that a time is off the grid; it cannot tell another
+origin from a typo, and it names the number it saw rather than the arithmetic that would have to hold
+for the comparison to mean anything. A corpus bucketing on two-second windows is refused as readily as
+one that wrote `7` by mistake. That is the right verdict for a claim about fifteen-second windows and
+it is a statement about this rule's reach, so it is written here rather than discovered by the next
+corpus that disagrees.

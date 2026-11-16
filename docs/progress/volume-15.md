@@ -1786,8 +1786,12 @@ clean tree, a paragraph, a fence, a single-backtick span, a nested span, a block
 threshold, an unterminated backtick, and a tree with no document at all), five on the reading itself.
 
 It is step sixteen of `docs:check`, which is now nineteen steps. `derive-gate-sites` re-derives to **141
-failure sites across 65 of 90 scripts** -- one more site and one more script -- and the battery is
-unchanged at 225 claims across 63 files, because a language rule has nothing to mutate.
+failure sites across 65 of 92 scripts**: one more site, because the new gate has exactly one exit to give,
+and two more scripts, because the reading behind it is a module with no exit of its own -- which is the
+shape every gate in this tree has and the reason `verify-gates-are-testable` can empty one. The battery
+follows the site rather than the mutation -- **225 -> 226 claims across 63 -> 64 files** -- because a claim
+here is a site that a proving test file is credited with, and the new gate brought one; the mutation a
+language rule offers is none, which is a different sentence from "nothing moved".
 
 ### Readings
 
@@ -1795,16 +1799,16 @@ unchanged at 225 claims across 63 files, because a language rule has nothing to 
 
 | item | value |
 | --- | --- |
-| `core` test suite | **252 files, 6403 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **256 files, 6590 tests passed** (as of this commit) |
+| `core` test suite | **252 files, 6403 tests passed** (at v3.96) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.96) |
+| repo test suite | **256 files, 6590 tests passed** (at v3.96) |
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the new code is under `scripts/`, which the coverage gate does not instrument |
 | the measurement | **96 lines** of Han prose across **5 documents** before, **0** after; **116 lines** of prose translated in three rounds (`v3.69` 43, `v3.83` 40, `v3.84` 33) |
 | the rewriting | 1 429 bytes more of English across the three rounds; every number, finding reference, heading level and ledger row unchanged |
 | new tests | **6390 -> 6403, +13**, all in `check-docs-language.test.ts`: eight fixtures through the gate and five on the reading |
 | docs:check | **18 -> 19 steps** |
-| gate sites | **141** across **65 of 90** scripts, one more site and one more gate than v3.95 |
-| the battery | **225** claim(s) across **63** file(s): unchanged |
+| gate sites | **141** across **65 of 92** scripts: one more site than v3.95, and two more scripts, one of which has no exit |
+| the battery | **225 -> 226** claim(s) across **63 -> 64** file(s): one more, because the battery counts the sites a proving test file is credited with, and the new gate brought one |
 | list | **28 -> 27**: the language entry is closed by the translation and the reader |
 | LLM calls | **0** |
 
@@ -1829,3 +1833,91 @@ touch a number, and the temptation is to treat a record as immutable and leave t
 record is what a round *measured*; the language it was measured in is not part of the measurement, and
 saying so explicitly -- ledger unchanged, every finding reference still resolving, byte deltas printed --
 is what makes the rewrite checkable rather than a claim.
+
+## v3.97 · the grid was assumed rather than read, and the breach it printed was about the wrong subject
+
+The Open list has carried this since v3.95: the inequality compares a table's buckets without ever asking
+whether the time column is on the grid. This round asked, and the answer cost two lines of code and no
+new pass over any file.
+
+### One · a table on another origin answers with windows the log never fills
+
+`logts.csv`'s time column is read as a bucket key. The log side floors every instant to a window --
+`Math.floor(atSeconds / LOGTS_BUCKET_SECONDS) * LOGTS_BUCKET_SECONDS`, the same expression finding 545 put
+there -- and the published side takes the file's own number. When the two grids differ, every published
+row is compared against a window that holds no rows, and the gate prints:
+
+```
+container 'frontend' in bucket 7 publishes 1 log cell(s) and logs.csv holds 0 row(s) for it;
+a table that summarizes a log file cannot count more lines than the file holds
+```
+
+Every clause of that is true and the subject is wrong: the corpus is not publishing cells it cannot have,
+this rule is comparing two origins. It is finding 545's shape one step upstream -- a sentence about a file
+in a place where the reader will read it as a sentence about the corpus -- and the corpus itself says the
+refusal is safe to write: **0 of 26 116** published rows across the 271 directories are off the grid.
+
+So a time that is not a multiple of fifteen is recorded once and refused rather than counted ninety-seven
+times and reported as a breach:
+
+```
+logts.csv: its time column reads 7, which is not on the 15-second grid the reduction buckets on;
+the inequality compares per-window totals, so a table written on another origin would be answered
+with cells the log file never fills rather than with a fact about the corpus
+```
+
+### Two · the fixture that keeps the refusal from being over-broad
+
+A refusal is a bigger claim than a breach, so it needs a case that stays a breach. A table one window away
+-- `15` where the log row is at second `0` -- is **on the grid**, so it is compared, and the comparison
+fails on its numbers:
+
+```
+container 'frontend' in bucket 15 publishes 1 log cell(s) and logs.csv holds 0 row(s) for it
+```
+
+That is the right verdict for a table that really does disagree, and the pair of fixtures is what says the
+new rule reads the grid rather than the numbers. Both were red-then-green in the right order: with the
+refusal removed, the off-grid fixture prints `FAILED (1 case(s) publish more log cell(s) than their own
+logs.csv holds; 1 problem(s) reported)` -- the sentence this round exists to stop printing.
+
+### Three · what did not move
+
+The corpus read is the same line it was: **25 reproduced, 246 bounded, 0 refused**, 83 742 cells and
+270 445 pairs, in 2 m 22 s, from the same three archives. A rule that refuses nothing on the real corpus is
+a rule whose cost is zero until the day a corpus disagrees about where its windows start.
+
+### Readings
+
+> Ledger for `v3.97`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **252 files, 6405 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **256 files, 6592 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** -- unchanged: the change is in `scripts/` and the two new tests drive a script |
+| new tests | **6403 -> 6405, +2**: the off-grid table refused, and the table one window away still compared |
+| the off-grid measurement | **0 of 26 116** published rows across the 271 directories are off the 15-second grid, which is what makes the refusal safe rather than loud |
+| the corpus | **unchanged**: 25 reproduced (83 742 cells), 246 bounded (270 445 pairs, 0 spare row at the tightest), 0 refused, 2 m 22 s |
+| gate sites | **141** across **65 of 92** scripts: no new site, because a refusal is a `return` and the gate's one exit already carries the verdict |
+| the battery | **226** claim(s) across **64** file(s): unchanged |
+| list | **28 -> 27**: the grid entry is closed by the refusal it asked for |
+| LLM calls | **0** |
+
+### Leftovers, in the order that reaches the goal
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| P1 | The workflow that found the bucketing defect has not run since the repair | run `43776772029` was dispatched on `56b9bbc` and is inside its 2.5-hour round trip | read step 13's line and close the entry |
+| P2 | The ceiling of 8 has never been measured where it is not oversubscription | unchanged: every reading is on a 4-CPU cgroup quota, where 8 is 2x | one full-suite run on nine or more usable CPUs |
+| P2 | How close a *failing* run comes to its ceiling | unchanged | a per-test reading from a run whose product is a failure |
+| P2 | A record's terms are a map of strings to numbers | unchanged | a second target reading another target's key |
+| P3 | The tree's comments are English but nothing reads them | unchanged | a reader for comment bodies, with the three shapes that defeat a line scan as fixtures |
+
+**The lesson.** The grid was in the code twice and checked once: the log side floors, the published side
+does not, and the gate compared the results. What made it invisible is that a mismatch of *origins* looks
+exactly like a mismatch of *numbers* -- both print "publishes N cells, holds 0 rows" -- so the only way to
+tell them apart is to ask which question was asked. A rule that reads one side of a comparison in a unit
+it never verifies on the other side is the general shape, and the fix is a check on the unit rather than a
+better sentence about the numbers.
