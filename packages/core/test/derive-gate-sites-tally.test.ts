@@ -324,8 +324,15 @@ describe('the two baskets are a partition of the calls, not a remainder', { time
     // says the same thing five ways. The pair moving together is not the interesting part; the
     // interesting part is that this is the first site in the tree whose *subject* is a figure the
     // documents publish about their own measurement.
-    expect(calls).toBe(158);
-    expect(sites).toBe(140);
+    //
+    // 159/141 is v3.96's, and the pair moves together for the tenth round, for the same reason one
+    // degree further out: a document's language is a property nothing in this tree read, so the gate
+    // that reads it is one more script with one more exit -- the verdict `check-docs-language.mjs`
+    // hands to `process.exit`. What makes it worth a paragraph is that its *subject* is the documents
+    // themselves rather than a number they publish: the nine rounds before it each added a reader for a
+    // figure, and this one adds a reader for the sentence the figure is written in.
+    expect(calls).toBe(159);
+    expect(sites).toBe(141);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

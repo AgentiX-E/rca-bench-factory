@@ -338,6 +338,22 @@ const REGISTER: Record<string, Entry> = {
       'shrank their scope to 69 KB of 521 KB; a reader that names one path cannot see a document that ' +
       'became four files.',
   },
+  'check-docs-language.mjs': {
+    class: 'gate',
+    why:
+      'The verdict for docs-language.mjs: no markdown document in the tree carries a run of eight Han ' +
+      'characters outside a quotation. Three rounds of the progress log (v3.69, v3.83, v3.84) were ' +
+      'written in Chinese, and the twenty gates that read those documents ask about counts, citations, ' +
+      'volume boundaries and headings -- not one of them asks what language a sentence is in.',
+  },
+  'docs-language.mjs': {
+    class: 'data',
+    why:
+      'The reading the language verdict is built on: which files are documents, what a code span is when ' +
+      'its delimiter is two backticks, why a fence and a block quote are quotations rather than prose, and ' +
+      'where the threshold sits. No main and no exit -- check-docs-language.mjs holds the verdict and is ' +
+      'spawned, because a gate a test imports cannot be proved by emptying it.',
+  },
   'check-progress-volumes.mjs': {
     class: 'gate',
     why:
