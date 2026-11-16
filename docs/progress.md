@@ -438,12 +438,12 @@ document that described it as downloading the data was describing an intention.
 | --- | --- |
 | Commits (at `e22e2de`) | 536 |
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
-| Source files | 97 |
-| Source lines | 34,471 |
-| Test files | 254 core + 4 cli |
-| Test lines | 109,671 core + 3,242 cli |
-| Tests | 6,509 core + 187 cli |
-| Tracked files | 656 |
+| Source files | 98 |
+| Source lines | 34,609 |
+| Test files | 255 core + 4 cli |
+| Test lines | 109,881 core + 3,242 cli |
+| Tests | 6,523 core + 187 cli |
+| Tracked files | 659 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -527,7 +527,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.102: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.103: **25** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1269,14 +1269,21 @@ is a row about rather than paraphrase one that no `grep` will find.
   `history-dependency-upstream-5xx-pricing` claiming eighteen minutes over a thirty-minute post side
   and `history-dependency-schema-change-currency-feed` claiming a hundred and twenty over a hundred and
   fifty. Both windows moved to the time each file already named in its own prose.
-- **A case can satisfy the length rule by deleting the field.** `fault.durationParameter` is optional
+- ~~**A case can satisfy the length rule by deleting the field.**~~ `fault.durationParameter` is optional
   on purpose: nine of the corpus's fourteen time-valued parameters are knobs (`terminationGracePeriodSeconds`,
   `retentionGapHours`, `readyAfterSeconds`), and a rule that demanded a length would be a rule about the
   annotation's vocabulary. The cost is that a case which never names its length makes no claim and is
   refused by nothing -- so the rule is a statement about files that *do* claim one, and the run can only
   print how many do (`5 named as the length of their episode`).
-  `[open: a way to tell a knob from an episode without reading prose, which would make the field
-  mandatory in the cases where it applies rather than in all of them]`
+  ~~`[open: a way to tell a knob from an episode without reading prose, which would make the field
+  mandatory in the cases where it applies rather than in all of them]`~~
+  **Closed by finding 556**, which is that way: the answer is written on the parameter it describes
+  (`role: "episode"` or `role: "knob"`), so it is mandatory exactly where it applies -- a count and a share
+  have no role to give, and a role written on one is refused rather than ignored -- and
+  `fault.durationParameter` is gone rather than kept beside the word. A length that says neither is refused
+  by name, which is what closes the deletion, and `check-fault-cases` refuses a residual field where a file
+  still writes one. The entry's own counts were a count of cases (finding 555): the corpus writes
+  **seventeen** time-valued parameters across **fifteen** cases, five of them episodes and twelve knobs.
 - **A window can still outlive the sentence that describes it, when the sentence is prose.** The two
   repairs in v3.73 were each pointed at the right number by a *string*: a log body reading
   `degradation window 09:12-09:30 UTC` and a checkpoint description reading "the two hours between the
@@ -1613,7 +1620,7 @@ The split is by **run order**, not by size and not by subject. A round is read
 together with the round before it -- "the gate was right, the error recurred, and the
 reason was one step to the ..." is only a sentence if the previous round is there --
 so a volume holds a contiguous run of rounds and the volumes **tile** the log: the
-concatenation of the four files is the body that was moved, byte for byte.
+concatenation of the volumes is the body that was moved, byte for byte.
 `node scripts/check-progress-volumes.mjs` holds the tiling, the ordering, the size,
 and this table.
 
@@ -1633,7 +1640,8 @@ and this table.
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
-| [volume-15.md](progress/volume-15.md) | 19 | v3.84 | v3.102 |
+| [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
+| [volume-16.md](progress/volume-16.md) | 13 | v3.91 | v3.103 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

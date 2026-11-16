@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–554, from the rounds recorded in `progress/volume-15.md`.
+Findings 542–556, from the rounds recorded in `progress/volume-15.md` and `progress/volume-16.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -786,3 +786,75 @@ pointer cannot disagree with the thing it points at.
 **What it does not fix.** The exemption count in the following clause (**37**, two of them runtime) is a number of the
 same kind with the same absence of a reader. It is left because it has not moved since the pass that took it, and a
 repair that anticipates drift is not a repair this list has a witness for.
+
+## Finding 555 — the count that defended the length rule was a count of cases, and it was three short
+
+**The shape.** `fault.parameters` states a case's own facts, and the corpus writes seventeen of them in a
+unit of time. One of those is the fault's own length -- `burstMinutes: 6`, `splitDurationMinutes: 17`,
+`durationMinutes: 120` -- and the rest are settings the case ran under: `terminationGracePeriodSeconds`,
+`retentionGapHours`, `readyAfterSeconds`, `keysIntervalSeconds`. Every reader in the tree sees one shape:
+a number and a unit of time, and `util/unit.ts` answers `isConvertible(unit, 's')` the same way for all
+seventeen.
+
+**The number.** `docs/data-model.md` defended the rule that separated them with a count: *the corpus
+carries **fourteen** time-valued parameters and **five** of them are the episode -- the other nine are
+knobs*. Measured at v3.103 with the reader this round writes: **seventeen** parameters, across **fifteen**
+cases, of which **five** state the episode and **twelve** name a knob. Fourteen was the number of
+**cases** -- the one unit a reader would not have chosen, since the sentence's own arithmetic, fourteen
+minus five is nine, only works if the fourteen are parameters. The three that were missing are one case's
+two time-valued parameters and one case's single one (`history-config-ingress-timeout-partner-portal`
+declares `upstreamReadTimeout` and `previousUpstreamReadTimeout`; `history-runtime-pod-shutdown-webhook-dispatcher`
+declares the grace period and the drain). A sentence whose subject is a record of a dozen keys was counting
+the records.
+
+**Why it survived.** Nothing read it. The count was prose in the one document that publishes the
+vocabulary, and the guard printed a different number in a different unit (`5 named as the length of their
+episode`, cases) on every run -- so the two numbers never met. This is the campaign's recurring shape: a
+number that defends a rule, measured over a unit nobody stated, and read by nothing.
+
+**The repair is not the number.** Correcting fourteen to seventeen would leave the same sentence in the
+same place with one more digit. The repair is that the parameters now answer, so the count is taken by the
+gate: `check-fault-cases` prints `lengths 17 time-valued parameter(s): 5 state the episode, 12 name a
+knob, 0 say neither`, and the three add up by construction -- the episode count is the number of parameters
+that carry the word, the knob count is the number that carry the other, and the third number is what is
+left. The document's own sentence carries the same three numbers and says where fourteen came from.
+
+## Finding 556 — the answer to "which length is this" was a field a case could delete, and the deletion was printed as a reading
+
+**The shape.** The question "which of these seventeen numbers is how long the fault lasted" was answered by
+`fault.durationParameter`: one string naming one key. It was optional on purpose -- a case may hold only
+knobs, and demanding a length from a case that has none would be a rule about the annotation's vocabulary
+-- and the guard's response to its absence was to print how many cases had answered. `5 named as the
+length of their episode`. Nothing printed the twelve that had said nothing, and nothing could: a case that
+deleted the field was indistinguishable from a case that had never had a length.
+
+**The falsification, read off the code and the corpus rather than run.** With the field absent,
+`readDurationClaim` returned `{ parameter: null, episode: null, fault: null }` -- the shape of the field it was handed, before this round renamed the measurement -- and the guard pushed nothing;
+the only other reader of that key is the notes rule, which treats it as spoken for exactly while it is named
+as the length. Four of the five cases also cite the key from a configuration checkpoint, so deleting the
+field leaves them **green** and the run printing four. The fifth, `history-dependency-upstream-5xx-pricing`,
+cites `durationMinutes` nowhere else, so it would turn red -- for a missing note, which is the neighbouring
+rule catching an accident on its way past, and not the length rule being answered. The defect is not that the
+field was optional: it is that its absence was reported as a **reading**, which is the shape
+`fault/parameter-notes.ts` was written against one field over, where the silence of an undocumented key is
+refused rather than counted.
+
+**The repair.** The answer moves onto the parameter it describes. A quantity in a unit of time carries
+`role: "episode"` or `role: "knob"`, the vocabulary is a two-member tuple (`PARAMETER_ROLES`) that the
+reader admits a value against, and a length that says neither is refused by name -- so the way to silence
+the rule is closed rather than counted. The field itself is gone rather than kept beside the word, because
+two statements of one fact are two that drift: the same reasoning that removed a reading which carried both
+a value and a parameter (`readDeclaredReading`). A file that still writes `durationParameter` is refused
+where it is written, by name.
+
+**What the vocabulary costs.** The three refusals that belonged to a name -- not a name at all, a name the
+case does not declare, a name whose value is not a time -- are gone with the name: there is nothing left to
+spell wrongly. In their place is one refusal no name field could make, `role-without-time`, which is what a
+role on a `count` or a `%` is. Four refusals became three plus one, and the one that arrived is the one
+that closes the silence.
+
+**What it does not fix.** A case whose parameters hold no length at all is still not refused, and that is
+the deliberate half: it makes no claim. The asymmetry is now visible in the run's own line rather than in a
+sentence about the rule -- `0 time-valued parameter(s)` is printed, so a case that lost its lengths
+entirely is a corpus fact a reader can see, and `fault/parameter-role.ts` refuses only the case that holds
+a length and declines to say what it is.

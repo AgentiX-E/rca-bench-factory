@@ -736,16 +736,37 @@ quantity and the rule has nothing to say about it -- `splitDurationMinutes: 17` 
 eight is a fault that lasts seventeen minutes in a window whose post side is wider, and refusing it
 would be a rule about vocabulary rather than about arithmetic.
 
-`fault.durationParameter` is the field that ends the guessing that rule declined to do. The corpus
-carries **fourteen** time-valued parameters and **five** of them are the episode -- the other nine are
-knobs (`terminationGracePeriodSeconds` is a kubelet setting, `retentionGapHours: 31` is a gap the ticket
-measured, `readyAfterSeconds: 40` is how long a replacement took to serve). Naming the one that is the
-episode turns a number into a claim the samples can refute: `readDurationClaim` reads it against
-`hold x spacing`, in the parameter's own unit and to the millisecond, and refuses four things -- a name
-the case does not declare, a value that is not a quantity in a unit of time, a case whose series draw no
-excursion at all, and a number the episode contradicts. A case that names nothing is **not** refused:
-it makes no claim, which is the boundary `fault/parameter-notes.ts` draws from the other side, and the
-run prints how many cases answer rather than turning a silence into a pass.
+The case says which of its lengths is that episode, and it says it **on the parameter**: a quantity
+written in a unit of time carries one of two words, and the vocabulary is closed.
+
+| `role` | what the parameter states |
+| --- | --- |
+| `knob` | a setting the case ran under -- a grace period, a retention gap, a timeout |
+| `episode` | how long the fault itself lasted, which the samples are then held to |
+
+The shape is the parameter itself, and nothing above it:
+
+```json
+"burstMinutes": { "value": 6, "unit": "min", "role": "episode" }
+```
+
+The corpus carries **seventeen** time-valued parameters across **fifteen** cases, of which **five**
+state the episode and **twelve** name a knob (`terminationGracePeriodSeconds` is a kubelet setting,
+`retentionGapHours: 31` is a gap the ticket measured, `readyAfterSeconds: 40` is how long a
+replacement took to serve). Every one of the seventeen answers, and a case that writes a length and
+says nothing about it is refused -- which is the defect the field before this one had: it named a
+single parameter and it was optional, so a case could answer the length rule by deleting it, and the
+count printed beside the rule (*fourteen time-valued parameters, five of them the episode*) was the
+number of **cases** rather than of parameters (finding 555). A role on a parameter whose unit is not
+one of time is refused rather than ignored, because a count and a share are not lengths and neither
+word could describe them.
+
+The word turns a number into a claim the samples can refute: `readDurationClaim` reads it against
+`hold x spacing`, in the parameter's own unit and to the millisecond, and refuses three things -- a
+case whose series draw no excursion at all, a case whose series draw two different lengths, and a
+number the episode contradicts. A case whose parameters hold no length at all is **not** refused:
+it makes no claim, which is the boundary `fault/parameter-notes.ts` draws from the other side, and
+the run prints how many lengths answered rather than turning a silence into a pass.
 
 A series that never returns has a length too, and it is the whole post side: an absent `hold` means all
 eight samples and an absent `noise` still says the value is exact. Two cases had written *"the readings

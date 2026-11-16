@@ -311,10 +311,11 @@ const parameterUse = {
   /**
    * Every parameter written in a unit of time, and how each one answered the question.
    *
-   * `knob` and `duration` are the two answers and they partition `timed`; the three are printed
-   * together so that the partition is checked by the run rather than assumed by the sentence. Before
-   * v3.103 the answer was one optional field, and the sentence that defended it -- *fourteen
-   * time-valued parameters, of which five are the episode* -- counted cases.
+   * `knob` counts parameters and `duration` counts cases -- the same number, because a case declares
+   * at most one episode, and the run prints all three so the partition of `timed` is checked rather
+   * than assumed by the sentence. Before v3.103 the answer was one optional field, and the sentence
+   * that defended it -- *fourteen time-valued parameters, of which five are the episode* -- counted
+   * cases while saying parameters, which is the defect that brought this counter here.
    */
   timed: 0,
   knob: 0,
