@@ -670,7 +670,7 @@ const cloudOpsBench = {
     'The scored artefact is `metadata.json`, whose `result` triple is ' +
     '⟨Stage, Component, Root Cause⟩ = ⟨fault_taxonomy, fault_object, root_cause⟩.',
   timezone: 'Not applicable - metadata.json carries no timestamps.',
-  scoringNote: '`checkCloudOpsBenchStructure` verifies at least one case exists and the metadata shape (namespace, query, difficulty, result triple). `difficulty` and `fault_taxonomy` are also checked against their vocabularies rather than against `typeof` alone.',
+  scoringNote: '`checkCloudOpsBenchStructure` verifies at least one case exists and the metadata shape (namespace, query, difficulty, result triple). `difficulty` and `fault_taxonomy` are also checked against their vocabularies rather than against `typeof` alone, and `difficulty_floor` against the same vocabulary where it is present -- present-or-absent is a statement about provenance, not about validity.',
   boundaries: [
     '`tool_cache.json`, `k8s_states.json` and `code/` require a live Kubernetes snapshot and are not produced from a static IR.',
     '`process-label/` and `golden-trajectory/` require expert annotation and are out of scope.',
@@ -685,7 +685,8 @@ const cloudOpsBench = {
       fields: [
         { name: 'namespace', type: T.str, required: true, source: 'FaultCase.system', notes: 'The k8s namespace / system under test.' },
         { name: 'query', type: T.str, required: true, source: 'FaultCase.query ?? GroundTruth.rootCauseReason', notes: '' },
-        { name: 'difficulty', type: T.str, required: true, source: 'difficultyFor(FaultCase.difficulty)', notes: 'L1->easy, L2->medium, L3/L4->hard, unset->medium. Declared as DIFFICULTIES, shared with itbench\'s scenario_complexity.' },
+        { name: 'difficulty', type: T.str, required: true, source: 'difficultyFor(FaultCase.difficulty)', notes: 'L1->easy, L2->medium, L3/L4->hard, unset->medium. Declared as DIFFICULTIES, shared with itbench\'s scenario_complexity. The level the case *claims*: a judgement, which `fault.difficultyNote` defends when it exceeds the floor.' },
+        { name: 'difficulty_floor', type: T.str, required: true, source: 'difficultyFor(difficultyFloor({ case, graph }))', notes: 'easy | medium | hard. The level the case\'s own chain and breadth support at the least, in the same vocabulary as `difficulty`; both words come from `projectDifficulty`, so the pair is one projection rather than two. This key is an extension to the upstream contract: `checkCloudOpsBenchStructure` validates it where it is present and never demands it, because a `metadata.json` the benchmark itself produced carries none.' },
         { name: 'result.fault_taxonomy', type: T.str, required: true, source: 'TAXONOMY_BY_CATEGORY[fault.category]', notes: 'Performance_Fault | Infrastructure_Fault | Runtime_Fault | Service_Fault | Code_Fault | Startup_Fault. Declared as CLOUD_OPSBENCH_TAXONOMIES, the projection table\'s deduplicated image: eight rows produce six words, because middleware and dependency share Service_Fault and runtime and unknown share Runtime_Fault.' },
         { name: 'result.fault_object', type: T.str, required: true, source: 'GroundTruth.rootCauseComponent', notes: 'The scored component.' },
         { name: 'result.root_cause', type: T.str, required: true, source: 'normalizeFaultType(fault.type).replace(/-/g, "_")', notes: 'snake_case root-cause token, e.g. `cpu_stress`.' },
@@ -713,7 +714,7 @@ const itbench = {
     'records the entities in the propagation chain, the chain itself and the fault conditions - a ' +
     'one-to-one match with the IR GroundTruth triple.',
   timezone: 'Not applicable - scenario.json carries no timestamps.',
-  scoringNote: '`checkItBenchStructure` verifies at least one scenario exists and the scenario shape (name, description, domain, class, complexity, groundtruth). `scenario_domain`, `scenario_class` and `scenario_complexity` are also checked against their vocabularies rather than against `typeof` alone.',
+  scoringNote: '`checkItBenchStructure` verifies at least one scenario exists and the scenario shape (name, description, domain, class, complexity, groundtruth). `scenario_domain`, `scenario_class` and `scenario_complexity` are also checked against their vocabularies rather than against `typeof` alone, and `scenario_complexity_floor` against the same vocabulary where it is present.',
   boundaries: [
     'Only the SRE persona is targeted (`scenario_domain = "SRE"`); CISO and FinOps are out of scope.',
     'The ITBench-Lite snapshot body (alerts/, metrics/, k8s_events_raw.tsv, otel_logs_raw.tsv, ...) is a frozen cluster snapshot and is not produced from a static IR.',
@@ -730,7 +731,8 @@ const itbench = {
         { name: 'scenario_description', type: T.str, required: true, source: 'FaultCase.query ?? GroundTruth.rootCauseReason', notes: '' },
         { name: 'scenario_domain', type: T.str, required: true, source: 'constant "SRE"', notes: 'Only the SRE persona is targeted; CISO and FinOps are real ITBench personas this converter does not emit. Declared as ITBENCH_SCENARIO_DOMAINS.' },
         { name: 'scenario_class', type: T.str, required: true, source: 'CLASS_BY_CATEGORY[fault.category]', notes: 'HighCPU | NetworkPartition | CrashLoopBackOff | ServiceDegradation | CorruptImage | Misconfiguration | DependencyFailure | Unknown. Declared as ITBENCH_SCENARIO_CLASSES, the projection table\'s deduplicated image.' },
-        { name: 'scenario_complexity', type: T.str, required: true, source: 'difficultyFor(FaultCase.difficulty)', notes: 'easy | medium | hard. Declared as DIFFICULTIES, shared with cloud-opsbench\'s difficulty -- one rule, two field names.' },
+        { name: 'scenario_complexity', type: T.str, required: true, source: 'difficultyFor(FaultCase.difficulty)', notes: 'easy | medium | hard. Declared as DIFFICULTIES, shared with cloud-opsbench\'s difficulty -- one rule, two field names. The level the case *claims*.' },
+        { name: 'scenario_complexity_floor', type: T.str, required: true, source: 'difficultyFor(difficultyFloor({ case, graph }))', notes: 'easy | medium | hard. The level the case\'s own chain and breadth support at the least, projected from `projectDifficulty` beside the claim -- the same pair cloud-opsbench publishes as `difficulty`/`difficulty_floor`. An extension to the upstream contract, validated where present and never demanded.' },
         { name: 'scenario_groundtruth.parameters', type: T.obj, required: true, source: 'FaultCase.fault.parameters ?? {}', notes: 'The injection declaration a `configuration` condition\'s reference names. Beside `diagnosis` rather than inside it: the diagnosis block is the three facets the SRE evaluator reads.' },
         { name: 'scenario_groundtruth.diagnosis.entities[]', type: 'string[]', required: true, source: 'rootCauseEntityId + chain endpoints', notes: 'Deduplicated, root cause first.' },
         { name: 'scenario_groundtruth.diagnosis.fault_propagation_chain[]', type: T.arr, required: true, source: 'GroundTruth.causalChain', notes: '' },

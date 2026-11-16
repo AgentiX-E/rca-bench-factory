@@ -371,7 +371,9 @@ export {
 export {
   DIFFICULTIES,
   difficultyFor,
+  projectDifficulty,
   type Difficulty,
+  type DifficultyProjection,
 } from './export/difficulty.js';
 
 export {

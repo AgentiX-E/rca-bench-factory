@@ -836,6 +836,12 @@ export const ITBENCH_SCENARIO_DOMAINS: readonly string[] = [ITBENCH_SRE_DOMAIN];
  * exporter cannot produce is refused here rather than at scoring time. The State
  * Snapshot body (`tool_cache`, `k8s_states`, `code`) is intentionally out of
  * scope and is not asserted here.
+ *
+ * `difficulty_floor` is this repository's extension to the contract (finding 553), so it is validated
+ * **where it is present** and never demanded. A `metadata.json` the upstream benchmark produced
+ * carries no such key, and a check that refused one would score the reference corpus as malformed;
+ * a present key that is not one of the three words is refused here for the same reason
+ * `difficulty` is.
  */
 export function checkCloudOpsBenchStructure(files: Record<string, string>): StructureReport {
   const checks: ScoreCheck[] = [];
@@ -872,11 +878,23 @@ export function checkCloudOpsBenchStructure(files: Record<string, string>): Stru
     if (!isVocabularyMember(DIFFICULTIES, meta.difficulty)) {
       metadataOk = false;
     }
+    if (
+      meta.difficulty_floor !== undefined &&
+      (typeof meta.difficulty_floor !== 'string' || !isVocabularyMember(DIFFICULTIES, meta.difficulty_floor))
+    ) {
+      metadataOk = false;
+    }
     if (!isVocabularyMember(CLOUD_OPSBENCH_TAXONOMIES, result.fault_taxonomy)) {
       metadataOk = false;
     }
   }
-  checks.push(check('metadata-shape', metadataOk, 'namespace/query/difficulty + result triple strings, difficulty and fault_taxonomy in their vocabularies'));
+  checks.push(
+    check(
+      'metadata-shape',
+      metadataOk,
+      'namespace/query/difficulty + result triple strings, difficulty and fault_taxonomy in their vocabularies, and difficulty_floor in the same vocabulary where present',
+    ),
+  );
 
   return { target: 'cloud-opsbench', passed: checks.every((c) => c.passed), checks };
 }
@@ -929,6 +947,14 @@ export function checkItBenchStructure(files: Record<string, string>): StructureR
     if (!isVocabularyMember(DIFFICULTIES, obj.scenario_complexity)) {
       shapeOk = false;
     }
+    // Present-or-absent is a statement about provenance, not about validity: see `checkCloudOpsBenchStructure`.
+    if (
+      obj.scenario_complexity_floor !== undefined &&
+      (typeof obj.scenario_complexity_floor !== 'string' ||
+        !isVocabularyMember(DIFFICULTIES, obj.scenario_complexity_floor))
+    ) {
+      shapeOk = false;
+    }
     const diagnosis = (obj.scenario_groundtruth as Record<string, unknown>).diagnosis;
     if (
       !isRecord(diagnosis) ||
@@ -939,7 +965,13 @@ export function checkItBenchStructure(files: Record<string, string>): StructureR
       shapeOk = false;
     }
   }
-  checks.push(check('scenario-shape', shapeOk, 'scenario metadata + diagnosis ground truth shape, with domain/class/complexity in their vocabularies'));
+  checks.push(
+    check(
+      'scenario-shape',
+      shapeOk,
+      'scenario metadata + diagnosis ground truth shape, with domain/class/complexity in their vocabularies and scenario_complexity_floor in the same vocabulary where present',
+    ),
+  );
 
   return { target: 'itbench', passed: checks.every((c) => c.passed), checks };
 }

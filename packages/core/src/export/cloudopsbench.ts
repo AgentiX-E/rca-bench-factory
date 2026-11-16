@@ -1,8 +1,8 @@
 import { normalizeFaultType } from '../fault/collector.js';
-import type { FaultCase, FaultCategory, IrBundle } from '../ir/types.js';
+import type { EntityGraph, FaultCase, FaultCategory, IrBundle } from '../ir/types.js';
 import type { ExportOutcome, ExportedFiles, SkippedCase } from './openrca.js';
 import { assertExportableBundle } from './guard.js';
-import { difficultyFor } from './difficulty.js';
+import { projectDifficulty } from './difficulty.js';
 
 /**
  * Cloud-OpsBench exporter (outcome ground-truth contract).
@@ -69,11 +69,16 @@ function rootCauseFor(faultType: string): string {
 }
 
 /** Build the `metadata.json` object for one case. */
-export function buildCloudOpsBenchMetadata(fc: FaultCase): Record<string, unknown> {
+export function buildCloudOpsBenchMetadata(fc: FaultCase, graph: EntityGraph): Record<string, unknown> {
+  const level = projectDifficulty({ case: fc, graph });
   return {
     namespace: fc.system,
     query: fc.query ?? fc.groundTruth.rootCauseReason,
-    difficulty: difficultyFor(fc.difficulty),
+    // The level the case claims, then the level its own structure supports. The second key is the
+    // repair for finding 553: `difficulty` alone published a judgement in a field a consumer reads
+    // as a measurement, and six of the thirty-four shipped cases claim above their floor.
+    difficulty: level.difficulty,
+    difficulty_floor: level.floor,
     result: {
       fault_taxonomy: TAXONOMY_BY_CATEGORY[fc.fault.category],
       fault_object: fc.groundTruth.rootCauseComponent,
@@ -99,7 +104,8 @@ export function exportCloudOpsBench(bundle: IrBundle): ExportOutcome {
       skipped.push({ caseId: fc.caseId, reason: 'missing root-cause component' });
       continue;
     }
-    files[`cases/${fc.caseId}/metadata.json`] = JSON.stringify(buildCloudOpsBenchMetadata(fc), null, 2) + '\n';
+    files[`cases/${fc.caseId}/metadata.json`] =
+      JSON.stringify(buildCloudOpsBenchMetadata(fc, bundle.graph), null, 2) + '\n';
   }
 
   return { files, skipped };

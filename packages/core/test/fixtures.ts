@@ -184,3 +184,76 @@ export function validBundle(overrides: Partial<IrBundle> = {}): IrBundle {
     ...overrides,
   };
 }
+
+/**
+ * A one-step chain over two entity kinds: the weakest structure that earns `L2`.
+ *
+ * `validCase`'s chain runs service to service, so it touches one kind and its floor is `L1`. The
+ * difference between the two fixtures is the floor, which is the fact a projection that publishes
+ * one word is unable to state (finding 553).
+ */
+export function twoKindBundle(): IrBundle {
+  const base = validCase();
+  return {
+    irVersion: '2.0',
+    graph: {
+      entities: [
+        { entityId: 'pod:default/order-abc', kind: 'pod', name: 'order-abc', namespace: 'default', aliases: [] },
+        { entityId: 'service:default/order', kind: 'service', name: 'order', namespace: 'default', aliases: [] },
+      ],
+      edges: [{ from: 'pod:default/order-abc', to: 'service:default/order', relation: 'member-of' }],
+    },
+    cases: [
+      {
+        ...base,
+        groundTruth: {
+          ...base.groundTruth,
+          rootCauseEntityId: 'pod:default/order-abc',
+          causalChain: [
+            {
+              step: 1,
+              fromEntityId: 'pod:default/order-abc',
+              toEntityId: 'service:default/order',
+              mechanism: 'the saturated container degraded the service it belongs to',
+              evidenceRefs: ['cp-1'],
+            },
+          ],
+        },
+      },
+    ],
+    signals: { 'case-001': cpuSignals() },
+  };
+}
+
+/**
+ * The baseline case with a three-step chain, which earns `L4` whatever the annotation says.
+ *
+ * Depth decides above one step, so this fixture's floor does not move when the label does -- the
+ * property that lets a test tell a floor read from the chain apart from one read from the claim.
+ */
+export function threeStepBundle(): IrBundle {
+  const base = validBundle();
+  const step = (n: number, from: string, to: string) => ({
+    step: n,
+    fromEntityId: from,
+    toEntityId: to,
+    mechanism: 'propagated to the next entity',
+    evidenceRefs: ['cp-1'],
+  });
+  return {
+    ...base,
+    cases: [
+      {
+        ...base.cases[0]!,
+        groundTruth: {
+          ...base.cases[0]!.groundTruth,
+          causalChain: [
+            step(1, 'service:default/order', 'service:default/cart'),
+            step(2, 'service:default/cart', 'service:default/order'),
+            step(3, 'service:default/order', 'service:default/cart'),
+          ],
+        },
+      },
+    ],
+  };
+}

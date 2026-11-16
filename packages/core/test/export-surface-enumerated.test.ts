@@ -656,6 +656,10 @@ const TESTED = [
   // produces both.
   'DIFFICULTIES',
   'difficultyFor',
+  // The pair a contract publishes about one case's level: the claim and the floor under it. Exported
+  // because it is what both exporters read, so the pairing is asserted as a function rather than
+  // inferred from two artefacts having to agree (finding 553).
+  'projectDifficulty',
   // export/itbench.ts
   'ITBENCH_TARGET_ID',
   'ITBENCH_CONTRACT_VERSION',

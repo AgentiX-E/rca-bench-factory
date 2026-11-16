@@ -811,6 +811,33 @@ describe('checkCloudOpsBenchStructure', () => {
     );
     expect(report.checks.find((c) => c.id === 'metadata-shape')?.passed).toBe(false);
   });
+  /**
+   * `difficulty_floor` is the extension v3.102 added beside the claim, and the check treats it the
+   * way it treats `difficulty` in one direction and differently in the other: a present word is held
+   * to the vocabulary, and an absent key is not a defect. The asymmetry is the whole contract -- a
+   * `metadata.json` the upstream benchmark produced carries no such key, so demanding one would
+   * score the reference corpus as malformed, while ignoring a present word outside the three would
+   * let a payload this exporter cannot produce pass as conformant.
+   */
+  it.each(DIFFICULTIES)('accepts the emitted floor %s beside the claim', (word) => {
+    expect(checkCloudOpsBenchStructure(cobFilesWith({ difficulty_floor: word })).passed).toBe(true);
+  });
+
+  it('refuses a floor outside the vocabulary, and a floor that is not a word', () => {
+    for (const floor of ['trivial', 'L4', 3, null]) {
+      const report = checkCloudOpsBenchStructure(cobFilesWith({ difficulty_floor: floor }));
+      expect(report.checks.find((c) => c.id === 'metadata-shape')?.passed, String(floor)).toBe(false);
+    }
+  });
+
+  it('does not demand the floor, because a file the upstream benchmark wrote has none', () => {
+    const files = cobFiles();
+    const meta = JSON.parse(files['cases/case-001/metadata.json']!) as Record<string, unknown>;
+    delete meta.difficulty_floor;
+    files['cases/case-001/metadata.json'] = JSON.stringify(meta);
+    expect(checkCloudOpsBenchStructure(files).passed).toBe(true);
+  });
+
 });
 
 describe('checkOpenRca2Structure', () => {
@@ -979,6 +1006,21 @@ describe('checkItBenchStructure', () => {
     files['scenarios/case-001/scenario.json'] = JSON.stringify(obj);
     const report = checkItBenchStructure(files);
     expect(report.checks.find((c) => c.id === 'scenario-shape')?.passed).toBe(false);
+  });
+  it.each(DIFFICULTIES)('accepts the emitted floor %s beside the complexity claim', (word) => {
+    expect(checkItBenchStructure(itbFilesWith('scenario_complexity_floor', word)).passed).toBe(true);
+  });
+
+  it('refuses a floor outside the vocabulary, and does not demand one', () => {
+    for (const floor of ['trivial', 'L4', 3]) {
+      const report = checkItBenchStructure(itbFilesWith('scenario_complexity_floor', floor));
+      expect(report.checks.find((c) => c.id === 'scenario-shape')?.passed, String(floor)).toBe(false);
+    }
+    const files = itbFiles();
+    const obj = JSON.parse(files['scenarios/case-001/scenario.json']!) as Record<string, unknown>;
+    delete obj.scenario_complexity_floor;
+    files['scenarios/case-001/scenario.json'] = JSON.stringify(obj);
+    expect(checkItBenchStructure(files).passed).toBe(true);
   });
 });
 

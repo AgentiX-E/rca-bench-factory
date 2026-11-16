@@ -1,9 +1,9 @@
-import type { FaultCase, FaultCategory, GroundTruth, IrBundle } from '../ir/types.js';
+import type { EntityGraph, FaultCase, FaultCategory, GroundTruth, IrBundle } from '../ir/types.js';
 import type { ExportOutcome, ExportedFiles, SkippedCase } from './openrca.js';
 import { assertExportableBundle } from './guard.js';
 import { buildEntityIndex, type EntityIndex } from './rca100.js';
 import { assertSignalRef, screenSignalRefs } from './signal-ref.js';
-import { difficultyFor } from './difficulty.js';
+import { projectDifficulty } from './difficulty.js';
 
 /**
  * ITBench exporter (SRE Diagnosis reasoning contract).
@@ -121,14 +121,23 @@ function faultConditions(gt: GroundTruth, index: EntityIndex, caseId: string): A
 }
 
 /** Build the `scenario.json` object for one case. */
-export function buildItBenchScenarioSpec(fc: FaultCase, index: EntityIndex): Record<string, unknown> {
+export function buildItBenchScenarioSpec(
+  fc: FaultCase,
+  index: EntityIndex,
+  graph: EntityGraph,
+): Record<string, unknown> {
   const gt = fc.groundTruth;
+  const level = projectDifficulty({ case: fc, graph });
   return {
     scenario_name: fc.caseId,
     scenario_description: fc.query ?? gt.rootCauseReason,
     scenario_domain: ITBENCH_SRE_DOMAIN,
     scenario_class: CLASS_BY_CATEGORY[fc.fault.category],
-    scenario_complexity: difficultyFor(fc.difficulty),
+    // The case's claim, then the floor its own chain supports -- the same pair `cloud-opsbench`
+    // publishes as `difficulty`/`difficulty_floor`, projected once in `export/difficulty.ts`
+    // (finding 553).
+    scenario_complexity: level.difficulty,
+    scenario_complexity_floor: level.floor,
     scenario_groundtruth: {
       diagnosis: {
         entities: diagnosisEntities(gt),
@@ -173,7 +182,7 @@ export function exportItBench(bundle: IrBundle): ExportOutcome {
       skipped.push({ caseId: fc.caseId, reason: refusal.message });
       continue;
     }
-    files[`scenarios/${fc.caseId}/scenario.json`] = JSON.stringify(buildItBenchScenarioSpec(fc, index), null, 2) + '\n';
+    files[`scenarios/${fc.caseId}/scenario.json`] = JSON.stringify(buildItBenchScenarioSpec(fc, index, bundle.graph), null, 2) + '\n';
   }
 
   return { files, skipped };

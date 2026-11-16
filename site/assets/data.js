@@ -1927,7 +1927,7 @@ window.RBF_DATA = {
       "tagline": "Agentic State-Snapshot benchmark with an outcome ground-truth triple.",
       "summary": "Each case is an agent-facing State Snapshot (tool cache, k8s states, logs, metrics, trimmed source). The scored artefact is `metadata.json`, whose `result` triple is ⟨Stage, Component, Root Cause⟩ = ⟨fault_taxonomy, fault_object, root_cause⟩.",
       "timezone": "Not applicable - metadata.json carries no timestamps.",
-      "scoringNote": "`checkCloudOpsBenchStructure` verifies at least one case exists and the metadata shape (namespace, query, difficulty, result triple). `difficulty` and `fault_taxonomy` are also checked against their vocabularies rather than against `typeof` alone.",
+      "scoringNote": "`checkCloudOpsBenchStructure` verifies at least one case exists and the metadata shape (namespace, query, difficulty, result triple). `difficulty` and `fault_taxonomy` are also checked against their vocabularies rather than against `typeof` alone, and `difficulty_floor` against the same vocabulary where it is present -- present-or-absent is a statement about provenance, not about validity.",
       "boundaries": [
         "`tool_cache.json`, `k8s_states.json` and `code/` require a live Kubernetes snapshot and are not produced from a static IR.",
         "`process-label/` and `golden-trajectory/` require expert annotation and are out of scope.",
@@ -1959,7 +1959,14 @@ window.RBF_DATA = {
               "type": "string",
               "required": true,
               "source": "difficultyFor(FaultCase.difficulty)",
-              "notes": "L1->easy, L2->medium, L3/L4->hard, unset->medium. Declared as DIFFICULTIES, shared with itbench's scenario_complexity."
+              "notes": "L1->easy, L2->medium, L3/L4->hard, unset->medium. Declared as DIFFICULTIES, shared with itbench's scenario_complexity. The level the case *claims*: a judgement, which `fault.difficultyNote` defends when it exceeds the floor."
+            },
+            {
+              "name": "difficulty_floor",
+              "type": "string",
+              "required": true,
+              "source": "difficultyFor(difficultyFloor({ case, graph }))",
+              "notes": "easy | medium | hard. The level the case's own chain and breadth support at the least, in the same vocabulary as `difficulty`; both words come from `projectDifficulty`, so the pair is one projection rather than two. This key is an extension to the upstream contract: `checkCloudOpsBenchStructure` validates it where it is present and never demands it, because a `metadata.json` the benchmark itself produced carries none."
             },
             {
               "name": "result.fault_taxonomy",
@@ -2013,7 +2020,7 @@ window.RBF_DATA = {
       "tagline": "Scenario specification with a diagnosis ground truth: entities, propagation chain, fault conditions.",
       "summary": "ITBench evaluates agents on live IT automation tasks. For the SRE Diagnosis task the ground truth records the entities in the propagation chain, the chain itself and the fault conditions - a one-to-one match with the IR GroundTruth triple.",
       "timezone": "Not applicable - scenario.json carries no timestamps.",
-      "scoringNote": "`checkItBenchStructure` verifies at least one scenario exists and the scenario shape (name, description, domain, class, complexity, groundtruth). `scenario_domain`, `scenario_class` and `scenario_complexity` are also checked against their vocabularies rather than against `typeof` alone.",
+      "scoringNote": "`checkItBenchStructure` verifies at least one scenario exists and the scenario shape (name, description, domain, class, complexity, groundtruth). `scenario_domain`, `scenario_class` and `scenario_complexity` are also checked against their vocabularies rather than against `typeof` alone, and `scenario_complexity_floor` against the same vocabulary where it is present.",
       "boundaries": [
         "Only the SRE persona is targeted (`scenario_domain = \"SRE\"`); CISO and FinOps are out of scope.",
         "The ITBench-Lite snapshot body (alerts/, metrics/, k8s_events_raw.tsv, otel_logs_raw.tsv, ...) is a frozen cluster snapshot and is not produced from a static IR.",
@@ -2059,7 +2066,14 @@ window.RBF_DATA = {
               "type": "string",
               "required": true,
               "source": "difficultyFor(FaultCase.difficulty)",
-              "notes": "easy | medium | hard. Declared as DIFFICULTIES, shared with cloud-opsbench's difficulty -- one rule, two field names."
+              "notes": "easy | medium | hard. Declared as DIFFICULTIES, shared with cloud-opsbench's difficulty -- one rule, two field names. The level the case *claims*."
+            },
+            {
+              "name": "scenario_complexity_floor",
+              "type": "string",
+              "required": true,
+              "source": "difficultyFor(difficultyFloor({ case, graph }))",
+              "notes": "easy | medium | hard. The level the case's own chain and breadth support at the least, projected from `projectDifficulty` beside the claim -- the same pair cloud-opsbench publishes as `difficulty`/`difficulty_floor`. An extension to the upstream contract, validated where present and never demanded."
             },
             {
               "name": "scenario_groundtruth.parameters",
@@ -2651,7 +2665,7 @@ window.RBF_DATA = {
     "cloud-opsbench": {
       "id": "cloud-opsbench",
       "files": {
-        "cases/case-001/metadata.json": "{\n  \"namespace\": \"order-prod\",\n  \"query\": \"A failure was detected between 08:00 and 08:30 UTC+8. Identify the affected component, when it occurred within that window, and the reason.\",\n  \"difficulty\": \"medium\",\n  \"result\": {\n    \"fault_taxonomy\": \"Performance_Fault\",\n    \"fault_object\": \"order\",\n    \"root_cause\": \"cpu\"\n  }\n}\n"
+        "cases/case-001/metadata.json": "{\n  \"namespace\": \"order-prod\",\n  \"query\": \"A failure was detected between 08:00 and 08:30 UTC+8. Identify the affected component, when it occurred within that window, and the reason.\",\n  \"difficulty\": \"medium\",\n  \"difficulty_floor\": \"easy\",\n  \"result\": {\n    \"fault_taxonomy\": \"Performance_Fault\",\n    \"fault_object\": \"order\",\n    \"root_cause\": \"cpu\"\n  }\n}\n"
       },
       "skipped": [],
       "report": {
@@ -2670,7 +2684,7 @@ window.RBF_DATA = {
             {
               "id": "metadata-shape",
               "passed": true,
-              "detail": "namespace/query/difficulty + result triple strings, difficulty and fault_taxonomy in their vocabularies"
+              "detail": "namespace/query/difficulty + result triple strings, difficulty and fault_taxonomy in their vocabularies, and difficulty_floor in the same vocabulary where present"
             }
           ]
         },
@@ -2686,7 +2700,7 @@ window.RBF_DATA = {
     "itbench": {
       "id": "itbench",
       "files": {
-        "scenarios/case-001/scenario.json": "{\n  \"scenario_name\": \"case-001\",\n  \"scenario_description\": \"A failure was detected between 08:00 and 08:30 UTC+8. Identify the affected component, when it occurred within that window, and the reason.\",\n  \"scenario_domain\": \"SRE\",\n  \"scenario_class\": \"HighCPU\",\n  \"scenario_complexity\": \"medium\",\n  \"scenario_groundtruth\": {\n    \"diagnosis\": {\n      \"entities\": [\n        \"service:default/order\",\n        \"service:default/cart\"\n      ],\n      \"fault_propagation_chain\": [\n        {\n          \"step\": 1,\n          \"from_entity\": \"service:default/order\",\n          \"to_entity\": \"service:default/cart\",\n          \"mechanism\": \"thread pool exhaustion propagated to the downstream cart service\"\n        }\n      ],\n      \"fault_conditions\": [\n        {\n          \"checkpoint_id\": \"cp-1\",\n          \"entity\": \"service:default/order\",\n          \"signal_ref\": \"order|cpu_usage\",\n          \"comparator\": \">\",\n          \"value\": 90,\n          \"unit\": \"%\",\n          \"description\": \"CPU usage exceeds 90 percent\"\n        }\n      ]\n    },\n    \"parameters\": {\n      \"intensity\": 90\n    }\n  }\n}\n"
+        "scenarios/case-001/scenario.json": "{\n  \"scenario_name\": \"case-001\",\n  \"scenario_description\": \"A failure was detected between 08:00 and 08:30 UTC+8. Identify the affected component, when it occurred within that window, and the reason.\",\n  \"scenario_domain\": \"SRE\",\n  \"scenario_class\": \"HighCPU\",\n  \"scenario_complexity\": \"medium\",\n  \"scenario_complexity_floor\": \"easy\",\n  \"scenario_groundtruth\": {\n    \"diagnosis\": {\n      \"entities\": [\n        \"service:default/order\",\n        \"service:default/cart\"\n      ],\n      \"fault_propagation_chain\": [\n        {\n          \"step\": 1,\n          \"from_entity\": \"service:default/order\",\n          \"to_entity\": \"service:default/cart\",\n          \"mechanism\": \"thread pool exhaustion propagated to the downstream cart service\"\n        }\n      ],\n      \"fault_conditions\": [\n        {\n          \"checkpoint_id\": \"cp-1\",\n          \"entity\": \"service:default/order\",\n          \"signal_ref\": \"order|cpu_usage\",\n          \"comparator\": \">\",\n          \"value\": 90,\n          \"unit\": \"%\",\n          \"description\": \"CPU usage exceeds 90 percent\"\n        }\n      ]\n    },\n    \"parameters\": {\n      \"intensity\": 90\n    }\n  }\n}\n"
       },
       "skipped": [],
       "report": {
@@ -2705,7 +2719,7 @@ window.RBF_DATA = {
             {
               "id": "scenario-shape",
               "passed": true,
-              "detail": "scenario metadata + diagnosis ground truth shape, with domain/class/complexity in their vocabularies"
+              "detail": "scenario metadata + diagnosis ground truth shape, with domain/class/complexity in their vocabularies and scenario_complexity_floor in the same vocabulary where present"
             }
           ]
         },

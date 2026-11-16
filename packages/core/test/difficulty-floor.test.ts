@@ -3,6 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { difficultyFloor, findDifficultyShortfalls, readDifficultyClaim, describeDifficultyClaimFault } from '../src/fault/difficulty.js';
+import { projectDifficulty, type Difficulty } from '../src/export/difficulty.js';
 import { checkDifficultyDistribution } from '../src/gates/gates.js';
 import type { Entity, EntityGraph, FaultCase } from '../src/ir/types.js';
 
@@ -517,5 +518,39 @@ describe('the shipped corpus · the labels and the ladder', () => {
     expect(at(earned.length * 10 + 1), 'five of fifty-one is below it').toEqual([
       'DIFFICULTY_SKEWED_HARD',
     ]);
+  });
+
+  it('publishes, for every case, the two words the exporters write -- and six pairs differ', () => {
+    // The guard reads the claim and the structure; the artefacts publish both. This is the only place
+    // the two readings are asserted *as the pair a consumer receives*, and it is the reading
+    // v3.102 bought: before it, `difficulty` and `scenario_complexity` carried the claim alone, so a
+    // judgement sat in a field a reader has every reason to take as a measurement (finding 553).
+    const pairs = shipped.map((one) => ({
+      caseId: one.caseId,
+      ...projectDifficulty({ case: one, graph: shippedGraph }),
+    }));
+    const rank: Record<Difficulty, number> = { easy: 0, medium: 1, hard: 2 };
+    // The direction that makes the second word readable: a floor above its claim is a case the corpus
+    // guard refuses, so it cannot appear in anything this repository exports.
+    for (const pair of pairs) expect(rank[pair.floor], pair.caseId).toBeLessThanOrEqual(rank[pair.difficulty]);
+    // Six pairs differ, and they are the six claims above the floor named earlier in this file: the
+    // pair is not a relabelling of the labels, it is the same two facts the guard reads.
+    expect(pairs.filter((pair) => pair.floor !== pair.difficulty).map((pair) => pair.caseId).sort()).toEqual([
+      'history-cart-network-delay',
+      'history-config-feature-flag-checkout',
+      'history-config-rate-cache-ttl-pricing',
+      'history-queue-disk-watermark-batch-drain',
+      'history-queue-watermark-ledger-writer',
+      'history-unhandled-exception-export',
+    ]);
+    // The headline: the case that claims L4 over a single step ships as `hard` and its floor is
+    // `medium`. That one pair is the whole defect, and the fourth assertion is that it is one pair
+    // and not a general drift -- twenty-eight cases print the same word twice.
+    expect(pairs.find((pair) => pair.caseId === 'history-config-rate-cache-ttl-pricing')).toEqual({
+      caseId: 'history-config-rate-cache-ttl-pricing',
+      difficulty: 'hard',
+      floor: 'medium',
+    });
+    expect(pairs.filter((pair) => pair.floor === pair.difficulty)).toHaveLength(shipped.length - 6);
   });
 });
