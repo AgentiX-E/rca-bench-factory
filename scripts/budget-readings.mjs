@@ -1,54 +1,25 @@
-#!/usr/bin/env node
 /**
  * What a test file says about its own clock, read from its source.
  *
- * This is a **data module**: it computes and it settles nothing. `check-test-budgets.mjs`
- * holds the verdict, and `timeout-budget.test.ts` reads the same functions from here.
- * That split is not tidiness -- a gate is proved by being emptied, so a test that
- * imports one cannot prove it (the meta-gate reports `UNATTRIBUTED`), and the one time
- * this repository broke the rule the readings were **copied** instead: two
- * implementations of one documented rule, of which only the unproved one ran in CI. It
- * drifted, and the drift is finding 558.
+ * A **data module**: it computes and it settles nothing. `check-test-budgets.mjs` holds
+ * the verdict and imports this; `timeout-budget.test.ts` reads the same functions. The
+ * split is not tidiness -- a gate is proved by being **emptied**, so a test may not
+ * import one -- and the alternative is the one this repository already paid for: the
+ * readings copied into the test file, where they drifted from the gate's copy, and the
+ * copy that CI ran was the one nobody had repaired (findings 558 to 561).
  *
- * ## The four spellings, and the reader that knows fewer of them
+ * ## Four questions about one text, and why there are four
  *
- * vitest honours four ways to state a timeout, and a reader that knows fewer fails in
- * the direction of a false red -- which this repository has paid for three times:
- * `reader-against-backend.test.ts` states `{ timeout: SUITE_BUDGET_MS }` on its suite,
- * `fetch-official.test.ts` states `300_000` positionally, and `check-cli-reference.test.ts`
- * states an inline `{ timeout: 30_000 }` on each of six tests. Each arrived as a file
- * reported as stating no budget while it stated one.
- *
- * ## A pattern is not one character long
- *
- * A **regex literal** is a third kind of quotation, and the scanner did not know it
- * existed: `/['"]/` holds a quotation, the scanner read it as the start of a string, and
- * everything up to the next matching quote was swallowed. `gate-sites-are-proven.test.ts`
- * grew such a pattern and the gate reported the file as stating no suite budget at all.
- *
- * A pattern also does not end at a slash **inside a character class**: `[^/]`, `[-_./]`
- * and `/[/"]/` are one token each. Eight patterns in this tree hold such a slash, and
- * stopping at it left the rest of the pattern to be read as code -- the quotation in
- * `/[/"]/` then opened a string that ran to the next one in the file, swallowing every
- * budget below it.
- *
- * ## Why blanked rather than removed
- *
- * Removing is what the gate did until v3.104, and it is enough for a reader that only
- * matches patterns. It is not enough for a reader that has to find a *call* and then
- * read its title out of the original: an offset in the stripped text is not an offset in
- * the source once a comment is gone. Blanking keeps the two aligned, so a position found
- * here indexes the file it came from (`testBudgets`).
- *
- * A literal is blanked whole, quotes included. Until v3.105 the two characters that
- * delimit it were kept, on the reasoning that "the last-significant-character rule reads
- * them: a `/` after a string is a division". That reasoning outlived the code it
- * described: the rule reads `last`, which `note` maintains from the *source* as the scan
- * passes, so by the time a `/` is classified the emitted text is not consulted at all.
- * Keeping the quotes changed nothing anywhere -- the falsification that blanked them too
- * returned identical readings for every one of 467 files, and identical verdicts on the
- * 259 files of the real run -- which is what a kept character with no reader looks like.
- * The rule itself survives, and is tested: a `/` after a literal divides.
+ * `statedBudgets` answers "does this file state a number", `suiteBudget` answers "what
+ * does its suite state", `testBudgets` answers "what does each test state for itself",
+ * and `budgetInForce` answers the one the fraction rule needs: the number in force
+ * where the test is written. The four spellings vitest honours are why the first of
+ * those has four patterns -- a reader that knows fewer fails in the direction of a false
+ * red, which this repository has paid for three times: `reader-against-backend.test.ts`
+ * states `{ timeout: SUITE_BUDGET_MS }` on its suite, `fetch-official.test.ts` states
+ * `300_000` positionally, and `check-cli-reference.test.ts` states an inline
+ * `{ timeout: 30_000 }` on each of six tests. Each arrived as a file reported as stating
+ * no budget while it stated one.
  */
 
 /**
@@ -62,18 +33,17 @@
  *
  * ## A pattern does not end at a slash inside a character class
  *
- * `[^/]` holds a slash and `[/"]` holds a slash and a quotation, and stopping at
- * either one left the rest of the pattern to be read as code -- in `[/"]` the
- * quotation then opened a string that ran to the next one in the file, swallowing
- * every budget below it. The scanner this file says it is, the one in
- * `test/timeout-budget.test.ts`, has tracked brackets since the false red that added
- * the fourth mode to it; this copy did not, so the two implementations of one
- * documented rule disagreed and only the undocumented one ran in CI.
+ * `[^/]` holds a slash and `[/"]` holds a slash and a quotation, and stopping at either
+ * one left the rest of the pattern to be read as code -- in `[/"]` the quotation then
+ * opened a string that ran to the next one in the file, swallowing every budget below
+ * it. Until v3.105 this reader stopped at the first unescaped slash and the copy in
+ * `test/timeout-budget.test.ts` did not, so two implementations of one documented rule
+ * disagreed and the one CI ran was the one that had not been repaired (finding 558).
  *
  * Eight patterns in this tree hold a slash inside a class, and none of them sits above
- * a stated budget, which is why both scanners returned the same reading for all 467
- * code files and why the drift survived a round. That is luck, not agreement, and the
- * first test in `check-test-budgets.test.ts` is the shape that spends it.
+ * a stated budget, which is why both readers returned the same reading for all 467 code
+ * files and why the drift survived a round. That is luck, not agreement, and the first
+ * test in `check-test-budgets.test.ts` is the shape that spends it.
  *
  * A class is tracked only for a pattern: a bracket inside a string is text, and a `/`
  * inside a string is text too, which is why the terminator test keeps its guard.
@@ -100,11 +70,10 @@ function literalEnd(source, start, terminator) {
  * Blank the comments, and the contents of the string and regex literals, so the
  * reader sees code -- at the same length as the source.
  *
- * The scanner is the one `test/timeout-budget.test.ts` documents: four modes, a regex
- * decided by the last significant character, and the keyword exceptions for
- * `return /re/`. It is here because this script runs without a build step, and the
- * alternative -- importing a `.ts` test helper -- would be a script that cannot run
- * where it is needed.
+ * Four modes, a regex decided by the last significant character, and the keyword
+ * exceptions for `return /re/`. `timeout-budget.test.ts` imports this scanner and pins
+ * its quirks; there is no second copy, and finding 561 is why -- the copy it used to
+ * carry is where the fourth mode was discovered, and where the two then drifted.
  *
  * ## Why blanked rather than removed
  *
