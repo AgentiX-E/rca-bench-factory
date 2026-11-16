@@ -90,6 +90,17 @@ const REGISTER: Record<string, Entry> = {
       'consume it are what carry the verdicts.',
   },
 
+  'budget-readings.mjs': {
+    class: 'data',
+    why:
+      'The scanner and the four budget readers, imported by `check-test-budgets.mjs` and by ' +
+      '`timeout-budget.test.ts`. It exports functions and has no main, so there is no exit to ' +
+      'enumerate; the gate holds the verdict and the test holds the rule. It exists because ' +
+      '`timeout-budget.test.ts` used to carry its own copy of all five, and the copies drifted: ' +
+      'the gate ended a pattern at the first slash even inside a character class and reported a ' +
+      'file that states 30 000 ms as stating none (finding 558).',
+  },
+
   'reconcile-readings.mjs': {
     class: 'gate',
     why:

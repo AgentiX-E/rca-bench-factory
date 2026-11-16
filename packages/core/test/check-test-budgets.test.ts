@@ -427,3 +427,108 @@ describe('check-test-budgets · the reader', { timeout: SUITE_BUDGET_MS }, () =>
     expect(status).toBe(0);
   });
 });
+
+/**
+ * The scanner reads code, and only code.
+ *
+ * `check-test-budgets.mjs` says of itself that "the scanner is the one
+ * `test/timeout-budget.test.ts` documents". That is a claim about two copies of one
+ * rule, and the copies had drifted: the test's scanner tracks character classes and
+ * this one did not, so a pattern like `/[/"]/` ended at the slash inside the brackets
+ * and the quotation after it opened a string that swallowed every budget below.
+ *
+ * The census says why nobody noticed. Eight patterns in this tree hold a slash inside
+ * a class -- `[^/]` in `run.test.ts`, `[-_./]` in `gates.ts`, and one holding a star
+ * and a slash in `check-no-absolute-paths.mjs` -- and not one of them sits above a
+ * stated budget, so both scanners returned the same reading for all 467 code files. A
+ * reader that is right by luck is one added pattern away from a false red, which is
+ * what the first test here is.
+ */
+describe('check-test-budgets · the scanner reads code, and only code', { timeout: SUITE_BUDGET_MS }, () => {
+  it('reads a budget that sits below a pattern holding a slash inside a class', () => {
+    // The shape `timeout-budget.test.ts` names as the one that broke its scanner, kept
+    // as it was written there: `/[/"]/` accepts either kind of quotation.
+    const source = [
+      "const EITHER = /[/'\"]/;",
+      'const SUITE_BUDGET_MS = 30_000;',
+      "describe('a suite', { timeout: SUITE_BUDGET_MS }, () => { it('a test', () => {}); });",
+    ].join('\n');
+    const dir = scratch();
+    const file = fixture(dir, 'g.test.ts', source);
+    const report = join(dir, 'report.json');
+    writeFileSync(report, reportOf([{ file, durations: [16_500] }]));
+    const { status, out } = run('--report', report);
+    expect(out).toContain('against a stated budget of 30000 ms, the one its suite states');
+    expect(status).toBe(1);
+  });
+
+  it('does not read a number that is an argument as a budget', () => {
+    // The positional spelling used to be read as `/, <number>)/`, a shape that also
+    // matches an ordinary call: `buildAnthropicRequest('p', 'claude-3-opus-latest',
+    // 8192)` and `Math.imul(state, 1664525)` are the two that did it in this tree.
+    // Eleven of the 259 test files were read that way and each became "a file that
+    // states a budget", which is the flattering direction twice over: the fraction
+    // rule cannot fire against 1 664 525 ms, and the floor rule -- the one that asks a
+    // file with a 1 000 ms test to declare a budget -- does not fire either, because
+    // the file has "declared" one.
+    //
+    // Nothing was red or green wrongly on the day, because every invented number is
+    // larger than the slowest test in its file. One three-second test would have been
+    // enough for the gate to call 1 664 525 ms of headroom.
+    const source = [
+      "const req = buildAnthropicRequest('p', 'claude-3-opus-latest', 8192);",
+      'const state = Math.imul(seed, 1664525);',
+      "describe('a suite', () => { it('a test', () => {}); });",
+    ].join('\n');
+    const dir = scratch();
+    const file = fixture(dir, 'j.test.ts', source);
+    const report = join(dir, 'report.json');
+    writeFileSync(report, reportOf([{ file, durations: [2_000] }]));
+    const { status, out } = run('--report', report);
+    expect(out).toContain('the file states no budget');
+    expect(out).toContain('0 state a budget');
+    expect(status).toBe(1);
+  });
+
+  it('reads a budget that sits below a string holding a bracket', () => {
+    // Classes are tracked for patterns only: a bracket inside a string is text. A
+    // reader that tracked one there would open a class it never closes, and the string
+    // would then run past its own quotation to the end of the file.
+    const source = [
+      "const OPEN = '[';",
+      'const SUITE_BUDGET_MS = 30_000;',
+      "describe('a suite', { timeout: SUITE_BUDGET_MS }, () => { it('a test', () => {}); });",
+    ].join('\n');
+    const dir = scratch();
+    const file = fixture(dir, 'i.test.ts', source);
+    const report = join(dir, 'report.json');
+    writeFileSync(report, reportOf([{ file, durations: [16_500] }]));
+    const { status, out } = run('--report', report);
+    expect(out).toContain('against a stated budget of 30000 ms, the one its suite states');
+    expect(status).toBe(1);
+  });
+
+  it('reads a budget that sits below a division that follows a literal', () => {
+    // A value cannot be followed by a pattern, so this `/` divides. The scanner decides
+    // that from the character it last noted, which for a literal is the delimiter it
+    // opened on -- so the rule survives whether the delimiter is emitted or blanked,
+    // and the reader keeps no state in its output that it does not have in its scan.
+    //
+    // The file is never compiled -- it is input to a lexer, and at the token level
+    // `"a" / 2` is a division. It is the only shape that separates "the delimiter was
+    // noted" from "the delimiter was not", which is why this test is the one that
+    // holds the rule up; the census counts zero files in this tree that write one.
+    const source = [
+      'const ratio = "a" / 2;',
+      'const SUITE_BUDGET_MS = 30_000;',
+      "describe('a suite', { timeout: SUITE_BUDGET_MS }, () => { it('a test', () => {}); });",
+    ].join('\n');
+    const dir = scratch();
+    const file = fixture(dir, 'h.test.ts', source);
+    const report = join(dir, 'report.json');
+    writeFileSync(report, reportOf([{ file, durations: [16_500] }]));
+    const { status, out } = run('--report', report);
+    expect(out).toContain('against a stated budget of 30000 ms, the one its suite states');
+    expect(status).toBe(1);
+  });
+});

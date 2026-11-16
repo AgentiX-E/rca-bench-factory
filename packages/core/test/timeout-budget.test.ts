@@ -1,5 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import {
+  statedBudgets,
+  stripCommentsAndStrings,
+  suiteBudget as gateSuite,
+} from '../../../scripts/budget-readings.mjs';
 
 /**
  * A test file whose standalone cost reaches vitest's default must state a budget
@@ -180,129 +185,22 @@ function testSource(file: string): string {
 }
 
 /**
- * Strip comments and string literals, so the detector reads code and not prose.
+ * The scanner is the gate's, imported rather than copied -- and the copy is why.
  *
- * The first version of this function matched raw source, and it failed its own
- * test on its own file: this file's *documentation* names `spawnSync`, and its
- * fixtures are string literals containing it. A detector that cannot tell code
- * from a quotation of code would have reported every file that explains the rule
- * as a violator -- the same defect `check-no-unsafe-shell.mjs`'s first version
- * had, found the same way: by testing the instrument on the input that motivated
- * it.
+ * This file carried its own until v3.105, and the copy is what found the fourth mode:
+ * a **regex literal** is a third kind of quotation, so a scanner that did not know it
+ * existed read the `'` in `/['"]/` as the start of a string and swallowed everything
+ * up to the next matching quote. `gate-sites-are-proven.test.ts` grew such a pattern,
+ * and the gate reported that file as stating no suite budget while the file plainly
+ * stated one.
  *
- * Character scanner rather than a regex, because comments and strings nest in the
- * sense that matters here (`// spawnSync` inside a template literal) and a regex
- * cannot track which mode the scan is in.
- *
- * ## The fourth mode, and the false red that added it
- *
- * A **regex literal** is a third kind of quotation, and this scanner did not know it
- * existed. So a pattern holding a quote -- `/['"]/`, which is how a reader accepts
- * either kind of quotation -- opened a string that never closed, and everything from
- * there to the next matching quote in the file was swallowed. The symptom was not in
- * this file: `gate-sites-are-proven.test.ts` grew such a pattern, and this gate
- * reported that file as stating no suite budget at all while the file plainly stated
- * one -- the same class of defect as the previous three, a reader that knows fewer
- * spellings than the language has, and it fails in the direction of a false red.
- *
- * Whether a `/` opens a regex or divides is decided by the last significant character
- * emitted, which is the one-token lookbehind a scanner without a parser can have: an
- * operator or an opening bracket before it means a value is expected, so `/` starts a
- * pattern; a name, a number or a closing bracket means one just ended, so `/` divides.
- * A trailing keyword is the exception (`return /re/` starts a pattern, `return a / b`
- * does not), and it is checked only when the keyword is the last whole token.
+ * The copy then drifted. The gate's reader kept the simpler terminator, so a pattern
+ * ended at the first slash even inside a character class, and only this copy knew that
+ * `/[/"]/` is one token. Two implementations of one documented rule, and the one that
+ * runs in CI was the one nobody had repaired: the gate reported a file that states
+ * 30 000 ms as stating none. The rule has one home now -- `scripts/check-test-budgets.mjs`
+ * -- and this file reads it rather than restating it.
  */
-function stripCommentsAndStrings(source: string): string {
-  let out = '';
-  let i = 0;
-  /** The last non-space character this scanner kept, and the word before a `/`. */
-  const context = (): { ch: string; word: string } => {
-    const trimmed = out.replace(/\s+$/, '');
-    const ch = trimmed.slice(-1);
-    const word = /([A-Za-z_$][\w$]*)$/.exec(trimmed)?.[1] ?? '';
-    return { ch, word };
-  };
-  /** Keywords after which a `/` opens a pattern rather than dividing. */
-  const REGEX_AFTER_WORD = new Set([
-    'return',
-    'typeof',
-    'instanceof',
-    'in',
-    'of',
-    'new',
-    'delete',
-    'void',
-    'case',
-    'do',
-    'else',
-    'yield',
-    'await',
-    'throw',
-  ]);
-  const startsRegex = (): boolean => {
-    const { ch, word } = context();
-    if (ch === '') return true;
-    if (REGEX_AFTER_WORD.has(word)) return true;
-    return '([{,;:=!&|?+-*%~^<>'.includes(ch);
-  };
-  while (i < source.length) {
-    const two = source.slice(i, i + 2);
-    if (two === '//') {
-      const nl = source.indexOf('\n', i);
-      i = nl === -1 ? source.length : nl;
-      continue;
-    }
-    if (two === '/*') {
-      const end = source.indexOf('*/', i + 2);
-      i = end === -1 ? source.length : end + 2;
-      continue;
-    }
-    const ch = source[i]!;
-    if (ch === '/' && startsRegex()) {
-      // A pattern runs to the first unescaped `/` outside a character class, and the
-      // class matters: `/[/"]/` holds a slash inside brackets.
-      i += 1;
-      let inClass = false;
-      while (i < source.length) {
-        const c = source[i];
-        if (c === '\\') {
-          i += 2;
-          continue;
-        }
-        if (c === '[') inClass = true;
-        else if (c === ']') inClass = false;
-        else if (c === '/' && !inClass) {
-          i += 1;
-          break;
-        }
-        i += 1;
-      }
-      while (i < source.length && /[a-z]/.test(source[i]!)) i += 1;
-      out += '/""/';
-      continue;
-    }
-    if (ch === "'" || ch === '"' || ch === '`') {
-      const quote = ch;
-      i += 1;
-      while (i < source.length) {
-        if (source[i] === '\\') {
-          i += 2;
-          continue;
-        }
-        if (source[i] === quote) {
-          i += 1;
-          break;
-        }
-        i += 1;
-      }
-      out += '""';
-      continue;
-    }
-    out += ch;
-    i += 1;
-  }
-  return out;
-}
 
 /** A test file that creates a child process. */
 function spawnsAChild(source: string): boolean {
@@ -333,107 +231,21 @@ function spawnsAChild(source: string): boolean {
  * question is not "is there a budget" but "is the budget larger than the default".
  */
 /**
- * The number a named constant was declared with, or `undefined`.
+ * The largest budget the file states anywhere, or 0 if it states none.
  *
- * Shared by the two readers that have to resolve a name, so the resolver has one
- * home. The pattern takes any identifier, not only one that ends in `TIMEOUT_MS`:
- * a budget named `SUITE_BUDGET_MS` is the same quantity as one named
- * `RULE_TIMEOUT_MS`, and a reader that insists on the second spelling reports the
- * first as no budget at all.
+ * `statedBudgets` and the suite reader are the gate's, for the reason above. What
+ * stays here is the one adapter this file's assertions are written against: the gate
+ * answers "no budget" with `undefined`, which is the absence of a number, and these
+ * arms compare numbers, where the absence is 0.
  */
-function constantValue(code: string, name: string): number | undefined {
-  const declared = new RegExp(`(?:const|let)\\s+${name}\\s*=\\s*([0-9][0-9_]*)`).exec(code);
-  if (declared === null) return undefined;
-  return Number(declared[1]!.replace(/_/g, ''));
-}
-
-function statedBudgets(source: string): number[] {
-  const values: number[] = [];
-  // Both patterns run against the stripped source.
-  //
-  // The first version of this function matched the named constant against the
-  // *raw* source, on the reasoning that the name is what carries the justifying
-  // comment. That was wrong, and the file's own test caught it on the first run:
-  // `// const OLD_TIMEOUT_MS = 90_000;` was read as a 90 s budget. The comment is
-  // where a budget is *explained*; the declaration is where it is *stated*, and a
-  // declaration cannot live inside a comment.
-  const code = stripCommentsAndStrings(source);
-  for (const m of code.matchAll(/(?:const|let)\s+[A-Z_]*TIMEOUT_MS\s*=\s*([0-9_]+)/g)) {
-    values.push(Number(m[1]!.replace(/_/g, '')));
-  }
-  // The options object, in both spellings: a literal, and a name.
-  //
-  // The named spelling was missing, and the cost of the omission is recorded
-  // above -- `reader-against-backend.test.ts` states `{ timeout: SUITE_BUDGET_MS }`
-  // on its suite, the reader therefore found no budget, and the gate reported a
-  // file that had done exactly what the rule asks as a violator. That is the
-  // third false red this reader has produced (the second was `fetch-official`'s
-  // positional form), and all three had the same cause: the reader knew fewer
-  // spellings than vitest honours.
-  for (const m of code.matchAll(/\{\s*timeout:\s*([A-Za-z_$][\w$]*|[0-9][0-9_]*)\s*\}/g)) {
-    const raw = m[1]!;
-    if (/^[0-9]/.test(raw)) {
-      values.push(Number(raw.replace(/_/g, '')));
-      continue;
-    }
-    const resolved = constantValue(code, raw);
-    if (resolved !== undefined) values.push(resolved);
-  }
-  // The positional form. Only a *trailing* number in a call-argument position is
-  // a timeout, so this requires a closing paren and a statement end after it --
-  // which is why it cannot be folded into the options-object pattern above.
-  for (const m of code.matchAll(/,\s*([0-9][0-9_]*)\s*\)\s*;?/g)) {
-    const value = Number(m[1]!.replace(/_/g, ''));
-    // Multi-digit only, and deliberately above 1000: a bare `, 1)` in this tree
-    // is an argument, not a timeout, and a budget is only meaningful as a
-    // four-digit millisecond figure or larger.
-    if (value >= 1000) values.push(value);
-  }
-  return values;
-}
-
-/** The largest budget the file states anywhere, or 0 if it states none. */
 function largestBudget(source: string): number {
   const values = statedBudgets(source);
   return values.length === 0 ? 0 : Math.max(...values);
 }
 
-/**
- * The budget a file's *suite* states, in milliseconds, or 0 if it states none.
- *
- * ## Why a fourth reader, when the three above already find three spellings
- *
- * The unit of a budget is not the file, and it is not the test either -- it is
- * whatever the process was doing when the clock ran out. `statedBudgets` reads
- * the number a file writes down; this function reads *where* the file writes it,
- * because a number applied to one test says nothing about the other thirty-two.
- *
- * The spellings this reader accepts are the ones vitest actually honours for a
- * whole suite (`describe(name, { timeout }, fn)`, verified to apply to nested
- * suites as well by running a six-second test under a nine-second `describe` and
- * under no `describe` at all: 6007 ms and 6003 ms passed, 5005 ms failed). The
- * value is returned with the identifier resolved if the file used one, because
- * the row that consumes it compares against the default.
- *
- * `vi.setConfig({ testTimeout })` would also work and is deliberately **not**
- * read: it mutates config that outlives the file in a worker, so a file that
- * used it could raise the budget of files that never asked. A reader that
- * accepted it would be blessing a leak.
- */
+/** The suite's budget, or 0 -- the gate returns `undefined` for "states none". */
 function suiteBudget(source: string): number {
-  // String literals are stripped to `""` by the scanner above, so the suite's
-  // name arrives as the empty literal and the options object follows it.
-  const code = stripCommentsAndStrings(source);
-  for (const m of code.matchAll(
-    /\b(?:describe|suite)\s*\(\s*(?:""|[^,]+?)\s*,\s*\{\s*timeout\s*:\s*([A-Za-z_$][\w$]*|[0-9][0-9_]*)/g,
-  )) {
-    const raw = m[1]!;
-    if (/^[0-9]/.test(raw)) return Number(raw.replace(/_/g, ''));
-    const named = constantValue(code, raw);
-    if (named === undefined) continue;
-    return named;
-  }
-  return 0;
+  return gateSuite(source) ?? 0;
 }
 
 /**
@@ -755,10 +567,19 @@ describe('the reader · it finds every spelling of a budget and only those', () 
 
   it('does not mistake an ordinary numeric argument for a budget', () => {
     // The positional pattern is the loosest of the three, so its failure mode is
-    // claiming a budget that is really an argument. A small number is not a
-    // timeout in milliseconds and is not read as one.
+    // claiming a budget that is really an argument.
+    //
+    // The first version of this test used `f(x, 2)` and `slice(a, 3)` and passed for a
+    // reason it did not state: the pattern dropped every number under a thousand, so
+    // the only arguments it could have invented a budget from were the four-digit ones
+    // -- and `buildAnthropicRequest('p', 'claude-3-opus-latest', 8192)` is exactly that.
+    // Ten files in this tree were read as stating a budget they never wrote, and
+    // `gen-rcaeval-cases.test.ts` was held to **1 700 000 000 ms**. None of it showed,
+    // because every invented number is larger than the slowest test beside it.
     expect(largestBudget('const xs = arr.map((x) => f(x, 2));')).toBe(0);
     expect(largestBudget('expect(slice(a, 3)).toEqual(b);')).toBe(0);
+    expect(largestBudget("const req = build('p', 'claude-3-opus-latest', 8192);")).toBe(0);
+    expect(largestBudget('const state = Math.imul(seed, 1664525);')).toBe(0);
   });
 
   it('reads both, and reports the larger, when a file states both', () => {
