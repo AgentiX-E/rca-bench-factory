@@ -74,7 +74,7 @@
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import { hanInComment } from './docs-language.mjs';
+import { commentsReport } from './docs-language.mjs';
 
 export const ROOT = resolve(import.meta.dirname, '..');
 
@@ -246,7 +246,10 @@ export function scanYamlComments(text) {
       // would have reported twelve of this tree's own comments as content.
       const content = body.slice(lead);
       if (content.startsWith('#')) {
-        comments.push({ kind: 'block', line, text: content.slice(1) });
+        // The family is the `#` and the column it sits at: a comment wrapped inside a
+        // block scalar continues in the column it started in, and a `#` row that ends a
+        // block sits at another column, so the two are not one paragraph.
+        comments.push({ kind: 'block', family: `#${String(lead)}`, line, text: content.slice(1) });
         hashes.comment += countHashes(content);
       } else {
         hashes.blockRow += countHashes(content);
@@ -276,7 +279,12 @@ export function scanYamlComments(text) {
     if (ch === '#' && opensComment(text, at)) {
       const stop = rowEnd(text, at);
       const body = text.slice(at + 1, stop);
-      comments.push({ kind: 'line', line, text: body });
+      comments.push({
+        kind: 'line',
+        family: `#${String(at - text.lastIndexOf('\n', at - 1) - 1)}`,
+        line,
+        text: body,
+      });
       hashes.comment += 1 + countHashes(body);
       advance(stop - at);
       continue;
@@ -345,6 +353,7 @@ export function check(root = ROOT) {
   let lineComments = 0;
   let blockComments = 0;
   let runs = 0;
+  let pairs = 0;
   let marks = 0;
   const hashes = { comment: 0, quoted: 0, blockRow: 0, scalar: 0 };
 
@@ -390,14 +399,20 @@ export function check(root = ROOT) {
       comments += 1;
       if (comment.kind === 'line') lineComments += 1;
       else blockComments += 1;
-      for (const hit of hanInComment(comment)) {
-        runs += 1;
-        errors.push(
-          `${name}:${String(hit.line)}: \`${hit.text}\` -- ${String(hit.length)} Han character(s) ` +
-            "of prose: this repository's comments are written in English, and the comments that " +
-            'are not are quotations, which a code span carries verbatim',
-        );
-      }
+    }
+    // Judged after the census, for the reason `comment-language.mjs` gives: a `#` comment
+    // wrapped onto the next row is two comments to the census and one paragraph to the
+    // language rule, and the two counts have to stay separate for either to be checkable.
+    const report = commentsReport(scan.comments);
+    pairs += report.pairs;
+    for (const hit of report.hits) {
+      runs += 1;
+      errors.push(
+        `${name}:${String(hit.line)}: \`${hit.text}\` -- ${String(hit.length)} Han character(s) ` +
+          `of prose${hit.spanning === undefined ? '' : ` across ${String(hit.spanning)} row(s)`}: ` +
+          "this repository's comments are written in English, and the comments that " +
+          'are not are quotations, which a code span carries verbatim',
+      );
     }
   }
 
@@ -410,13 +425,15 @@ export function check(root = ROOT) {
     blockComments,
     marks,
     runs,
+    pairs,
     hashes,
     summary:
       `check-workflow-language: ${errors.length === 0 ? 'OK' : 'FAILED'} — ${String(files.length)} ` +
       `file(s), ${String(marks)} '#' mark(s): ${String(comments)} comment(s) (${String(lineComments)} ` +
       `line, ${String(blockComments)} block scalar), ${String(hashes.quoted)} inside a quoted scalar, ` +
       `${String(hashes.blockRow)} inside a block scalar's own row, ${String(hashes.scalar)} glued to ` +
-      `a word; ${String(runs)} run(s) of Han prose` +
+      `a word; ${String(runs)} run(s) of Han prose, ${String(pairs)} row break(s) held inside a ` +
+      'paragraph' +
       (errors.length === 0 ? '' : `; first: ${errors[0] ?? ''}`),
   };
 }

@@ -45,11 +45,13 @@
  *
  * ## What this reading cannot do
  *
- * - **A run broken by a line break is not a run.** Each line of a comment is read on its
- *   own, which is what the document reader does, so a comment wrapped mid-run in a
- *   narrow column evades both. That is one boundary shared by two readers rather than two
- *   boundaries, and it is stated here rather than discovered by the next person who tries
- *   to evade it.
+ * - **A run may cross a row break, and the paragraph is the unit.** A comment wrapped in a
+ *   narrow column is one sentence, so this reader groups a file's comments into paragraphs
+ *   before it judges them -- two `//` rows on consecutive rows in the same column are one
+ *   paragraph, a blank row or a block comment's terminator ends it. The grouping rule is
+ *   the surface's own and the paragraph is judged by `commentsReport` in
+ *   `docs-language.mjs`, so all three language readers answer "what is one paragraph" from
+ *   one place. Before v3.100 each row was judged alone, which made this break a wall.
  * - **The workflow files are read elsewhere.** A `#` in YAML is four grammars -- plain,
  *   single-quoted, double-quoted -- plus the block scalars that hold shell scripts, so
  *   reading one correctly needs the YAML scanner rather than this one. Five files hold
@@ -59,7 +61,7 @@
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import { hanInComment } from './docs-language.mjs';
+import { commentsReport } from './docs-language.mjs';
 
 export const ROOT = resolve(import.meta.dirname, '..');
 
@@ -150,8 +152,26 @@ function endOfRegex(text, from) {
 }
 
 /**
- * Every comment in one source file, as `{ kind, line, text }`, plus the first place the
- * scanner could not go on.
+ * The paragraph family of a comment: its delimiter and the column it opens at.
+ *
+ * Two comments are one paragraph only when their family agrees, and the family is stated
+ * by the scanner that can see it rather than inferred from `kind`. The distinction is not
+ * pedantry: `kind` says *what the census calls* a comment, and the census and the language
+ * rule ask different questions. A `//` row and a block comment are different families
+ * because the terminator that ends a block is a wall no wrap crosses; two `//` rows at one
+ * indentation are the
+ * same family because a wrapped sentence continues where it started. The column is part of
+ * the identity for the same reason -- a wrap does not change indentation, and a comment
+ * that does is a new paragraph.
+ */
+function familyOf(text, at, delimiter) {
+  const start = text.lastIndexOf('\n', at - 1) + 1;
+  return `${delimiter}${String(at - start)}`;
+}
+
+/**
+ * Every comment in one source file, as `{ kind, family, line, text }`, plus the first
+ * place the scanner could not go on.
  *
  * `text` is the body without its delimiters, so a caller can judge the words rather than
  * the punctuation. `line` is one-based and names the line the comment *opens* on; the
@@ -234,7 +254,7 @@ export function scanComments(text) {
     if (ch === '/' && text[at + 1] === '/') {
       const end = text.indexOf('\n', at + 2);
       const stop = end === -1 ? text.length : end;
-      comments.push({ kind: 'line', line, text: text.slice(at + 2, stop) });
+      comments.push({ kind: 'line', family: familyOf(text, at, '//'), line, text: text.slice(at + 2, stop) });
       advance(stop - at);
       canStartRegex = true;
       continue;
@@ -253,7 +273,7 @@ export function scanComments(text) {
         };
         break;
       }
-      comments.push({ kind: 'block', line: opened, text: text.slice(at + 2, close) });
+      comments.push({ kind: 'block', family: familyOf(text, at, '/*'), line: opened, text: text.slice(at + 2, close) });
       advance(close + 2 - at);
       continue;
     }
@@ -384,6 +404,7 @@ export function check(root = ROOT) {
   let blockComments = 0;
   let lines = 0;
   let runs = 0;
+  let pairs = 0;
   let markers = 0;
 
   if (sources.length === 0) {
@@ -404,14 +425,22 @@ export function check(root = ROOT) {
       lines += comment.text.split('\n').length;
       if (comment.kind === 'line') lineComments += 1;
       else blockComments += 1;
-      for (const hit of hanInComment(comment)) {
-        runs += 1;
-        errors.push(
-          `${name}:${String(hit.line)}: \`${hit.text}\` -- ${String(hit.length)} Han character(s) ` +
-            "of prose: this repository's comments are written in English, and the comments that " +
-            'are not are quotations, which a code span carries verbatim',
-        );
-      }
+    }
+    // Judged after the census rather than inside it: a run may cross the break between two
+    // line comments on consecutive rows, so the language rule reads the file's comments as
+    // paragraphs while the census counts them one by one. The two answers to "how many
+    // comments" are the same number, and the two readings of "what is one paragraph" are
+    // kept apart on purpose.
+    const report = commentsReport(found);
+    pairs += report.pairs;
+    for (const hit of report.hits) {
+      runs += 1;
+      errors.push(
+        `${name}:${String(hit.line)}: \`${hit.text}\` -- ${String(hit.length)} Han character(s) ` +
+          `of prose${hit.spanning === undefined ? '' : ` across ${String(hit.spanning)} row(s)`}: ` +
+          "this repository's comments are written in English, and the comments that " +
+          'are not are quotations, which a code span carries verbatim',
+      );
     }
   }
 
@@ -424,11 +453,13 @@ export function check(root = ROOT) {
     blockComments,
     lines,
     runs,
+    pairs,
     markers,
     summary:
       `check-comments-language: ${errors.length === 0 ? 'OK' : 'FAILED'} — ${String(sources.length)} ` +
       `file(s), ${String(comments)} comment(s) (${String(lineComments)} line, ` +
       `${String(blockComments)} block), ${String(runs)} run(s) of Han prose outside a code span; ` +
+      `${String(pairs)} row break(s) held inside a paragraph, ` +
       `${String(markers)} comment opener(s) skipped inside a string, a template or a regex` +
       (errors.length === 0 ? '' : `; first: ${errors[0] ?? ''}`),
   };

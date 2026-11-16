@@ -37,6 +37,27 @@
  * document to maintain. The cost is stated: a round could hide its prose in block
  * quotes, and this reading would not see it. The guard's subject is the accident, not
  * the lie -- the same sentence the ledger-name rule in `progress-volumes.mjs` carries.
+ *
+ * ## What a line break does
+ *
+ * A run is not confined to a row. **The unit is the paragraph, and a row break that falls
+ * between two Han characters is not a break** -- otherwise a comment wrapped in a narrow
+ * column, or a Chinese paragraph hard-wrapped at eighty characters, is invisible to every
+ * reader in this tree, which is a hole in the rule rather than a convention.
+ *
+ * The three surfaces decide what a paragraph is, because they know their own structure:
+ * a markdown paragraph ends at a blank row, a fence, a block quote and an ATX heading; a
+ * comment's paragraph ends at a blank row, which in a doc block is a row carrying nothing
+ * but its decoration; and two line comments belong to one paragraph only when they sit on
+ * consecutive rows. Everything else is joined, and the join inserts nothing -- which is
+ * *exactly* the rule above rather than an approximation of it: a run of eight Han
+ * characters needs Han on both sides of every break it crosses, so a break with anything
+ * else on either side could not be crossed whichever way it was joined. The property test
+ * in `check-comments-language.test.ts` states that equivalence instead of trusting it.
+ *
+ * The direction each approximation takes is stated where it is made. It is always towards
+ * a break rather than across one: a missed join costs a narrower rule, an invented join
+ * costs a sentence about a row that holds no prose.
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -108,56 +129,206 @@ export function withoutCodeSpans(line) {
   return out;
 }
 
+/** A global copy of `HAN_RUN`, because a run is searched for repeatedly rather than once. */
+const HAN_RUN_ALL = new RegExp(HAN_RUN.source, 'gu');
+
+/** An ATX heading, which is one row and cannot be the continuation of the row above it. */
+const ATX_HEADING = /^ {0,3}#{1,6}(\s|$)/;
+
 /**
- * Every prose run of Han characters in one document, as `{ line, text }`.
+ * A row of a paragraph: its absolute line, and its text with decoration, spans and layout
+ * whitespace removed.
  *
- * `line` is one-based, because that is what an editor and a reviewer use. Fences are
- * tracked because a captured output can hold anything, and block quotes are skipped
- * because they are quotations -- see the header for why that is a decision with a cost
- * rather than a completeness claim.
+ * Both ends of the row are trimmed, and that is not tidiness: a line comment keeps the
+ * space after its `//`, so `// 文档说明` and `// 第二行` would be joined as `说明 第二行` --
+ * one space in the middle of the break, and a rule that only crosses a break between two
+ * Han characters would never cross one in a line comment at all. The same accident makes a
+ * hard break written as two trailing spaces, and a CRLF file's carriage return, into a
+ * character of the prose. Layout is not text, so it is dropped before the join.
  */
-export function hanProseIn(text) {
-  const found = [];
-  let fenced = false;
-  text.split('\n').forEach((raw, index) => {
-    if (/^\s*(```|~~~)/.test(raw)) {
-      fenced = !fenced;
-      return;
-    }
-    if (fenced) return;
-    if (/^\s*>/.test(raw)) return;
-    const prose = withoutCodeSpans(raw);
-    const match = HAN_RUN.exec(prose);
-    if (match !== null) found.push({ line: index + 1, text: match[0], length: match[0].length });
-  });
-  return found;
+function rowOf(line, raw) {
+  return { line, body: withoutCodeSpans(raw).trim() };
 }
 
 /**
- * Every prose run of Han characters in one comment, as `{ line, text, length }`.
+ * The paragraphs of `rows`, split at every row whose body is blank.
  *
- * This lives here, beside the threshold it reads, because three readers need it: the
- * document reader above, the source reader in `comment-language.mjs` and the workflow
- * reader in `yaml-language.mjs`. A second copy of "strip the decoration, strip the code
- * spans, look for eight Han characters" would be the third-source-of-truth defect
- * `validity.test.ts` names, and the three readers have to agree about what a quotation
- * is or the tree has three answers to one question.
+ * A blank row is what all three surfaces use to say "new paragraph": markdown says it with
+ * an empty row, a doc block says it with a row carrying nothing but its ` * ` decoration,
+ * and a YAML comment group says it by ending. Splitting here rather than in each caller
+ * keeps the answer to "is this one paragraph" in one place, which is what makes the three
+ * readers comparable at all.
+ */
+function paragraphsOf(rows) {
+  const out = [];
+  let group = [];
+  for (const row of rows) {
+    if (row.body.trim() === '') {
+      if (group.length > 0) out.push(group);
+      group = [];
+    } else group.push(row);
+  }
+  if (group.length > 0) out.push(group);
+  return out;
+}
+
+/**
+ * Every prose run in one paragraph, as `{ line, text, length, spanning? }`.
  *
- * The decoration a doc block puts on each row (` * `) is stripped before the row is
- * judged, because it is punctuation rather than words. A YAML comment has no such
- * decoration; the pattern is harmless there, since it removes `*` and spaces rather than
- * characters the rule looks for. `line` is absolute, so a reader can open the file at it.
+ * The rows are joined with **nothing** between them, which is the rule in this file's
+ * header rather than an approximation of it: a break is crossed only by a run that is Han
+ * on both sides of it. `spanning` is present only when a run crosses a row break, so a run
+ * inside one row produces the object it produced before this rule existed -- a caller that
+ * compared shapes against the old reader compares the same shapes.
+ */
+function scanParagraph(rows) {
+  const found = [];
+  const starts = [];
+  let at = 0;
+  for (const row of rows) {
+    starts.push(at);
+    at += row.body.length;
+  }
+  const joined = rows.map((row) => row.body).join('');
+  for (const match of joined.matchAll(HAN_RUN_ALL)) {
+    const end = match.index + match[0].length;
+    let index = 0;
+    while (index + 1 < starts.length && starts[index + 1] <= match.index) index += 1;
+    const spanning = starts.filter((start) => start > match.index && start < end).length + 1;
+    const hit = { line: rows[index].line, text: match[0], length: match[0].length };
+    if (spanning > 1) hit.spanning = spanning;
+    found.push(hit);
+  }
+  return found;
+}
+
+/** Every prose run in `rows`, which may hold more than one paragraph. */
+export function hanRunsIn(rows) {
+  return paragraphsOf(rows).flatMap(scanParagraph);
+}
+
+/**
+ * Every prose run of Han characters in one document, plus the row breaks the rule held.
+ *
+ * `pairs` is the reading's own witness: the number of row breaks that fell inside a
+ * paragraph and were therefore crossed by the search. A grouper that broke -- one that
+ * flushed at every row -- would leave the runs intact and the crossings at zero, and the
+ * floor a test puts under this number is what makes that a red test rather than a smaller
+ * number reported as a pass.
+ *
+ * `line` in a hit is one-based, because that is what an editor and a reviewer use. Fences
+ * are tracked because a captured output can hold anything, block quotes are skipped
+ * because they are quotations, and headings are judged alone because a heading is one row.
+ */
+export function proseReport(text) {
+  const hits = [];
+  let pairs = 0;
+  let fenced = false;
+  let paragraph = [];
+  const flush = () => {
+    for (const part of paragraphsOf(paragraph)) {
+      pairs += part.length - 1;
+      for (const hit of scanParagraph(part)) hits.push(hit);
+    }
+    paragraph = [];
+  };
+  text.split('\n').forEach((raw, index) => {
+    if (/^\s*(```|~~~)/.test(raw)) {
+      fenced = !fenced;
+      flush();
+      return;
+    }
+    if (fenced) return;
+    if (/^\s*>/.test(raw)) {
+      flush();
+      return;
+    }
+    const row = rowOf(index + 1, raw);
+    if (row.body.trim() === '') {
+      flush();
+      return;
+    }
+    if (ATX_HEADING.test(raw)) {
+      // A heading is one row, and it is judged as a paragraph of one: its own markers stop
+      // it from continuing the row above -- `## ` is not Han, so no run reaches across it --
+      // and nothing may continue it. Counting it inside the paragraph would put a break in
+      // the witness that no run can ever cross.
+      flush();
+      for (const hit of scanParagraph([row])) hits.push(hit);
+      return;
+    }
+    paragraph.push(row);
+  });
+  flush();
+  return { hits, pairs };
+}
+
+/** Every prose run of Han characters in one document, as `{ line, text, length }`. */
+export function hanProseIn(text) {
+  return proseReport(text).hits;
+}
+
+/**
+ * The rows of one comment, with the decoration a doc block puts on each row removed.
+ *
+ * The decoration (` * `) is punctuation rather than words, so it is stripped before the
+ * row is judged. A YAML comment has no such decoration; the pattern is harmless there,
+ * since it removes `*` and spaces rather than characters the rule looks for.
+ */
+function rowsOfComment(comment) {
+  return comment.text.split('\n').map((raw, index) =>
+    rowOf(comment.line + index, raw.replace(/^\s*\*+ ?/, '')),
+  );
+}
+
+/**
+ * Every prose run in one comment, as `{ line, text, length, spanning? }`.
+ *
+ * This is one comment judged alone. A reader that has a file's comments in hand wants
+ * `commentsReport`, which also carries a run across the break between two line comments on
+ * consecutive rows -- `// the first half of a sentence` above `// and its second` is one
+ * paragraph, and judging each comment alone is what made that break a wall.
  */
 export function hanInComment(comment) {
-  const found = [];
-  comment.text.split('\n').forEach((raw, index) => {
-    const body = withoutCodeSpans(raw.replace(/^\s*\*+ ?/, ''));
-    const match = HAN_RUN.exec(body);
-    if (match !== null) {
-      found.push({ line: comment.line + index, text: match[0], length: match[0].length });
+  return hanRunsIn(rowsOfComment(comment));
+}
+
+/**
+ * Every prose run in a file's comments, plus the row breaks the rule held.
+ *
+ * The grouping rule needs two things and nothing else: the comments must sit on
+ * consecutive rows, and they must be the same **family** -- the delimiter they open with
+ * and the column it sits at, which each scanner states because it is the only part of the
+ * tree that can see it. A `//` row continues the `//` row above it; it does not continue a
+ * doc block, because the terminator that ended that block is a wall no wrap crosses, and
+ * it does not continue a `//` row at another indentation, because a wrap does not move.
+ *
+ * `pairs` counts the breaks that were crossed, so a grouper that stopped grouping is
+ * visible as a number rather than as a silence.
+ */
+export function commentsReport(comments) {
+  const hits = [];
+  let pairs = 0;
+  let paragraph = [];
+  let previous = null;
+  const flush = () => {
+    for (const part of paragraphsOf(paragraph)) {
+      pairs += part.length - 1;
+      for (const hit of scanParagraph(part)) hits.push(hit);
     }
-  });
-  return found;
+    paragraph = [];
+  };
+  for (const comment of comments) {
+    const rows = rowsOfComment(comment);
+    const family = comment.family ?? comment.kind;
+    const continues =
+      previous !== null && previous.family === family && comment.line === previous.end + 1;
+    if (!continues) flush();
+    for (const row of rows) paragraph.push(row);
+    previous = { family, end: comment.line + rows.length - 1 };
+  }
+  flush();
+  return { hits, pairs };
 }
 
 /**
@@ -171,6 +342,7 @@ export function check(root = ROOT) {
   const documents = documentsIn(root);
   const errors = [];
   let runs = 0;
+  let pairs = 0;
 
   if (documents.length === 0) {
     errors.push(
@@ -180,10 +352,13 @@ export function check(root = ROOT) {
   }
 
   for (const name of documents) {
-    for (const hit of hanProseIn(readFileSync(join(root, name), 'utf8'))) {
+    const report = proseReport(readFileSync(join(root, name), 'utf8'));
+    pairs += report.pairs;
+    for (const hit of report.hits) {
       runs += 1;
       errors.push(
-        `${name}:${String(hit.line)}: \`${hit.text}\` -- ${String(hit.length)} Han character(s) of prose: ` +
+        `${name}:${String(hit.line)}: \`${hit.text}\` -- ${String(hit.length)} Han character(s) of prose` +
+          `${hit.spanning === undefined ? '' : ` across ${String(hit.spanning)} row(s)`}: ` +
           "this repository's documents are written in English, and the documents that are not are the " +
           'external ones, which a block quote or a code span carries verbatim',
       );
@@ -195,9 +370,11 @@ export function check(root = ROOT) {
     errors,
     documents: documents.length,
     runs,
+    pairs,
     summary:
       `check-docs-language: ${errors.length === 0 ? 'OK' : 'FAILED'} — ${String(documents.length)} ` +
-      `document(s), ${String(runs)} run(s) of Han prose outside a quotation` +
+      `document(s), ${String(runs)} run(s) of Han prose outside a quotation, ${String(pairs)} row ` +
+      'break(s) held inside a paragraph' +
       (errors.length === 0 ? '' : `; first: ${errors[0] ?? ''}`),
   };
 }

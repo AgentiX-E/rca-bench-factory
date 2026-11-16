@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { hanInComment } from '../../../scripts/docs-language.mjs';
+import { commentsReport, hanInComment, hanRunsIn } from '../../../scripts/docs-language.mjs';
 import {
   SOURCE_EXTENSIONS,
   check,
@@ -215,7 +215,9 @@ describe('the reading, at its edges', { timeout: SUITE_BUDGET_MS }, () => {
   it('reports a block comment at the line the run sits on, not at its opener', () => {
     const found = scanComments('/**\n * One.\n * Two.\n * Three.\n */\n');
     expect(found.problem).toBeNull();
-    expect(found.comments).toEqual([{ kind: 'block', line: 1, text: '*\n * One.\n * Two.\n * Three.\n ' }]);
+    expect(found.comments).toEqual([
+      { kind: 'block', family: '/*0', line: 1, text: '*\n * One.\n * Two.\n * Three.\n ' },
+    ]);
     expect(hanInComment({ kind: 'block', line: 1, text: '\nOne.\nTwo.\n' + HAN(9) })).toEqual([
       { line: 4, text: HAN(9), length: 9 },
     ]);
@@ -229,7 +231,7 @@ describe('the reading, at its edges', { timeout: SUITE_BUDGET_MS }, () => {
 
   it('does not read a shebang as a regex, and does not count it as a comment', () => {
     const found = scanComments('#!/usr/bin/env node\n// One.\n');
-    expect(found.comments).toEqual([{ kind: 'line', line: 2, text: ' One.' }]);
+    expect(found.comments).toEqual([{ kind: 'line', family: '//0', line: 2, text: ' One.' }]);
   });
 
   it('reports the tree it was given, and the real tree is clean', () => {
@@ -295,5 +297,156 @@ describe('the reading, at its edges', { timeout: SUITE_BUDGET_MS }, () => {
       expect(body.problem).toBeNull();
       for (const comment of body.comments) expect(hanInComment(comment)).toEqual([]);
     }
+  });
+});
+
+/**
+ * A row break inside a comment paragraph, which is the boundary this reader used to have.
+ *
+ * `// the first half of a sentence` above `// and its second` is one paragraph, and a
+ * reader that judged each comment alone made that break a wall -- in a file whose prose is
+ * wrapped at the width the author's editor chose. The rule now crosses the break, and the
+ * fixtures below are the two directions: it crosses a wrap, and it does not cross a break
+ * that the surface uses to say "new paragraph".
+ */
+describe('a row break inside a comment', { timeout: SUITE_BUDGET_MS }, () => {
+  it('crosses the break between two line comments on consecutive rows', () => {
+    const dir = treeOf({ 'src/a.ts': `// ${HAN(4)}\n// ${HAN(4)}.\nconst a = 1;\n` });
+    const { status, out } = run(dir);
+    expect(out).toContain('src/a.ts:1:');
+    expect(out).toContain('8 Han character(s) of prose across 2 row(s)');
+    expect(status).toBe(1);
+  });
+
+  it('crosses the break between the rows of a doc block', () => {
+    const dir = treeOf({ 'src/a.ts': `/**\n * ${HAN(4)}\n * ${HAN(4)}.\n */\nconst a = 1;\n` });
+    const { status, out } = run(dir);
+    expect(out).toContain('src/a.ts:2:');
+    expect(out).toContain('8 Han character(s) of prose across 2 row(s)');
+    expect(status).toBe(1);
+  });
+
+  it('does not cross a blank row between two line comments', () => {
+    // Two paragraphs. Joining them would print a sentence about a break no author wrote,
+    // which is the direction every approximation in these readers is chosen against.
+    const dir = treeOf({ 'src/a.ts': `// ${HAN(4)}\n\n// ${HAN(4)}.\nconst a = 1;\n` });
+    const { status, out } = run(dir);
+    expect(out).toContain('0 run(s)');
+    expect(status).toBe(0);
+  });
+
+  it('does not cross from a block comment into a line comment', () => {
+    // A block comment ends at its terminator, and a line comment after it is a new
+    // paragraph even when it sits on the next row: the two are different syntactically,
+    // and a `*/` between them is a wall.
+    const dir = treeOf({ 'src/a.ts': `/** ${HAN(4)} */\n// ${HAN(4)}.\nconst a = 1;\n` });
+    expect(run(dir).status).toBe(0);
+  });
+
+  it('does not cross from one column to another', () => {
+    // The family carries the column because a wrap stays where it started. Two comments at
+    // different columns sit on consecutive rows and are still two paragraphs, and without
+    // the column in the family this fixture reports eight Han characters nobody wrote.
+    const dir = treeOf({ 'src/a.ts': `// ${HAN(4)}\n  // ${HAN(4)}.\nconst a = 1;\n` });
+    expect(run(dir).status).toBe(0);
+  });
+
+  it('ends the paragraph at a blank row inside a block comment', () => {
+    // The blank row of a doc block is ` *` on its own, which the decoration strip turns
+    // into nothing -- so the split has to happen after the strip, not before it.
+    const dir = treeOf({ 'src/a.ts': `/**\n * ${HAN(4)}\n *\n * ${HAN(4)}.\n */\nconst a = 1;\n` });
+    expect(run(dir).status).toBe(0);
+  });
+
+  it('crosses a wrap in a file written with CRLF', () => {
+    const dir = treeOf({ 'src/a.ts': `// ${HAN(4)}\r\n// ${HAN(4)}.\r\nconst a = 1;\r\n` });
+    expect(run(dir).status).toBe(1);
+  });
+
+  it('reports the row breaks it held, and the real tree holds many', () => {
+    // The witness, floored: a grouper that flushed at every comment would find the same
+    // runs and cross nothing, and the gate would print a smaller number as a pass.
+    const body = scanComments(`// a\n// b\n\n// c\nconst a = 1;\n`);
+    expect(commentsReport(body.comments).pairs).toBe(1);
+    expect(check(ROOT).pairs).toBeGreaterThan(20_000);
+  });
+});
+
+/**
+ * The claim in `docs-language.mjs`'s header, as an experiment rather than a sentence.
+ *
+ * The implementation joins a paragraph's rows with **nothing** between them. The rule it
+ * stands for is narrower: a break is crossed only when the characters on either side of it
+ * are both Han. This test asserts the two are the same reading over 400 pseudo-random
+ * sequences of rows -- the join is not an approximation of the rule, it is the rule.
+ *
+ * The reference is the pairwise decision: a separator wherever the break does not fall
+ * between two Han characters. The seed is a literal and the generator is an LCG, so the
+ * experiment is the same experiment on every machine; a random seed would make a red run
+ * unreproducible, which is worse than a smaller population.
+ */
+describe('the join, against the rule it stands for', { timeout: SUITE_BUDGET_MS }, () => {
+  const HAN_CHAR = /\p{Script=Han}/u;
+  const PIECES = ['', ' ', 'a', 'ab.', '\u3002', '(', ')', 'x/y', '-'];
+
+  /** 400 sequences of one to six rows, drawn from Han runs of 0 to 11 and inert pieces. */
+  function sequences(): string[][] {
+    let seed = 20_261_116;
+    const next = () => {
+      seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+      return seed / 2_147_483_648;
+    };
+    const pick = <T,>(items: readonly T[]): T => items[Math.floor(next() * items.length)] as T;
+    const out: string[][] = [];
+    for (let case_ = 0; case_ < 400; case_ += 1) {
+      const rows: string[] = [];
+      const count = 1 + Math.floor(next() * 6);
+      for (let row = 0; row < count; row += 1) {
+        const han = Math.floor(next() * 12);
+        // Two thirds of the rows carry no decoration: a Chinese paragraph's middle rows
+        // have none, and without them the population would hold almost no crossing run
+        // and the property would pass while saying nothing.
+        rows.push(next() < 0.34 ? `${pick(PIECES)}${HAN(han)}${pick(PIECES)}` : HAN(han));
+      }
+      out.push(rows);
+    }
+    return out;
+  }
+
+  /** The runs a reader finds when it decides each break on its own. */
+  function referenceRuns(rows: readonly string[]): string[] {
+    let joined = '';
+    rows.forEach((row, index) => {
+      if (index > 0) {
+        const left = (rows[index - 1] ?? '').trimEnd().at(-1);
+        const right = row.trimStart()[0];
+        const bothHan = left !== undefined && right !== undefined && HAN_CHAR.test(left) && HAN_CHAR.test(right);
+        if (!bothHan) joined += '\u0000';
+      }
+      joined += row;
+    });
+    return [...joined.matchAll(/\p{Script=Han}{8,}/gu)].map((match) => match[0]);
+  }
+
+  it('finds the same runs as a reader that decides each break on its own', () => {
+    let spanning = 0;
+    for (const rows of sequences()) {
+      if (rows.some((row) => row.trim() === '')) continue;
+      const hits = hanRunsIn(rows.map((body, index) => ({ line: index + 1, body })));
+      expect(hits.map((hit) => hit.text)).toEqual(referenceRuns(rows));
+      spanning += hits.filter((hit) => hit.spanning !== undefined).length;
+    }
+    // A property that never met the case it is about would pass while saying nothing: the
+    // population has to contain runs that cross a break, and this is the count.
+    expect(spanning).toBeGreaterThan(50);
+  });
+
+  it('reports a crossing run at the row it starts on', () => {
+    const hits = hanRunsIn([
+      { line: 4, body: 'lead ' },
+      { line: 5, body: HAN(4) },
+      { line: 6, body: `${HAN(4)} tail` },
+    ]);
+    expect(hits).toEqual([{ line: 5, text: `${HAN(4)}${HAN(4)}`, length: 8, spanning: 2 }]);
   });
 });

@@ -307,9 +307,13 @@ describe('the reading, at its edges', { timeout: SUITE_BUDGET_MS }, () => {
     expect(found.problems).toEqual([]);
     expect(found.hashes).toEqual({ comment: 2, quoted: 1, blockRow: 1, scalar: 1 });
     expect(found.comments).toEqual([
-      { kind: 'line', line: 1, text: ' a comment' },
-      { kind: 'block', line: 8, text: ' a shell comment' },
+      { kind: 'line', family: '#0', line: 1, text: ' a comment' },
+      { kind: 'block', family: '#10', line: 8, text: ' a shell comment' },
     ]);
+    // The family is the `#` and its column, and it is what decides whether two rows can be
+    // one paragraph: the block scalar's row sits at column ten, so it cannot continue the
+    // row at column zero even if the two were adjacent.
+    expect(found.comments.map((comment) => comment.family)).toEqual(['#0', '#10']);
     const total = Object.values(found.hashes).reduce((sum, value) => sum + value, 0);
     expect(total).toBe(text.split('#').length - 1);
   });
@@ -319,7 +323,7 @@ describe('the reading, at its edges', { timeout: SUITE_BUDGET_MS }, () => {
     // opener would report a row nobody can open.
     const found = scanYamlComments('# see #3\n');
     expect(found.hashes).toEqual({ comment: 2, quoted: 0, blockRow: 0, scalar: 0 });
-    expect(found.comments).toEqual([{ kind: 'line', line: 1, text: ' see #3' }]);
+    expect(found.comments).toEqual([{ kind: 'line', family: '#0', line: 1, text: ' see #3' }]);
   });
 
   it('reports a run at the row it sits on, and only outside a code span', () => {
@@ -368,5 +372,52 @@ describe('the reading, at its edges', { timeout: SUITE_BUDGET_MS }, () => {
     expect(lost).toEqual([]);
     expect(rows).toBeGreaterThan(1_100);
     expect(check(ROOT).comments).toBe(rows);
+  });
+});
+
+/**
+ * A row break inside a `#` comment paragraph -- the third surface of one boundary.
+ *
+ * The workflow files are where this repository writes down *why* a step exists, in prose,
+ * and prose wrapped in a narrow column is two rows. The census counts comments row by row
+ * on purpose (a row beginning with `#` must be a comment on that row), so the language
+ * rule has to group those rows itself rather than let the census decide what a paragraph
+ * is -- two answers to two different questions, which is why both are checked.
+ */
+describe('a row break inside a workflow comment', { timeout: SUITE_BUDGET_MS }, () => {
+  it('crosses the break between two `#` rows on consecutive lines', () => {
+    const dir = treeOf({ 'a.yml': `# ${HAN(4)}\n# ${HAN(4)}.\njobs:\n  a: 1\n` });
+    const { status, out } = run(dir);
+    expect(out).toContain('a.yml:1:');
+    expect(out).toContain('8 Han character(s) of prose across 2 row(s)');
+    expect(status).toBe(1);
+  });
+
+  it('does not cross from one column to another', () => {
+    const dir = treeOf({ 'a.yml': `# ${HAN(4)}\n  # ${HAN(4)}.\njobs:\n  a: 1\n` });
+    expect(run(dir).status).toBe(0);
+  });
+
+  it('does not cross a blank row between two `#` comments', () => {
+    const dir = treeOf({ 'a.yml': `# ${HAN(4)}\n\n# ${HAN(4)}.\njobs:\n  a: 1\n` });
+    const { status, out } = run(dir);
+    expect(out).toContain('0 run(s)');
+    expect(status).toBe(0);
+  });
+
+  it('crosses the break between two comment rows inside a block scalar', () => {
+    // Both rows are comments the census reads from a `run: |` block, and the language rule
+    // pairs them the same way it pairs any other two rows: adjacency is all it asks.
+    const dir = treeOf({
+      'a.yml': `jobs:\n  a:\n    steps:\n      - run: |\n          echo hi\n          # ${HAN(4)}\n          # ${HAN(4)}.\n`,
+    });
+    const { status, out } = run(dir);
+    expect(out).toContain('a.yml:6:');
+    expect(out).toContain('across 2 row(s)');
+    expect(status).toBe(1);
+  });
+
+  it('reports the row breaks it held, and the real tree holds hundreds', () => {
+    expect(check(ROOT).pairs).toBeGreaterThan(400);
   });
 });

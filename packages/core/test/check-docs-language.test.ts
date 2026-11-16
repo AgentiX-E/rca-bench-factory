@@ -4,14 +4,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { HAN_RUN, check, documentsIn, hanProseIn, withoutCodeSpans } from '../../../scripts/docs-language.mjs';
+import { HAN_RUN, check, documentsIn, hanProseIn, proseReport, withoutCodeSpans } from '../../../scripts/docs-language.mjs';
 
 /**
  * The documents of this repository are English, and this is the reader that says so.
  *
  * Three rounds of the progress log (v3.69, v3.83, v3.84) were written in Chinese --
  * 43, 40 and 33 lines with their headings -- in a tree whose commit messages, comments
- * and gate output are English. Nothing failed: `docs:check` runs twenty gates over those
+ * and gate output are English. Nothing failed: `docs:check` runs twenty-one gates over those
  * documents and not one of them asks what language a sentence is in. The rounds were
  * rewritten against the record, and this file is the part that keeps a fourth one from
  * arriving the same way.
@@ -25,6 +25,13 @@ import { HAN_RUN, check, documentsIn, hanProseIn, withoutCodeSpans } from '../..
  * shapes that are easiest to get wrong -- a span delimited by two backticks around text
  * that contains one, and an unterminated backtick -- are fixtures too, because both are
  * cases where a regex-based reader is silently wrong in the direction of passing.
+ *
+ * The unit the rule judges is a paragraph rather than a row, because a run wrapped in a
+ * narrow column is one sentence rather than two citations. So the boundaries a paragraph
+ * ends at -- a blank row, a heading, a fence, a block quote -- get a fixture each in the
+ * direction that costs something: four Han characters on both sides of the boundary, which
+ * a reader with no boundary reports as eight. Without them the widening would be a rule
+ * with a failure mode nobody had seen.
  */
 
 /** The gate this file drives, declared as well as spawned. */
@@ -134,6 +141,73 @@ describe('the language of a document', { timeout: 30_000 }, () => {
   it('finds documents in subdirectories, so the scope is the tree rather than the top level', () => {
     const dir = treeOf({ 'a/b/c/deep.md': '# Deep\n', 'top.md': '# Top\n' });
     expect(documentsIn(dir).sort()).toEqual(['a/b/c/deep.md', 'top.md']);
+  });
+});
+
+describe('a row break inside a paragraph', { timeout: 30_000 }, () => {
+  it('crosses a wrap that falls between two Han characters', () => {
+    // Neither row reaches the threshold on its own -- four characters and four -- so a
+    // reader that judged each row alone would see two citations and report nothing. This
+    // is the fixture the whole round exists for, and it is the shape a narrow column
+    // produces: a paragraph hard-wrapped in the middle of a run.
+    const dir = treeOf({ 'docs/page.md': `# Page\n\n${HAN(4)}\n${HAN(4)}.\n` });
+    const { status, out } = run(dir);
+    expect(out).toContain('docs/page.md:3:');
+    expect(out).toContain('8 Han character(s) of prose across 2 row(s)');
+    expect(status).toBe(1);
+  });
+
+  it('ends the paragraph at a blank row', () => {
+    // The other direction of the same rule, and the one a reader that joined every pair of
+    // rows would get wrong: two paragraphs of four characters are two citations, not one
+    // sentence -- and joining them would print a sentence about a break no author wrote.
+    const dir = treeOf({ 'docs/page.md': `# Page\n\n${HAN(4)}\n\n${HAN(4)}.\n` });
+    const { status, out } = run(dir);
+    expect(out).toContain('0 run(s)');
+    expect(status).toBe(0);
+  });
+
+  it('does not let a heading continue the row above it', () => {
+    // A heading ends the paragraph in both directions, and this fixture is the one the
+    // first version of this file got wrong: it put the quote *after* a blank row, so the
+    // paragraph had already ended and the flush under test could not be reached. The row
+    // before the heading is prose here, and there is no blank row between them.
+    const dir = treeOf({ 'docs/page.md': `# Page\n\n${HAN(4)}\n## ${HAN(4)}\n${HAN(4)}.\n` });
+    expect(run(dir).status).toBe(0);
+  });
+
+  it('does not let prose continue across a fence', () => {
+    const dir = treeOf({
+      'docs/page.md': `# Page\n\n${HAN(4)}\n\`\`\`\ncode\n\`\`\`\n${HAN(4)}.\n`,
+    });
+    expect(run(dir).status).toBe(0);
+  });
+
+  it('does not let prose continue across a block quote', () => {
+    // The first version of this fixture had a blank row after the quote, which ended the
+    // paragraph by another rule -- so the mutation that removed the quote's flush left the
+    // suite green. The row before and the row after are both prose and adjacent here.
+    const dir = treeOf({ 'docs/page.md': `# Page\n\n${HAN(4)}\n> quoted\n${HAN(4)}.\n` });
+    expect(run(dir).status).toBe(0);
+  });
+
+  it('crosses the break in a document written with CRLF', () => {
+    // A carriage return left on the row would sit between the two characters of a wrapped
+    // run and the break would look like punctuation. It is one `replace` and one fixture,
+    // and without the fixture the exclusion would be invisible on a tree that is LF.
+    const dir = treeOf({ 'docs/page.md': `# Page\r\n\r\n${HAN(4)}\r\n${HAN(4)}.\r\n` });
+    const { status, out } = run(dir);
+    expect(out).toContain('8 Han character(s) of prose across 2 row(s)');
+    expect(status).toBe(1);
+  });
+
+  it('counts the row breaks it held, so a grouper that stopped grouping is visible', () => {
+    // The reading's own witness. A reader that flushed at every row would find the same
+    // runs and cross nothing, which reads exactly like a tree with nothing to cross --
+    // so the number is reported, floored here, and printed by the gate.
+    expect(proseReport('a\nb\nc\n').pairs).toBe(2);
+    expect(proseReport('a\n\nb\n').pairs).toBe(0);
+    expect(check(ROOT).pairs).toBeGreaterThan(10_000);
   });
 });
 
