@@ -538,6 +538,49 @@ describe('check-aggregate-tables · the gate', { timeout: SUITE_BUDGET_MS }, () 
    * container off the left of the last underscore would be a guess about a file whose
    * whole purpose is to be compared with.
    */
+  /**
+   * A table whose time column is not on the grid is not a table this rule can compare.
+   *
+   * The inequality compares per-window totals: the log side floors every instant to a
+   * fifteen-second window, and the published side is keyed by whatever its time column
+   * says. A table written on another origin therefore has no row that can be compared
+   * with any window, and the breach it produces -- "publishes 131 cells, holds 0 rows"
+   * -- is a true sentence about a comparison that should not have been made. That is
+   * finding 545's shape one step upstream, and the answer is a refusal that names the
+   * grid rather than a breach that names the numbers.
+   */
+  it('refuses a table whose time column is not on the fifteen-second grid', () => {
+    const dir = makeCase({
+      'cluster_info.json': JSON.stringify(CLUSTERS),
+      'logs.csv': [LOGS_HEADER_MESSAGE_ONLY, logLineMessageOnly(0, 'frontend')].join('\n'),
+      // A table written on an origin seven seconds off the grid the reduction uses.
+      'logts.csv': ['time,currencyservice_1,frontend_2', '7,0,1'].join('\n'),
+    });
+    const { status, out } = run('--case', dir);
+    expect(out).toContain('its time column reads 7, which is not on the 15-second grid');
+    expect(out).toContain('would be answered with cells the log file never fills');
+    expect(out).toContain('0 of 1 case(s) could be reproduced or bounded, which is not a pass');
+    expect(status).toBe(1);
+  });
+
+  /**
+   * The refusal is about the grid, not about the numbers, and this is the fixture that
+   * keeps it from being over-broad: a table one window away is on the grid, so it is
+   * compared, and the comparison fails on its numbers -- which is the right verdict for
+   * a table that really does disagree.
+   */
+  it('still compares a table that is on the grid and one window away', () => {
+    const dir = makeCase({
+      'cluster_info.json': JSON.stringify(CLUSTERS),
+      'logs.csv': [LOGS_HEADER_MESSAGE_ONLY, logLineMessageOnly(0, 'frontend')].join('\n'),
+      'logts.csv': ['time,currencyservice_1,frontend_2', '15,0,1'].join('\n'),
+    });
+    const { status, out } = run('--case', dir);
+    expect(out).toContain("container 'frontend' in bucket 15 publishes 1 log cell(s) and logs.csv holds 0 row(s)");
+    expect(out).not.toContain('not on the 15-second grid');
+    expect(status).toBe(1);
+  });
+
   it('refuses a published column that does not name a container and a key', () => {
     const dir = makeCase({
       'cluster_info.json': JSON.stringify(CLUSTERS),

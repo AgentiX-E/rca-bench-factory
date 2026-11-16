@@ -341,6 +341,8 @@ function compareMarginals(text, containers, logCounts, label) {
   let rows = 0;
   let cells = 0;
   let publishedTotal = 0;
+  /** The first published time that is not on the grid, or `null` when every one is. */
+  let offGrid = null;
 
   for (const line of iterateCsvRows(text)) {
     if (header) {
@@ -358,6 +360,15 @@ function compareMarginals(text, containers, logCounts, label) {
         `${label}: row ${rows} has time='${line[0] ?? ''}', which is not a whole second; every bucket in the ` +
           'corpus is written as one',
       );
+      continue;
+    }
+    if (bucket % LOGTS_BUCKET_SECONDS !== 0) {
+      // A time that is not on the grid is not a bucket this rule can compare with. The
+      // log side floors every instant to a window, so a table written on another origin
+      // would be reported as publishing cells for windows the log never fills -- a true
+      // sentence about a false comparison, which is the shape of finding 545 one step
+      // upstream. Recorded once and refused by the caller rather than 97 times per case.
+      if (offGrid === null) offGrid = bucket;
       continue;
     }
     for (let c = 1; c < line.length; c += 1) {
@@ -403,6 +414,7 @@ function compareMarginals(text, containers, logCounts, label) {
 
   return {
     problems,
+    offGrid,
     pairs,
     publishedTotal,
     // Two row counts that are not the same number and were confused once: the table's
@@ -559,6 +571,17 @@ function checkCase(dir, label) {
     // comparison rather than inside it: `compareMarginals` reads the published table
     // and never opens `logs.csv`.
     marginal.logRows = counted.total;
+    if (marginal.offGrid !== null) {
+      return {
+        outcome: 'refused',
+        reason: 'off-grid-table',
+        why:
+          `${join(dir, LOGTS)}: its time column reads ${String(marginal.offGrid)}, which is not on the ` +
+          `${String(LOGTS_BUCKET_SECONDS)}-second grid the reduction buckets on; the inequality compares ` +
+          'per-window totals, so a table written on another origin would be answered with cells the log ' +
+          'file never fills rather than with a fact about the corpus',
+      };
+    }
     if (marginal.pairs === 0) {
       // A table with no non-zero cell is not a weak pass: nothing was compared, and
       // "the claim held" and "there was no claim" print the same number of failures.
