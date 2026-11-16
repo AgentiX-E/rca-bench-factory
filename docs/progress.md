@@ -984,11 +984,13 @@ is a row about rather than paraphrase one that no `grep` will find.
   `exports` field cover. See finding 50.
 
   **Those three figures are pass 11's measurement and are kept as such** — they are
-  the record of what that pass changed, not a description of the tree today. At this
-  revision the list holds **47 modules** and **538 runtime exports**, and the
-  exemption count is **37 entries, two of which are runtime** (`llm/provider.ts::*`
-  and `index.ts::assembleBundle`); the other 35 are `ir/types.ts` type aliases that
-  erase at runtime. Pass 13 found that the same three literals had drifted three
+  the record of what that pass changed, not a description of the tree today. The
+  module and export counts are the list's own and this paragraph no longer restates
+  them: v3.102 added one export, and the sentence that said **538** was the second
+  place that had to be edited -- which is the drift it describes and not an exception
+  to it (finding 554). The exemption count is **37 entries, two of which are runtime**
+  (`llm/provider.ts::*` and `index.ts::assembleBundle`); the other 35 are
+  `ir/types.ts` type aliases that erase at runtime. Pass 13 found that the same three literals had drifted three
   different ways — 43 in the test file's own comment, 45 here, 46 in the L3 row —
   which is why the test file no longer states any of them and points at the list
   instead.

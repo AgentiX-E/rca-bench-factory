@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–553, from the rounds recorded in `progress/volume-15.md`.
+Findings 542–554, from the rounds recorded in `progress/volume-15.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -765,3 +765,24 @@ the exporter's own tests and by the generated contract page instead.
 floor that may outrank it -- a three-step chain with no label prints `medium` beside `hard` -- and nothing
 refuses that pair. The corpus offers no witness (0 of 34), so the repair would be a rule whose only failure is
 synthetic, which is the shape this list has learned to distrust. Recorded as an open entry rather than written.
+
+## Finding 554 — the paragraph that argues against restating a count restated it, and this round moved the number
+
+**The shape.** `docs/progress.md`'s L3 entry explains, at length, why the export-surface figures stopped being written
+in prose: pass 13 found the same three literals drifted three different ways across the test file's comment, the entry
+itself and the L3 row, so the test now points at the list instead of quoting it. The next sentence then did the thing
+the paragraph had just finished forbidding -- "at this revision the list holds **47 modules** and **538 runtime
+exports**" -- and nothing read it.
+
+**How it was found.** Not by a gate. v3.102 added one export (`projectDifficulty`) and the enumeration suite went red
+because the name was not in `TESTED`; adding it moved the surface from 538 to 539, and the prose that states 538 kept
+saying 538 while every gate stayed green. The number was stale within the round that changed it, which is the whole
+cost of a count with no reader: it does not fail, it ages.
+
+**The repair.** The sentence no longer states either count. It says the counts are the list's own and names the round
+that made the restatement visible, which is the same repair the test file took in pass 13 and for the same reason -- a
+pointer cannot disagree with the thing it points at.
+
+**What it does not fix.** The exemption count in the following clause (**37**, two of them runtime) is a number of the
+same kind with the same absence of a reader. It is left because it has not moved since the pass that took it, and a
+repair that anticipates drift is not a repair this list has a witness for.

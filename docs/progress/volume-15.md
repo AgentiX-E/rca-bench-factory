@@ -2687,6 +2687,9 @@ demanded one would score the reference corpus as malformed. What it costs is sta
 notice an exporter that stopped emitting the pair, so the emission is pinned by the exporters' own tests and
 by the generated contract page instead.
 
+**A second finding.** The export count this round moved was also stated in the one paragraph that argues against
+restating a count, and it stayed stale while every gate went green (finding 554); the sentence now points at the list.
+
 **What it does not fix.** A case that states no level publishes the documented `unset -> medium` row beside a
 floor that may outrank it -- a three-step chain with no label prints `medium` beside `hard` -- and nothing
 refuses that pair. The corpus offers no witness (0 of 34), so the repair would be a rule whose only failure
