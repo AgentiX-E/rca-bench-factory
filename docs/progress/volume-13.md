@@ -742,81 +742,155 @@ feeds it compared one case at a time, so the arm, once added, would still have b
 been asked again over the whole set. The third finding is the same sentence about documents: a figure
 needs a second reader, and the copy that has one is the copy that stays true.
 
-## v3.69 — 两条从没被人动过的阈值，和一个只存在于库里的通道
+## v3.69 — two thresholds nobody had ever moved, and a channel that exists only in the library
 
-### 一、网格十六格一个答案，而那不是网格通过了
+### One · sixteen cells, one answer, and that is not the grid passing
 
-`checkG3Validity` 用「某个指标在注入后连续 3 个样本 `|Z| >= 2.0`」接纳一个案例。两个数都是带默认值的参数，两个默认值都内联在函数里，而树里没有任何东西问过它们两侧是什么样。网格的答案是：**什么都没变**。
+`checkG3Validity` admits a case on "some metric holds `|Z| >= 2.0` for 3 consecutive samples after the
+injection". Both numbers are parameters with defaults, both defaults are inline in the function, and
+nothing in the tree had ever asked what either side of them looks like. The grid's answer: **nothing
+changed**.
 
-| 单元 | 接纳 | 单元 | 接纳 |
+| cell | admitted | cell | admitted |
 | --- | --- | --- | --- |
-| `\|Z\| >= 1`，1 样本 | 30 / 30 | `\|Z\| >= 10`，1 样本 | 30 / 30 |
-| `\|Z\| >= 1`，8 样本 | 30 / 30 | `\|Z\| >= 100`，8 样本 | 30 / 30 |
+| `\|Z\| >= 1`, 1 sample | 30 / 30 | `\|Z\| >= 10`, 1 sample | 30 / 30 |
+| `\|Z\| >= 1`, 8 samples | 30 / 30 | `\|Z\| >= 100`, 8 samples | 30 / 30 |
 
-十六格，一个判决。这不是网格通过了，是**语料看不见阈值**——而网格的职责正是分清这两件事。分开它们的是每个案例的**翻转点**：它仍能撑住 3 个样本的最大 `\|Z\|` 线，也就是最佳三窗里最小的那个 z（闭式，不用搜索）。
+Sixteen cells, one verdict. This is not the grid passing; it is **the corpus being unable to see the
+threshold** -- and telling those two apart is exactly the grid's job. What separates them is each
+case's **flip point**: the largest `\|Z\|` line it can still hold 3 samples above, which is the smallest
+z among the best three windows (closed form, no search).
 
-| 量 | 值 |
+| quantity | value |
 | --- | --- |
-| 被判决的案例 | **30** |
-| 最弱的翻转点 | **126.85** —— `history-resource-ephemeral-capacity-image-builder` |
-| 最强的翻转点 | **3.15e12** —— `history-kafka-consumer-lag` |
-| 相对默认线的余量 | **63.42 倍** |
-| 单个案例能给的最多样本 | **8** |
+| cases judged | **30** |
+| weakest flip point | **126.85** -- `history-resource-ephemeral-capacity-image-builder` |
+| strongest flip point | **3.15e12** -- `history-kafka-consumer-lag` |
+| margin over the default line | **63.42x** |
+| most samples one case can offer | **8** |
 
-原因是语料的构造而不是门禁：派生序列从基线一步跳到 post 值，计数器的前置窗口精确平坦，于是 `stddev` 是零或 2% 抖动，z 就成了步长与**那个**的比值——最弱 126，最强 3.15e12。这样造出来的语料测不了阈值，这正是 `probe-z-floor` 关于 `epsilon` 的发现（finding 288）低一层的样子。
+The cause is the corpus's construction rather than the gate: the derived series steps from the baseline
+to the post value in one step and the counter's pre-window is exactly flat, so `stddev` is zero or a 2%
+jitter and z becomes the step divided by **that** -- 126 at the weakest, 3.15e12 at the strongest. A
+corpus built that way cannot test a threshold, which is finding 288's discovery about `epsilon` one
+level down.
 
-**网格还能辩护什么。** 顺序：任一条轴抬高，被拒数不会下降，十六格全部断言过，所以这是一个曲面而不是十六次互不相干的测量。**不能辩护什么：**数值——1 到 100 之间任何一条线在这份语料上给出同一个判决，所以默认值是一个语料对它保持沉默的判断。读数不假装相反：`check-fault-cases.mjs` 在两个出口都把余量印在网格旁边，清单条目改写为「语料回答不了什么」而不是「网格没测出什么」。
+**What the grid can still defend.** Order: raising either axis never lowers the number rejected, and all
+sixteen cells are asserted, so this is a surface rather than sixteen unrelated measurements. **What it
+cannot defend:** the numbers -- any line between 1 and 100 gives the same verdict on this corpus, so the
+default is a judgment the corpus is silent about. The reading does not pretend otherwise:
+`check-fault-cases.mjs` prints the margin beside the grid at both exits, and the list entry was rewritten
+as "what the corpus cannot answer" rather than "what the grid failed to find".
 
-**让答案可信的形状。**网格与判决是同一次计算：`metricGroups`、`absZScores`、`flipPoint` 与 `checkG3Validity` 共用，一条测试把每一格拒掉的集合与 `checkG3Validity` 自己的违规逐格比对。十六格与门禁一致，那是对门禁的读数；十六格由第二份实现算出，那是第二条规则——上一轮刚为这件事付过账（finding 479）。
+**The shape that makes the answer trustworthy.** The grid and the verdict are one computation:
+`metricGroups`, `absZScores` and `flipPoint` are shared with `checkG3Validity`, and one test compares
+each cell's rejected set with `checkG3Validity`'s own violations, cell by cell. Sixteen cells agreeing
+with the gate is a reading *of the gate*; sixteen cells computed by a second implementation is a second
+rule -- a thing the previous round had just paid for (finding 479).
 
-写它的时候抓到两个小东西。`G3_DEFAULTS` 现在存在，网格读的是门禁应用的数而不是复述的；而这个读数的第一版**只给调用方轴上的样本线**算翻转点，于是问了个更窄问题的调用方被告知「没有任何案例撑住 3 个样本」——而那个案例撑住 62 个。把网格形状的读数当成语料的读数，被那条故意问窄问题的测试抓住。
+Two small things were caught while writing it. `G3_DEFAULTS` now exists, and the grid reads the numbers
+the gate applies rather than restating them; and the first version of this reading computed flip points
+**only** along the sample line of the axis its caller asked about, so a caller asking a narrower
+question was told "no case holds 3 samples" -- while that case holds 62. Taking a grid-shaped reading for
+a corpus reading is what the deliberately narrow test caught.
 
-### 二、一个只存在于库里的通道，和一张写了两遍的表
+### Two · a channel that exists only in the library, and a table written twice
 
-清单条目说：`rulegen` 没有拒绝计数、没有一致率，「没有任何东西把它和已经存在的三十条人工标注比对」。三句话里两句是错的，第三句才是要害。
+The list entry said: `rulegen` has no refusal count, no agreement rate, and "nothing compares it with
+the thirty human annotations that already exist". Two of those three sentences are wrong, and the third
+is the point.
 
-**那三十条标注属于另一个通道。** `golden-master/fault-extraction/samples.json` 有三十条手写事故文本与期望的 `type`/`category`/`component`，`buildExtractionReport` 把一次运行与之比对：命中、miss、分层比率、miss 分类、严格阈值。`fault-extraction-accuracy` workflow 调用它。所以那条条目指向的标注集**早就被读了**——被从文本抽取故障的通道读，而那不是 `rulegen`。
+**The thirty annotations belong to another channel.** `golden-master/fault-extraction/samples.json`
+holds thirty hand-written incident texts with their expected `type`/`category`/`component`, and
+`buildExtractionReport` compares one run against them: hits, misses, stratified rates, miss classes,
+strict threshold. The `fault-extraction-accuracy` workflow calls it. So the annotation set the entry
+pointed at **had long been read** -- read by the channel that extracts a fault from text, which is not
+`rulegen`.
 
-**而 `rulegen` 根本没有调用方。**`buildRulegenPrompt`、`parseRulegenResponseChecked`、`validateGeneratedLayout` 从 `index.ts` 导出，在 `src/` 与 `scripts/` 里除了自己和测试之外无人调用。每个被摄取的文件走的是 `ingest/prime.ts` 的别名表。所以「没有拒绝计数」不是一个缺失的测量，而是一个无人调用的函数的正确报告；对模型输出报一个一致率，描述的是一个不运行的通道。
+**And `rulegen` has no caller at all.** `buildRulegenPrompt`, `parseRulegenResponseChecked` and
+`validateGeneratedLayout` are exported from `index.ts` and, outside themselves and their tests, are
+called by nothing in `src/` or `scripts/`. Every ingested file goes through the alias table in
+`ingest/prime.ts`. So "no refusal count" is not a missing measurement; it is a correct report about a
+function nobody calls, and an agreement rate over model output would describe a channel that does not
+run.
 
-**表才是值得修的缺陷。**`REQUIRED_FIELDS`——一个布局必须映射哪些字段才算可读——被逐字节写了两遍：`ingest/prime.ts` 一份决定能否调用 `ingestFile`，`llm/rulegen.ts` 一份决定模型的映射是否完整。两者在本轮开始时完全相同，而没有任何东西把它们拴在一起；一旦分叉，就会出现「验证器接受的布局被摄取拒绝」，而那句报错会写**缺列**而不是两个表不一致。这与 v3.67 的 `contractVersion`、v3.68 的停用词表是同一个缺陷的第三件外衣：**一个事实，两个写者，没有规则。**表现在住在 `ingest/file.ts`（它拥有 `FileLayout` 与 `FileSignalKind`），两个模块都导入它，分叉不再可表达。
+**The table was the defect worth repairing.** `REQUIRED_FIELDS` -- which fields a layout must map before
+it is readable -- was written twice, byte for byte: one copy in `ingest/prime.ts` deciding whether
+`ingestFile` may be called, one in `llm/rulegen.ts` deciding whether the model's mapping is complete. The
+two were identical when the round began and nothing bound them together; once they diverged, a layout
+the validator accepted would be refused by the ingest, and the error would name a **missing column**
+rather than two tables disagreeing. This is the third coat of the defect v3.67 found in `contractVersion`
+and v3.68 in the stop-word list: **one fact, two writers, no rule.** The table now lives in
+`ingest/file.ts` (which owns `FileLayout` and `FileSignalKind`), both modules import it, and the
+divergence is no longer expressible.
 
-### 三、答案集量的是什么
+### Three · what the answer set measures
 
-`golden-master/rulegen-layouts.json` 里十六个手写案例：一个表头行、两三条样本、一个仔细的人类读者会给出的布局，以及——模型那一侧——整段候选回答，按模型出错的方式写。读数报两个**不是同一个断言**的数：
+`golden-master/rulegen-layouts.json` holds sixteen hand-written cases: a header row, two or three
+samples, the layout a careful human reader would give, and -- on the model's side -- a whole candidate
+reply, written the way models get it wrong. The reading reports two numbers that are **not the same
+assertion**:
 
-| 通道 | 数 | 量的是什么 |
+| channel | number | what it measures |
 | --- | --- | --- |
-| 别名表 | **14 / 16** 个指定布局 | 发的是它：差在两个值列不在其词表里的案例 |
-| 验证器 | **16 / 16** 个判决，9 接受 / 7 拒绝 | 对回答的守卫：拼错的字段、不存在的列、空格、缺必需字段、错模态字段、编造的枚举值、超过 1 的置信度 |
-| 理由 | **7 / 7** | 理由错的拒绝等于答案错而退出码对 |
-| 它看不见的那一类 | **1** | 一个被接受的回答把 `metricValue` 指到 `limit`，而答案集说 `usage` |
+| alias table | **14 / 16** layouts named | it issued the answer: the two it misses are cases whose value columns are not in its vocabulary |
+| validator | **16 / 16** verdicts, 9 accepted / 7 refused | the guard over replies: misspelled fields, columns that do not exist, blank cells, missing required fields, wrong-modality fields, invented enum values, confidences above 1 |
+| reasons | **7 / 7** | a refusal whose reason is wrong is a wrong answer with a right exit code |
+| the class it cannot see | **1** | an accepted reply points `metricValue` at `limit` while the key says `usage` |
 
-最后一行是值得有的那个读数。`validateGeneratedLayout` 把布局对样本重放，所以它拒绝的是缺失或空的列——一个**结构性**检查。指到一个真实、非空、含义错误的列，它能通过。验证器对自己的契约是对的，通道对数据是错的，一个数载不动两个断言。
+The last row is the number worth having. `validateGeneratedLayout` replays a layout against the samples,
+so what it refuses is a missing or empty column -- a **structural** check. Pointing at a real, non-empty,
+wrong-in-meaning column passes. The validator is right about its own contract, the channel is wrong about
+the data, and one number cannot carry two assertions.
 
-**kappa 缺席，而缺席本身就是主张。**Cohen's kappa 需要两个独立标注者；这十六个表头、指定布局与候选回答出自同一个作者。所以这个数是与**指定答案**的一致——弱于标注者之间的一致——每一句印它的话都说明是哪一种。另一种做法是把数字不加限定地印出来，而那是弱主张被读成强主张的路径。
+**kappa is absent, and the absence is itself a claim.** Cohen's kappa needs two independent annotators;
+these sixteen headers, laid-out answers and candidate replies come from one author. So the number is
+agreement with the **authored answer** -- weaker than agreement between annotators -- and every sentence
+that prints it says which of the two it is. The alternative was to print the number unqualified, and that
+is the path along which a weak claim gets read as a strong one.
 
-### 四、两轮之间格式上的一个共同点
+### Four · what the two rounds have in common in shape
 
-网格与答案集是同一个形状：把默认值的一个决定放进一张表，把表**不能**决定的东西报在它**能**决定的东西旁边，并且拒绝让一个数被印出来而不带那句「它是关于什么的数」。一个默认值和一个比率是同一件东西：一个其辩护住在敲下它的人脑子里的数字。
+The grid and the answer set are one shape: put one decision about a default into a table, report what the
+table **cannot** decide beside what it **can**, and refuse to let a number be printed without the
+sentence saying what it is a number *of*. A default and a rate are the same thing: a number whose defence
+lives in the head of the person who typed it.
 
-### 五、一条只在别人的回退里成立的导入路径
+### Five · an import path that only resolved inside someone else's fallback
 
-全量跑在这一轮红了十二个文件，其中十一个是子进程超时——机器被上一次覆盖率跑压住了，重跑即绿。第十二个不是：`published-refusals.test.ts` 报 `ERR_MODULE_NOT_FOUND`，说 `../../scripts/format-spec.mjs` 找不到。
+The full run went red on twelve files this round, eleven of them subprocess timeouts -- the machine was
+still pressed by the previous coverage run, and a re-run was green. The twelfth was not:
+`published-refusals.test.ts` reported `ERR_MODULE_NOT_FOUND` for `../../scripts/format-spec.mjs`.
 
-那个文件在 `packages/core/test/` 下，所以 `../../` 是 `packages/`，而 `packages/scripts/` 在树里不存在。路径**从来**就是错的。它一直能跑，是因为 vite-node 把树外模块当作外部依赖之前先按自己的根解析了一遍；当那次运行没有走那条回退（同一台机器、同一份文件、同一分钟，前一次红后一次绿），node 按 importer 解析，于是拿出一个没人写过的路径。
+That file sits in `packages/core/test/`, so `../../` is `packages/`, and `packages/scripts/` does not
+exist in the tree. The path was **always** wrong. It had always run because vite-node resolved a module
+outside the tree against its own root before treating it as external; when that run did not take the
+fallback (same machine, same file, same minute, red then green), node resolved by the importer and
+produced a path nobody had ever written.
 
-守卫不是把这一行改对就完事——**一条只在某个加载器的回退里成立的路径，下一轮会以同样方式再出现一次**。`scripts-are-classified.test.ts` 里已经有一个读 `from '…/scripts/x.mjs'` 的正则，用来禁止测试导入 gate；它被扩成同时读出整条 specifier，于是同一个读取器多出一个问题：这条 specifier 按写它的那个文件解析，落不落在一个真文件上。
+The repair is not to correct that one line -- **a path that only resolves inside some loader's fallback
+will come back the same way next round**. `scripts-are-classified.test.ts` already had a regular
+expression reading `from '…/scripts/x.mjs'` to keep tests from importing a gate; it was widened to read
+the whole specifier, so the same reader gained a second question: does this specifier, resolved against
+the file that writes it, land on a real file.
 
-守卫第一次运行就报了**两条**，两条都是散文：守卫自己的 doc comment 写出了那个形状，控制用例把形状引在字符串里。一条会因为自己的注释而红的守卫会被删掉，所以扫描前先去注释（`//` 必须紧跟在空白之后，这样字符串里的 `http://` 不会被读成注释开头），并把这三种情况写成控制断言。随后它报出的唯一一条 offender 就是真文件里那一行，而把那一行改回错的，它会再次点名报告。
+Its first run reported **two**, and both were prose: the guard's own doc comment spells the shape out,
+and a control case quotes it inside a string. A guard that goes red on its own comment gets deleted, so
+the scan strips comments first (`//` must follow whitespace, so `http://` inside a string is not read as
+a comment opening), and those three cases are written as control assertions. The single offender it then
+reported was the line in the real file, and putting that line back to the wrong spelling makes it name it
+again.
 
-| 读法 | 结果 |
+| reading | result |
 | --- | --- |
-| 全树 `scripts/*.mjs` specifier | **42** 条，全部落在一个真文件上 |
-| 修之前 | 1 条落在 `packages/scripts/`——一个不存在的目录 |
-| 同一条 specifier 的外部依赖路径 | node 按 importer 解析 → `ERR_MODULE_NOT_FOUND` |
+| every `scripts/*.mjs` specifier in the tree | **42**, all landing on a real file |
+| before the repair | 1 landing in `packages/scripts/` -- a directory that does not exist |
+| the same specifier as an external dependency | node resolves by importer → `ERR_MODULE_NOT_FOUND` |
 
-这件事的形状值得记下来：**红一次、绿一次、同一份文件**，如果只看后来的绿，它就是「机器抖了一下」。可用的线索是错误自己说的那句话——它报的路径没人写过。一个真缺陷与一次抖动的区别，经常只是错误信息里那个路径存不存在。
+The shape of this is worth recording: **red once, green once, same file**. Read only through the later
+green, it is "the machine stuttered". The usable clue was the sentence the error printed -- it named a
+path nobody had written. The difference between a real defect and a stutter is often just whether the
+path in the error message exists.
 
 ### Readings
 

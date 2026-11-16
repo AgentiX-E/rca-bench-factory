@@ -945,39 +945,45 @@ all guard a shape the data cannot have. The repair is to make `terms` required a
 them." This round read the seven, one at a time, and the plan was wrong for two of them --
 because the sentence it was derived from was wrong in a way only a range can hide.
 
-### 一 · 四个生产者，两个故意不写那个映射（finding 517）
+### One · four producers, two of which deliberately omit the map (finding 517)
 
-那句话的第二个从句是假的。`OfficialCaseScore` 有四个构造函数，**两个不写 `terms`**：
-`scoreFacetSubset`（三个 RCAEval 锚用的规则）与 `scoreCloudOpsBench` 都是对 facets 的集合
-比较，没有可携带的命名项，而字段自己的文档就写着「when the target's rule has them」。所以
-可选性不是遗留，它是**被用着的**，而且用它的两处都正确。
+The second clause of that sentence is false. `OfficialCaseScore` has four constructors, and **two
+of them do not write `terms`**: `scoreFacetSubset` -- the rule the three RCAEval anchors use -- and
+`scoreCloudOpsBench` both compare sets of facets, have no named item to carry, and the field's own
+documentation says "when the target's rule has them". So the optionality is not a leftover; it is
+**in use**, and both of its uses are correct.
 
-决定不因此反转，因为类型划出的那个区分**没有读者能看见**：`meanOfPresent` 对一个没有分母的
-项一律丢弃，无论它是缺项还是空映射；而 `rca100Process` 里那条 `terms === undefined` 返回的
-东西，与一行之后的空映射返回的完全相同。一个说「可能不存在」而实际只会「可能为空」的类型，
-在每一次读取处买一个兜底、在每一处都买不到保证——聚合里十七处 `?.` 加那一条臂。于是
-`terms` 改为必填、两个 facet 规则写 `{}`，空映射成为「没有命名项的规则」携带的形状。
+The decision is not reversed on that account, because the distinction the type draws **has no reader
+that can see it**: `meanOfPresent` drops any term with no denominator whether it is missing or an
+empty map, and the thing the `terms === undefined` arm returns in `rca100Process` is exactly what the
+empty map one line later returns. A type that says "may not exist" while in fact only ever means "may
+be empty" buys a fallback at every read and a guarantee at none -- seventeen `?.` in the aggregate plus
+that one arm. So `terms` becomes required, the two facet rules write `{}`, and the empty map becomes
+the shape a "rule with no named terms" carries.
 
-然后那七个位置，逐个读，它们**不是一个遗留**：
+And the seven positions, read one at a time, **are not one leftover**:
 
-| 位置 | 有输入能到吗 | 处置 |
+| position | can an input reach it | disposition |
 | --- | --- | --- |
-| `checkpointToken` 的 `typeof value === 'string'` 与 `: ''`（两处） | **能**：`value` 是 `unknown`，从案例文件里读出来，JSON 里数组和对象都是标注可能装的东西。一直没被走过，是因为每个夹具都传 `42` | 两条测试：字符串值原样携带（`order\|cpu\|>=\|high\|count/min`），对象什么都不贡献（`order\|cpu\|>=\|\|count/min`，而不是 `[object Object]`） |
-| `reachesAny` 的 `targets.size === 0` | **不能**：唯一调用方外侧有 `gt.chain.length === 0`、内侧有 `componentMatches`，所以 `from` 非空，而 `targets` 是一条每个 token 都由两个非空名字构成的链的 `chainNodes` | 删掉，并把论证写进 doc comment：空目标集在循环里也答 `false`，空 `from` 也一样——一个答案等于它所守代码的守卫，只值一个分支位和一种「检查过了」的错觉 |
-| `scoreFacetSubset` 的 `scored.length === 0` | **能**，且是通过读取器：`parseRcaEvalDirectory` 的 service 组是 `(.*)`，于是名为 `RE2--adservice_1` 的目录解析出空 service，那个案例从此是真实的、被计数的、值零分 | 一条测试，不是删除：这条守卫的另一面是 `0 / 0`，而 `NaN` 会污染它进入的每一个均值 |
-| `rca100Process` 的 `terms === undefined` | **不能**（映射必填之后） | 由类型删除 |
-| 池化聚合里的两个 `?? 0` | 一个能一个不能 | 见第二节 |
+| `checkpointToken`'s `typeof value === 'string'` and `: ''` (two places) | **yes**: `value` is `unknown`, read out of a case file, and JSON can put an array or an object where the annotation promised a string. It had never been walked because every fixture passed `42` | two tests: a string value carried through unchanged (`order\|cpu\|>=\|high\|count/min`), and an object contributing nothing (`order\|cpu\|>=\|\|count/min`, rather than `[object Object]`) |
+| `reachesAny`'s `targets.size === 0` | **no**: the only caller sits outside `gt.chain.length === 0` and inside `componentMatches`, so `from` is non-empty and `targets` is the `chainNodes` of a chain whose every token is two non-empty names | deleted, with the argument written into the doc comment: an empty target set also answers `false` inside the loop, and so does an empty `from` -- a guard whose answer equals the code it guards is worth one branch position and a feeling of having checked |
+| `scoreFacetSubset`'s `scored.length === 0` | **yes**, and through the reader: `parseRcaEvalDirectory`'s service group is `(.*)`, so a directory named `RE2--adservice_1` parses to an empty service, and that case is thereafter real, counted, and worth zero | a test rather than a deletion: the other face of this guard is `0 / 0`, and `NaN` pollutes every mean it enters |
+| `rca100Process`'s `terms === undefined` | **no** (once the map is required) | deleted by the type |
+| the two `?? 0` in the pooled aggregate | one yes, one no | see the second section |
 
-结果是 **9 → 3 个分支位**，分支覆盖 99.86 → **99.95**，语句、函数、行不动。剩下的三个
-是：`never` 回退的三条语句与通向它的那个位置、CLI 的 `Number.isSafeInteger`（`acceptance.md`
-§2.39 有论证的豁免），以及下面那一条兜底。
+The result is **9 → 3 branch positions**, branch coverage 99.86 → **99.95**, with statements,
+functions and lines unmoved. The three that remain are the `never` backstop's three statements and the
+position leading to it, the CLI's `Number.isSafeInteger` (an exemption argued in `acceptance.md`
+§2.39), and the fallback below.
 
-教训不是「先读代码再定计划」——写那个计划的轮次刚读过三个位置。它更窄、也更难受：
-**一句关于七个位置的总结，是对这七个位置的主张，而它是在差异消失的高度上写的。**
-「每个生产者都写」对其中五个为真、对两个为假，而那两个恰好是修法不同的两个。位置必须一个一个
-读，而唯一说出这件事的，是那句话有一个范围。
+The lesson is not "read the code before writing the plan" -- the round that wrote that plan had just
+read three positions. It is narrower and less comfortable: **a sentence summarizing seven positions is
+a claim about those seven positions, and it was written at the altitude where the differences
+disappear.** "Every producer writes it" was true of five of them and false of two, and those two were
+exactly the two whose repair differs. A position has to be read one at a time, and the only thing that
+said so was that the sentence had a range in it.
 
-### 二 · 五个字节之外的两个兜底，只有求和的那个改变答案（finding 518）
+### Two · two fallbacks five bytes apart, and only the summed one changes an answer (finding 518)
 
 ```ts
 const em = cases.reduce((sum, c) => sum + (c.terms['evidenceHits'] ?? 0), 0);
@@ -985,18 +991,23 @@ const em = cases.reduce((sum, c) => sum + (c.terms['evidenceHits'] ?? 0), 0);
 .map((c, i) => ({ la: c.terms['la'] ?? 0, pred: predictions[i] }))
 ```
 
-两处都未覆盖，看起来是同一个遗留：为一个从不缺席的项写的兜底。它们不是，而差别全在下游的
-运算符：`em` 是**被加的**，所以缺席的计数必须贡献零，因为求和里的 `undefined` 就是 `NaN`，
-而 `NaN` 是那十分之一的 Explainability 唯一撑不住的数字——它会在一份其余每个数都在 0..100
-的报告里印成 `NaN`。`la` 是**被比较**的（`la === 1`），缺席与 `0` 早已答同一个 `false`。
+Both are uncovered and look like the same leftover: a fallback written for a term that is never absent.
+They are not, and the whole difference is the operator downstream. `em` is **added**, so an absent count
+must contribute zero, because `undefined` inside a sum is `NaN`, and `NaN` is the one number the
+Explainability tenth cannot hold -- it prints as `NaN` in a report whose every other number is within
+0..100. `la` is **compared** (`la === 1`), where absent and `0` have long since answered the same
+`false`.
 
-所以一个是守卫，一个是习惯。习惯失去了兜底，守卫留着，而理由现在写在两者之间，而不是留给
-下一个发现相邻两行不一致的读者去推断。这个不一致是刻意的，而且正是整理时会消失的那一类：
-把这对改成一致，往任何一个方向都是要么请回一个 `NaN`，要么加一条没有输入能到的分支。
+So one is a guard and one is a habit. The habit lost its fallback, the guard kept it, and the reason now
+sits between the two lines rather than being left for the next reader who finds two adjacent lines
+disagreeing. The disagreement is deliberate, and it is exactly the class that tidying would remove:
+making the pair consistent in either direction either invites a `NaN` back or adds a branch no input can
+reach.
 
-剩下的那一处是诚实的，而且只有一个位置：`Record<string, number>` 说不出「这条规则总是写这两个
-键」。要关掉它，需要一张按目标区分的 `terms` 映射——九个形状而不是一个——那是结构变更，
-不是一条兜底的工作量，因此进开放清单，而不是塞进一个覆盖率数字里。
+The one that remains is honest, and there is exactly one of it: `Record<string, number>` cannot say
+"this rule always writes these two keys". Closing it needs a `terms` map discriminated by target -- nine
+shapes instead of one -- which is a structural change rather than a branch's worth of work, and it
+therefore goes to the open list rather than into a coverage number.
 
 ### Readings
 
@@ -1026,9 +1037,10 @@ const em = cases.reduce((sum, c) => sum + (c.terms['evidenceHits'] ?? 0), 0);
 | P2 | a `terms` map per target, so the aggregate can say which keys a rule writes | **new**: the last position of the coverage residual | nine shapes instead of one, decided as a record change rather than a branch |
 | P3 | coverage numbers have no reader that computes them | unchanged | teach `docs:check` to read a report |
 
-**The lesson.** 这一轮的发现不在代码里，在两句话里，而两句话都是**关于范围的总结**：
-「每个生产者都写」总结了四个生产者，「它们守着一个数据不可能有的形状」总结了七个位置。
-两句都在差异消失的高度上写成，而差异在于处置：有的是补测试、有的是删、有的是换成类型、
-还有一条必须留着并说明为什么。一个范围的声明，只有把范围内的每一个都读一遍才算数——
-而读一遍的代价，这一轮是**六条测试和一次删改**。
-
+**The lesson.** This round's finding is not in the code but in two sentences, and both of them are
+**summaries about a scope**: "every producer writes it" summarized four producers, and "they guard a
+shape the data cannot have" summarized seven positions. Both were written at the altitude where the
+differences disappear, and the difference is in the disposition: some want a test, one is deleted, one
+becomes a type, and one has to stay with the reason it stays. A claim about a range counts only once
+every member of the range has been read -- and reading them, this round, cost **six tests and one
+deletion**.

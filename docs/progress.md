@@ -439,10 +439,10 @@ document that described it as downloading the data was describing an intention.
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 97 |
 | Source lines | 34,369 |
-| Test files | 251 core + 4 cli |
-| Test lines | 107,941 core + 3,242 cli |
-| Tests | 6,390 core + 187 cli |
-| Tracked files | 647 |
+| Test files | 252 core + 4 cli |
+| Test lines | 108,128 core + 3,242 cli |
+| Tests | 6,403 core + 187 cli |
+| Tracked files | 650 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -526,7 +526,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.95: **28** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.96: **28** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1512,14 +1512,23 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: a refusal that names the grid when a published time is not on it, with the 0 of 26 116 in the
   test that holds it]`
 
-- **Three rounds in this log are prose in a language the rest of it is not written in.** `v3.69`,
-  `v3.83` and `v3.84` are Chinese: 43, 40 and 33 lines respectively, headings included. Every other
-  round is English, the code comments are English, and no gate reads a document's language -- so the
-  three are unreadable to a reader of the other 240 rounds and invisible to `docs:check`. The record
-  they carry is intact and the numbers in them are the numbers their ledgers state; what is wrong is
-  the language of the record, and translating it is a rewrite of prose rather than of a measurement.
-  `[open: translate the three against the record, keeping every number, finding reference and heading
-  level, and make the language of the newest volume checkable]`
+- ~~**Three rounds in this log are prose in a language the rest of it is not written in.**~~ **Closed
+  by finding 546, which translated them and built the reader that would have refused them.** `v3.69`,
+  `v3.83` and `v3.84` were Chinese: 43, 40 and 33 lines, headings included. Every other round is
+  English, the code comments are English, and no gate read a document's language -- so the three were
+  unreadable to a reader of the other 241 rounds and invisible to eighteen `docs:check` steps that read
+  their counts, their citations, their boundaries and their headings. The three were rewritten against
+  the record -- every number, finding reference, heading level and ledger row unchanged, 1 429 bytes
+  more of English across them -- and `check-docs-language.mjs` now refuses a run of eight Han characters
+  of prose anywhere in the tree, with fences, code spans and block quotes read as the quotations they
+  are. Measured before: **96 lines** of Han prose across five documents. After: **zero**.
+- **The tree's comments are English and nothing reads them.** The gate above reads markdown; `src/`,
+  `scripts/` and the workflows are held to English by the reviewer and by nothing else, and this round
+  found the markdown case only because it went looking. A comment is a smaller document with the same
+  property, and a reader for it needs a lexer rather than a line scan -- a `//` inside a string, a
+  docstring inside a template literal, and a regex holding `/\*` are all cases a line scan gets wrong in
+  the direction of passing.
+  `[open: a reader for comment bodies, with the three shapes above as fixtures]`
 
 ## Pass log
 
@@ -1552,7 +1561,7 @@ and this table.
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
-| [volume-15.md](progress/volume-15.md) | 12 | v3.84 | v3.95 |
+| [volume-15.md](progress/volume-15.md) | 13 | v3.84 | v3.96 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

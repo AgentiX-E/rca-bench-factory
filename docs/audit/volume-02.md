@@ -4784,8 +4784,8 @@ correct once.
 OpenRCA 1.0's `—` means **never** while RE1's `—` means **not yet** — the distinction the single
 column erased.
 
-**2. The document's own rule is now enforced, not merely stated.** `08` declares "本文档只记录
-实测值 … 未实测的数字一律写 `未测量`"; nothing checked it. `scripts/check-l4-status.mjs` holds
+**2. The document's own rule is now enforced, not merely stated.** `08` declares, verbatim,
+``本文档只记录实测值 … 未实测的数字一律写 `未测量` ``; nothing checked it. `scripts/check-l4-status.mjs` holds
 the published matrix to `golden-master/official-assets.json`, which is already the
 machine-readable source of truth for exactly this axis:
 

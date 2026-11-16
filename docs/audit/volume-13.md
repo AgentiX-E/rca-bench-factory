@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–545, from the rounds recorded in `progress/volume-15.md`.
+Findings 542–546, from the rounds recorded in `progress/volume-15.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -249,3 +249,73 @@ reproducible on any machine with 20 GB of disk.
 confirm the claim, and the run's verdict was reported as a corpus failure for one push. A gate whose
 first real reading is a failure of the gate is the shape finding 543's coverage row had one instrument
 earlier, and the repair is the same in both: run the reading before the release that cites it.
+
+## Finding 546 — eighteen document gates, and not one of them asked what language a sentence is in
+
+Three rounds of a 244-round log were written in Chinese. `v3.69` is 43 lines, `v3.83` 40 and `v3.84` 33,
+headings included; the other 241 rounds are English, every commit message is English, every comment is
+English and every gate's output is English. The three were found by reading the log rather than by
+running anything, and they had been there for 27 rounds.
+
+**Why nothing noticed.** `docs:check` ran eighteen steps over exactly these documents. They hold the
+suite counts to a run, the findings cited to findings that exist, each volume's edges to a tiling of the
+log, the open list to its own arithmetic, the repository table to the tree, the roundtrip record to a CI
+run, the vocabularies to one source, the CLI reference to a parser, the site count to a derivation, and
+the coverage figures to the instrument that produced them. Every one of those is a question with a
+**shape** in it -- a number, a boundary, a resolvable name. "Which language is this sentence" has no
+shape, so no step asked it, and a document written in a language the reader does not have passes all
+eighteen.
+
+**The measurement.** The reading was written ad hoc, an hour before the gate existed, and the shape it
+counted is the shape the gate now refuses: a run of eight or more Han characters outside a quotation. The
+output it printed, over the tree as it stood:
+
+```
+files 46, lines 96: volume-14.md 34, volume-13.md 32, volume-15.md 28,
+docs/audit/volume-02.md 1, docs/audit/volume-03.md 1
+```
+
+96 lines across five documents, of which 116 were prose inside the three rounds (a line can hold two runs,
+and a line inside a fence is not one). The same reading now names zero, by
+`node scripts/check-docs-language.mjs`, and the fixture that reproduces the *before* state in miniature is
+the paragraph test beside this gate. Nothing of the ad-hoc script survives, which is the right end for a
+reading that turned out to be a rule.
+
+**The repair, in two halves.** The three rounds were rewritten in English against the record -- every
+number kept, every finding number still resolving, every heading level and ledger row unchanged, and the
+byte deltas printed rather than hidden: `v3.69` 14 322 → 15 175, `v3.83` 9 026 → 9 423, `v3.84` 6 120 →
+6 299. And `scripts/docs-language.mjs` holds a reading that refuses a fourth: a run of **eight** Han
+characters outside a quotation, where a quotation is any of the three forms this repository carries
+another document's bytes in -- a fenced block, a code span of any delimiter length, or a block quote.
+
+**Why eight, and why three exclusions.** Every legitimate Chinese string in this tree is shorter than
+eight: `金标` is two, `§六` is one, and the longest -- `04-里程碑与路线图.md` -- is inside a code span. The
+threshold is a decision, so both sides of it are asserted: seven characters pass, eight refuse. The three
+exclusions are decisions with a cost, and the cost is written into the module rather than left to be
+discovered: a round could hide its prose in block quotes and this reader would call it a quotation. That
+is the same limit the ledger-name rule states -- the guard's subject is the accident, not the lie -- and
+the alternative, refusing every Han character, would have made every citation of the external
+documentation unwritable.
+
+**Two shapes a naive reader gets wrong, both now fixtures.** A span delimited by two backticks around
+text containing one: a reader matching `` `[^`]*` `` closes that span at the inner backtick and leaves
+sixteen characters of Han in "prose", so it refuses a citation. And an **unterminated** backtick: the
+same expression swallows the rest of the line, so a line that should be refused passes -- the one
+direction a guard must never fail in. `withoutCodeSpans` walks backtick runs and matches delimiters by
+length instead, which is CommonMark's rule and the reason `` ``…`…`` `` exists.
+
+**One citation moved rather than translated.** `docs/audit/volume-02.md` quoted 08's own rule inline,
+with a nested code span inside the quotation:
+
+> `08` declares "本文档只记录实测值 … 未实测的数字一律写 `未测量`"
+
+A nested span inside a quotation defeats a single-delimiter reader from the other side, so the quotation
+is now a double-backtick span: the bytes stay verbatim and stop reading as prose. Translating a quotation
+would have been the wrong repair -- it is another document's sentence, and the other document is Chinese
+by design.
+
+**What the gate is worth.** One more script with one more exit: `derive-gate-sites` moves to **141 failure
+sites across 65 of 90 scripts**, and the battery does not move at all (225 claims over 63 files), because
+a language rule has nothing to mutate. The thirteen tests are eight fixtures driven through the gate and
+five over the reading; the three exclusion fixtures are written so that removing their exclusion makes
+them fail, which is the only thing that distinguishes an exclusion from a rule that never runs.

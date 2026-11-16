@@ -1,40 +1,47 @@
-## v3.84 · v3.82 的那个开关没有到它唯一是为它写的那个文件
+## v3.84 · the switch v3.82 set never reached the one file it was written for
 
-v3.83 提交之后的第一趟全量门禁**又一次**在同一个步骤红了，而这次它说出的话是被 v3.82 换上去的
-那一句：`gate-sites-are-proven.test.ts did not finish inside its own 30000 ms of test budget`。
-**30,000，不是 120,000**——而 v3.82 的开关传的是 120,000。
+The first full gate run after v3.83 committed went red on the same step **again**, and this time the
+sentence it printed was the one v3.82 had installed: `gate-sites-are-proven.test.ts did not finish
+inside its own 30000 ms of test budget`. **30,000, not 120,000** -- and the number on the switch v3.82
+passed was 120,000.
 
-### 一 · 一个设定默认值的开关，到不了一个自己声明预算的文件（finding 519）
+### One · a switch that sets a default cannot reach a file that declares its own budget (finding 519)
 
-`--testTimeout` 设的是**测试继承的默认值**；一个自己写了
-`describe(…, { timeout: RULE_TIMEOUT_MS })` 的文件保留自己的数。于是那个旗子到达了每一个申报者，
-**除了最慢的那一个**——而它是唯一一个旗子为它而写的。
+`--testTimeout` sets the **default a test inherits**; a file that writes
+`describe(…, { timeout: RULE_TIMEOUT_MS })` keeps its own number. So the flag arrived at every
+claimant **except the slowest one** -- and that was the only one the flag had been written for.
 
-30,000 是不是关于工作量的陈述，要量：那三个超时的测试在覆盖率下是 **4 / 50 / 44 ms**，整份文件
-单跑 **476 ms**，四份并发（v3.83 实测）各 **8.22 / 8.32 / 8.33 / 8.22 s** 且每份 69/69 全绿，
-而本仓已经量到过一次 **47,727 ms** 的停摆（finding 507）。预算落在了一个已经观测过的扰动之下。
+Whether 30,000 is a statement about the work has to be measured. The three tests that timed out are
+**4 / 50 / 44 ms** under coverage, the whole file is **476 ms** on its own, four copies at once
+(measured at v3.83) take **8.22 / 8.32 / 8.33 / 8.22 s** each with 69 of 69 green in every one, and
+this repository has already measured a stall of **47,727 ms** (finding 507). The budget sat below a
+disturbance that had been observed.
 
-于是数改成 **120,000**，与电池给每个申报者的上限**相等**——不是因为这份文件需要两分钟，而是
-因为两个本该是同一个数的数应该是同一个数，而一个低于已测停摆的预算，量的是机器。
+So the number became **120,000**, **equal** to the ceiling the battery gives each claimant -- not
+because this file needs two minutes, but because two numbers that ought to be one number should be one
+number, and a budget below a measured stall measures the machine.
 
-让这件事被发现的是那句判词：它印的是**它用的**预算（30000），不是旗子上的 120,000。若它印后者，
-那份文件自己的声明会再隐身一轮。
+What made this visible was the verdict: it printed **the budget it used** (30000), not the 120,000 on
+the flag. Had it printed the latter, the file's own declaration would have stayed hidden another round.
 
-### 二 · 在 `git add` 之前派生的计数，是一棵从未存在过的树的计数（finding 520）
+### Two · a count derived before `git add` is the count of a tree that never existed (finding 520)
 
-v3.83 发布了 `Tracked files 638`。带着它的那个提交里有 639，下一次 `docs:check` 直接拒绝。
-机制不新鲜：文件行都切自 `git ls-files`，也就是**索引**，而那个新测试文件在跑 `--write` 时还没被
-暂存。守卫自己的成功句写着「every one derived from the tree it was just rewritten from」——真的，
-而且没用：它派生自的那棵树不是提交将要包含的那棵树。
+v3.83 published `Tracked files 638`. The commit carrying it held 639, and the next `docs:check`
+refused outright. The mechanism is not new: the file rows are cut from `git ls-files`, which is the
+**index**, and the new test file had not been staged when `--write` ran. The guard's own success
+sentence says "every one derived from the tree it was just rewritten from" -- true, and useless: the
+tree it derived from was not the tree the commit would contain.
 
-修法是拒绝而不是警告：本仓的流程是 `git add -A`，所以只要索引与工作树不一致，`--write` 就拒绝，
-点名第一个未跟踪文件，并说出出路。
+The repair is a refusal rather than a warning. This repository's flow is `git add -A`, so `--write`
+refuses while the index and the working tree disagree, names the first untracked file, and says what
+the way out is.
 
-有意思的是夹具。`check-repository-table.test.ts` 建一个五文件的仓库并断言 `Tracked files | 7`，
-而它的文档是在**提交之后**写的，于是在每一个夹具里它都是未跟踪的——7 是一棵**漏掉了那张表所住的
-文档本身**的树的计数。夹具把这个缺陷复刻了整整一个守卫的生命周期，所以从来没有测试反对过它：
-夹具复现的是作者做过的那次测量，而这位作者和那一轮做的是同一个测量。守卫学会拒绝的那一刻，
-这个数变成了 8。
+The fixture is the interesting part. `check-repository-table.test.ts` builds a five-file repository
+and asserts `Tracked files | 7`, and its document is written **after** the commit, so in every fixture
+that document is untracked -- 7 is the count of a tree that **omits the document the table lives in**.
+The fixture reproduced the defect for the whole life of the guard, which is why no test ever objected
+to it: the fixture reproduced the measurement its author had made, and the author and the round were
+making the same one. The moment the guard learned to refuse, the number became 8.
 
 ### Readings
 
@@ -64,13 +71,16 @@ v3.83 发布了 `Tracked files 638`。带着它的那个提交里有 639，下�
 | P2 | the index grows every round | unchanged | measure the distance to the ceiling first |
 | P3 | coverage numbers have no reader that computes them | unchanged | teach `docs:check` to read a report |
 
-**The lesson.** 两轮的修复都在**正确的文件**里，而对**正确的文件**来说都是无效的：v3.82 的旗子
-设的是默认值，而唯一需要它的那份文件自己声明了预算；v3.83 的派生读的是索引，而那个数是在索引
-被更新之前取的。两次都不是写错了，而是**在错误的位置上正确**——而这正是「读者」这个概念的边界：
-一个开关有一个作用域，一次派生有一个发生时刻，两者都不在自己的名字里。
+**The lesson.** Both repairs were in the **right file** and were ineffective for the **right file**:
+v3.82's flag set a default, and the one file that needed it declared a budget of its own; v3.83's
+derivation read the index, and the number was taken before the index was updated. Neither was written
+wrongly; both were **right in the wrong place**, which is the boundary of the word "reader" -- a switch
+has a scope, a derivation has an instant, and neither of them is in its name.
 
-能抓住这一类的不是更强的断言，是**让每个数说出自己的来源与时刻**：判词印它实际用的预算（30000），
-拒绝句印第一个未跟踪文件（`notes.md`）。两次修复本身也都是这个形状——把沉默的作用域变成一句话。
+What catches this class is not a stronger assertion. It is **making every number state its own source
+and its own instant**: the verdict prints the budget it actually used (30000), the refusal prints the
+first untracked file (`notes.md`). Both repairs have that shape -- turning a silent scope into a
+sentence.
 
 ## v3.85 · the plan said one table, and the corpus writes two
 
@@ -1676,9 +1686,9 @@ open volume rather than a filename.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **251 files, 6390 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **255 files, 6577 tests passed** (as of this commit) |
+| `core` test suite | **251 files, 6390 tests passed** (at v3.95) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.95) |
+| repo test suite | **255 files, 6577 tests passed** (at v3.95) |
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the repair is in `scripts/` and no file under `src/` moved |
 | new tests | **6388 -> 6390, +2**, both in `check-aggregate-tables.test.ts`: six rows in one window, and two rows straddling a boundary |
 | the corpus | **271 directories** read end to end locally in **2 m 13 s**: 25 reproduced (83 742 cells), 246 bounded (270 445 pairs, 0 spare row at the tightest, 35 462 054 cells against 40 008 239 rows), 0 refused |
@@ -1711,3 +1721,111 @@ values a table writes, and they are exact. Reading them as "a row at 0.123 s" ma
 with a rule that only holds at 0.000 s. A fixture is a claim about the shape of the data, and the shape
 this corpus has is that timestamps are instants -- which the fixture helper's own `+ 123 456 789` was
 written to imitate, and which its callers then rounded away.
+## v3.96 · three rounds were written in a language the rest of the log is not in
+
+The Open list carried this since v3.95: `v3.69`, `v3.83` and `v3.84` are prose in a language the other
+241 rounds are not written in, and no gate reads a document's language. This round translated the three
+against the record and built the reader that would have said so.
+
+### One · eighteen gates over these documents, and not one of them asks what language a sentence is in
+
+`docs:check` runs eighteen steps before this round. They hold the suite counts to a run, the citations to
+findings that exist, the volume boundaries to a tiling, the open list to its own arithmetic, the
+repository table to the tree, the roundtrip record to a CI run, the vocabularies to a single source, the
+CLI reference to a parser, and the site count to a derivation. Every one of them passed, on a log in which
+three rounds cannot be read by a reader of the other 241.
+
+The measurement is one command's worth of reading. A **run of eight or more Han characters** outside a
+quotation was found on **96 lines across five documents** before the translation -- 34 in `volume-14.md`,
+32 in `volume-13.md`, 28 in `volume-15.md`, and one each in `docs/audit/volume-02.md` and
+`docs/audit/volume-03.md`. After it, **zero**.
+
+### Two · what a quotation is, why the threshold is eight, and what this cannot see
+
+The rule has to leave the citations alone, because this repository cites a Chinese document constantly
+and the citation is a byte string, not prose. Three forms arrive here verbatim and all three are
+excluded: a **fenced block** (a captured output, a quoted table), a **code span** (one path, one
+identifier, one line -- with any number of backticks as its delimiter, since `` ``…`…`` `` is how a span
+containing a backtick is written), and a **block quote** (a paragraph lifted from the external
+documentation).
+
+Eight characters, because every legitimate Chinese string in this tree is shorter: `金标` is two,
+`§六` is one, `04-里程碑与路线图.md` is nine but sits inside a code span, and the longest unquoted Han
+string in the tree before this round was eight characters of a quoted rule in `docs/audit/volume-02.md`
+which is now a code span. A threshold is a decision, so both sides of it are asserted in the suite: seven
+characters pass, eight refuse.
+
+**What it cannot see, stated rather than discovered later.** A round could put its prose in block quotes
+and this reader would call it a quotation. That is the same limit the ledger-name rule in
+`progress-volumes.mjs` carries and states: the guard's subject is the accident, not the lie. The
+alternative -- refuse every Han character -- would have made the citations unwritable, and an exemption
+list of Chinese file names would have been a second document to maintain.
+
+### Three · the rewriting, and the numbers that did not move
+
+Four files changed, and the three ledgers did not: `v3.69` still reads *243 files, 6191 tests*, `v3.83`
+*248 / 6299*, `v3.84` *248 / 6300*. What moved is the prose around them -- 14 322 → 15 175 bytes for
+`v3.69`, 9 026 → 9 423 for `v3.83`, 6 120 → 6 299 for `v3.84`, 1 429 bytes more of English across the
+three -- and one citation in `docs/audit/volume-02.md`, where 08's own rule was quoted inline with a
+nested code span and is now a double-backtick span so that the quotation stays verbatim and stops
+reading as prose.
+
+The two shapes that a naive reader gets wrong are both fixtures rather than remarks. A span delimited by
+two backticks around text containing one: a reader matching `` `[^`]*` `` ends that span at the inner
+backtick and leaves sixteen characters of Han in "prose" -- it would have refused a citation. And an
+**unterminated** backtick: the same regex swallows the rest of the line, so a line that was refused
+becomes a line that passes, which is the direction a guard must never fail in.
+
+### Four · the gate, and where it sits
+
+`scripts/docs-language.mjs` holds the reading -- which files are documents, what a span is, where the
+threshold sits -- and `scripts/check-docs-language.mjs` is the verdict and is only ever spawned, because
+`verify-gates-are-testable.mjs` proves a gate by emptying it and an emptied file that a test imports kills
+the worker before it can name a failing test. Thirteen tests: eight driving fixtures through the gate (a
+clean tree, a paragraph, a fence, a single-backtick span, a nested span, a block quote, both sides of the
+threshold, an unterminated backtick, and a tree with no document at all), five on the reading itself.
+
+It is step sixteen of `docs:check`, which is now nineteen steps. `derive-gate-sites` re-derives to **141
+failure sites across 65 of 90 scripts** -- one more site and one more script -- and the battery is
+unchanged at 225 claims across 63 files, because a language rule has nothing to mutate.
+
+### Readings
+
+> Ledger for `v3.96`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **252 files, 6403 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **256 files, 6590 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the new code is under `scripts/`, which the coverage gate does not instrument |
+| the measurement | **96 lines** of Han prose across **5 documents** before, **0** after; **116 lines** of prose translated in three rounds (`v3.69` 43, `v3.83` 40, `v3.84` 33) |
+| the rewriting | 1 429 bytes more of English across the three rounds; every number, finding reference, heading level and ledger row unchanged |
+| new tests | **6390 -> 6403, +13**, all in `check-docs-language.test.ts`: eight fixtures through the gate and five on the reading |
+| docs:check | **18 -> 19 steps** |
+| gate sites | **141** across **65 of 90** scripts, one more site and one more gate than v3.95 |
+| the battery | **225** claim(s) across **63** file(s): unchanged |
+| list | **28 -> 27**: the language entry is closed by the translation and the reader |
+| LLM calls | **0** |
+
+### Leftovers, in the order that reaches the goal
+
+| priority | item | state | next step |
+| --- | --- | --- | --- |
+| P1 | The workflow that found the bucketing defect has not run since the repair | run `43776772029` was dispatched on `56b9bbc`; step 13 is behind a 2.5-hour round trip | read step 13's line and close this entry |
+| P2 | The gate compares buckets without asking whether the time column is on the grid | unchanged: 0 of 26 116 published rows are off it | a refusal for an off-grid time, and the sentence that names the grid |
+| P2 | The ceiling of 8 has never been measured where it is not oversubscription | unchanged: every reading is on a 4-CPU cgroup quota | one full-suite run on nine or more usable CPUs |
+| P2 | How close a *failing* run comes to its ceiling | unchanged | a per-test reading from a run whose product is a failure |
+| P2 | A record's terms are a map of strings to numbers | unchanged | a second target reading another target's key |
+| P3 | The tree's comments are English but nothing reads them | **new, and the honest edge of this round**: the gate reads markdown, and `src/`, `scripts/` and the workflows are held to English by nothing | a reader for comment bodies, which needs a lexer rather than a line scan |
+
+**The lesson.** The defect was invisible to eighteen gates because every one of them asks a question with
+a *shape* in it -- a count, a boundary, a resolvable citation -- and "which language" is not a shape. A
+gate list grows by the shapes its authors hit, and the language of a document is the one property no
+author thinks to check in their own writing.
+
+The second thing is about the repair's cost. Translating three rounds is a rewrite of prose that must not
+touch a number, and the temptation is to treat a record as immutable and leave the language wrong. The
+record is what a round *measured*; the language it was measured in is not part of the measurement, and
+saying so explicitly -- ledger unchanged, every finding reference still resolving, byte deltas printed --
+is what makes the rewrite checkable rather than a claim.
