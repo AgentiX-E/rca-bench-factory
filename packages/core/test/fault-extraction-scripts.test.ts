@@ -180,7 +180,21 @@ describe('scripts/derive-fault-golden.mjs · the key read', () => {
   });
 });
 
-describe('scripts/derive-fault-golden.mjs · the provider is configuration, not a code path', () => {
+/**
+ * The budget the suite below runs under.
+ *
+ * It states none until v3.97, and `scripts/check-test-budgets.mjs` named it on a full
+ * run: `the provider is configuration, not a code path` measured **1 038 ms** under
+ * four workers against **202 ms** run alone. The test spawns `derive-fault-golden.mjs`
+ * with a rejected provider, so its cost is a process start charged by the scheduler
+ * rather than by the script -- and 202 ms is a fifth of the way to nothing.
+ *
+ * 30 000 ms is the estate's tightest declaration for a file that spawns, as for its
+ * siblings.
+ */
+const SUITE_BUDGET_MS = 30_000;
+
+describe('scripts/derive-fault-golden.mjs · the provider is configuration, not a code path', { timeout: SUITE_BUDGET_MS }, () => {
   it('names the provider variable when an unknown provider is configured', () => {
     // The point of the registry: a run against a provider nobody registered must
     // say so, rather than quietly falling back and reporting a DeepSeek number

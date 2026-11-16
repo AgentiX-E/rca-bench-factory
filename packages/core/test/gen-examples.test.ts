@@ -22,6 +22,25 @@ const DRIVES = [
   'scripts/gen-examples.mjs',
 ];
 
+/**
+ * The budget every suite in this file is given, in milliseconds.
+ *
+ * Each test drives `scripts/gen-examples.mjs` as a child process over a throwaway
+ * copy of `docs/targets/`, so its cost is a process start plus one read and one write
+ * per page. Measured on one tree: **214 ms** for the slowest test run alone, and
+ * **1 820 ms** for the same test inside the full suite, where four workers share four
+ * cores -- 8.5x for identical work, which is what `scripts/check-test-budgets.mjs`
+ * read when it named this file. An undeclared file's verdict is decided by vitest's
+ * 5 000 ms default, and under that amplification the default is decided by the
+ * scheduler rather than by the test.
+ *
+ * 30 000 ms is the estate's tightest declaration for a file that spawns, as for its
+ * siblings (`check-cli-reference.test.ts`, `build-example-bundle.test.ts`), and the
+ * gate holds a declared file to half of it: **15 000 ms**, sixteen times the slowest
+ * reading this file has produced. Nothing here is close to it.
+ */
+const SUITE_BUDGET_MS = 30_000;
+
 
 /**
  * `scripts/gen-examples.mjs` generates the site payload and the doc blocks.
@@ -120,7 +139,7 @@ function exampleMarker(): string {
   ].join('\n');
 }
 
-describe('scripts/gen-examples.mjs · the payload it generates', () => {
+describe('scripts/gen-examples.mjs · the payload it generates', { timeout: SUITE_BUDGET_MS }, () => {
   it('writes a data file that assigns the global the site reads', () => {
     // The precondition. The site is a dependency-free static app, so the
     // payload has to be a plain script assigning `window.RBF_DATA` -- not a
@@ -231,7 +250,7 @@ describe('scripts/gen-examples.mjs · the payload it generates', () => {
   });
 });
 
-describe('scripts/gen-examples.mjs · the doc blocks it rewrites', () => {
+describe('scripts/gen-examples.mjs · the doc blocks it rewrites', { timeout: SUITE_BUDGET_MS }, () => {
   it('replaces a stale example block with the real export', () => {
     // The doc-block half of the generator. The replacement is what makes a
     // documented sample unable to drift from the code that produces it, so an
@@ -361,7 +380,7 @@ describe('scripts/gen-examples.mjs · the doc blocks it rewrites', () => {
   });
 });
 
-describe('scripts/gen-examples.mjs · the field tables, and what is not checked', () => {
+describe('scripts/gen-examples.mjs · the field tables, and what is not checked', { timeout: SUITE_BUDGET_MS }, () => {
   it('regenerates a field table from the specification', () => {
     // The fields half. The table is rendered from `FORMAT_SPECS`, so the
     // generator is the only thing that can keep it in step with the code --
@@ -496,7 +515,7 @@ describe('scripts/gen-examples.mjs · the field tables, and what is not checked'
  *    Renaming the row is cheaper than answering it, and it left both pages with a row that means
  *    something different from the row of the same position on every other page.
  */
-describe('scripts/gen-examples.mjs · the metadata table', () => {
+describe('scripts/gen-examples.mjs · the metadata table', { timeout: SUITE_BUDGET_MS }, () => {
   /** A page with a target block holding values no spec contains. */
   function tableWith(id: string, rows: string[]): string {
     return [
@@ -639,7 +658,7 @@ describe('scripts/gen-examples.mjs · the metadata table', () => {
   });
 });
 
-describe('the shipped contract pages', () => {
+describe('the shipped contract pages', { timeout: SUITE_BUDGET_MS }, () => {
   it('carry one generated table and one field table per documented file', () => {
     // The half `--check` cannot see: it compares the blocks that are *there*, so deleting a marker
     // would take its block out of the check and leave every page green. This is the enumeration

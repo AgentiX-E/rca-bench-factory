@@ -166,7 +166,23 @@ describe('the workflow that runs a guard needing history', () => {
   });
 });
 
-describe('the guard that needs the history', () => {
+/**
+ * The budget the suite below runs under.
+ *
+ * It states none until v3.97, and `scripts/check-test-budgets.mjs` named it on a full
+ * run: `the guard that needs the history cannot resolve a revision in a one-commit
+ * clone` measured **1 487 ms** under four workers and **55 ms** run alone -- 27x for
+ * the same work, because the test builds a repository with real `git` calls and the
+ * box charges for every one of them. A file at 55 ms is nowhere near vitest's
+ * 5 000 ms default, which is the number the floor exists to protect; the declaration
+ * is what stops a busy runner from deciding this file's verdict.
+ *
+ * 30 000 ms is the estate's tightest declaration for a file that spawns, as for its
+ * siblings.
+ */
+const SUITE_BUDGET_MS = 30_000;
+
+describe('the guard that needs the history', { timeout: SUITE_BUDGET_MS }, () => {
   it('is a member of both aggregates, which is why the workflow rule is not about one step', () => {
     const manifest = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>;

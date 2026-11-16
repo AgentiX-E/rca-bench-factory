@@ -35,6 +35,21 @@
  * half is the margin CI's own worst case needs, since the same bytes are up to
  * 3.1x slower under 32 workers than alone.
  *
+ * ## The floor is decided by the box, so crossing it buys a declaration
+ *
+ * A test that spawns a process is charged by the scheduler far more than 3.1x. One
+ * tree, three files, read alone and then inside the four-worker coverage run:
+ * `fault-extraction-scripts` **202 -> 1 038 ms**, `gen-examples` **214 -> 1 820 ms**,
+ * `docs-guards-need-history` **55 -> 1 487 ms**. The last one is 27x, and its true
+ * cost is 55 ms -- a file that could never approach the default this floor protects.
+ * The first full run after that reading named one file and the next named two others,
+ * which is the same tree and the same floor: what moved was what else was running.
+ * So the floor's false positives are answered here with a declaration on the file it
+ * names, not with a lower floor -- a floor low enough to be quiet on a busy box would
+ * be too low to catch the file the floor was built for -- and the declaration records
+ * the two readings beside it, so the next reader can tell a spent allowance from a
+ * real ceiling.
+ *
  * A file that states **no** budget inherits vitest's default, and there the rule is
  * a floor: a test at or above a fifth of that default (1 000 ms) must have a
  * budget, because the default is what decided the verdict in every failure this

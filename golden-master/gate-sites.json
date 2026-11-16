@@ -460,14 +460,14 @@
     },
     {
       "script": "scripts/check-test-budgets.mjs",
-      "line": 70,
+      "line": 85,
       "diagnostic": "usage: check-test-budgets.mjs --report <path>[,<path>] [--floor <ms>] [--share <n>]",
       "status": "proved",
       "provedBy": "packages/core/test/check-test-budgets.test.ts"
     },
     {
       "script": "scripts/check-test-budgets.mjs",
-      "line": 346,
+      "line": 361,
       "condition": "problems.length > 0",
       "diagnostic": "check-test-budgets: FAILED (${problems.length} problem(s) across ${files.length} file(s);",
       "status": "proved",
@@ -475,7 +475,7 @@
     },
     {
       "script": "scripts/check-test-budgets.mjs",
-      "line": 357,
+      "line": 372,
       "condition": "files.length === 0 || tests === 0",
       "diagnostic": "check-test-budgets: FAILED (the report(s) named no test at all, so nothing was measured and this is",
       "status": "proved",
