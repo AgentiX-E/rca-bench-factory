@@ -1887,6 +1887,43 @@ The corpus read is the same line it was: **25 reproduced, 246 bounded, 0 refused
 270 445 pairs, in 2 m 22 s, from the same three archives. A rule that refuses nothing on the real corpus is
 a rule whose cost is zero until the day a corpus disagrees about where its windows start.
 
+### Four · the push came back red, and the gate that went red measures the box
+
+CI on the round's first push failed one step: `Every test's cost against the budget it
+declares`. `scripts/check-test-budgets.mjs` named **`gen-examples.test.ts`** at 1 820 ms
+with no declared budget, which is past the 1 000 ms floor its rule sets on a file that
+inherits vitest's 5 000 ms default. Nothing in this round's diff touches that file's
+cost -- the diff is two fixtures and a docs read -- so the reading had to be checked
+before it was believed.
+
+**The same test, twice.** Run alone, the slowest test of that file takes **214 ms**. Run
+inside the full suite on four cores it takes **1 820 ms**: 8.5x for identical work, and
+the work is one child process per test. Two more files were named by the next full run
+-- `docs-guards-need-history.test.ts` at 1 487 ms against **55 ms** alone (**27x**),
+`fault-extraction-scripts.test.ts` at 1 038 ms against **202 ms** (**5x**) -- and the
+run after that named neither. Same tree, same floor, different verdicts: what moved was
+what else was running.
+
+| file | alone | under four workers | ratio | declares a budget |
+| --- | --- | --- | --- | --- |
+| `docs-guards-need-history.test.ts` | **55 ms** | **1 487 ms** | 27x | no -> **30 000 ms** |
+| `fault-extraction-scripts.test.ts` | **202 ms** | **1 038 ms** | 5.1x | no -> **30 000 ms** |
+| `gen-examples.test.ts` | **214 ms** | **1 820 ms** | 8.5x | no -> **30 000 ms** |
+
+**The repair is a declaration, not a lower floor.** A file at 55 ms of real work cannot
+approach the default the floor protects, and a floor low enough to stay quiet on a busy
+box would miss the file the floor was built for. So each of the three states the estate's
+tightest declaration -- `30 000 ms`, as `check-cli-reference.test.ts` and
+`build-example-bundle.test.ts` do -- with both readings in the comment beside it, so the
+next reader can tell a spent allowance from a real ceiling. The gate's own header now
+carries the amplification it was measuring against (3.1x for in-process work) next to the
+numbers for work that spawns, which is the population the floor kept naming.
+
+**What this round learned about the instrument.** The floor is correct and its verdict is
+a function of the machine, in the direction of a false red rather than a false green --
+the safe direction, and the one that produces a declaration every time instead of an
+excuse. `39 -> 41` files state a budget across the round.
+
 ### Readings
 
 > Ledger for `v3.97`.
@@ -1902,6 +1939,7 @@ a rule whose cost is zero until the day a corpus disagrees about where its windo
 | the corpus | **unchanged**: 25 reproduced (83 742 cells), 246 bounded (270 445 pairs, 0 spare row at the tightest), 0 refused, 2 m 22 s |
 | gate sites | **141** across **65 of 92** scripts: no new site, because a refusal is a `return` and the gate's one exit already carries the verdict |
 | the battery | **226** claim(s) across **64** file(s): unchanged |
+| budget declarations | **38 -> 41** files, from CI's own reading of a file the floor named and a second reading of the same test alone (1 820 against 214 ms, 8.5x) -- the declarations are what stop a busy box from deciding those files' verdicts |
 | list | **28 -> 27**: the grid entry is closed by the refusal it asked for |
 | LLM calls | **0** |
 
