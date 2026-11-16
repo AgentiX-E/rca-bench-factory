@@ -339,8 +339,13 @@ describe('the two baskets are a partition of the calls, not a remainder', { time
     // by two because the scanner behind it has no exit of its own: a reading module a verdict is built
     // on, which is the shape that lets `verify-gates-are-testable` empty the gate without killing the
     // worker.
-    expect(calls).toBe(160);
-    expect(sites).toBe(142);
+    // 161/143 is v3.99's, and the pair moves together for the twelfth round. The subject is the one
+    // v3.98 left on the Open list in its own header: a `#` in YAML is four grammars, so the workflow
+    // files were the only prose surface in the tree with no reader at all -- 1,215 marks, almost all
+    // of them sentences about why a step exists. The exit count rises by one for the verdict and the
+    // script count by two for the scanner it is built on, which is the same shape as v3.98's pair.
+    expect(calls).toBe(161);
+    expect(sites).toBe(143);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

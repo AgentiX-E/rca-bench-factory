@@ -354,6 +354,22 @@ const REGISTER: Record<string, Entry> = {
       'comment openers it skipped as text. No main and no exit -- check-comments-language.mjs holds the ' +
       'verdict and is spawned, because a gate a test imports cannot be proved by emptying it.',
   },
+  'check-workflow-language.mjs': {
+    class: 'gate',
+    why:
+      'The verdict for yaml-language.mjs: no workflow file carries a run of eight Han characters of ' +
+      'prose in a `#` comment. The source reader next door states in its own header that it does not ' +
+      'read these five files, because a `#` in YAML is four grammars rather than one -- so the one ' +
+      'directory whose comments are almost all prose about why a step exists was read by nothing.',
+  },
+  'yaml-language.mjs': {
+    class: 'data',
+    why:
+      'The scanner the workflow verdict rests on: where a plain scalar ends and a comment starts, how ' +
+      '`\'\'` closes a single-quoted scalar, which rows a block scalar owns, and how many `#` marks it ' +
+      'classified into each of four buckets. No main and no exit -- check-workflow-language.mjs holds ' +
+      'the verdict and is spawned, because a gate a test imports cannot be proved by emptying it.',
+  },
   'check-docs-language.mjs': {
     class: 'gate',
     why:

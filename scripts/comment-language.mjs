@@ -50,16 +50,16 @@
  *   narrow column evades both. That is one boundary shared by two readers rather than two
  *   boundaries, and it is stated here rather than discovered by the next person who tries
  *   to evade it.
- * - **The workflow files are not read.** A `#` in YAML is three grammars -- plain,
+ * - **The workflow files are read elsewhere.** A `#` in YAML is four grammars -- plain,
  *   single-quoted, double-quoted -- plus the block scalars that hold shell scripts, so
  *   reading one correctly needs the YAML scanner rather than this one. Five files hold
- *   1,172 `#` marks between them and this round measured them separately; the reader for
- *   them is the next instrument, not this one.
+ *   1,172 `#` marks between them; `yaml-language.mjs` reads them from v3.99, and the
+ *   measurements that made the rule safe to write are in that file's header.
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import { HAN_RUN, withoutCodeSpans } from './docs-language.mjs';
+import { hanInComment } from './docs-language.mjs';
 
 export const ROOT = resolve(import.meta.dirname, '..');
 
@@ -366,26 +366,6 @@ export function sourcesIn(root = ROOT) {
   };
   walk(root);
   return out.sort();
-}
-
-/**
- * Every prose run of Han characters in one comment, as `{ line, text, length }`.
- *
- * The decoration a doc block puts on each line (` * `) is stripped before the line is
- * judged, because it is punctuation rather than words, and the span rule is the document
- * reader's own: a run inside backticks is a citation. The line number is absolute, so a
- * reader can open the file at it.
- */
-export function hanInComment(comment) {
-  const found = [];
-  comment.text.split('\n').forEach((raw, index) => {
-    const body = withoutCodeSpans(raw.replace(/^\s*\*+ ?/, ''));
-    const match = HAN_RUN.exec(body);
-    if (match !== null) {
-      found.push({ line: comment.line + index, text: match[0], length: match[0].length });
-    }
-  });
-  return found;
 }
 
 /**

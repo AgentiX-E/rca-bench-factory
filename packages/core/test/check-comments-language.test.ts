@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { hanInComment } from '../../../scripts/docs-language.mjs';
 import {
   SOURCE_EXTENSIONS,
   check,
-  hanInComment,
   scanComments,
   sourcesIn,
 } from '../../../scripts/comment-language.mjs';

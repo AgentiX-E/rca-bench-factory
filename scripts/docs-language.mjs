@@ -134,6 +134,33 @@ export function hanProseIn(text) {
 }
 
 /**
+ * Every prose run of Han characters in one comment, as `{ line, text, length }`.
+ *
+ * This lives here, beside the threshold it reads, because three readers need it: the
+ * document reader above, the source reader in `comment-language.mjs` and the workflow
+ * reader in `yaml-language.mjs`. A second copy of "strip the decoration, strip the code
+ * spans, look for eight Han characters" would be the third-source-of-truth defect
+ * `validity.test.ts` names, and the three readers have to agree about what a quotation
+ * is or the tree has three answers to one question.
+ *
+ * The decoration a doc block puts on each row (` * `) is stripped before the row is
+ * judged, because it is punctuation rather than words. A YAML comment has no such
+ * decoration; the pattern is harmless there, since it removes `*` and spaces rather than
+ * characters the rule looks for. `line` is absolute, so a reader can open the file at it.
+ */
+export function hanInComment(comment) {
+  const found = [];
+  comment.text.split('\n').forEach((raw, index) => {
+    const body = withoutCodeSpans(raw.replace(/^\s*\*+ ?/, ''));
+    const match = HAN_RUN.exec(body);
+    if (match !== null) {
+      found.push({ line: comment.line + index, text: match[0], length: match[0].length });
+    }
+  });
+  return found;
+}
+
+/**
  * The verdict: no document in the tree carries Han prose.
  *
  * `root` is a parameter so a fixture can be a tree -- the failure modes of this rule are

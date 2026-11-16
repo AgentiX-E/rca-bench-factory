@@ -149,7 +149,21 @@ SYNTHETIC = (
 module.run_tests = lambda test_file: (
     1, '× some other test entirely\\nTests  1 failed (2)\\n', 0.1)`;
 
-describe('gate-test battery · a red is not a proof until it names the test', () => {
+/**
+ * The budget this file is given, in milliseconds.
+ *
+ * Every test here spawns `python3` -- three of them more than once -- so the file's cost
+ * is interpreter starts rather than work: the slowest test is **149 ms** alone and
+ * **1 040 ms** inside a full run, a factor of seven, which is the population
+ * `scripts/check-test-budgets.mjs` measured at 5x to 27x between the two. 30 000 ms is the
+ * estate's tightest declaration for a file that spawns, and the gate holds a declared file
+ * to half of it. The warning that produced this paragraph named exactly this test, and the
+ * repair is a declared budget rather than a lower floor: the reading is about the box, and
+ * a floor set under the box's worst day would be a threshold nobody can fail.
+ */
+const SUITE_BUDGET_MS = 30_000;
+
+describe('gate-test battery · a red is not a proof until it names the test', { timeout: SUITE_BUDGET_MS }, () => {
   // The condition that used to decide, driven with the exact shape a parse error
   // produces: the fixture is the defect rather than a description of it.
   it('refuses to credit a red whose failure does not name the declared test', () => {
