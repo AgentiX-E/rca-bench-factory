@@ -2704,7 +2704,7 @@ is synthetic; it is an open entry rather than a rule.
 | `core` test suite | **254 files, 6509 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
 | repo test suite | **258 files, 6696 tests passed** (as of this commit) |
-| coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98** (+0.01 on statements and lines: the one new function is covered), `cli` **100 / 100 / 100 / 100** |
 | new tests | **6484 -> 6509, +25**: six in `cloudopsbench`, five in `itbench`, four on the projection, one on the shipped corpus, nine in the two structure checks |
 | the measurement before the rule | **34** cases: six pairs differ, zero shortfalls, zero unlabelled; the example bundle carries the same shape |
 | the falsifications | eight removals, **125** red, no survivor |

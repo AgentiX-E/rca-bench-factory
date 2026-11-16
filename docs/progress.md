@@ -70,15 +70,16 @@ the instrument in the same sentence. CI runs it with `--require` in the step tha
 reads that run's reports, immediately after `pnpm test:coverage`; `docs:check` does not run
 the suite, so it does not carry that guard, and where there is no report the script says
 `UNCHECKED` rather than passing on nothing (finding 543). The two instruments differ by 0.01
-on this tree -- clover's XML says 99.980, v8 says 99.97 -- which is why the sentence names
-one of them instead of saying "coverage" (finding 539).
+on this tree -- v3.102 moved statements and lines from 99.97 to 99.98 by adding one covered
+function -- which is why the sentence names the instrument instead of saying "coverage"
+(finding 539).
 
 | Dimension | Result | Gate |
 | --- | --- | --- |
-| Statements | 99.97% | ≥ 95% |
+| Statements | 99.98% | ≥ 95% |
 | Branches | 99.95% | ≥ 95% |
 | Functions | 100% | ≥ 95% |
-| Lines | 99.97% | ≥ 95% |
+| Lines | 99.98% | ≥ 95% |
 
 The residual is three statements and three branch positions, enumerated by the
 position the tool counts and not by the source line that carries it: v8 records
