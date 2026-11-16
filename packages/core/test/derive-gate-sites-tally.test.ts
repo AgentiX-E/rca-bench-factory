@@ -331,8 +331,16 @@ describe('the two baskets are a partition of the calls, not a remainder', { time
     // hands to `process.exit`. What makes it worth a paragraph is that its *subject* is the documents
     // themselves rather than a number they publish: the nine rounds before it each added a reader for a
     // figure, and this one adds a reader for the sentence the figure is written in.
-    expect(calls).toBe(159);
-    expect(sites).toBe(141);
+    //
+    // 160/142 is v3.98's, and the pair moves together for the eleventh round. The subject is the same
+    // one v3.96 took up -- a sentence nothing read -- from the other side: the document reader covers
+    // markdown, and every comment in `src/`, `scripts/` and the tests was reviewed by reviewers. The
+    // exit count rises by one because the verdict is one `process.exit`, and the *script* count rises
+    // by two because the scanner behind it has no exit of its own: a reading module a verdict is built
+    // on, which is the shape that lets `verify-gates-are-testable` empty the gate without killing the
+    // worker.
+    expect(calls).toBe(160);
+    expect(sites).toBe(142);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

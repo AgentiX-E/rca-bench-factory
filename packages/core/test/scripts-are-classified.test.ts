@@ -338,6 +338,22 @@ const REGISTER: Record<string, Entry> = {
       'shrank their scope to 69 KB of 521 KB; a reader that names one path cannot see a document that ' +
       'became four files.',
   },
+  'check-comments-language.mjs': {
+    class: 'gate',
+    why:
+      'The verdict for comment-language.mjs: no source file in the tree carries a run of eight Han ' +
+      'characters of prose in a comment. The document reader next door covers markdown, so every ' +
+      'comment in src/, scripts/ and 246 test files was reviewed by reviewers -- an instrument that ' +
+      'sees the lines that changed and nothing else.',
+  },
+  'comment-language.mjs': {
+    class: 'data',
+    why:
+      'The scanner the comment verdict is built on: where a string, a regex and a template literal end, ' +
+      'why a shebang is not a regex, which lines a block comment puts its decoration on, and how many ' +
+      'comment openers it skipped as text. No main and no exit -- check-comments-language.mjs holds the ' +
+      'verdict and is spawned, because a gate a test imports cannot be proved by emptying it.',
+  },
   'check-docs-language.mjs': {
     class: 'gate',
     why:
