@@ -2270,6 +2270,7 @@ a threshold whose subject is a machine, reported against a file that has nothing
 | the census, before the repair | **1 155** comments and **25** block-row marks, i.e. twelve comments counted as content -- rows 308-314 and 467-471 of `official-data.yml` |
 | the row predicate | **1 167** rows begin with a `#`, **1 167** comments read, **0** lost |
 | the falsifications | six removals, six red fixtures; the first attempt at the sixth proved nothing and was replaced |
+| the push | **run 43822783339, 8 of 8 job(s) green in 12 m 30 s**, first attempt |
 | budget declarations | **43 -> 44**: one file named at 1 040 ms under four workers and 149 ms alone; the floor stays at 1 000 ms |
 | the YAML measurement | **1 172** rows carry a `#`; **1 215** `#` characters; five in-row marks, all shell strings inside `run: |` |
 | gate sites | **143 / 67 of 96 scripts** (was 142 / 66 of 94); the call tally **161** |
