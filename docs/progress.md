@@ -1565,7 +1565,7 @@ is a row about rather than paraphrase one that no `grep` will find.
   between them, which is the rule "a break between two Han characters is not a break" rather than an
   approximation of it, and a property test over 400 seeded sequences compares the two formulations. Measured
   before the rule was written, twice: **0** row breaks in this tree fall between two Han characters, stripped or
-  raw, so the widening costs nothing today and its whole proof is in the fixtures. **68 734** breaks are held
+  raw, so the widening costs nothing today and its whole proof is in the fixtures. **68 891** breaks are held
   inside a paragraph and **0** of them is a crossing. Twelve falsifications, one red fixture each; one of the
   twelve came back green at first because the fixture put the block quote after a blank row, so the flush under
   test was unreachable -- rebuilt, and red. Three defects fell out of the fixtures: the space a `//` leaves at

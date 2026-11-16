@@ -545,8 +545,8 @@ on the raw bytes in case the material was hiding inside a citation: **0** row br
 between two Han characters, and the longest run that could have been built across any break is zero characters.
 Every Han character in the tree is a short citation inside backticks and not one of them is wrapped. The
 consequence is stated rather than worked around -- **the widening costs nothing today and its entire proof is in
-the fixtures**, because the tree cannot carry it. What the tree carries is 68 734 row breaks that were held
-inside a paragraph (**37 537** documents, **30 389** comments, **808** workflow) and **0** of them a crossing.
+the fixtures**, because the tree cannot carry it. What the tree carries is 68 891 row breaks that were held
+inside a paragraph (**37 694** documents, **30 389** comments, **808** workflow) and **0** of them a crossing.
 That number is reported because a grouper that flushed at every row would find the same runs and cross nothing,
 which reads exactly like a tree with nothing to cross; each reader now carries a floor under it.
 

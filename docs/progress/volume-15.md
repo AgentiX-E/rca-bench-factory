@@ -2332,7 +2332,7 @@ check-workflow-language: OK — 6 file(s), 1215 '#' mark(s): 1167 comment(s) (97
 0 run(s) of Han prose, 808 row break(s) held inside a paragraph
 ```
 
-68 734 breaks held, **0** of them between two Han characters. The count is reported because a grouper that
+68 891 breaks held, **0** of them between two Han characters. The count is reported because a grouper that
 flushed at every row would find the same runs and cross nothing, which reads exactly like a tree with nothing to
 cross -- so each of the three readers carries a floor under it, and three mutations below take it to zero.
 
@@ -2446,7 +2446,7 @@ arithmetic a list of boundaries has.
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** -- unchanged: the new code is in `scripts/`, which the four dimensions do not measure |
 | new tests | **6446 -> 6468, +22**: five document fixtures, ten comment fixtures and the property, seven workflow fixtures |
 | the measurement before the rule | **0** row breaks between two Han characters, stripped and raw, across all three surfaces; longest crossing run **0** |
-| the breaks held | **37 537** documents, **30 389** comments, **808** workflow, **68 734** total, of which **0** fall between two Han characters |
+| the breaks held | **37 694** documents, **30 389** comments, **808** workflow, **68 891** total, of which **0** fall between two Han characters |
 | the comment census | 465 files, **23 924** comments (19 957 line, 3 967 block), **350** openers skipped |
 | the property | 400 seeded sequences, one to six rows, **>= 50** crossing runs compared, same runs as the pairwise reader |
 | the falsifications | twelve removals, twelve red; the block quote's fixture had to be rebuilt before its mutation could be observed |
