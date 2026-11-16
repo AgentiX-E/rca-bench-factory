@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–552, from the rounds recorded in `progress/volume-15.md`.
+Findings 542–553, from the rounds recorded in `progress/volume-15.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -691,3 +691,77 @@ about a span that fails to close on its row.
 99.97** and **100 / 100 / 100 / 100**, because both rules are in `scripts/`, which the four dimensions do not
 measure; gate sites **143 / 67 of 96** and the battery **228 claims across 66 files** unchanged, since this round
 added no gate and no exit; `docs:check` still 21 steps.
+
+## Finding 553 — the artifact published a level the corpus calls a judgement, and the floor under it never left the repository
+
+**The shape.** Two contracts publish an easy/medium/hard word for a case's IR level: `cloud-opsbench` calls it
+`difficulty` and `itbench` calls it `scenario_complexity`. Both were `difficultyFor(FaultCase.difficulty)` -- the
+level the case's author wrote. `docs/data-model.md` says what that field is: a **claim**, permitted above the
+structural floor because a case can be hard to *detect* while easy to trace, and refused above it unless the case
+says what the floor cannot see. Six of the corpus's thirty-four cases carry that sentence, and one of them,
+`history-config-rate-cache-ttl-pricing`, claims `L4` -- the level every other holder reaches with three causal
+steps -- over a chain of **one**.
+
+So the artifact said `hard` for a case whose own structure supports `medium`. Both exporters were
+self-consistent, which is why nothing noticed: every field a reader could compare agreed with every other field
+in the same file, and the fact that the level was an opinion lived in a different module. A consumer comparing
+corpora by difficulty was reading six judgements among twenty-eight measurements with no way to tell one from
+the other.
+
+**Why the note did not travel, and why the floor can.** `assembleBundle` deliberately drops `difficultyNote`: it
+names what the chain cannot see -- a setting changed days before the window, an exception that closed a
+connection rather than nacking the message -- which is a paragraph of the answer. The floor is not that. It is a
+lower bound derived from the causal chain, and the file it lands in already carries the answer: `metadata.json`
+holds the `result` triple and `scenario.json` holds `scenario_groundtruth.diagnosis`. A coarse bound on how deep
+the chain is tells a reader of those two files nothing they cannot read two keys away, and in a valid corpus it
+can only *lower* what the claim suggests, because a level below its floor is refused as a shortfall before
+anything is exported.
+
+**The repair.** A second key beside the claim, in the same three words, produced by one function.
+`projectDifficulty` takes the case and the graph and returns both words; each exporter reads the pair off one
+object. Pairing a claim with a floor by hand in `cloudopsbench.ts` and `itbench.ts` would be the third-source
+defect `export/difficulty.ts` was created to remove -- that module's header argues the point about the word, and
+the argument is the same one level up.
+
+The graph is a required parameter and not an optional one, which is the smaller half of the design: a floor
+computed over an empty graph is `L1` for every case, because breadth is a count of entity kinds resolved through
+the index. A wrong answer wearing the shape of a conservative one is the failure this repository has the least
+defence against, so the signature refuses to make it convenient.
+
+**The measurement.** Thirty-four shipped cases, level read against floor:
+
+| declared | floor | cases |
+| --- | --- | --- |
+| `L1` | `L1` | 2 |
+| `L2` | `L1` | 2 |
+| `L2` | `L2` | 8 |
+| `L3` | `L2` | 3 |
+| `L3` | `L3` | 13 |
+| `L4` | `L2` | 1 |
+| `L4` | `L4` | 5 |
+
+**Six** pairs differ, **zero** cases state no level, and **zero** claim below their floor -- the last of those is
+the property that makes the second word readable rather than a contradiction. The example bundle is itself a
+witness: its one case states `L2` over a one-step chain, so the verified block in
+`docs/targets/cloud-opsbench.md` now prints `"difficulty": "medium"` beside `"difficulty_floor": "easy"`, which is
+the defect visible in the contract page rather than only in a corpus file.
+
+**Eight falsifications, 125 red.** The floor taken from the claim instead of the chain (13); the floor read
+through an empty graph rather than the one passed in (5); the two words swapped (28); `cloud-opsbench` dropping
+the key (7); `itbench` dropping it (5); the IR level published instead of a projected word (40); the claim
+replaced by the floor in both exporters (25); and the structure checks accepting any present floor word (2). No
+mutation survived, and the last one is why the field is not merely emitted: a word outside the three is refused
+wherever it appears.
+
+**The asymmetry the checks carry.** `difficulty_floor` and `scenario_complexity_floor` are extensions to two
+upstream contracts, so the structure checks hold a present word to the vocabulary and **do not demand the key**.
+That is not leniency about this repository's own exports -- it is the difference between a statement about
+validity and a statement about provenance: a `metadata.json` the benchmark itself produced carries no such key,
+and a check that demanded one would score the reference corpus as malformed. The cost is stated rather than
+hidden: the shape check cannot notice an exporter that stopped emitting the pair, so the emission is pinned by
+the exporter's own tests and by the generated contract page instead.
+
+**What it does not fix.** A case that states no level publishes the documented `unset -> medium` row beside a
+floor that may outrank it -- a three-step chain with no label prints `medium` beside `hard` -- and nothing
+refuses that pair. The corpus offers no witness (0 of 34), so the repair would be a rule whose only failure is
+synthetic, which is the shape this list has learned to distrust. Recorded as an open entry rather than written.

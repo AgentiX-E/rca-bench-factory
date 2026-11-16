@@ -160,6 +160,15 @@ days before the window, an exception that closed a connection instead of nacking
 is a paragraph of the answer, so `assembleBundle` carries the level and leaves the defence in the
 case file.
 
+What does travel into an export is the **floor beside the level**. `projectDifficulty`
+(`export/difficulty.ts`) projects both words with one rule, and the two contracts that publish an
+easy/medium/hard word carry both of them: `cloud-opsbench`'s `difficulty` with `difficulty_floor`, and
+`itbench`'s `scenario_complexity` with `scenario_complexity_floor`. A consumer that ranks by difficulty
+reads the claim; one that needs a measurement rather than a judgement reads the floor. Six of the
+corpus's thirty-four cases print two different words, and the pair says which of them is the
+annotation (finding 553). The floor is not a second opinion about difficulty — it is a lower bound on
+structure, and a case at its floor may be trivial for a model.
+
 It is **not** a rating of how hard a case is for a model. That needs per-case accuracy over enough
 solvers to separate the levels, and this repository has two local baselines and one configured
 provider. Until that exists, a level means "at least this much structure" and nothing more; a case at

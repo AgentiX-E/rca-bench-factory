@@ -438,10 +438,10 @@ document that described it as downloading the data was describing an intention.
 | Commits (at `e22e2de`) | 536 |
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 97 |
-| Source lines | 34,369 |
+| Source lines | 34,471 |
 | Test files | 254 core + 4 cli |
-| Test lines | 109,398 core + 3,242 cli |
-| Tests | 6,484 core + 187 cli |
+| Test lines | 109,671 core + 3,242 cli |
+| Tests | 6,509 core + 187 cli |
 | Tracked files | 656 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -526,7 +526,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.101: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.102: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1348,14 +1348,29 @@ is a row about rather than paraphrase one that no `grep` will find.
   so. The reading comes from `probe:modality-memory`, which names the module it measured and is
   driven by four tests. What remains is not this entry: it is the dispatch that would carry a
   TrainTicket case to the end of 270, which is the round trip's entry and not the comparison's.
-- **The level a case claims still reaches both exports, and the note that defends it does not.** The
+- ~~**The level a case claims still reaches both exports, and the note that defends it does not.**~~ The
   distribution gate stopped reading claims in v3.74, so a corpus can no longer meet its tenth by
   relabelling; `difficultyFor` still projects `FaultCase.difficulty`, so the case with a one-hop chain
   ships to `cloudopsbench` as `hard` and to `itbench` as `scenario_complexity: hard` beside three-hop
   chains. The note is deliberately not assembled into a bundle, because it is a paragraph of the answer
   -- which leaves the projection with no defence attached.
-  `[open: a projection that carries the floor beside the claim, or a consumer-facing field that says the
-  level is a claim rather than a measurement]`
+  ~~`[open: a projection that carries the floor beside the claim, or a consumer-facing field that says the
+  level is a claim rather than a measurement]`~~
+  **Closed by finding 553**, which is the first of the two alternatives: `difficulty_floor` beside
+  `difficulty`, `scenario_complexity_floor` beside `scenario_complexity`, both from one
+  `projectDifficulty` that takes the case *and the graph*, because a floor computed without one is `L1`
+  for every case. The floor could travel where the note cannot, for a reason that is checkable rather
+  than argued: the file it lands in already carries the answer. **Six of thirty-four** cases print two
+  different words, and the example bundle is one of them, so the contract page shows the pair rather
+  than describing it.
+- **A case that states no level publishes a default beside a floor that may outrank it.** `difficulty`
+  carries the documented `unset -> medium` row, so a case with a three-step chain and no annotation
+  prints `medium` beside a `difficulty_floor` of `hard`: two words that disagree, and nothing that says
+  which is which. The shipped corpus holds **0 of 34** such cases, which makes the repair a rule whose
+  only failure is synthetic, and the three ways to write it each move a documented row -- the level
+  could default to the floor, the pair could carry a third word for "nobody claimed", or the export
+  could refuse the case outright.
+  `[open: which of the three, decided by a corpus that has one -- the shipped thirty-four have none]`
 - **`docs/acceptance.md` is 96 KB and grows by clause per round.** L3 is 284 lines and L4 is 405;
   L0, L1, L2 and L5 are 14, 7, 7 and 6, so the obvious split by layer would produce four files
   of a dozen lines.
@@ -1615,7 +1630,7 @@ and this table.
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
-| [volume-15.md](progress/volume-15.md) | 18 | v3.84 | v3.101 |
+| [volume-15.md](progress/volume-15.md) | 19 | v3.84 | v3.102 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

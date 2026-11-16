@@ -2581,9 +2581,9 @@ person would actually write, and the four that should fail do.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **254 files, 6484 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **258 files, 6671 tests passed** (as of this commit) |
+| `core` test suite | **254 files, 6484 tests passed** (at v3.101) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.101) |
+| repo test suite | **258 files, 6671 tests passed** (at v3.101) |
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** -- unchanged: both rules are in `scripts/`, which the four dimensions do not measure |
 | new tests | **6468 -> 6484, +16**: thirteen document fixtures, two comment fixtures, one workflow fixture |
 | the measurement before the rule | **1** row ends in a backslash and **0** are markers; **965** spans in **873** rows sit between two non-whitespace bytes and **0** sit between two Han characters |
@@ -2608,3 +2608,120 @@ the paragraph, the marker is punctuation on the one surface that has a renderer,
 three P2 items wait on something outside this sandbox. The one P3 item is about a language YAML does not name. What
 the last two rounds bought is not a change in the verdict -- the tree was green before and after -- but the
 disappearance of three ways the rule could have been wrong without anything saying so.
+
+## v3.102 · the artifact published a judgement in a field every reader takes as a measurement
+
+Two contracts publish an easy/medium/hard word for a case's level, and both published the level the
+*author* wrote. The floor under it stayed in the repository, so six of thirty-four cases shipped an
+opinion beside twenty-eight measurements and nothing in the file said which was which.
+
+### One · measured before the rule was written
+
+`cloud-opsbench` calls the field `difficulty`, `itbench` calls it `scenario_complexity`, and both were
+`difficultyFor(FaultCase.difficulty)`. `docs/data-model.md` has said what that field is since the round
+that gave it a definition: a **claim**, allowed above the structural floor because a case can be hard to
+*detect* while easy to trace, and refused above it unless the case says what the floor cannot see.
+
+Thirty-four shipped cases, the level each states against the floor its own chain supports:
+
+| declared | floor | cases |
+| --- | --- | --- |
+| `L1` | `L1` | 2 |
+| `L2` | `L1` | 2 |
+| `L2` | `L2` | 8 |
+| `L3` | `L2` | 3 |
+| `L3` | `L3` | 13 |
+| `L4` | `L2` | 1 |
+| `L4` | `L4` | 5 |
+
+**Six** pairs differ, **zero** cases claim below their floor, **zero** state no level. The one `L4` over an
+`L2` floor is `history-config-rate-cache-ttl-pricing`: the artifact says `hard` for a case whose structure
+supports `medium`, over a chain of a single step. Both exporters were self-consistent, which is why reading
+either file could not find this -- every field in each file agreed with every other field in it.
+
+### Two · the floor can travel where the note cannot, for a reason that is checkable
+
+`assembleBundle` drops `difficultyNote` deliberately: it names what the chain cannot see -- a setting
+changed days earlier, an exception that closed a connection instead of nacking the message -- and that is a
+paragraph of the answer. The floor is not that. It is a lower bound derived from the causal chain, and the
+file it lands in already carries the answer: `metadata.json` holds the `result` triple, `scenario.json`
+holds `scenario_groundtruth.diagnosis`. In a valid corpus the floor can only *lower* what the claim
+suggests, because a level below its floor is refused as a shortfall before anything is exported.
+
+### Three · one projection, and a graph that is not optional
+
+`projectDifficulty({ case, graph })` returns both words and each exporter reads the pair off one object.
+Pairing a claim with a floor by hand in `cloudopsbench.ts` and `itbench.ts` would be the third-source
+defect `export/difficulty.ts` was created to remove, one level up: two files that have to agree and no
+reader that compares them.
+
+The graph is required rather than optional, which is the smaller half of the design: `difficultyFloor` resolves
+entity kinds through the graph's index, so a floor computed over an empty graph is `L1` for every case -- a
+wrong answer wearing the shape of a conservative one. The module's header called it a leaf for as long as it
+read only the type of the level it was given; it is not one any more, and the header says so.
+
+### Four · eight falsifications, one hundred and twenty-five red
+
+| mutation | red |
+| --- | --- |
+| the floor taken from the claim instead of the chain | 13 |
+| the floor read through an empty graph rather than the one passed in | 5 |
+| the two words swapped | 28 |
+| `cloud-opsbench` drops the key | 7 |
+| `itbench` drops the key | 5 |
+| the IR level published instead of a projected word | 40 |
+| the claim replaced by the floor in both exporters | 25 |
+| the structure checks accept any present floor word | 2 |
+
+No mutation survived. The last one is why the field is not merely emitted: a word outside the three is
+refused wherever it appears, and neither direction of that check is decoration -- the words the emitter can
+produce pass, and a word it cannot produce does not.
+
+### Five · the asymmetry the checks carry, and what this does not fix
+
+`difficulty_floor` and `scenario_complexity_floor` are extensions to two upstream contracts, so the structure
+checks hold a present word to the vocabulary and **do not demand the key**. That is not leniency about this
+repository's own exports: it is the difference between a statement about validity and a statement about
+provenance, since a `metadata.json` the benchmark itself produced carries no such key and a check that
+demanded one would score the reference corpus as malformed. What it costs is stated: the shape check cannot
+notice an exporter that stopped emitting the pair, so the emission is pinned by the exporters' own tests and
+by the generated contract page instead.
+
+**What it does not fix.** A case that states no level publishes the documented `unset -> medium` row beside a
+floor that may outrank it -- a three-step chain with no label prints `medium` beside `hard` -- and nothing
+refuses that pair. The corpus offers no witness (0 of 34), so the repair would be a rule whose only failure
+is synthetic; it is an open entry rather than a rule.
+
+### Readings
+
+> Ledger for `v3.102`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **254 files, 6509 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **258 files, 6696 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** |
+| new tests | **6484 -> 6509, +25**: six in `cloudopsbench`, five in `itbench`, four on the projection, one on the shipped corpus, nine in the two structure checks |
+| the measurement before the rule | **34** cases: six pairs differ, zero shortfalls, zero unlabelled; the example bundle is one of the six |
+| the falsifications | eight removals, **125** red, no survivor |
+| gate sites | **143 / 67 of 96 scripts**, call tally **161** -- unchanged: no new gate; one `throw` in `format-spec.mjs` moved from line 758 to 760 |
+| the battery | **228 claims across 66 files** -- unchanged |
+| `docs:check` | **21 steps** -- unchanged |
+| list | **26 -> 26**: the projection entry closed by finding 553, and the unset-claim pair opened in its place |
+
+### What is left, in the order it has to happen
+
+| priority | item | state | next |
+| --- | --- | --- | --- |
+| P2 | the ceiling of 8 workers has never been measured where it is not oversubscription | unchanged: every reading is on a four-CPU quota | one full run on a box with nine or more available CPUs |
+| P2 | how close a **failing** run comes to its ceiling | unchanged | one run whose artefact is a failure, read per test |
+| P2 | a record's `terms` is a map, so nothing can say which keys a rule writes | unchanged: priced at v3.94 | the trigger, or nothing |
+| P3 | an in-row `#` inside a block scalar is read by nothing | unchanged: 13 marks, all shell strings | nothing until a block holds a language whose comments are not row-leading |
+| P3 | a case that states no level prints a default beside a floor that may outrank it | new: 0 of 34 have the shape | a corpus with one, or one of the three spellings chosen |
+
+**Where this leaves the campaign.** This round left the language axis, and the defect it found points the other
+way: what the artifact says about a corpus rather than what the repository says about its own prose. Six of
+thirty-four is a number any later round can recompute from the corpus without trusting a sentence here. The
+three P2 items wait on something outside this sandbox; both P3 items wait on a witness this corpus does not
+carry.

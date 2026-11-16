@@ -1363,7 +1363,7 @@
       },
       {
         "script": "scripts/format-spec.mjs",
-        "line": 758,
+        "line": 760,
         "disposition": "unguarded",
         "message": "unknown format id '${id}'",
         "status": "proved",
