@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–549, from the rounds recorded in `progress/volume-15.md`.
+Findings 542–550, from the rounds recorded in `progress/volume-15.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -530,3 +530,70 @@ are the same bytes to YAML, and telling them apart needs the language the block 
 line break still evades all three readers -- the document reader, the comment reader and this one -- which is one
 boundary in three places rather than three boundaries, and closing it costs a decision about what a paragraph is
 before it costs a line of code.
+
+## Finding 550 — three language readers judged a row, so a wrapped sentence was two citations, and the first fixture for the rule proved nothing
+
+The Open list carried it in the words of the reader that could not cross it: *a run broken by a line break
+evades all three language readers*. `docs-language.mjs` judged a row, `comment-language.mjs` judged a comment's
+row, `yaml-language.mjs` judged a comment row -- so a sentence wrapped in a narrow column, a Chinese paragraph
+hard-wrapped at eighty characters, and a `#` comment continued on the next row were one sentence to their author
+and two citations to the rule. The entry said the cost was a decision before it was a line of code, and it was
+right.
+
+**Measured before the rule was written, twice.** First with each row stripped the way the readers strip it, then
+on the raw bytes in case the material was hiding inside a citation: **0** row breaks in this repository fall
+between two Han characters, and the longest run that could have been built across any break is zero characters.
+Every Han character in the tree is a short citation inside backticks and not one of them is wrapped. The
+consequence is stated rather than worked around -- **the widening costs nothing today and its entire proof is in
+the fixtures**, because the tree cannot carry it. What the tree carries is 68 734 row breaks that were held
+inside a paragraph (**37 537** documents, **30 389** comments, **808** workflow) and **0** of them a crossing.
+That number is reported because a grouper that flushed at every row would find the same runs and cross nothing,
+which reads exactly like a tree with nothing to cross; each reader now carries a floor under it.
+
+**The decision.** A paragraph is what the surface says it is: a markdown paragraph ends at a blank row, a
+heading, a fence and a block quote; a comment's paragraph ends at a blank row -- which in a doc block is a row
+carrying nothing but its ` *` -- and at the terminator that ends it; and two comments continue each other when
+they sit on consecutive rows in the same column of the same delimiter. Two rows of one paragraph are joined with
+**nothing** between them, and that is the rule rather than an approximation of it: a run of eight Han characters
+needs Han on both sides of every break it crosses, so a break with anything else on either side cannot be crossed
+under either formulation. `check-comments-language.test.ts` states that as an experiment -- 400 seeded sequences
+compared against a reference that decides each break on its own -- and asserts that at least 50 of the runs it
+compared actually crossed a break.
+
+**Three defects came out of the fixtures for the rule beside them.**
+
+1. **The space after `//`.** The doc block's decoration is stripped whole, so its rows join cleanly; a line
+   comment keeps the space after its delimiter, so `// 文档说明` and `// 第二行` joined as `说明 第二行` -- one
+   space in the middle of the break, and the rule never fired in a line comment at all. Both ends of every row
+   are now trimmed, because layout is not text.
+2. **`kind` meant two different things in the two scanners.** The shared grouper asked whether two comments were
+   the same `kind`, which is a wall for the source scanner (a `//` row does not continue a doc block) and
+   nonsense for the workflow scanner, where `kind` records *where a `#` was found* rather than what it is. Two
+   adjacent `#` rows inside a `run: |` -- one paragraph to their author -- were refused. The repair is a field
+   with one meaning: a comment's **family**, its delimiter and the column it opens at, stated by the scanner that
+   can see both.
+3. **A spread append whose length is a function of the input.** `hits.push(...scanParagraph(part))` survived the
+   suite and was named by `spread-append-guard`, a previous round's instrument. Four sites, now `for` loops.
+
+**Twelve falsifications, one of which proved nothing.** Each piece of the new state was removed and its fixtures
+watched: the join (9 red), the left-hand trim (4), the whole trim (4), the blank row's flush (2), a heading being
+its own paragraph (1), the block quote's flush (1), the fence's flush (1), joining at all (6), the family test
+(6), the blank row inside a block comment (1), the source family's column (3), the workflow family's column (1).
+**The block quote's flush came back green at first and the fixture was wrong, not the code**: it put the quote
+after a blank row, so the paragraph had already ended by another rule and the flush under test was unreachable --
+the same shape as finding 549's sixth falsification, an assertion about a path it cannot take. Rebuilt with prose
+on both sides and no blank row, it goes red. While rebuilding it, one more thing surfaced: a heading was pushed
+*into* the paragraph and flushed afterwards, which cannot produce a run (its own `## ` is not Han) but did put a
+break in the witness that no run can cross. A heading is now judged as a paragraph of one.
+
+**What is still not read.** A hard break written as a trailing backslash: the backslash sits between the two
+characters of the run, so the join does not cross it, and closing it would apply a markdown rule to comments as
+well -- it is on the Open list with that cost. A code span or a fence broken across rows leaves its contents in
+"prose", which is a false positive rather than a silence. And the in-row `#` inside a block scalar is unchanged
+from finding 549: 13 marks, all shell strings, and telling one from a shell comment needs the language the block
+holds.
+
+**The measurement.** 22 new tests (5 documents, 10 comments, 7 workflow, one of which is the 400-case property);
+suite **6 446 -> 6 468** in `core` and **187** in `cli`; coverage unchanged at **99.97 / 99.95 / 100 / 99.97**
+and **100 / 100 / 100 / 100**, because the new code is in `scripts/`; gate sites **143 / 67 of 96** and the
+battery **228 claims across 66 files** unchanged, since this round added no gate and no exit.

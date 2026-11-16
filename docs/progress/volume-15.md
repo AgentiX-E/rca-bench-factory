@@ -2261,9 +2261,9 @@ a threshold whose subject is a machine, reported against a file that has nothing
 
 | item | value |
 | --- | --- |
-| `core` test suite | **254 files, 6446 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **258 files, 6633 tests passed** (as of this commit) |
+| `core` test suite | **254 files, 6446 tests passed** (at v3.99) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.99) |
+| repo test suite | **258 files, 6633 tests passed** (at v3.99) |
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** -- unchanged: the new code is two files under `scripts/`, which the four dimensions do not measure |
 | new tests | **6423 -> 6446, +23**: nineteen fixtures through the gate, four over the reading and the real tree |
 | the workflow comments | **6 file(s), 1 215 `#` mark(s), 1 167 comment(s) (979 line, 188 block scalar), 0 run(s) of Han prose**; **13** marks inside a block scalar's row, **0** inside a quoted scalar, **0** glued to a word |
@@ -2293,3 +2293,180 @@ prose: the documents, the code, and the five workflow files whose comments are t
 exists. The three P2 items still wait on something outside this sandbox, and the two P3 items are boundaries
 rather than defects -- both stated in the readers' headers, both with the repair each would need. The corpus
 figure, the coverage table and the battery's per-claim witness are where v3.98 left them.
+
+## v3.100 · the unit is the paragraph, and two of the walls turn out to be one wall
+
+The Open list has carried this one since v3.98 in the words of the reader that could not cross it: *a run broken
+by a line break still evades all three language readers*. Three readers judged a row at a time, so a comment
+wrapped in a narrow column, a Chinese paragraph hard-wrapped at eighty characters, and a `#` comment continued on
+the next row were all one sentence to their author and two citations to the rule. The entry said the cost was a
+decision rather than a line of code -- what a *paragraph* is -- so the decision comes first and the code is what
+is left of it.
+
+### One · measured before the rule was written
+
+The first question is not what a paragraph is but whether this tree has any: a widening that changes the verdict
+on the real tree would need a decision about each instance. Measured twice.
+
+The first pass walked all three surfaces and stripped each row the way the readers strip it -- code spans
+removed, block quotes and fences skipped -- and counted row breaks whose left character and right character are
+both Han. **Zero.** The second pass asked the same question of the raw bytes, with no stripping at all, in case
+the material was hiding inside a citation: **zero again**, and the longest run that could have been built across
+any break in the tree is zero characters. Every Han character in this repository is a short citation inside
+backticks, and not one of them is wrapped.
+
+So the rule costs nothing today, and that is worth writing down rather than around: **the whole proof of this
+round is in the fixtures**, because the tree cannot carry it. What the tree carries is the other number -- the
+breaks the rule was *allowed* to cross and did not need to:
+
+```
+check-docs-language: OK — 48 document(s), 0 run(s) of Han prose outside a quotation,
+37537 row break(s) held inside a paragraph
+
+check-comments-language: OK — 465 file(s), 23924 comment(s) (19957 line, 3967 block),
+0 run(s) of Han prose outside a code span; 30389 row break(s) held inside a paragraph,
+350 comment opener(s) skipped inside a string, a template or a regex
+
+check-workflow-language: OK — 6 file(s), 1215 '#' mark(s): 1167 comment(s) (979 line, 188 block scalar),
+0 inside a quoted scalar, 13 inside a block scalar's own row, 0 glued to a word;
+0 run(s) of Han prose, 808 row break(s) held inside a paragraph
+```
+
+68 734 breaks held, **0** of them between two Han characters. The count is reported because a grouper that
+flushed at every row would find the same runs and cross nothing, which reads exactly like a tree with nothing to
+cross -- so each of the three readers carries a floor under it, and three mutations below take it to zero.
+
+### Two · the decision, and why the join inserts nothing
+
+A paragraph is what the surface says it is, because the surface is the only thing that knows:
+
+| surface | a paragraph is | what ends it |
+| --- | --- | --- |
+| documents | consecutive prose rows | a blank row, a heading, a fence and its contents, a block quote |
+| one comment | its own rows | a blank row -- which in a doc block is a row carrying nothing but its ` *` |
+| a file's comments | `//` rows on consecutive rows, in the same column | a gap, a different delimiter, a different column |
+| workflow comments | `#` rows on consecutive rows, in the same column | the same three |
+
+And the join between two rows of a paragraph inserts **nothing**. That is not an approximation of "a break
+between two Han characters is not a break" -- it *is* it: a run of eight Han characters needs Han on both sides
+of every break it crosses, so a break with anything else on either side cannot be crossed by either formulation.
+The header states the argument and `check-comments-language.test.ts` states it as an experiment: 400 sequences of
+one to six rows drawn from Han runs and Latin fragments by a seeded LCG, the runs this reader finds compared
+against a reference that decides each break on its own and inserts a separator everywhere it is not between two
+Han characters. Same runs, all 400, and the test asserts that **at least 50** of the runs it compared actually
+crossed a break -- a property that never met the case it is about would pass while saying nothing.
+
+### Three · three defects, and each was found by the fixture for the rule beside it
+
+**The space after `//`.** The first version of the join put the doc block's case and the line comment's case in
+one function and they are not the same: a doc block's decoration (` * `) is stripped whole, so its rows join
+cleanly, and a `//` comment's text keeps the space after the delimiter, so `// 文档说明` and `// 第二行` join as
+`说明 第二行` -- one space in the middle of the break, and the rule never fires in a line comment at all. The
+fixture went red and named it, and the repair is the general one: both ends of every row are trimmed, because
+layout is not text. The same trim is what a hard break written as two trailing spaces and a CRLF file's carriage
+return needed, and both now have a fixture.
+
+**`kind` means two different things in the two scanners.** The shared grouper first asked "are these two the same
+kind of comment", which is a wall for the source scanner (a `//` row does not continue a doc block: the
+terminator that ended the block is between them) and nonsense for the workflow scanner, where `kind` records
+*where the `#` was found* rather than what it is. The block-scalar fixture went red and said so: two `#` rows in
+a `run: |`, adjacent, one paragraph to their author, refused. The repair is a field with one meaning -- the
+comment's **family**: its delimiter and the column it opens at, stated by the scanner that can see both. A `//`
+row continues the `//` row above it, does not continue a doc block, and does not continue a row at another
+indentation; the workflow scanner says `#` and the column, so a `#` row inside a block scalar continues the `#`
+row under it and cannot continue a `#` row at column zero that happened to end the block.
+
+**The spread the guard refused.** `hits.push(...scanParagraph(part))` passed through the whole suite until
+`spread-append-guard` named it: the argument count is a function of the paragraph's length, and a paragraph is a
+function of the input. Four sites, all now `for` loops. The guard is a previous round's instrument doing its job
+on this round's code, which is the cheapest kind of review there is.
+
+### Four · twelve falsifications, one of which proved nothing
+
+Each piece of the new state was removed and the fixtures that hold it were watched. Every run restored the files
+afterwards; `cmp` against the saved copies is what says so.
+
+| removed | what it is for | tests that went red |
+| --- | --- | --- |
+| the join (`''` became `'\n'`) | a run crosses a row break | **9** -- four document fixtures, four comment fixtures, the property |
+| the left-hand trim | `// ` leaves a space in the middle of a break | **4** |
+| the whole trim | CRLF and the `//` space together | **4** |
+| the blank row's flush | a blank row ends a markdown paragraph | **2** |
+| a heading being its own paragraph | nothing continues a heading | **1** |
+| the block quote's flush | prose does not continue across a quote | **1** |
+| the fence's flush | nor across a fence | **1** |
+| joining two comments at all | two line comments are one paragraph | **6** |
+| the family test | a terminator, a gap and a column are walls | **6** |
+| the blank row inside a block comment | its ` *` row ends the paragraph | **1** |
+| the source family's column | a wrap does not move | **3** |
+| the workflow family's column | nor inside a block scalar | **1** |
+
+**The block quote's flush came back green at first, and the fixture was wrong, not the code.** It read
+
+```
+${HAN(4)}
+> quoted
+
+Back to English.
+```
+
+and the blank row between the quote and the row after it ended the paragraph by another rule, so the flush under
+test was unreachable -- the same shape as v3.99's sixth falsification: an assertion about a path it cannot take.
+The fixture is now two prose rows with the quote between them and no blank row anywhere, and the mutation goes
+red. While rebuilding it, one more thing surfaced: a heading was being *pushed into* the paragraph and flushed
+afterwards, which let it join backwards -- not a run this tree can produce, because `## ` is not Han, so the
+markers are their own wall, but the `pairs` count was carrying a break no run could ever cross. A heading is now
+judged as a paragraph of one, and the witness counts only breaks that can be crossed.
+
+### Five · what this still does not read
+
+**A hard break written as a trailing backslash.** `行末的\` and the row after it are one paragraph to CommonMark
+and two to this reader, because the backslash sits between the two characters. Trimming it would be a markdown
+rule applied to comments as well, and the two-space form -- the one an editor inserts -- is handled. The cost is
+stated rather than paid.
+
+**A code span or a fence broken across rows.** Both are stripped per row, so a span that opens on one row and
+closes on the next leaves its contents in "prose". The direction is a false positive rather than a silence, and a
+broken span is itself a defect worth a red gate.
+
+**The two P3 and three P2 items are where v3.99 left them**, with one change: the language axis no longer has a
+shared boundary to argue about, so the remaining paragraph question is per-surface rather than one decision in
+three readers. The list stays at 27 -- the paragraph entry closes and the backslash entry opens, which is the
+arithmetic a list of boundaries has.
+
+### Readings
+
+> Ledger for `v3.100`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **254 files, 6468 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **258 files, 6655 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** -- unchanged: the new code is in `scripts/`, which the four dimensions do not measure |
+| new tests | **6446 -> 6468, +22**: five document fixtures, ten comment fixtures and the property, seven workflow fixtures |
+| the measurement before the rule | **0** row breaks between two Han characters, stripped and raw, across all three surfaces; longest crossing run **0** |
+| the breaks held | **37 537** documents, **30 389** comments, **808** workflow, **68 734** total, of which **0** fall between two Han characters |
+| the comment census | 465 files, **23 924** comments (19 957 line, 3 967 block), **350** openers skipped |
+| the property | 400 seeded sequences, one to six rows, **>= 50** crossing runs compared, same runs as the pairwise reader |
+| the falsifications | twelve removals, twelve red; the block quote's fixture had to be rebuilt before its mutation could be observed |
+| gate sites | **143 / 67 of 96 scripts**, call tally **161** -- unchanged: no new gate |
+| the battery | **228 claims across 66 files** -- unchanged |
+| `docs:check` | **21 steps** -- unchanged |
+| list | **27 -> 27**: the paragraph entry closed, the trailing-backslash entry opened |
+
+### What is left, in the order it has to happen
+
+| priority | item | state | next |
+| --- | --- | --- | --- |
+| P2 | the ceiling of 8 workers has never been measured where it is not oversubscription | unchanged: every reading is on a four-CPU quota, so 8 is 2x | one full run on a box with nine or more available CPUs |
+| P2 | how close a **failing** run comes to its ceiling | unchanged | one run whose artefact is a failure, read per test |
+| P2 | a record's `terms` is a map, so nothing can say which keys a rule writes | unchanged: priced at v3.94, waiting on its trigger | the trigger, or nothing |
+| P3 | an in-row `#` inside a block scalar is read by nothing | unchanged: 13 marks, all shell strings | nothing until a block holds a language whose comments are not row-leading |
+| P3 | a hard break written as a trailing backslash | **new**: one paragraph to CommonMark, two to this reader | decide whether the backslash is punctuation or text, in one place |
+
+**Where this leaves the campaign.** The language axis now reads the same unit on three surfaces: what a paragraph
+is, decided where the surface is legible, and one rule about what a break does to a run. The three P2 items still
+wait on something outside this sandbox. The two P3 items are boundaries with a stated cost each -- one about a
+language YAML does not name, one about a markdown rule that would have to be applied to comments as well. The
+corpus figure, the coverage table and the battery's per-claim witness are where v3.99 left them.

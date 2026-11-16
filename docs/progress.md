@@ -440,8 +440,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 97 |
 | Source lines | 34,369 |
 | Test files | 254 core + 4 cli |
-| Test lines | 108,950 core + 3,242 cli |
-| Tests | 6,446 core + 187 cli |
+| Test lines | 109,228 core + 3,242 cli |
+| Tests | 6,468 core + 187 cli |
 | Tracked files | 656 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -526,7 +526,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.99: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.100: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1557,14 +1557,25 @@ is a row about rather than paraphrase one that no `grep` will find.
   nothing; what it would cost is a block in a language whose comments are not row-leading.
   `[open: a reader for the in-row `#`, which needs the block's language rather than the file's -- a `run: |`
   holding shell and a `path: |` holding paths are the same bytes to YAML]`
-- **A run broken by a line break evades all three language readers.** The document reader judges a row at a
-  time, the comment reader does the same, and the workflow reader judges a comment row rather than a comment.
-  A comment wrapped mid-run in a narrow column is therefore invisible to every one of them, and the workflow
-  file is the third place the boundary now shows. One boundary in three readers rather than three boundaries,
-  and it costs a decision before it costs a line: what a *paragraph* is, which the document reader would have
-  to answer first.
-  `[open: the paragraph question -- decide whether a run may cross a line break, then change three readers
-  together rather than one]`
+- ~~**A run broken by a line break evades all three language readers.**~~ **Closed at v3.100 by the decision
+  this entry said it needed: the unit is the paragraph.** Each surface says what one is -- a markdown paragraph
+  ends at a blank row, a heading, a fence and a block quote; a comment's paragraph ends at a blank row, including
+  the doc block's row that carries nothing but its ` *`; and two comments continue each other when they sit on
+  consecutive rows in the same column of the same delimiter. Two rows of one paragraph are joined with nothing
+  between them, which is the rule "a break between two Han characters is not a break" rather than an
+  approximation of it, and a property test over 400 seeded sequences compares the two formulations. Measured
+  before the rule was written, twice: **0** row breaks in this tree fall between two Han characters, stripped or
+  raw, so the widening costs nothing today and its whole proof is in the fixtures. **68 734** breaks are held
+  inside a paragraph and **0** of them is a crossing. Twelve falsifications, one red fixture each; one of the
+  twelve came back green at first because the fixture put the block quote after a blank row, so the flush under
+  test was unreachable -- rebuilt, and red. Three defects fell out of the fixtures: the space a `//` leaves at
+  the break, `kind` meaning two different things in the two scanners (now an explicit `family` of delimiter and
+  column), and a spread append the guard refused.
+- **A hard break written as a trailing backslash is one paragraph to CommonMark and two to this reader.** The
+  backslash sits between the two characters of the run, so the join does not cross it. The two-space form, which
+  is the one an editor inserts, is handled; this one would need a markdown rule applied to comments as well.
+  `[open: decide whether a trailing backslash is punctuation or text -- one decision, three readers, and a
+  fixture on each side]`
 
 ## Pass log
 
@@ -1597,7 +1608,7 @@ and this table.
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
-| [volume-15.md](progress/volume-15.md) | 16 | v3.84 | v3.99 |
+| [volume-15.md](progress/volume-15.md) | 17 | v3.84 | v3.100 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
