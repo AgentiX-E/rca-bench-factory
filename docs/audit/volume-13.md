@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–548, from the rounds recorded in `progress/volume-15.md`.
+Findings 542–549, from the rounds recorded in `progress/volume-15.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -468,3 +468,65 @@ too, and is why it is a round rather than a paragraph. Also stated: the shebang 
 state whose removal no fixture catches, because no shebang in this tree puts anything after the interpreter
 path that a scanner would misread. It is kept and named rather than tested, and that asymmetry is the honest
 part of the table.
+
+## Finding 549 — the last prose surface had no reader, and the scanner's own census found twelve comments it was counting as content
+
+`comment-language.mjs` reads every `.ts`, `.mts`, `.cts`, `.mjs`, `.cjs` and `.js` file in the tree, and its
+header ends with the boundary it could not cross: a `#` in YAML is not one grammar but several, so the five
+workflow files were left to reviewers. Those five files are where this repository writes down *why*: why a step
+exists, which run a budget number came from, which failure earned a job split. **1 172 rows carry a `#` and not
+one of them carried a Han character** -- so the rule cost nothing, and the reader is the only thing that would
+keep it that way.
+
+**The digit was a line count.** The entry on the Open list said 1 172 marks; measured by character, the files
+hold **1 215**. The five in-row marks are the whole population, and all five are the same shape: a double-quoted
+shell string inside a `run: |` -- `${#selected}` and four `echo "### …"` lines. Three quoted scalars reach the
+top level at all (`default: ''` and two `cron:` schedules). A reader that confused the two shapes would have
+printed a sentence about a shell string, which is finding 545 and 547's shape with a different delimiter.
+
+**Four grammars, not three.** The plain scalar (a `#` opens a comment only after whitespace or a row start, so
+`foo#bar` is a value), the single-quoted scalar (`''` is the escape), the double-quoted scalar (`\` is the
+escape, and the scalar may continue on the next row), and the block scalar, whose rows are content in a language
+YAML does not name. The fourth is where 1 167 of the comments live, and a reader that treated a block as opaque
+would have missed nearly all the prose the round was written for.
+
+**The census found a bug in the reader that wrote it.** Two readings are taken over every file: every `#` is
+classified into exactly one of four buckets whose counts must sum to the file's `#` characters, and every row
+whose first non-blank character is a `#` must be recorded as a comment. The first finished run reported **1 155**
+comments and **25** block-row marks; the tree has 13 of the latter. The twelve that were missing are comments in
+`official-data.yml` (rows 308-314 and 467-471) indented **deeper** than their block's first row, and the reader
+measured the `#` from the block's column instead of the row's:
+
+```
+      # No cause is named here on purpose. Every status the script documents
+```
+
+That is a comment, and it was counted as content -- on a green run, because the file is English. Had it been
+Chinese, the reader that exists to catch it was the reader that had already stopped reading there. The repair is
+one column (`body.slice(lead)` rather than `body.slice(block.indent)`), and after it the two readings agree at
+**1 167** comments and **13** marks.
+
+**Six falsifications, and one of them proved nothing.** Each piece of scanner state was removed and the fixture
+holding it was watched: quote state (4 tests red), block state (5), the row's own indentation (3), the block's
+end (2), the doubled quote (1). The sixth -- "every quote opens a scalar" -- left its fixture **passing**, because
+that fixture sat inside a `run: |` block: the block branch had already taken the row, so the quote logic never
+ran. The test asserted something about a path it could not reach, which is the shape this log keeps finding in
+gates. It was replaced with a plain scalar carrying an apostrophe glued to a word (`the runner's cache`, taken
+from `anchor-roundtrip.yml`), which does go red under the mutation and takes the real tree red with it.
+
+**The measurement.** Six files, 1 215 `#` characters, **1 167** comments (979 line, 188 block scalar), **0** runs
+of Han prose outside a code span, 13 marks inside a block scalar's row, 0 inside a quoted scalar, 0 glued to a
+word. The row predicate is the second instrument and it agrees: 1 167 rows begin with a `#`, 1 167 comments were
+read, **0** lost.
+
+**What the gate is worth.** One exit and two scripts, so `derive-gate-sites` moves to **143 failure sites across
+67 of 96 scripts**, the call tally to **161**, the battery to **228 claims across 66 files**, and `docs:check` to
+twenty-one steps. Twenty-three tests: nineteen drive the gate over a throwaway tree and four read the real one,
+with floors (`comments > 1 000`, `marks > 1 200`) taken below this round's readings so a reader that stopped
+walking fails rather than publishing a smaller number as a pass.
+
+**What is not closed.** The 13 in-row marks are declined rather than read: `echo hi  # why` and `echo "a # b"`
+are the same bytes to YAML, and telling them apart needs the language the block holds. And a run broken by a
+line break still evades all three readers -- the document reader, the comment reader and this one -- which is one
+boundary in three places rather than three boundaries, and closing it costs a decision about what a paragraph is
+before it costs a line of code.

@@ -2093,9 +2093,9 @@ that stopped walking half the tree fails a test rather than publishing a smaller
 
 | item | value |
 | --- | --- |
-| `core` test suite | **253 files, 6423 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **257 files, 6610 tests passed** (as of this commit) |
+| `core` test suite | **253 files, 6423 tests passed** (at v3.98) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.98) |
+| repo test suite | **257 files, 6610 tests passed** (at v3.98) |
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** -- unchanged: the new code is two files under `scripts/`, which the four dimensions do not measure |
 | new tests | **6405 -> 6423, +18**: fourteen fixtures through the gate, four over the reading and the real tree |
 | the comments read | **462 file(s), 23 768 comment(s) (19 838 line, 3 930 block), 0 run(s) of Han prose**; **331** comment openers skipped inside a string, a template or a regex, in **90** files |
@@ -2121,3 +2121,174 @@ TypeScript, with the two boundaries above stated rather than hidden. The three P
 outside this sandbox — a machine with nine CPUs, a run that fails, a second score target — and the P3 items
 are instruments whose subjects are strings inside another grammar. Nothing in the round changed a published
 figure: the corpus read, the coverage, and the battery's per-claim witness are where v3.97 left them.
+
+## v3.99 · a `#` in YAML is four grammars, and twelve of the tree's own comments were read as content
+
+The Open list got this entry one round ago, written by the reader that could not read it: *the workflow files'
+`#` comments are read by nothing*, with three fixtures named and a measurement beside them -- five files, 1 172
+`#` marks, none of them carrying a Han character. The entry was right about the count and wrong about the
+grammar: there are four, and the fourth is where most of the marks live.
+
+### One · what the parenthesis got right, and the number it counted
+
+The count was a line count and the rule needed a character count. Measured this round: **1 215** `#`
+characters across **1 172** rows, of which **1 167** rows begin with one. The five that do not are the whole of
+the tree's in-row marks, and each is worth naming because each is a shape a reader gets wrong:
+
+```
+fault-extraction-accuracy.yml:202   echo "provider=${PROVIDER} has a key present (${#selected} characters…"
+fault-extraction-accuracy.yml:231   echo "### Fault extraction accuracy"
+official-data.yml:270               echo "### Fetch outcome"
+official-data.yml:454               echo "### No pin report" >> "$GITHUB_STEP_SUMMARY"
+official-data.yml:460               echo "### Measured pins"
+```
+
+All five are inside a `run: |` block, all five are inside a double-quoted shell string, and none of them is a
+comment. Three quoted scalars reach the top level at all: `default: ''` and two `cron:` schedules. That is the
+measurement that made the rule safe to write -- a tree where the only in-row `#` is shell text is a tree where
+a reader that confuses the two prints a sentence nobody can act on.
+
+### Two · six falsifications, and the fixture that had to be thrown away
+
+The scanner's state was removed one piece at a time and the fixture that holds that piece was watched. Every
+run restored the file afterwards, and `cmp` against the saved copy is what says so.
+
+| removed | what it is for | tests that went red |
+| --- | --- | --- |
+| quote state | a `#` inside a quoted scalar is text | **4** -- the quoted-scalar fixture, the `''` escape, the unterminated-scalar refusal, the four-bucket census |
+| block state | a `run: |` row is content, not YAML | **5** -- the English fixture's own count, the quote inside a block, the census, the real tree, the row predicate |
+| the row's own indentation | `body.slice(lead)` became `body.slice(block.indent)` | **3** -- the deeper-comment fixture, the real tree, the row predicate |
+| the block's end | a block never ends at a less-indented row | **2** -- the end fixture, the census |
+| the doubled quote | `''` no longer closes and reopens | **1** -- the single-quote fixture |
+| the token boundary | every quote opens a scalar | **3** -- see below |
+
+**The sixth one is the round's honest failure.** It was written as a fixture holding `'"'"'` -- the real shape
+`anchor-roundtrip.yml` uses to carry an apostrophe through a single-quoted shell string -- and the claim beside
+it was that a reader which opened a scalar at every quote would never close it and would lose the comment on
+the next row. With `opensScalar` made unconditional, that fixture **passed**. The fixture sat inside a
+`run: |` block, so the block branch had already taken the row and the quote logic never ran: the test was
+asserting something about a path it could not reach, which is the shape this log keeps finding in gates.
+
+It was replaced rather than patched. The new fixture is a plain scalar with an apostrophe glued to a word --
+`- name: the runner's cache  # …`, taken from `anchor-roundtrip.yml`'s `Build (the round trip reads core's
+dist)` -- and it is the row a reader without the token boundary swallows. It goes red under the mutation, and
+it is the row that makes the real tree go red too, because `core's` appears in prose the scanner would
+otherwise read as the start of a string.
+
+### Three · the census found a bug in the reader that wrote it
+
+Two readings are taken over every file. The first is per character: every `#` is classified into exactly one
+of four buckets -- it opened a comment, it sat inside a quoted scalar, it sat in a block scalar's row, or it was
+glued to a word -- and the four counts must sum to the number of `#` characters in the file. The second is per
+row: **every row whose first non-blank character is a `#` must be recorded as a comment on that row**, so the
+number of such rows and the number of comments have to agree.
+
+The first run of the finished scanner reported `1 155 comment(s) (979 line, 176 block)` and **25** marks in
+block rows. There are 13 such marks in the tree. The difference was twelve comments -- seven in
+`official-data.yml` at rows 308 to 314, five at rows 467 to 471 -- sitting inside a `run: |` block, indented
+**deeper** than the block's first row, and counted as content because the reader measured the `#` from the
+block's column rather than the row's:
+
+```
+      # No cause is named here on purpose. Every status the script documents
+```
+
+That is a comment. It is one of the twelve the first run reported as `25 inside a block scalar's own row`, and
+the gate was green over it -- the file is English, so nothing was violated, and the reading that would have
+noticed a Chinese comment in that position was the reading that was broken. The repair is one column, and the
+row predicate above is what found it: with the fix the two readings agree at **1 167** comments and **13**
+marks, and the numbers add up for the first time.
+
+The summary after the repair:
+
+```
+check-workflow-language: OK — 6 file(s), 1215 '#' mark(s): 1167 comment(s) (979 line, 188 block scalar),
+0 inside a quoted scalar, 13 inside a block scalar's own row, 0 glued to a word; 0 run(s) of Han prose
+```
+
+### Four · what this reader does not read
+
+**A `#` in the middle of a block scalar's row.** It could be a shell comment (`echo hi  # why`) or a `#` inside
+a shell string (`echo "a # b"`), and telling those apart needs to know which language the block holds, which
+YAML does not record. The row-leading `#` is the one shape that is a comment in shell, in Python, in Ruby and
+in make alike, so that is the shape this reader takes -- and the 13 marks it declines are exactly the five rows
+above plus their duplicates.
+
+**A `"` inside a plain scalar opens a flow scalar.** `say "hi"` is legal YAML and the approximation enters the
+quote rather than ignoring it. The cost is a `#` between two such quotes counted as text; the direction is
+chosen because the other one -- reading a quotation as prose -- makes a gate red on a file that is fine.
+
+**An explicit indentation indicator is measured from the header row.** `|2` means two columns past the parent
+node, and the parent is taken to be the row the header sits on. Exact for a mapping key and for a sequence
+item, which is what these six files contain.
+
+**A header whose `|` is followed by a comment.** `run: |  # why` is read, and the comment is YAML's; a `|` in
+the middle of a scalar is a character, which is why the header pattern requires the indicator to end the row.
+
+### Five · what the gate is worth
+
+One more exit and two more scripts, and `derive-gate-sites` re-derives to **143 failure sites across 67 of 96
+scripts**. The battery moves to **228 claims across 66 files** because a claim is a site credited to the
+proving test file, and `docs:check` is **twenty-one steps**.
+
+Twenty-three tests: nineteen drive the gate over a throwaway tree and four read the real one. The floors are
+taken below this round's readings -- `files` is exactly six (the tree has six YAML files and the lock file is
+excluded by name), `comments > 1 000`, `marks > 1 200` -- so a reader that stopped walking fails a test rather
+than publishing a smaller number as a pass. The row predicate is the second instrument, and §Three is what it
+bought.
+
+### Six · the step before the push, where the machine measured again
+
+`verify-local` went red at step 8. `check-test-budgets` named
+`gate-test-battery-attribution.test.ts`: its slowest test takes **1 040 ms** and the file states no budget,
+so vitest's 5 000 ms default decides its verdict. Run alone, that test takes **149 ms** -- seven times
+less, inside the 5x-to-27x population finding 538 recorded when this gate first ran, and the same lesson
+that round paid for: **the gate measures the box**.
+
+The repair has one shape and this round did not invent a second. A budget is declared on the suite, both
+readings go into the comment beside it (**149 ms** alone, **1 040 ms** under four workers), and the floor
+stays at 1 000 ms -- a floor set under the box's worst day is a threshold nobody can fail, which is the
+defect the floor exists to avoid rather than to create. Declared files move **43 -> 44**, and the file
+closest to its own budget is `typecheck-entrypoint.test.ts` at 32% of 30 000 ms.
+
+What makes this worth a section rather than a line: the round had already run the suite green twice, and
+the reading that failed is not about this round's code at all. It is finding 538's shape one round on --
+a threshold whose subject is a machine, reported against a file that has nothing wrong with it.
+
+### Readings
+
+> Ledger for `v3.99`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **254 files, 6446 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **258 files, 6633 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.95 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100** -- unchanged: the new code is two files under `scripts/`, which the four dimensions do not measure |
+| new tests | **6423 -> 6446, +23**: nineteen fixtures through the gate, four over the reading and the real tree |
+| the workflow comments | **6 file(s), 1 215 `#` mark(s), 1 167 comment(s) (979 line, 188 block scalar), 0 run(s) of Han prose**; **13** marks inside a block scalar's row, **0** inside a quoted scalar, **0** glued to a word |
+| the census, before the repair | **1 155** comments and **25** block-row marks, i.e. twelve comments counted as content -- rows 308-314 and 467-471 of `official-data.yml` |
+| the row predicate | **1 167** rows begin with a `#`, **1 167** comments read, **0** lost |
+| the falsifications | six removals, six red fixtures; the first attempt at the sixth proved nothing and was replaced |
+| budget declarations | **43 -> 44**: one file named at 1 040 ms under four workers and 149 ms alone; the floor stays at 1 000 ms |
+| the YAML measurement | **1 172** rows carry a `#`; **1 215** `#` characters; five in-row marks, all shell strings inside `run: |` |
+| gate sites | **143 / 67 of 96 scripts** (was 142 / 66 of 94); the call tally **161** |
+| the battery | **228 claims across 66 files** (was 227 / 65) |
+| `docs:check` | **20 -> 21 steps** |
+| list | **26 -> 26**: the workflow entry closed, the paragraph-boundary entry left open |
+
+### What is left, in the order it has to happen
+
+| priority | item | state | next |
+| --- | --- | --- | --- |
+| P2 | the ceiling of 8 workers has never been measured where it is not oversubscription | unchanged: every reading is on a four-CPU quota, so 8 is 2x | one full run on a box with nine or more available CPUs |
+| P2 | how close a **failing** run comes to its ceiling | unchanged | one run whose artefact is a failure, read per test |
+| P2 | a record's `terms` is a map, so nothing can say which keys a rule writes | unchanged: priced at v3.94, waiting on its trigger | the trigger, or nothing |
+| P3 | a run broken by a line break evades all three language readers | **unchanged and now wider**: the third reader has the same boundary, and a YAML comment wrapped in a narrow column is the same case | decide whether a paragraph is a unit, which changes three readers at once |
+| P3 | an in-row `#` inside a block scalar is read by nothing | **new**: 13 marks, all shell strings, and telling one from a shell comment needs the block's language | nothing until a block holds a language whose comments are not row-leading |
+
+**Where this leaves the campaign.** The language axis now covers every surface in this repository that carries
+prose: the documents, the code, and the five workflow files whose comments are the record of why each step
+exists. The three P2 items still wait on something outside this sandbox, and the two P3 items are boundaries
+rather than defects -- both stated in the readers' headers, both with the repair each would need. The corpus
+figure, the coverage table and the battery's per-claim witness are where v3.98 left them.
