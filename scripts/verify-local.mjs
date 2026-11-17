@@ -40,6 +40,8 @@
  * the tests spawn it, and hollowing it makes the spawns return the wrong code.
  */
 
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   describePlan,
   duration,
@@ -54,6 +56,8 @@ import { runStep } from './step-process.mjs';
 import { repairAbandonedTree } from './tree-repair.mjs';
 import {
   receiptDecision,
+  rehearsal,
+  REHEARSAL_SHAPES,
   revokeReceipt,
   runVerdict,
   verifiedTree,
@@ -65,6 +69,128 @@ const argv = process.argv.slice(2);
 const listing = argv.includes('--list');
 const onlyIndex = argv.indexOf('--only');
 const only = onlyIndex < 0 ? null : (argv[onlyIndex + 1] ?? null);
+const rehearseIndex = argv.indexOf('--rehearse');
+const rehearsing = rehearseIndex < 0 ? null : (argv[rehearseIndex + 1] ?? '');
+
+/**
+ * Where a rehearsal files what it files.
+ *
+ * A rehearsal ends in the same close-out a run does, which means it files a receipt --
+ * and filing a receipt for a tree that does not exist, in this repository's `.git`, would
+ * put a name in front of the pusher that no run ever measured. So the root is scratch by
+ * default, and a test may point it at its own directory.
+ */
+function rehearsalRoot() {
+  return process.env.RCA_REHEARSAL_ROOT ?? join(tmpdir(), 'rca-bench-rehearsal');
+}
+
+/**
+ * Everything a finished run decides, in one place, so it is one place.
+ *
+ * ## What finding 563 left
+ *
+ * The receipt was refused for a tree that moved and the verdict still printed `OK` and
+ * exited 0. The repair gave `runVerdict` the same decision object the receipt used, and
+ * closed with a number: a gate told to ignore the decision it computed -- `runVerdict({
+ * result, decision: { state: 'issue' } })` -- was green in 207 tests with the inventory
+ * unchanged. Nothing in the tree could ask whether the value the gate computed was the
+ * value it obeyed: the inventory proves an exit exists and is reached, hollowing proves a
+ * gate is executed, and neither is that question.
+ *
+ * ## Why this function and not five lines in `main`
+ *
+ * Because a test can reach it. `--rehearse` supplies the inputs a run would have
+ * produced, and calls **this** -- the same `receiptDecision`, the same `runVerdict`, the
+ * same branch, the same `process.exit`. There is no second close-out to drift from this
+ * one, which is what makes a rehearsal evidence rather than a description.
+ *
+ * `decision` is computed here rather than passed in, and that is the load-bearing choice:
+ * a caller that computed it would leave the wiring -- `{ tree, full, ended }` in, verdict
+ * out -- outside the reach of the rehearsal, and the wiring is exactly what was measured
+ * to be unobservable.
+ */
+function settle({ result, tree, ended, full, coverage, plan, only: subset, root }) {
+  const decision = receiptDecision({ tree, full, ended });
+  const verdict = runVerdict({ result, decision });
+
+  if (verdict.exit !== 0) {
+    // A red run over content an earlier green run blessed takes the blessing back.
+    // Two verdicts about the same bytes cannot both stand, and the later one wins.
+    //
+    // A void run revokes nothing: there is no verdict about that tree to stand, and an
+    // earlier receipt still describes content that has not changed.
+    //
+    // This line sits *above* the failure report, and the order is not cosmetic:
+    // `golden-master/gate-sites.json` fingerprints this exit by the diagnostic
+    // immediately above it, so anything printed between the report and the exit
+    // renames the site and drops the proof that names its test. Measured here
+    // first -- a withdrawal message written after the report cost this site its
+    // `provedBy` on the next derivation.
+    const revoked =
+      verdict.word === 'FAILED' && tree.state === 'clean'
+        ? revokeReceipt({ root, tree: tree.tree })
+        : { state: 'absent' };
+    if (revoked.state === 'revoked') process.stderr.write(`verify:local: withdrew the receipt for tree ${tree.tree}\n`);
+    // Two reports, one exit. `FAILED` names the step a reader can act on, even when the
+    // tree moved under it -- the move is then a consequence, and the withheld receipt is
+    // already on stderr. `VOID` is the state with no failing step to name: every step
+    // passed, over content this tree no longer is.
+    //
+    // Both blocks are built by pure functions that have tests -- `failureReport` with
+    // both of its shapes, `voidReport` with the two ways a tree moves -- because
+    // reaching either from here costs fifteen minutes, and a branch only a test can
+    // reach is the only branch that gets one.
+    const report =
+      verdict.word === 'VOID' ? voidReport({ decision, started: tree, ended, coverage }) : failureReport(result);
+    process.stderr.write(`${report.join('\n')}\n`);
+    process.exit(verdict.exit);
+  }
+
+  // Two things make "OK" less than it sounds, and both are stated in the verdict
+  // line and then listed: a failure the workflow called a note, and a step that did
+  // not run at all. The exit code stays zero because CI's job would have stayed
+  // green, which is the fact being reproduced.
+  const noted = notedFailures(result.outcomes);
+  const skipped = result.outcomes.filter((one) => one.status === 'skipped');
+  const notes = [
+    skipped.length === 0 ? '' : `, ${String(skipped.length)} skipped because the condition was not met`,
+    noted.length === 0 ? '' : `, with ${String(noted.length)} tolerated failure(s)`,
+  ].join('');
+
+  // The verdict above is a sentence on a terminal and nothing downstream can read
+  // it, so the same decision is also filed as a fact keyed on the tree it is about.
+  const receipt =
+    decision.state === 'issue'
+      ? writeReceipt({ root, tree: decision.tree, note: `verify:local ${coverage}` })
+      : null;
+
+  process.stdout.write(
+    [
+      '',
+      `verify:local: ${verdict.word} (${coverage})${notes}`,
+      ...(subset === null ? [] : [`  the full plan: ${String(plan.remote.length)} step(s) need a runner, by scripts/gate-steps.mjs`]),
+      receipt === null
+        ? `  receipt:  none — ${decision.why}`
+        : `  receipt:  tree ${receipt.tree}, in .git/rca-bench-verified — a revision of this tree may be published`,
+      // The budgets, spent against declared. The pool is enforced above; printing it
+      // here is what turns "still inside" from an assumption into a measurement,
+      // and a step that quietly doubled is visible before it breaks the gate.
+      ...(result.budgets.length === 0
+        ? []
+        : [
+            `  budget:  ${result.budgets
+              .map((one) => `${one.job} ${duration(one.spentMs)} of ${duration(one.totalMs)}`)
+              .join(', ')}`,
+          ]),
+      ...skipped.map((one) => `  skipped: ${one.step.first} — ${one.why}`),
+      ...noted.map(
+        (one) => `  tolerated: ${one.step.first} — ${one.error.message}; the workflow says that is a note`,
+      ),
+      ...plan.remote.map((step) => `  did not run: ${step.key} — ${step.why}`),
+      '',
+    ].join('\n'),
+  );
+}
 
 /**
  * The runner is `runStep`, and this file's only job is to decide *which* steps.
@@ -89,6 +215,27 @@ async function main() {
 
   if (listing) {
     process.stdout.write(`${describePlan(plan).join('\n')}\n`);
+    return;
+  }
+
+  // A rehearsal is this gate with the inputs a run would have produced. It comes before
+  // the preflight because the preflight repairs a working tree, and a rehearsal must not
+  // touch one; it comes before the filter because a shape is not a step key.
+  //
+  // A name the table does not have is refused rather than ignored: `--rehearse movedd`
+  // falling through to the plan would start a fifteen-minute run to answer a question
+  // about one word, and `--rehearse` on a gate that does not know the flag would do the
+  // same -- which is how this branch was found, by adding the test first and watching it
+  // run the whole gate.
+  if (rehearsing !== null) {
+    const inputs = rehearsal(rehearsing, plan);
+    if (inputs === null) {
+      process.stderr.write(
+        `verify:local: no rehearsal is named "${rehearsing}"; the shapes are: ${REHEARSAL_SHAPES.join(', ')}\n`,
+      );
+      process.exit(1);
+    }
+    settle({ ...inputs, plan, only: null, root: rehearsalRoot() });
     return;
   }
 
@@ -132,95 +279,20 @@ async function main() {
         )} run steps in ci.yml; the other ${String(plan.remote.length)} need a runner`
       : `${String(result.commands)} command(s), ${String(selected)} of the ${String(plan.local.length)} local steps`;
 
-  // Read once, here, and used by both facts below: the receipt and the verdict. One
-  // read, one decision, two readers -- a run that withheld a receipt for one tree while
-  // blessing another would be the defect this whole file is about.
-  //
-  // Finding 563: v3.105 withheld the receipt and left the verdict saying `OK`. The
-  // receipt was refused and the sentence was not, so a run that had measured nothing
-  // still printed `OK` and exited 0. `runVerdict` now reads the same decision object the
-  // receipt does, so the word, the code and the file cannot say three things.
-  const ended = verifiedTree({ root: ROOT });
-  const decision = receiptDecision({ tree, full: only === null, ended });
-  const verdict = runVerdict({ result, decision });
-
-  if (verdict.exit !== 0) {
-    // A red run over content an earlier green run blessed takes the blessing back.
-    // Two verdicts about the same bytes cannot both stand, and the later one wins.
-    //
-    // A void run revokes nothing: there is no verdict about that tree to stand, and an
-    // earlier receipt still describes content that has not changed.
-    //
-    // This line sits *above* the failure report, and the order is not cosmetic:
-    // `golden-master/gate-sites.json` fingerprints this exit by the diagnostic
-    // immediately above it, so anything printed between the report and the exit
-    // renames the site and drops the proof that names its test. Measured here
-    // first -- a withdrawal message written after the report cost this site its
-    // `provedBy` on the next derivation.
-    const revoked =
-      verdict.word === 'FAILED' && tree.state === 'clean'
-        ? revokeReceipt({ root: ROOT, tree: tree.tree })
-        : { state: 'absent' };
-    if (revoked.state === 'revoked') process.stderr.write(`verify:local: withdrew the receipt for tree ${tree.tree}\n`);
-    // Two reports, one exit. `FAILED` names the step a reader can act on, even when the
-    // tree moved under it -- the move is then a consequence, and the withheld receipt is
-    // already on stderr. `VOID` is the state with no failing step to name: every step
-    // passed, over content this tree no longer is.
-    //
-    // Both blocks are built by pure functions that have tests -- `failureReport` with
-    // both of its shapes, `voidReport` with the two ways a tree moves -- because
-    // reaching either from here costs fifteen minutes, and a branch only a test can
-    // reach is the only branch that gets one.
-    const report =
-      verdict.word === 'VOID' ? voidReport({ decision, started: tree, ended, coverage }) : failureReport(result);
-    process.stderr.write(`${report.join('\n')}\n`);
-    process.exit(verdict.exit);
-  }
-
-  // Two things make "OK" less than it sounds, and both are stated in the verdict
-  // line and then listed: a failure the workflow called a note, and a step that did
-  // not run at all. The exit code stays zero because CI's job would have stayed
-  // green, which is the fact being reproduced.
-  const noted = notedFailures(result.outcomes);
-  const skipped = result.outcomes.filter((one) => one.status === 'skipped');
-  const notes = [
-    skipped.length === 0 ? '' : `, ${String(skipped.length)} skipped because the condition was not met`,
-    noted.length === 0 ? '' : `, with ${String(noted.length)} tolerated failure(s)`,
-  ].join('');
-
-  // The verdict above is a sentence on a terminal and nothing downstream can read
-  // it, so the same decision is also filed as a fact keyed on the tree it is about.
-  const receipt =
-    decision.state === 'issue'
-      ? writeReceipt({ root: ROOT, tree: decision.tree, note: `verify:local ${coverage}` })
-      : null;
-
-  process.stdout.write(
-    [
-      '',
-      `verify:local: ${verdict.word} (${coverage})${notes}`,
-      ...(only === null ? [] : [`  the full plan: ${String(plan.remote.length)} step(s) need a runner, by scripts/gate-steps.mjs`]),
-      receipt === null
-        ? `  receipt:  none — ${decision.why}`
-        : `  receipt:  tree ${receipt.tree}, in .git/rca-bench-verified — a revision of this tree may be published`,
-      // The budgets, spent against declared. The pool is enforced above; printing it
-      // here is what turns "still inside" from an assumption into a measurement,
-      // and a step that quietly doubled is visible before it breaks the gate.
-      ...(result.budgets.length === 0
-        ? []
-        : [
-            `  budget:  ${result.budgets
-              .map((one) => `${one.job} ${duration(one.spentMs)} of ${duration(one.totalMs)}`)
-              .join(', ')}`,
-          ]),
-      ...skipped.map((one) => `  skipped: ${one.step.first} — ${one.why}`),
-      ...noted.map(
-        (one) => `  tolerated: ${one.step.first} — ${one.error.message}; the workflow says that is a note`,
-      ),
-      ...plan.remote.map((step) => `  did not run: ${step.key} — ${step.why}`),
-      '',
-    ].join('\n'),
-  );
+  // Everything from here is the close-out, and it is one function because a rehearsal
+  // has to execute it too. Read the tree again first: the receipt is filed under the tree
+  // the run began on, and a tree that moved while it ran makes that name a claim about
+  // content nothing measured.
+  settle({
+    result,
+    tree,
+    ended: verifiedTree({ root: ROOT }),
+    full: only === null,
+    coverage,
+    plan,
+    only,
+    root: ROOT,
+  });
 }
 
 // The same direct-call guard as the counting script. Nothing imports this file

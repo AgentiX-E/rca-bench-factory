@@ -59,6 +59,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { localCommands } from './gate-steps.mjs';
 
 /** Where receipts live: inside `.git`, so they are never committed and never counted. */
 export const RECEIPT_DIR = join('.git', 'rca-bench-verified');
@@ -261,6 +262,116 @@ export function voidReport({ decision, started, ended, coverage }) {
     '  receipt: none — the steps passed over content this tree no longer is, so no revision here may be published',
     '  next:    run it again on the tree you mean to publish',
   ];
+}
+
+/**
+ * The inputs a rehearsal hands the gate, one per shape a run can end in.
+ *
+ * ## Why this table is here and not in `verify-local.mjs`
+ *
+ * It is the same reason `receiptDecision` is here: the gate may not be imported, so
+ * anything the gate must be *driven* with has to live in a module a test can read. But
+ * there is a second reason, and it is the one that keeps this table honest -- it is the
+ * **enumeration of this file's own branches**. A shape is added when a branch is added,
+ * and a reader who changes `receiptDecision` sees, twenty lines below, the sample that
+ * would have to change with it. Two homes would let the samples describe last round's
+ * rule, and a rehearsal is worthless if it rehearses a rule nothing follows.
+ *
+ * ## Why a rehearsal at all
+ *
+ * Finding 563 closed with a measurement rather than a claim: a gate told to ignore the
+ * decision it computed -- `runVerdict({ result, decision: { state: 'issue' } })` -- was
+ * green everywhere, because the inventory proves that exits exist and are reached, and
+ * hollowing proves a gate is executed, and neither asks whether the value the gate
+ * computed is the value it obeyed. The only spawn that could observe it for real would
+ * have to rewrite the tree underneath a running gate. A rehearsal is the same gate with
+ * its inputs taken from a table, so the close-out -- one decision, one verdict, one
+ * branch, one exit -- is executed by a test in a second.
+ *
+ * A dirty start is deliberately absent from the table. It is a state a developer is in
+ * all day, its verdict is `OK` with no receipt, and its shape is already driven through
+ * the real path by `--only`; a rehearsal for it would be a copy of a test that exists.
+ */
+const TREE_A = '1f4a0c9b2e7d3a5f8c6b4d2e0a9f7c5b3d1e8a06';
+const TREE_B = '9c2b7d4e1a8f6c3b5d0e2f4a7c9b1d3e5f8a0c62';
+
+/** Sorted, because the gate publishes this list in its refusal and a test sorts too. */
+export const REHEARSAL_SHAPES = ['dirty-end', 'failed', 'moved', 'passed', 'subset'];
+
+/**
+ * The inputs `verify-local.mjs` would have computed, for one named shape.
+ *
+ * `plan` is the shipped plan, so the failing shape names the step a real failure would
+ * name first. That is the point of passing it: a rehearsal with a hand-written step would
+ * be a second description of the workflow, and this repository has spent rounds removing
+ * those.
+ *
+ * Returns `null` for a name in neither this table nor the caller's list, because a typo
+ * that rehearsed a different shape would be silent -- the exact failure a table of inputs
+ * invites.
+ */
+export function rehearsal(name, plan) {
+  // A failure names the first command a run would execute, which is a *command* rather
+  // than a step: `localCommands` merges steps that run the same shell line, and the merged
+  // entry is what `failureReport` prints. Building one here rather than taking a step's key
+  // keeps the rehearsal and the run naming the same thing.
+  const step = localCommands(plan.local)[0];
+  const total = plan.local.length + plan.remote.length;
+  const coverage =
+    `0 command(s) covering ${String(plan.local.length)} of the ${String(total)} run steps in ci.yml; ` +
+    `the other ${String(plan.remote.length)} need a runner`;
+  const clean = { state: 'clean', tree: TREE_A };
+  const passed = {
+    ok: true,
+    timedOut: false,
+    exhausted: false,
+    index: -1,
+    step: null,
+    commands: 0,
+    error: null,
+    outcomes: [],
+    failedJobs: [],
+    cancelledJobs: [],
+    jobs: [],
+    budgets: [],
+  };
+  const endedWith = (state) => {
+    if (state === 'clean') return { state: 'clean', tree: TREE_A };
+    if (state === 'other') return { state: 'clean', tree: TREE_B };
+    return {
+      state: 'dirty',
+      tree: TREE_A,
+      why: `the working tree differs from ${TREE_A.slice(0, 7)}, so what ran is a tree that cannot be pushed`,
+    };
+  };
+  switch (name) {
+    case 'passed':
+      return { result: passed, tree: clean, ended: endedWith('clean'), full: true, coverage };
+    case 'subset':
+      return {
+        result: passed,
+        tree: clean,
+        ended: endedWith('clean'),
+        full: false,
+        coverage: `0 command(s), 1 of the ${String(plan.local.length)} local steps`,
+      };
+    case 'moved':
+      return { result: passed, tree: clean, ended: endedWith('other'), full: true, coverage };
+    case 'dirty-end':
+      return { result: passed, tree: clean, ended: endedWith('dirty'), full: true, coverage };
+    // Both are true here on purpose: a step failed *and* the tree moved. `FAILED` has to
+    // outrank `VOID`, and this is the only place where one run is both.
+    case 'failed':
+      return {
+        result: { ...passed, ok: false, index: 0, step, commands: 1, error: new Error('the step exited 1') },
+        tree: clean,
+        ended: endedWith('other'),
+        full: true,
+        coverage,
+      };
+    default:
+      return null;
+  }
 }
 
 /**

@@ -495,7 +495,12 @@ const REGISTER: Record<string, Entry> = {
       'hook is a property of a command this repository does not use to publish. It also holds the two ' +
       'sentences that follow from the same decision -- `treeMoved` for the comparison and `runVerdict` ' +
       'for the word and the exit code -- because the gate prints them and may not be imported: leaving ' +
-      'either in that file is a rule with no test (finding 563).',
+      'either in that file is a rule with no test (finding 563). Its third occupant is `rehearsal`: the ' +
+      'inputs a run would have produced, one per shape the decision can take, so that the close-out a ' +
+      'gate executes can be executed by a test. That table belongs here for the same reason the decision ' +
+      'does -- a gate may not be imported -- and for a second one: it is the enumeration of this module\'s ' +
+      'own branches, so a reader who adds a branch sees, twenty lines below, the sample that has to move ' +
+      'with it (finding 564).',
   },
   'gate-steps.mjs': {
     class: 'data',

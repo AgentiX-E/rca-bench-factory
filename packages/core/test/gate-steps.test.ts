@@ -1957,6 +1957,139 @@ describe('scripts/verify-local.mjs as a command', () => {
   });
 });
 
+/**
+ * What the gate does with the values it computes.
+ *
+ * ## The measurement this is the answer to
+ *
+ * Finding 563 repaired the verdict and closed with a number rather than a claim:
+ * replacing the gate's `runVerdict({ result, decision })` with
+ * `runVerdict({ result, decision: { state: 'issue' } })` was **green everywhere** --
+ * 207 tests in the three files that touch that gate, and `derive-gate-sites --check`
+ * unchanged. Two instruments exist and neither asks the question. The inventory proves
+ * a site exists and is reached. Hollowing proves the gate is executed at all, and a
+ * module a test may import names no failing test when it is hollowed, so a gate that a
+ * test could call directly is a gate whose proof disappears.
+ *
+ * What neither asks is whether the value the gate computed is the value it obeyed. The
+ * only spawn that could reach the void branch for real would have to rewrite the tree
+ * underneath a running gate, which is the thing that branch refuses.
+ *
+ * ## `--rehearse <shape>`
+ *
+ * So the gate is given a second source of **inputs** and no second close-out. A shape
+ * names a result and a pair of trees; the gate reads them from a table instead of from a
+ * fifteen-minute run and then executes the same lines it executes for real -- the same
+ * `receiptDecision`, the same `runVerdict`, the same branch, the same `process.exit`.
+ * A gate that ignored the decision it computed would print the wrong word here, and this
+ * is the only place in the tree where that is observable.
+ *
+ * ## Why every expectation is written here
+ *
+ * A rehearsal that computed its own expected word would agree with the implementation by
+ * construction. The table below is the expectation; the gate supplies the behaviour. The
+ * last test closes the other direction: the gate publishes the list of shapes it has, so
+ * adding one without adding a row here is red rather than silent.
+ */
+const SHAPES: { name: string; word: string; exit: 0 | 1; where: 'stdout' | 'stderr' }[] = [
+  { name: 'passed', word: 'OK', exit: 0, where: 'stdout' },
+  { name: 'subset', word: 'OK', exit: 0, where: 'stdout' },
+  { name: 'moved', word: 'VOID', exit: 1, where: 'stderr' },
+  { name: 'dirty-end', word: 'VOID', exit: 1, where: 'stderr' },
+  { name: 'failed', word: 'FAILED', exit: 1, where: 'stderr' },
+];
+
+describe('scripts/verify-local.mjs, rehearsed', () => {
+  function rehearse(name: string) {
+    return spawnSync(process.execPath, [SCRIPT, '--rehearse', name], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      // The receipt a rehearsal files goes to a scratch root, so a rehearsal cannot
+      // bless a tree a pusher would then read.
+      env: { ...process.env, RCA_REHEARSAL_ROOT: join(SCRATCH, 'rehearsal') },
+    });
+  }
+
+  it.each(SHAPES)('prints $word and exits $exit for the $name shape', ({ name, word, exit, where }) => {
+    const result = rehearse(name);
+    expect(result.status, `stderr: ${result.stderr}`).toBe(exit);
+    const stream = where === 'stdout' ? result.stdout : result.stderr;
+    const other = where === 'stdout' ? result.stderr : result.stdout;
+    expect(stream).toContain(`verify:local: ${word}`);
+    // One verdict per run, and on one stream. A word printed to both would let a
+    // reader who pipes stdout see a failure and one who pipes stderr see a success.
+    expect(other).not.toContain('verify:local: OK');
+    expect(other).not.toContain('verify:local: VOID');
+    expect(other).not.toContain('verify:local: FAILED');
+  });
+
+  it('moves a green run to VOID when the tree it ended on is another tree', () => {
+    // The whole point of the branch: every step passed, and the answer is not OK. The
+    // four lines below are the ones a reader needs to act on it, and each was added
+    // because its absence made the block unreadable in a way a falsification found.
+    const result = rehearse('moved');
+    for (const line of ['  started:', '  ended:  ', '  measured:', '  reason:  ', '  next:    ']) {
+      expect(result.stderr, `missing ${line}`).toContain(line);
+    }
+    // The tree names are shortened to seven characters and carry their state, so a
+    // reader can tell a commit apart from an uncommitted edit.
+    expect(result.stderr).toMatch(/started: [0-9a-f]{7} \(clean\)/);
+    expect(result.stderr).toMatch(/ended: {3}[0-9a-f]{7} \(clean\)/);
+  });
+
+  it('moves a green run to VOID when a step left the tree dirty', () => {
+    // Same verdict, different sentence: nothing names what the steps measured, but the
+    // cause is a write rather than a commit, and the reader acts on it differently.
+    const result = rehearse('dirty-end');
+    expect(result.stderr).toContain('with uncommitted changes');
+    expect(result.stderr).not.toContain('and ended on ');
+  });
+
+  it('withholds the receipt for a subset run and still says OK', () => {
+    // A subset run is not a lie about the tree, it is a claim about fewer steps. The
+    // two facts are separate on purpose: the word is about the steps that ran.
+    const result = rehearse('subset');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('verify:local: OK');
+    expect(result.stdout).toContain('receipt:  none');
+    expect(result.stdout).toContain('subset of the steps');
+  });
+
+  it('files a receipt for a clean full run over one tree', () => {
+    // The other half of the pair: without this, `receipt: none` everywhere would pass
+    // both this and the subset test.
+    const result = rehearse('passed');
+    expect(result.stdout).toMatch(/receipt: {2}tree [0-9a-f]{40}/);
+    expect(result.stdout).toContain('a revision of this tree may be published');
+    expect(existsSync(join(SCRATCH, 'rehearsal', '.git', 'rca-bench-verified'))).toBe(true);
+  });
+
+  it('names the step that failed rather than the tree, when both are true', () => {
+    // `FAILED` outranks `VOID`: the failing step is the actionable fact and the move is
+    // its consequence. A run that printed the void block here would send a reader to
+    // look for a commit instead of at the step that broke.
+    const result = rehearse('failed');
+    expect(result.stderr).toContain('verify:local: FAILED at 1/');
+    expect(result.stderr).toContain('  step:    ');
+    expect(result.stderr).not.toContain('the tree moved while the gate ran');
+  });
+
+  it('refuses a shape it does not have, and publishes the ones it does', () => {
+    // A typo in a rehearsal name must not rehearse something else: that is the failure
+    // a table of inputs invites, and it is silent. The list is also what keeps this
+    // file honest -- a shape added to the gate and not to `SHAPES` shows up here.
+    const result = rehearse('no-such-shape');
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('no rehearsal is named');
+    const published = /the shapes are: ([a-z,\- ]+)/.exec(result.stderr)?.[1];
+    expect(published, result.stderr).toBeDefined();
+    expect(published?.split(', ').sort()).toEqual(SHAPES.map((one) => one.name).sort());
+    // And it runs nothing: a refused rehearsal that started the plan would take a
+    // quarter of an hour to say one word.
+    expect(result.stdout).not.toContain('verify:local:');
+  });
+});
+
 describe('the exits, reached without breaking the shipped workflow', () => {
   const scratch = SCRATCH;
 

@@ -344,8 +344,20 @@ describe('the two baskets are a partition of the calls, not a remainder', { time
     // files were the only prose surface in the tree with no reader at all -- 1,215 marks, almost all
     // of them sentences about why a step exists. The exit count rises by one for the verdict and the
     // script count by two for the scanner it is built on, which is the same shape as v3.98's pair.
-    expect(calls).toBe(161);
-    expect(sites).toBe(143);
+    //
+    // 162/144 is v3.107's, and the pair moves together for the thirteenth round -- but for a reason
+    // none of the twelve had. Every round before this one added a *reader*: a gate that reads a
+    // figure, a sentence, a comment, a workflow's prose. This one adds no reader at all. It adds a
+    // way to **drive** a gate that already exists, so that what the gate does with a value it
+    // computed stops being unobservable: `verify-local.mjs --rehearse <shape>` takes its inputs from
+    // a table instead of from a fifteen-minute run, and the refusal for a name the table does not
+    // have is the one new exit. The script count does not move, because the table lives in
+    // `gate-receipt.mjs` -- a module with no exit, which is where it belongs: it is the enumeration
+    // of that module's own branches. What makes the pair worth a paragraph is the direction: the
+    // eleven rounds above each moved the inventory by reading something new, and this one moves it by
+    // making an old reading falsifiable.
+    expect(calls).toBe(162);
+    expect(sites).toBe(144);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([
