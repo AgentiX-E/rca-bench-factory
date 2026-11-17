@@ -10,10 +10,13 @@ import {
   locateBase,
   parseIdent,
   planPublish,
+  pointerPlan,
   predictRebuild,
   readAncestry,
+  readBlob,
   readCommit,
   readFiles,
+  readRev,
   readTreeOf,
   requireSha,
   resolveSymbol,
@@ -481,5 +484,80 @@ describe('the commit a replay will produce', () => {
     const first = commit(root, 'first', { 'a.txt': 'a\n' });
     const second = commit(root, 'second', { 'b.txt': 'b\n' });
     expect(() => predictRebuild({ root, sha: second, parents: ['not-a-sha'] })).toThrow(/a parent to hang on/);
+  });
+});
+
+/**
+ * The three reads that used to be excused as "only a push can prove them".
+ *
+ * Each of them sat in `SPAWN_ONLY` with the reason that `publish.test.ts` reaches it
+ * through a real push. The spawn does reach every line: it is the *branches* it cannot
+ * name. The refusal of a name that is not a SHA, the layer that refuses a revision git
+ * cannot resolve, and the empty commit list of a pointer plan could each be deleted and
+ * the end-to-end assertion would still be green, because none of them is on its path.
+ */
+describe('reading one object out of the database a plan was built against', () => {
+  it('returns a blob as the bytes git stores, not as a decoded string', () => {
+    const root = repository('blob-reader');
+    commit(root, 'one', { 'note.txt': 'first line\nsecond line\n' });
+    const blob = git(root, ['rev-parse', 'HEAD:note.txt']).trim();
+
+    const read = readBlob({ root, sha: blob });
+    // `runGit` without an `encoding` returns a Buffer, and that is the only shape that can
+    // carry a binary blob through this function. A default of `'utf8'` would decode every
+    // byte above 0x7f, and a text fixture like this one would still round-trip -- so the
+    // Buffer is asserted separately from its contents.
+    expect(Buffer.isBuffer(read)).toBe(true);
+    expect(read.length).toBe(Buffer.byteLength('first line\nsecond line\n'));
+    expect(read.toString('utf8')).toBe('first line\nsecond line\n');
+  });
+
+  it('refuses a name that is not a SHA before git is asked to resolve it', () => {
+    const root = repository('blob-refusal');
+    commit(root, 'one', { 'note.txt': 'one\n' });
+    // `HEAD` is a name git resolves happily, so removing `requireSha` does not make this
+    // call fail where it should: it fails one layer down, in a git sentence about an
+    // object that is not a blob. A caller reading that sentence would be told the content
+    // is missing rather than that it was never named properly.
+    expect(() => readBlob({ root, sha: 'HEAD' })).toThrow(TypeError);
+    expect(() => readBlob({ root, sha: 'HEAD' })).toThrow(/a blob to read must be a 40-character SHA-1/);
+  });
+});
+
+describe('the commit a revision names, as a name a plan can key on', () => {
+  it('resolves HEAD to the full SHA-1 of the commit it names', () => {
+    const root = repository('rev-reader');
+    const sha = commit(root, 'one', { 'a.txt': 'a\n' });
+    expect(readRev({ root, rev: 'HEAD' })).toBe(sha);
+    expect(readRev({ root, rev: 'HEAD' })).toBe(git(root, ['rev-parse', 'HEAD']).trim());
+  });
+
+  it('lets git refuse a revision that names nothing, rather than reporting a shape error', () => {
+    const root = repository('rev-refusal');
+    commit(root, 'one', { 'a.txt': 'a\n' });
+    // Two layers can reject this call, and only one of them is about the caller's mistake.
+    // `runGit` says the revision resolved to nothing and quotes git; `requireSha` would say
+    // the answer is not a SHA, which reads as a defect in this module. Moving the check
+    // ahead of the git call keeps the second sentence and loses the first, so both the
+    // sentence and the layer that produced it are asserted.
+    expect(() => readRev({ root, rev: 'no-such-ref' })).toThrow(/git rev-parse no-such-ref failed in/);
+    expect(() => readRev({ root, rev: 'no-such-ref' })).not.toThrow(TypeError);
+  });
+});
+
+describe('a plan that publishes a tree with no commit behind it', () => {
+  it('carries the tree and no commits, which is what moving a pointer is', () => {
+    const tree = 'a'.repeat(40);
+    const plan = pointerPlan({ tree });
+    expect(plan).toEqual({ commits: [], tipTree: tree });
+    // The empty list is the function's whole claim. A plan that grew a placeholder commit
+    // would make `publish.mjs` ask the API for a commit nobody intended to create, and the
+    // equality above would only fail if the placeholder happened to be spelled differently.
+    expect(plan.commits).toEqual([]);
+  });
+
+  it('refuses a tree that is not a SHA, naming the plan rather than the caller', () => {
+    expect(() => pointerPlan({ tree: 'HEAD' })).toThrow(TypeError);
+    expect(() => pointerPlan({ tree: 'HEAD' })).toThrow(/the tree a pointer plan publishes/);
   });
 });

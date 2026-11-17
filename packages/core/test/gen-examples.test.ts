@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { FORMAT_SPECS } from '../../../scripts/format-spec.mjs';
+import { FORMAT_SPECS, MODALITY_LABELS, modalitiesProse } from '../../../scripts/format-spec.mjs';
 import { OPENRCA2_CONTRACT_VERSION } from '../src/export/openrca2.js';
 
 /**
@@ -674,5 +674,55 @@ describe('the shipped contract pages', { timeout: SUITE_BUDGET_MS }, () => {
         expect(page, `${spec.id}.md must document ${file.path}`).toContain(marker);
       }
     }
+  });
+});
+
+/**
+ * The words a modality list becomes, asked of the function rather than of a page.
+ *
+ * ## Why this arm is not covered by the gate that prints it
+ *
+ * `gen-examples.mjs` is spawned by the describe above, and the refusal for an unlabelled
+ * code is asserted there through `stderr` and an exit code. That proves the refusal exits
+ * the process, which is one of four things `modalitiesProse` does; the other three -- the
+ * label it picks, the order it joins them in, and the sentence it refuses with -- are
+ * invisible from outside, because a page that printed `logs, metrics` where the list said
+ * `M, L` is still a page the gate would call `OK`. The expansion is a *reading* of the
+ * contract table, and the two orders disagree on every page that lists two modalities.
+ *
+ * This entry was in `SPAWN_ONLY` with the reason "the prose has no verdict of its own, so
+ * the gate is the only place its output is judged". The second half is true and the first
+ * is the defect: a pure string function has a verdict for every input, and the only reason
+ * the table could call a spawn the only route is that nobody had compared the two orders.
+ */
+describe('format-spec.mjs · the reader-facing words a modality list becomes', { timeout: SUITE_BUDGET_MS }, () => {
+  it('expands every code the vocabulary knows, one label per code', () => {
+    for (const code of Object.keys(MODALITY_LABELS)) {
+      expect(modalitiesProse([code]), `${code} must expand to the label MODALITY_LABELS gives it`).toBe(
+        MODALITY_LABELS[code as keyof typeof MODALITY_LABELS],
+      );
+    }
+  });
+
+  it('keeps the order the list gives, rather than the order the vocabulary declares', () => {
+    // The two differ for every pair that is not alphabetical, which is most of them: `T, M`
+    // is `traces, metrics` and `M, T` is `metrics, traces`. A reader that sorted, or that
+    // walked `MODALITY_LABELS`, would print the same words in the other order and every
+    // page would still be a page the generator accepted.
+    expect(modalitiesProse(['T', 'M'])).toBe('traces, metrics');
+    expect(modalitiesProse(['M', 'T'])).toBe('metrics, traces');
+    // The separator is part of the output a document reads, so it is asserted rather than
+    // assumed: `join` with a comma and no space is a different sentence.
+    expect(modalitiesProse(['M', 'L', 'T'])).toBe('metrics, logs, traces');
+  });
+
+  it('refuses a code with no word, and says which code and which table', () => {
+    // Directly, rather than through an exit code: the message is what a maintainer reads
+    // when the contract grows a modality, and it names both the code that has no word and
+    // the table where the word belongs. A version that threw a bare `undefined is not a
+    // string` would pass the spawned test above, which asserts only the exit code and the
+    // two words `modality 'Q'`.
+    expect(() => modalitiesProse(['M', 'Q'])).toThrow(/modality 'Q' has no entry in MODALITY_LABELS/);
+    expect(() => modalitiesProse(['Q'])).toThrow(/a badge the site understands and a word the document does not/);
   });
 });

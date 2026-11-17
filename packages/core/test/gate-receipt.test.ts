@@ -8,6 +8,7 @@ import {
   readReceipt,
   receiptDecision,
   receiptPath,
+  rehearsal,
   revokeReceipt,
   runVerdict,
   treeMoved,
@@ -412,5 +413,113 @@ describe('gate-receipt · the verdict a void run prints', () => {
     expect(text).toContain('receipt: none');
     expect(text).toContain('uncommitted changes');
     expect(text).toContain('run it again');
+  });
+});
+
+/**
+ * The six shapes a rehearsal can take, asked of the table rather than of six runs.
+ *
+ * ## Why the function, when `verify-local.mjs --rehearse` is already spawned
+ *
+ * `rehearsal` is a decision table: five named shapes, each returning the inputs a run
+ * would have produced, and `null` for a name that is not one of them. The spawned path
+ * proves the entry point -- `--rehearse passed` reaches `settle()` and prints a verdict --
+ * and it proves one shape per invocation, through a temporary receipt root, at the cost of
+ * a whole `verify:local` bootstrap. What it cannot show is the *edge* between two shapes
+ * that differ in one field: `moved` and `dirty-end` both end on a disagreement with the
+ * starting tree, one about the tree and one about the working directory, and a reader that
+ * returned the same object for both would still print a plausible verdict for the one it
+ * was asked about.
+ *
+ * The table is also the only place where the two halves of finding 564 meet: the coverage
+ * sentence counts the commands a *rehearsal* can run against the steps the plan states,
+ * and a division printed from the wrong denominator is a sentence about a run that did not
+ * happen. Both numbers are asserted below, because the pair is what a reader compares.
+ *
+ * ## What this does not establish
+ *
+ * That `verify-local.mjs` files a receipt for each shape. That is the spawn's job and it is
+ * where finding 564 was: the table was right and the close-out that consumed it was not.
+ */
+describe('gate-receipt · the inputs a rehearsal invents, one per shape', () => {
+  /** Two local commands, two CI-only steps: the denominator the coverage sentence states. */
+  const PLAN = {
+    local: [{ key: 'install', run: 'pnpm install --frozen-lockfile' }, { key: 'unit', run: 'pnpm test' }],
+    remote: [{ key: 'windows', run: 'pnpm test' }, { key: 'docker', run: 'docker build .' }],
+  };
+
+  it('runs the whole plan cleanly for `passed`, and says how much of it a local run reaches', () => {
+    const inputs = rehearsal('passed', PLAN);
+    expect(inputs).not.toBeNull();
+    expect(inputs!.full).toBe(true);
+    expect(inputs!.result.ok).toBe(true);
+    // The tree it started on and the tree it ended on are one tree: the shape is "nothing
+    // moved", and a reader that reused `endedWith` for every arm would be right here and
+    // wrong about the two arms below that differ by exactly this field.
+    expect(inputs!.ended).toEqual(inputs!.tree);
+    expect(inputs!.coverage).toContain('2 of the 4 run steps');
+    expect(inputs!.coverage).toContain('the other 2 need a runner');
+  });
+
+  it('says `subset` covers one local step, because a rehearsal that ran one is not the run', () => {
+    const inputs = rehearsal('subset', PLAN);
+    expect(inputs!.full).toBe(false);
+    expect(inputs!.result.ok).toBe(true);
+    // `1 of the 2 local steps`, not `2 of the 4 run steps`: the denominator changes with the
+    // claim, and a reader that kept the run's denominator would be describing a full run.
+    expect(inputs!.coverage).toContain('0 command(s), 1 of the 2 local steps');
+  });
+
+  it('ends `moved` on a different clean tree, which is the VOID a push would refuse', () => {
+    const inputs = rehearsal('moved', PLAN);
+    expect(inputs!.ended.state).toBe('clean');
+    // Clean and *different*: the pair is the whole shape. A reader that answered TREE_B with
+    // state `dirty` would be reporting a working directory it has no evidence about.
+    expect(inputs!.ended.tree).not.toBe(inputs!.tree.tree);
+  });
+
+  it('ends `dirty-end` on the tree it started from, and says which tree that was', () => {
+    const inputs = rehearsal('dirty-end', PLAN);
+    expect(inputs!.ended.state).toBe('dirty');
+    expect(inputs!.ended.tree).toBe(inputs!.tree.tree);
+    // The sentence names the starting tree by its short form, which is the only handle a
+    // reader has on the tree the receipt is about.
+    expect(inputs!.ended.why).toContain(inputs!.tree.tree.slice(0, 7));
+  });
+
+  it('names the first command a run would have executed when a step failed', () => {
+    const inputs = rehearsal('failed', PLAN);
+    expect(inputs!.result.ok).toBe(false);
+    expect(inputs!.result.index).toBe(0);
+    expect(inputs!.result.commands).toBe(1);
+    expect(inputs!.result.error).toBeInstanceOf(Error);
+    expect((inputs!.result.error as Error).message).toBe('the step exited 1');
+    expect(inputs!.result.step.run).toBe('pnpm install --frozen-lockfile');
+    // FAILED outranks VOID, so the failure arm carries the moved tree as well: a run whose
+    // step failed *and* whose tree moved is the one case where both are true, and the
+    // verdict has to pick the failure. Returning `ended` clean on this arm would make the
+    // outranking assertion above untestable.
+    expect(inputs!.ended.tree).not.toBe(inputs!.tree.tree);
+  });
+
+  it('names the command a merged pair became, rather than the step the plan lists', () => {
+    // `localCommands` merges steps that run the same shell line, and the merged entry keeps
+    // the first key and lists the rest in `also`. A rehearsal that took `plan.local[0]`
+    // instead would name the same command by luck and drop the merged step's key -- which is
+    // exactly the key a reader would search the workflow for.
+    const merged = {
+      local: [{ key: 'a', run: 'pnpm test' }, { key: 'b', run: 'pnpm test' }],
+      remote: [],
+    };
+    const inputs = rehearsal('failed', merged);
+    expect(inputs!.result.step.first).toBe('a');
+    expect(inputs!.result.step.also).toEqual(['b']);
+  });
+
+  it('answers null for a shape it does not have, so the caller can name the ones it does', () => {
+    // `verify-local.mjs` turns this `null` into "no rehearsal is named …; the shapes are: …".
+    // An arm that returned a default shape instead would make every typo a green rehearsal.
+    expect(rehearsal('nope', PLAN)).toBeNull();
+    expect(rehearsal('', PLAN)).toBeNull();
   });
 });

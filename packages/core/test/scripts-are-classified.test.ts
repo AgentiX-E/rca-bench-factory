@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { stripCommentsAndStrings } from '../../../scripts/budget-readings.mjs';
 
 /**
  * Every script in `scripts/` is classified, and the classification is checked.
@@ -1163,86 +1164,147 @@ describe('a data module exports a name only when something outside it takes that
   /**
    * The exports whose only reader is a script the suite spawns, with the reason that is all there is.
    *
-   * Every entry is a *decision*: the reason has to say why a spawn is the only route, not that a
-   * test would be inconvenient. A reason shorter than `MIN_EXEMPTION` or shared with another entry
-   * is refused, because a table of one-word excuses is a table nobody re-reads -- the same argument
-   * `check-doc-counts.mjs` makes for its own exemption list.
+   * ## The table is empty at v3.110, and how it emptied is the finding
+   *
+   * v3.109 wrote nine rows here, each with a paragraph saying why a spawn was the only route.
+   * A paragraph cannot be checked, and the stale direction was the table's only falsifier, so
+   * nothing in the tree could tell a real exemption from a sentence. Read one at a time, eight
+   * of the nine bodies never leave the process: `budgetInForce` takes a source string and a
+   * title, `modalitiesProse` takes a list of codes, `rehearsal` takes a name and a plan,
+   * `pointerPlan` takes a tree name, `parseArgs` takes an argv array, `inspect` takes a path,
+   * and `readBlob`/`readRev` reach git through `runGit` -- a helper call, not a boundary of
+   * their own. Only `workflowPath` reads `process.env`. All nine are taken by a test that
+   * imports them now, and the refusals that had no branch-level proof are asserted where they
+   * are decided.
+   *
+   * The nine reasons were not lies. Each said something true about the *gate* -- that spawning
+   * it covers the arm, that a fixture proves the denominator -- and each was attached to a
+   * *symbol* a test can call. That is what a prose key buys: the sentence is about a route, the
+   * row is about a name, and nothing compares the two.
+   *
+   * ## What a row must carry now
+   *
+   * The four checks v3.109 had -- stale, unconsumed, too short, repeated -- and one more: the
+   * body must cross the process boundary, or a test can call it and the row is an excuse
+   * rather than a fact. The predicate is `crossesProcessBoundary` below, and it is calibrated
+   * against real bodies in the test beside this table, because a rule that only ever runs over
+   * an empty table is a rule nobody has seen work.
    */
   const MIN_EXEMPTION = 120;
-  const SPAWN_ONLY: { module: string; fn: string; reason: string }[] = [
-    {
-      module: 'budget-readings.mjs',
-      fn: 'budgetInForce',
-      reason:
-        '`check-test-budgets.mjs` is the only caller, and its verdict is a sentence about a real file: ' +
-        'a test that called this function would pin the four arms and leave the gate that turns them into ' +
-        'a refusal unread. The gate is spawned over fixture sources for each arm, which proves the arms.',
-    },
-    {
-      module: 'format-spec.mjs',
-      fn: 'modalitiesProse',
-      reason:
-        'The only caller is `gen-examples.mjs`, whose artefact is the contract table; the prose has no ' +
-        'verdict of its own, so the gate is the only place its output is judged. Its throw for an ' +
-        'unlabelled modality is in `gate-sites.json` as proved by `gen-examples.test.ts`.',
-    },
-    {
-      module: 'gate-receipt.mjs',
-      fn: 'rehearsal',
-      reason:
-        'The table exists to be entered from outside: `verify-local.mjs --rehearse <shape>` is the whole ' +
-        'of finding 564, and a test that called `rehearsal()` directly would prove the table while leaving ' +
-        'the entry point that reads it — the part that was wrong — unproven.',
-    },
-    {
-      module: 'gate-steps.mjs',
-      fn: 'workflowPath',
-      reason:
-        'It answers with a path chosen by `RCA_CI_WORKFLOW`, so the tree it names is already an input the ' +
-        'operator sets and both callers are spawned under it: `check-ci-budget.mjs` and ' +
-        '`measure-ci-baseline.mjs` run in CI and locally with that variable unset and set.',
-    },
-    {
-      module: 'publish-plan.mjs',
-      fn: 'readBlob',
-      reason:
-        'A blob is read by SHA out of a real object database, and `publish.test.ts` builds one — real ' +
-        'repository, real bare remote — and drives `publish()` through it. A fixture blob would prove the ' +
-        'arithmetic and not the plan that asks for the wrong SHA.',
-    },
-    {
-      module: 'publish-plan.mjs',
-      fn: 'readRev',
-      reason:
-        'A revision is resolved against a real checkout, and both callers are driven over one: ' +
-        '`publish.test.ts` through `publish()` and the CLI through its own round trip. The refusal for a ' +
-        'revision that names no commit is a git message, not this module\'s.',
-    },
-    {
-      module: 'publish-plan.mjs',
-      fn: 'pointerPlan',
-      reason:
-        'Its only use is the branch of `publish.mjs` that publishes a tree with no commit behind it, and that ' +
-        'branch is reachable only by pushing: `publish.test.ts` runs it against a bare remote and compares ' +
-        'the pointer. Nothing a test could pass in would be a plan this tree can produce.',
-    },
-    {
-      module: 'publish-readings.mjs',
-      fn: 'parseArgs',
-      reason:
-        'The argv reader for a CLI: `publish-readings.test.ts` spawns `publish-readings-cli.mjs` for every ' +
-        'arm including the refusal for `--file` with no value, so the reader is proved at the process ' +
-        'boundary it exists for rather than one call frame inside it.',
-    },
-    {
-      module: 'publish-readings.mjs',
-      fn: 'inspect',
-      reason:
-        'It reads a record at a path only the CLI knows, and answers two ways for a file it cannot read. ' +
-        '`publish-readings.test.ts` spawns `--check` over a written record and over a missing one, so both ' +
-        'answers are asserted where they are printed.',
-    },
+
+  /** One row: a symbol, and the sentence saying why nothing inside the suite can call it. */
+  type Exemption = { module: string; fn: string; reason: string };
+
+  /**
+   * The table, empty on purpose.
+   *
+   * A row is admissible only for a symbol whose body cannot run inside the test process, and
+   * the nine rows that stood here did not meet that bar. `FORMERLY_EXCUSED` below is the
+   * record of what they were, so the drop to zero is a fact with a date rather than an
+   * absence -- the shape this repository keeps insisting on for a list that shrinks.
+   */
+  const SPAWN_ONLY: Exemption[] = [];
+
+  /** The nine symbols this table excused at v3.109, each now taken by a test that imports it. */
+  const FORMERLY_EXCUSED = [
+    'budget-readings.mjs#budgetInForce',
+    'format-spec.mjs#modalitiesProse',
+    'gate-receipt.mjs#rehearsal',
+    'gate-steps.mjs#workflowPath',
+    'publish-plan.mjs#readBlob',
+    'publish-plan.mjs#readRev',
+    'publish-plan.mjs#pointerPlan',
+    'publish-readings.mjs#parseArgs',
+    'publish-readings.mjs#inspect',
   ];
+
+  /**
+   * What a body leaves behind when it can only run in a process of its own.
+   *
+   * `process.env` and `process.argv` are inputs a test cannot supply without reaching into the
+   * worker's own environment; `process.exit` ends the worker; a direct `spawn`/`exec` needs a
+   * program the test would have to own. `console` is deliberately absent: vitest can spy on it,
+   * so printing is not a boundary -- and a row excused by "it prints" would be excused by the
+   * one thing a test can capture.
+   */
+  const PROCESS_BOUNDARY =
+    /\bprocess\.(?:argv|env|stdin|stdout|stderr|exit|exitCode)\b|\b(?:spawnSync|spawn|execFileSync|execFile|execSync|exec)\s*\(/;
+
+  /**
+   * The text of one exported function.
+   *
+   * The braces are matched in the *blanked* source, so a `}` inside a string or a regex does
+   * not end the body early -- and the slice is taken from the original, because the body is
+   * then searched for markers that a blank would have removed along with the comments.
+   */
+  function functionBody(module: string, fn: string): string {
+    const path = resolve(SCRIPTS, module);
+    if (!existsSync(path)) return '';
+    const source = readFileSync(path, 'utf8');
+    const start = source.indexOf(`export function ${fn}(`);
+    if (start < 0) return '';
+    const masked = stripCommentsAndStrings(source);
+    let depth = 0;
+    for (let index = masked.indexOf('{', start); index >= 0; index += 1) {
+      if (masked[index] === '{') depth += 1;
+      else if (masked[index] === '}') {
+        depth -= 1;
+        if (depth === 0) return source.slice(start, index + 1);
+      }
+    }
+    return source.slice(start);
+  }
+
+  /** Whether a body can run only where it can start a process or read the one it is in. */
+  function crossesProcessBoundary(body: string): boolean {
+    // Blanked first: the comments in this tree quote `process.env` constantly, and a mention
+    // is not a read -- the distinction the import reader in this file already had to learn.
+    return PROCESS_BOUNDARY.test(stripCommentsAndStrings(body));
+  }
+
+  /** Why one row is not a decision. Empty when it is. */
+  function exemptionFaults(
+    entry: Exemption,
+    context: { taken: Set<string>; spawned: Map<string, string[]> },
+  ): string[] {
+    const key = `${entry.module}#${entry.fn}`;
+    const faults: string[] = [];
+    if (context.taken.has(key)) {
+      faults.push(`${key}: a test takes this name now, so the exemption is stale -- delete the entry`);
+    }
+    if ((context.spawned.get(key) ?? []).length === 0) {
+      faults.push(`${key}: nothing spawns this name either, so the export has no consumer at all -- make it private`);
+    }
+    if (entry.reason.trim().length < MIN_EXEMPTION) {
+      faults.push(`${key}: a reason under ${MIN_EXEMPTION} characters is a placeholder`);
+    }
+    const body = functionBody(entry.module, entry.fn);
+    if (body === '') faults.push(`${key}: ${entry.module} defines no such exported function, so the row names nothing`);
+    else if (!crossesProcessBoundary(body)) {
+      faults.push(`${key}: the body never leaves the process, so a test can call it -- a spawn is not the only route`);
+    }
+    return faults;
+  }
+
+  /** Every fault the table has, including the one that needs two rows to exist. */
+  function tableFaults(
+    entries: Exemption[],
+    context: { taken: Set<string>; spawned: Map<string, string[]> } = {
+      taken: testTakers(),
+      spawned: scriptTakers(),
+    },
+  ): string[] {
+    const faults = entries.flatMap((entry) => exemptionFaults(entry, context));
+    const firstOf = new Map<string, string>();
+    for (const entry of entries) {
+      const key = `${entry.module}#${entry.fn}`;
+      const first = firstOf.get(entry.reason);
+      if (first !== undefined) faults.push(`${key}: repeats ${first}'s reason, and two rows with one reason are one decision written twice`);
+      firstOf.set(entry.reason, key);
+    }
+    return faults;
+  }
+
 
   it('resolves every exported function of a data module: taken by a test, or excused in writing', () => {
     const takenByTest = testTakers();
@@ -1270,38 +1332,88 @@ describe('a data module exports a name only when something outside it takes that
     ).toEqual([]);
   });
 
-  it('refuses an exemption for a symbol a test now takes, so the table can only shrink by work', () => {
-    // The direction that makes the table honest. An exemption is a statement that the import route
-    // does not exist; the day a test takes the name, the statement is false and the entry is debt
-    // that would otherwise sit there being read as a decision.
+  it('holds no row, and every symbol it used to excuse is taken by a test now', () => {
+    // The table's subject is a statement no test can check -- "a spawn is the only route" -- so
+    // its only honest population is the empty one, and the record below is what makes the
+    // emptiness a change rather than a thing that was never there.
+    expect(tableFaults(SPAWN_ONLY)).toEqual([]);
     const taken = testTakers();
-    const stale = SPAWN_ONLY.filter((entry) => taken.has(`${entry.module}#${entry.fn}`)).map(
-      (entry) => `${entry.module}#${entry.fn}`,
-    );
-    expect(stale, 'a test takes this name now, so the exemption is stale: delete the entry').toEqual([]);
+    const stillExcused = FORMERLY_EXCUSED.filter((key) => !taken.has(key));
+    expect(
+      stillExcused,
+      'a symbol that left the table has to be taken by a test, or it left for no reason and the ' +
+        'export is now an unread claim',
+    ).toEqual([]);
+    // And the two lists cannot overlap: a row for a symbol on the record would mean the record
+    // is being used as an excuse, which is the direction this whole file exists to refuse.
+    expect(SPAWN_ONLY.filter((entry) => FORMERLY_EXCUSED.includes(`${entry.module}#${entry.fn}`))).toEqual([]);
   });
 
-  it('refuses an exemption for a symbol no script takes, which must be made private instead', () => {
-    const taken = scriptTakers();
-    const empty = SPAWN_ONLY.filter((entry) => (taken.get(`${entry.module}#${entry.fn}`) ?? []).length === 0).map(
-      (entry) => `${entry.module}#${entry.fn}`,
-    );
-    expect(empty, 'nothing spawns this name either: the export has no consumer at all').toEqual([]);
+  it('refuses one row for each fault it can have, so the rule is not a loop over nothing', () => {
+    // A rule that only ever runs across an empty table is a rule nobody has seen work. These
+    // five rows are the calibration: each has exactly one fault, and each fault is asserted by
+    // its own sentence rather than by "the call returned something".
+    const REASON = 'a sentence long enough to be a decision rather than a placeholder'.padEnd(MIN_EXEMPTION, '.');
+    const elsewhere = new Set<string>();
+    const spawnedBy = (keys: string[]) => new Map(keys.map((key) => [key, ['publish.mjs']]));
+
+    // 1. A body that a test can call. `pointerPlan` is the real one that stood here at v3.109:
+    //    it takes a tree name and returns an object, and no spawn can make that uncallable.
+    expect(
+      exemptionFaults({ module: 'publish-plan.mjs', fn: 'pointerPlan', reason: REASON }, {
+        taken: elsewhere,
+        spawned: spawnedBy(['publish-plan.mjs#pointerPlan']),
+      }),
+      'a pure body is callable, so the row is an excuse and the spawn is not the only route',
+    ).toEqual([
+      'publish-plan.mjs#pointerPlan: the body never leaves the process, so a test can call it -- a spawn is not the only route',
+    ]);
+
+    // 2. A test takes the name. The body crosses the boundary (it reads `process.env`), so the
+    //    only fault left is that the exemption is no longer true.
+    const workflow = { module: 'gate-steps.mjs', fn: 'workflowPath', reason: REASON };
+    expect(
+      exemptionFaults(workflow, { taken: new Set(['gate-steps.mjs#workflowPath']), spawned: spawnedBy(['gate-steps.mjs#workflowPath']) }),
+    ).toEqual(['gate-steps.mjs#workflowPath: a test takes this name now, so the exemption is stale -- delete the entry']);
+
+    // 3. Nothing spawns it either, which is an export with no consumer at all.
+    expect(exemptionFaults(workflow, { taken: elsewhere, spawned: new Map() })).toEqual([
+      'gate-steps.mjs#workflowPath: nothing spawns this name either, so the export has no consumer at all -- make it private',
+    ]);
+
+    // 4. A reason that is a placeholder.
+    expect(
+      exemptionFaults({ ...workflow, reason: 'because' }, { taken: elsewhere, spawned: spawnedBy(['gate-steps.mjs#workflowPath']) }),
+    ).toEqual([`gate-steps.mjs#workflowPath: a reason under ${MIN_EXEMPTION} characters is a placeholder`]);
+
+    // 5. A row naming a symbol the module does not export -- the table drifting away from the
+    //    tree it describes, which is the one fault no reading of the reason could catch.
+    expect(
+      exemptionFaults({ module: 'gate-steps.mjs', fn: 'noSuchFunction', reason: REASON }, {
+        taken: elsewhere,
+        spawned: spawnedBy(['gate-steps.mjs#noSuchFunction']),
+      }),
+    ).toEqual(['gate-steps.mjs#noSuchFunction: gate-steps.mjs defines no such exported function, so the row names nothing']);
+
+    // And the fault that needs two rows: one reason written twice.
+    expect(
+      tableFaults([workflow, { ...workflow }], { taken: elsewhere, spawned: spawnedBy(['gate-steps.mjs#workflowPath']) }),
+      'two rows with one reason are one decision written twice, which is the duplication a table invites',
+    ).toEqual(['gate-steps.mjs#workflowPath: repeats gate-steps.mjs#workflowPath\'s reason, and two rows with one reason are one decision written twice']);
   });
 
-  it('refuses a reason too short to explain, or shared with another entry', () => {
-    const short = SPAWN_ONLY.filter((entry) => entry.reason.trim().length < MIN_EXEMPTION).map(
-      (entry) => `${entry.module}#${entry.fn}`,
-    );
-    expect(short, `a reason under ${MIN_EXEMPTION} characters is a placeholder`).toEqual([]);
-    const seen = new Map<string, string>();
-    const shared: string[] = [];
-    for (const entry of SPAWN_ONLY) {
-      const first = seen.get(entry.reason);
-      if (first !== undefined) shared.push(`${entry.module}#${entry.fn} repeats ${first}'s reason`);
-      seen.set(entry.reason, `${entry.module}#${entry.fn}`);
-    }
-    expect(shared, 'two entries with one reason are one decision written twice').toEqual([]);
+  it('reads a process boundary in a body, and not a mention of one in a comment', () => {
+    // The calibration of the predicate itself, against real bodies. `workflowPath` is the one
+    // row of the nine whose body reads the environment; `readBlob` is the one that reaches a
+    // spawn through `runGit` and was excused anyway, which is the defect this predicate names.
+    expect(crossesProcessBoundary(functionBody('gate-steps.mjs', 'workflowPath'))).toBe(true);
+    expect(crossesProcessBoundary(functionBody('publish-plan.mjs', 'readBlob'))).toBe(false);
+    // A direct child process is a boundary; a printer is not, because a test can spy on it.
+    expect(crossesProcessBoundary('export function f() {\n  return spawnSync(\'git\', [\'status\']);\n}')).toBe(true);
+    expect(crossesProcessBoundary("export function f() {\n  console.log('hi');\n}")).toBe(false);
+    // A comment that says `process.env` is not a read, which is the distinction that made the
+    // import reader in this file refuse to match prose.
+    expect(crossesProcessBoundary('export function f() {\n  // reads process.env.X\n  return 1;\n}')).toBe(false);
   });
 
   it('reads the populations it claims, which is the half a broken filter would skip', () => {

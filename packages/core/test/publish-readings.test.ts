@@ -7,8 +7,11 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { failureCode, githubTransport, isNetworkFailure } from '../../../scripts/publish.mjs';
 import {
+  READINGS,
   appendReadings,
   formatSummary,
+  inspect,
+  parseArgs,
   readingErrors,
   summariseReadings,
 } from '../../../scripts/publish-readings.mjs';
@@ -797,5 +800,140 @@ describe('the reader a gate runs', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(file);
     expect(result.stderr).toContain('cannot read');
+  });
+});
+
+/* ------------------------------------------------------ the argv reader, unit tests */
+
+/**
+ * `parseArgs` is a pure function over a string array, so here it is called rather than spawned.
+ *
+ * The spawns above prove the CLI exits 1 and prints a sentence; they cannot say which arm
+ * produced it, so a reader that stopped after `--file`'s value would still print the same
+ * sentence for the wrong reason. Each expectation compares the **whole** return value,
+ * because an extra key or a flag dropped on the floor is exactly what a field-by-field
+ * assertion forgives.
+ *
+ * The default is the module's own `READINGS` rather than the literal path: a test that
+ * spelled `golden-master/publish-readings.json` would keep passing after the history moved,
+ * which is the change these tests are here to notice.
+ */
+describe('the argv a readings reader is handed', () => {
+  it('answers an empty argv with the default history and the verdict off', () => {
+    expect(
+      parseArgs([]),
+      'the file and the verdict are the two answers an empty argv decides, and both defaults must come from the module',
+    ).toEqual({ options: { file: READINGS, check: false } });
+  });
+
+  it('turns --check on without moving the file', () => {
+    expect(
+      parseArgs(['--check']),
+      'a reader that rebuilt the options object instead of mutating it would lose the default file and check a different history silently',
+    ).toEqual({ options: { file: READINGS, check: true } });
+  });
+
+  it('takes the token after --file as the path', () => {
+    expect(
+      parseArgs(['--file', 'x.json']),
+      'the value is consumed by --file; if it were not, it would fall through to the unknown-argument arm',
+    ).toEqual({ options: { file: 'x.json', check: false } });
+  });
+
+  it('keeps reading after --file, so the argument after its value is still a flag', () => {
+    // Deleting `index += 1` leaves the single-argument case above green and makes this argv
+    // end in `unknown argument 'x.json'` -- the skip is only visible with a token behind it.
+    expect(
+      parseArgs(['--file', 'x.json', '--check']),
+      'a value that is not skipped is re-read as an unknown argument and the flag after it is never reached',
+    ).toEqual({ options: { file: 'x.json', check: true } });
+  });
+
+  it('refuses --file with no value instead of falling back to the default', () => {
+    expect(
+      parseArgs(['--file']),
+      'a missing value read as "use the default history" is the typo this refusal exists to stop, and the CLI would check a file nobody named',
+    ).toEqual({ error: '--file needs a path' });
+  });
+
+  it('refuses a flag where --file expects a path, and returns no options beside the error', () => {
+    const parsed = parseArgs(['--file', '--check']);
+    expect(
+      parsed,
+      'the next token is a flag, not the path it names, so the refusal is the same one as a missing value',
+    ).toEqual({ error: '--file needs a path' });
+    expect(
+      'options' in parsed,
+      'an error returned beside options lets a caller that reads options first run a check --file never named',
+    ).toBe(false);
+  });
+
+  it('names the unknown token in its refusal, so a typo in a longer argv is located', () => {
+    expect(
+      parseArgs(['--nope']),
+      'a generic "invalid argument" would pass this branch while leaving the operator to guess which token was wrong',
+    ).toEqual({ error: "unknown argument '--nope'" });
+  });
+});
+
+/* ------------------------------------------------------- the file reader, unit tests */
+
+/**
+ * `inspect` is a read plus a judgement at a path the caller passes, so no process boundary
+ * is needed: an absolute path in the scratch tree exercises the same `resolve(ROOT, file)`
+ * the CLI uses, and the two failure modes are kept apart.
+ *
+ * The distinction under test is between a file that cannot be read or parsed and a file
+ * that parses into something that is not a history. The CLI prints one sentence for a read
+ * failure and a list for a shape failure, so a reader that collapsed them would still pass
+ * any spawn that only looked for a nonzero exit.
+ */
+describe('reading a history from a path', () => {
+  it('reads the committed history and reports no problem with it', () => {
+    const found = inspect(READINGS);
+    expect(
+      found.error,
+      'the repository history must parse, or every assertion below is measured against a baseline nobody checked',
+    ).toBeNull();
+    expect(
+      Array.isArray(found.entries),
+      'a parsed history is a list, and the reader hands back the value it parsed rather than a copy of it',
+    ).toBe(true);
+    expect(found.entries, 'the committed history holds readings; an empty list would make this test agree with a reader that dropped them').not.toHaveLength(0);
+    expect(found.problems, 'this is the one file every gate checks, so it has to satisfy its own checks').toEqual([]);
+  });
+
+  it('answers a missing file with an error naming it and no entries', () => {
+    const file = join(scratch('unit-inspect-missing'), 'absent.json');
+    const found = inspect(file);
+    expect(found.entries, 'a file that was never opened has no entries, and null says so where an empty list would claim it was empty').toBeNull();
+    expect(found.problems, 'there is nothing to judge in an unread file, so the problem list must not invent one').toEqual([]);
+    expect(found.error, 'the read failure has to be reported, not swallowed into an empty verdict').not.toBeNull();
+    expect(found.error, 'a refusal about a path is useless unless it repeats the path back').toContain(file);
+    expect(
+      found.error?.startsWith('cannot read '),
+      'the CLI prints this reader\'s error verbatim, so the prefix is this function\'s contract rather than the printer\'s',
+    ).toBe(true);
+  });
+
+  it('answers a file that exists but is not JSON with the same read error, not a throw', () => {
+    const file = join(scratch('unit-inspect-not-json'), 'readings.json');
+    writeFileSync(file, 'this is not json\n', 'utf8');
+    const found = inspect(file);
+    expect(found.entries, 'a file whose bytes are not JSON yields no entries').toBeNull();
+    expect(
+      found.error?.startsWith('cannot read '),
+      'JSON.parse must stay inside the try: moving it out turns a readable-but-unparseable file into a throw the two-call CLI has no answer for',
+    ).toBe(true);
+  });
+
+  it('parses a file that is JSON but not a history, and reports the shape problem rather than a read error', () => {
+    const file = join(scratch('unit-inspect-empty'), 'readings.json');
+    writeFileSync(file, '[]\n', 'utf8');
+    const found = inspect(file);
+    expect(found.error, 'the file was read and parsed, so a read error here would misname the step that failed').toBeNull();
+    expect(found.entries, 'the reader returns what it parsed; judging the value is readingErrors\' job, not a reason to discard it').toEqual([]);
+    expect(found.problems.length, 'an empty list is valid JSON and an invalid history, which is the distinction this test pins').toBe(1);
+    expect(found.problems[0], 'the sentence has to say no reading was ever taken, not merely that the values were odd').toContain('holds no readings');
   });
 });

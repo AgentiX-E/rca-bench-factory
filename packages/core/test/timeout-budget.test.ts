@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  STATED_BY,
+  budgetInForce,
   statedBudgets,
   stripCommentsAndStrings,
   suiteBudget as gateSuite,
@@ -705,5 +707,93 @@ describe('the per-call budget · a file over the default states one on every top
     // The nested call is indented, and a file that budgets its top-level suites has
     // covered this one: requiring a budget at every depth would be a rule about spelling.
     expect(unbudgetedTopLevel("describe('a', { timeout: T }, () => {\n  describe('b', () => {});\n});")).toEqual([]);
+  });
+});
+
+/**
+ * Which clock a test is actually given, and the four answers there are.
+ *
+ * ## Why the function, when a gate already spawns over it
+ *
+ * `budgetInForce` is the one place where the three readings above are put in order: the
+ * test's own, then its suite's, then the file's largest number, then "none". Its reader in
+ * production is `check-test-budgets.mjs`, and that gate *is* spawned over fixture trees --
+ * so the chain is entered, and the exit it takes is reported in the sentence it prints.
+ * What a spawn cannot give is the arm on its own: the same fixture that reaches a suite
+ * budget can be read as reaching the largest number if the suite reader breaks, and the
+ * only difference is a number in a printed sentence that the fixture was written to match.
+ *
+ * The four cases below are therefore stated against the function, each with the source a
+ * reader would have to argue with. They are also the reason `SPAWN_ONLY` lost this entry:
+ * a reason saying "a test that called this function would leave the gate unread" was true
+ * of the gate and false of this function's four exits, and the table was keyed by the
+ * second thing while written about the first.
+ */
+describe('the budget in force · the test, its suite, the file, or nothing, in that order', () => {
+  /** One suite that states 40 000, one test that states 120 000, one test that states nothing. */
+  const ORDERED = [
+    "describe('a suite', { timeout: 40_000 }, () => {",
+    "  it('slow', () => {}, 120_000);",
+    "  it('fast', () => {});",
+    '});',
+  ].join('\n');
+
+  it('takes the number the test states, over the one its suite states', () => {
+    expect(budgetInForce(ORDERED, 'a suite slow')).toEqual({ ms: 120_000, statedBy: 'test' });
+    // The pair matters more than the row: both tests live under the same 40 000, so a
+    // reader that answered with the suite's number would be right about one of them.
+    expect(budgetInForce(ORDERED, 'a suite fast')).toEqual({ ms: 40_000, statedBy: 'suite' });
+  });
+
+  it('finds the test by the title a report prints, with either separator', () => {
+    // `check-test-budgets.mjs` passes the title vitest's JSON report gives it, which joins
+    // the ancestors and the title; both spellings appear in that report across versions.
+    expect(budgetInForce(ORDERED, 'a suite > slow')).toEqual({ ms: 120_000, statedBy: 'test' });
+    // And a title that is neither: the suffix rule must not match a test it only partly
+    // names, or every "slow" test in the file would inherit this one's clock.
+    expect(budgetInForce(ORDERED, 'a suite slower')).toEqual({ ms: 40_000, statedBy: 'suite' });
+  });
+
+  it('does not look for a test when it is given no title, because "" names the whole file', () => {
+    // A report without a title is a report about the file: asking `ownBudget` for `''`
+    // would return the first test whose title ends with a space, which is no test at all.
+    expect(budgetInForce(ORDERED, '')).toEqual({ ms: 40_000, statedBy: 'suite' });
+  });
+
+  it('takes the largest number a suite-less file states, and names it as the fallback', () => {
+    const flat = [
+      'const FILE_TIMEOUT_MS = 30_000;',
+      "it('a', () => {}, 20_000);",
+      "it('b', () => {});",
+    ].join('\n');
+    // Largest, not first and not smallest: the three readings are 30 000, 20 000 and 30 000,
+    // and a reader that answered 20 000 would be telling a test it has less room than the
+    // file ever asked for -- the direction that produces a red for a file that is fine.
+    expect(budgetInForce(flat, 'b')).toEqual({ ms: 30_000, statedBy: 'largest' });
+  });
+
+  it('answers none rather than zero, because zero is a budget and this is its absence', () => {
+    // The discovery rule reads `statedBy: 'none'`; it does not read `ms`. Writing `0` there
+    // would be a number the fraction rule could divide by, which is the shape
+    // `suiteBudget` already refuses for the same reason.
+    expect(budgetInForce("it('a', () => {});", 'a')).toEqual({ ms: 0, statedBy: 'none' });
+  });
+
+  it('names every arm the gate prints, and the one it answers itself', () => {
+    // `STATED_BY[inForce.statedBy]` is indexed without a guard in the gate, so an arm added
+    // here and not there prints `undefined ms, undefined, which is 0.94 of it`. The three
+    // keys are compared as a set rather than one by one, because the defect is a *new* arm
+    // whose sentence was never written.
+    expect(Object.keys(STATED_BY).sort()).toEqual(['largest', 'suite', 'test']);
+    // The fourth arm is deliberately absent, and that is only safe while the gate answers it
+    // before the index. This assertion is the join: the table may lose a row it does not
+    // need only as long as the branch that says the sentence exists, and it is written as a
+    // read of the gate because a reader of only this file cannot otherwise see the pairing.
+    const gate = readFileSync(new URL('../../../scripts/check-test-budgets.mjs', import.meta.url), 'utf8');
+    expect(
+      /inForce\.statedBy === 'none'[\s\S]{0,600}?continue;/.test(gate),
+      'STATED_BY has no sentence for a file that states no budget, so the gate must write its own ' +
+        'before it indexes the table -- and it does not',
+    ).toBe(true);
   });
 });

@@ -106,27 +106,70 @@ interface Heavy {
   verb: string;
 }
 
+/** The argument list of every `spawn*` call, sliced out of the *raw* source. */
+function spawnArguments(blanked: string, raw: string): string[] {
+  const out: string[] = [];
+  for (const match of blanked.matchAll(/\b(?:execFileSync|execSync|spawnSync|spawn)\s*\(/g)) {
+    const open = match.index + match[0].length - 1;
+    let depth = 0;
+    for (let index = open; index < blanked.length; index += 1) {
+      if (blanked[index] === '(') depth += 1;
+      else if (blanked[index] === ')') {
+        depth -= 1;
+        if (depth === 0) {
+          out.push(raw.slice(open, index + 1));
+          break;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * The verb that makes a source heavy, looked for only inside a spawn's arguments.
+ *
+ * ## Why the region matters, and what the whole-file reading cost
+ *
+ * The first version asked the raw source for `'install'` anywhere, and that is a
+ * question about the *file* rather than about a command. `gate-receipt.test.ts`
+ * states a rehearsal plan whose first step is `{ key: 'install', run: 'pnpm install
+ * --frozen-lockfile' }` -- a label, never passed to a child -- and the file became
+ * heavy on the strength of it: the assertion below went red naming a file that runs
+ * no package manager at all. A guard whose subject is a substring is the defect this
+ * file's own history records three times over (findings 127, 133, and the `cwd:
+ * sandbox` mutation above), so it is repaired here rather than worked around by
+ * renaming the label.
+ *
+ * ## Why the arguments and not the line
+ *
+ * The verbs reach a package manager as `execFileSync('pnpm', ['install', …])`, so the
+ * region that decides is the call's argument list. Taking the line would miss a call
+ * written across lines, and taking the whole file is what this repairs; the list is
+ * bounded by the parenthesis, which the blanked source has already emptied of the
+ * strings that could contain one.
+ */
+function heavyVerb(raw: string): string | null {
+  const args = spawnArguments(stripCommentsAndStrings(raw), raw);
+  if (args.length === 0) return null;
+  // `install` and `typecheck` reach a package manager; `build` and `tsc` reach the
+  // compiler. The quotes are required so that an identifier -- `installPath` -- and a
+  // key that is not a command -- `'install'` in a step table -- stay out of the set.
+  for (const verb of ['install', 'typecheck', 'build', 'tsc']) {
+    if (args.some((arg) => arg.includes(`'${verb}'`) || arg.includes(`"${verb}"`))) return verb;
+  }
+  return null;
+}
+
 const HEAVY = ((): Heavy[] => {
   const out: Heavy[] = [];
   for (const [file, blanked] of SUITE) {
-    // Both readings are needed and for different reasons. The spawn call is
-    // *code* and is therefore looked for with string literals blanked, so that a
-    // file which merely asserts on the text `spawnSync(` cannot be mistaken for
-    // one that calls it. The verb is an *argument* and is therefore looked for
-    // in the raw source, where it still carries its quotes.
+    // The spawn call is *code* and is looked for with string literals blanked, so a
+    // file that merely asserts on the text `spawnSync(` cannot be mistaken for one
+    // that calls it.
     if (!/\b(?:execFileSync|execSync|spawnSync|spawn)\s*\(/.test(blanked)) continue;
-    const raw = readFileSync(resolve(TEST_DIR, file), 'utf8');
-    // `install` and `typecheck` reach a package manager; `build` and `tsc`
-    // reach the compiler. Every one of them is passed as a quoted argument to
-    // the spawn, so requiring the quotes is what keeps a file that names the
-    // word in an identifier -- `installPath`, `typecheckOutput` -- out of the
-    // set.
-    for (const verb of ['install', 'typecheck', 'build', 'tsc']) {
-      if (raw.includes(`'${verb}'`) || raw.includes(`"${verb}"`)) {
-        out.push({ file, verb });
-        break;
-      }
-    }
+    const verb = heavyVerb(readFileSync(resolve(TEST_DIR, file), 'utf8'));
+    if (verb !== null) out.push({ file, verb });
   }
   return out;
 })();
@@ -137,6 +180,23 @@ describe('the suite’s heavy fixtures', () => {
     // `pnpm install` and `pnpm typecheck`, so a scan that returns nothing has
     // drifted and the rules below would be green over an empty set.
     expect(HEAVY.map((h) => h.file)).toContain('typecheck-entrypoint.test.ts');
+  });
+
+  it('reads a verb inside the arguments a spawn is given, not a label that names one', () => {
+    // The regression this reader exists for. `gate-receipt.test.ts` carries a rehearsal
+    // plan whose first step is labelled `install` and runs no package manager; under the
+    // whole-file reading that label made the file heavy, and the assertion below named it
+    // as the second file to run one. The pair is the rule: a verb in an argument list is a
+    // command, and the same word anywhere else is a name.
+    const plan = "const plan = { local: [{ key: 'install', run: 'pnpm install --frozen-lockfile' }] };";
+    expect(heavyVerb(`${plan}\nspawnSync('git', ['status'], { cwd: ROOT });`)).toBeNull();
+    expect(heavyVerb("spawnSync('pnpm', ['install', '--frozen-lockfile'], { cwd });")).toBe('install');
+    // And a call written in a comment is not a call: the blanked source is what the
+    // argument reader walks, which is why the comment's parenthesis cannot open a region.
+    expect(heavyVerb("// spawnSync('pnpm', ['install'])\nconst x = 1;")).toBeNull();
+    // The positive control for this reader, taken from the file it names below.
+    const entrypoint = readFileSync(resolve(TEST_DIR, 'typecheck-entrypoint.test.ts'), 'utf8');
+    expect(heavyVerb(entrypoint)).toBe('install');
   });
 
   it('states, and keeps to one, the file that runs a package manager in the suite', () => {

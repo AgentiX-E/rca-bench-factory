@@ -43,6 +43,7 @@ import {
   shellOf,
   shippedPlan,
   whereOf,
+  workflowPath,
 } from '../../../scripts/gate-steps.mjs';
 import { runStep, StepTimeout } from '../../../scripts/step-process.mjs';
 
@@ -2319,5 +2320,68 @@ describe('the plan is a claim about this repository', () => {
     // working directory: both run from the repository root, and this file is read
     // from there by the scripts above.
     expect(resolve(HERE, '..', '..', '..')).toBe(ROOT);
+  });
+});
+
+/**
+ * Which workflow file a run reads, and the one variable that moves it.
+ *
+ * ## Why the function, when both callers are spawned
+ *
+ * `check-ci-budget.mjs` and `measure-ci-baseline.mjs` are spawned with `RCA_CI_WORKFLOW`
+ * unset and with it set, so the *route* is proved: a run with the variable pointing at a
+ * fixture reads the fixture. What a spawn cannot show is the third value, because the two
+ * rows it can run are "absent" and "a path" -- and the branch in this function is an
+ * `||`, not a `??`. An override of `''` is a value the shell produces from
+ * `RCA_CI_WORKFLOW=$UNSET_VAR`, and with `??` it would resolve to the repository root,
+ * which is a directory: the plan would then read no workflow and report the shipped steps
+ * missing. The empty arm is not a hypothetical -- it is what a wrapper script that forwards
+ * its environment writes, and it is the arm that `??` breaks.
+ *
+ * `SPAWN_ONLY` carried this symbol with the reason "both callers are spawned under it",
+ * which is true and is a statement about two of the three inputs. The third one is not
+ * spawnable through those callers, because neither of them ever passes an empty string:
+ * it comes from the environment of whoever started them.
+ */
+describe('gate-steps · the workflow path, and the empty override that is not a path', () => {
+  const shipped = resolve(ROOT, '.github', 'workflows', 'ci.yml');
+
+  /**
+   * Run `body` with `RCA_CI_WORKFLOW` set to `value`, and put the environment back.
+   *
+   * Restored in a `finally` rather than after each call: the variable is read by the
+   * spawned gates in this file, and a test that left `''` behind would move what those
+   * runs read -- which is a failure in a different test than the one that caused it.
+   */
+  function under<T>(value: string | undefined, body: () => T): T {
+    const prior = process.env['RCA_CI_WORKFLOW'];
+    try {
+      if (value === undefined) delete process.env['RCA_CI_WORKFLOW'];
+      else process.env['RCA_CI_WORKFLOW'] = value;
+      return body();
+    } finally {
+      if (prior === undefined) delete process.env['RCA_CI_WORKFLOW'];
+      else process.env['RCA_CI_WORKFLOW'] = prior;
+    }
+  }
+
+  it('answers the shipped ci.yml when nothing overrides it', () => {
+    expect(under(undefined, () => workflowPath())).toBe(shipped);
+  });
+
+  it('treats an empty override as no override, rather than as the repository root', () => {
+    // The arm `??` would break, stated as the path it would produce: `resolve(ROOT, '')`
+    // is `ROOT`, a directory, and `readWorkflow` on a directory is an error the run reports
+    // as a missing workflow rather than as an unset variable.
+    expect(under('', () => workflowPath())).toBe(shipped);
+    expect(under('', () => workflowPath())).not.toBe(ROOT);
+  });
+
+  it('resolves an override against the repository root, not the working directory', () => {
+    // The documented use is `RCA_CI_WORKFLOW=/tmp/ci.yml pnpm verify:local`, and an absolute
+    // path is what `resolve` returns unchanged -- so the interesting case is the relative
+    // one, which is what a fixture under this repository would pass.
+    expect(under('fixtures/ci.yml', () => workflowPath())).toBe(resolve(ROOT, 'fixtures', 'ci.yml'));
+    expect(under('/tmp/ci.yml', () => workflowPath())).toBe(resolve('/tmp/ci.yml'));
   });
 });
