@@ -2070,6 +2070,32 @@ gained the `invokedDirectly` guard the deriver and the doc-counter already carry
 a gate over the test runner's own arguments. The register gained a row for the module, the site inventory moved
 from **96 to 97** scripts, and sites (**143**) and throw statements (**99**) did not move.
 
+### Six · a hollow gate rode into a commit, and the receipt blessed the tree the run began on (finding 562)
+
+This round's own documentation commit published `scripts/check-official.mjs` with `process.exit(0);` on its
+second line. The marker is the meta-gate's hollow form, a battery had left it behind, and `git add -A` took it
+along while a long run was still rewriting the tree. Three readers disagreed:
+
+| reader | verdict |
+| --- | --- |
+| `verify:local` | `OK (35 command(s) covering 48 of the 58 run steps)`, with a receipt |
+| `derive-gate-sites` | **FAILED** -- six of that file's exit sites had moved by one line |
+| the suite | **68 tests fail** against the hollow form, measured by re-hollowing it |
+
+The inventory caught it by arithmetic: the marker is a line, and the inventory fingerprints exits by line. A
+marker that did not shift a line would have passed every local reader. The receipt was no help at all, and
+that is finding 562: `HEAD^{tree}` is resolved **before** the first step, deliberately, so a step that
+rewrites the tree cannot move the name the receipt is filed under -- which makes the name right and the
+question half-asked. A run that starts on one tree and ends on another has measured neither, and its verdict
+names the first.
+
+`receiptDecision` now takes the tree read **after** the steps and withholds the receipt when it moved, name or
+dirtiness; the run's last line becomes `receipt: none — the tree moved while the gate ran`. It does **not**
+turn the run red, and the finding says why: a new exit is a new site, and a site is proved by a test that
+reaches it -- the only way to reach this one is to rewrite the tree underneath a running gate, which is the
+thing being refused. Two falsifications hold the branch: dropping the comparison turns both withhold tests
+red, and keeping the dirtiness check while dropping the name turns one red.
+
 ### Five · six falsifications, all red
 
 | removal | red |
@@ -2092,15 +2118,15 @@ by callee (any call, which is the same defect with a narrower net).
 
 | item | value |
 | --- | --- |
-| `core` test suite | **255 files, 6533 tests passed** (as of this commit) |
+| `core` test suite | **255 files, 6536 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **259 files, 6720 tests passed** (as of this commit) |
+| repo test suite | **259 files, 6723 tests passed** (as of this commit) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
-| new tests | **6529 -> 6533, +4**: a pattern holding a slash inside a class with a budget below it, a division that follows a literal, a string holding a bracket, and an argument that is not a budget |
+| new tests | **6529 -> 6536, +7**: a pattern holding a slash inside a class with a budget below it, a division that follows a literal, a string holding a bracket, an argument that is not a budget, and the three outcomes of a tree that moved while the gate ran |
 | tests strengthened | **1**: `does not mistake an ordinary numeric argument for a budget` pinned two numbers the `>= 1000` filter had already excluded |
 | the census | **467** code files scanned; **8** patterns hold a slash inside a class; **0** files hold a `/` after a closed literal |
 | what the repair changed | **0 of 467** readings for the class fix; **10 of 259** verdicts for the positional one, all from a number never written to none; files that state a budget **44 -> 34** |
 | the copy, deleted | `timeout-budget.test.ts` **888 -> 709** lines; `scripts/budget-readings.mjs` **458** lines new; the gate **622 -> 272** |
 | gate sites / scripts / throws | **143** sites, **97** scripts (was 96), **99** throw statements -- all three re-derived and proved |
-| the falsifications | six removals, **6** red, **0** survivors |
+| the falsifications | eight removals, **8** red, **0** survivors (six across the three repairs, two on the receipt's new branch) |
 | gate sites, proved | **143** failure sites across **67 of 97** scripts, and `verify-site-proofs` **PASSED (228 claim(s) across 66 file(s))** -- both re-derived after the move |

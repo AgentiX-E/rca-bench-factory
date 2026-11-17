@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–561, from the rounds recorded in `progress/volume-15.md` and `progress/volume-16.md`.
+Findings 542–562, from the rounds recorded in `progress/volume-15.md` and `progress/volume-16.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -1021,3 +1021,45 @@ imports it and keeps the rule; **179 lines** left the test file and **none of th
 import runs a gate over the test runner's own arguments. The register in `scripts-are-classified.test.ts` has a
 row for the module and the reason it exists, and the site inventory moved from **96 to 97** scripts with the
 sites unchanged at **143** and the throw statements at **99**.
+
+## Finding 562 — the receipt named the tree the run began on, and nothing asked where it ended
+
+**The shape.** `verify:local` resolves `HEAD^{tree}` **before** the first step, on purpose: "a step that
+rewrites the tree cannot change the name it is filed under". The receipt is then filed under that name and the
+run prints `a revision of this tree may be published`. Both halves are true about the tree the run *started*
+on, and neither is a statement about the one it ended on. A battery that hollows a gate while it measures it
+writes into the working tree, a commit made during the run sweeps that file in, and the receipt goes on naming
+the earlier tree.
+
+**Measured, on this round.** `scripts/check-official.mjs` came out of a long run with `process.exit(0);` on its
+second line -- the meta-gate's hollow form -- and `git add -A` for the round's documentation commit took it
+along. The tree that this round would have published had that gate disabled. Three readers disagreed about
+whether anything was wrong:
+
+| reader | verdict |
+| --- | --- |
+| `verify:local` | `OK (35 command(s) covering 48 of the 58 run steps)`, with a receipt for the tree it started on |
+| `derive-gate-sites` | **FAILED** -- six exit sites in `check-official.mjs` had moved by one line |
+| the suite | **68 tests fail** against the hollow form (measured by re-hollowing it: 2 files, 68 of 94) |
+
+The site inventory is what caught it, and it caught it by accident of arithmetic: the marker is a *line*, and
+the inventory fingerprints exits by line. A marker that did not shift a line would have passed every reader
+here, and the suite would have caught it only in CI, where the `build` job runs it.
+
+**The repair.** `receiptDecision` takes the tree read *after* the steps and withholds the receipt when it
+moved -- the name and the dirtiness both, because a run that ends dirty has measured content that cannot be
+pushed either. `verify:local` passes it. The sentence the run prints becomes `receipt: none — the tree moved
+while the gate ran -- it started on c29138f and ended with uncommitted changes`, so the claim that would have blessed the
+marker is withdrawn at the moment it is made.
+
+**What the repair deliberately does not do.** It does not turn the run red. A new `process.exit(1)` is a new
+site in the inventory, and a site is proved by a test that reaches it -- the only way to reach this one from a
+test is to rewrite the tree underneath a running gate, which is the thing being refused. A gate that exempts
+itself from the rule it enforces is worse than one that prints a sentence a reader can check, and the sentence
+is where a pusher looks: the receipt line is the last line of the verdict.
+
+**What it does not fix.** The suite is the reader that names the *file*: 68 red tests say `check-official`
+does nothing. Nothing in the local chain runs the suite over a tree it is about to bless -- `verify:local`
+runs the coverage step fifth, and the battery that hollows the gate runs eleventh. Two falsifications hold the
+new branch: dropping the `ended` comparison turns both withhold tests red, and keeping the dirtiness check
+while dropping the name turns one red.
