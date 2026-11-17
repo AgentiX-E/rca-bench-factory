@@ -2215,11 +2215,13 @@ re-measured: **228** claims across **66** files).
 
 ### Five · the inventory moved and the proof was re-taken
 
-The exit moved from line 134 to 177 as the block above it grew. `derive-gate-sites` keys the hand-written columns on
-the guard text, so the site's `provedBy` was **dropped** on the first re-derivation and restored by hand, then measured:
-`verify-site-proofs` re-runs the named file with a hook on `process.exit` and reports the exit arrived. Sites **143**,
-scripts **97**, throw statements **99** -- all three unchanged, and the other four `verify-local.mjs` sites moved by
-one line each (87, 104, 114, 235) with their annotations carried.
+The exit moved from line 134 to 177 as the block above it grew, and its guard text changed twice on the way
+(`!result.ok`, then `!result.ok || moved !== null`, then `verdict.exit !== 0`). `derive-gate-sites` keys the
+hand-written columns on that text, so the site's `provedBy` was **dropped** on both re-derivations and restored by
+hand -- and then measured rather than assumed: `verify-site-proofs` re-runs the named file with a hook on
+`process.exit` and reports that the exit arrived. Sites **143**, scripts **97**, throw statements **99** -- all three
+unchanged; the other four `verify-local.mjs` sites moved with the lines above them (80 -> 87, 97 -> 104, 107 -> 114,
+209 -> 235) and carried their annotations.
 
 ### Readings
 
