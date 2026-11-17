@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–566, from the rounds recorded in `progress/volume-15.md` and `progress/volume-16.md`.
+Findings 542–567, from the rounds recorded in `progress/volume-15.md` and `progress/volume-16.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -1383,3 +1383,90 @@ route: the three following tests check that the symbol is spawned, that no test 
 a sentence. A gate that became driveable tomorrow would still be excused by today's paragraph; the table's only
 defence is the stale direction, which fires when a test takes the name and never when a flag makes the gate
 drivable. That is stated in the live list as an item rather than implied by a rule that looks complete.
+
+## Finding 567 — nine written exemptions, eight of them for functions a test could call: the sentence was about a route and the row was about a name
+
+v3.109 closed with an item it could not check and stated rather than hid: the reasons in `SPAWN_ONLY` are prose,
+and no reader can confirm that a spawn is *really* the only route. Four checks stood behind the table -- the symbol
+is exported, no test takes it, some script takes it, the reason is at least 120 characters and not shared -- and
+every one of them is about a **route that exists**, not about a route that is **the only one**. So the table could
+be satisfied by a paragraph, and the paragraph could be satisfied by being a paragraph.
+
+This round read the nine bodies instead of the nine sentences.
+
+**The census, and the marker it looked for.** Each entry was resolved to the source of its function: the `export
+function` declaration, then braces matched in the comment-and-string-blanked form of the file so that a `}` inside
+a literal cannot end it early. The question asked of each body was whether it can only run in a process of its own
+-- whether it reads `process.argv`, `process.env`, one of the three standard streams, `process.exit`, or calls
+`spawn`/`exec` directly. Eight of the nine never do:
+
+| symbol | body | boundary |
+| --- | --- | --- |
+| `budget-readings.mjs#budgetInForce` | `(source, testName)` -> one of four answers | none |
+| `format-spec.mjs#modalitiesProse` | `(modalities)` -> a joined string | none |
+| `gate-receipt.mjs#rehearsal` | `(name, plan)` -> one of six shapes | none |
+| `gate-steps.mjs#workflowPath` | reads `process.env['RCA_CI_WORKFLOW']` | **environment** |
+| `publish-plan.mjs#readBlob` | `({ root, sha })` -> `runGit(root, ['cat-file', ...])` | helper call |
+| `publish-plan.mjs#readRev` | `({ root, rev })` -> `runGit(root, ['rev-parse', ...])` | helper call |
+| `publish-plan.mjs#pointerPlan` | `({ tree })` -> `{ commits: [], tipTree }` | none |
+| `publish-readings.mjs#parseArgs` | `(argv)` -> options or an error | none |
+| `publish-readings.mjs#inspect` | `(file)` -> `readFileSync` plus a judgement | file read |
+
+**Why the four checks could not catch it.** They ask whether the name is consumed, and every one of the nine was.
+`readBlob`'s reason said the end-to-end push "is the only place its output is judged" -- and that is true, and it
+is a fact about `publish.mjs`, which is the caller. The row was keyed by a **symbol** and argued about a **gate**.
+Finding 566 made the key finer (module -> symbol) and that repaired the stale direction; it could not repair the
+argument, because the argument was never a claim the tree could read. A function that takes a string and returns a
+number has an answer for every string a test can write, and the fact that some other file also calls it is not a
+reason to leave those answers unmeasured.
+
+**What the eight bodies were hiding.** Each of them decides something, and the decisions had no branch-level
+proof: which of four budgets is in force and in what order (`budgetInForce`), whether an expansion keeps the order
+the list gives or the order the vocabulary declares (`modalitiesProse` -- the two differ on every page that lists
+two modalities), what a rehearsal ends on when the tree moved and when the working directory is dirty
+(`rehearsal`, whose `moved` and `dirty-end` shapes differ in one field), whether an empty `RCA_CI_WORKFLOW`
+means "the shipped workflow" or "the repository root" (`workflowPath`, and the branch is `||` rather than `??`),
+whether a blob is bytes or a decoded string (`readBlob` -- a `utf8` default silently rewrites every byte above
+0x7f), which layer refuses a revision git cannot resolve (`readRev`: git's sentence or a shape `TypeError`),
+whether a pointer plan carries a commit (`pointerPlan`: the empty list is its entire claim), which of six argv
+shapes is accepted and which is refused (`parseArgs`, including the `index += 1` that makes `--file x --check`
+read the flag), and whether a file that parses into the wrong shape is a read failure or a shape failure
+(`inspect`). Thirty-seven tests now pin those, in the six files that already import the module.
+
+**The table, and why zero is the honest size.** `SPAWN_ONLY` holds no rows. The nine names are kept as
+`FORMERLY_EXCUSED`, and a test asserts that every one of them is taken by a test now -- so the emptiness is a
+change with a record rather than an absence, and a symbol that leaves the table without a test fails the record
+instead of quietly disappearing. The four checks survive because a future row must pass them, and they are no
+longer an empty loop: one **fifth** rule was added, and the whole set is exercised against six synthetic rows, one
+per fault. The fifth is the one this finding is about: **the body must cross the process boundary**. `console` is
+deliberately not a marker -- vitest can spy on it, so printing is the one thing a test can capture -- and the
+body is blanked before it is searched, because the comments in this tree quote `process.env` constantly and a
+mention is not a read.
+
+**The predicate is calibrated, not asserted.** Three calibrations make the rule falsifiable while the table is
+empty: `workflowPath`'s real body reads the environment and crosses; `readBlob`'s real body reaches a spawn
+through `runGit` and does not -- which is the exemption that stood here, judged by the rule that replaced it; and a
+primer is not a boundary. The mutation that deletes one alternative from the predicate turns two tests red.
+
+**Two findings fell out of the repair.** The first is `STATED_BY`, the table that turns an arm into the sentence a
+report prints: `budgetInForce` can answer four ways and the table has three keys. The fourth (`none`) is safe only
+because `check-test-budgets.mjs` answers it before indexing, with a branch of its own and a `continue`. That is a
+pairing nobody had written down, so the test now asserts both halves -- the three keys, and the branch in the gate
+that makes the fourth one safe. The second is the heavy-fixture detector: it searched the whole file for `'install'`
+and required only that the file also spawned something, so a rehearsal plan whose first step is a *label* named
+`install` made `gate-receipt.test.ts` look like a file that runs a package manager, and an assertion about memory
+went red naming a file that runs none. The verb is now looked for inside a spawn's **argument list**, sliced by
+matching the parenthesis in the blanked source; four calibrations hold the distinction (a label is not a command, a
+comment is not a call, a real argument list is, and the one heavy file in the tree still is).
+
+**Four falsifications, five reds.** A row for `pointerPlan` put back into the empty table (one red, carrying both
+the stale fault and the body fault), the predicate with `process.env` removed (two reds: the row calibration and
+the body calibration), and the heavy detector returned to the whole-file reading (two reds: its own calibration and
+the set assertion naming `gate-receipt.test.ts`).
+
+**What this does not establish.** `crossesProcessBoundary` is a proxy, not a proof that a function cannot be
+called: a body that reads `process.env` can still be called from a test that sets the variable, and `workflowPath`
+is now tested exactly that way. What the predicate answers is narrower and checkable -- "this function takes an
+input the test does not hold" -- and that is weaker than the sentence the table used to write. The honest
+consequence is that a symbol which genuinely cannot be called from this process may not exist in this tree at all:
+every one of the nine could be, and the table is empty because of it rather than because the question was dropped.

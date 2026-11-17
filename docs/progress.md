@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 257 core + 4 cli |
-| Test lines | 111,027 core + 3,242 cli |
-| Tests | 6,589 core + 187 cli |
+| Test lines | 111,728 core + 3,242 cli |
+| Tests | 6,626 core + 187 cli |
 | Tracked files | 663 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -527,7 +527,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.109: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.110: **28** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1638,15 +1638,38 @@ is a row about rather than paraphrase one that no `grep` will find.
   site (143 -> 144, battery 228 -> 229), proved the ordinary way by the spawn that reaches it in under a second --
   finding 563's argument that a new exit is a new site was right, and it was about a branch no spawn could reach.
 
-- **The export surface of `scripts/` is enumerated by symbol, and the reasons in its table are prose.** v3.109
-  replaced v3.108's module-wide rule with the key the `src/` instrument had already settled on: over **28** `data`
-  modules and **155** exported functions, **146** are taken by a test, **9** are taken only by a script the suite
-  spawns and carry a reason, and **0** are taken by nothing (finding 566). The table is refused when an entry is
-  short, shared, stale, or names nothing a script takes -- but "a spawn is the only route" is a sentence, and no
-  reader checks it. A gate that became driveable tomorrow would still be excused by today's paragraph; the only
-  defence is the stale direction, which fires when a test takes the name and never when a flag makes the gate
-  drivable.
-  `[open: the reading that would replace the prose is a census of the inputs each gate takes from outside -- a flag it parses, an env name it reads, a script copied into a fixture tree -- held against the route each of those inputs actually reaches]`
+- ~~**The export surface of `scripts/` is enumerated by symbol, and the reasons in its table are prose.**~~
+  **Closed by finding 567.** v3.109 left nine rows whose reason was a paragraph, and this round read the nine
+  bodies instead: eight never leave the process at all, and the ninth (`workflowPath`) reads `process.env` and is
+  tested by setting it. All nine are taken by a test that imports them now -- four budget arms in their order, the
+  modality expansion and its refusal, six rehearsal shapes and the merged pair, three workflow-path arms, the blob
+  and revision readers at both layers, the pointer plan's empty commit list, six argv shapes, and the three ways a
+  file reader can answer -- and the table holds **no rows**. The nine names are kept as a record the suite asserts
+  against, so zero is a change with a date; and the prose was replaced by a rule the tree can read: **the body must
+  cross the process boundary**, measured on the body with its comments blanked, calibrated against `workflowPath`
+  (crosses) and `readBlob` (does not -- the row that stood here). `src/` and `scripts/` now answer the same
+  question with the same kind of key.
+
+- **The heavy-fixture detector carries a second copy of the language scanner.** It is four regular expressions
+  where `scripts/budget-readings.mjs` has a state machine, so the two disagree about a template literal and about a
+  regex literal -- and the copy is the one that decides which files in the suite are heavy. v3.110 repaired what
+  the copy was *asked*, not what it *is*: the verb is now searched inside a spawn's argument list rather than
+  anywhere in the file, because a rehearsal plan labelled `install` made a file that runs no package manager look
+  heavy.
+  `[open: replacing it with the imported scanner would change what the detector sees for the files that hold an escaped character or a template with braces in an argument list, which is a measurement before it is a repair]`
+
+- **`crossesProcessBoundary` answers a weaker question than the table used to claim.** It asks whether a body takes
+  an input the test does not hold, not whether the function can be called: `workflowPath` reads the environment and
+  is now tested by setting it, with the value restored in a `finally`. The rule is honest about the gap and the
+  gap is the point -- a predicate strong enough to prove uncallability would have to name something no test can
+  construct, and no symbol in this tree answers to that.
+  `[open: a symbol that is genuinely uncallable would need an exit that ends the worker, or an input no test can build, as its marker; the table is empty because every symbol examined could be called]`
+
+- **The progress index has 772 bytes of room under its own volume, and the next round needs more.** `volume-16.md`
+  is at **199,228 of 200,000** and the index at **132,615** of it, which is legal only because the open volume is
+  larger than the index (finding 501). A new volume cannot be started while the index is 132 KB -- it would be
+  smaller than the file comparing it -- and the next round's record does not fit in 772 bytes.
+  `[open: the repair is to move the struck entries out of the index into a record, which shrinks the side the comparison measures; it is a structural edit to a file two gates read, so it is a round of its own rather than a paragraph at the end of this one]`
 
 
 ## Pass log
@@ -1681,7 +1704,7 @@ and this table.
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
-| [volume-16.md](progress/volume-16.md) | 19 | v3.91 | v3.109 |
+| [volume-16.md](progress/volume-16.md) | 20 | v3.91 | v3.110 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
