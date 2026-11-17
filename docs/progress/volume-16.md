@@ -2347,9 +2347,9 @@ makes an existing gate's consumption of a value falsifiable.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **255 files, 6560 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **259 files, 6747 tests passed** (as of this commit) |
+| `core` test suite | **255 files, 6560 tests passed** (at v3.107) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.107) |
+| repo test suite | **259 files, 6747 tests passed** (at v3.107) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6549 -> 6560, +11**: five shapes rehearsed, plus the void block's four lines, the dirty ending, the subset withholding, the receipt filed, `FAILED` outranking `VOID`, and the refusal that publishes the table |
 | the falsifications | ten removals, **24** reds, **no survivor** |
@@ -2358,3 +2358,122 @@ makes an existing gate's consumption of a value falsifiable.
 | `verify-site-proofs` | **PASSED (229 claim(s) across 66 file(s))** |
 | what a rehearsal costs | **0.4 s** for the eleven tests together; the plan it replaces costs fifteen minutes |
 | the live list | **26 -> 26**: closed "no gate's use of a pure decision is proved" (finding 564), opened "the rehearsal pattern is one gate's, not an instrument" |
+
+## v3.108 · the classifier that decides which numbers are true was filed as a table
+
+**Two sentences, and both were about the thing beside the function.** `scripts-are-classified.test.ts` files
+`doc-counts-vocabulary.mjs` as `data` -- "a module under `scripts/` that exports a table and has no `main`. It is
+imported rather than run, so it has no exit and no verdict." The module's own header said the same thing in the
+first person: "it is a plain data module: no `main`, no exit, nothing to prove." Neither sentence was about
+`scopeOf`.
+
+`scopeOf` decides **which published count belongs to which suite**, and therefore which numbers a guard may hold
+to a measurement and which row a writer may rewrite. It had four branches, no test in the tree imported the
+module to call it, and its only proof was two spawned gates over fixtures -- which is the route this same file
+describes elsewhere as "a spawn, which cannot name the branch you broke". A branch of the classifier that decides
+which numbers are true could be deleted, and nothing would notice.
+
+**Three shapes the corpus writes that the chain answered wrongly or unasked.**
+
+| label, as a document writes it | what `scopeOf` answered | what the label is |
+| --- | --- | --- |
+| `core / cli / repo` (three rows, `volume-08`) | `core` | one row publishing three suites; the first word won |
+| `` `scripts/publish-cli.mjs` `` | `cli` | a file's name, not a claim about a suite -- `\b` splits at `-` |
+| `every workspace` | `repo` | an alias no document uses, and the word `repo` is not in it |
+| `packages/core` | `core` | a path |
+
+The first is the worse one: a label naming three suites is *more* ambiguous than the bare `test suite` the
+module was created to refuse, and it was answered rather than refused. None of the four is reachable in the
+corpus today by a count shape -- which is luck, not a rule, and the row one `N files, M tests` away from being
+checked against the wrong suite is what makes it a defect rather than a curiosity.
+
+**The survivor, measured rather than argued.** Deleting the `every workspace` alternative left **255 files /
+6,560 tests** green and `check-doc-counts` green over **433** published counts. That is the round: one of the
+four branches had no reader anywhere -- not a test, not a fixture, not a document.
+
+**Where the alias came from.** The checker kept its own `SCOPES`:
+
+    const SCOPES = { core: 'packages/core', cli: 'packages/cli', repo: 'every workspace, i.e. `pnpm test`' };
+
+and printed `Object.keys(SCOPES).join(', ')` -- twice, and never a value. Three strings sat in a guard looking
+like operator-facing text that no operator had ever seen, and the `repo` one had already been copied into the
+classifier as a matching alternative. A dead string is not inert: it reads as a specification.
+
+**The repair: the list is the source, and the classifier is a function of it.**
+
+| part | before | after |
+| --- | --- | --- |
+| the words | the union of what a chain of `if`s tested | `SCOPES = ['core', 'cli', 'repo']`, exported |
+| `scopeOf` | first branch that matched, anywhere in the label | every name that stands alone; one name or `null` |
+| `null` | a bare `test suite` | a bare label, a compound label, a path, and an unknown word alike |
+| the notes | private to the checker, never printed | beside the words, and printed in the rule-1 refusal |
+| the writer's `SCOPES` | three literals beside the vocabulary | `VOCABULARY.map((name) => ({ name, ...MEASUREMENTS[name] }))` |
+| the vocabulary's own proof | none | `doc-counts-vocabulary.test.ts`: 12 tests, the only importer |
+
+`null` is not a soft answer, and that is what makes the deletions safe: rule 1 of `check-doc-counts.mjs` refuses
+a published count whose scope is `null`, so `every workspace` -- had a document ever used it -- becomes a
+sentence an author can act on ("say which one it measured, with what each one covers") instead of a guess made
+on their behalf. The alias was not a safety net; it was the failure the module exists to prevent, one spelling
+over.
+
+The four values in the refusal are the only place the vocabulary reaches a reader, so a test now asserts the
+message contains all three notes. A note no message prints is a note that gets believed and not read -- which is
+exactly how `every workspace` became a branch.
+
+**Seven edits, thirteen reds, one equivalent.**
+
+| edit | red |
+| --- | --- |
+| the classifier answers with the first word again | **1** |
+| the delimiters are `\b` again | **1** |
+| a fourth scope is added to the vocabulary | **7** |
+| the refusal stops printing the notes | **1** |
+| a scope arrives with no argv to run | **2** |
+| the writer's list is written by hand again | **0** -- equivalent |
+| the vocabulary's test is deleted | **1**, naming `doc-counts-vocabulary.mjs exports scopeOf and no test imports it` |
+
+The sixth row is honest about what a value test can and cannot say. A hand-written list that *agrees* with the
+vocabulary is the same behaviour today; what the new test buys is that the day the two disagree -- the only day
+that matters -- it is red. The seventh is the class rule proving itself, and it names the module and the
+function rather than a file count.
+
+**The class rule, and what it is worth.** `data` is the class that excuses a script from every other instrument
+in the tree: no exit for the inventory, and hollowing cannot reach a module nothing spawns. So "exports a table
+and has no `main`" was the whole of its proof, and the word *table* was doing the work. The register now carries
+the rule with a reader: **a `data` module may export functions only if some test file imports it** -- 27 data
+modules export functions, and this one was the only one nobody imported.
+
+**What this does not establish.** The rule is over modules, not over the edges that consume them. Measured at
+this round, **20 of 59** gates import a module that exports functions, over **31** edges, and **one** of those
+edges has an entry point that supplies inputs a run did not produce (`verify-local.mjs`, through `--rehearse`,
+finding 564). The other nineteen compute a verdict from a module and can only be run over the tree they are
+looking at. That is the half this round did not buy, and it is now a stated item with a count rather than a
+paragraph.
+
+### Readings
+
+> Ledger for `v3.108`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **256 files, 6576 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **260 files, 6763 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
+| new tests | **6560 -> 6576, +16**: twelve in the vocabulary's first importing test, the refusal naming its three notes, and three that make the class rule a reader |
+| the falsifications | seven edits, **13** reds, **one equivalent** and it is named as one |
+| the survivor's fate | deleting the `every workspace` alternative was green in **255 files / 6,560 tests**; the word no longer exists, and its absence is pinned as `null` with rule 1 behind it |
+| gate sites / scripts / throws | **144** / **97** / **99** -- no new exit, no new script; six line numbers moved in `doc-counts-rows.mjs` and carried their proofs |
+| `verify-site-proofs` | **PASSED (229 claim(s) across 66 file(s))** |
+| the vocabulary's three homes | one list, one derived classifier, one writer table keyed by it, and a test that compares all three |
+| gates importing a decision module | **20 of 59**, over **31** edges, **1** drivable |
+| the live list | **26 -> 26**: the rehearsal item narrowed to the gate side, with the census written into it |
+
+### Left open
+
+- **Nothing asks a gate whether the decision it consumed could have been driven.** The module half is closed
+  here.
+  `[open: the edge half needs a reader over the gate -> module edges, and the measurement it would start from is in the live list -- 20 of 59 gates, 31 edges, 1 drivable]`
+- **`scopeOf` reads a label, so it cannot see a row that names its suite somewhere else.** A row whose label
+  names no scope and whose value cell names one is refused by rule 1 rather than read.
+  `[open: the refusal is the right direction and it costs a re-read of the row, which no round has needed yet; the reading that would settle it is a corpus row of that shape]`

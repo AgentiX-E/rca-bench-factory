@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–564, from the rounds recorded in `progress/volume-15.md` and `progress/volume-16.md`.
+Findings 542–565, from the rounds recorded in `progress/volume-15.md` and `progress/volume-16.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -1211,3 +1211,104 @@ instrument: the pattern is `settle()` plus a table of inputs plus a `--rehearse`
 second consumer of a pure result would have to grow the same three. What is now general is the *statement* of
 the requirement -- a gate that consumes a pure result needs an entry point that supplies the result, or the
 consumption is unobservable -- and the fact that the first gate to need it has one.
+
+## Finding 565 — the classifier that decides which numbers are true was filed as a table, and one of its branches had no reader
+
+**The shape, in two sentences that were about the object beside the function.** `scripts-are-classified.test.ts`
+filed `doc-counts-vocabulary.mjs` as `data`, whose definition in that register is "a module under `scripts/` that
+exports a table and has no `main`. It is imported rather than run, so it has no exit and no verdict", and the
+module's own header agreed in the first person: "it is a plain data module: no `main`, no exit, nothing to
+prove". Both sentences are true of `CURRENT_MARKERS`. Neither is about `scopeOf`.
+
+`scopeOf` decides **which published count belongs to which suite**. From that decision the checker builds which
+numbers it holds to a measurement, and the writer builds which row it may rewrite. It had four branches, no test
+in the tree imported the module to call it, and its only proof was two spawned gates over fixtures -- the route
+this same register describes elsewhere as "a spawn, which cannot name the branch you broke".
+
+**The survivor, and how it was found.** The branch `|\bevery workspace\b` was deleted from the classifier, and
+the suite stayed green: **255 files / 6,560 tests**, with `check-doc-counts` green over **433** published counts.
+The branch had no reader anywhere -- not a test, not a fixture, not a document. Worse than a dead branch, it was
+a *guess*: the function's contract is that the scope word appears in the row's label, and `every workspace` does
+not contain the word `repo`.
+
+**Where the guess came from.** The checker kept a second copy of the three names:
+
+    const SCOPES = { core: 'packages/core', cli: 'packages/cli', repo: 'every workspace, i.e. `pnpm test`' };
+
+and printed `Object.keys(SCOPES).join(', ')` -- twice, and never a value. So the `repo` value was a string no
+operator had ever seen, and it had already been copied into the classifier as a matching alternative. **A dead
+string is not inert: it reads as a specification**, and the next reader encodes it.
+
+**Three shapes the corpus writes that the chain answered wrongly or unasked.** A regex built from `\b` splits at
+`-` and `/`, so any label that *contains* a scope word answered as if the row *claimed* it:
+
+| label, as a document writes it | `scopeOf` answered | what the label is |
+| --- | --- | --- |
+| `core / cli / repo` (three rows, `progress/volume-08.md`) | `core` | one row publishing three suites' counts; the first word won |
+| `` `scripts/publish-cli.mjs` `` | `cli` | a file's name, not a claim about a suite |
+| `packages/core` | `core` | a path |
+| `every workspace` | `repo` | an alias no document uses |
+
+The first row is the sharpest: a label naming three suites is *more* ambiguous than the bare `test suite` the
+module was created to refuse, and it was answered instead of refused. None of the four is reachable in the
+corpus by a count shape today -- which is luck, not a rule. Each is one `N files, M tests` away from being
+checked against the wrong suite, and the row that would be checked is a *dated record* whose numbers are
+supposed to differ from today's.
+
+**The repair: the list is the source, and the classifier is a function of it.**
+
+| part | before | after |
+| --- | --- | --- |
+| the words | the union of what a chain of `if`s happened to test | `SCOPES = ['core', 'cli', 'repo']`, exported |
+| `scopeOf` | first branch that matched, anywhere in the label | every name standing alone; one name, or `null` |
+| `null` | a bare `test suite` | a bare label, a compound label, a path and an unknown word alike |
+| the notes | private to the checker, never printed | beside the words, and printed in the rule-1 refusal |
+| the writer's table | three literals beside the vocabulary | `VOCABULARY.map((name) => ({ name, ...MEASUREMENTS[name] }))` |
+| the vocabulary's proof | none | `doc-counts-vocabulary.test.ts`: twelve tests, and the only importer |
+
+`null` is not a soft answer, and that is what makes the deletion of the alias safe. Rule 1 of
+`check-doc-counts.mjs` refuses a published count whose scope is `null`, so `every workspace` -- had a document
+ever used it -- becomes a sentence an author can act on ("say which one it measured") instead of a guess made on
+their behalf. The alias was not a safety net; it was the failure the module exists to prevent, one spelling over.
+
+The values are the only place the vocabulary reaches a reader, so the refusal now prints all three and a test
+asserts each one. A note no message prints is a note that gets believed and not read, which is exactly how
+`every workspace` became a branch.
+
+**Seven edits, thirteen reds, one equivalent.**
+
+| edit | red |
+| --- | --- |
+| the classifier answers with the first word again | **1** |
+| the delimiters are `\b` again | **1** |
+| a fourth scope is added to the vocabulary | **7** |
+| the refusal stops printing the notes | **1** |
+| a scope arrives with no argv to run | **2** |
+| the writer's list is written by hand again | **0** -- equivalent |
+| the vocabulary's test is deleted | **1**, naming `doc-counts-vocabulary.mjs exports scopeOf and no test imports it` |
+
+The sixth row is stated as equivalent rather than hidden. A hand-written list that *agrees* with the vocabulary
+is the same behaviour today, and a value test cannot tell derivation from a copy; what the new test buys is that
+the day the two disagree -- the only day that matters -- it is red. The seventh is the class rule proving itself
+on the module it was written for.
+
+**The class rule, and why it is only about `data`.** `data` is the class that excuses a script from every other
+instrument in the tree: there is no exit for the inventory to enumerate, and hollowing cannot reach a module
+nothing spawns. So "exports a table and has no `main`" was the whole of its proof, and the word *table* was
+doing the work. `scripts-are-classified.test.ts` now carries the rule with a reader: **a module the register
+files as `data` may export functions only if some test file imports it** -- read from the specifiers in the test
+corpus, not from a mention of the file's name. Of **27** data modules that export functions, this one was the
+only one nobody imported.
+
+A gate is the other side of the same line and gets a different rule: it may not be imported (the proof is
+emptying it), so its functions are reached through a spawn, which proves the process and never the branch.
+That is why the rule is scoped to `data` rather than to every module that exports a function -- the two classes
+have different instruments, and a rule that ignored the difference would demand something a gate cannot have.
+
+**What this does and does not establish.** It establishes that the vocabulary has one home, that its classifier
+answers one word or `null`, and that its branches are proved by a test that names them. It does not establish the
+analogue for the edges that *consume* decisions. Measured at this round: **20 of 59** gates import a module that
+exports functions, over **31** edges, and **one** of those -- `verify-local.mjs`, through `--rehearse` (finding
+564) -- can be supplied with inputs a run did not produce. The other nineteen compute a verdict from a module and
+can only be run over the tree they are looking at. The requirement is stated with a count rather than a
+paragraph, because a paragraph is what the previous round left and it took a round to narrow.
