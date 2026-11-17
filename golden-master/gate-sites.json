@@ -1315,7 +1315,7 @@
       },
       {
         "script": "scripts/doc-counts-rows.mjs",
-        "line": 256,
+        "line": 267,
         "disposition": "unguarded",
         "message": "the ${scope} summary cannot be read",
         "status": "proved",
@@ -1323,7 +1323,7 @@
       },
       {
         "script": "scripts/doc-counts-rows.mjs",
-        "line": 271,
+        "line": 282,
         "disposition": "unguarded",
         "message": "new TranscriptRecordsFailures(scope, [ `the ${scope} transcript records a failing run, so it is not a measurement:`, ` $",
         "status": "proved",
@@ -1331,7 +1331,7 @@
       },
       {
         "script": "scripts/doc-counts-rows.mjs",
-        "line": 282,
+        "line": 293,
         "disposition": "unguarded",
         "message": "measuredNothing(scope, skipped)",
         "status": "proved",
@@ -1339,7 +1339,7 @@
       },
       {
         "script": "scripts/doc-counts-rows.mjs",
-        "line": 501,
+        "line": 512,
         "disposition": "unguarded",
         "message": "new ReportRecordsFailures(path, [ `the report at ${path} records a failure, so it is not a measurement:`, ...shown.map((",
         "status": "proved",
@@ -1347,7 +1347,7 @@
       },
       {
         "script": "scripts/doc-counts-rows.mjs",
-        "line": 522,
+        "line": 533,
         "disposition": "unguarded",
         "message": "new ReportMeasuredNothing(scope.name, measuredNothingLines(scope.name, measured.skipped, 'record'))",
         "status": "proved",
@@ -1355,7 +1355,7 @@
       },
       {
         "script": "scripts/doc-counts-rows.mjs",
-        "line": 548,
+        "line": 559,
         "disposition": "unguarded",
         "message": "new MeasurementUnavailable(lines[0] ?? 'the measurement is unavailable', lines)",
         "status": "proved",

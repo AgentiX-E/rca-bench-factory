@@ -200,6 +200,20 @@ describe('check-doc-counts', () => {
     expect(r.out).toContain('without naming its scope');
   });
 
+  // The refusal is the only place the vocabulary's *notes* reach a reader, and until this
+  // round they reached nobody: the checker held `{ core: 'packages/core', … }` and printed
+  // `Object.keys(...)`, so three strings sat in the code looking like operator-facing text
+  // while `every workspace, i.e. pnpm test` -- the `repo` one -- was being copied into the
+  // classifier as a matching alternative (finding 565). A note no message prints is a note
+  // that will be believed and not read, so one message prints all three.
+  it('names every scope, with what each one covers, when it refuses an unlabelled count', () => {
+    const r = run(`${HEADER}| test suite | **108 files, 3059 tests passed** |\n`);
+    expect(r.code).toBe(1);
+    for (const note of ['core = `packages/core`', 'cli = `packages/cli`', 'repo = every workspace']) {
+      expect(r.out, `the refusal does not say ${note}`).toContain(note);
+    }
+  });
+
   it('refuses a document with no counts at all, rather than passing blind', () => {
     const r = run(`${HEADER}| gates | all clean |\n`);
     expect(r.code).toBe(1);

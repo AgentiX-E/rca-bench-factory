@@ -22,15 +22,26 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
-import { CURRENT_MARKERS, scopeOf } from './doc-counts-vocabulary.mjs';
+import { CURRENT_MARKERS, SCOPES as VOCABULARY, scopeOf } from './doc-counts-vocabulary.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 
-export const SCOPES = [
-  { name: 'core', filter: '@rca-bench-factory/core', args: ['--filter', '@rca-bench-factory/core', 'test'] },
-  { name: 'cli', filter: '@rca-bench-factory/cli', args: ['--filter', '@rca-bench-factory/cli', 'test'] },
-  { name: 'repo', filter: null, args: ['test'] },
-];
+/**
+ * How one scope is measured: what its run is limited to, and the argv `pnpm` gets.
+ *
+ * Keyed by the vocabulary's names rather than listed beside them, because the names are the
+ * vocabulary's to declare and this table only says how to take each measurement (finding 565).
+ * A name added to the vocabulary without an entry here arrives with no `argv`, which
+ * `doc-counts-vocabulary.test.ts` refuses by name -- the writer would otherwise spawn
+ * `pnpm undefined` and report on a run it never made.
+ */
+const MEASUREMENTS = {
+  core: { filter: '@rca-bench-factory/core', args: ['--filter', '@rca-bench-factory/core', 'test'] },
+  cli: { filter: '@rca-bench-factory/cli', args: ['--filter', '@rca-bench-factory/cli', 'test'] },
+  repo: { filter: null, args: ['test'] },
+};
+
+export const SCOPES = VOCABULARY.map((name) => ({ name, ...MEASUREMENTS[name] }));
 
 /**
  * The one sentence both refusal paths say, because they refuse the same thing.

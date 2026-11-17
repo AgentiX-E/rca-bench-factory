@@ -536,11 +536,15 @@ const REGISTER: Record<string, Entry> = {
   'doc-counts-vocabulary.mjs': {
     class: 'data',
     why:
-      'One exported array, read by two scripts that face the same predicate from opposite sides: ' +
-      'check-doc-counts.mjs refuses a row that claims to describe this commit, and ' +
-      'measure-doc-counts.mjs rewrites exactly those rows. A writer and a checker that disagree ' +
-      'about which rows are current are wrong in opposite, silent directions -- one edits a dated ' +
-      'record, the other reports success over a stale number. There is no main and no exit.',
+      'The two vocabularies the count readers share: the marker list that decides which row claims to ' +
+      'describe this commit, and the three scope words with the classifier that reads one out of a ' +
+      'label. Three scripts face them from opposite sides -- check-doc-counts.mjs refuses a row that ' +
+      'claims this commit, measure-doc-counts.mjs rewrites exactly those rows, and doc-counts-rows.mjs ' +
+      'spawns one run per scope -- and a writer and a checker that disagree about either are wrong in ' +
+      'opposite, silent directions. No main and no exit, so the inventory has nothing to enumerate; the ' +
+      'classifier is proved by doc-counts-vocabulary.test.ts, the one test that imports this file, which ' +
+      'is what the rule at the bottom of this file requires of a data module that exports a function ' +
+      '(finding 565: it used to export one, and no test imported the module at all).',
   },
   // A gate that cannot run in CI, like `fetch-official.mjs`: its input is the
   // four CSVs upstream publishes under `rca/archive/`, which this repository
@@ -887,6 +891,42 @@ describe('scripts/ · every script is classified, and the class is checked', () 
 });
 
 /**
+ * `from '../../../scripts/x.mjs'` and dynamic `import('…/scripts/x.mjs')`.
+ *
+ * Two groups: the whole specifier, and the file name the register is keyed by. Both are needed
+ * and neither is derivable from the other without a second walk over the tree -- the register
+ * names files, and the depth checks are about specifiers.
+ *
+ * Hoisted out of the describe below because two rules read it now: one refuses a test that
+ * imports a gate, and one requires a test to import the data modules that carry functions.
+ */
+const IMPORT = /(?:from\s+|import\s*\(\s*)'([^']*?\/([\w.-]+\.mjs))'/g;
+
+/**
+ * The source with its comments removed.
+ *
+ * The first run of the depth check below reported two offenders in this very file, and both were
+ * prose: the doc comment above spells the pattern, and the control test quotes it. A specifier
+ * inside a comment is not an import, and a guard that fails on its own documentation is a guard
+ * somebody deletes. `//` is required to follow whitespace so that a URL inside a string
+ * (`http://…`) is not read as the start of a comment.
+ */
+const withoutComments = (source: string): string =>
+  source.replace(/\/\*\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/[^\n]*/g, '$1');
+
+/** Every `scripts/<name>.mjs` a test file imports, read at the depth the file spells it. */
+function scriptsImportedByTests(): Set<string> {
+  const testDir = resolve(ROOT, 'packages/core', 'test');
+  const imported = new Set<string>();
+  for (const name of readdirSync(testDir).filter((entry) => entry.endsWith('.test.ts'))) {
+    const source = withoutComments(readFileSync(resolve(testDir, name), 'utf8'));
+    for (const match of source.matchAll(IMPORT)) imported.add(match[2]!);
+  }
+  return imported;
+}
+
+
+/**
  * A gate may be spawned by a test, never imported by one.
  *
  * ## The defect this closes, stated as a rule
@@ -908,26 +948,6 @@ describe('scripts/ · every script is classified, and the class is checked', () 
  * in the meta-gate's `UNATTRIBUTED` line.
  */
 describe('a gate is proved by being emptied, so no test may import one', () => {
-  /**
-   * `from '../../../scripts/x.mjs'` and dynamic `import('…/scripts/x.mjs')`.
-   *
-   * Two groups: the whole specifier, and the file name the register is keyed by. Both are needed
-   * and neither is derivable from the other without a second walk over the tree -- the register
-   * names files, and the depth check below is about specifiers.
-   */
-  const IMPORT = /(?:from\s+|import\s*\(\s*)'([^']*?\/([\w.-]+\.mjs))'/g;
-
-  /**
-   * The source with its comments removed.
-   *
-   * The first run of the depth check below reported two offenders in this very file, and both were
-   * prose: the doc comment above spells the pattern, and the control test quotes it. A specifier
-   * inside a comment is not an import, and a guard that fails on its own documentation is a guard
-   * somebody deletes. `//` is required to follow whitespace so that a URL inside a string
-   * (`http://…`) is not read as the start of a comment.
-   */
-  const withoutComments = (source: string): string =>
-    source.replace(/\/\*\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/[^\n]*/g, '$1');
 
   it('no test file imports a file the register calls a gate or a probe', () => {
     const offenders: string[] = [];
@@ -1011,5 +1031,73 @@ describe('a gate is proved by being emptied, so no test may import one', () => {
     // above is a filter over one value.
     expect(REGISTER['audit-volumes.mjs']?.class).toBe('data');
     expect(REGISTER['check-audit-volumes.mjs']?.class).toBe('gate');
+  });
+});
+
+/**
+ * A `data` module's functions are proved by a test that imports them, and by nothing else.
+ *
+ * ## Why this class needs a rule of its own
+ *
+ * `data` is the class that excuses a script from every other instrument in the tree: there is no
+ * exit for the inventory to enumerate, and hollowing cannot reach a module nothing spawns. So the
+ * register's definition -- "a module under `scripts/` that exports a table and has no `main`" -- was
+ * the whole of its proof, and the word *table* was doing the work.
+ *
+ * `doc-counts-vocabulary.mjs` was filed here and exported `scopeOf`: a four-branch classifier that
+ * decides which published count belongs to which suite, and therefore which numbers a guard may
+ * hold to a measurement. No test imported the module, so no test could name a branch, and deleting
+ * one of the four branches was green across **255 files / 6,560 tests** (finding 565). The register
+ * had said "a table" and the module had said "nothing to prove", and both sentences were about the
+ * array sitting beside the function.
+ *
+ * ## What the rule says, and why it is only about `data`
+ *
+ * A module the register files as `data` may export functions only if some test file imports it.
+ * A `gate` may not be imported -- the rule above is that it is proved by being emptied -- so its
+ * functions are reached through a spawn, which proves the process and never the branch. A `data`
+ * module has no such route; the import is the only proof available to it.
+ */
+describe("a data module's functions are proved by an importing test, since nothing spawns it", () => {
+  /** The declaration form the tree uses throughout; `export const f = () => …` is not a function here. */
+  const EXPORTED = /^export function ([A-Za-z0-9_]+)/gm;
+
+  function exportedFunctions(name: string): string[] {
+    return [...readFileSync(resolve(SCRIPTS, name), 'utf8').matchAll(EXPORTED)].map((match) => match[1]!);
+  }
+
+  it('imports every data module that exports a function', () => {
+    const imported = scriptsImportedByTests();
+    const offenders = scriptNames()
+      .filter((name) => REGISTER[name]?.class === 'data')
+      .filter((name) => exportedFunctions(name).length > 0)
+      .filter((name) => !imported.has(name))
+      .map((name) => `${name} exports ${exportedFunctions(name).join(', ')} and no test imports it`);
+    expect(
+      offenders,
+      'a function in a data module is reached only by an import: a spawn proves the process, not the ' +
+        'branch it took. Either import the module from a test that pins each branch, or state in the ' +
+        'register why the function is not a decision',
+    ).toEqual([]);
+  });
+
+  it('finds data modules that export functions at all, which is the half a broken filter would skip', () => {
+    // The two floors. A register read that returned no `data` entries, or an `EXPORTED` pattern that
+    // matched nothing, would make the assertion above pass over the whole tree -- the failure mode
+    // every guard over a directory has to state.
+    const exporting = scriptNames().filter(
+      (name) => REGISTER[name]?.class === 'data' && exportedFunctions(name).length > 0,
+    );
+    expect(exporting.length, 'no data module exports a function').toBeGreaterThan(10);
+    expect(scriptsImportedByTests().size, 'no test imports any script').toBeGreaterThan(10);
+  });
+
+  it('tells an import from a mention, which is the difference the rule turns on', () => {
+    // `check-no-mock.mjs` is written about in most test files and imported by none; `gate-receipt.mjs`
+    // is imported by one. A reader that matched text rather than specifiers would call both proved.
+    expect(scriptsImportedByTests().has('gate-receipt.mjs')).toBe(true);
+    expect(scriptsImportedByTests().has('serve-site.mjs')).toBe(false);
+    expect(REGISTER['serve-site.mjs']?.class).toBe('tool');
+    expect(REGISTER['gate-receipt.mjs']?.class).toBe('data');
   });
 });

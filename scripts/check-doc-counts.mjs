@@ -100,7 +100,7 @@
 import { existsSync, readFileSync, writeSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CURRENT_MARKERS, scopeOf } from './doc-counts-vocabulary.mjs';
+import { CURRENT_MARKERS, SCOPES, SCOPE_NOTES, scopeOf } from './doc-counts-vocabulary.mjs';
 import { checkCountAdditivity } from './doc-count-additivity.mjs';
 import { progressCorpus } from './docs-corpus.mjs';
 import { claimedSites } from './site-proofs.mjs';
@@ -120,13 +120,13 @@ function corpusFiles() {
   return progressCorpus();
 }
 
-// Scopes a published count may declare. A count that declares none is refused,
-// because the whole defect this guard exists for was an undeclared scope.
-const SCOPES = {
-  core: 'packages/core',
-  cli: 'packages/cli',
-  repo: 'every workspace, i.e. `pnpm test`',
-};
+// Scopes a published count may declare. The words live in `doc-counts-vocabulary.mjs`, with
+// the classifier that reads them and the note that explains each one: this file used to keep
+// a second copy whose `repo` value (`every workspace, i.e. pnpm test`) was never printed --
+// only its keys were -- and that dead string is where the classifier's `every workspace`
+// alias came from (finding 565). A refusal is the only place the words reach a reader, so
+// this is where they have to be spelled out rather than implied.
+const namedScopes = SCOPES.map((scope) => `${scope} = ${SCOPE_NOTES[scope]}`).join(', ');
 
 // A row is taken as claiming the state at *this commit* only when it says so in
 // as many words. Everything else is a dated record of the pass that took it, and
@@ -534,7 +534,7 @@ function main() {
     if (row.scope === null) {
       problems.push(
         `${at(row)}: publishes ${row.files} files / ${row.tests} tests without naming ` +
-          `its scope. Say which one it measured (${Object.keys(SCOPES).join(', ')}) -- ` +
+          `its scope. Say which one it measured (${namedScopes}) -- ` +
           `"108 files, 3059 tests" is true of core and false of the repo, and that is how ` +
           `two rows labelled "test suite" came to disagree.`,
       );
@@ -586,7 +586,7 @@ function main() {
       problems.push(
         `${at(row)}: no live measurement for scope '${row.scope}'. Rows marked as the ` +
           `current state must name a scope the measurement covers ` +
-          `(${Object.keys(SCOPES).join(', ')}), so add the scope to SCOPES and retake.`,
+          `(${namedScopes}), so add the scope to SCOPES and retake.`,
       );
       continue;
     }
