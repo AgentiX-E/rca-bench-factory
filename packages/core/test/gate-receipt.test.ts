@@ -10,7 +10,10 @@ import {
   receiptDecision,
   receiptPath,
   revokeReceipt,
+  runVerdict,
+  treeMoved,
   verifiedTree,
+  voidReport,
   writeReceipt,
 } from '../../../scripts/gate-receipt.mjs';
 
@@ -212,12 +215,20 @@ describe('gate-receipt · the decision the gate obeys', () => {
   it('withholds on a subset run, because a receipt says the gate ran', () => {
     const decision = receiptDecision({ tree: { state: 'clean', tree: TREE_A }, full: false });
     expect(decision.state).toBe('withhold');
+    // `because` is what the verdict reads. Reading the sentence instead would make a
+    // wording change a behaviour change, and the corpus has been here: finding 562's
+    // decision was right and nothing could ask it which kind of right it was.
+    expect(decision.because).toBe('subset');
     expect(decision.why).toContain('subset of the steps');
   });
 
   it('withholds on a dirty tree for the reason the tree gave, not a new one', () => {
     const tree = { state: 'dirty', tree: TREE_A, why: 'the working tree differs from aaaaaaa' };
-    expect(receiptDecision({ tree, full: true })).toEqual({ state: 'withhold', why: tree.why });
+    expect(receiptDecision({ tree, full: true })).toEqual({
+      state: 'withhold',
+      because: 'starting-tree',
+      why: tree.why,
+    });
   });
 
   it('withholds when the tree moved while the gate ran', () => {
@@ -233,6 +244,7 @@ describe('gate-receipt · the decision the gate obeys', () => {
       ended: { state: 'clean', tree: TREE_B },
     });
     expect(decision.state).toBe('withhold');
+    expect(decision.because).toBe('moved');
     expect(decision.why).toContain('the tree moved while the gate ran');
     expect(decision.why).toContain(TREE_A.slice(0, 7));
     expect(decision.why).toContain(TREE_B.slice(0, 7));
@@ -245,6 +257,7 @@ describe('gate-receipt · the decision the gate obeys', () => {
       ended: { state: 'dirty', tree: TREE_A, why: 'the working tree differs from aaaaaaa' },
     });
     expect(decision.state).toBe('withhold');
+    expect(decision.because).toBe('moved');
     expect(decision.why).toContain('with uncommitted changes');
   });
 
@@ -261,6 +274,145 @@ describe('gate-receipt · the decision the gate obeys', () => {
   it('withholds when there is no repository, even on a full run', () => {
     const tree = { state: 'absent', tree: null, why: 'this directory is not a git checkout with a HEAD' };
     expect(receiptDecision({ tree, full: true }).state).toBe('withhold');
+  });
+});
+
+/**
+ * The one predicate two readers share, and the verdict that follows from it.
+ *
+ * Finding 563: v3.105 made the receipt withhold when the tree moved, and left the
+ * sentence a reader trusts saying `verify:local: OK`. The run had measured a tree
+ * that no longer existed, said so on its second line, and ended on exit 0 -- so a
+ * reader who trusts the verdict (or a script that trusts the code) was told the
+ * gate passed, about content nothing had measured. The repair splits the fact from
+ * the sentence: `treeMoved` states it once, the receipt quotes it, and the verdict
+ * becomes `VOID` on exit 1 when it is not null.
+ *
+ * Every shape here is driven directly, because the gate branch that consumes them
+ * is reachable only by rewriting the tree underneath a running gate -- which is the
+ * thing being refused. What that leaves unproved is the wiring, and it is stated
+ * in the finding rather than implied.
+ */
+describe('gate-receipt · the tree a run ended on', () => {
+  const clean = (tree) => ({ state: 'clean', tree });
+  const dirty = (tree) => ({ state: 'dirty', tree, why: `the working tree differs from ${tree.slice(0, 7)}` });
+
+  it('says nothing when the run ended on the tree it began on', () => {
+    expect(treeMoved({ started: clean(TREE_A), ended: clean(TREE_A) })).toBeNull();
+  });
+
+  it('names both trees when the run ended on another one', () => {
+    const sentence = treeMoved({ started: clean(TREE_A), ended: clean(TREE_B) });
+    expect(sentence).toContain('the tree moved while the gate ran');
+    expect(sentence).toContain(TREE_A.slice(0, 7));
+    expect(sentence).toContain(TREE_B.slice(0, 7));
+  });
+
+  it('names the uncommitted changes when the run wrote to the tree it began on', () => {
+    const sentence = treeMoved({ started: clean(TREE_A), ended: dirty(TREE_A) });
+    expect(sentence).toContain('the tree moved while the gate ran');
+    expect(sentence).toContain('with uncommitted changes');
+  });
+
+  it('says nothing when the run began dirty, because that is a developer at work', () => {
+    // The distinction the rule needs and the one it is easy to lose: a run over a
+    // dirty tree has measured content that cannot be pushed, and that is the normal
+    // loop -- edit, run, edit. A run that *starts* clean and ends dirty is a step
+    // writing while the gate ran, which is not. Comparing `state` alone would fail
+    // every local run a developer makes, so the comparison is against the start.
+    expect(treeMoved({ started: dirty(TREE_A), ended: dirty(TREE_A) })).toBeNull();
+  });
+
+  it('treats a tree that cannot be read afterwards as a move, because nothing names it', () => {
+    const sentence = treeMoved({ started: clean(TREE_A), ended: { state: 'absent', tree: null, why: 'git failed' } });
+    expect(sentence).toContain('could not be read after the gate ran');
+  });
+
+  it('says nothing when there was no tree to begin with', () => {
+    const absent = { state: 'absent', tree: null, why: 'not a checkout' };
+    expect(treeMoved({ started: absent, ended: absent })).toBeNull();
+  });
+
+  it('is the sentence the receipt withholds for, rather than a second copy of the rule', () => {
+    const started = clean(TREE_A);
+    const ended = clean(TREE_B);
+    const sentence = treeMoved({ started, ended });
+    expect(receiptDecision({ tree: started, full: true, ended }).why).toContain(sentence);
+  });
+});
+
+describe('gate-receipt · the verdict a void run prints', () => {
+  const COVERAGE = '35 command(s) covering 48 of the 58 run steps in ci.yml; the other 10 need a runner';
+  const PASSED = { ok: true, commands: 35, outcomes: [] };
+  const FAILED = { ok: false, commands: 35, outcomes: [], step: { first: 'a / one' }, index: 3 };
+
+  const decisionFor = (over) => receiptDecision({
+    tree: { state: 'clean', tree: TREE_A },
+    full: true,
+    ...(over === undefined ? {} : { ended: over }),
+  });
+
+  it('says OK and exits 0 when the steps passed over the tree it ended on', () => {
+    expect(runVerdict({ result: PASSED, decision: decisionFor() })).toEqual({ word: 'OK', exit: 0 });
+  });
+
+  it('says OK for the kinds of withholding that are not a move', () => {
+    // A subset run and a dirty start are states the run names and a reader can act on;
+    // neither is evidence that what ran is not what is here. Only a move is.
+    expect(runVerdict({ result: PASSED, decision: decisionFor() })).toEqual({ word: 'OK', exit: 0 });
+    expect(runVerdict({ result: PASSED, decision: { state: 'withhold', because: 'subset', why: '' } })).toEqual({
+      word: 'OK',
+      exit: 0,
+    });
+  });
+
+  it('says VOID and exits 1 when the steps passed over a tree that moved', () => {
+    // The half v3.105 left undone: the receipt was refused and the exit code was 0.
+    // A reader who trusts `$?` was told the gate passed, about content nothing had
+    // measured. The word and the code come from one function so they cannot disagree.
+    expect(runVerdict({ result: PASSED, decision: decisionFor({ state: 'clean', tree: TREE_B }) })).toEqual({
+      word: 'VOID',
+      exit: 1,
+    });
+  });
+
+  it('says FAILED and exits 1 when a step failed, whichever tree it ended on', () => {
+    expect(runVerdict({ result: FAILED, decision: decisionFor() })).toEqual({ word: 'FAILED', exit: 1 });
+    expect(runVerdict({ result: FAILED, decision: decisionFor({ state: 'clean', tree: TREE_B }) })).toEqual({
+      word: 'FAILED',
+      exit: 1,
+    });
+  });
+
+  it('says VOID with both names and what ran, and never the word OK', () => {
+    const started = { state: 'clean', tree: TREE_A };
+    const ended = { state: 'clean', tree: TREE_B };
+    const decision = receiptDecision({ tree: started, full: true, ended });
+    const text = voidReport({ decision, started, ended, coverage: COVERAGE }).join('\n');
+    expect(text).toContain('verify:local: VOID');
+    expect(text).not.toContain('verify:local: OK');
+    expect(text).toContain(`started: ${TREE_A.slice(0, 7)} (clean)`);
+    expect(text).toContain(`ended:   ${TREE_B.slice(0, 7)} (clean)`);
+    expect(text).toContain(COVERAGE);
+    // The sentence is the point of the block: a reader who is told `VOID` and not why
+    // has been given a verdict about a tree they cannot find. Pinned here after a
+    // falsification found that deleting the line was green -- the report is assembled
+    // from six strings and five of them had a reader.
+    expect(text).toContain(decision.why);
+  });
+
+  it('says the receipt is refused rather than missing, and says what to do next', () => {
+    const started = { state: 'clean', tree: TREE_A };
+    const ended = { state: 'dirty', tree: TREE_A, why: 'the working tree differs from aaaaaaa' };
+    const text = voidReport({
+      decision: receiptDecision({ tree: started, full: true, ended }),
+      started,
+      ended,
+      coverage: COVERAGE,
+    }).join('\n');
+    expect(text).toContain('receipt: none');
+    expect(text).toContain('uncommitted changes');
+    expect(text).toContain('run it again');
   });
 });
 

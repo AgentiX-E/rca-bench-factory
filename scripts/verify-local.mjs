@@ -52,7 +52,14 @@ import {
 } from './gate-steps.mjs';
 import { runStep } from './step-process.mjs';
 import { repairAbandonedTree } from './tree-repair.mjs';
-import { receiptDecision, revokeReceipt, verifiedTree, writeReceipt } from './gate-receipt.mjs';
+import {
+  receiptDecision,
+  revokeReceipt,
+  runVerdict,
+  verifiedTree,
+  voidReport,
+  writeReceipt,
+} from './gate-receipt.mjs';
 
 const argv = process.argv.slice(2);
 const listing = argv.includes('--list');
@@ -114,24 +121,60 @@ async function main() {
 
   const result = await runSteps(commands, runStep);
   const selected = only === null ? plan.local.length : plan.local.filter((step) => step.key.includes(only)).length;
-  if (!result.ok) {
+  const runStepsTotal = plan.local.length + plan.remote.length;
+  // What ran, then what the plan covers. The two are the same only for a full
+  // run, and reporting the plan's size after `--only` would let a one-step check
+  // read as though thirty-six steps had passed.
+  const coverage =
+    only === null
+      ? `${String(result.commands)} command(s) covering ${String(plan.local.length)} of the ${String(
+          runStepsTotal,
+        )} run steps in ci.yml; the other ${String(plan.remote.length)} need a runner`
+      : `${String(result.commands)} command(s), ${String(selected)} of the ${String(plan.local.length)} local steps`;
+
+  // Read once, here, and used by both facts below: the receipt and the verdict. One
+  // read, one decision, two readers -- a run that withheld a receipt for one tree while
+  // blessing another would be the defect this whole file is about.
+  //
+  // Finding 563: v3.105 withheld the receipt and left the verdict saying `OK`. The
+  // receipt was refused and the sentence was not, so a run that had measured nothing
+  // still printed `OK` and exited 0. `runVerdict` now reads the same decision object the
+  // receipt does, so the word, the code and the file cannot say three things.
+  const ended = verifiedTree({ root: ROOT });
+  const decision = receiptDecision({ tree, full: only === null, ended });
+  const verdict = runVerdict({ result, decision });
+
+  if (verdict.exit !== 0) {
     // A red run over content an earlier green run blessed takes the blessing back.
     // Two verdicts about the same bytes cannot both stand, and the later one wins.
+    //
+    // A void run revokes nothing: there is no verdict about that tree to stand, and an
+    // earlier receipt still describes content that has not changed.
     //
     // This line sits *above* the failure report, and the order is not cosmetic:
     // `golden-master/gate-sites.json` fingerprints this exit by the diagnostic
     // immediately above it, so anything printed between the report and the exit
     // renames the site and drops the proof that names its test. Measured here
-    // first -- a withdrawal message written after the report cost
-    // `scripts/verify-local.mjs:129` its `provedBy` on the next derivation.
-    const revoked = tree.state === 'clean' ? revokeReceipt({ root: ROOT, tree: tree.tree }) : { state: 'absent' };
+    // first -- a withdrawal message written after the report cost this site its
+    // `provedBy` on the next derivation.
+    const revoked =
+      verdict.word === 'FAILED' && tree.state === 'clean'
+        ? revokeReceipt({ root: ROOT, tree: tree.tree })
+        : { state: 'absent' };
     if (revoked.state === 'revoked') process.stderr.write(`verify:local: withdrew the receipt for tree ${tree.tree}\n`);
-    // The block is built by `failureReport`, which is pure and tested with both
-    // shapes -- a step that exited non-zero and a step that ran past its bound.
-    // The timeout branch is the reason: reaching it from here would cost fifteen
-    // minutes, so a branch only a test can reach is the only branch that gets one.
-    process.stderr.write(`${failureReport(result).join('\n')}\n`);
-    process.exit(1);
+    // Two reports, one exit. `FAILED` names the step a reader can act on, even when the
+    // tree moved under it -- the move is then a consequence, and the withheld receipt is
+    // already on stderr. `VOID` is the state with no failing step to name: every step
+    // passed, over content this tree no longer is.
+    //
+    // Both blocks are built by pure functions that have tests -- `failureReport` with
+    // both of its shapes, `voidReport` with the two ways a tree moves -- because
+    // reaching either from here costs fifteen minutes, and a branch only a test can
+    // reach is the only branch that gets one.
+    const report =
+      verdict.word === 'VOID' ? voidReport({ decision, started: tree, ended, coverage }) : failureReport(result);
+    process.stderr.write(`${report.join('\n')}\n`);
+    process.exit(verdict.exit);
   }
 
   // Two things make "OK" less than it sounds, and both are stated in the verdict
@@ -144,26 +187,9 @@ async function main() {
     skipped.length === 0 ? '' : `, ${String(skipped.length)} skipped because the condition was not met`,
     noted.length === 0 ? '' : `, with ${String(noted.length)} tolerated failure(s)`,
   ].join('');
-  const runStepsTotal = plan.local.length + plan.remote.length;
-  // What ran, then what the plan covers. The two are the same only for a full
-  // run, and reporting the plan's size after `--only` would let a one-step check
-  // read as though thirty-six steps had passed.
-  const coverage =
-    only === null
-      ? `${String(result.commands)} command(s) covering ${String(plan.local.length)} of the ${String(
-          runStepsTotal,
-        )} run steps in ci.yml; the other ${String(plan.remote.length)} need a runner`
-      : `${String(result.commands)} command(s), ${String(selected)} of the ${String(plan.local.length)} local steps`;
 
   // The verdict above is a sentence on a terminal and nothing downstream can read
-  // it, so the same verdict is also filed as a fact keyed on the tree it is about.
-  // `receiptDecision` is pure and holds the rule -- a subset run and a dirty tree
-  // both withhold, because neither names content that can be published.
-  // Read again after the steps: the receipt is filed under the tree the run started
-  // on, and a tree that moved while it ran makes that name a claim about content
-  // nothing measured. v3.105 published a gate with `process.exit(0)` on its second
-  // line that way, on a run that printed `OK`.
-  const decision = receiptDecision({ tree, full: only === null, ended: verifiedTree({ root: ROOT }) });
+  // it, so the same decision is also filed as a fact keyed on the tree it is about.
   const receipt =
     decision.state === 'issue'
       ? writeReceipt({ root: ROOT, tree: decision.tree, note: `verify:local ${coverage}` })
@@ -172,7 +198,7 @@ async function main() {
   process.stdout.write(
     [
       '',
-      `verify:local: OK (${coverage})${notes}`,
+      `verify:local: ${verdict.word} (${coverage})${notes}`,
       ...(only === null ? [] : [`  the full plan: ${String(plan.remote.length)} step(s) need a runner, by scripts/gate-steps.mjs`]),
       receipt === null
         ? `  receipt:  none — ${decision.why}`

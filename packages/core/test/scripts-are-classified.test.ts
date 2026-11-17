@@ -492,7 +492,10 @@ const REGISTER: Record<string, Entry> = {
       'is a pure function here because that file is a gate and no test may import it. Measured on the ' +
       'round that wrote it: the first of three pushed revisions was red on three of six jobs, over a ' +
       'tree the local gate rejects in under a minute, because the push speaks the Git Data API and a ' +
-      'hook is a property of a command this repository does not use to publish.',
+      'hook is a property of a command this repository does not use to publish. It also holds the two ' +
+      'sentences that follow from the same decision -- `treeMoved` for the comparison and `runVerdict` ' +
+      'for the word and the exit code -- because the gate prints them and may not be imported: leaving ' +
+      'either in that file is a rule with no test (finding 563).',
   },
   'gate-steps.mjs': {
     class: 'data',

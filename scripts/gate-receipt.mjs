@@ -150,28 +150,117 @@ export function verifiedTree({ root, run = gitIn(root) }) {
  * it is the sentence a reader trusts.
  *
  * So a caller that can read the tree again passes `ended`, and a tree that moved
- * withholds the receipt. It does not turn the run red: a new exit needs a test that
- * reaches it, and the only way to reach this one from a test is to rewrite the tree
- * underneath a running gate, which is the thing being refused.
+ * withholds the receipt. That was v3.105, and it left the sentence a reader trusts
+ * saying `verify:local: OK`: the receipt was refused and the verdict was not, so the
+ * run that had measured nothing still ended on exit 0 (finding 563). The comparison
+ * moved out into `treeMoved`, which both the receipt and the verdict now quote, and
+ * a run whose tree moved prints `VOID` and exits 1 through the exit that already
+ * exists for a failed step -- a second exit would be a second site, and a site is
+ * proved by a test that reaches it.
  */
 export function receiptDecision({ tree, full, ended }) {
-  if (tree.state !== 'clean') return { state: 'withhold', why: tree.why };
+  if (tree.state !== 'clean') return { state: 'withhold', because: 'starting-tree', why: tree.why };
   if (!full) {
     return {
       state: 'withhold',
+      because: 'subset',
       why: 'this run selected a subset of the steps, and a receipt says the gate ran',
     };
   }
-  if (ended !== undefined && (ended.state !== 'clean' || ended.tree !== tree.tree)) {
-    const after = ended.state === 'clean' ? `on ${ended.tree.slice(0, 7)}` : 'with uncommitted changes';
+  const moved = ended === undefined ? null : treeMoved({ started: tree, ended });
+  if (moved !== null) {
     return {
       state: 'withhold',
-      why:
-        `the tree moved while the gate ran -- it started on ${tree.tree.slice(0, 7)} and ended ${after}, ` +
-        'so the verdict names a tree that no longer exists',
+      because: 'moved',
+      why: `${moved}, so the verdict names a tree that no longer exists`,
     };
   }
   return { state: 'issue', tree: tree.tree };
+}
+
+/**
+ * Whether the tree a run ended on is the one it began on, and the sentence if not.
+ *
+ * One predicate and two consumers: the receipt withholds because of it, and the
+ * verdict is void because of it. Two copies of this comparison would be finding 561
+ * again -- a rule with a home and a copy, agreeing today and diverging on the day a
+ * shape neither was written for appears.
+ *
+ * ## Why a dirty start is not a move
+ *
+ * A run over a dirty tree has measured content that cannot be published, and that is
+ * the loop a developer works in: edit, run, edit. A run that *starts* clean and ends
+ * dirty is something else -- a step writing to the tree while the gate ran, which is
+ * the shape v3.105 published. Comparing `state` alone would fail every local run; the
+ * comparison is against the start.
+ *
+ * A tree that cannot be read afterwards is a move for the same reason it is not a
+ * clean end: nothing names what the steps measured.
+ */
+export function treeMoved({ started, ended }) {
+  if (started.state !== 'clean') return null;
+  if (ended.state === 'absent') {
+    return 'the tree could not be read after the gate ran, so nothing can name what the steps measured';
+  }
+  if (ended.state === 'dirty') {
+    return (
+      `the tree moved while the gate ran -- it started on ${started.tree.slice(0, 7)} ` +
+      'and ended with uncommitted changes'
+    );
+  }
+  if (ended.tree !== started.tree) {
+    return (
+      `the tree moved while the gate ran -- it started on ${started.tree.slice(0, 7)} ` +
+      `and ended on ${ended.tree.slice(0, 7)}`
+    );
+  }
+  return null;
+}
+
+/** What a tree is, in the words a reader needs beside a verdict. */
+function treeName(tree) {
+  if (tree.state === 'absent' || tree.tree === null) return 'no tree could be read';
+  if (tree.state === 'dirty') return `${tree.tree.slice(0, 7)} (uncommitted changes)`;
+  return `${tree.tree.slice(0, 7)} (clean)`;
+}
+
+/**
+ * What the run says, and what it exits with.
+ *
+ * The word and the code are decided together because they are one claim. v3.105 decided
+ * the receipt and left the pair alone: the run printed `OK` and exited 0 over content
+ * nothing had measured, and a reader who trusts either half was told the gate passed.
+ *
+ * `FAILED` outranks `VOID` because a step that failed is the actionable fact: the move
+ * is a consequence of the same battery, and the withheld receipt is already on stderr.
+ * `VOID` exists as a third word rather than reusing `FAILED` because a reader who sees
+ * `FAILED` looks for the step that broke, and in this state no step did.
+ */
+export function runVerdict({ result, decision }) {
+  if (!result.ok) return { word: 'FAILED', exit: 1 };
+  if (decision.state === 'withhold' && decision.because === 'moved') return { word: 'VOID', exit: 1 };
+  return { word: 'OK', exit: 0 };
+}
+
+/**
+ * The block a run prints when its tree moved: the same shape as a failure report,
+ * on stderr, from the same exit.
+ *
+ * The verdict word is `VOID` rather than `FAILED` because no step failed -- the steps
+ * passed, over content that is no longer this tree. A reader who sees `FAILED` looks
+ * for the step that broke; a reader who sees `VOID` looks at what moved.
+ */
+export function voidReport({ decision, started, ended, coverage }) {
+  return [
+    '',
+    'verify:local: VOID — the tree moved while the gate ran',
+    `  started: ${treeName(started)}`,
+    `  ended:   ${treeName(ended)}`,
+    `  measured: ${coverage}`,
+    `  reason:  ${decision.why}`,
+    '  receipt: none — the steps passed over content this tree no longer is, so no revision here may be published',
+    '  next:    run it again on the tree you mean to publish',
+  ];
 }
 
 /**
