@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 255 core + 4 cli |
-| Test lines | 110,176 core + 3,242 cli |
-| Tests | 6,549 core + 187 cli |
+| Test lines | 110,326 core + 3,242 cli |
+| Tests | 6,560 core + 187 cli |
 | Tracked files | 660 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -527,7 +527,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.106: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.107: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1627,15 +1627,24 @@ is a row about rather than paraphrase one that no `grep` will find.
   comparing states alone would fail every local run. Nine removals in the module are red (fifteen tests) and one in
   the gate is red (the exit becomes a zero and leaves the inventory).
 
-- **No gate's *use of a pure decision* is proved.** The inventory proves that an exit exists and is reached; hollowing
-  proves that a gate is executed at all. Neither proves that the value a gate computed is the value it obeyed, and
-  that is now measured rather than suspected: `runVerdict({ result, decision })` replaced by
-  `runVerdict({ result, decision: { state: 'issue' } })` in `verify-local.mjs` is **green everywhere** -- **207**
-  tests in the three files that touch that gate, and `derive-gate-sites --check` unchanged, because the exit is
-  still reached by the failing-step spawn. The cause is structural and not specific to this gate: a gate may not be
-  imported, so nothing it does with a pure result is observable except through a spawn, and the spawn that would
-  reach this branch has to rewrite the tree underneath a running gate -- the thing the branch refuses.
-  `[open: a way to observe that a gate obeyed a value it computed, for gates whose own state a test cannot produce -- the inventory proves exits and hollowing proves execution, and the gap is the third thing neither asks]`
+- ~~**No gate's *use of a pure decision* is proved.**~~ **Closed by finding 564.** `verify-local.mjs` gained
+  `--rehearse <shape>`: the inputs a run would have produced come from a table in `gate-receipt.mjs`, and the gate
+  then executes the same close-out it executes for real. `settle()` is that close-out, it computes its own
+  `decision` -- a caller that computed it would leave the wiring outside the rehearsal's reach, and the wiring is
+  the thing that was unobservable -- and both the rehearsal and the run call it. The expectations live in
+  `gate-steps.test.ts`, so a rehearsal cannot agree with the implementation by construction, and the gate's refusal
+  for an unknown name publishes the shape list so a table row added without a test is red. **Ten removals, 24 reds,
+  no survivor**; the first row is the edit that was green in 207 tests four rounds ago and now costs four. One new
+  site (143 -> 144, battery 228 -> 229), proved the ordinary way by the spawn that reaches it in under a second --
+  finding 563's argument that a new exit is a new site was right, and it was about a branch no spawn could reach.
+
+- **The rehearsal pattern is one gate's, not an instrument.** `settle()` plus a table of inputs plus a
+  `--rehearse` entry closed finding 564 for `verify-local.mjs`, which is the only gate in the tree that consumes a
+  pure decision. A gate that grew a second consumer would have to grow the same three things by hand, and nothing
+  in the tree would notice if it did not -- the inventory would still prove its exits and hollowing would still
+  prove it runs.
+  `[open: a reader that notices a gate consuming a pure result it cannot be driven with -- one table of the modules each gate imports, held against the closures it exposes]`
+
 
 ## Pass log
 
@@ -1669,7 +1678,7 @@ and this table.
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
-| [volume-16.md](progress/volume-16.md) | 16 | v3.91 | v3.106 |
+| [volume-16.md](progress/volume-16.md) | 17 | v3.91 | v3.107 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

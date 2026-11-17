@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–563, from the rounds recorded in `progress/volume-15.md` and `progress/volume-16.md`.
+Findings 542–564, from the rounds recorded in `progress/volume-15.md` and `progress/volume-16.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -1134,3 +1134,80 @@ the rule (nine removals, fifteen reds, below).
 
 The ninth is the round's own instance of the defect it repairs: the void report is assembled from six strings,
 five of which had a reader, and deleting the sixth was green. The reporter's whole purpose is that sentence.
+
+## Finding 564 — the gate computed a verdict, and nothing could ask whether it obeyed it
+
+**The shape, in the words v3.106 closed with.** Finding 563 repaired the verdict and ended on a
+measurement rather than a claim: replacing the gate's `runVerdict({ result, decision })` with
+`runVerdict({ result, decision: { state: 'issue' } })` was **green everywhere** -- 207 tests in the three files
+that touch `verify-local.mjs`, and `derive-gate-sites --check` unchanged. That sentence was written down as an
+open item, because a survivor that is reported is a debt and a survivor that is explained away is a defect.
+
+**Why neither instrument could ask.** The tree holds two proofs about gates and they cover two different facts.
+`golden-master/gate-sites.json` proves that a `process.exit(...)` **exists** and that a named file **reaches**
+it. `verify-gates-are-testable.mjs` proves that a gate is **executed** at all, by hollowing it and requiring a
+failing test to be named -- and that is also why a gate may not be imported: a module hollowed at import time
+crashes the worker, names no test, and the harness reports `UNATTRIBUTED`. Between "an exit exists" and "the
+gate runs" sits a third fact that neither asks:
+
+> the value the gate computed is the value it obeyed.
+
+**Why no spawn could reach the branch that consumes it.** The only real run that prints `VOID` is one whose
+tree moved while the gate ran. Producing that from a test means rewriting the working tree underneath a running
+gate, which is precisely what the branch exists to refuse. So the observation could not be bought with a better
+spawn. It had to stop needing a tree.
+
+**The repair: a second source of inputs, and no second close-out.**
+
+`verify-local.mjs` gained `--rehearse <shape>`. A shape names a `result`, a pair of trees, and whether the run
+was full; the gate reads those from a table and then executes **the same close-out** it executes for real. The
+load-bearing choice is where the decision is computed:
+
+| part | before | after | why it matters |
+| --- | --- | --- | --- |
+| the close-out | 90 lines inside `main()` | one `settle()` function | a test can drive it, and `main()` has no copy to drift from it |
+| `decision` | computed in `main()`, passed down | computed **inside** `settle()` | a caller that computed it would leave the wiring outside the rehearsal's reach -- and the wiring is the thing measured to be unobservable |
+| `root` | `ROOT` everywhere | a parameter | a rehearsal must not file a receipt for a tree that does not exist in this repository's `.git` |
+| the shapes | -- | `REHEARSALS` in `gate-receipt.mjs` | it is the enumeration of that module's own branches, so it sits beside the rule and moves with it |
+
+The shapes are `passed`, `subset`, `moved`, `dirty-end` and `failed`. `failed` carries **both** a failed step
+and a moved tree, because `FAILED` has to outrank `VOID` and this is the only place where one run is both. A
+dirty *start* is deliberately absent: it is a state a developer is in all day, its verdict is `OK` with no
+receipt, and its shape is already driven through the real path by `--only`.
+
+**The expectation cannot come from the implementation.** A rehearsal that computed its own expected word would
+agree with the gate by construction. The table of `(shape, word, exit, stream)` lives in
+`gate-steps.test.ts`; the gate supplies the behaviour. And the other direction is closed too: the refusal for an
+unknown name publishes the list of shapes it has, and a test compares that list to its own table sorted -- so a
+shape added to the gate and not to the test is red rather than silent.
+
+**Ten removals, twenty-four reds, no survivor.**
+
+| removal | red |
+| --- | --- |
+| the gate ignores the decision it computed (the v3.106 survivor) | **4** |
+| the gate decides for itself whether the run was a subset | **1** |
+| the void branch is never chosen (`VOID` compared against `FAILED`) | **6** |
+| the exit code ignores the verdict | **3** |
+| the receipt is filed for every run (`issue` inverted) | **3** |
+| the moved shape is the same tree twice | **2** |
+| an unknown shape falls through to a green rehearsal | **1** |
+| the refusal exits zero | **1** |
+| a shape is published that has no sample | **1** |
+| the failing shape stops outranking the move | **2** |
+
+The first row is the round's whole subject: the edit that was green in every instrument this tree had, four
+rounds ago, now costs four tests.
+
+**One site, and it is a site that can be reached.** The refusal is a new `process.exit(1)`, so the inventory
+moves **143 -> 144** and the battery **228 -> 229 claims across 66 files**. It is proved the ordinary way -- by
+the spawn that reaches it -- rather than by the argument that a site cannot be proved, which is what finding 563
+said about a *different* exit and was right about. The two sentences are not in tension: a new exit is a cost,
+and the question is whether a test can reach it. Here one can, in a second, without a tree.
+
+**What this does and does not establish.** It establishes that **this** gate obeys the value it computes, for
+every branch of the decision, in eleven tests that take under a second together. It does not establish a general
+instrument: the pattern is `settle()` plus a table of inputs plus a `--rehearse` entry, and a gate that grew a
+second consumer of a pure result would have to grow the same three. What is now general is the *statement* of
+the requirement -- a gate that consumes a pure result needs an entry point that supplies the result, or the
+consumption is unobservable -- and the fact that the first gate to need it has one.

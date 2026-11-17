@@ -2229,9 +2229,9 @@ unchanged; the other four `verify-local.mjs` sites moved with the lines above th
 
 | item | value |
 | --- | --- |
-| `core` test suite | **255 files, 6549 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **259 files, 6736 tests passed** (as of this commit) |
+| `core` test suite | **255 files, 6549 tests passed** (at `v3.106`) |
+| `cli` test suite | **4 files, 187 tests passed** (at `v3.106`) |
+| repo test suite | **259 files, 6736 tests passed** (at `v3.106`) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6536 -> 6549, +13**: seven shapes of `treeMoved`, four of `runVerdict`, two of `voidReport` |
 | the falsifications | nine removals in the module, **15** red; one in the gate, the inventory; **one survivor**, measured |
@@ -2240,3 +2240,121 @@ unchanged; the other four `verify-local.mjs` sites moved with the lines above th
 | `verify-site-proofs` | **PASSED (228 claim(s) across 66 file(s))** |
 | what the gate prints now | `OK` on the green path, `VOID` + exit 1 when the tree moved, `FAILED` + exit 1 when a step did |
 | a real subset run | `verify:local --only scripts` -> `OK (1 command(s), 1 of the 48 local steps)` and `receipt: none — the working tree differs from 6592c7b` -- the dirty start is OK by design |
+
+## v3.107 · a gate computed a verdict, and nothing could ask whether it obeyed it
+
+The round before this one ended on a number instead of a claim. Finding 563 repaired the verdict, then measured
+what it had not fixed: a gate told to ignore the decision it computed -- `runVerdict({ result, decision: { state:
+'issue' } })` -- was green in **207** tests, with `derive-gate-sites --check` unchanged. That sentence went onto
+the Open list. This round is what it took to close it.
+
+### One · two instruments, and the fact between them
+
+The tree holds two proofs about gates and they cover two different questions.
+
+`golden-master/gate-sites.json` proves that a `process.exit(...)` **exists** and that a named file **reaches**
+it -- `verify-site-proofs` re-runs that file with a hook on `process.exit` and reports whether the exit arrived.
+`verify-gates-are-testable.mjs` proves that a gate is **executed** at all, by hollowing it and requiring a failing
+test to be *named*. That second requirement is also why a gate may not be imported: a module hollowed at import
+time kills the worker, names no test, and the harness reports `UNATTRIBUTED` -- correctly, because a crashed
+worker is not a verdict.
+
+Between "an exit exists" and "the gate runs" sits the third fact:
+
+> the value the gate computed is the value it obeyed.
+
+### Two · why a better spawn could not buy it
+
+The only real run that prints `VOID` is one whose tree moved while the gate ran. Producing that from a test means
+rewriting the working tree underneath a running gate, which is exactly what that branch exists to refuse. So the
+observation was not for sale at any price in spawns. The gate had to stop needing a tree.
+
+### Three · a second source of inputs, and no second close-out
+
+`verify-local.mjs` gained `--rehearse <shape>`. A shape names a `result`, a pair of trees and whether the run was
+full; the gate reads those from a table instead of from a fifteen-minute run, and then executes **the same** lines
+it executes for real.
+
+| part | before | after | why it is load-bearing |
+| --- | --- | --- | --- |
+| the close-out | 90 lines inside `main()` | one `settle()` | a test can drive it, and `main()` keeps no copy to drift from it |
+| `decision` | computed in `main()`, passed down | computed **inside** `settle()` | a caller that computed it would leave the wiring outside the rehearsal's reach -- and the wiring is the thing measured to be unobservable |
+| `root` | `ROOT` throughout | a parameter | a rehearsal must not file a receipt for a tree that does not exist in this repository's `.git` |
+| the shapes | -- | `REHEARSAL_SHAPES` + `rehearsal()` in `gate-receipt.mjs` | it is the enumeration of that module's own branches, so it sits beside the rule and moves when the rule moves |
+
+Five shapes: `passed`, `subset`, `moved`, `dirty-end`, `failed`. The last carries **both** a failed step and a
+moved tree, because `FAILED` has to outrank `VOID` and this is the only place where one run is both. A dirty
+*start* is deliberately absent: it is the state a developer is in all day, its verdict is `OK` with no receipt,
+and `--only` already drives it through the real path.
+
+The block `moved` prints, which nothing had ever read end to end before a test did:
+
+    verify:local: VOID — the tree moved while the gate ran
+      started: 1f4a0c9 (clean)
+      ended:   9c2b7d4 (clean)
+      measured: 0 command(s) covering 48 of the 58 run steps in ci.yml; the other 10 need a runner
+      reason:  the tree moved while the gate ran -- it started on 1f4a0c9 and ended on 9c2b7d4, …
+      receipt: none — the steps passed over content this tree no longer is, …
+      next:    run it again on the tree you mean to publish
+
+### Four · the expectation cannot come from the implementation
+
+A rehearsal that computed its own expected word would agree with the gate by construction. The table of
+`(shape, word, exit, stream)` lives in `gate-steps.test.ts`; the gate supplies the behaviour. The other direction
+is closed too: the refusal for an unknown name publishes the list of shapes it has, and a test compares that list
+to its own table sorted -- so a shape added to the gate and not to the test is red rather than silent.
+
+That refusal is also the round's own near-miss, recorded because it is the reason the branch exists. The tests
+were written first, and a gate that had never heard of `--rehearse` treated it as a step filter it could ignore:
+one `it` started the full thirty-five-step plan. The run was killed after twenty-two minutes, on a tree that was
+still clean, and the branch under it had answered the question the test was asking -- by taking a quarter of an
+hour to say one word.
+
+### Five · ten removals, twenty-four reds, no survivor
+
+| removal | red |
+| --- | --- |
+| the gate ignores the decision it computed (the v3.106 survivor) | **4** |
+| the gate decides for itself whether the run was a subset | **1** |
+| the void branch is never chosen (`VOID` compared against `FAILED`) | **6** |
+| the exit code ignores the verdict | **3** |
+| the receipt is filed for every run (`issue` inverted) | **3** |
+| the moved shape is the same tree twice | **2** |
+| an unknown shape falls through to a green rehearsal | **1** |
+| the refusal exits zero | **1** |
+| a shape is published that has no sample | **1** |
+| the failing shape stops outranking the move | **2** |
+
+The first row is the subject of the round: the edit that was green in every instrument this tree had, four rounds
+ago, now costs four tests.
+
+### Six · one site, and this one a spawn can reach
+
+The refusal is a new `process.exit(1)`, so the inventory moves **143 -> 144** and the battery **228 -> 229 claims
+across 66 files**. Finding 563 argued that a new exit is a new site and a site needs a test that reaches it, and
+declined to add one. That argument was about a branch no spawn could reach. This branch is reached in under a
+second by the test that types a name the table does not have -- so it is paid for the ordinary way, and the two
+sentences are not in tension: the cost of a site is real, and the question is whether it can be proved.
+
+`derive-gate-sites-tally.test.ts` pins the pair and now carries a paragraph for this round, because the pair has
+moved thirteen times and this is the first time for a reason none of the twelve had: every round before added a
+*reader* -- a gate that reads a figure, a sentence, a comment, a workflow's prose. This one adds no reader. It
+makes an existing gate's consumption of a value falsifiable.
+
+### Readings
+
+> Ledger for `v3.107`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **255 files, 6560 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **259 files, 6747 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
+| new tests | **6549 -> 6560, +11**: five shapes rehearsed, plus the void block's four lines, the dirty ending, the subset withholding, the receipt filed, `FAILED` outranking `VOID`, and the refusal that publishes the table |
+| the falsifications | ten removals, **24** reds, **no survivor** |
+| the survivor's fate | `runVerdict({ result, decision: { state: 'issue' } })` was green in 207 tests last round; it is **4 red** now |
+| gate sites / scripts / throws | **144** / **97** / **99** -- one new exit, no new script |
+| `verify-site-proofs` | **PASSED (229 claim(s) across 66 file(s))** |
+| what a rehearsal costs | **0.4 s** for the eleven tests together; the plan it replaces costs fifteen minutes |
+| the live list | **26 -> 26**: closed "no gate's use of a pure decision is proved" (finding 564), opened "the rehearsal pattern is one gate's, not an instrument" |
