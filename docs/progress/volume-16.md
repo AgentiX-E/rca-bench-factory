@@ -2456,9 +2456,9 @@ paragraph.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **256 files, 6576 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **260 files, 6763 tests passed** (as of this commit) |
+| `core` test suite | **256 files, 6576 tests passed** (at v3.108) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.108) |
+| repo test suite | **260 files, 6763 tests passed** (at v3.108) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6560 -> 6576, +16**: twelve in the vocabulary's first importing test, the refusal naming its three notes, and three that make the class rule a reader |
 | the falsifications | seven edits, **13** reds, **one equivalent** and it is named as one |
@@ -2477,3 +2477,138 @@ paragraph.
 - **`scopeOf` reads a label, so it cannot see a row that names its suite somewhere else.** A row whose label
   names no scope and whose value cell names one is refused by rule 1 rather than read.
   `[open: the refusal is the right direction and it costs a re-read of the row, which no round has needed yet; the reading that would settle it is a corpus row of that shape]`
+
+## v3.109 · the rule was keyed by module, which is the key the `src/` instrument had already rejected
+
+**Finding 566 is a rule that was one level too coarse, and the tree already knew.** v3.108 gave the `data` class
+its first reader: *a `data` module may export functions only if some test file imports **the module***. Three
+hundred lines away, `export-surface-enumerated.test.ts` -- the instrument for `src/` -- carries a design note
+that says exactly why that key is the defect:
+
+> `UNENHANCED` was keyed by *module* ... a symbol added to `cli/args.ts` next month would be exempted by a reason
+> written about a different symbol. An exemption whose scope is wider than its argument is finding 47 again.
+
+A module ten tests import satisfies the module-wide rule for every symbol it will ever grow. Measured at this
+round: **28** `data` modules export **155** functions, and the module-wide rule sees one bit about each of them.
+The symbol does not need a different instrument; it needs the key the `src/` side had already settled on.
+
+**What the symbol key found, on the tree v3.108 left green.**
+
+| population, before v3.109 | count | what it was |
+| --- | --- | --- |
+| exported and taken by a test | **145** | the reader existed |
+| exported and taken by nothing outside the module | **7** | the keyword was a claim with no consumer |
+| exported and taken only by a script the suite spawns | **10** | the branches are reached by a process, never by an import |
+| total | **162** | across 27 modules |
+
+The seven are not a rounding error; they are the *reason* the module-wide rule could not see them. `largestVolume`
+is called once, in the function that returns the verdict it feeds. `testBudgets`, `narrowed`, `entriesOf`,
+`closingSectionsIn` and `ledgerOf` are each called inside their own module and nowhere else. And `gitIn` was
+**two of the seven at once**: `gate-receipt.mjs` and `git-hooks.mjs` each define a runner for `git`, one written
+`spawnSync('git', args, { cwd: root })` and the other `spawnSync('git', ['-C', root, ...args])`. One of the two
+copies had been taken by a test since it was written, which is the whole of why the duplication survived: *the
+module that had a test looked proved*.
+
+**Three ways the two spellings could have differed, and one way they did.**
+
+| shape | `cwd: root` | `-C root` | same answer |
+| --- | --- | --- | --- |
+| a command that works | stdout | stdout | yes |
+| a revision that does not resolve | status 128 | status 128 | yes |
+| a root that is not a directory | spawn error, `status: null` | status 128 | yes, both `null` |
+| a root that does not exist | spawn error, `status: null` | status 128 | yes, both `null` |
+
+Equivalent on every shape, which is why nothing caught it -- and also why the duplication was harmless and still
+wrong: the next caller copies whichever copy it reads first, and "what a git failure looks like here" gets a
+second author. The consolidation moved it to `scripts/git-in.mjs`, imported by both, with `git-in.test.ts` holding
+the contract and the equivalence (`git -C` vs `cwd`, side by side, on the same five argument lists).
+
+**And the equivalence test found a dead condition in the code it was written to protect.** The first draft of the
+shared runner carried both copies' guard:
+
+    if (result.error !== undefined || result.status !== 0) return null;
+
+Deleting the `error` arm left **all six tests green**. `spawnSync` pairs every way of not starting a child with
+`status: null`, and a child killed by a signal also reports `status: null` -- so `null !== 0` already answers
+`null` for both, and the first arm could not change an answer. The shipped form is one comparison:
+
+    return result.status === 0 ? result.stdout : null;
+
+That is the round's eleventh falsification, and it is reported as an equivalent mutant rather than as a survivor:
+the code changed because of it, and the test that reaches the shape (git taken off `PATH` for one call) is in the
+file.
+
+**The rule, and the two directions that keep its table honest.** The exemption table is where a spawned-only
+symbol is decided, and it is validated four ways:
+
+| the table entry | refused when |
+| --- | --- |
+| `SPAWN_ONLY` names a symbol | the symbol is not one a `data` module exports |
+| the symbol is reachable | a test takes it (**stale**, and the table can only shrink by work) |
+| a spawn is the only route | no script takes it (**it must be made private instead**) |
+| the reason says why | it is under 120 characters, or shares its text with another entry |
+
+The second row is the one that pays: widening the reader back to a module-wide key leaves the first rule green,
+because every symbol of an imported module becomes "taken" -- and the **stale** rule goes red, because
+`gate-receipt.mjs#rehearsal` is a name no test takes. The table's own direction catches the regression the rule
+was written against.
+
+**Eleven falsifications, sixteen reds, one equivalent.**
+
+| edit | red |
+| --- | --- |
+| the reader stops seeing a computed dynamic import | **2** |
+| an exemption is dropped | **2** |
+| an exemption is added for a symbol a test takes | **2** |
+| a reason is three characters long | **1** |
+| two exemptions share one reason | **1** |
+| an export nobody consumes comes back | **1** |
+| the export detector matches nothing | **1** -- the floors, not the rule |
+| the reader is keyed by module again | **1** -- the stale direction |
+| the runner judges by `error` instead of `status` | **3** |
+| the runner strips the newline git prints | **2** |
+| the plural arm of the hung-test sentence is folded into the singular | **1** |
+| the `error` arm of the runner is removed | **0** -- equivalent, and the arm is gone |
+
+**The fourth import form, and why the reader had to learn it.** `measure-doc-counts-readings.test.ts` takes
+`parseSummary` and `countsFromReports` with
+
+    const { … } = (await import(pathToFileURL(resolve(ROOT, 'scripts', 'doc-counts-rows.mjs')).href)) as { … };
+
+so the specifier is not a literal and a reader keyed on `from '…/x.mjs'` calls both unread. A census that had
+missed them would have asked for two exemptions for functions a test pins branch by branch -- the instrument
+demanding bookkeeping for work already done, which is how an instrument gets deleted. The control test names both
+names, so a reader that loses the form goes red rather than quiet.
+
+**What this does not establish.** The reasons in `SPAWN_ONLY` are prose, and no reader can check that a spawn is
+*really* the only route: the three tests that follow the table check that the symbol is spawned, that no test
+takes it, and that the sentence is a sentence. A gate that could be driven tomorrow would still be excused by
+today's paragraph -- the table's only defence is the stale direction, which fires when a test takes the name and
+never when a flag makes it driveable. That is one item, and it is stated rather than implied.
+
+### Readings
+
+> Ledger for `v3.109`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **257 files, 6589 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **261 files, 6776 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
+| new tests | **6576 -> 6589, +13**: seven for the symbol rule, six for the shared runner, four for the hung-test sentence, minus the one the runner's old home carried |
+| the exports | **162 -> 155** across **27 -> 28** modules; test-taken **145 -> 146**; excused in writing **0 -> 9**; with no consumer **7 -> 0** |
+| the falsifications | twelve rows, **16** reds, **one equivalent** that changed the code |
+| gate sites / scripts / throws | **144** / **67 of 98** / **99** -- no new exit; the inventory's scan grew by one script (`git-in.mjs`) |
+| `verify-site-proofs` | **PASSED (229 claim(s) across 66 file(s))** |
+| the class rule | keyed by symbol, with a table validated in four directions and a control for the dynamic import |
+| the live list | **26 -> 26**: the rehearsal item's edge half is replaced by the export-surface item, which is closed for `scripts/` and named for the reasons it cannot be |
+
+### Left open
+
+- **A reason is prose, and nothing can check that a spawn is the only route.** The table's stale direction is
+  the only falsification available to it.
+  `[open: the reading that would replace the prose is a census of the inputs each gate takes from outside -- a flag it parses, an env name it reads, a script copied into a fixture tree -- and the route each of those inputs reaches]`
+- **`src/` has the same instrument and `scripts/` now has a second one.** They agree in shape and not in code: two
+  readers, two tables, two floors.
+  `[open: one reader over both directories would need a class for test files and a rule for which exports are entry points, which is a design question rather than a measurement]`

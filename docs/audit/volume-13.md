@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–565, from the rounds recorded in `progress/volume-15.md` and `progress/volume-16.md`.
+Findings 542–566, from the rounds recorded in `progress/volume-15.md` and `progress/volume-16.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -1312,3 +1312,74 @@ exports functions, over **31** edges, and **one** of those -- `verify-local.mjs`
 564) -- can be supplied with inputs a run did not produce. The other nineteen compute a verdict from a module and
 can only be run over the tree they are looking at. The requirement is stated with a count rather than a
 paragraph, because a paragraph is what the previous round left and it took a round to narrow.
+
+## Finding 566 — the rule was keyed by module, and one helper was written twice
+
+**The shape.** v3.108 closed finding 565 by giving the `data` class its first reader: *a `data` module may export
+functions only if some test file imports the module*. Three hundred lines away in the same suite,
+`export-surface-enumerated.test.ts` -- the instrument that enumerates the exports of `src/` -- carries a design
+note saying why that key is the defect it exists to catch:
+
+> `UNENHANCED` was keyed by *module* ... a symbol added to `cli/args.ts` next month would be exempted by a reason
+> written about a different symbol. An exemption whose scope is wider than its argument is finding 47 again.
+
+A module ten tests import satisfies a module-wide rule for every symbol it will ever grow, so a new export
+arrives unread and green. Measured at v3.109 over the 27 `data` modules and the **162** functions they export:
+**145** are taken by a test, **7** are taken by nothing outside their own module, and **10** are taken only by a
+script the suite spawns. The module-wide rule could not see the difference between those three populations, and
+the register's own words are why -- "it is imported rather than run" is a sentence about a file.
+
+**The two halves of `gitIn`.** Two of the seven were the same helper written twice: `gate-receipt.mjs` ran
+`spawnSync('git', args, { cwd: root })` and `git-hooks.mjs` ran `spawnSync('git', ['-C', root, ...args])`, each
+exported, each used only by the module that defined it. One of the two copies had been taken by a test since it
+was written, and that is the whole reason the duplication survived: **the module that had a test looked proved.**
+The register's module-wide rule reported "imported" for `gate-receipt.mjs` and moved on.
+
+The two spellings are equivalent on every shape either has been given -- a command that works, a revision that
+does not resolve, a root that is not a directory, a root that does not exist. That equivalence is why nothing
+caught it, and it is also why the duplication was harmless and still wrong: the next caller copies whichever copy
+it reads first, and "what a git failure looks like here" acquires a second author. The repair is
+`scripts/git-in.mjs`, imported by both, with `git-in.test.ts` holding the contract and the equivalence --
+`git -C` and `cwd`, side by side, on the same five argument lists.
+
+**A dead condition, found by the test that was written to protect the code.** The first draft of the shared runner
+carried both copies' guard:
+
+    if (result.error !== undefined || result.status !== 0) return null;
+
+Deleting the `error` arm left **all six tests green**. `spawnSync` pairs every way of not starting a child with
+`status: null`, and a child killed by a signal also reports `status: null`, so `null !== 0` already answers `null`
+for both -- the first arm could not change an answer, in either of the two modules it had been copied into. The
+shipped form is one comparison, `result.status === 0 ? result.stdout : null`, and the case that reaches it (git
+taken off `PATH` for one call) is in the test file. This is the round's only equivalent mutant, and it changed the
+code rather than being excused.
+
+**The rule, and the four directions of its table.** A `SPAWN_ONLY` entry is a statement that the import route does
+not exist, so it is refused when the symbol is not exported, when a test takes it (**stale** -- the table can only
+shrink by work), when no script takes it (it must be made private instead), and when the reason is under 120
+characters or shares its text with another entry. The stale direction is the load-bearing one: widening the reader
+back to a module-wide key leaves the first rule green, because every symbol of an imported module becomes "taken"
+-- and the stale rule goes red, because `gate-receipt.mjs#rehearsal` is a name no test takes.
+
+**The fourth import form, which is why the census was wrong before it was right.** `measure-doc-counts-readings.test.ts`
+takes `parseSummary` and `countsFromReports` with
+
+    const { … } = (await import(pathToFileURL(resolve(ROOT, 'scripts', 'doc-counts-rows.mjs')).href)) as { … };
+
+The specifier is not a literal. A reader keyed on `from '…/x.mjs'` reports both as unread, and a census built on
+it asks for two exemptions for functions a test already pins branch by branch -- an instrument demanding
+bookkeeping for work that is done, which is how an instrument gets deleted rather than fixed. Both names are now
+a control test: a reader that loses the form goes red instead of quiet.
+
+**Eleven falsifications, sixteen reds.** The reader losing the dynamic form, an exemption dropped, an exemption
+added for a symbol a test takes, a three-character reason, two entries sharing a reason, an export nobody
+consumes coming back, the export detector matching nothing (the floors, not the rule), the reader keyed by module
+again, the runner judging by `error` instead of `status`, the runner stripping git's newline, and the plural arm
+of the hung-test sentence folded into the singular. The twelfth edit -- removing the runner's `error` arm -- was
+green, and is stated as equivalent above.
+
+**What this does not establish.** The reasons are prose, and no reader can check that a spawn is really the only
+route: the three following tests check that the symbol is spawned, that no test takes it, and that the sentence is
+a sentence. A gate that became driveable tomorrow would still be excused by today's paragraph; the table's only
+defence is the stale direction, which fires when a test takes the name and never when a flag makes the gate
+drivable. That is stated in the live list as an item rather than implied by a rule that looks complete.

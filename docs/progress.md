@@ -440,10 +440,10 @@ document that described it as downloading the data was describing an intention.
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 98 |
 | Source lines | 34,609 |
-| Test files | 256 core + 4 cli |
-| Test lines | 110,613 core + 3,242 cli |
-| Tests | 6,576 core + 187 cli |
-| Tracked files | 661 |
+| Test files | 257 core + 4 cli |
+| Test lines | 111,027 core + 3,242 cli |
+| Tests | 6,589 core + 187 cli |
+| Tracked files | 663 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -527,7 +527,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.108: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.109: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1638,16 +1638,15 @@ is a row about rather than paraphrase one that no `grep` will find.
   site (143 -> 144, battery 228 -> 229), proved the ordinary way by the spawn that reaches it in under a second --
   finding 563's argument that a new exit is a new site was right, and it was about a branch no spawn could reach.
 
-- **Nothing asks a gate whether the decision it consumed could have been driven.** v3.107 closed finding 564
-  for `verify-local.mjs` with `settle()` plus a table of inputs plus a `--rehearse` entry, and ended by saying
-  the pattern was one gate's rather than an instrument. v3.108 closed the **module** half: a `data` module may
-  export functions only if a test imports it, because a spawn proves the process and never the branch -- and
-  `doc-counts-vocabulary.mjs`, filed as a table while exporting the four-branch classifier that decides which
-  published numbers are true, had no importing test at all (finding 565). What is still unasked is the **edge**.
-  Measured at v3.108: **20 of 59** gates import a module that exports functions, over **31** edges, and **one**
-  of those has an entry point that supplies inputs a run did not produce. The other nineteen compute a verdict
-  from a module and can only be run over the tree they are looking at; nothing notices a twentieth arriving.
-  `[open: a reader that walks the gate -> module edges and requires a driven entry point for every edge that reaches a decision, or a recorded reason why a spawn is the only route]`
+- **The export surface of `scripts/` is enumerated by symbol, and the reasons in its table are prose.** v3.109
+  replaced v3.108's module-wide rule with the key the `src/` instrument had already settled on: over **28** `data`
+  modules and **155** exported functions, **146** are taken by a test, **9** are taken only by a script the suite
+  spawns and carry a reason, and **0** are taken by nothing (finding 566). The table is refused when an entry is
+  short, shared, stale, or names nothing a script takes -- but "a spawn is the only route" is a sentence, and no
+  reader checks it. A gate that became driveable tomorrow would still be excused by today's paragraph; the only
+  defence is the stale direction, which fires when a test takes the name and never when a flag makes the gate
+  drivable.
+  `[open: the reading that would replace the prose is a census of the inputs each gate takes from outside -- a flag it parses, an env name it reads, a script copied into a fixture tree -- held against the route each of those inputs actually reaches]`
 
 
 ## Pass log
@@ -1682,7 +1681,7 @@ and this table.
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
-| [volume-16.md](progress/volume-16.md) | 18 | v3.91 | v3.108 |
+| [volume-16.md](progress/volume-16.md) | 19 | v3.91 | v3.109 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
