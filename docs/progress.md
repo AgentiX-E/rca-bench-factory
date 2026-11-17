@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 255 core + 4 cli |
-| Test lines | 110,021 core + 3,242 cli |
-| Tests | 6,536 core + 187 cli |
+| Test lines | 110,173 core + 3,242 cli |
+| Tests | 6,549 core + 187 cli |
 | Tracked files | 660 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -527,7 +527,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.105: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.106: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1617,15 +1617,25 @@ is a row about rather than paraphrase one that no `grep` will find.
   literal is blanked whole and the rule that a value cannot be followed by a pattern is now pinned by a fixture
   (`const ratio = "a" / 2;` above a budget, a file no compiler accepts and no lexer can misread).
 
-- **`verify:local` can still print `OK` over a tree it no longer describes.** The receipt refuses (finding 562), and
-  the sentence a human reads is unchanged: the run began on one tree, a battery hollowed a gate at step eleven, the
-  coverage step had already run at step five, and the verdict at the end says `verify:local: OK (35 command(s) …)`.
-  What a reader needs is a **red** there, and it is not added because a new `process.exit(1)` is a new site in
-  `golden-master/gate-sites.json`, and a site is proved by a test that reaches it -- the only way to reach this one
-  from a test is to rewrite the tree underneath a running gate, which is the thing being refused. The gap is real
-  and measured: **68** tests fail against a hollowed `check-official.mjs`, and the local chain does not run them
-  after the mutation step.
-  `[open: a reader that fails the run without adding a site -- the failure report is already a pure function, so a fifth reason can be printed where the fourth is, without a second exit]`
+- ~~**`verify:local` can still print `OK` over a tree it no longer describes.**~~ The entry asked for a reader that
+  fails the run without adding a site, and named the shape it would take: the failure report is already a pure
+  function, so a reason can be printed where the others are, from the exit they use. **Closed by finding 563.**
+  `treeMoved` is now one predicate with two readers, the decision states *which* kind of withholding it is
+  (`starting-tree` / `subset` / `moved`) so the verdict is not a parse of a sentence, and `runVerdict` decides the
+  word and the exit code together: a run whose tree moved prints `VOID` and exits **1** through the exit a failed step
+  already uses, so the inventory gained no site. A dirty *start* is still `OK` -- that is a developer at work, and
+  comparing states alone would fail every local run. Nine removals in the module are red (fifteen tests) and one in
+  the gate is red (the exit becomes a zero and leaves the inventory).
+
+- **No gate's *use of a pure decision* is proved.** The inventory proves that an exit exists and is reached; hollowing
+  proves that a gate is executed at all. Neither proves that the value a gate computed is the value it obeyed, and
+  that is now measured rather than suspected: `runVerdict({ result, decision })` replaced by
+  `runVerdict({ result, decision: { state: 'issue' } })` in `verify-local.mjs` is **green everywhere** -- **207**
+  tests in the three files that touch that gate, and `derive-gate-sites --check` unchanged, because the exit is
+  still reached by the failing-step spawn. The cause is structural and not specific to this gate: a gate may not be
+  imported, so nothing it does with a pure result is observable except through a spawn, and the spawn that would
+  reach this branch has to rewrite the tree underneath a running gate -- the thing the branch refuses.
+  `[open: a way to observe that a gate obeyed a value it computed, for gates whose own state a test cannot produce -- the inventory proves exits and hollowing proves execution, and the gap is the third thing neither asks]`
 
 ## Pass log
 
@@ -1659,7 +1669,7 @@ and this table.
 | [volume-13.md](progress/volume-13.md) | 9 | v3.64 | v3.72 |
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
-| [volume-16.md](progress/volume-16.md) | 15 | v3.91 | v3.105 |
+| [volume-16.md](progress/volume-16.md) | 16 | v3.91 | v3.106 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

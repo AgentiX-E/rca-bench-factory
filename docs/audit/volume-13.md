@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–562, from the rounds recorded in `progress/volume-15.md` and `progress/volume-16.md`.
+Findings 542–563, from the rounds recorded in `progress/volume-15.md` and `progress/volume-16.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -1063,3 +1063,74 @@ does nothing. Nothing in the local chain runs the suite over a tree it is about 
 runs the coverage step fifth, and the battery that hollows the gate runs eleventh. Two falsifications hold the
 new branch: dropping the `ended` comparison turns both withhold tests red, and keeping the dirtiness check
 while dropping the name turns one red.
+
+## Finding 563 — the receipt was refused and the verdict still said `OK`, on exit 0
+
+**The shape.** Finding 562 gave `receiptDecision` the tree read *after* the steps, so a run whose tree moved
+withholds the receipt. The sentence a reader trusts was not touched: `verify-local.mjs` printed
+`verify:local: OK (35 command(s) covering 48 of the 58 run steps in ci.yml; the other 10 need a runner)` and
+exited **0**, and the refusal appeared only on the second line, under the word OK. A run that began on one tree,
+ended on another, and measured neither reported success twice -- once in the word and once in the code -- and the
+one place the refusal was written is the line a pusher skims after seeing `OK`.
+
+**Measured, on the round before this one.** v3.105's documentation commit carried `process.exit(0);` on the
+second line of `scripts/check-official.mjs`; `verify:local` printed `OK` with a receipt for the tree it started
+on; the exit-site inventory caught the marker only because a line moved six of that file's exits by one; and
+**68** tests fail against the hollow form, measured by re-hollowing it. After finding 562 the receipt line read
+`receipt: none — the tree moved while the gate ran …` and the verdict above it still read `OK`.
+
+**Why the decision was not enough.** The receipt is a file under `.git`, read by a pusher that is not in this
+repository. The verdict is a word and an exit code, read by a human and by `$?`. Finding 562 fixed the third and
+left the first two, on the argument that a red run needs a new `process.exit(1)`, a new exit is a new site, and a
+site is proved by a test that reaches it. That argument is sound about *new exits* and says nothing about the
+one that already exists four lines above: the run's failure exit is reached by any failing step, is proved by
+`gate-steps.test.ts`, and can carry a second reason without a second site.
+
+**The repair, in three parts.**
+
+| part | what it is | why there |
+| --- | --- | --- |
+| `treeMoved({ started, ended })` | the comparison, returning `null` or the sentence | it had two readers from the moment the verdict needed it; a second copy is finding 561 |
+| `because: 'starting-tree' \| 'subset' \| 'moved'` | the kind of withholding, machine-readable | `runVerdict` must not parse the sentence -- a wording change would become a behaviour change |
+| `runVerdict({ result, decision })` | `{ word: 'OK' \| 'VOID' \| 'FAILED', exit: 0 \| 1 }` | the word and the code are one claim; deciding them apart is how they came to disagree |
+
+`voidReport` prints the block, from the same exit as a failed step. The gate now reads one value twice: the word
+it prints on the green path, and the branch it exits through on the void one, so the two cannot disagree without
+contradicting the same variable.
+
+**Four boundaries the repair had to state, because each is a wrong answer that looks right.**
+
+| shape | verdict | why |
+| --- | --- | --- |
+| starts clean, ends clean on another tree | **VOID**, exit 1 | a commit landed mid-run; nothing here is evidence about what would be pushed |
+| starts clean, ends dirty | **VOID**, exit 1 | a step wrote to the tree while the gate ran |
+| starts dirty, ends dirty | **`OK`**, exit 0, no receipt | that is a developer at work: edit, run, edit. Comparing `state` alone fails every local run |
+| a subset run (`--only`) | **`OK`**, exit 0, no receipt | it proves the steps it ran and says nothing about the rest; the verdict line already says so |
+| a step failed **and** the tree moved | **FAILED**, exit 1 | the failing step is the actionable fact; the move is a consequence and the withheld receipt is already on stderr |
+
+**What it does not fix, measured rather than argued.** The gate cannot be imported -- `verify-gates-are-testable`
+hollows it -- so the wiring from the decision to the verdict is reachable only by a spawn. Replacing the gate's
+`runVerdict({ result, decision })` with `runVerdict({ result, decision: { state: 'issue' } })` is **green
+everywhere**: 207 tests in the three files that touch this gate, and `derive-gate-sites --check` unchanged, because
+the exit is still reached by the failing-step spawn. The only test that could catch it would have to rewrite the
+tree underneath a running gate, which is the thing the branch refuses. What *is* proved is the exit (site
+`scripts/verify-local.mjs:177`, re-signed and re-measured by `verify-site-proofs`, 228 claims) and every shape of
+the rule (nine removals, fifteen reds, below).
+
+**The falsifications.** Nine removals in the module and one in the gate:
+
+| removal | red |
+| --- | --- |
+| the `VOID` branch in `runVerdict` | **1** |
+| a dirty start is not a move | **2** |
+| the run wrote to the tree | **2** |
+| the tree could not be read afterwards | **1** |
+| the receipt quotes `treeMoved` rather than restating it | **3** |
+| the kind of withholding the verdict reads (`because: 'moved'`) | **3** |
+| the verdict word (`VOID` printed as `OK`) | **1** |
+| what the run covered | **1** |
+| the sentence the void report quotes | **1** -- after it came back green once |
+| the gate's exit code (`process.exit(verdict.exit)` to `process.exit(0)`) | `derive-gate-sites --check` **FAILED**: the site is a zero and leaves the inventory |
+
+The ninth is the round's own instance of the defect it repairs: the void report is assembled from six strings,
+five of which had a reader, and deleting the sixth was green. The reporter's whole purpose is that sentence.

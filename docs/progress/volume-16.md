@@ -2118,9 +2118,9 @@ by callee (any call, which is the same defect with a narrower net).
 
 | item | value |
 | --- | --- |
-| `core` test suite | **255 files, 6536 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **259 files, 6723 tests passed** (as of this commit) |
+| `core` test suite | **255 files, 6536 tests passed** (at `v3.105`) |
+| `cli` test suite | **4 files, 187 tests passed** (at `v3.105`) |
+| repo test suite | **259 files, 6723 tests passed** (at `v3.105`) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6529 -> 6536, +7**: a pattern holding a slash inside a class with a budget below it, a division that follows a literal, a string holding a bracket, an argument that is not a budget, and the three outcomes of a tree that moved while the gate ran |
 | tests strengthened | **1**: `does not mistake an ordinary numeric argument for a budget` pinned two numbers the `>= 1000` filter had already excluded |
@@ -2130,3 +2130,111 @@ by callee (any call, which is the same defect with a narrower net).
 | gate sites / scripts / throws | **143** sites, **97** scripts (was 96), **99** throw statements -- all three re-derived and proved |
 | the falsifications | eight removals, **8** red, **0** survivors (six across the three repairs, two on the receipt's new branch) |
 | gate sites, proved | **143** failure sites across **67 of 97** scripts, and `verify-site-proofs` **PASSED (228 claim(s) across 66 file(s))** -- both re-derived after the move |
+
+## v3.106 · the receipt was refused and the verdict still said OK
+
+The round before this one ended with a finding whose "what it does not fix" was a sentence about the sentence: the
+receipt withheld on a moved tree, the verdict still printed `OK`, and the run still exited 0. That sentence is this
+round's subject, and the argument it made -- a red run needs a new exit, a new exit is a new site, a site is proved
+by a test that reaches it -- was sound about new exits and silent about the one already there.
+
+### One · the word, the code and the file said three things (finding 563)
+
+`receiptDecision` decides whether a run may name a tree. After finding 562 it also knew when the tree had moved.
+`verify-local.mjs` read that decision, wrote the receipt when it said `issue`, and then printed a **literal**:
+
+    `verify:local: OK (${coverage})${notes}`
+
+so a run that began on one tree and ended on another printed `OK`, exited **0**, and put the refusal on the second
+line -- `receipt: none — the tree moved while the gate ran …` -- where a pusher who has just read `OK` does not look.
+Two of the three facts about that run were wrong, and both of them were the ones a script reads.
+
+The measurement is the previous round's own incident, which is why this is not a hypothetical: v3.105's
+documentation commit carried `process.exit(0);` on the second line of `check-official.mjs`, `verify:local` printed
+`OK` with a receipt, the inventory caught it only because a line moved six exits by one, and **68** tests fail
+against the hollow form.
+
+### Two · one predicate, one decision, two readers
+
+Three pieces, each in `scripts/gate-receipt.mjs` because that is the module a test may import:
+
+| piece | shape | the defect it removes |
+| --- | --- | --- |
+| `treeMoved({ started, ended })` | `null` or the sentence | the comparison had two readers the moment the verdict needed it, and a second copy of a rule is finding 561 |
+| `because` on the decision | `'starting-tree'` / `'subset'` / `'moved'` | `runVerdict` cannot parse the sentence: a wording change would become a behaviour change |
+| `runVerdict({ result, decision })` | `{ word, exit }` | the word and the code are one claim, and deciding them apart is how they came to disagree |
+
+The gate now reads one value twice -- the word on the green path, the branch on the rest -- so the printed word and
+the exit code cannot disagree without contradicting the same variable. `voidReport` prints the block, from the exit a
+failed step already uses, which is why the inventory did not gain a site.
+
+### Three · four boundaries, each a wrong answer that looks right
+
+| shape | verdict | why |
+| --- | --- | --- |
+| starts clean, ends clean on another tree | **VOID**, exit 1 | a commit landed mid-run |
+| starts clean, ends dirty | **VOID**, exit 1 | a step wrote to the tree while the gate ran |
+| starts dirty, ends dirty | **OK**, exit 0, no receipt | that is a developer at work; comparing `state` alone fails every local run |
+| a subset run | **OK**, exit 0, no receipt | it proves the steps it ran, and the verdict line already says which |
+| a step failed **and** the tree moved | **FAILED**, exit 1 | the failing step is the actionable fact; the move is its consequence |
+
+The block a reader now gets instead of `OK`:
+
+    verify:local: VOID — the tree moved while the gate ran
+      started: 6592c7b (clean)
+      ended:   c29138f (clean)
+      measured: 35 command(s) covering 48 of the 58 run steps in ci.yml; the other 10 need a runner
+      reason:  the tree moved while the gate ran -- it started on 6592c7b and ended on c29138f, so the verdict
+               names a tree that no longer exists
+      receipt: none — the steps passed over content this tree no longer is, so no revision here may be published
+      next:    run it again on the tree you mean to publish
+
+### Four · nine removals red, one survivor measured rather than argued
+
+| removal | red |
+| --- | --- |
+| the `VOID` branch in `runVerdict` | **1** |
+| a dirty start is not a move | **2** |
+| the run wrote to the tree | **2** |
+| the tree could not be read afterwards | **1** |
+| the receipt quotes `treeMoved` rather than restating it | **3** |
+| the kind of withholding the verdict reads | **3** |
+| the verdict word | **1** |
+| what the run covered | **1** |
+| the sentence the void report quotes | **1** -- the first attempt was **green**, and the assertion added for it is this row |
+| the gate's exit code (`process.exit(verdict.exit)` to `process.exit(0)`) | `derive-gate-sites --check` **FAILED** -- the exit becomes a zero and leaves the inventory |
+
+The survivor is the one that matters and it is stated, not concealed: replacing the gate's
+`runVerdict({ result, decision })` with `runVerdict({ result, decision: { state: 'issue' } })` is **green
+everywhere** -- **207** tests in the three files that touch this gate, and `derive-gate-sites --check` unchanged,
+because the exit is still reached by the failing-step spawn. The cause is structural: the gate may not be imported,
+so nothing it *does with* a pure result is observable except through a spawn, and the spawn that would reach this
+branch has to rewrite the tree underneath a running gate. What the round buys is that the rule now has one home with
+nine removals behind it and the exit has a proof (`scripts/verify-local.mjs:177`, re-signed after the move and
+re-measured: **228** claims across **66** files).
+
+### Five · the inventory moved and the proof was re-taken
+
+The exit moved from line 134 to 177 as the block above it grew. `derive-gate-sites` keys the hand-written columns on
+the guard text, so the site's `provedBy` was **dropped** on the first re-derivation and restored by hand, then measured:
+`verify-site-proofs` re-runs the named file with a hook on `process.exit` and reports the exit arrived. Sites **143**,
+scripts **97**, throw statements **99** -- all three unchanged, and the other four `verify-local.mjs` sites moved by
+one line each (87, 104, 114, 235) with their annotations carried.
+
+### Readings
+
+> Ledger for `v3.106`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **255 files, 6549 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **259 files, 6736 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
+| new tests | **6536 -> 6549, +13**: seven shapes of `treeMoved`, four of `runVerdict`, two of `voidReport` |
+| the falsifications | nine removals in the module, **15** red; one in the gate, the inventory; **one survivor**, measured |
+| the survivor's measurement | **207** tests green and `derive-gate-sites --check` OK against a gate told to ignore the decision it computed |
+| gate sites / scripts / throws | **143** / **97** / **99** -- unchanged; the exit moved 134 -> 177 and its proof was re-signed and re-measured |
+| `verify-site-proofs` | **PASSED (228 claim(s) across 66 file(s))** |
+| what the gate prints now | `OK` on the green path, `VOID` + exit 1 when the tree moved, `FAILED` + exit 1 when a step did |
+| a real subset run | `verify:local --only scripts` -> `OK (1 command(s), 1 of the 48 local steps)` and `receipt: none — the working tree differs from 6592c7b` -- the dirty start is OK by design |
