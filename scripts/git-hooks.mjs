@@ -40,7 +40,7 @@
 
 import { chmodSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { gitIn } from './git-in.mjs';
 
 /** The directory hooks are kept in, relative to the checkout root. */
 export const HOOKS_DIR = '.githooks';
@@ -50,15 +50,6 @@ export const HOOK = 'pre-commit';
 
 /** The guard that hook runs. Named here so the test that holds the two together is not prose. */
 export const GUARD = 'scripts/check-staged-mutation.mjs';
-
-/** `git -C root`, answering `null` rather than throwing: every caller has a state for it. */
-export function gitIn(root) {
-  return (args) => {
-    const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
-    if (result.error !== undefined || result.status !== 0) return null;
-    return result.stdout;
-  };
-}
 
 /**
  * Install, and say what happened.

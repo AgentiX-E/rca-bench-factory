@@ -182,7 +182,7 @@ export function absentNumbers(numbers) {
  * (finding 294). A reading that a reader must attach a name to is a reading that will be attached to
  * the wrong one.
  */
-export function largestVolume(volumes) {
+function largestVolume(volumes) {
   let largest = volumes[0];
   for (const one of volumes) if (one.bytes > largest.bytes) largest = one;
   return `${largest.name} at ${largest.bytes.toLocaleString('en-US')} of ${MAX_BYTES.toLocaleString('en-US')} bytes`;

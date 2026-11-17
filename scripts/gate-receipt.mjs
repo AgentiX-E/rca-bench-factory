@@ -58,8 +58,8 @@
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { localCommands } from './gate-steps.mjs';
+import { gitIn } from './git-in.mjs';
 
 /** Where receipts live: inside `.git`, so they are never committed and never counted. */
 export const RECEIPT_DIR = join('.git', 'rca-bench-verified');
@@ -85,15 +85,6 @@ function requireTree(tree) {
     );
   }
   return tree;
-}
-
-/** Run `git` in `root`, and answer `null` rather than throwing: every caller has a state for it. */
-export function gitIn(root) {
-  return (args) => {
-    const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
-    if (result.error !== undefined || result.status !== 0) return null;
-    return result.stdout;
-  };
 }
 
 /**

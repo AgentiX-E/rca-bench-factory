@@ -11,6 +11,7 @@ import {
   claimsByFile,
   exhaustedTestBudget,
   failureSummary,
+  hungTestClause,
   hungTests,
   longestTest,
   outputTail,
@@ -1256,5 +1257,47 @@ describe('site-proofs · the budget a claimant declares', () => {
       line: 1,
       below: false,
     });
+  });
+});
+
+/**
+ * The sentence that names what was still running when a budget ended.
+ *
+ * The two singular shapes are asserted through the gate -- `verify-sites-are-sensitive.test.ts`
+ * spawns it over a battery whose test never finishes and reads the sentence -- and the *plural*
+ * one was not asserted anywhere: an import test that already names the shapes is cheaper than a
+ * second battery, and the branch is the same three-way distinction the repository keeps making
+ * (none, one, many) with the "many" arm unread.
+ *
+ * The subject is a message, and the failure a message makes is naming nothing: `hungTests` can
+ * answer an entry whose `name` is the empty string -- a test that had not yet reported a name --
+ * and the sentence then has to fall back to the file rather than print empty backticks.
+ */
+describe('site-proofs · the sentence for what a spent budget left running', () => {
+  it('says there was no name rather than naming nothing', () => {
+    expect(hungTestClause([])).toBe('its own output names no test, only the budget');
+  });
+
+  it('names the one test that was still running', () => {
+    expect(hungTestClause([{ name: 'drives the gate', file: 'a.test.ts' }])).toBe(
+      'the test still running when the budget ended was `drives the gate`',
+    );
+  });
+
+  it('counts them and names each, which is the arm nothing had read', () => {
+    expect(
+      hungTestClause([
+        { name: 'drives the gate', file: 'a.test.ts' },
+        { name: 'reads the trace', file: 'b.test.ts' },
+      ]),
+    ).toBe('the 2 tests still running when the budget ended were `drives the gate`, `reads the trace`');
+  });
+
+  it('falls back to the file when the test reported no name', () => {
+    // A test that is still running has not printed a name in every reporter, so the entry can carry
+    // an empty one. Backticks around nothing would read as a rendering fault rather than as a fact.
+    expect(hungTestClause([{ name: '', file: 'c.test.ts' }])).toBe(
+      'the test still running when the budget ended was `c.test.ts`',
+    );
   });
 });

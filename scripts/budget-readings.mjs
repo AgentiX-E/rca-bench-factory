@@ -397,7 +397,7 @@ function argumentNumber(masked, raw) {
  * direction -- a suite number smaller than the test's own would be a false red, which
  * is loud, rather than a false green, which is what this whole file is against.
  */
-export function testBudgets(source, masked = stripCommentsAndStrings(source)) {
+function testBudgets(source, masked = stripCommentsAndStrings(source)) {
   const budgets = new Map();
   for (const open of testCallOpeners(masked)) {
     const { args } = callArguments(masked, open);

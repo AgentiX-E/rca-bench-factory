@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   RECEIPT_DIR,
-  gitIn,
   readReceipt,
   receiptDecision,
   receiptPath,
@@ -413,15 +412,5 @@ describe('gate-receipt · the verdict a void run prints', () => {
     expect(text).toContain('receipt: none');
     expect(text).toContain('uncommitted changes');
     expect(text).toContain('run it again');
-  });
-});
-
-describe('gate-receipt · the git runner itself', () => {
-  it('answers stdout for a command that works and null for one that does not', () => {
-    const { root } = repository('runner');
-    const run = gitIn(root);
-    expect(run(['rev-parse', '--verify', 'HEAD'])).toMatch(/^[0-9a-f]{40}\n$/);
-    expect(run(['rev-parse', '--verify', 'no-such-revision-here'])).toBeNull();
-    expect(run(['not-a-git-subcommand'])).toBeNull();
   });
 });

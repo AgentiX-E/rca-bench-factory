@@ -101,7 +101,7 @@ export function labelOf(heading) {
  * counting a quotation as an entry would report a volume as holding rounds it does
  * not hold. The audit guard learned this by being wrong about its own example.
  */
-export function entriesOf(text) {
+function entriesOf(text) {
   const out = [];
   let fenced = false;
   let offset = 0;
@@ -126,7 +126,7 @@ export function entriesOf(text) {
  */
 export const CLOSING_SECTIONS = ['### Readings', '### Left open', '### Unchanged'];
 
-export function closingSectionsIn(lines, from, to) {
+function closingSectionsIn(lines, from, to) {
   const counts = new Map();
   let fenced = false;
   for (const raw of lines.slice(from, to)) {
@@ -176,7 +176,7 @@ const QUAD = /\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?\s*\/\s*\d+
  * carries that line so the refusal can quote what it found instead of describing it.
  * `shas` is every distinct `(as of \`sha\`)` in the section, in order of appearance.
  */
-export function ledgerOf(lines, from, to) {
+function ledgerOf(lines, from, to) {
   let fenced = false;
   let first = null;
   const shas = [];

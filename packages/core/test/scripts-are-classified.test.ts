@@ -206,6 +206,16 @@ const REGISTER: Record<string, Entry> = {
       'two silences one level down: git ignores a hook with no execute bit, prints a hint, and ' +
       'commits anyway.',
   },
+  'git-in.mjs': {
+    class: 'data',
+    why:
+      'The runner two modules share: `git -C <root> <args>`, stdout or null. It exists because the ' +
+      'same six lines were written twice -- once in gate-receipt.mjs with `cwd: root` and once in ' +
+      'git-hooks.mjs with `-C root` -- and neither was taken by anything but itself, which is why the ' +
+      'duplication survived: the module that had a test looked proved (finding 566). git-in.test.ts ' +
+      'holds the contract (four ways to fail all end at null) and the equivalence the consolidation ' +
+      'rests on. No main and no exit.',
+  },
   // --- Gates: each has failure exits, all enumerated in gate-sites.json ---
   'install-git-hooks.mjs': {
     class: 'gate',
@@ -1035,69 +1045,299 @@ describe('a gate is proved by being emptied, so no test may import one', () => {
 });
 
 /**
- * A `data` module's functions are proved by a test that imports them, and by nothing else.
+ * A `data` module exports a name only when something outside it takes that name.
  *
- * ## Why this class needs a rule of its own
+ * ## Why the key is the symbol and not the module
  *
- * `data` is the class that excuses a script from every other instrument in the tree: there is no
- * exit for the inventory to enumerate, and hollowing cannot reach a module nothing spawns. So the
- * register's definition -- "a module under `scripts/` that exports a table and has no `main`" -- was
- * the whole of its proof, and the word *table* was doing the work.
+ * Finding 565 gave this class a rule: a `data` module may export functions only if some test file
+ * imports **the module**. That is a module-wide key, and the instrument for `src/` had already
+ * recorded why a module-wide key is the defect it is meant to catch --
+ * `export-surface-enumerated.test.ts`, design note 4:
  *
- * `doc-counts-vocabulary.mjs` was filed here and exported `scopeOf`: a four-branch classifier that
- * decides which published count belongs to which suite, and therefore which numbers a guard may
- * hold to a measurement. No test imported the module, so no test could name a branch, and deleting
- * one of the four branches was green across **255 files / 6,560 tests** (finding 565). The register
- * had said "a table" and the module had said "nothing to prove", and both sentences were about the
- * array sitting beside the function.
+ * > `UNENHANCED` was keyed by *module* ... a symbol added to `cli/args.ts` next month would be
+ * > exempted by a reason written about a different symbol. An exemption whose scope is wider than
+ * > its argument is finding 47 again.
  *
- * ## What the rule says, and why it is only about `data`
+ * The same sentence is true one directory over. A module that ten tests import satisfies the rule
+ * for every symbol it will ever grow, so a new export arrives unread and green -- which is exactly
+ * how `scopeOf` arrived (finding 565) and how `check-no-mock.mjs` printed OK on a tree full of
+ * mocks while its lines were 100% covered.
  *
- * A module the register files as `data` may export functions only if some test file imports it.
- * A `gate` may not be imported -- the rule above is that it is proved by being emptied -- so its
- * functions are reached through a spawn, which proves the process and never the branch. A `data`
- * module has no such route; the import is the only proof available to it.
+ * Measured at v3.109, over the 27 `data` modules and the **162** functions they export: **145**
+ * are taken by a test, **7** are taken by nothing outside their own module (the `export` keyword
+ * was a claim with no consumer, and one of the seven -- `gitIn` -- existed twice, once in a module
+ * whose copy a test took and once in a module whose copy nothing took), and **10** are taken only
+ * by a script the suite spawns. This rule is what separates those three populations, and the table
+ * below is where the second and third are decided rather than left to a reader's eye.
+ *
+ * ## What the reader counts as taking a name
+ *
+ * Four import forms appear in this tree, and a reader that knows only the first calls two functions
+ * in `doc-counts-rows.mjs` unread that a test in fact pins branch by branch:
+ *
+ *   1. `import { a, b as c } from '…/x.mjs'` -- the imported name, not the local alias.
+ *   2. `import * as ns from '…/x.mjs'` -- `ns.a` anywhere in the file.
+ *   3. `const { a, b } = await import('…/x.mjs')`.
+ *   4. `const { a, b } = (await import(pathToFileURL(resolve(ROOT, 'scripts', 'x.mjs')).href))` --
+ *      a computed specifier whose argument still names the module literally. This is the form
+ *      `measure-doc-counts-readings.test.ts` uses, and the reason it uses it is that the two
+ *      readers live in a module while the gate they were lifted out of must stay unimportable.
+ *
+ * The limit is stated rather than hidden: a module named by a string computed at run time is
+ * invisible here, and the failure direction is the safe one -- this rule then asks for a reason
+ * rather than granting one.
  */
-describe("a data module's functions are proved by an importing test, since nothing spawns it", () => {
+describe('a data module exports a name only when something outside it takes that name', () => {
   /** The declaration form the tree uses throughout; `export const f = () => …` is not a function here. */
   const EXPORTED = /^export function ([A-Za-z0-9_]+)/gm;
+  const STATIC_IMPORT = /import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*'([^']+)'/g;
+  const NAMESPACE_IMPORT = /import\s*\*\s*as\s+([A-Za-z0-9_$]+)\s*from\s*'([^']+)'/g;
+  const DYNAMIC_IMPORT = /(?:const|let|var)\s*\{([^}]*)\}\s*=\s*\(?\s*await\s+import\s*\(([\s\S]*?)\)/g;
+
+  const KNOWN = new Set(scriptNames());
+
+  const moduleOf = (specifier: string): string => specifier.slice(specifier.lastIndexOf('/') + 1);
+
+  /** `a, b as c, type D` -> the three names the module actually publishes. */
+  const namesIn = (raw: string): string[] =>
+    raw
+      .split(',')
+      .map((one) => one.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0]!.trim())
+      .filter((one) => one.length > 0);
+
+  /** Every script name a piece of source takes, by the module it takes it from. */
+  function namesTaken(text: string): Map<string, Set<string>> {
+    const out = new Map<string, Set<string>>();
+    const add = (module: string, names: string[]): void => {
+      if (!KNOWN.has(module)) return;
+      const set = out.get(module) ?? new Set<string>();
+      for (const name of names) set.add(name);
+      out.set(module, set);
+    };
+    for (const match of text.matchAll(STATIC_IMPORT)) add(moduleOf(match[2]!), namesIn(match[1]!));
+    for (const match of text.matchAll(NAMESPACE_IMPORT)) {
+      const used = [...text.matchAll(new RegExp(`\\b${match[1]}\\s*\\.\\s*([A-Za-z0-9_$]+)`, 'g'))];
+      add(moduleOf(match[2]!), used.map((one) => one[1]!));
+    }
+    for (const match of text.matchAll(DYNAMIC_IMPORT)) {
+      for (const named of match[2]!.matchAll(/'([^']*\.mjs)'/g)) add(moduleOf(named[1]!), namesIn(match[1]!));
+    }
+    return out;
+  }
+
+  function testTakers(): Set<string> {
+    const taken = new Set<string>();
+    const roots = ['core', 'cli'].map((workspace) => resolve(ROOT, 'packages', workspace, 'test'));
+    for (const dir of roots.filter((each) => existsSync(each))) {
+      for (const name of readdirSync(dir).filter((entry) => entry.endsWith('.test.ts'))) {
+        for (const [module, names] of namesTaken(withoutComments(readFileSync(resolve(dir, name), 'utf8')))) {
+          for (const one of names) taken.add(`${module}#${one}`);
+        }
+      }
+    }
+    return taken;
+  }
+
+  /** Which scripts take each name, for the message and for the second half of the rule. */
+  function scriptTakers(): Map<string, string[]> {
+    const fans = new Map<string, string[]>();
+    for (const script of scriptNames()) {
+      for (const [module, names] of namesTaken(readFileSync(resolve(SCRIPTS, script), 'utf8'))) {
+        if (module === script) continue;
+        for (const one of names) {
+          const key = `${module}#${one}`;
+          fans.set(key, [...(fans.get(key) ?? []), script]);
+        }
+      }
+    }
+    return fans;
+  }
 
   function exportedFunctions(name: string): string[] {
     return [...readFileSync(resolve(SCRIPTS, name), 'utf8').matchAll(EXPORTED)].map((match) => match[1]!);
   }
 
-  it('imports every data module that exports a function', () => {
-    const imported = scriptsImportedByTests();
-    const offenders = scriptNames()
-      .filter((name) => REGISTER[name]?.class === 'data')
-      .filter((name) => exportedFunctions(name).length > 0)
-      .filter((name) => !imported.has(name))
-      .map((name) => `${name} exports ${exportedFunctions(name).join(', ')} and no test imports it`);
+  const dataModules = (): string[] =>
+    scriptNames().filter((name) => REGISTER[name]?.class === 'data' && exportedFunctions(name).length > 0);
+
+  /**
+   * The exports whose only reader is a script the suite spawns, with the reason that is all there is.
+   *
+   * Every entry is a *decision*: the reason has to say why a spawn is the only route, not that a
+   * test would be inconvenient. A reason shorter than `MIN_EXEMPTION` or shared with another entry
+   * is refused, because a table of one-word excuses is a table nobody re-reads -- the same argument
+   * `check-doc-counts.mjs` makes for its own exemption list.
+   */
+  const MIN_EXEMPTION = 120;
+  const SPAWN_ONLY: { module: string; fn: string; reason: string }[] = [
+    {
+      module: 'budget-readings.mjs',
+      fn: 'budgetInForce',
+      reason:
+        '`check-test-budgets.mjs` is the only caller, and its verdict is a sentence about a real file: ' +
+        'a test that called this function would pin the four arms and leave the gate that turns them into ' +
+        'a refusal unread. The gate is spawned over fixture sources for each arm, which proves the arms.',
+    },
+    {
+      module: 'format-spec.mjs',
+      fn: 'modalitiesProse',
+      reason:
+        'The only caller is `gen-examples.mjs`, whose artefact is the contract table; the prose has no ' +
+        'verdict of its own, so the gate is the only place its output is judged. Its throw for an ' +
+        'unlabelled modality is in `gate-sites.json` as proved by `gen-examples.test.ts`.',
+    },
+    {
+      module: 'gate-receipt.mjs',
+      fn: 'rehearsal',
+      reason:
+        'The table exists to be entered from outside: `verify-local.mjs --rehearse <shape>` is the whole ' +
+        'of finding 564, and a test that called `rehearsal()` directly would prove the table while leaving ' +
+        'the entry point that reads it — the part that was wrong — unproven.',
+    },
+    {
+      module: 'gate-steps.mjs',
+      fn: 'workflowPath',
+      reason:
+        'It answers with a path chosen by `RCA_CI_WORKFLOW`, so the tree it names is already an input the ' +
+        'operator sets and both callers are spawned under it: `check-ci-budget.mjs` and ' +
+        '`measure-ci-baseline.mjs` run in CI and locally with that variable unset and set.',
+    },
+    {
+      module: 'publish-plan.mjs',
+      fn: 'readBlob',
+      reason:
+        'A blob is read by SHA out of a real object database, and `publish.test.ts` builds one — real ' +
+        'repository, real bare remote — and drives `publish()` through it. A fixture blob would prove the ' +
+        'arithmetic and not the plan that asks for the wrong SHA.',
+    },
+    {
+      module: 'publish-plan.mjs',
+      fn: 'readRev',
+      reason:
+        'A revision is resolved against a real checkout, and both callers are driven over one: ' +
+        '`publish.test.ts` through `publish()` and the CLI through its own round trip. The refusal for a ' +
+        'revision that names no commit is a git message, not this module\'s.',
+    },
+    {
+      module: 'publish-plan.mjs',
+      fn: 'pointerPlan',
+      reason:
+        'Its only use is the branch of `publish.mjs` that publishes a tree with no commit behind it, and that ' +
+        'branch is reachable only by pushing: `publish.test.ts` runs it against a bare remote and compares ' +
+        'the pointer. Nothing a test could pass in would be a plan this tree can produce.',
+    },
+    {
+      module: 'publish-readings.mjs',
+      fn: 'parseArgs',
+      reason:
+        'The argv reader for a CLI: `publish-readings.test.ts` spawns `publish-readings-cli.mjs` for every ' +
+        'arm including the refusal for `--file` with no value, so the reader is proved at the process ' +
+        'boundary it exists for rather than one call frame inside it.',
+    },
+    {
+      module: 'publish-readings.mjs',
+      fn: 'inspect',
+      reason:
+        'It reads a record at a path only the CLI knows, and answers two ways for a file it cannot read. ' +
+        '`publish-readings.test.ts` spawns `--check` over a written record and over a missing one, so both ' +
+        'answers are asserted where they are printed.',
+    },
+  ];
+
+  it('resolves every exported function of a data module: taken by a test, or excused in writing', () => {
+    const takenByTest = testTakers();
+    const takenByScript = scriptTakers();
+    const excused = new Set(SPAWN_ONLY.map((entry) => `${entry.module}#${entry.fn}`));
+    const offenders: string[] = [];
+    for (const module of dataModules()) {
+      for (const fn of exportedFunctions(module)) {
+        const key = `${module}#${fn}`;
+        if (takenByTest.has(key) || excused.has(key)) continue;
+        const fans = takenByScript.get(key) ?? [];
+        offenders.push(
+          fans.length === 0
+            ? `${key}: nothing outside ${module} names it, so the export is a claim with no consumer -- ` +
+                'drop the keyword, or give it a test that takes it'
+            : `${key}: only ${fans.join(', ')} takes it, through a spawn, which cannot name the branch it ` +
+                'took -- add a test that imports it, or record in SPAWN_ONLY why a spawn is the only route',
+        );
+      }
+    }
     expect(
       offenders,
-      'a function in a data module is reached only by an import: a spawn proves the process, not the ' +
-        'branch it took. Either import the module from a test that pins each branch, or state in the ' +
-        'register why the function is not a decision',
+      'an export is a promise that something outside the module consumes it: `src/` learned this as ' +
+        '`export-surface-enumerated.test.ts` and keyed it by symbol for the reason quoted above',
     ).toEqual([]);
   });
 
-  it('finds data modules that export functions at all, which is the half a broken filter would skip', () => {
-    // The two floors. A register read that returned no `data` entries, or an `EXPORTED` pattern that
-    // matched nothing, would make the assertion above pass over the whole tree -- the failure mode
-    // every guard over a directory has to state.
-    const exporting = scriptNames().filter(
-      (name) => REGISTER[name]?.class === 'data' && exportedFunctions(name).length > 0,
+  it('refuses an exemption for a symbol a test now takes, so the table can only shrink by work', () => {
+    // The direction that makes the table honest. An exemption is a statement that the import route
+    // does not exist; the day a test takes the name, the statement is false and the entry is debt
+    // that would otherwise sit there being read as a decision.
+    const taken = testTakers();
+    const stale = SPAWN_ONLY.filter((entry) => taken.has(`${entry.module}#${entry.fn}`)).map(
+      (entry) => `${entry.module}#${entry.fn}`,
     );
-    expect(exporting.length, 'no data module exports a function').toBeGreaterThan(10);
-    expect(scriptsImportedByTests().size, 'no test imports any script').toBeGreaterThan(10);
+    expect(stale, 'a test takes this name now, so the exemption is stale: delete the entry').toEqual([]);
   });
 
-  it('tells an import from a mention, which is the difference the rule turns on', () => {
+  it('refuses an exemption for a symbol no script takes, which must be made private instead', () => {
+    const taken = scriptTakers();
+    const empty = SPAWN_ONLY.filter((entry) => (taken.get(`${entry.module}#${entry.fn}`) ?? []).length === 0).map(
+      (entry) => `${entry.module}#${entry.fn}`,
+    );
+    expect(empty, 'nothing spawns this name either: the export has no consumer at all').toEqual([]);
+  });
+
+  it('refuses a reason too short to explain, or shared with another entry', () => {
+    const short = SPAWN_ONLY.filter((entry) => entry.reason.trim().length < MIN_EXEMPTION).map(
+      (entry) => `${entry.module}#${entry.fn}`,
+    );
+    expect(short, `a reason under ${MIN_EXEMPTION} characters is a placeholder`).toEqual([]);
+    const seen = new Map<string, string>();
+    const shared: string[] = [];
+    for (const entry of SPAWN_ONLY) {
+      const first = seen.get(entry.reason);
+      if (first !== undefined) shared.push(`${entry.module}#${entry.fn} repeats ${first}'s reason`);
+      seen.set(entry.reason, `${entry.module}#${entry.fn}`);
+    }
+    expect(shared, 'two entries with one reason are one decision written twice').toEqual([]);
+  });
+
+  it('reads the populations it claims, which is the half a broken filter would skip', () => {
+    const modules = dataModules();
+    const total = modules.reduce((sum, module) => sum + exportedFunctions(module).length, 0);
+    const taken = testTakers();
+    const tested = modules.reduce(
+      (sum, module) => sum + exportedFunctions(module).filter((fn) => taken.has(`${module}#${fn}`)).length,
+      0,
+    );
+    // Floors rather than equalities: a new module or a new export moves these, and a count written
+    // here would have to be re-signed on every one of them. What cannot move silently is the shape --
+    // many modules, many exports, most of them taken by a test.
+    expect(modules.length, 'no data module exports a function').toBeGreaterThan(20);
+    expect(total, 'the exports of those modules').toBeGreaterThan(140);
+    expect(tested, 'the exports a test takes').toBeGreaterThan(130);
+    expect(taken.size, 'no test takes any script name').toBeGreaterThan(100);
+  });
+
+  it('sees a name taken through a computed dynamic import, which is the form a specifier reader misses', () => {
+    // `measure-doc-counts-readings.test.ts` imports these two with
+    // `(await import(pathToFileURL(resolve(ROOT, 'scripts', 'doc-counts-rows.mjs')).href))`, so the
+    // specifier is not a literal and a reader keyed on `from '…/x.mjs'` reports both as unread.
+    // They are the only two names in the tree reached that way, which is why they are the control.
+    const taken = testTakers();
+    expect(taken.has('doc-counts-rows.mjs#parseSummary')).toBe(true);
+    expect(taken.has('doc-counts-rows.mjs#countsFromReports')).toBe(true);
+  });
+
+  it('tells a name taken from a module from the same name mentioned in prose', () => {
     // `check-no-mock.mjs` is written about in most test files and imported by none; `gate-receipt.mjs`
-    // is imported by one. A reader that matched text rather than specifiers would call both proved.
-    expect(scriptsImportedByTests().has('gate-receipt.mjs')).toBe(true);
-    expect(scriptsImportedByTests().has('serve-site.mjs')).toBe(false);
+    // is imported by one. A reader that matched text rather than imports would call both proved --
+    // and it would have accepted `check-no-mock.mjs`'s OK verdict over a tree full of mocks.
+    const taken = testTakers();
+    expect([...taken].some((key) => key.startsWith('gate-receipt.mjs#'))).toBe(true);
+    expect([...taken].some((key) => key.startsWith('serve-site.mjs#'))).toBe(false);
     expect(REGISTER['serve-site.mjs']?.class).toBe('tool');
-    expect(REGISTER['gate-receipt.mjs']?.class).toBe('data');
   });
 });

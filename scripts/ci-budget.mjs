@@ -725,7 +725,7 @@ export function ledgerErrors(baseline, ledger) {
  * adding one is the narrowest: the seconds were never spent against a deadline and now
  * they have to be.
  */
-export function narrowed(record, job) {
+function narrowed(record, job) {
   if (job.timeoutMinutes === null) return false;
   if (record.timeoutMinutes === null) return true;
   return record.timeoutMinutes > job.timeoutMinutes;
