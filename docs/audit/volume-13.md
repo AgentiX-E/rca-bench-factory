@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–567, from the rounds recorded in `progress/volume-15.md` and `progress/volume-16.md`.
+Findings 542–569, from the rounds recorded in `progress/volume-15.md` through `progress/volume-17.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -1470,3 +1470,126 @@ is now tested exactly that way. What the predicate answers is narrower and check
 input the test does not hold" -- and that is weaker than the sentence the table used to write. The honest
 consequence is that a symbol which genuinely cannot be called from this process may not exist in this tree at all:
 every one of the nine could be, and the table is empty because of it rather than because the question was dropped.
+
+## Finding 568 — the index could not grow because two thirds of it was a list of things that were done, and the arm that would have noticed had been reading a record forty rounds old
+
+v3.110 closed with one item it could not check and one it could not fit: `docs/progress.md` was **133,309
+bytes** and the volume still open was **199,228 of 200,000**, so the next round's record did not fit. The rule
+that bounds the index compares it with the volume that is **still open** -- a relation rather than a number,
+because a pinned number is a property of the whole corpus (finding 202) -- and a volume holding one round is
+born at about 9 KB. So the ceiling was not "the next round does not fit in the volume": it was that **no new
+volume could be born**, because a new volume would have been smaller than the index it is compared with
+(finding 501).
+
+The entry that asked for the repair said where the bytes were, and had said so for seventeen rounds:
+
+> **The live list grows whatever the bound is.** A struck entry stays where it is struck, so `## Open` gains
+> bytes every round...
+
+Measured this round: `## Open` was **98,927 bytes**, of which **65,544** were **forty-eight struck entries**.
+Two thirds of the file a reader opens to find out what is still left was a list of what is not.
+
+**The repair is a split, and the split is checked rather than asserted.** The forty-eight closures moved, whole
+and in their own words, to `docs/progress/closed.md` under `## Closed`; the live list kept the twenty-eight
+entries that are open and nothing else. The tiling was verified by hashing every entry before and after the
+move -- 76 in, 76 out, 28 + 48 -- and the index fell from **133,309 to 66,673** bytes. Then a volume could be
+born larger than it: twelve rounds (`v3.99`--`v3.110`, **108,534** bytes) moved to `volume-17.md`, leaving
+`volume-16.md` at **90,693** bytes with `v3.91`--`v3.98`. The index is now **67,407** bytes against an open
+volume of **108,534**: about thirty rounds of headroom, which is the first time this log has had any.
+
+**What keeps it split.** Two refusals in `check-open-list.mjs`, one per side:
+
+| the file | refuses | because |
+| --- | --- | --- |
+| `## Open` | a struck entry | history filed as work: a reader who greps for what is left finds it, and the index pays for it in bytes forever |
+| `## Closed` | an unstruck entry | work filed as history: the only list a reader consults for work is the live one, so nobody will do it and nobody will see it undone |
+
+`## Closed` is a third spelling in the guard's vocabulary rather than a new gate, because it is the same list
+at an earlier time -- so the closure citation rule (`Closed by finding N`, or a round, or an explicit
+"sans finding" sentence), the struck-reason rule and the placeholder rule all apply to it unchanged. The
+shipped record now reads **48 entries, 0 open with a reason, 48 closed by a finding**.
+
+**Two defects fell out of the move, and the first one is the reason to keep reading.**
+
+*The arm was judging a record that had been frozen for forty-one rounds.* The rule from finding 465 is that a
+round's record may not be the only place a residual lives, and its scope is "the newest record, because older
+ones cannot be edited". The selection was `records.reduce(newest)` over records **in table form** -- and the
+rounds stopped writing tables at `v3.70`. So "the newest record" was `v3.69`, and the arm spent forty-one
+rounds comparing three rows from `v3.69` while every round since wrote a bullet record that the arm could not
+read at all. It stayed green because those three rows happened to quote entries the list still carried. It went
+red the moment the closures moved, which is how a defect that had been silent for forty rounds announced
+itself: not as a wrong verdict, but as four refusals that were right about the population and wrong about the
+subject.
+
+*The population had to become two files.* A record row may name a residual the round **closed** -- that is what
+closing it meant -- and while closures were struck in place, the row resolved against the live list. Moving
+them narrowed the population to what is still open, and the arm refused rows that had been right for forty
+rounds. The population is now every entry the list holds, in either file, and the arm runs **after** the walk
+rather than inside it, so the answer no longer depends on which document was read first. Both forms of record
+are collected -- a record written as a list of entries is a record, and its item is the sentence the round
+wrote -- and the record this arm judges is the one the **newest round** wrote, found by owner rather than by
+shape.
+
+**The rule I wrote and then deleted.** The obvious cross-file check is "no entry is in both files", and it is
+unreachable: a copy left in the live list is struck by definition, and the live-strike refusal has already
+refused it before any comparison runs. A rule whose only input is a document the previous rule rejected is a
+rule nobody has seen work, so it is gone and the gap is stated in the live list instead: an entry has no
+identity, so the tiling is a measurement rather than a guard.
+
+**Six falsifications, nineteen reds.** Disabling the live-strike refusal (1 red), the record-strike refusal
+(1), collecting only table-form records again (1), narrowing the population to the entries that are not struck
+(1), removing `## Closed` from the guard's vocabulary (12 -- the record becomes invisible and every fixture
+that relies on it fails), and handing every document the `--doc` fixture instead of only the first (3 -- the
+sections get counted twice). The last two are the calibration that the new spelling is load-bearing rather
+than decorative.
+
+**What this does not establish.** That the two-file population has ever run on the shipped tree: no record
+there names a residual its own round closed, so the fixture (one file, both sections) is the only execution of
+that path, and the live list carries the gap. And that a closure is *moved* rather than copied-and-edited: the
+guard catches the copy that stays struck, and nothing catches a closure pasted into the record while its live
+entry is rewritten into a different claim.
+
+## Finding 569 — the same scanner, twice, and the copy was the one deciding which files are heavy
+
+`heavy-fixtures-do-not-contend.test.ts` carried a private `stripCommentsAndStrings`: four regular expressions
+applied in sequence, blanking block comments, line comments, single-quoted strings, double-quoted strings, and
+leaving the quotes in place. `scripts/budget-readings.mjs` has had a state machine under the same name since
+v3.34 -- escapes, template literals with `${}`, and regex literals, which need "is this `/` a division or the
+start of a pattern" to be answered from the previous token.
+
+Two implementations of one question, and the copy is the one that decides which files in the suite run a
+package manager or a compiler. v3.110 repaired what the copy was *asked* (the verb is now searched inside a
+spawn's argument list rather than anywhere in the file) and left what it *is*, with the reason written down:
+replacing it would change what the detector sees, and that is a measurement before it is a repair.
+
+Measured this round, on the suite's own 248 files, with the quote characters normalised on both sides (the
+copy keeps them, the machine blanks them, and that difference is only cosmetic):
+
+| reading | value |
+| --- | --- |
+| files whose blanked text differs | **219 of 248** |
+| causes | template literals and regex literals, and nothing else |
+| the heavy set under either scanner | **`typecheck-entrypoint.test.ts:install`**, identical |
+
+So the copy had been wrong about the *shape* of 219 files and right about the only question the file asks.
+That is the shape of a duplicate that survives: it is not wrong about today's answer, so no assertion moves,
+and the next person to write a fixture with a URL in a string finds out.
+
+The replacement is an import, and four fixtures hold what the copy got wrong -- each through `heavyVerb`, not
+through the scanner, because a test that asserts a copy's output is a test that agrees with the copy:
+
+- a call that follows a string holding a URL (`'https://…'` -- the line-comment rule ate the rest of the line,
+  including a `spawnSync('pnpm', ['install'])` written after it);
+- a call that follows a template literal containing an apostrophe;
+- a call that follows a regex literal containing a quote;
+- and the mirror -- a template piece that names `install` is not a command.
+
+**Two falsifications, seven reds.** Restoring the four-regex version with the new tests in place reds four --
+the three above and the pre-existing set assertion, because the new fixtures' own URL makes this test file look
+heavy, which is the defect reproducing itself on its own subject. Adding "search the whole file instead of the
+argument list" on top reds three more.
+
+**What this does not establish.** That the machine is right about anything the copy was right about: it was
+compared against the copy, not against a parser. What was measured is that the two disagree only where the
+copy has no rule, and that the question the file asks is answered the same way -- which is the weaker claim and
+the one the evidence supports.
