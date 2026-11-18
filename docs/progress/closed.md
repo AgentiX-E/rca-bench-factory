@@ -27,13 +27,45 @@ than repaired, because imposing closure order on entries written before v3.111 w
 inventing dates.
 
 **Every entry carries an id, and the ids were a backfill.** Writing them was one edit in v3.112, and
-the order it walked is the only thing their numbers record: the live list first, `O-001` to `O-027`, then
-this file in the order its entries stood, `O-028` to `O-079`. So a number here says **which entry a bullet
-is**, not when it closed, and not which half of the space a file keeps -- the two files are one space, it is
-dense (`1..N` with nothing missing, recomputed by `check-open-list.mjs` on every run, finding 570), and a
-closure appended from now on carries the id its live entry had. The order in this file is the closing order;
-the numbers inside it are not monotone, and that is the same divergence the paragraph above describes, now
-visible in a second place.
+the order it walked is the only thing their numbers record: the live list first, `O-001` to `O-027` as it
+stood then, then this file in the order its entries stood, `O-028` to `O-079`. So a number here says **which
+entry a bullet is**, not when it closed, and not which half of the space a file keeps -- the two files are one
+space, it is dense (`1..N` with nothing missing, recomputed by `check-open-list.mjs` on every run, finding 570),
+and a closure carries the id its live entry had. Because a closure **keeps its number and slots in at its
+place** (v3.113), this file's numbers ascend and its range grows **downward**: `O-027` joined above `O-028` at
+v3.113 and `O-026` joined above `O-027` here, each at the position its number had in the live list.
+**Finding 576 is this paragraph.** Until v3.114 it said the order in this file was the *closing* order and that
+the numbers inside it were not monotone -- which contradicted the paragraph above it, the entry three lines
+below it, and the rule v3.113 had written in the same round that wrote the sentence: the file ascends, and
+`check-open-list.mjs` refuses the first number that does not.
+
+- O-026 · ~~**The row arm's cross-file population has never run on the shipped tree.** Since v3.111 a round's record
+  may name a residual the round *closed*, and that entry is in `progress/closed.md` rather than in `## Open`,
+  so the population the arm compares against is both files.~~
+  **Closed by finding 573, finding 574, finding 575 and finding 577** -- four defects, all of them found
+  on the way to the fixture this entry asked for, and all of them in the arm rather than in the fixture.
+  (A fifth, finding 576, is the paragraph three lines above this entry.) The fixture exists now
+  (`resolves a row naming a residual the round closed against the closure in the second file`): `closed.md`
+  holds `O-002`, `closed-02.md` holds the `O-003` the round closed, the round's own `### Left open` names it,
+  and neither the first file nor the live list mentions it -- so a green there is the second file being read
+  by the arm that judges rows, which is the thing that had never happened. What the fixture found on the way
+  is that the arm had no teeth to test. v3.113 fixed its selection, so it read the newest record whatever
+  form it was written in; the form every round has written since v3.70 is a `### Left open` list, whose items
+  **are** its entries, and the population was built by pushing every entry the walk read -- records included.
+  The row and the entry it was compared with were the same bullet, so `every one of them quotes an entry` was
+  true of a set with one member, and no record in that form could ever have been refused (finding 573). The
+  repair narrows the population to the two lists, which is what the arm's own diagnostic had promised all
+  along (`appears in no entry of ## Open or ## Closed`) and what a row means: a claim about an entry somewhere
+  else. Narrowing it made the shipped v3.113 record go red **on a row that is right**, and that is finding 574:
+  the comparison was published at twenty characters (finding 468) and implemented as the whole row, so a
+  round's own account of a residual had to be identical to the list's account of it. No test could tell,
+  because a self-witnessing row satisfies any ruler however strict; the first reading that could tell the two
+  apart was the one after the narrowing. The third is the selection again, one level down: `find` took the
+  first record whose owner was the newest round, so a round that wrote two would have one judged and the
+  other passed in silence -- zero of 195 shipped rounds do it, and the refusal is a floor (finding 575) --
+  and a record written **above** its round was found by nothing at all, which the three volumes of the
+  `## Pass N` era made invisible, because they name no round and so cannot be told from a record written
+  too high (finding 577).
 
 - O-027 · ~~**The record is not split by size.** `docs/progress/closed.md` is **69,785** bytes after two rounds of
   closures, and nothing bounds it: it is a record, and records grow. The argument that produced the volume

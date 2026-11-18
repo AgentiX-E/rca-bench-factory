@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–572, from the rounds recorded in `progress/volume-15.md` through `progress/volume-17.md`.
+Findings 542–577, from the rounds recorded in `progress/volume-15.md` through `progress/volume-17.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -1744,3 +1744,144 @@ and nothing here says 39 is the right horizon. The split -- 25 entries in `close
 the 52 entry lines compared before and after and identical -- is what makes the set rule run on the shipped
 tree instead of on fixtures only, and it is the cheap version of a migration the log has already paid for
 once: v3.111's split was forced mid-round by a file that blocked it.
+
+## Finding 573 — the arm that judges a round's record was comparing each row with itself
+
+The live list carried one entry that said a path had never run: a round's record may name a residual the
+round *closed*, the closure is in the record of closures rather than in `## Open`, and no shipped record on
+this tree had ever named one its own round closed. Writing that fixture took one measurement, and the
+measurement did not produce a fixture. It produced a population.
+
+The arm's population was every entry the walk read, records included:
+
+```
+witnesses.push(item)                                                    // every entry, records included
+records.push({ items: items.map((item) => item.split('\n')[0] ...) })   // the same bullets
+population.some((one) => one.includes(row))                             // true by construction
+```
+
+For a **table** that is harmless: a row is an `item` cell, and a cell is not an entry, so a row could never
+be a copy of the thing it was compared with. v3.113 fixed the arm's *selection* -- it had been judging the
+table v3.69 wrote for forty-one rounds (finding 568) -- and the form every round since v3.70 writes is a
+`### Left open` list of entries. From that round the arm's rows were drawn from the array they were compared
+with, and the sentence it printed was true of a set with one member.
+
+| reading | rows judged | rows that quoted something |
+| --- | --- | --- |
+| v3.113 as shipped | **2** | **1** |
+| the same tree with the population narrowed to the two lists | **2** | **1** -- and the other one refused |
+
+The narrowing costs nothing on the shipped tree and it changes what the arm means: `2 row(s) were judged, and
+every one of them quotes an entry` became `1 row(s) were judged` plus a refusal naming the second row. The
+row that failed is `O-026`'s own -- *the row arm's cross-file population has never run on the shipped tree* --
+which is the entry the round was written for, refusing itself because it was the only entry in the corpus
+that mentioned it.
+
+**Why it is a finding and not a tightening.** A row is a claim about an entry **somewhere else**: that is
+what a record's `item` column is for, and it is what the arm's own diagnostic had promised since it was
+written -- *appears in no entry of `## Open` or `## Closed`*. The code was the thing that disagreed with the
+sentence, and the sentence was right.
+
+**What the repair cannot see.** A row that quotes an entry which is itself wrong; a row whose residual was
+closed by a different round (allowed, and right -- the list holds it); and a record whose entries are all
+absent from the list *and* from the arm's reach, which is finding 577 from the other side.
+
+## Finding 574 — the comparison was published at twenty characters and implemented as the whole row
+
+With the population narrowed and the comparison untouched, the shipped v3.113 record went red -- on a row
+that is right:
+
+```
+- docs/progress/volume-17.md: the v3.113 record names a residual the list does not hold --
+  "**The row arm's cross-file population has never run on the s" appears in no entry of `## Open` or `## Closed`
+```
+
+Its first twenty characters are the live entry's; its tail is the round's own account of the same residual.
+Finding 468 had measured the corpus for exactly this shape -- seven rows of v3.64's record, one quotation and
+two paraphrases of entries that exist -- and published the comparison in prose:
+
+> strip `**`, `~~` and backticks, normalise the quote and dash forms, collapse whitespace, drop the case and
+> the trailing full stop -- and then require twenty characters of the row to appear inside an entry.
+
+The code had required the **whole** row since v3.65, when the arm was built. Nothing could tell the two
+apart, and the reason is finding 573: a self-witnessing row satisfies any ruler, however strict. The first
+reading that could separate them was the one after the population was narrowed, and it refused a document
+that is right -- the failure mode this log treats as worse than a silence, because a rule that makes a
+correct file illegal is a rule somebody will delete.
+
+Two things changed with it. `ROW_QUOTE` is the published ruler, implemented. And the count the arm prints
+says which ruler it is -- `matches an entry on its first 20 characters` rather than `quotes an entry` --
+because *quotes* claimed verbatim agreement that the twenty-character rule never asked for, which is the same
+drift one line below the one being repaired.
+
+The ruler's separation, measured at v3.114: the **80** entries of the two lists have **80** distinct first
+twenty characters. So no row that opens with an entry's words can resolve against a different entry, which is
+the property the twenty-character floor needs and had never been checked.
+
+**What the repair costs.** The refusal of v3.113's row cannot be reproduced any more: this round's record is
+the newest, and that record is frozen from here on. The defect had to be found in the round that fixed the
+population, which is the argument for reading the newest record while it is still the newest.
+
+## Finding 575 — a round's second record had no reader
+
+The selection is `records.filter((one) => one.owner.round === newestRound.round)[0]`. Two `### Left open`
+sections under one round heading is two answers to *what did this round leave open*, and the first would be
+judged while the second was passed in silence: its rows are never compared, and the section is still counted,
+so the summary reports a larger corpus with one record unjudged.
+
+Measured over the shipped corpus: **zero** of the 192 records the corpus holds belong to a round that wrote
+two. So this is a floor rather than a repair, and it is the only rule this round added without a shipped
+defect behind it. The reason it is worth an exit is that the silence is unreachable by inspection: both
+halves are valid documents, each passes every refusal, and the arm's subject -- *the* newest record -- has two
+candidates. Finding 162's shape, one kind over.
+
+The refusal is scoped to the newest round, for the reason every other rule here is: a frozen round's second
+section cannot be merged now, and a rule that demanded it would be a demand for a repair the corpus forbids.
+
+## Finding 576 — the record's introduction said the order was the closing order, in the round that made it an ascending one
+
+Placing `O-026` in `docs/progress/closed.md` found this, three paragraphs apart in the same file:
+
+| where | what it says |
+| --- | --- |
+| the third paragraph | **The order is the live list's order, not the closing order.** |
+| the fourth paragraph | The order in this file is the closing order; the numbers inside it are not monotone. |
+
+and the entry between them, written by the same round: *a closure keeps its number and slots in at its place,
+so the record is a run of numbers*. v3.113 wrote the ascending rule and left the introduction saying the file
+is not monotone -- in the round that added the refusal for the first number that does not ascend. The file's
+own numbers read `O-027` to `O-052`, then `O-053` to `O-079`: monotone, and refused if it ever is not.
+
+The paragraph is repaired rather than struck, because it is an introduction rather than an entry, and it now
+states the rule and the direction the range grows: **downward**, as closures slot in above their successors
+(`O-027` at v3.113, `O-026` here). Its ranges were stale in a second way -- `O-001` to `O-027` was the live
+list at v3.112, and two of those numbers are in this file now.
+
+**What no gate can do about the next one.** `check-docs-language` reads what language a sentence is in;
+`check-citations` reads whether a number resolves; `check-doc-counts` reads whether a published count is the
+count of the thing it stands for. None of them reads whether a sentence about the document is *true*. This is
+the second stale sentence found in this introduction in two rounds, and both were found by a person reading
+the file to put something in it -- which is the honest answer to "what would have caught it", and the reason
+the repair is stated in the paragraph rather than in a comment somewhere else.
+
+## Finding 577 — a record written above its round was found by nothing
+
+The other half of the selection. The arm finds a record by the nearest round heading **above** it, so a
+record above the first heading in its file never reaches `records`: its rows are never judged, and its entries
+are still counted. Nothing refused that, and the exemption hiding it is real -- three volumes were written
+before rounds had numbers and name their rounds `## Pass N`, so no `## vX.Y` heading appears in them at all.
+
+| the file | rounds | first round heading |
+| --- | --- | --- |
+| `volume-01.md` to `volume-03.md` | **0** | none -- the `## Pass N` era |
+| `volume-04.md` to `volume-17.md` | 21 to 30 | **line 1**, every one of them |
+
+So the question "was this record written too high or too early" is answered by the file rather than by the
+record, and the refusal is scoped to a file that names rounds. In such a file a record above the first
+heading is a record written three lines too high. In the three legacy volumes there is no round to name and
+the record is history.
+
+The rule costs one comparison per section and it closes the silence on the other side of 575: the arm's
+subject is now *found* -- one record, belonging to a named round, in a file that names rounds -- rather than
+assumed. What it leaves is the count: **25** records in those three volumes have no owner, and nothing states
+the number.

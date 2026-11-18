@@ -776,7 +776,7 @@ describe('docs · a record may not be the only place a residual lives', () => {
   it('accepts a row whose item quotes an entry the live list holds', () => {
     const r = runOn(page(`| **P1** | ${QUOTED} | unchanged | nothing |`));
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain(`the ${ROUND} record's 1 row(s) were judged, and every one of them quotes an entry`);
+    expect(r.out).toContain(`the ${ROUND} record's 1 row(s) were judged, and every one of them matches an entry on its first 20 characters`);
   });
 
   it('refuses a row that names a residual no entry in either file holds', () => {
@@ -786,7 +786,7 @@ describe('docs · a record may not be the only place a residual lives', () => {
     expect(r.code).toBe(1);
     expect(r.out).toContain('names a residual the list does not hold');
     expect(r.out).toContain('in no entry of `## Open` or `## Closed`');
-    expect(r.out).toContain('add the entry, or quote the entry the row is about');
+    expect(r.out).toContain('have to appear in an entry, so add the entry or open the row with its words');
   });
 
   it('leaves an older record alone, because a frozen record cannot be repaired', () => {
@@ -802,7 +802,7 @@ describe('docs · a record may not be the only place a residual lives', () => {
       `${older}${newer}## Open\n\n${withId(LIVE, 1)}\n\nChecked at ${ROUND}: **1** entries open\n\n## Pass log\n\nbody\n`,
     );
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain(`the ${ROUND} record's 1 row(s) were judged, and every one of them quotes an entry`);
+    expect(r.out).toContain(`the ${ROUND} record's 1 row(s) were judged, and every one of them matches an entry on its first 20 characters`);
   });
 
   it('judges the record the newest round wrote, whichever form it was written in', () => {
@@ -826,7 +826,7 @@ describe('docs · a record may not be the only place a residual lives', () => {
     expect(r.code, r.out).toBe(0);
     // Zero table rows are judged -- the newest round wrote none -- and the entry that *was*
     // judged is the newest round's own, which is the sentence the summary has to say.
-    expect(r.out).toContain(`the ${ROUND} record's 1 row(s) were judged, and every one of them quotes an entry`);
+    expect(r.out).toContain(`the ${ROUND} record's 1 row(s) were judged, and every one of them matches an entry on its first 20 characters`);
   });
 
   it('refuses a row whose item is too short to name anything at all', () => {
@@ -835,6 +835,114 @@ describe('docs · a record may not be the only place a residual lives', () => {
     const r = runOn(page('| **P1** | see above | unchanged | nothing |'));
     expect(r.code).toBe(1);
     expect(r.out).toContain('too short to name an entry');
+  });
+});
+
+/**
+ * What the arm was comparing, once its subject became right (findings 573 and 574).
+ *
+ * ## The green that was a set of one member
+ *
+ * v3.113 fixed this arm's **selection**: it had been judging v3.69's table for forty-one rounds,
+ * because it collected only the table form and the rounds stopped writing tables at v3.70. The fix
+ * gave it the newest record in either form -- and the form every round since v3.70 writes is a
+ * `### Left open` list of **entries**. The population it compared rows against was built by pushing
+ * every entry the walk read, records included, so for that form the row and the entry it was
+ * compared with were the same bullet:
+ *
+ * ```
+ * witnesses.push(item)            // every entry, records included
+ * records.push({ items: items.map((item) => item.split('\n')[0]... ) })  // the same bullets
+ * population.some((one) => one.includes(row))                            // always true
+ * ```
+ *
+ * The arm's one reading of a bullet-form record was v3.113's own, it reported two rows judged and
+ * both quoting an entry, and one of the two quoted nothing but itself. That is the shape this file
+ * exists to refuse -- a rule satisfied by construction -- and it was created by the round that fixed
+ * the rule above it.
+ *
+ * ## The ruler that was published and never used
+ *
+ * Finding 468 published the comparison: twenty characters of the row, marks removed, inside an
+ * entry. The code required the **whole** row, and nothing could tell, because a self-witnessing row
+ * satisfies any ruler. Narrowing the population made the difference visible at once: the shipped
+ * v3.113 record went red on a row that is right -- its first twenty characters are the live entry's
+ * and its tail is the round's own account, which is the paraphrase finding 468 wrote the ruler for.
+ *
+ * ## One round, one record
+ *
+ * The arm's subject is "the newest round's record", and the selection takes the first one it finds.
+ * A round that wrote two would have one judged and the other passed in silence -- finding 162's
+ * shape (`a document that gains a list must gain a reader for it`) one kind over. No shipped round
+ * does this; the refusal is a floor.
+ */
+describe('docs · a record is not a witness of itself, and the ruler is the one it published', () => {
+  const ROUND = 'v9.9';
+  const QUOTED = 'A residual the live list also carries';
+  const LIVE = `- ${QUOTED}. [open: the reason this is still work, long enough to be a reason a reader acts on]`;
+  /** The row's first twenty characters are the entry's, and its tail is the round's own words. */
+  const SHARED = `${QUOTED}, and the record says the rest in its own words`;
+
+  /** One round, whatever record it wrote, over a live list holding exactly one entry. */
+  const page = (record: string) =>
+    `## ${ROUND} — a round\n\n${record}\n\n## Open\n\n${withId(LIVE, 1)}\n\n` +
+    `Checked at ${ROUND}: **1** entries open\n\n## Pass log\n\nbody\n`;
+
+  it('refuses a record whose own bullet is the only entry it quotes', () => {
+    // 573, as a refusal. The bullet below is the record's row *and* the only text resembling it in
+    // the corpus, so under the wide population it was its own witness and the arm stayed green.
+    const r = runOn(
+      page(
+        "### Left open\n\n- a residual no entry of the list holds, written in the round's own words and nowhere else\n" +
+          '  [open: the reason this is still work, long enough to be a reason a reader acts on]',
+      ),
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('names a residual the list does not hold');
+    expect(r.out).toContain('appears in no entry of `## Open` or `## Closed`');
+  });
+
+  it('accepts a row that matches an entry on its first twenty characters and not on its tail', () => {
+    // 574, as the green side. The row is a sentence about an entry rather than a copy of it, which
+    // is what a record's row is: the round writes the list entry and then writes its own account of
+    // it. The whole-row rule refused this shape, and the shipped v3.113 record has exactly it.
+    const r = runOn(
+      page(`### Left open, in the order the goal is reached\n\n${TABLE_HEAD}\n| **P1** | ${SHARED} | unchanged | nothing |`),
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('matches an entry on its first 20 characters');
+  });
+
+  it('refuses a round that wrote two records, because only the first of them is judged', () => {
+    // 575. The second record's row names something no entry holds, and the arm never looks at it:
+    // that silence is the defect, and the assertion below is about the silence rather than about
+    // the row. A round has one record, so two is a document that has to be merged rather than read.
+    const r = runOn(
+      page(
+        `### Left open\n\n- ${QUOTED}. [open: the reason this is still work, long enough to be a reason a reader acts on]\n\n` +
+          '### Left open\n\n- a residual the second half of the round raised, which no entry anywhere holds\n' +
+          '  [open: another reason, long enough to stand as a reason here]',
+      ),
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain(`the ${ROUND} round wrote 2 records`);
+    expect(r.out).not.toContain('names a residual the list does not hold');
+  });
+
+  it('refuses a record written above its round, because a record is found by the heading above it', () => {
+    // 577, the other half of the selection: 575 is a round with two records, this is a record with
+    // no round. The arm looks *up* for its owner, so a record above the first heading in its file is
+    // found by nothing -- it never reaches the arm, and its entries are still counted. The file is
+    // asked rather than guessed: a volume that names no round at all is the era before rounds had
+    // numbers, and only a file that names rounds can be told that the record was written too high.
+    const r = runOn(
+      `### Left open\n\n- ${QUOTED}. [open: the reason this is still work, long enough to be a reason a reader acts on]\n\n` +
+        `## ${ROUND} — a round\n\n## Open\n\n${withId(LIVE, 1)}\n\n` +
+        `Checked at ${ROUND}: **1** entries open\n\n## Pass log\n\nbody\n`,
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("sits above this file's first round heading");
+    expect(r.out).toContain('a record is found by the round above it, and this one is judged by nothing');
   });
 });
 
@@ -902,7 +1010,7 @@ describe('docs · the live list holds work, the record holds closures, and neith
         `## Closed\n\n- ~~**O-002 · the closure the round recorded**~~ **Closed by finding 150**, which settled it.\n`,
     );
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain("the v9.9 record's 1 row(s) were judged, and every one of them quotes an entry");
+    expect(r.out).toContain("the v9.9 record's 1 row(s) were judged, and every one of them matches an entry on its first 20 characters");
   });
 
   it('reads the shipped record and the live list as one corpus, and counts each from its own file', () => {
@@ -1279,5 +1387,30 @@ describe('docs · the record is a set of files, and the set has to be complete b
     expect(r.out).toContain('history is filed as work');
     expect(r.out).toContain('move it to `');
     expect(r.out).toContain('closed-02.md` and delete it here');
+  });
+
+  it('resolves a row naming a residual the round closed against the closure in the second file', () => {
+    // O-026, closed. The row arm's population became two files at v3.111 and a set of files at
+    // v3.113, and the two switches had never been on together: every fixture that exercised the
+    // cross-file population carried `## Open` and `## Closed` in the same document, which is not
+    // the shipped shape. Here the round's record (in `--doc`) names a residual the round closed,
+    // the closure is in `closed-02.md`, and neither the first file nor the live list mentions it --
+    // so a green here is the second file being read by the arm that compares rows with the list.
+    const CLOSED = 'the closure the round recorded in the second file, and what it settled';
+    const r = runOnRecord(
+      {
+        'closed.md': `## Closed\n\n${withId('- ~~an old item~~ **Closed by finding 150**, which settled it.', 2)}\n`,
+        'closed-02.md': `## Closed\n\n${withId(`- ~~${CLOSED}~~ **Closed by finding 151**, which settled it.`, 3)}\n`,
+      },
+      `## v9.9 — a round\n\n### Left open\n\n- ${CLOSED}. ` +
+        '[open: a reason long enough to be a reason a reader acts on]\n\n' +
+        `## Open\n\n${withId(OPEN_ENTRY, 1)}\n\nChecked at v9.9: **1** entry open\n\n## Pass log\n\nbody\n`,
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain("the v9.9 record's 1 row(s) were judged");
+    // The witness is the second file's closure and not the row: the row's number is O-003, and its
+    // text appears nowhere the walk read except that file. A green with `closed.md` alone would be
+    // this test passing for the reason it was written to rule out.
+    expect(r.out).toContain('closed-02.md');
   });
 });

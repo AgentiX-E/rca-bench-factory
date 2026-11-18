@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 257 core + 4 cli |
-| Test lines | 112,358 core + 3,242 cli |
-| Tests | 6,658 core + 187 cli |
+| Test lines | 112,491 core + 3,242 cli |
+| Tests | 6,663 core + 187 cli |
 | Tracked files | 666 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.113: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.114: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -893,21 +893,21 @@ is a row about rather than paraphrase one that no `grep` will find.
   construct, and no symbol in this tree answers to that.
   `[open: a symbol that is genuinely uncallable would need an exit that ends the worker, or an input no test can build, as its marker; the table is empty because every symbol examined could be called]`
 
-- O-026 · **The row arm's cross-file population has never run on the shipped tree.** Since v3.111 a round's record
-  may name a residual the round *closed*, and that entry is in `progress/closed.md` rather than in `## Open`,
-  so the population the arm compares against is both files. The fixture in `check-open-list.test.ts` proves the
-  rule -- a row naming a closed entry resolves -- but a fixture is one file with both sections in it, and no
-  shipped record on this tree names a residual its own round closed. The two-file path has therefore been
-  built, argued for, and never executed where it matters.
-  `[open: the gate has the second switch now -- RCA_RECORD_DIR, added by finding 572 -- so a fixture over a set of files is writable, and what no fixture can supply is the shipped record that makes this the tree's own path rather than a test's; the first round whose record names a residual it closed is still the round that closes it]`
-
-
 - O-080 · **The record's set is one directory deep, and a file moved below it is invisible.** `recordSet()` reads
   `docs/progress/` and nothing else, so the discovery rule this round wrote has the limit the single path had, one
   level down: `docs/progress/archive/closed.md` is a closure log to a reader and to no rule here. The three
   refusals cannot help -- they are about names inside the directory that was read -- and the id space is dense
   within what was opened, which is the sentence finding 572 is about.
   `[open: a recursive walk would need a rule for what a file one level down means -- an archive is not the record, and a record in two places is the thing the numbering refuses -- so the widening waits for a statement about where the record lives]`
+
+- O-081 · **Twenty-five records are judged by nothing, and the number has never been counted.** `roundAt` reads
+  `## vX.Y` headings, and the three volumes written before rounds had numbers name their rounds `## Pass N`,
+  so every `### Left open` in volumes 01 to 03 has no owner: `records` never holds it, and the arm that judges
+  rows cannot reach it. They are frozen, so no round can repair them and no rule can require a repair -- which
+  is why finding 577's refusal asks the **file** whether it names rounds instead of asking the record. What is
+  missing is the count: the exemption is a reading of three file names, so a fourth volume of that era, or a
+  record written above its round inside one of the three, would be exempt without a word.
+  `[open: an arm that reports how many records have no owner would turn the exemption into a number; it is a report rather than a refusal because the three volumes cannot be repaired]`
 
 ## Pass log
 
@@ -942,7 +942,7 @@ and this table.
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
-| [volume-17.md](progress/volume-17.md) | 15 | v3.99 | v3.113 |
+| [volume-17.md](progress/volume-17.md) | 16 | v3.99 | v3.114 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

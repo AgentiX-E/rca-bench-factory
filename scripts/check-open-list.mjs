@@ -442,6 +442,31 @@ function plain(text) {
 }
 
 /**
+ * How much of a row has to appear inside an entry for the row to be *about* that entry.
+ *
+ * Finding 468 published this ruler and measured the corpus with it: strip the marks, normalise the
+ * quotes and the dash, collapse the whitespace, drop the case and the trailing full stop, then
+ * require twenty characters of the row to appear inside an entry. Twenty is a floor taken from the
+ * corpus rather than from principle -- the shortest row that names anything is 25 characters, so a
+ * rule that accepted `see above` would be accepting a coincidence. Measured at v3.114, under the same
+ * ruler: the **80** entries of the two lists have **80** distinct first twenty characters, so no row
+ * that begins with an entry's words can be mistaken for a row about a different entry.
+ *
+ * What the code did instead, from v3.65 to v3.113, was require the **whole** row (finding 574). That
+ * is not a stricter reading of the same rule, it is a different rule: it demands that a round's own
+ * prose about a residual be identical to the list's prose about it, in two documents written by one
+ * hand at one time -- which is exactly the paraphrase finding 468 argued a record *is*.
+ *
+ * Forty-eight rounds could not tell the two apart. Until v3.113 the subject was a table, and a
+ * table's row is a cell rather than an entry, so no row was ever a copy of the thing it was
+ * compared with; from v3.113 the subject is a list of entries, and the row was the very bullet it
+ * was compared with (finding 573), so every ruler however strict was satisfied. The first reading
+ * that could separate them is the one after the population was narrowed, and it refused the shipped
+ * v3.113 record over a row the published ruler accepts.
+ */
+const ROW_QUOTE = 20;
+
+/**
  * The live list's currency stamp: which round read it, and how many entries it found open.
  *
  * ## Why a stamp, and what it is not
@@ -850,23 +875,36 @@ function stampChecks({ live, rounds, problems }) {
 
 function check() {
   const problems = [];
-  // Every entry the list holds, in either file, so a record's row can be compared with the
-  // thing it is a row about.
+  // What a record's row may resolve against: the two lists, and **not** the records.
   //
-  // Read up front rather than accumulated as the documents are walked. The row arm asks whether
-  // a round's record names a residual "the list holds", and from v3.111 the list is two files --
-  // `## Open` in the index and `## Closed` in the record -- so a row that names a residual the
-  // round **closed** has to resolve against the record as well. Accumulating it during the walk
-  // would make that depend on which document was read first, and a verdict a reordering can flip
-  // is not a verdict. A fixture carries both sections in one file, so it supplies its own.
-  const listed = [];
+  // ## Why a record is not a witness of itself (finding 573)
+  //
+  // Until v3.114 this held every entry the walk read, records included. That was harmless while the
+  // arm's subject was a **table**: a table's rows are cells, and a cell is not an entry. v3.113 fixed
+  // the selection so the arm reads the newest record whatever form it was written in, and the form
+  // every round has written since v3.70 is a `### Left open` list -- whose items are its **entries**.
+  // The arm's rows were then drawn from the same array they were compared with, so
+  // `population.some((one) => one.includes(row))` was true by construction and the sentence it
+  // printed -- "every one of them quotes an entry" -- was true of a set with one member.
+  //
+  // The fix is not a bug fix, it is the rule: a row is a claim *about* an entry somewhere else, and a
+  // record that witnesses itself verifies nothing whatever it says. It is also what this arm's own
+  // diagnostic had promised all along -- "appears in no entry of `## Open` or `## Closed`".
+  //
+  // ## Why both lists, and why up front
+  //
+  // A row may name a residual the round **closed**, because that is what closing it meant, and from
+  // v3.111 that entry is in the record of closures rather than in `## Open`. Pooling the two up front
+  // rather than accumulating as the walk goes is what keeps the verdict independent of which
+  // document was read first: a verdict a reordering can flip is not a verdict.
+  const witnesses = [];
   // The corpus's records and rounds, hoisted for the arm after the walk: it asks which record the
   // **newest round** wrote, and that question is about the corpus rather than about the document
   // being read when the answer becomes available.
   const records = [];
   const rounds = [];
   // The ids of the two lists, in one map, because they are one space (finding 570). Pooled here
-  // for the same reason `listed` is: the live list is in the index and the record is in a file, and
+  // for the same reason `witnesses` is: the live list is in the index and the record is in a file, and
   // a duplicate id is a fact about both of them.
   const ids = new Map();
   // The record's ids in the order its files hold them. The map answers "is this number used"; this
@@ -1029,6 +1067,21 @@ function check() {
       // the paragraph.
       if (kind === 'record') {
         const owner = roundAt.filter((one) => one.line < section.index).at(-1) ?? null;
+        // A record is found by the round heading above it, and a record with no heading above it is
+        // found by nothing: it never reaches `records`, so the arm that judges rows never sees it,
+        // and the entries it holds are still counted -- the summary would report a larger corpus with
+        // one record unjudged (finding 577). The two are indistinguishable from a legacy record
+        // unless the file is asked, and the file answers: volumes 01 to 03 name their rounds `## Pass
+        // N`, so they carry no `## vX.Y` heading at all, while every volume written since starts with
+        // one on its first line. So the rule is scoped to a file that names rounds -- in such a file,
+        // a record above the first heading was written too high rather than too early.
+        if (owner === null && roundAt.length > 0) {
+          problems.push(
+            `${from.label}: the \`${section.heading}\` at line ${String(section.index + 1)} sits above this ` +
+              "file's first round heading, so the round it belongs to cannot be named -- a record is found " +
+              'by the round above it, and this one is judged by nothing; move it under its round',
+          );
+        }
         if (owner !== null) {
           records.push({
             label: from.label,
@@ -1041,7 +1094,11 @@ function check() {
       for (const item of items) {
         const headline = item.split('\n')[0];
         const first = headline.slice(2).trim();
-        listed.push(item);
+        // The witness list, and the exclusion is the arm's subject rather than an economy: a
+        // record's bullets **are** the rows, so a record that is also a witness is a row that
+        // resolves against itself (finding 573). Only these two lists hold residuals a reader can
+        // grep for -- `## Open` for what is still work, `## Closed` for what was closed and by what.
+        if (kind === 'live' || kind === 'closed') witnesses.push(item);
         // The entry's identity, read before either refusal, so that an entry refused for being
         // struck where it stands still contributes its id to the space: a document with two
         // defects should say both, and a set that silently lost the id of the entry it was
@@ -1328,6 +1385,35 @@ function check() {
   // Running after the walk is what makes the second fix order-independent: accumulating the
   // population during the walk would have made the verdict depend on which document was read
   // first, and a verdict a reordering can flip is not a verdict.
+  //
+  // ## The subject became right and the evidence became the subject (finding 573)
+  //
+  // The selection fix is what made this arm read a record whose rows **are entries**. Before it the
+  // subject was a table frozen since v3.69 -- a record that could not change, judged against a list
+  // that could -- so the green was a coincidence. After it the subject is the round's own
+  // `### Left open`, and those bullets were already in the population: `records.push` took the
+  // headlines of the very entries `witnesses.push` had taken, so every row resolved against itself.
+  // v3.113's own reading was two rows, both reported as quoting an entry, and one of them quoted
+  // nothing but itself.
+  //
+  // The repair is the exclusion at the push site, and it states the arm's subject rather than
+  // tightening it: a row is a claim about an entry **somewhere else**.
+  //
+  // ## The ruler the arm published was not the ruler it used (finding 574)
+  //
+  // With the population narrowed, the shipped v3.113 record went red -- on a row that is right. Its
+  // first twenty characters are the live entry's, and its tail is the round's own account, which is
+  // the paraphrase finding 468 measured the corpus for and published a ruler about. The code had
+  // been requiring the **whole** row, and no test could tell, because a self-witnessing row
+  // satisfies any ruler however strict it is. `ROW_QUOTE` is the published ruler, implemented.
+  //
+  // ## One round, one record (finding 575)
+  //
+  // The selection is "the first record whose owner is the newest round", so a round that wrote two
+  // records would have one judged and the other passed in silence -- an arm whose subject is *the*
+  // newest record, with two candidates. Nothing shipped does this (zero of 195 rounds, measured at
+  // v3.114), and the refusal is scoped to the newest round for the reason every rule here is scoped
+  // that way: only that round can still merge its two halves.
   const newestRound = rounds.reduce(
     (best, one) =>
       best === null ||
@@ -1337,28 +1423,47 @@ function check() {
         : best,
     null,
   );
-  const newestRecord =
-    newestRound === null ? null : (records.find((one) => one.owner.round === newestRound.round) ?? null);
+  // A round writes **one** record, and two under one heading is two answers to "what did this round
+  // leave open" -- with this arm judging whichever `find` reached first and passing the other in
+  // silence (finding 575). The shape is finding 162's (`a document that gains a list must gain a
+  // reader for it`), one kind over: the second list here has no reader at all, because the arm's
+  // subject is a round's record and a round has one.
+  //
+  // The scope is the newest round, which is the only one whose record can still be merged; a frozen
+  // round's second section would be a demand for a repair the corpus forbids. That costs nothing
+  // today -- measured at v3.114, zero of the 195 shipped records' rounds wrote two -- so this is a
+  // floor that closes the silence before it has a tenant.
+  const sameRound =
+    newestRound === null ? [] : records.filter((one) => one.owner.round === newestRound.round);
+  if (sameRound.length > 1) {
+    problems.push(
+      `${sameRound[1].label}: the ${newestRound.round} round wrote ${String(sameRound.length)} records, so ` +
+        `"what that round left open" has ${String(sameRound.length)} answers and only the first of them is ` +
+        'judged -- merge them under one heading, because a round has one record',
+    );
+  }
+  const newestRecord = sameRound[0] ?? null;
   let quotedRows = 0;
   if (newestRecord !== null) {
-    const population = listed.map((one) => plain(one));
+    const population = witnesses.map((one) => plain(one));
     for (const item of newestRecord.items) {
       const row = plain(item);
-      if (row.length < 20) {
+      if (row.length < ROW_QUOTE) {
         problems.push(
           `${newestRecord.label}: the ${newestRecord.owner.round} record has a row whose item is ` +
             `${row.length} character(s), too short to name an entry: ${item.slice(0, 60)}`,
         );
         continue;
       }
-      if (population.some((one) => one.includes(row))) {
+      if (population.some((one) => one.includes(row.slice(0, ROW_QUOTE)))) {
         quotedRows += 1;
         continue;
       }
       problems.push(
         `${newestRecord.label}: the ${newestRecord.owner.round} record names a residual the list does ` +
           `not hold -- "${item.slice(0, 60)}" appears in no entry of \`## Open\` or \`## Closed\` -- so it is a ` +
-          'residual a reader of the list is not told about; add the entry, or quote the entry the row is about',
+          `residual a reader of the list is not told about; the row's first ${String(ROW_QUOTE)} characters ` +
+          'have to appear in an entry, so add the entry or open the row with its words',
       );
     }
   }
@@ -1367,7 +1472,7 @@ function check() {
       (newestRecord === null
         ? 'the newest round wrote none, so no row was judged'
         : `the ${newestRecord.owner.round} record's ${String(quotedRows)} row(s) were judged, and every one ` +
-          'of them quotes an entry'),
+          `of them matches an entry on its first ${String(ROW_QUOTE)} characters`),
   );
 
   if (problems.length > 0) {

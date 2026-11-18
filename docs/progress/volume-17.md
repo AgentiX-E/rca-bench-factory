@@ -1860,9 +1860,9 @@ for it:
 
 | item | value |
 | --- | --- |
-| `core` test suite | **257 files, 6658 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **261 files, 6845 tests passed** (as of this commit) |
+| `core` test suite | **257 files, 6658 tests passed** (at v3.113) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.113) |
+| repo test suite | **261 files, 6845 tests passed** (at v3.113) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6,646 -> 6,658, +12**: eleven refusals and readings of the set, and one green fixture that pins the scope of the order rule |
 | the lists | `## Open` **27 -> 27** (one closed, one opened), `## Closed` **52 -> 53**, one space of **80** ids with none missing |
@@ -1882,3 +1882,199 @@ for it:
 - **The record's set is one directory deep, and a file moved below it is invisible.** `recordSet()` reads
   `docs/progress/` and nothing else, so the discovery rule has the limit the single path had, one level down.
   `[open: a recursive walk needs a statement about what a file one level down means -- an archive is not the record, and a record in two places is what the numbering refuses]`
+
+## v3.114 · the arm compared a record with itself, and the ruler it published was not the one it used
+
+The live list's last word about this guard was that one of its paths had never run:
+
+> **The row arm's cross-file population has never run on the shipped tree.** ... The two-file path has
+> therefore been built, argued for, and never executed where it matters.
+
+Writing that fixture took one measurement, and the measurement found four defects -- three in the arm and
+one in the record's own introduction -- before the fixture existed. A fifth came out of counting what the
+fixture's neighbouring rule would exempt.
+
+### 1. Both switches, on together
+
+`--doc` names the index and `RCA_RECORD_DIR` names the record's directory. They were added a round apart --
+the second by finding 572 -- and no test had ever used the two together, because the record was one path
+when the cross-file fixture was written. The fixture is the shipped shape at fixture scale: `closed.md` holds
+`O-002`, `closed-02.md` holds the `O-003` the round closed, the round's own `### Left open` names it, and the
+live list holds `O-001` and nothing else. Green.
+
+That green means something now, which is what the entry was about: the row's words appear nowhere in the
+corpus except in the closure that `closed-02.md` holds, so a green is the second file being read by the arm
+that judges rows. It closes `O-026`. It is not the interesting part of the round.
+
+### 2. The measurement that came before it
+
+The shortest way to ask whether an arm has teeth is to take away the witnesses it should not have. The
+population was every entry the walk read, records included; the arm's own diagnostic names two lists --
+*`appears in no entry of ## Open or ## Closed`*. So the population was narrowed to those two and the gate
+ran on the shipped tree:
+
+```
+check-open-list: 25 record(s) in table form (188 row(s)); the v3.113 record's 1 row(s) were judged, and every one of them quotes an entry
+  - docs/progress/volume-17.md: the v3.113 record names a residual the list does not hold -- "**The row arm's cross-file population has never run on the s" appears in no entry of `## Open` or `## Closed` -- ...
+exit 1
+```
+
+**Two rows were reported as quoting an entry a moment earlier, and one of them was quoting itself.**
+
+### 3. The green that was a set with one member (finding 573)
+
+v3.113 fixed this arm's *selection*: it had been judging v3.69's table for forty-one rounds, because it
+collected only the table form and the rounds stopped writing tables at v3.70 (finding 568). The fix collects
+both forms, and the form every round since v3.70 writes is a `### Left open` list of **entries**. The
+population was built by pushing every entry the walk read:
+
+| the arm's subject | its rows | what a row was compared with |
+| --- | --- | --- |
+| a table (v3.65 to v3.112) | a `item` cell | entries -- a cell is not an entry, so a copy was impossible |
+| a list of entries (v3.113) | an entry's headline | entries -- **the same bullet** |
+
+```
+witnesses.push(item)                                                   // every entry, records included
+records.push({ items: items.map((item) => item.split('\n')[0] ...) })   // the same bullets
+population.some((one) => one.includes(row))                            // true by construction
+```
+
+So the sentence `the v3.113 record's 2 row(s) were judged, and every one of them quotes an entry` was true
+of a set with one member, and no record in that form could ever have been refused. The arm's subject became
+right in v3.113 and its evidence became its subject in the same edit.
+
+The repair is the exclusion at the push site, and it states the arm's subject rather than tightening it: a
+row is a claim about an entry **somewhere else**. Both lists stay in the population, because a row may name
+a residual the round *closed*, and from v3.111 that entry is in the record of closures.
+
+### 4. The row that is right (finding 574)
+
+With the population narrowed and the comparison untouched, the shipped v3.113 record went red -- on a row
+that is right. Its first twenty characters are the live entry's; its tail is the round's own account of the
+same residual. Finding 468 measured the corpus for exactly this and published the comparison:
+
+> ... strip `**`, `~~` and backticks, normalise the quote and dash forms, collapse whitespace, drop the case
+> and the trailing full stop -- and then require twenty characters of the row to appear inside an entry.
+
+The code had required the **whole** row since v3.65, and forty-eight rounds could not tell. Until v3.113 the
+subject was a table and no row could be a copy of its witness; from v3.113 the row was its own witness, and a
+self-witnessing row satisfies any ruler however strict it is. The first reading that could separate the two
+was the one after the population was narrowed, and it refused a document that is right -- which is the shape
+this log treats as worse than a silence, because it is a rule that would make a correct file illegal.
+
+`ROW_QUOTE` is the published ruler, implemented, and the count the arm prints now says which one it is:
+`every one of them matches an entry on its first 20 characters`. The word *quotes* was a claim of verbatim
+agreement that the ruler never made, and it is the same drift one line below the one being repaired.
+
+Measured under the ruler at v3.114: the **80** entries of the two lists have **80** distinct first twenty
+characters, so no row that opens with an entry's words can resolve against a different entry.
+
+That refusal can no longer be reproduced, and the reason is the arm's own scope: this round's record is the
+newest now, and the row the whole-row rule refused belongs to a record that is frozen from here on. The defect
+had to be found in the round that fixed the population, or it would have become a green rule over a past
+nobody may edit -- which is the whole reason the arm reads the newest record while it is still the newest.
+
+### 5. Two records, one judged (finding 575)
+
+The selection is "the first record whose owner is the newest round". Two records under one round is two
+answers to *what did this round leave open*, and the arm would judge one and pass the other in silence --
+finding 162's shape (`a document that gains a list must gain a reader for it`) applied to a section that was
+supposed to be unique. The measurement, over the shipped corpus: **zero** of the 192 records the
+shipped corpus holds have a round that wrote two. So the refusal costs nothing and closes the silence before it has a
+tenant, which is the only kind of rule this log adds without a defect behind it.
+
+### 6. The record's introduction said the opposite of its rule (finding 576)
+
+Reading `docs/progress/closed.md` to place `O-026` found this, three paragraphs apart in the same file:
+
+| where | what it says |
+| --- | --- |
+| the third paragraph | **The order is the live list's order, not the closing order.** |
+| the fourth paragraph | The order in this file is the closing order; the numbers inside it are not monotone. |
+
+and the entry between them, written by the same round: *a closure keeps its number and slots in at its
+place, so the record is a run of numbers*. v3.113 wrote the ascending rule and left the introduction saying
+the file is not monotone -- in the round that added the refusal for the first number that does not ascend.
+The file's numbers read `O-027` to `O-052` then `O-053` to `O-079`, which is monotone, and the guard has
+refused a non-ascending record since finding 572.
+
+The paragraph is repaired rather than struck, because it is an introduction and not an entry: it now states
+the rule, says the range grows **downward** as closures slot in above their successors, and names the two
+that did (`O-027` at v3.113, `O-026` here). What no gate can do is catch the next one: a sentence about the
+document that is not a count is read by nobody but a reader, and this is the second stale sentence found in
+this introduction in two rounds. The repair is stated in the paragraph itself, where the next reader is.
+
+### 7. A record above its round is judged by nothing (finding 577)
+
+The other half of the selection. The arm finds a record by the round heading **above** it, so a record
+written above the first heading in its file never reaches `records` -- its entries are still counted, and the
+arm that judges rows never sees them. Nothing refused it, and the exemption that hid it was real: three
+volumes were written before rounds had numbers and name their rounds `## Pass N`, so they carry no `## vX.Y`
+heading at all.
+
+The file answers the question the record cannot: **every volume since v3.45 begins with a round heading on
+its first line** (measured: volumes 04 to 17, `firstRoundLine=1`), and volumes 01 to 03 name no round
+anywhere. So the refusal is scoped to a file that names rounds, where a record above the first heading was
+written too high rather than too early. The rule reads the file once per section and costs one comparison;
+what it buys is that the arm's subject is *found* rather than assumed, which is what 575 says from the other
+side.
+
+### 8. Three defects that are this round's own
+
+1. **The constant's comment put the whole-row ruler at v3.66**, and the arm was built at v3.65 -- volume-13's
+   ledger is where that number is written, and the comment was written from memory. Caught by reading the
+   round that introduced the rule, which is the only place the answer exists.
+2. **The rename left a stale reference.** `listed` became `witnesses` and one sentence three hundred lines
+   away still said `for the same reason listed is`. Found by grepping the old name after the rename, which is
+   the check last round's stale comment taught.
+3. **The fixtures were written after the repair.** The measurement was the instrument that found the defect,
+   so the order was measure, repair, then fixture -- and the guarantee a test-first round gets for free has
+   to be obtained backwards. It was: each repair was removed in turn and the red had to be the fixture
+   written for it, seven edits and **nine** reds. Stated rather than excused, because "the test came second"
+   is only safe when it is checked, and the check is the table below.
+
+### 9. Falsification
+
+Seven edits, **nine** reds. Each deletes one judgement this round added, and the red has to be the
+fixture written for it:
+
+| edit | red |
+| --- | --- |
+| accept a record as a witness of its own rows | 1 -- `refuses a record whose own bullet is the only entry it quotes` |
+| require the whole row again | 2 -- the twenty-character fixture and the cross-file fixture |
+| drop the too-short floor | 1 -- `refuses a row whose item is too short to name anything at all` |
+| allow two records for a round | 1 -- `refuses a round that wrote two records` |
+| judge the second record rather than refusing two | 1 -- the same fixture, from the other side |
+| stop treating closures as witnesses | 2 -- the two-file closure fixture and its one-file predecessor |
+| **let a record sit above its round** | 1 -- `refuses a record written above its round` |
+
+### Readings
+
+> Ledger for `v3.114`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **257 files, 6663 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **261 files, 6850 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
+| new tests | **6,658 -> 6,663, +5**: the vacuity refusal, the twenty-character fixture, the two-record refusal, the record-above-its-round refusal, and the two-file closure fixture |
+| the lists | `## Open` **27 -> 27** (one closed, one opened), `## Closed` **53 -> 54**, one space of **81** ids with none missing |
+| the index | **67,565 -> 67,555** bytes |
+| the record | **77,191 -> 80,444** bytes over 54 entries, in **two** files (49,545 + 30,899) |
+| the volumes | **17**, and this round is the fourth in `volume-17.md` (**147,596** bytes) |
+| the falsifications | seven edits, **nine** reds |
+| gate sites / scripts / throws | **144** / **67 of 98** / **99** -- no new exit and no new script |
+| the budgets | **35** files state one -- unchanged: no new suite |
+| LLM calls | **0** |
+
+### Left open
+
+- **The record's set is one directory deep, and a file moved below it is invisible.** `recordSet()` reads
+  `docs/progress/` and nothing else, so the discovery rule has the limit the single path had, one level down:
+  `docs/progress/archive/closed.md` is a closure log to a reader and to no rule here.
+  `[open: what a file one level down means has to be decided before a walker is written -- an archive is not the record, and a record in two places is what the numbering refuses -- so the widening waits on that sentence rather than on a recursion]`
+- **Twenty-five records are judged by nothing, and the number has never been counted.** The three volumes of
+  the `## Pass N` era name no round, so finding 577's refusal steps over them by asking the file; the count is
+  what is missing, not the rule.
+  `[open: the exemption is a reading of three file names, and a count would say what it covers; the repair is a report rather than a refusal because a record in those volumes can never be merged into a round]`
