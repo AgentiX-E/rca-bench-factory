@@ -254,8 +254,8 @@ function recordSet() {
     const missing = n === 1 ? 'closed.md' : `closed-${String(n).padStart(2, '0')}.md`;
     const after = known.filter((one) => one.number > n).map((one) => `\`${one.name}\``);
     problems.push(
-      `${label(missing)}: the record's files skip ${missing}, so ${after.join(' and ')} begin a ` +
-        'numbering whose predecessor does not exist -- a file that was deleted is its entries, and ' +
+      `${label(missing)}: the record's files skip ${missing}, so the numbering then continues at ` +
+        `${after.join(' and ')} with no predecessor -- a file that was deleted is its entries, and ` +
         'no reader is told',
     );
     break;
