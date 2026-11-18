@@ -1643,12 +1643,14 @@ stamp edited to **26** so that its arithmetic still agreed with the section -- p
 rule passed, and `the ids skip O-010` was the only line that said anything. That is the accident the tiling
 equation was measured for and could not guard.
 
-**Six falsifications, fifteen reds.** Removing the no-id refusal: **1**. The duplicate-id refusal: **1** -- the
+**Seven falsifications, sixteen reds.** Removing the no-id refusal: **1**. The duplicate-id refusal: **1** -- the
 fixture is the copy, and nothing else in the suite refuses it. Report the gap while leaving the summary line
-printing `1..N`: **1**, which is a summary that can be false. The width refusal: **1**. The whole id block,
-check and summary: **3**, the shipped lists among them. Asking the **records** for ids as well: **8**, because
-the 558 entries of the frozen records have none, and a rule that wanted them would demand a repair of every
-round ever written.
+printing `1..N`: **1**, which is a summary that can be false. The width refusal: **1**. The zero refusal: **1**,
+which is the same defect one number further out: `O-000` passes the width rule and every number from 1 to the
+maximum stands beside it, so the gap check finds nothing and the summary prints `1..N` over a set that is not
+`1..N`. The whole id block, check and summary: **3**, the shipped lists among them. Asking the **records** for
+ids as well: **8**, because the 558 entries of the frozen records have none, and a rule that wanted them would
+demand a repair of every round ever written.
 
 **What this does not establish.** That the id says the text is the same entry. A closure can arrive carrying
 the id of an entry whose words were rewritten, and no reading of two files tells that from a closure -- the

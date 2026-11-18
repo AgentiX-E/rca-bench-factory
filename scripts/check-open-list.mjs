@@ -844,6 +844,17 @@ function check() {
                 `is three, so it is not ${idToken(Number(id.digits))} and the space would report a hole where ` +
                 `this entry stands: ${first.slice(0, 80)}`,
             );
+          } else if (Number(id.digits) === 0) {
+            // The space starts at 1, and `O-000` is the one token that passes the width rule and is still
+            // not a number in it. It matters beyond tidiness: the summary line promises "N entries with ids
+            // 1..N", and a set holding zero and one would print `1..2` over two ids that are `O-000` and
+            // `O-001` -- a sentence about a space the file does not hold, printed by the arm whose whole
+            // subject is that a published number must be the count of the thing it stands for.
+            idProblems += 1;
+            problems.push(
+              `${from.label}: the id ${id.token} is zero and the space starts at ${idToken(1)}, so the entry ` +
+                `has no number in the space the two lists share: ${first.slice(0, 80)}`,
+            );
           } else if (ids.has(id.token)) {
             idProblems += 1;
             problems.push(

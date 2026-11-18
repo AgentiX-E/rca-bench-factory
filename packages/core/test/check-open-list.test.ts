@@ -1001,6 +1001,19 @@ describe('docs · every entry has an identity, so nothing can leave the two list
     expect(r.out).toContain('a prefix grep for O-100 would find it');
   });
 
+  it('refuses O-000, because the space starts at one and the summary line promises 1..N', () => {
+    // The token that passes the width rule and is still not a number in the space. Without this
+    // refusal a set holding `O-000` and `O-001` is "dense" as far as the gap check can tell -- every
+    // number from 1 to the maximum is present -- and the summary prints `2 entr(ies) with ids 1..2`
+    // over two ids that are 000 and 001. A published number that is false about its own subject.
+    const zero = '- **O-000 · An item.** [open: a reason long enough to stand as one, and this is it]';
+    const one = '- **O-001 · Another item.** [open: and a second reason, long enough to be a reason here]';
+    const r = runOn(`## Open\n\n${zero}\n${one}\n\n## Pass log\n\nbody\n`);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('O-000 is zero and the space starts at O-001');
+    expect(r.out).not.toContain('with ids 1..2');
+  });
+
   it('refuses an id narrower than three, and does not accuse it of the prefix defect', () => {
     // The other direction is a different defect, and the first version of this refusal said the
     // wrong one: `grep O-009` does not match `O-9`, so "a prefix grep would find it" sends a reader

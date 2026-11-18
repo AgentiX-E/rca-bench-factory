@@ -1673,12 +1673,14 @@ count agreed with the section. The old guard would have been green -- every othe
 only line that said anything was `the ids skip O-010`. That is the accident the tiling equation was measured
 for and could not guard, and it is a guard now.
 
-**Six falsifications, fifteen reds.** Removing the no-id refusal: **1**. The duplicate-id refusal: **1** --
+**Seven falsifications, sixteen reds.** Removing the no-id refusal: **1**. The duplicate-id refusal: **1** --
 the fixture is the copy, and nothing else in the suite refuses it. The gap message while leaving the summary
 line printing `1..N`: **1**, which is the shape of a summary that can be false. The width refusal: **1**. The
-whole id block, check and summary together: **3**, the shipped lists among them. Asking the **records** for
-ids as well: **8**, because the 558 entries of the frozen records have none and a rule that wanted them would
-demand a repair of every round ever written.
+zero refusal: **1**, and it is the same defect one number further out -- `O-000` passes the width rule, every
+number from 1 to the maximum is present beside it, and the summary prints `1..N` over a set that is not
+`1..N`. The whole id block, check and summary together: **3**, the shipped lists among them. Asking the
+**records** for ids as well: **8**, because the 558 entries of the frozen records have none and a rule that
+wanted them would demand a repair of every round ever written.
 
 **What the id cannot say, and why that is written down rather than implied.** It cannot say the text is the
 same entry: a closure can arrive carrying the id of an entry whose words were rewritten, and no reading of two
@@ -1709,15 +1711,15 @@ and the two files' numbers were assigned together rather than argued about after
 
 | item | value |
 | --- | --- |
-| `core` test suite | **257 files, 6645 tests passed** (as of this commit) |
+| `core` test suite | **257 files, 6646 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **261 files, 6832 tests passed** (as of this commit) |
+| repo test suite | **261 files, 6833 tests passed** (as of this commit) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
-| new tests | **6,637 -> 6,645, +8**: six refusals (no id, a copy, a gap, a four-digit id, a one-digit id, and the record's scope) and two readings (the space across two files, and the shipped lists as 1..79) |
+| new tests | **6,637 -> 6,646, +9**: seven refusals (no id, a copy, a gap, a four-digit id, a one-digit id, a zero id, and the record's scope) and two readings (the space across two files, and the shipped lists as 1..79) |
 | the lists | `## Open` **28 -> 27**, `## Closed` **51 -> 52**, one space of **79** ids with none missing |
 | the index | **66,779 -> 66,861** bytes; the record **70,196 -> 73,447** over 52 entries |
 | the volumes | **17**, and this round is the second in `volume-17.md` |
-| the falsifications | six edits, **15** reds; two accidents performed on the shipped tree |
+| the falsifications | seven edits, **16** reds; two accidents performed on the shipped tree |
 | the budgets | **34 -> 35** files state one: `category-derivation.test.ts` at **1 044 ms** on the runner, declared at **3 000 ms** |
 | gate sites / scripts / throws | **144** / **67 of 98** / **99** -- no new exit and no new script |
 | the live list | **28 -> 27**: one closed, none opened |
