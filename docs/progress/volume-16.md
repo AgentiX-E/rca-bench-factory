@@ -1207,7 +1207,7 @@ that stopped walking half the tree fails a test rather than publishing a smaller
 | P2 | the ceiling of 8 workers has never been measured where it is not oversubscription | unchanged: every reading is on a four-CPU quota, so 8 is 2x | one full run on a box with nine or more available CPUs |
 | P2 | how close a **failing** run comes to its ceiling | unchanged | one run whose artefact is a failure, read per test |
 | P2 | a record's `terms` is a map, so nothing can say which keys a rule writes | unchanged: priced at v3.94, waiting on its trigger -- a second target reading a key another writes, or a `?? 0` in a sum whose 0 is a wrong answer | the trigger, or nothing |
-| P3 | the workflow files' `#` comments are read by nothing | **new**: five files, 1 172 `#` marks, 0 Han characters; reading one needs the YAML scanner | three fixtures -- a `#` in a quoted scalar, a `#` inside a `run: |` block, and a block scalar that contains a quote |
+| P3 | the workflow files' `#` comments are read by nothing | **new**: five files, 1 172 `#` marks, 0 Han characters; reading one needs the YAML scanner | three fixtures -- a `#` in a quoted scalar, a `#` inside a `run: \|` block, and a block scalar that contains a quote |
 | P3 | a run broken by a line break evades both language readers | **new**: a boundary, not a defect, measured by neither reader | decide whether a paragraph is a unit, which changes the document reader too |
 
 **Where this leaves the campaign.** The language axis is done for the files this tree writes in JavaScript and
