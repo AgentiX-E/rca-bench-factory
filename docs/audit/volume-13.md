@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–571, from the rounds recorded in `progress/volume-15.md` through `progress/volume-17.md`.
+Findings 542–572, from the rounds recorded in `progress/volume-15.md` through `progress/volume-17.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -1691,3 +1691,56 @@ a number written in this file.
 cost of the corpus, and the budget makes it a stated one rather than a cheaper one. The gate's job is to refuse
 a verdict decided by a number nobody chose; it is not a performance budget, and this repair does not pretend
 to be one.
+
+## Finding 572 — the record was one path, so ten closures left the corpus and the summary said none was missing
+
+`docs/progress/closed.md` reached **73,447** bytes after two rounds of closures, and the entry that asked
+what size is too large said the size had not been measured. So it was measured first: 52 closures, 1,412
+bytes an entry, the v3.112 closure added 3,251, and the volume budget of 200,000 is 39 closures away. The
+budget for the record is that number rather than a new one -- both are documents a round reads -- and it is
+judged on the last file only, because a budget applied to a frozen record is a budget applied to something
+nobody may edit.
+
+**The measurement is not what this finding is about.** Moving the last ten entries into
+`docs/progress/closed-02.md` -- the name a split would use -- left every verdict green:
+
+```
+check-open-list: OK (42 entry(ies) across 1 section(s) of docs/progress/closed.md: 0 open ..., 42 closed ...)
+check-open-list: 69 entr(ies) with ids 1..69, and none is missing
+exit 0
+```
+
+Ten closures had left the corpus, and the sentence that says they could not have left was printed by the
+guard that could not see them. Finding 570's identity rule is dense **within the population it is given**:
+the space is computed from the files that were opened, so no property of the numbers can notice a file that
+was never opened. That is the same shape as finding 568 one level out -- an arm whose population was what it
+had read rather than what the list holds -- and it is why the population has to be complete *before* the ids
+mean anything.
+
+**What replaced the path.** The record is a discovered set: `closed.md`, then `closed-NN.md` from `02` up,
+contiguous. Three refusals, one per way a set loses a member: a gap in the numbering (a deleted file is its
+entries), a name that is named like the record and is not one of its files (`closed-copy.md` reads as a
+closure log to a person and as nothing to the guard, which is finding 463's principle applied to file names
+rather than headings), and a second first file (`closed-01.md` beside `closed.md` is two answers to where
+the record begins, and the index links to one). Two boundary rules for a continuation file -- the heading,
+then an entry -- because a file without the heading is a file `sections()` finds nothing in, and the walk
+then reports a smaller corpus with no diagnostic at all. One order rule, scoped to the record: the ids
+ascend across the files, which a single file cannot get wrong and a set of files can, and which the corpus
+as a whole does not satisfy (a residual closed from the middle carries a number the live list has passed).
+
+**Two rules were written here and only one survived, and the round's own defects are the third answer.** The
+order rule was first written over the corpus in read order, and a fixture that is right refused it: `O-002`
+closed while `O-003` open is a dense space and not a run of numbers. The scope moved to the record, where the
+run is real -- a closure keeps its number and slots in at its place, which is what v3.112 did when it put
+`O-028` at the head of the record. The closure's advice (`move it to ...`) was assembled during the walk, so
+the live list, read first, was told to file closures in the *first* file of a two-file record; the fixture
+that expects the last file caught it, and the address is read from the discovered set now. And this entry's
+first draft took `O-080` -- the number after the highest -- which left a hole at `O-027` and was refused by
+the density rule: `the ids skip O-027`. That refusal is the convention being executed rather than described.
+
+**What this does not establish.** That the budget is the right number. It is the volume's number, chosen so
+that a reader holds one limit for "a document this log reads"; the measurement says 39 closures of headroom,
+and nothing here says 39 is the right horizon. The split -- 25 entries in `closed.md`, 27 in `closed-02.md`,
+the 52 entry lines compared before and after and identical -- is what makes the set rule run on the shipped
+tree instead of on fixtures only, and it is the cheap version of a migration the log has already paid for
+once: v3.111's split was forced mid-round by a file that blocked it.

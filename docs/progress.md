@@ -441,9 +441,9 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 257 core + 4 cli |
-| Test lines | 112,129 core + 3,242 cli |
-| Tests | 6,646 core + 187 cli |
-| Tracked files | 665 |
+| Test lines | 112,358 core + 3,242 cli |
+| Tests | 6,658 core + 187 cli |
+| Tracked files | 666 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -515,8 +515,8 @@ committed yet was invisible to it, so the row said 244 files beside a runner tha
 ## Open
 
 **This is the only live list.** An entry arrives when the round that raised it declined to
-close it, and **leaves** when something closes it: it is deleted from here and appended to
-[the record of closures](progress/closed.md), which is where every strike in this log now lives. A
+close it, and **leaves** when something closes it: it is deleted from here and moved into
+[the record of closures](progress/closed.md), where it **keeps its number** and slots in at its place. A
 round's own heading is `### Left open`, and it is a record of that round, frozen: nothing
 appends to it afterwards, and a reader who greps for what is open is asking this list, not
 those.
@@ -527,6 +527,11 @@ bytes** by v3.110, two thirds of the file a reader opens to find out what is lef
 is bounded by the volume that is still open, so the size of a list of closures was the reason
 the log could not start another volume (finding 568). `check-open-list.mjs` refuses a struck
 entry here and an unstruck one there, which is what keeps the two apart.
+
+The record is a **set of files** from v3.113: `closed.md`, then `closed-NN.md` from `02` up, contiguous, and
+the guard discovers them rather than naming one -- a second file it did not read once took ten closures out of
+the corpus while it printed `none is missing` (finding 572). The budget that bounds a volume bounds the last of
+them, and names the next one for the round that crosses it.
 
 Both headings were called `Open` until finding 207, which is how the same reader got
 fifty-eight answers, one of which was current. The rename was the repair; a sentence saying
@@ -545,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.112: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.113: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -894,14 +899,15 @@ is a row about rather than paraphrase one that no `grep` will find.
   rule -- a row naming a closed entry resolves -- but a fixture is one file with both sections in it, and no
   shipped record on this tree names a residual its own round closed. The two-file path has therefore been
   built, argued for, and never executed where it matters.
-  `[open: the first round whose record names a residual it closed will exercise the path, and nothing before then will; the alternative is a two-file fixture, which needs a second flag on a gate that has one]`
+  `[open: the gate has the second switch now -- RCA_RECORD_DIR, added by finding 572 -- so a fixture over a set of files is writable, and what no fixture can supply is the shipped record that makes this the tree's own path rather than a test's; the first round whose record names a residual it closed is still the round that closes it]`
 
-- O-027 · **The record is not split by size.** `docs/progress/closed.md` is **69,785** bytes after two rounds of
-  closures, and nothing bounds it: it is a record, and records grow. The argument that produced the volume
-  budget -- a document a reader cannot diff, and a push that carries all of it -- applies to this file at some
-  size, and that size has not been measured.
-  `[open: the volume budget's argument applies to the record at some size, and the number that size is has not been measured; the first closure after the file passes it is where the question becomes a decision]`
 
+- O-080 · **The record's set is one directory deep, and a file moved below it is invisible.** `recordSet()` reads
+  `docs/progress/` and nothing else, so the discovery rule this round wrote has the limit the single path had, one
+  level down: `docs/progress/archive/closed.md` is a closure log to a reader and to no rule here. The three
+  refusals cannot help -- they are about names inside the directory that was read -- and the id space is dense
+  within what was opened, which is the sentence finding 572 is about.
+  `[open: a recursive walk would need a rule for what a file one level down means -- an archive is not the record, and a record in two places is the thing the numbering refuses -- so the widening waits for a statement about where the record lives]`
 
 ## Pass log
 
@@ -936,7 +942,7 @@ and this table.
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
-| [volume-17.md](progress/volume-17.md) | 14 | v3.99 | v3.112 |
+| [volume-17.md](progress/volume-17.md) | 15 | v3.99 | v3.113 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -120,6 +120,49 @@ function indexOpen(entries: string[], from = 1): string {
 }
 
 const CLOSED_ENTRY = '- ~~An old item.~~ **Closed by finding 150**: the consumer arrived.';
+
+/**
+ * Run the guard over a **set** of record files, which is what the record became.
+ *
+ * `--doc` answers "the whole corpus is this one file" and every fixture above says it by carrying
+ * `## Open` and `## Closed` together. A set is not a file, and the rule that reads it is the
+ * discovery rule -- numbering, gaps, names -- so a fixture that wants a set has to hand the guard a
+ * directory. `RCA_RECORD_DIR` is that hand, and the index still travels through `--doc`: two
+ * switches, two subjects, and the ids they carry are one space because the space is a fact about
+ * both lists (finding 570).
+ *
+ * The other alternative was a second `--doc`, which would have made the id space two file names
+ * rather than one corpus, and the fixture would then have had to prove the very thing it assumed.
+ */
+function runOnRecord(files: Record<string, string>, body: string, env: Record<string, string> = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'open-list-record-'));
+  dirs.push(dir);
+  for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
+  const doc = join(dir, 'progress.md');
+  writeFileSync(doc, body);
+  const r = spawnSync('node', [SCRIPT, '--doc', doc], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, RCA_RECORD_DIR: dir, ...env },
+  });
+  return { code: r.status, out: `${r.stdout}${r.stderr}` };
+}
+
+/**
+ * The record's files on the shipped tree, counted from the disk rather than from a literal.
+ *
+ * A pinned fifty-two would have to be re-signed by every closure, and the set is the thing this
+ * round is about: the test has to know which files are the record without asking the guard, or it
+ * would agree with the guard about a file neither of them read.
+ */
+function shippedRecord(): { name: string; text: string }[] {
+  const dir = resolve(ROOT, 'docs', 'progress');
+  return readdirSync(dir)
+    .filter((name) => name === 'closed.md' || /^closed-\d{2}\.md$/.test(name))
+    .sort()
+    .map((name) => ({ name, text: readFileSync(join(dir, name), 'utf8') }));
+}
+
 
 /**
  * The record's own shape: `## Closed` at the top of a document, closed by the next `## `.
@@ -872,14 +915,20 @@ describe('docs · the live list holds work, the record holds closures, and neith
     expect(`${shipped.stdout}${shipped.stderr}`).toContain('check-open-list: OK');
     expect(shipped.status).toBe(0);
 
-    const record = readFileSync(resolve(ROOT, 'docs', 'progress', 'closed.md'), 'utf8');
-    const closures = record.split('\n').filter((line) => line.startsWith('- ')).length;
+    const record = shippedRecord();
+    const closures = record.reduce(
+      (sum, file) => sum + file.text.split('\n').filter((line) => line.startsWith('- ')).length,
+      0,
+    );
     expect(closures, 'the record holds no entry, so nothing below is a reading').toBeGreaterThan(0);
     const line = shipped.stdout
       .split('\n')
-      .find((one) => one.includes('of docs/progress/closed.md:'));
+      .find((one) => one.includes('of docs/progress/closed'));
     expect(line, `the guard printed no line for the record: ${shipped.stdout}`).toBeDefined();
     expect(line).toContain(`0 open with a reason, ${closures} closed by a finding`);
+    // And every file of the set is named in that one line: a summary that counted a file it did not
+    // name would let a reader check the total against the wrong file.
+    for (const file of record) expect(line).toContain(file.name);
 
     // And the live list's own number: every entry it holds is open, because a struck one is
     // refused above. A zero here is the split, stated where a reader of the gate's output sees
@@ -1047,8 +1096,188 @@ describe('docs · every entry has an identity, so nothing can leave the two list
     // carries every round's `### Left open` record, and those entries have no ids by design.
     const entries =
       sectionEntries(readFileSync(resolve(ROOT, 'docs', 'progress.md'), 'utf8'), '## Open').length +
-      sectionEntries(readFileSync(resolve(ROOT, 'docs', 'progress', 'closed.md'), 'utf8'), '## Closed').length;
+      shippedRecord().reduce((sum, file) => sum + sectionEntries(file.text, '## Closed').length, 0);
     expect(entries, 'the two lists hold no entry, so nothing below is a reading').toBeGreaterThan(50);
     expect(shipped.stdout).toContain(`${String(entries)} entr(ies) with ids 1..${String(entries)}, and none is missing`);
+  });
+});
+
+/**
+ * The record is a **set** of files, and a file nobody reads is the hole the ids cannot see.
+ *
+ * ## The accident this round is built on
+ *
+ * `docs/progress/closed.md` was one path in `DOCS`, and the id space of finding 570 is dense
+ * *within the population it is given*. Put the last ten entries into `docs/progress/closed-02.md`
+ * -- the file name a split would use -- and the guard read one file, reported
+ * `69 entr(ies) with ids 1..69, and none is missing`, and exited 0. Ten closures had left the
+ * corpus, and the one rule written for exactly that shape (an entry may not leave these lists)
+ * could not fire, because the space it checks is computed from the files it happened to open.
+ *
+ * So the population has to be complete **before** the identity rule means anything, and the
+ * population is a discovery problem: which files are the record, in which order, and what happens
+ * to a name that is close to one of them.
+ *
+ * ## Why the rules are three and not one
+ *
+ * A set loses a member in three ways, and each has its own repair: a **gap** in the numbering (a
+ * deleted file), a name that is **named like the record and is not one of its files** (a copy, or a
+ * spelling from a different convention), and a **second first file** (`closed-01.md` beside
+ * `closed.md`, two answers to where the record begins). The budget is the fourth rule and it is the
+ * only one that is about the future: the file a round appends to is the last one, so the last one
+ * is the only one judged.
+ *
+ * Each test below is one refusal, and each refusal is load-bearing -- the round's falsification log
+ * removes each in turn and names what went red.
+ */
+describe('docs · the record is a set of files, and the set has to be complete before its ids mean anything', () => {
+  /** The live list, as the corpus's first file: one open entry, and it holds id 1. */
+  const indexOne = () => `## Open\n\n${withId(OPEN_ENTRY, 1)}\n\n## Pass log\n\nbody\n`;
+
+  /** Two more live entries, for the fixture that needs the record to hold a gap in the middle. */
+  const SECOND = '- Another residual. [open: another reason, long enough to be a reason a reader acts on]';
+  const THIRD = '- A third residual. [open: a third reason, long enough to stand as a reason here]';
+
+  /** One closure, in the shape the shipped record uses. */
+  const closure = (n: number) => `- ~~An old item ${String(n)}.~~ **Closed by finding ${String(150 + n)}**: the consumer arrived.`;
+
+  /** A record file: a heading and `count` closures, numbered from `from`. */
+  const recordOf = (from: number, count = 1) =>
+    `## Closed\n\n${Array.from({ length: count }, (_, i) => withId(closure(from + i), from + i)).join('\n')}\n`;
+
+  it('reads every file of the record, which is the file a split would create', () => {
+    // The accident, as a rule: two files, one space. The summary names both, because a total a
+    // reader cannot attribute to a file is a total they cannot check.
+    const r = runOnRecord({ 'closed.md': recordOf(2, 2), 'closed-02.md': recordOf(4, 2) }, indexOne());
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('closed.md and ');
+    expect(r.out).toContain(': 0 open with a reason, 4 closed by a finding');
+    expect(r.out).toContain('5 entr(ies) with ids 1..5, and none is missing');
+  });
+
+  it('refuses a file named like the record that is not one of its files', () => {
+    // `closed-copy.md` reads as a closure log to a person and as nothing to this guard. The repair
+    // is a refusal rather than a glob: a glob would read it and catch the copy through the ids, and
+    // would also read `closed-old.md`, `closed.md.bak` and every other name a person invents at
+    // three in the morning -- as *the* record, at a position in the numbering that nothing chose.
+    const r = runOnRecord({ 'closed.md': recordOf(2), 'closed-copy.md': recordOf(3) }, indexOne());
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('named like the record and is not one of its files');
+    expect(r.out).toContain('closed-copy.md');
+  });
+
+  it('refuses a gap in the numbering, because a deleted file is its entries', () => {
+    // The id space is dense across the files it is given, so a missing *file* is invisible to it in
+    // the same way a missing entry was before finding 570. The numbering is what makes the
+    // difference visible, and the file that follows the gap is the one that says so.
+    const r = runOnRecord({ 'closed.md': recordOf(2), 'closed-03.md': recordOf(3) }, indexOne());
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('the record\'s files skip closed-02.md');
+    expect(r.out).toContain('closed-03.md');
+  });
+
+  it('refuses a second first file, because the index links to one of them', () => {
+    // `closed-01.md` is the number the first file would have if the numbering started at one, and
+    // the first file is called `closed.md` because the index links there. Two of them would make
+    // "where does the record begin" a question with two answers and one link.
+    const r = runOnRecord({ 'closed.md': recordOf(2), 'closed-01.md': recordOf(3) }, indexOne());
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('closed-01.md is a second answer to "where does the record begin"');
+  });
+
+  it('refuses a continuation that begins inside an entry', () => {
+    // The volume rule's counterpart: a boundary drawn through a sentence. The preamble that tells a
+    // reader what the numbers mean belongs to the first file, and a file that opens with prose is a
+    // document cut in half -- the entries below it would still be counted, so nothing else notices.
+    const r = runOnRecord(
+      { 'closed.md': recordOf(2), 'closed-02.md': `## Closed\n\nthe rest of a sentence\n\n${withId(closure(3), 3)}\n` },
+      indexOne(),
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('which is not an entry');
+    expect(r.out).toContain('the rest of a sentence');
+  });
+
+  it('refuses a continuation with no heading, because its entries are then in no list', () => {
+    // The one with no diagnostic at all before this round: `sections()` finds nothing in a file
+    // without the heading, so the walk went on and the corpus was quietly smaller. The defect is
+    // not the missing heading, it is that the entries below it had no reader.
+    const r = runOnRecord({ 'closed.md': recordOf(2), 'closed-02.md': `${withId(closure(3), 3)}\n` }, indexOne());
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('carries no `## Closed` heading');
+    expect(r.out).toContain('a set of closures nobody is told about');
+  });
+
+  it('refuses a record whose files are not in the order its numbers are', () => {
+    // The property only a set of files can get wrong. The space is dense -- 1, 4, 2, 3 is the set
+    // {1,2,3,4} -- so the identity rule is satisfied and the record's own order is reversed. A
+    // closure keeps its number and slots in at its place, so the record *is* a run of numbers, and
+    // the file boundary has to fall on that run.
+    const r = runOnRecord({ 'closed.md': recordOf(4), 'closed-02.md': recordOf(2, 2) }, indexOne());
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('comes after O-004');
+    expect(r.out).toContain('filed in the wrong place');
+  });
+
+  it('reads the order as the record ordering and not as a corpus ordering', () => {
+    // The scope, and it is one line of a rule away from being wrong. The live list holds 1, 4 and
+    // 5 while the record holds 2 and 3: read in corpus order that is 1, 4, 5, 2, 3, which is not a
+    // run of numbers and is right -- a closure keeps its number, so a residual closed from the
+    // middle of the list carries a number the live list has long passed. A rule over the corpus
+    // would refuse the first middle closure; the rule over the record refuses only a misplaced file.
+    const r = runOnRecord(
+      { 'closed.md': recordOf(2), 'closed-02.md': recordOf(3) },
+      `## Open\n\n${withId(OPEN_ENTRY, 1)}\n${withId(SECOND, 4)}\n${withId(THIRD, 5)}\n\n## Pass log\n\nbody\n`,
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('5 entr(ies) with ids 1..5, and none is missing');
+  });
+
+  it('refuses a last file over the budget, and names the file the closure needs', () => {
+    // The budget is the only rule here about the future, and it is judged on the last file because
+    // that is the only one a round may still edit. The diagnostic names the next file: the round
+    // that crosses the line is the least free to think about what to call it.
+    const r = runOnRecord(
+      { 'closed.md': recordOf(2), 'closed-02.md': recordOf(3, 3) },
+      indexOne(),
+      { RCA_RECORD_BUDGET: '200' },
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('the next closure needs a file of its own');
+    expect(r.out).toContain('closed-03.md');
+  });
+
+  it('does not judge a frozen file against the budget', () => {
+    // The asymmetry, and it is the volume rule's. A budget is a limit on what a round may add; a
+    // frozen record is not being added to, and a rule that refused it would be a rule that says a
+    // document already written is illegal.
+    const r = runOnRecord(
+      { 'closed.md': recordOf(2, 4), 'closed-02.md': recordOf(6) },
+      indexOne(),
+      { RCA_RECORD_BUDGET: '300' },
+    );
+    expect(r.code, r.out).toBe(0);
+  });
+
+  it('refuses a budget that is not a number of bytes', () => {
+    // `RCA_RECORD_BUDGET=twenty` would make every comparison false and the rule would never fire --
+    // a limit that cannot be compared is the shape of every gate this repository has had to repair.
+    const r = runOnRecord({ 'closed.md': recordOf(2) }, indexOne(), { RCA_RECORD_BUDGET: 'twenty' });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('a budget has to be a positive number of bytes');
+  });
+
+  it('names the last file of the record, not the first, when the live list carries a closure', () => {
+    // The refusal's advice has to be an address, and the address moved: a closure belongs in the
+    // file a round may still edit. A message that said `closed.md` would send it to a frozen file,
+    // where the next round's budget rule would refuse it for a reason two steps away.
+    const r = runOnRecord(
+      { 'closed.md': recordOf(2), 'closed-02.md': recordOf(3) },
+      `## Open\n\n${withId(CLOSED_ENTRY, 1)}\n\n## Pass log\n\nbody\n`,
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('history is filed as work');
+    expect(r.out).toContain('move it to `');
+    expect(r.out).toContain('closed-02.md` and delete it here');
   });
 });

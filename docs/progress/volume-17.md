@@ -1711,9 +1711,9 @@ and the two files' numbers were assigned together rather than argued about after
 
 | item | value |
 | --- | --- |
-| `core` test suite | **257 files, 6646 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **261 files, 6833 tests passed** (as of this commit) |
+| `core` test suite | **257 files, 6646 tests passed** (at v3.112) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.112) |
+| repo test suite | **261 files, 6833 tests passed** (at v3.112) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6,637 -> 6,646, +9**: seven refusals (no id, a copy, a gap, a four-digit id, a one-digit id, a zero id, and the record's scope) and two readings (the space across two files, and the shipped lists as 1..79) |
 | the lists | `## Open` **28 -> 27**, `## Closed` **51 -> 52**, one space of **79** ids with none missing |
@@ -1733,3 +1733,152 @@ and the two files' numbers were assigned together rather than argued about after
 - **The record is not split by size.** `docs/progress/closed.md` is **73,447** bytes after three rounds of
   closures, and nothing bounds it: it is a record, and records grow.
   `[open: the volume budget's argument -- a document a reader cannot diff -- applies to it at some size, and the size has not been measured]`
+
+## v3.113 · the record became a set of files, and the file nobody read took ten entries with it
+
+The last entry of the live list said why it could not be closed: the record had **no bound**, and the number
+that would bound it had never been measured.
+
+> **The record is not split by size.** `docs/progress/closed.md` is **69,785** bytes after two rounds of
+> closures, and nothing bounds it: it is a record, and records grow. ... that size has not been measured.
+
+This round measured it first, and the first thing the measurement produced was not a threshold. It was a hole.
+
+### 1. The size, measured before anything was decided
+
+| reading | value |
+| --- | --- |
+| the record | **52** closures in **73,447** bytes |
+| per entry | **1,412** bytes |
+| the v3.112 closure | **+3,251** bytes |
+| the volume budget | **200,000** bytes |
+| therefore | **39** closures of headroom |
+
+So "how large is too large" has an answer: **the volume's own number**, because the two things are the same
+thing -- a document a round reads -- and one limit a reader has to hold is better than two, for the reason the
+index/volume ratio was argued for last round. It is judged on the **last** file only: the files above are frozen
+records, and a budget applied to a record is a budget applied to something nobody may edit.
+
+The threshold is not what this round is about. What it is about is that a document a reader cannot diff was read
+by the guard as **one path**.
+
+### 2. Ten entries left the corpus, and every verdict stayed green
+
+Moving the last ten entries into `docs/progress/closed-02.md` -- the name a split would use -- and running the
+guard:
+
+```
+check-open-list: OK (590 entry(ies) ... : 560 open with a reason, 30 closed by a finding)
+check-open-list: OK (42 entry(ies) across 1 section(s) of docs/progress/closed.md: 0 open ..., 42 closed ...)
+check-open-list: 69 entr(ies) with ids 1..69, and none is missing
+exit 0
+```
+
+**Ten entries were gone, and "none is missing" was the guard's own sentence.** That is finding 570's edge: the
+id space is dense **within the population it is given**, so no property of the numbers can notice a file that was
+never opened. The identity rule means nothing until the population is complete -- which is finding 568's lesson
+(an arm whose population was what it had read rather than what the list holds) with a set in place of a row.
+
+### 3. The record is a discovered set
+
+`closed.md`, then `closed-NN.md` from `02` up, contiguous. One refusal per way a set loses a member:
+
+| defect | the line the guard prints |
+| --- | --- |
+| a gap in the numbering | `the record's files skip closed-02.md, so closed-03.md begin a numbering whose predecessor does not exist` |
+| a name that is named like the record and is not one of its files | `this file is named like the record and is not one of its files` |
+| a second first file | `closed-01.md is a second answer to "where does the record begin"` |
+
+The second is deliberate. A glob would read `closed-copy.md` and let the ids catch the copy -- and would also read
+`closed-old.md` and `closed.md.bak` as **the record itself**, at a position in the numbering that nothing chose.
+Finding 463's principle, an unknown spelling refused rather than ignored, moved from headings to file names.
+
+### 4. A boundary has two ways to be wrong
+
+A continuation file must carry the `## Closed` heading, and its first content line must be an entry:
+
+- **no heading**: `sections()` finds nothing in the file, the walk moves on, and **the corpus is quietly
+  smaller**. That is the previous section's hole in its local form, and it was the one shape with no diagnostic
+  at all;
+- **prose before the first entry**: a boundary drawn through a sentence. The preamble belongs to the first file,
+  because it says what the numbers mean; a continuation file starts at an entry.
+
+### 5. The one rule only a set can get wrong
+
+"The ids ascend across the files." A boundary can be placed anywhere, and one placed in front of the older half
+leaves the space dense -- the set is the same set -- while the record's own order is reversed. Density cannot see
+that, and every citation into the record ("the closure above", "the one before it") means the order.
+
+The scope is the **record**, not the corpus: `O-002` can be closed while `O-003` is open, so the corpus in read
+order is not a run of numbers, and a rule over it would refuse a document that is right. Thus the green side needs
+a fixture of its own -- the live list holding 1, 4 and 5 while the record holds 2 and 3.
+
+### 6. The split itself: 25 + 27, proven and not asserted
+
+`closed.md` holds `O-028`..`O-052`, `closed-02.md` holds `O-053`..`O-079`, and the entry this round closes holds
+`O-027` at the head of the record. The **52 entry lines were compared before and after, in order, and are
+identical**; 42,558 and 30,899 bytes.
+
+### 7. Three defects that are this round's own
+
+1. **The closure's address was assembled during the walk.** `move it to ...` took "the last file of the record so
+   far", and the live list -- the index -- is read first, so it was told to file closures in the **first** file of
+   a two-file record. The fixture that expects the last file went red; the address comes from the discovered set
+   now.
+2. **The order rule was first written over the corpus**, and the "1, 4, 5 against 2, 3" shape refused it -- a
+   document that is right. The scope moved to the record.
+3. **This entry's own first draft took `O-080`**, the number after the highest, which left a hole at `O-027` and
+   was refused: `the ids skip O-027`. That is the rule working -- a closure carries its number into the record and
+   a number that was spent stays spent -- and it is the first execution of "a closure slots in at its place".
+4. **This section was written in Chinese first**, and `check-docs-language` refused it with eleven diagnostics:
+   this repository's documents are English, and the gate's jurisdiction is the tree rather than the diff. The
+   section is a translation of itself now, which is why it is shorter than the round it describes.
+
+### 8. Falsification
+
+Twelve edits, **21** reds. Each deletes one judgement this round added, and the red has to be the fixture written
+for it:
+
+| edit | red |
+| --- | --- |
+| accept a file named like the record | 1 -- `refuses a file named like the record` |
+| check only the top of the numbering | 1 -- `refuses a gap in the numbering` |
+| accept a second first file | 1 -- `refuses a second first file` |
+| read continuation files without a boundary | 2 -- both boundary fixtures |
+| let a continuation file lose its heading | 1 -- `refuses a continuation with no heading` |
+| let a continuation file open with prose | 1 -- `refuses a continuation that begins inside an entry` |
+| drop the record's order rule | 1 -- `refuses a record whose files are not in the order its numbers are` |
+| never judge the budget | 1 -- `refuses a last file over the budget` |
+| judge every file against the budget | 2 -- the frozen-file fixture and the budget fixture |
+| name the first file as where a closure goes | 1 -- `names the last file of the record` |
+| **read only the first file of the record** | 8 -- **the accident itself**: five fixtures and three shipped readings |
+| accept a budget that is not a number | 1 -- `refuses a budget that is not a number of bytes` |
+
+### Readings
+
+> Ledger for `v3.113`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **257 files, 6658 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **261 files, 6845 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
+| new tests | **6,646 -> 6,658, +12**: eleven refusals and readings of the set, and one green fixture that pins the scope of the order rule |
+| the lists | `## Open` **27 -> 27** (one closed, one opened), `## Closed` **52 -> 53**, one space of **80** ids with none missing |
+| the index | **66,861 -> 67,565** bytes |
+| the record | **73,447 -> 77,191** bytes over 53 entries, in **two** files (46,292 + 30,899) |
+| the volumes | **17**, and this round is the third in `volume-17.md` (**134,310** bytes) |
+| the falsifications | twelve edits, **21** reds; the accident performed on the shipped tree |
+| gate sites / scripts / throws | **144** / **67 of 98** / **99** -- no new exit and no new script |
+| the budgets | **35** files state one -- unchanged: no new suite |
+| LLM calls | **0** |
+
+### Left open
+
+- **The row arm's cross-file population has never run on the shipped tree.** A fixture carries both sections in
+  one file, so the two-file population is exercised only by a document that is not the shipped one.
+  `[open: the gate has the second switch now -- RCA_RECORD_DIR -- so a fixture over a set is writable, and what no fixture can supply is the shipped record that makes it the tree's own path]`
+- **The record's set is one directory deep, and a file moved below it is invisible.** `recordSet()` reads
+  `docs/progress/` and nothing else, so the discovery rule has the limit the single path had, one level down.
+  `[open: a recursive walk needs a statement about what a file one level down means -- an archive is not the record, and a record in two places is what the numbering refuses]`

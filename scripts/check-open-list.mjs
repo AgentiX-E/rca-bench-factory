@@ -73,9 +73,9 @@
  * for the two judges could not have answered this question.
  */
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { progressCorpus } from './docs-corpus.mjs';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -107,11 +107,16 @@ const DOCS = [
   // in the live list, an unstruck bullet in the record -- and those two are the whole reason
   // the record is a file rather than a section that is merely long today.
   //
+  // The record is the one entry here whose `path` is a **stem** rather than a file: v3.113 made it
+  // a set (`closed.md`, then `closed-NN.md` from `02` up) because a single path is a population
+  // nobody completes, and `recordSet()` discovers it rather than trusting this line. The path below
+  // is still what `recordSet()` starts from and what the diagnostics name when a fixture run does
+  // not read a record at all.
   //
   // The row arm below runs **after** this walk rather than inside it, and that is what makes the
   // list it compares against whole: a row may name a residual the round closed, and the closure
-  // is in the second of these two files. An arm that ran per document would see only the entries
-  // of the documents read so far, and its verdict would depend on their order.
+  // is in the record, which is one file or more. An arm that ran per document would see only the
+  // entries of the documents read so far, and its verdict would depend on their order.
   { path: 'docs/progress.md', headings: ['## Open', '### Left open'] },
   { path: 'docs/progress/closed.md', headings: ['## Closed'] },
 ];
@@ -128,6 +133,195 @@ function source(rel) {
   if (i === -1) return { label: rel, path: resolve(ROOT, rel) };
   const actual = resolve(process.argv[i + 1]);
   return { label: actual, path: actual };
+}
+
+/** The record's first file, and the directory its files live in. */
+const RECORD_PATH = 'docs/progress/closed.md';
+const RECORD_DIR = 'docs/progress';
+/** Every name that is a second or later file of the record: `closed-02.md` and up. */
+const CONTINUATION = /^closed-(\d{2})\.md$/;
+/** What a file has to be called to be *named like* the record, whether it is one or not. */
+const RECORD_STEM = 'closed';
+
+/**
+ * The budget for the **last** file of the record.
+ *
+ * The same number as a volume's, and for the same reason rather than by coincidence: both
+ * are documents a round reads, and one number for "how big a document this log reads" is one
+ * number a reader has to hold. The asymmetry is the volume rule's too -- only the last file is
+ * judged, because the files above it are frozen records and a budget applied to a record is a
+ * budget applied to something nobody may edit.
+ *
+ * `RCA_RECORD_BUDGET` exists for the fixture that has to cross the line without writing two
+ * hundred kilobytes into a temp directory, the same way `RCA_PROGRESS_DIR` exists for the
+ * volume rules. A value that is not a positive number is refused rather than ignored: a
+ * budget that quietly became `NaN` would be a rule that never fires, which is the shape of
+ * every defect this file's neighbours were written to make visible.
+ */
+const RECORD_BUDGET = Number(process.env['RCA_RECORD_BUDGET'] ?? 200_000);
+
+/**
+ * The record's files: `closed.md`, then `closed-NN.md` from `02` up, contiguous.
+ *
+ * ## Why this is discovered rather than named
+ *
+ * Until v3.113 the record was one path in `DOCS`, and a second file with the same heading was
+ * simply not read -- so ten entries could leave the corpus (moved into `closed-02.md`) and every
+ * verdict stayed green, including the one finding 570 added for exactly this: the summary line
+ * printed `69 entr(ies) with ids 1..69, and none is missing` while ten were missing. The id space
+ * is dense *within the population it is given*, so no property of the ids can notice a file that
+ * was never opened. The population has to be complete before the identity rule means anything.
+ *
+ * ## What the names are checked against
+ *
+ * Three refusals, and they are the three ways a set loses a member:
+ *
+ *   - a **gap** in the numbering -- a deleted file is its entries, and the file after it begins
+ *     a numbering whose predecessor does not exist;
+ *   - a name that is **named like the record and is not one of its files** -- `closed-copy.md`
+ *     reads as a closure log to a person and as nothing to this guard, which is finding 463's
+ *     shape (an unknown spelling refused rather than ignored) applied to file names;
+ *   - a **second first file** -- `closed-01.md` beside `closed.md` is two answers to "where does
+ *     the record begin", and the first file is the one the index links to.
+ *
+ * ## The budget, judged on the last file only
+ *
+ * The record grows by closures, so the file a round appends to is the last one. A last file over
+ * the budget is refused with the name of the next one to open, because the alternative is that the
+ * round which crosses the line decides the naming -- at the moment it is least free to think about
+ * it. The files above are frozen and are not judged.
+ */
+function recordSet() {
+  const dir = process.env['RCA_RECORD_DIR'];
+  // `--doc` says "the whole corpus is this one file", and every fixture that carries `## Open` and
+  // `## Closed` in one document says it. A **set** is not a file, so a fixture that wants a set
+  // hands the guard a directory instead: the two switches name two subjects, and the ids they
+  // carry are one space because the space is a fact about both lists.
+  if (process.argv.includes('--doc') && dir === undefined) return { files: [], problems: [] };
+  const root = dir ?? resolve(ROOT, RECORD_DIR);
+  const label = (name) => (dir === undefined ? `${RECORD_DIR}/${name}` : join(root, name));
+
+  const problems = [];
+  if (!Number.isFinite(RECORD_BUDGET) || RECORD_BUDGET <= 0) {
+    problems.push(
+      `RCA_RECORD_BUDGET is ${String(process.env['RCA_RECORD_BUDGET'])}, and a budget has to be a ` +
+        'positive number of bytes -- a limit that cannot be compared is a rule that never fires',
+    );
+    return { files: [], problems };
+  }
+
+  let names;
+  try {
+    names = readdirSync(root);
+  } catch {
+    // A directory that cannot be read is one unreadable file as far as the walk is concerned: it
+    // reports `cannot read` with the path it tried, which is the diagnostic a reader can act on.
+    return { files: [{ label: label('closed.md'), path: resolve(root, 'closed.md') }], problems };
+  }
+
+  const known = [];
+  for (const name of [...names].sort()) {
+    if (!name.startsWith(RECORD_STEM)) continue;
+    if (name === 'closed.md') {
+      known.push({ name, number: 1 });
+      continue;
+    }
+    const continuation = CONTINUATION.exec(name);
+    if (continuation === null) {
+      problems.push(
+        `${label(name)}: this file is named like the record and is not one of its files -- the record ` +
+          'is `closed.md` and then `closed-NN.md` from `02` up, so the closures in this one are read ' +
+          'by nothing; rename it into the numbering, or delete it',
+      );
+      continue;
+    }
+    const number = Number(continuation[1]);
+    if (number < 2) {
+      problems.push(
+        `${label(name)}: the record's first file is \`closed.md\`, and ${name} is a second answer to ` +
+          '"where does the record begin" -- the index links to the first one, so a reader would ' +
+          'reach one of the two',
+      );
+      continue;
+    }
+    known.push({ name, number });
+  }
+
+  known.sort((a, b) => a.number - b.number);
+  const top = known.at(-1)?.number ?? 1;
+  for (let n = 1; n <= top; n += 1) {
+    if (known.some((one) => one.number === n)) continue;
+    const missing = n === 1 ? 'closed.md' : `closed-${String(n).padStart(2, '0')}.md`;
+    const after = known.filter((one) => one.number > n).map((one) => `\`${one.name}\``);
+    problems.push(
+      `${label(missing)}: the record's files skip ${missing}, so ${after.join(' and ')} begin a ` +
+        'numbering whose predecessor does not exist -- a file that was deleted is its entries, and ' +
+        'no reader is told',
+    );
+    break;
+  }
+
+  const last = known.at(-1);
+  if (last !== undefined && problems.length === 0) {
+    let bytes = 0;
+    try {
+      bytes = statSync(resolve(root, last.name)).size;
+    } catch {
+      bytes = 0;
+    }
+    if (bytes > RECORD_BUDGET) {
+      const next = `closed-${String(last.number + 1).padStart(2, '0')}.md`;
+      problems.push(
+        `${label(last.name)}: the last file of the record is ${String(bytes)} bytes and the budget is ` +
+          `${String(RECORD_BUDGET)}, so the next closure needs a file of its own -- open ` +
+          `\`${next}\` beside it and put the closure there; the files above are frozen and are not judged`,
+      );
+    }
+  }
+
+  return {
+    files: known.map((one) => ({ label: label(one.name), path: resolve(root, one.name) })),
+    problems,
+  };
+}
+
+/**
+ * Where a continuation file of the record has to begin, and the two ways it does not.
+ *
+ * The volume rule's counterpart. A volume that opens mid-entry is a boundary drawn through a
+ * sentence, and the rule there is that each volume begins at a `## ` heading. The record's files
+ * are the same shape with one difference: the first file carries the preamble that says what the
+ * numbers mean, and a second file may not -- a preamble at the top of `closed-02.md` is a document
+ * that was cut through its own introduction, and the entries below it would still be counted, so
+ * nothing else in this file would notice.
+ *
+ * The second way is the one with no diagnostic at all: a file whose heading is missing or spelled
+ * differently is a file `sections()` finds nothing in, so the walk goes on to the next one and the
+ * corpus is silently smaller. The heading check is here rather than in `recordSet()` because the
+ * spelling rule for headings already lives in this walk (`NEARLY`), and a file refused before it
+ * was opened could not be told apart from a file that could not be read.
+ */
+function continuationBoundary(text, from, first) {
+  if (from === first) return null;
+  const lines = text.split('\n');
+  const heading = lines.findIndex((line) => line.trim() === '## Closed');
+  if (heading === -1) {
+    return (
+      `${from.label}: this file of the record carries no \`## Closed\` heading, so its entries sit in ` +
+      'no list this guard reads -- every file of the record is one document, and a file without its ' +
+      'heading is a set of closures nobody is told about'
+    );
+  }
+  const opening = lines.slice(heading + 1).find((line) => line.trim() !== '');
+  if (opening === undefined) return null;
+  if (!opening.trimStart().startsWith('- ')) {
+    return (
+      `${from.label}: this file of the record begins with "${opening.trim().slice(0, 60)}", which is ` +
+      'not an entry -- a boundary drawn through an entry cuts a document in half, and the preamble ' +
+      'belongs to the first file'
+    );
+  }
+  return null;
 }
 
 /**
@@ -567,19 +761,32 @@ function entries(lines) {
  * the same defect the audit split produced in `blocker-claims.test.ts` and the same
  * one `check-doc-counts` was fixed for an hour earlier.
  */
-function filesOf(doc, first) {
+function filesOf(doc) {
   // `--doc` names one file and is not expanded: the tests drive this guard over
   // fixtures, and a fixture is one document. Expanding it to a corpus would make
   // every fixture test read the repository's own log instead of its subject.
   //
-  // Only the first document is handed the fixture, and the rest are handed nothing. A
-  // fixture is the whole corpus for the run -- `sections()` reads every spelling it knows in
-  // whatever file it is given, so one fixture can carry `## Open` and `## Closed` together --
-  // and handing the same file to a second document would count its sections twice, which is a
-  // number three tests below read.
-  if (process.argv.includes('--doc')) return first ? [source(doc.path)] : [];
-  if (doc.path !== 'docs/progress.md') return [source(doc.path)];
+  // The record is not asked here at all any more: it is a set `recordSet()` discovers, and a
+  // fixture that wants a set hands it `RCA_RECORD_DIR`. What is left in this function is the
+  // index and its volumes, which are one document read across eighteen files because a round
+  // is where it was written.
+  if (process.argv.includes('--doc')) return [source(doc.path)];
   return progressCorpus().map((file) => ({ path: file.path, label: file.label }));
+}
+
+/**
+ * What the summary calls the document it just read.
+ *
+ * One file is called by its own label, and that is the case every fixture is in. The index is
+ * called by what it is rather than by the first of its eighteen files, because a reader of the
+ * gate's output is asking about the log rather than about `volume-01.md`. The record is called by
+ * naming its files, because that is the fact the set rule added and the one a reader has to be able
+ * to check: which files of this tree are closures, and in what order they are read.
+ */
+function nameOf(doc, files, labelled) {
+  if (files.length === 1) return labelled;
+  if (doc.path !== RECORD_PATH) return 'docs/progress.md and its volumes';
+  return files.map((one) => one.label).join(' and ');
 }
 
 /**
@@ -662,13 +869,29 @@ function check() {
   // for the same reason `listed` is: the live list is in the index and the record is in a file, and
   // a duplicate id is a fact about both of them.
   const ids = new Map();
+  // The record's ids in the order its files hold them. The map answers "is this number used"; this
+  // answers "do the files hold the numbers in order", which is a question a single file cannot get
+  // wrong and a set of files can.
+  const ordered = [];
   let idEntries = 0;
   let idProblems = 0;
   let idLabel = '';
   let tables = 0;
   let tableRows = 0;
-  for (const [position, doc] of DOCS.entries()) {
-    const files = filesOf(doc, position === 0);
+  // The record's files, discovered before the walk and their problems reported first: a file that
+  // was never opened is a fact about the corpus, and every verdict below is computed from the
+  // corpus it was given. Reporting it after the walk would put the largest defect last.
+  const record = recordSet();
+  for (const problem of record.problems) problems.push(problem);
+  // Where a closure belongs, which is the **last** file of the record: the only one a round may
+  // still edit. Read from the discovered set rather than accumulated during the walk -- the index is
+  // read first, so a value assembled in the loop is the *fallback* at the moment the live list's
+  // refusal needs it, and the refusal would name the first file of a two-file record. The shipped
+  // path is what a fixture run gets, and it is the right advice there as well: the fixture is not
+  // where closures go, the record is.
+  let recordTarget = record.files.at(-1)?.label ?? RECORD_PATH;
+  for (const doc of DOCS) {
+    const files = doc.path === RECORD_PATH ? record.files : filesOf(doc);
     if (files.length === 0) continue;
     // Document-wide, not per section: the second list is usually written by copying
     // the first one's shape, so a sentence shared between them is the cheapest thing
@@ -688,6 +911,20 @@ function check() {
       text = readFileSync(from.path, 'utf8');
     } catch (error) {
       problems.push(`cannot read ${from.label}: ${error.message}`);
+      continue;
+    }
+    // A continuation file of the record is a boundary, and a boundary has two ways to be wrong:
+    // drawn in the wrong place (before an entry, so the first entry starts mid-sentence) or not
+    // drawn at all (no heading, so the entries sit in no list this guard reads). Both are refused
+    // here rather than counted: a file the walk silently skips reports as a smaller corpus, which
+    // is the defect this whole round is about.
+    //
+    // The record only. The index's volumes are a document read across eighteen files too, and a
+    // volume is *forbidden* the record's heading rather than required to have it -- a `## Closed`
+    // in a volume would be a closure list nobody read before this round made the record a set.
+    const boundary = doc.path === RECORD_PATH ? continuationBoundary(text, from, files[0]) : null;
+    if (boundary !== null) {
+      problems.push(boundary);
       continue;
     }
     // A heading that begins with one of the two names and is neither of the two spellings this
@@ -864,6 +1101,16 @@ function check() {
           } else {
             ids.set(id.token, `${from.label}: ${first.slice(0, 60)}`);
             if (idLabel === '') idLabel = from.label;
+            // The record only, and the scope is the whole of what the order means. The live list and
+            // the record are two populations: `O-002` can be closed while `O-003` is open, so the
+            // corpus in read order is not a run of numbers and a rule over it would refuse a document
+            // that is right. Within the record the numbers **are** a run -- a closure keeps its
+            // number and slots in at its place, which is why the shipped record ascends and why its
+            // files hold consecutive ranges -- and the file boundary has to fall on that run rather
+            // than across it.
+            if (kind === 'closed') {
+              ordered.push({ number: Number(id.digits), token: id.token, label: from.label });
+            }
           }
         }
         // The split, enforced. Two refusals, one per side, and they are the whole reason the
@@ -879,7 +1126,7 @@ function check() {
         if (kind === 'live' && CLOSED.test(headline)) {
           problems.push(
             `${from.label}: the live list holds a struck entry, so history is filed as work: ` +
-              `move it to \`docs/progress/closed.md\` and delete it here -- ${first.slice(0, 80)}`,
+              `move it to \`${recordTarget}\` and delete it here -- ${first.slice(0, 80)}`,
           );
           continue;
         }
@@ -969,9 +1216,11 @@ function check() {
       continue;
     }
     console.log(
-      `check-open-list: OK (${total} entry(ies) across ${sectionsSeen} section(s) of ${
-        files.length > 1 ? 'docs/progress.md and its volumes' : labelled
-      }: ${total - closed} open with a reason, ${closed} closed by a finding)`,
+      `check-open-list: OK (${total} entry(ies) across ${sectionsSeen} section(s) of ${nameOf(
+        doc,
+        files,
+        labelled,
+      )}: ${total - closed} open with a reason, ${closed} closed by a finding)`,
     );
     stampChecks({ live, rounds, problems });
   }
@@ -1014,6 +1263,24 @@ function check() {
       console.log(
         `check-open-list: ${String(idEntries)} entr(ies) with ids 1..${String(idEntries)}, and none is missing`,
       );
+    }
+    // The sequence, which is the property a set of files has and a single file does not. A boundary
+    // can be placed anywhere, and one placed in front of the older half leaves the space dense while
+    // reversing the record's own order -- density cannot see that, because the set is the same set.
+    // What the record guarantees is that its files hold the numbers in order: `closed.md` holds the
+    // lower range and `closed-02.md` the higher one, and a file boundary that falls anywhere else is
+    // a record filed in the wrong place.
+    let previous = null;
+    for (const one of ordered) {
+      if (previous !== null && one.number < previous.number) {
+        problems.push(
+          `${one.label}: the id ${one.token} comes after ${previous.token}, and the record's files ` +
+            'are read in name order -- a record whose numbers run backwards is a file, or an entry, ' +
+            'filed in the wrong place, and every citation into it means the order',
+        );
+        break;
+      }
+      previous = one;
     }
   }
 
