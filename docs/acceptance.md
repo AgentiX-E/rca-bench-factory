@@ -920,6 +920,14 @@ point, and the boundary between the first two is the whole of what makes the thi
   for a receipt keyed on the tip's tree and the push refuses without one; a repository without a
   gate is not asked, because a rule that refused every push there would be turned off rather than
   satisfied.
+- **The receipt is taken on the committed tree, because two of its checks read the index** (v3.115).
+  `## Repository`'s `Tracked files` row is `git ls-files` and its `Commits` row names a revision;
+  both describe the commit rather than the working tree, so a round that adds a file has one tree
+  that passes and one that fails on byte-identical content. Measured: v3.115 ran the gate over its
+  working tree (35 commands, `OK`), committed, and the same content then failed at 8 of 35 -- the
+  tracked count one short of the commit that held it, and a budget threshold nothing had moved
+  under. The second failure was the run that told the truth: a green gate is a reading of the box
+  as well as of the tree, so the tree a receipt is filed for has to be the tree that gets published.
 - **What is not claimed.** In v3.53's close-out the channel was pointed at the real
   `api.github.com`: the read path answered 640 entries for this repository (598 files after 42
   tree entries are skipped, `truncated: false`), and the write path published two commits to the

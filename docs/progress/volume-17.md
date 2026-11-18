@@ -2306,6 +2306,55 @@ them from the file:
 | the orphan rule loses its scope | 15 |
 | a record with no round stops being counted | 1 -- `counts a record whose file names no round` |
 
+### 10. Two things only the committed tree said
+
+The gate ran twice over this round's content: once on the working tree, once on the commit. The first
+said `OK (35 command(s) covering 48 of the 58 run steps)`. The second failed at 8 of 35. **Neither
+failure was about the content**, which is why neither could appear on the first run, and both are
+about a number this round wrote.
+
+#### 583. The eight derived numbers were typed, not re-derived, and one of them was a count of the index
+
+`docs/audit/volume-14.md` is new in this round, so the commit holds **667** tracked files; the
+`## Repository` table published **666**, taken from the tree that did not yet contain it. The row is
+`git ls-files`, and the check that reads it passed on the tree holding 666 and failed on the commit
+holding 667:
+
+```
+  - ## Repository says '666' for Tracked files; the tree says '667'
+```
+
+The guard has a mode for exactly this -- `--write` refuses to publish while a file exists that the
+index does not hold, and says so in a sentence -- and the round did not use it: it edited prose. The
+repair is the guard's own output, re-derived rather than typed, and it moved a second row with it:
+`Test lines` **112,719 → 112,744**, which is the 25 lines of the comment 584's repair added. A number
+in a derived table is a reading; a number a hand wrote beside seven derived ones is a coincidence with
+a deadline.
+
+#### 584. A second file crossed the floor, and this time the run moved rather than the tree
+
+`battery-witnesses.test.ts` holds 17 tests and every one of them spawns `python3`, so its cost is the
+machine's: the slowest -- *reads the transform failure out of the bytes CI produced*, two spawns --
+reads **150 ms** alone and **1,085 ms** inside the coverage suite, which is 7.2x for two process
+launches. The rule's floor is 1,000 ms, and the file stated no budget, so its verdict fell to
+vitest's 5,000 ms default:
+
+```
+check-test-budgets: battery-witnesses.test.ts: its slowest test takes 1085 ms and the file states no
+budget, so its verdict is decided by vitest's 5000 ms default; state one on the suite
+```
+
+finding 578 wrote this sentence one round ago about `step-process.test.ts`, and the first run of this
+round passed the gate with the same file under 1,000 ms. **The same bytes, two verdicts, and the thing
+that moved was what else was running** -- which is the whole finding, arriving a second time in the
+round that recorded it the first time.
+
+The repair is the one finding 578 chose, and the number is chosen the same way: the suite's reading is
+the reading, because a file measured alone would be sized for a machine it is never run on. **4,000
+ms**, which the rule reads as "the slowest test may take 2,000" -- 1.8x the suite's reading, 13x the
+isolated one, and below the default, so a spawn that genuinely hangs is caught sooner than it was.
+Files that state a budget: **36 → 37**.
+
 ### Readings
 
 > Ledger for `v3.115`.
@@ -2322,10 +2371,11 @@ them from the file:
 | the population | **218** record sections: **193** under a round and **25** under none; **211** rounds, **18** of them wrote none -- **217**, **192** and **210** when the round started, and the 22 records it found are in the 193 |
 | the index | **67,555 -> 68,687** bytes |
 | the record | **80,444 -> 82,170** bytes over 55 entries, in **two** files (49,545 + 32,625) |
-| the volumes | **17**, and this round is the fifth in `volume-17.md` (**165,220** bytes) |
+| the volumes | **17**, and this round is the fifth in `volume-17.md` (**168,393** bytes) |
 | the falsifications | eight edits, **forty** reds |
 | gate sites / scripts / throws | **144** / **67 of 98** / **99** -- no new exit and no new script |
-| the budgets | **36** files state one -- unchanged: no test file was added |
+| the budgets | **36 -> 37** files state one: `battery-witnesses.test.ts` states **4,000** ms over a suite reading of 1,085 and an isolated one of 150 |
+| the derived table | `Tracked files` **666 -> 667** (this round's audit volume) and `Test lines` **112,719 -> 112,744** (the comment that states the budget) -- both re-derived by the guard, not typed |
 | LLM calls | **0** |
 
 ### Left open

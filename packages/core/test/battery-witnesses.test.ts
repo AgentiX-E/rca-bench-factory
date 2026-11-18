@@ -63,7 +63,32 @@ const REGULAR_RED = [
   'Tests  1 failed | 8 passed (9)',
 ].join('\n');
 
-describe('injection batteries · a red is not a proof until it names the test', () => {
+/**
+ * The clock this suite's verdict is decided by, stated because nobody else states it.
+ *
+ * ## The file the floor named on its second reading, not its first (finding 584)
+ *
+ * Every test here spawns `python3` and waits for it, so the cost is the machine's rather
+ * than the file's: the slowest -- *reads the transform failure out of the bytes CI
+ * produced*, two spawns -- reads **150 ms** alone and **1 085 ms** inside the coverage
+ * suite, where it shares four cores with 260 other files. That is 7.2x for two process
+ * launches, which is what a scheduler does to a spawn when everything else is running.
+ *
+ * The budget rule's floor is 1 000 ms, so the same tree has two verdicts. `verify:local`
+ * passed this gate on the working tree of v3.115 and failed it on the committed tree of
+ * the same content twenty minutes later: nothing moved except which of the 261 files were
+ * running beside it, and the number that decided the difference was vitest's 5 000 ms
+ * default, which this file never wrote.
+ *
+ * **4 000 ms**, which the rule reads as "the slowest test may take 2 000" -- 1.8x the
+ * reading inside the suite and 13x the isolated one -- and below the default, so a spawn
+ * that genuinely hangs is caught sooner than it was. The reading is the suite's for the
+ * same reason `step-process.test.ts` gives: a file measured alone would be sized for a
+ * machine this one is never run on.
+ */
+const SUITE_BUDGET_MS = 4_000;
+
+describe('injection batteries · a red is not a proof until it names the test', { timeout: SUITE_BUDGET_MS }, () => {
   it('separates "no red" from "a red that proves nothing"', () => {
     expect(pythonJson(`print(json.dumps(W.attribute('row', {}, 0, 0, [])))`)[0]).toBe('NO_RED');
     expect(pythonJson(`print(json.dumps(W.attribute('row', {}, 1, 0, [])))`)[0]).toBe('NO_RED');

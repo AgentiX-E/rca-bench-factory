@@ -1,6 +1,6 @@
 # Audit · volume 14
 
-Findings 579–582, from the round recorded in `progress/volume-17.md` as `v3.115`.
+Findings 579–584, from the round recorded in `progress/volume-17.md` as `v3.115`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -200,3 +200,76 @@ The paragraph's advice still holds for the table it is about: a record written w
 is read as a record's rows by the arm, once its heading is one the guard reads. What was wrong was
 which of the two kept that table out of the arm's reach, and a round that explains the wrong cause
 leaves the next round looking in the wrong place — this one looked for twelve rounds.
+
+## Finding 583 — the eight derived numbers were typed beside a tree that did not hold the file they counted
+
+`## Repository` is a table of eight numbers, and since v3.80 every one of them is derived by
+`scripts/check-repository-table.mjs` and refused when it drifts. This round added a file --
+`docs/audit/volume-14.md` -- and published the eight rows from the tree that did not yet contain it.
+
+The row that could see the difference is `Tracked files`, which is `git ls-files`: **666** while the
+file was untracked, **667** in the commit that holds it. So the guard passed on the working tree and
+failed on the commit of byte-identical content:
+
+```
+  - ## Repository says '666' for Tracked files; the tree says '667'
+```
+
+The guard has a mode for this and its own comment says why it exists: `--write` refuses to publish
+while a file exists that the index does not hold, because "the tree it was just rewritten from" has to
+be the tree the commit will contain (v3.83, published 638 for 639). The round did not use it. It
+edited prose by hand, which is the one thing a derived table cannot survive: seven of the eight
+numbers were readings and the eighth was a memory.
+
+### The repair is the guard's output, and it moved a second row
+
+Re-derived, `Tracked files` is **667** and `Test lines` is **112,744** -- the 25 lines of the comment
+that finding 584's repair added. The second number is the point: a hand edit repairs the row it was
+made in and leaves the next reader to discover that the table was not derived.
+
+### What it does not claim
+
+That the row is wrong to count the index. It counts tracked files and its label says so, and the mode
+that publishes it refuses until the index and the worktree agree; what was missing was the round's use
+of that mode, not the guard's definition. The consequence is recorded in `acceptance.md`: a receipt is
+filed for the committed tree, because two of these eight rows can only be checked after the commit.
+
+## Finding 584 — a second file crossed the budget floor, and what moved between the two runs was not the tree
+
+The same two runs, the other direction. `battery-witnesses.test.ts` holds 17 tests and every one of
+them spawns `python3` and waits, so the cost is the machine's rather than the file's. The slowest --
+*reads the transform failure out of the bytes CI produced*, two spawns -- reads **150 ms** alone and
+**1,085 ms** inside the coverage suite, where it shares four cores with 260 other files: 7.2x for two
+process launches.
+
+The rule refuses a file with no declared budget whose slowest test reaches **1,000 ms**, because the
+default that decided the verdict is vitest's 5,000 and the file never wrote it:
+
+```
+check-test-budgets: battery-witnesses.test.ts: its slowest test takes 1085 ms and the file states no
+budget, so its verdict is decided by vitest's 5000 ms default; state one on the suite
+```
+
+The first run of this round's content passed this gate; the second failed it seventeen minutes later.
+Nothing about the file changed -- a comment was added to a different file. **finding 578 recorded this
+exact shape one round ago**, which is the finding's real content: a floor whose false positives are
+answered by a declaration will keep naming files, one run at a time, because what crosses 1,000 ms on
+a four-core box is decided by what else is running.
+
+### The reading, and the number chosen from it
+
+| reading | value |
+| --- | --- |
+| the file alone | **150 ms** |
+| the same test in the coverage suite | **1,085 ms** |
+| the rule's floor | 1,000 ms |
+| vitest's default, which decided the verdict | 5,000 ms |
+| stated | **4,000 ms** -- the rule reads it as "the slowest test may take 2,000": 1.8x the suite's reading, 13x the isolated one, and below the default |
+
+Files that state a budget: **36 -> 37**.
+
+### What it does not claim
+
+That 4,000 is this file's cost. It is a number about a clock on a box, and what can refute it is a
+reading above 2,000 ms inside the suite -- which would be a report to act on rather than a red to
+retry. It also does not make the file cheaper: seventeen `python3` launches are what these tests are.
