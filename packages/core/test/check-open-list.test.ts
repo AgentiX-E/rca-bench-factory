@@ -97,6 +97,18 @@ function indexOpen(entries: string[]): string {
 const CLOSED_ENTRY = '- ~~An old item.~~ **Closed by finding 150**: the consumer arrived.';
 
 /**
+ * The record's own shape: `## Closed` at the top of a document, closed by the next `## `.
+ *
+ * A closure used to be struck where it stood, and from v3.111 it moves here. Every fixture
+ * below that is *about* a closed entry uses this, because the live list refuses a strike now:
+ * a fixture that left one in `## Open` would be testing the refusal rather than the rule the
+ * test names.
+ */
+function closedSection(entries: string[]): string {
+  return `## Closed\n\n${entries.join('\n')}\n`;
+}
+
+/**
  * The header the nineteen shipped table-form records use, in the shape markdown needs: the
  * column names, then the rule that draws the line under them. Two lines that are not rows --
  * which is finding 464, and which every fixture below has to supply for the row count to mean
@@ -133,7 +145,7 @@ describe('docs · the shipped list, as the guard reads it', () => {
     // instead held to the document's own headings, counted here from the file, and the
     // entry count to the two parts it is made of.
     const summary = shipped.stdout.match(
-      /check-open-list: OK \((\d+) entry\(ies\) across (\d+) section\(s\) of docs\/progress\.md(?: and its volumes)?: (\d+) open with a reason, (\d+) closed by a finding, and (\d+) record\(s\) in table form \((\d+) row\(s\)\)/,
+      /check-open-list: OK \((\d+) entry\(ies\) across (\d+) section\(s\) of docs\/progress\.md(?: and its volumes)?: (\d+) open with a reason, (\d+) closed by a finding\)/,
     );
     expect(summary, `the guard's summary changed shape: ${shipped.stdout}`).not.toBeNull();
     const numbers = (summary ?? []).slice(1).map(Number);
@@ -161,7 +173,11 @@ describe('docs · the shipped list, as the guard reads it', () => {
       }).length;
     expect(sections, 'the guard read a different number of lists than the document has').toBe(headings);
     expect(entries, 'the parts do not add up to the whole').toBe(open + closed);
-    expect(entries).toBeGreaterThanOrEqual(headings - (numbers[4] ?? 0));
+    // And the rows a record carries are not entries: a record's rows are counted on their own
+    // line, because they are a different kind of object -- the log states them separately and so
+    // does the guard, and a document whose records held entries would be refused by the arm that
+    // reads them.
+    expect(shipped.stdout).toMatch(/record\(s\) in table form \(\d+ row\(s\)\)/);
     // Non-vacuity in the other direction: the shipped document has at least one
     // closure, so "closed by a finding" is a reading rather than a constant zero.
     expect(closed).toBeGreaterThan(0);
@@ -245,7 +261,7 @@ describe('docs · the guard reads its subject, not the first sample of it', () =
     // of the twenty shipped closures could not have satisfied the strict version
     // either -- their citation wraps a line break -- which is why the pattern needs
     // `\s+` and why this fixture is one entry, not a document.
-    const r = runOn(indexOpen(['- ~~An old item, struck through and otherwise silent.~~']));
+    const r = runOn(closedSection(['- ~~An old item, struck through and otherwise silent.~~']));
     expect(r.code).toBe(1);
     expect(r.out).toContain('does not say what closed it');
   });
@@ -258,7 +274,7 @@ describe('docs · the guard reads its subject, not the first sample of it', () =
       '- ~~An old item.~~ **Closed without a finding: the fix was in a scratch helper outside this tree, and the entry records it.**',
     ];
     for (const entry of cases) {
-      const r = runOn(indexOpen([entry]));
+      const r = runOn(closedSection([entry]));
       expect(r.code, `${entry} was refused: ${r.out}`).toBe(0);
     }
   });
@@ -319,7 +335,10 @@ describe('docs · the live list says when it was read, and how much it holds', (
     `${ROUND}\n\nbody\n\n## Open\n\n${stamp === null ? '' : `${stamp}\n\n`}${entries.join('\n')}\n\n## Pass log\n\nbody\n`;
 
   it('passes when the stamp names the newest round and counts the entries below it', () => {
-    const r = runOn(withStamp([OPEN_ENTRY, CLOSED_ENTRY], 'Checked at v3.62: **1** entry open.'));
+    // The closed entry is in the record, which is a second section of the same document: the
+    // stamp counts the live list, and the record is not part of that count even when the two
+    // files are one fixture.
+    const r = runOn(withStamp([OPEN_ENTRY], 'Checked at v3.62: **1** entry open.') + closedSection([CLOSED_ENTRY]));
     expect(r.out).toContain('the live list was read at v3.62 and holds 1 open entr(ies)');
     expect(r.out).toContain('the newest round this corpus names is v3.62');
     expect(r.code).toBe(0);
@@ -375,7 +394,7 @@ describe('docs · the live list says when it was read, and how much it holds', (
       '  ~~[open: an old sub-item]~~ Closed by finding 343, which settled the sub-item only.',
       '  [open: the entry itself is still open, and this is the sentence that says why it is]',
     ].join('\n');
-    const r = runOn(indexOpen([quoted, CLOSED_ENTRY]));
+    const r = runOn(indexOpen([quoted]) + closedSection([CLOSED_ENTRY]));
     expect(r.code).toBe(0);
     expect(r.out).toContain('1 open with a reason, 1 closed by a finding');
   });
@@ -431,14 +450,17 @@ describe('docs · the headline and the reason have to agree about whether an ent
     expect(r.out).toContain('A residual whose caveat was settled a round later.');
   });
 
-  it('accepts the same entry once its headline is struck too, which is the shape this log already used', () => {
+  it('accepts the same entry once its headline is struck too, and only in the record', () => {
     // Non-vacuity for the rule above: the only change is the headline's `~~`, so a guard that
     // refused the fixture for any other reason would fail here.
+    //
+    // And the entry belongs to `## Closed` now: the same text under `## Open` is refused by the
+    // live list's own rule, which is the assertion below this one rather than a coincidence.
     const whole = HALF_STRUCK.replace(
       '- A residual whose caveat was settled a round later.',
       '- ~~A residual whose caveat was settled a round later.~~',
     );
-    const r = runOn(indexOpen([whole, OPEN_ENTRY]));
+    const r = runOn(closedSection([whole]) + indexOpen([OPEN_ENTRY]));
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain('1 open with a reason, 1 closed by a finding');
   });
@@ -452,7 +474,7 @@ describe('docs · the headline and the reason have to agree about whether an ent
       '- ~~A residual that was closed.~~ **Closed by finding 343**, which settled it.',
       '  [open: and yet this sentence still asks a reader to do the work]',
     ].join('\n');
-    const r = runOn(indexOpen([both]));
+    const r = runOn(closedSection([both]));
     expect(r.code).toBe(1);
     expect(r.out).toContain('history in its headline and as work in its body');
   });
@@ -466,7 +488,7 @@ describe('docs · the headline and the reason have to agree about whether an ent
       '  ~~[open: an old sub-item]~~ Closed by finding 343, which settled the sub-item only.',
       '  [open: the entry itself is still open, and this is the sentence that says why it is]',
     ].join('\n');
-    const r = runOn(indexOpen([quoted, CLOSED_ENTRY]));
+    const r = runOn(indexOpen([quoted]) + closedSection([CLOSED_ENTRY]));
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain('1 open with a reason, 1 closed by a finding');
   });
@@ -506,7 +528,7 @@ describe('docs · a record written as a table is read as rows, and a third spell
     // test written against an output inherits the output's mistake (finding 464).
     const r = runOn(page(suffix('| priority | item | state | next step |\n| --- | --- | --- | --- |\n| **P1** | a residual | unchanged | nothing |')));
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('1 record(s) in table form (1 row(s)) whose rows were not judged');
+    expect(r.out).toContain('1 record(s) in table form (1 row(s)); the newest round wrote none, so no row was judged');
   });
 
   it('refuses an entry sitting under a record that is written as a table', () => {
@@ -525,7 +547,7 @@ describe('docs · a record written as a table is read as rows, and a third spell
   it('refuses a third spelling of either name, so a list cannot leave its reader quietly', () => {
     const r = runOn(`## Headline\n\ntext\n\n## Open\n\n${OPEN_ENTRY}\n\n### Left open (unfinished)\n\n${OPEN_ENTRY.replace('- A residual.', '- Another.')}\n\n## Pass log\n\nbody\n`);
     expect(r.code).toBe(1);
-    expect(r.out).toContain('begins with one of the two names this guard');
+    expect(r.out).toContain('begins with one of the list names this guard');
     expect(r.out).toContain('would have no reader');
   });
 });
@@ -574,7 +596,7 @@ describe('docs · the rows a table-form record holds, counted from the record', 
     // `filter(/^\s*\|/)`, this reported 3 -- and so did the test that shipped with it.
     const r = runOn(page(suffix(`${HEAD}\n| **P1** | a residual | unchanged | nothing |`)));
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('1 record(s) in table form (1 row(s)) whose rows were not judged');
+    expect(r.out).toContain('1 record(s) in table form (1 row(s)); the newest round wrote none, so no row was judged');
   });
 
   it('counts five rows in a five-row record, so the number is the record and not the file', () => {
@@ -680,15 +702,16 @@ describe('docs · a record may not be the only place a residual lives', () => {
   it('accepts a row whose item quotes an entry the live list holds', () => {
     const r = runOn(page(`| **P1** | ${QUOTED} | unchanged | nothing |`));
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain(`the ${ROUND} record's 1 row(s), every one of which quotes an entry`);
+    expect(r.out).toContain(`the ${ROUND} record's 1 row(s) were judged, and every one of them quotes an entry`);
   });
 
-  it('refuses a row that names a residual no entry in the live list holds', () => {
+  it('refuses a row that names a residual no entry in either file holds', () => {
     // The shipped defect in fixture form: this is v3.64's own first row, seven rounds after the
     // residual it names was raised, and the list it was raised against has never mentioned it.
     const r = runOn(page('| **P1** | the split is expensive by 240 s of every run | unchanged | nothing |'));
     expect(r.code).toBe(1);
-    expect(r.out).toContain('names a residual the live list does not hold');
+    expect(r.out).toContain('names a residual the list does not hold');
+    expect(r.out).toContain('in no entry of `## Open` or `## Closed`');
     expect(r.out).toContain('add the entry, or quote the entry the row is about');
   });
 
@@ -703,7 +726,31 @@ describe('docs · a record may not be the only place a residual lives', () => {
       `| **P1** | ${QUOTED} | unchanged | nothing |\n\n`;
     const r = runOn(`${older}${newer}## Open\n\n${LIVE}\n\nChecked at ${ROUND}: **1** entries open\n\n## Pass log\n\nbody\n`);
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain(`the ${ROUND} record's 1 row(s), every one of which quotes an entry`);
+    expect(r.out).toContain(`the ${ROUND} record's 1 row(s) were judged, and every one of them quotes an entry`);
+  });
+
+  it('judges the record the newest round wrote, whichever form it was written in', () => {
+    // Finding 568's second half. The arm's subject is "the newest record", and the record's
+    // *form* changed at v3.70 -- from a table to a list of entries -- so a selection by form
+    // picked the newest table, which was v3.69, and judged a record that had been frozen for
+    // forty-one rounds. It stayed green because those rows happened to quote entries the list
+    // still carried; it went red the moment they moved out (finding 568).
+    //
+    // The fixture is the shape: an older table whose row names nothing, and a newer list whose
+    // entry names the live residual. Judging the table would refuse this document, and the
+    // document is the one the last forty rounds wrote.
+    const older =
+      `## v9.8 — the round before\n\n### Left open, in the order the goal is reached\n\n${TABLE_HEAD}\n` +
+      '| **P1** | a residual the list has never held, written when this arm could not see it | unchanged | nothing |\n\n';
+    const newer =
+      `## ${ROUND} — a round\n\n### Left open\n\n` +
+      `- ${QUOTED}. [open: the reason this is still work, long enough to be a reason a reader acts on]\n\n` +
+      `## Open\n\n${LIVE}\n\nChecked at ${ROUND}: **1** entries open\n\n## Pass log\n\nbody\n`;
+    const r = runOn(`${older}${newer}`);
+    expect(r.code, r.out).toBe(0);
+    // Zero table rows are judged -- the newest round wrote none -- and the entry that *was*
+    // judged is the newest round's own, which is the sentence the summary has to say.
+    expect(r.out).toContain(`the ${ROUND} record's 1 row(s) were judged, and every one of them quotes an entry`);
   });
 
   it('refuses a row whose item is too short to name anything at all', () => {
@@ -712,5 +759,108 @@ describe('docs · a record may not be the only place a residual lives', () => {
     const r = runOn(page('| **P1** | see above | unchanged | nothing |'));
     expect(r.code).toBe(1);
     expect(r.out).toContain('too short to name an entry');
+  });
+});
+
+/**
+ * The split: what the live list is for, and the record that keeps it that way.
+ *
+ * Until v3.111 a closed entry was struck where it stood, so `## Open` carried its own history
+ * and grew by it -- **65,544 of 98,927 bytes** by v3.110, two thirds of the list a reader opens
+ * to find out what is still open. The index that holds it had grown past the size a volume can
+ * be born at, and the rule that bounds it compares it with the volume that is still open, so
+ * the size of a list of closures was the reason the log could not start another volume
+ * (finding 568).
+ *
+ * The split is only a split if it holds, and it holds by two refusals: a strike in the live
+ * list, and a bullet in the record that is not struck. Both are below, and so is the shipped
+ * document, because a rule that only ever runs over fixtures is a rule nobody has seen work on
+ * the thing it was written for.
+ */
+describe('docs · the live list holds work, the record holds closures, and neither drifts', () => {
+  /** A document with one open entry, as the shallowest fixture that can carry a refusal. */
+  const live = (entry: string) => `## Open\n\n${entry}\n\n## Pass log\n\nbody\n`;
+
+  it('refuses a struck entry in the live list, and names the file the closure belongs in', () => {
+    // The refusal that keeps the split. Without it the closures drift back one strike at a
+    // time, and the file that could not grow is the file that cannot grow again: the index's
+    // bound is the open volume, and a volume is born at about 9 KB.
+    const r = runOn(live(CLOSED_ENTRY));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('history is filed as work');
+    expect(r.out).toContain('move it to `docs/progress/closed.md` and delete it here');
+    // The refusal is not the stamp's: an entry that is closed is already excluded from the
+    // count, so the number at the top of the list was right about this file while the file was
+    // growing by the entry. That is why the rule has to refuse rather than count.
+    expect(r.out).toContain('check-open-list: FAILED');
+  });
+
+  it('refuses an entry in the record that is not struck, because nobody reads the record for work', () => {
+    // The mirror, and the worse direction: the only list a reader consults for what is left to
+    // do is `## Open`, so an unstruck bullet here is work that will never be done and will never
+    // be seen to be undone.
+    const r = runOn(`## Closed\n\n${OPEN_ENTRY}\n`);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('work is filed as history');
+    expect(r.out).toContain('no reader of the live list will see it');
+  });
+
+  it('refuses a `## Closed` heading that gained a suffix, rather than reading no list at all', () => {
+    // Finding 463's shape, one name further on: a heading that gained a suffix left nineteen
+    // records outside the guard's reach without a word, because the match was an exact string.
+    const r = runOn(`## Closed, and how it emptied\n\n${CLOSED_ENTRY}\n`);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('begins with one of the list names this guard');
+  });
+
+  it('lets a row name a residual the record holds, because the list is two files now', () => {
+    // The regression the split caused, and the reason `DOCS` reads the record first. A round's
+    // record may name a residual the round **closed** -- that is what closing it meant -- and
+    // while closures were struck in place, the row resolved against the live list. Moving them
+    // narrowed that population to what is still open, and the arm went red on rows that had been
+    // right for forty rounds. The population is every entry the list holds, in either file.
+    const body = '| **P1** | the closure the round recorded | unchanged | nothing |';
+    const r = runOn(
+      `## v9.9 — a round\n\n### Left open, in the order the goal is reached\n\n${TABLE_HEAD}\n${body}\n\n` +
+        `## Open\n\n${OPEN_ENTRY}\n\nChecked at v9.9: **1** entry open\n\n## Pass log\n\nbody\n\n` +
+        `## Closed\n\n- ~~the closure the round recorded~~ **Closed by finding 150**, which settled it.\n`,
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain("the v9.9 record's 1 row(s) were judged, and every one of them quotes an entry");
+  });
+
+  it('reads the shipped record and the live list as one corpus, and counts each from its own file', () => {
+    // Non-vacuity for both refusals above: the shipped documents are judged by the same rules,
+    // so a `## Open` that went back to carrying its history would fail here rather than after
+    // the next volume boundary. The counts are arithmetic over the files -- a pinned forty-eight
+    // would have to be re-signed by every closure, and a number re-signed on every unrelated
+    // edit is a number nobody reads.
+    const shipped = spawnSync('node', [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
+    expect(`${shipped.stdout}${shipped.stderr}`).toContain('check-open-list: OK');
+    expect(shipped.status).toBe(0);
+
+    const record = readFileSync(resolve(ROOT, 'docs', 'progress', 'closed.md'), 'utf8');
+    const closures = record.split('\n').filter((line) => line.startsWith('- ')).length;
+    expect(closures, 'the record holds no entry, so nothing below is a reading').toBeGreaterThan(0);
+    const line = shipped.stdout
+      .split('\n')
+      .find((one) => one.includes('of docs/progress/closed.md:'));
+    expect(line, `the guard printed no line for the record: ${shipped.stdout}`).toBeDefined();
+    expect(line).toContain(`0 open with a reason, ${closures} closed by a finding`);
+
+    // And the live list's own number: every entry it holds is open, because a struck one is
+    // refused above. A zero here is the split, stated where a reader of the gate's output sees
+    // it rather than inferred from a green build.
+    const index = shipped.stdout.split('\n').find((one) => one.includes('of docs/progress.md and its volumes:'));
+    expect(index, `the guard printed no line for the live list: ${shipped.stdout}`).toBeDefined();
+    expect(index).toContain('0 closed by a finding');
+  });
+
+  it('names the record from the index, so a closure is one link away from the list that closed it', () => {
+    // The pointer is what makes the record reachable: a reader who greps the live list for
+    // something that was closed finds nothing, and the sentence above the list is the only
+    // place that tells them where it went. Nothing else in the tree asserts this link.
+    const index = readFileSync(resolve(ROOT, 'docs', 'progress.md'), 'utf8');
+    expect(index).toContain('progress/closed.md');
   });
 });

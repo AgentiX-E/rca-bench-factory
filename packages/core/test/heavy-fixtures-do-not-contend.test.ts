@@ -2,6 +2,14 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+// The shared scanner, imported rather than copied so the suite's view of "code" is
+// the same one the budget guards read. It is a character state machine: it handles
+// template and regex literals, and it blanks a literal's delimiters along with its
+// contents. That last difference is harmless here because blanking is
+// length-preserving -- parentheses still pair and every offset this file slices
+// with still indexes the raw source. Blanking rather than deleting is what keeps a
+// match position pointing at the line it came from, so a failure can name a line.
+import { stripCommentsAndStrings } from '../../../scripts/budget-readings.mjs';
 
 /**
  * A test file that runs a package manager or a compiler must not run it inside
@@ -63,23 +71,6 @@ import { describe, expect, it } from 'vitest';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const TEST_DIR = resolve(ROOT, 'packages', 'core', 'test');
-
-/**
- * The source with comments and string literals blanked, offsets preserved.
- *
- * Blanking rather than deleting keeps a match position pointing at the line it
- * came from, which is what lets a failure name a line number. String literals
- * are blanked too because the spelling being searched for -- `pnpm install` --
- * appears inside fixtures as an *argument* to `run(['install'])` as well as in
- * the prose explaining the rule.
- */
-function stripCommentsAndStrings(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
-    .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length))
-    .replace(/'(?:[^'\\\n]|\\.)*'/g, (m) => `'${' '.repeat(Math.max(0, m.length - 2))}'`)
-    .replace(/"(?:[^"\\\n]|\\.)*"/g, (m) => `"${' '.repeat(Math.max(0, m.length - 2))}"`);
-}
 
 /** Every `*.test.ts` in the suite, with its source blanked. */
 function suiteSources(): Map<string, string> {
@@ -148,6 +139,11 @@ function spawnArguments(blanked: string, raw: string): string[] {
  * written across lines, and taking the whole file is what this repairs; the list is
  * bounded by the parenthesis, which the blanked source has already emptied of the
  * strings that could contain one.
+ *
+ * The scanner also blanks a literal's delimiters, which keeps the division of
+ * labour intact: the delimiters are gone from the text used to pair parentheses,
+ * but the verb is read from the raw slice at the same offsets, where the quotes
+ * around `'install'` are still present for the match below.
  */
 function heavyVerb(raw: string): string | null {
   const args = spawnArguments(stripCommentsAndStrings(raw), raw);
@@ -374,5 +370,54 @@ describe('the suite’s heavy fixtures', () => {
     // which is the same defect wearing a green tick.
     const heapCapped = /runWithHeapMb\(\[[^\]]*'--cases'[^\]]*\],\s*\d+\)/.test(source);
     expect(heapCapped).toBe(true);
+  });
+});
+
+/**
+ * The shapes on which a four-regex blanker and the shared state machine disagree.
+ *
+ * Each case is stated through `heavyVerb`, the function whose reading decides the
+ * heavy set, rather than against the scanner's output: the property is that a call
+ * written later on the same line stays visible. Asserting the scanner's text would
+ * only pin a copy of its behaviour and would stay green if the reader stopped
+ * using it.
+ */
+describe('the heavy reader’s view of a line', () => {
+  it('keeps a call that follows a string holding a URL', () => {
+    // A blanker that removes `//` comments before string literals eats from the URL
+    // to end of line, deleting the second call with it; the reading then falls back
+    // to null and the file silently leaves the heavy set.
+    expect(
+      heavyVerb("spawnSync('git', ['status', '--url', 'https://example.com/x']); spawnSync('pnpm', ['install'], { cwd });"),
+      'erasing from the `//` in the URL to the end of the line hides the later install and turns this into a null, which would drop a heavy fixture from the set without a failure',
+    ).toBe('install');
+  });
+
+  it('keeps a call that follows a template literal containing an apostrophe', () => {
+    // Without template-literal handling the apostrophe in `it's` opens a phantom
+    // single-quoted string that runs to the next quote, which is the one opening
+    // `'pnpm'`; everything between them, including the second call's name, is gone.
+    expect(
+      heavyVerb("const label = `it's (${x})`; spawnSync('pnpm', ['install'], { cwd });"),
+      'treating the apostrophe inside a template literal as a string delimiter swallows the call that follows it, so this returns null while a package manager is still being run',
+    ).toBe('install');
+  });
+
+  it('keeps a call that follows a regex literal containing a quote', () => {
+    // Same failure through the regex route: `/'/` is not a string, but a blanker
+    // that has no regex mode reads the quote as one and consumes the rest of the line.
+    expect(
+      heavyVerb("const q = /'/; spawnSync('pnpm', ['install'], { cwd });"),
+      'reading the quote inside a regex literal as a string delimiter blanks the following install, so a real spawn would be reported as null',
+    ).toBe('install');
+  });
+
+  it('does not promote a template piece to a command', () => {
+    // The opposite drift: a reader that searched the whole file rather than a spawn's
+    // arguments would find the quoted verb inside this template and call it a command.
+    expect(
+      heavyVerb("const note = `${'install'}` as a template piece;"),
+      'searching outside a spawn argument list turns a template piece into a command, which is the whole-file reading this file already rejected once',
+    ).toBeNull();
   });
 });

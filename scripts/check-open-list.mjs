@@ -82,11 +82,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
 
 const DOCS = [
-  // Two headings, and they answer two different questions.
+  // Three lists, and they answer three different questions.
   //
   // `## Open` is the **live** list: what is not done now. There is one, in the index, and
   // it is maintained by hand -- an entry is added when the round that raises it declines
-  // to close it, and struck when something closes it.
+  // to close it, and **deleted** when something closes it.
   //
   // `### Left open` is a **record**: what that round left undone, at that round. There are
   // fifty-seven of them and none is updated afterwards. The heading used to read `### Open`
@@ -94,10 +94,26 @@ const DOCS = [
   // which was current (finding 207). Renaming was the repair; a rule in a comment would
   // have left the names lying.
   //
-  // The guard checks the same two things of both: that each entry says which it is, and
-  // that an open entry gives a reason long enough to be one. It cannot check that either
-  // list is *current*, and does not pretend to.
+  // `## Closed` is the **record of closures**, and it exists because the live list stopped
+  // fitting: until v3.111 an entry was struck in place, so `## Open` carried its own history
+  // and grew by it -- **65,544 of 98,927 bytes** by v3.110, two thirds of the list a reader
+  // opens to find out what is still open. The index that holds it had grown past the size a
+  // new volume can be born at, so the size of a list of closures was the reason the log could
+  // not grow (finding 568).
+  //
+  // The guard checks the same two things of all three: that each entry says which it is, and
+  // that an open entry gives a reason long enough to be one. It cannot check that any list is
+  // *current*, and does not pretend to. What the split adds is one refusal per side -- a strike
+  // in the live list, an unstruck bullet in the record -- and those two are the whole reason
+  // the record is a file rather than a section that is merely long today.
+  //
+  //
+  // The row arm below runs **after** this walk rather than inside it, and that is what makes the
+  // list it compares against whole: a row may name a residual the round closed, and the closure
+  // is in the second of these two files. An arm that ran per document would see only the entries
+  // of the documents read so far, and its verdict would depend on their order.
   { path: 'docs/progress.md', headings: ['## Open', '### Left open'] },
+  { path: 'docs/progress/closed.md', headings: ['## Closed'] },
 ];
 
 /**
@@ -292,11 +308,16 @@ function spellingOf(heading) {
   if (heading === '## Open') return { kind: 'live', form: 'entries' };
   if (heading === '### Left open') return { kind: 'record', form: 'entries' };
   if (/^### Left open,/.test(heading)) return { kind: 'record', form: 'table' };
+  // The record of closures. Its own kind rather than `record`, because the two are asked
+  // different questions: a round's record may hold an entry that is still open (a round can
+  // leave something undone), and this one may not -- everything here is closed, or it is
+  // work filed as history and nobody will ever do it.
+  if (heading === '## Closed') return { kind: 'closed', form: 'entries' };
   return null;
 }
 
-/** A heading that begins with one of the two names without being a spelling this guard reads. */
-const NEARLY = /^#{2,3} (?:Open|Left open)\b/;
+/** A heading that begins with one of the list names without being a spelling this guard reads. */
+const NEARLY = /^#{2,3} (?:Open|Left open|Closed)\b/;
 
 /**
  * The four columns a table-form record names, and the reason each one has to be there.
@@ -467,11 +488,17 @@ function entries(lines) {
  * the same defect the audit split produced in `blocker-claims.test.ts` and the same
  * one `check-doc-counts` was fixed for an hour earlier.
  */
-function filesOf(doc) {
+function filesOf(doc, first) {
   // `--doc` names one file and is not expanded: the tests drive this guard over
   // fixtures, and a fixture is one document. Expanding it to a corpus would make
   // every fixture test read the repository's own log instead of its subject.
-  if (process.argv.includes('--doc')) return [source(doc.path)];
+  //
+  // Only the first document is handed the fixture, and the rest are handed nothing. A
+  // fixture is the whole corpus for the run -- `sections()` reads every spelling it knows in
+  // whatever file it is given, so one fixture can carry `## Open` and `## Closed` together --
+  // and handing the same file to a second document would count its sections twice, which is a
+  // number three tests below read.
+  if (process.argv.includes('--doc')) return first ? [source(doc.path)] : [];
   if (doc.path !== 'docs/progress.md') return [source(doc.path)];
   return progressCorpus().map((file) => ({ path: file.path, label: file.label }));
 }
@@ -537,8 +564,26 @@ function stampChecks({ live, rounds, problems }) {
 
 function check() {
   const problems = [];
-  for (const doc of DOCS) {
-    const files = filesOf(doc);
+  // Every entry the list holds, in either file, so a record's row can be compared with the
+  // thing it is a row about.
+  //
+  // Read up front rather than accumulated as the documents are walked. The row arm asks whether
+  // a round's record names a residual "the list holds", and from v3.111 the list is two files --
+  // `## Open` in the index and `## Closed` in the record -- so a row that names a residual the
+  // round **closed** has to resolve against the record as well. Accumulating it during the walk
+  // would make that depend on which document was read first, and a verdict a reordering can flip
+  // is not a verdict. A fixture carries both sections in one file, so it supplies its own.
+  const listed = [];
+  // The corpus's records and rounds, hoisted for the arm after the walk: it asks which record the
+  // **newest round** wrote, and that question is about the corpus rather than about the document
+  // being read when the answer becomes available.
+  const records = [];
+  const rounds = [];
+  let tables = 0;
+  let tableRows = 0;
+  for (const [position, doc] of DOCS.entries()) {
+    const files = filesOf(doc, position === 0);
+    if (files.length === 0) continue;
     // Document-wide, not per section: the second list is usually written by copying
     // the first one's shape, so a sentence shared between them is the cheapest thing
     // to leave behind, and a per-section map would not see it. Document-wide now
@@ -546,20 +591,10 @@ function check() {
     // same list read at two times.
     const reasons = new Map();
     const live = [];
-    const rounds = [];
-    // Every entry of the live list, as text, so a record's row can be compared with the thing
-    // it is a row about. Both states: a record may name a residual the live list has just
-    // closed, and that row is still pointing at an entry that exists.
-    const listed = [];
-    // Every table-form record that sits under a round heading, with the round that wrote it.
-    // `rowLines` are the rows; the header and the rule are not rows (finding 464).
-    const records = [];
     let total = 0;
     let closed = 0;
     let sectionsSeen = 0;
     let headings = 0;
-    let tables = 0;
-    let tableRows = 0;
     let labelled = files[0].label;
     for (const from of files) {
     let text;
@@ -577,8 +612,8 @@ function check() {
       const trimmed = line.trim();
       if (NEARLY.test(trimmed) && spellingOf(trimmed) === null) {
         problems.push(
-          `${from.label}: the \`${trimmed}\` heading begins with one of the two names this guard ` +
-            'reads and is neither of them, so a list written under it would have no reader',
+          `${from.label}: the \`${trimmed}\` heading begins with one of the list names this guard ` +
+            'reads and is none of them, so a list written under it would have no reader',
         );
       }
     }
@@ -657,11 +692,57 @@ function check() {
         return;
       }
       total += items.length;
+      // A record written as bullets is a record too.
+      //
+      // From v3.70 the rounds write `### Left open` with entries instead of a table, and the row
+      // arm below collected only the table form -- so "the newest record" was the newest *table*,
+      // and that was **v3.69 for forty-one rounds**: an arm whose stated subject is the record
+      // that can still be edited, reading one that had been frozen since v3.69. It stayed green
+      // because the rows happened to quote entries the list still carried, and it went red the
+      // moment those entries moved out of the list (finding 568).
+      //
+      // The item of a bullet record is its headline, which is the sentence the round wrote; the
+      // body is where the reading is, and a row is a claim about a subject rather than a copy of
+      // the paragraph.
+      if (kind === 'record') {
+        const owner = roundAt.filter((one) => one.line < section.index).at(-1) ?? null;
+        if (owner !== null) {
+          records.push({
+            label: from.label,
+            owner,
+            items: items.map((item) => item.split('\n')[0].slice(2).trim()),
+          });
+        }
+      }
       let openHere = 0;
       for (const item of items) {
         const headline = item.split('\n')[0];
         const first = headline.slice(2).trim();
         listed.push(item);
+        // The split, enforced. Two refusals, one per side, and they are the whole reason the
+        // record is a separate file rather than a section that happens to be long today.
+        //
+        // A struck entry in the live list is history filed as work: a reader who greps the
+        // list for what is not done finds it, and the index pays for it in bytes forever. That
+        // is how `## Open` reached 98,927 bytes -- and the index that holds it cannot exceed
+        // the volume it is compared with, so the cost was not aesthetic.
+        //
+        // An unstruck entry in the record is the mirror, and it is worse: it is work that
+        // nobody will do, because the only list a reader consults for work is the live one.
+        if (kind === 'live' && CLOSED.test(headline)) {
+          problems.push(
+            `${from.label}: the live list holds a struck entry, so history is filed as work: ` +
+              `move it to \`docs/progress/closed.md\` and delete it here -- ${first.slice(0, 80)}`,
+          );
+          continue;
+        }
+        if (kind === 'closed' && !CLOSED.test(headline)) {
+          problems.push(
+            `${from.label}: \`## Closed\` holds an entry that is not struck, so work is filed as history ` +
+              `and no reader of the live list will see it -- ${first.slice(0, 80)}`,
+          );
+          continue;
+        }
         // The entry's own reason, read once: the closed branch needs it to refuse a bullet
         // that is history in its headline and work in its body, and the open branch needs it
         // to refuse the mirror. Reading it in two places would let the two drift.
@@ -740,73 +821,99 @@ function check() {
       );
       continue;
     }
-    // The newest round's record, matched against the live list.
-    //
-    // ## What this arm is for
-    //
-    // A record's `item` column is a place a residual can live with **no entry behind it**, and
-    // four of them did: the only P1 in this log -- the remote's history sharing no name with the
-    // local one -- spent six rounds in records and never appeared in the list that calls itself
-    // the only live list. A reader who greps for what is open, which is the reader the live list
-    // exists for, was not told about the largest thing outstanding.
-    //
-    // The count could not see it. The stamp is arithmetic over the entries below it, so a
-    // residual that is not an entry is not a residual as far as the stamp is concerned -- and
-    // the guard printed both numbers (eleven open, seven rows judged in the newest record)
-    // without ever asking whether they were talking about the same set.
-    //
-    // ## Why only the newest round's record
-    //
-    // Older records are frozen: nothing appends to them, and a round that has been written up
-    // cannot be repaired. Their rows are history and their paraphrases are how the log was kept.
-    // The newest record is the one that can still be edited, so it is the one this arm reads --
-    // the same scope, and for the same reason, as the currency stamp's round comparison.
-    const newestRecord = records.reduce(
-      (best, one) =>
-        best === null ||
-        one.owner.major > best.owner.major ||
-        (one.owner.major === best.owner.major && one.owner.minor > best.owner.minor)
-          ? one
-          : best,
-      null,
-    );
-    let quotedRows = 0;
-    if (newestRecord !== null) {
-      const entries = listed.map((one) => plain(one));
-      for (const item of newestRecord.items) {
-        const row = plain(item);
-        if (row.length < 20) {
-          problems.push(
-            `${newestRecord.label}: the ${newestRecord.owner.round} record has a row whose item is ` +
-              `${row.length} character(s), too short to name an entry: ${item.slice(0, 60)}`,
-          );
-          continue;
-        }
-        if (entries.some((one) => one.includes(row))) {
-          quotedRows += 1;
-          continue;
-        }
-        problems.push(
-          `${newestRecord.label}: the ${newestRecord.owner.round} record names a residual the live list ` +
-            `does not hold -- "${item.slice(0, 60)}" appears in no entry -- so it is a residual a reader of ` +
-            'the list is not told about; add the entry, or quote the entry the row is about',
-        );
-      }
-    }
-    // The section count is printed beside the entry count, so a document that gains a
-    // list cannot do it silently: the number of lists is part of the evidence.
-    const judged =
-      newestRecord === null
-        ? `${tables} record(s) in table form (${tableRows} row(s)) whose rows were not judged, and no ` +
-          'round heading to attach one to'
-        : `${tables} record(s) in table form (${tableRows} row(s)) whose rows were not judged, except the ` +
-          `${newestRecord.owner.round} record's ${quotedRows} row(s), every one of which quotes an entry`;
     console.log(
-      `check-open-list: OK (${total} entry(ies) across ${sectionsSeen} section(s) of ${files.length > 1 ? 'docs/progress.md and its volumes' : labelled}: ` +
-        `${total - closed} open with a reason, ${closed} closed by a finding, and ${judged})`,
+      `check-open-list: OK (${total} entry(ies) across ${sectionsSeen} section(s) of ${
+        files.length > 1 ? 'docs/progress.md and its volumes' : labelled
+      }: ${total - closed} open with a reason, ${closed} closed by a finding)`,
     );
     stampChecks({ live, rounds, problems });
   }
+
+  // The newest round's record, matched against the list.
+  //
+  // ## What this arm is for
+  //
+  // A record's `item` column is a place a residual can live with **no entry behind it**, and
+  // four of them did: the only P1 in this log -- the remote's history sharing no name with the
+  // local one -- spent six rounds in records and never appeared in the list that calls itself
+  // the only live list. A reader who greps for what is open, which is the reader the live list
+  // exists for, was not told about the largest thing outstanding.
+  //
+  // The count could not see it. The stamp is arithmetic over the entries below it, so a
+  // residual that is not an entry is not a residual as far as the stamp is concerned -- and
+  // the guard printed both numbers (eleven open, seven rows judged in the newest record)
+  // without ever asking whether they were talking about the same set.
+  //
+  // ## Why only the newest round's record
+  //
+  // Older records are frozen: nothing appends to them, and a round that has been written up
+  // cannot be repaired. Their rows are history and their paraphrases are how the log was kept.
+  // The newest record is the one that can still be edited, so it is the one this arm reads --
+  // the same scope, and for the same reason, as the currency stamp's round comparison.
+  //
+  // ## Why it runs after the walk, and what that fixed
+  //
+  // Two defects, both found by v3.111's split (finding 568).
+  //
+  // The first is the selection. It used to be `records.reduce(newest)` over the **table** form
+  // only, and the rounds stopped writing tables at v3.70 -- so "the newest record" was v3.69,
+  // and this arm spent forty-one rounds judging a record that had been frozen since. It stayed
+  // green because those rows happened to quote entries the list still carried. The selection is
+  // by **owner** now, and both forms are collected: a record written as a list of entries is a
+  // record, and its item is the sentence the round wrote.
+  //
+  // The second is the population. The arm compares a row against "the list", and from v3.111
+  // the list is two files: `## Open` in the index and `## Closed` in the record. A row may name
+  // a residual the round *closed* -- that is what closing it meant -- and while closures were
+  // struck in place, the row resolved against the live list. Moving them narrowed the population
+  // to what is still open and the arm went red on rows that had been right for forty rounds. The
+  // population is every entry the list holds, in either file, and it is complete here because
+  // the walk has read both.
+  //
+  // Running after the walk is what makes the second fix order-independent: accumulating the
+  // population during the walk would have made the verdict depend on which document was read
+  // first, and a verdict a reordering can flip is not a verdict.
+  const newestRound = rounds.reduce(
+    (best, one) =>
+      best === null ||
+      one.major > best.major ||
+      (one.major === best.major && one.minor > best.minor)
+        ? one
+        : best,
+    null,
+  );
+  const newestRecord =
+    newestRound === null ? null : (records.find((one) => one.owner.round === newestRound.round) ?? null);
+  let quotedRows = 0;
+  if (newestRecord !== null) {
+    const population = listed.map((one) => plain(one));
+    for (const item of newestRecord.items) {
+      const row = plain(item);
+      if (row.length < 20) {
+        problems.push(
+          `${newestRecord.label}: the ${newestRecord.owner.round} record has a row whose item is ` +
+            `${row.length} character(s), too short to name an entry: ${item.slice(0, 60)}`,
+        );
+        continue;
+      }
+      if (population.some((one) => one.includes(row))) {
+        quotedRows += 1;
+        continue;
+      }
+      problems.push(
+        `${newestRecord.label}: the ${newestRecord.owner.round} record names a residual the list does ` +
+          `not hold -- "${item.slice(0, 60)}" appears in no entry of \`## Open\` or \`## Closed\` -- so it is a ` +
+          'residual a reader of the list is not told about; add the entry, or quote the entry the row is about',
+      );
+    }
+  }
+  console.log(
+    `check-open-list: ${String(tables)} record(s) in table form (${String(tableRows)} row(s)); ` +
+      (newestRecord === null
+        ? 'the newest round wrote none, so no row was judged'
+        : `the ${newestRecord.owner.round} record's ${String(quotedRows)} row(s) were judged, and every one ` +
+          'of them quotes an entry'),
+  );
 
   if (problems.length > 0) {
     // The problems first, the verdict last, so the diagnostic a `gate-sites.json`
