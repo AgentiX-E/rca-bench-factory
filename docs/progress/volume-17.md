@@ -2019,7 +2019,7 @@ written too high rather than too early. The rule reads the file once per section
 what it buys is that the arm's subject is *found* rather than assumed, which is what 575 says from the other
 side.
 
-### 8. Three defects that are this round's own
+### 8. Four defects that are this round's own
 
 1. **The constant's comment put the whole-row ruler at v3.66**, and the arm was built at v3.65 -- volume-13's
    ledger is where that number is written, and the comment was written from memory. Caught by reading the
@@ -2032,6 +2032,13 @@ side.
    to be obtained backwards. It was: each repair was removed in turn and the red had to be the fixture
    written for it, seven edits and **nine** reds. Stated rather than excused, because "the test came second"
    is only safe when it is checked, and the check is the table below.
+4. **The population in this round's own sentences was the corpus's, not the records'.** Two of them said
+   `zero of the 195 sections that are records`, and 195 is every list section the corpus holds -- one live
+   list, two closed files and **192** records -- so the number named a population three times the size of the
+   one that was measured. It survived the round's first commit and was found while restating the ledger's
+   counts, which is where a number that was never counted goes to be counted; the comment that justified the
+   same floor carried it too, and there it was deleted rather than corrected, because a count of a population
+   that grows is a count that decays.
 
 ### 9. Falsification
 
@@ -2062,7 +2069,7 @@ fixture written for it:
 | the lists | `## Open` **27 -> 27** (one closed, one opened), `## Closed` **53 -> 54**, one space of **81** ids with none missing |
 | the index | **67,565 -> 67,555** bytes |
 | the record | **77,191 -> 80,444** bytes over 54 entries, in **two** files (49,545 + 30,899) |
-| the volumes | **17**, and this round is the fourth in `volume-17.md` (**147,596** bytes) |
+| the volumes | **17**, and this round is the fourth in `volume-17.md` (**148,280** bytes) |
 | the falsifications | seven edits, **nine** reds |
 | gate sites / scripts / throws | **144** / **67 of 98** / **99** -- no new exit and no new script |
 | the budgets | **35** files state one -- unchanged: no new suite |
