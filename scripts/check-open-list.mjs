@@ -1431,7 +1431,7 @@ function check() {
   //
   // The scope is the newest round, which is the only one whose record can still be merged; a frozen
   // round's second section would be a demand for a repair the corpus forbids. That costs nothing
-  // today -- measured at v3.114, zero of the 195 shipped records' rounds wrote two -- so this is a
+  // today -- measured at v3.114, no shipped record belongs to a round that wrote two -- so this is a
   // floor that closes the silence before it has a tenant.
   const sameRound =
     newestRound === null ? [] : records.filter((one) => one.owner.round === newestRound.round);
