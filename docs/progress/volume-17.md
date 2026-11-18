@@ -1871,7 +1871,7 @@ for it:
 | the volumes | **17**, and this round is the third in `volume-17.md` (**134,310** bytes) |
 | the falsifications | twelve edits, **21** reds; the accident performed on the shipped tree |
 | gate sites / scripts / throws | **144** / **67 of 98** / **99** -- no new exit and no new script |
-| the budgets | **35** files state one -- unchanged: no new suite |
+| the budgets | **34 -> 35** files state one: `category-derivation.test.ts` at **1 044 ms** on the runner, declared at **3 000 ms** |
 | LLM calls | **0** |
 
 ### Left open
@@ -1892,7 +1892,8 @@ The live list's last word about this guard was that one of its paths had never r
 
 Writing that fixture took one measurement, and the measurement found four defects -- three in the arm and
 one in the record's own introduction -- before the fixture existed. A fifth came out of counting what the
-fixture's neighbouring rule would exempt.
+fixture's neighbouring rule would exempt, and a sixth out of the verification that followed: a file whose
+cost crosses the budget floor in the suite and not alone.
 
 ### 1. Both switches, on together
 
@@ -2019,7 +2020,41 @@ written too high rather than too early. The rule reads the file once per section
 what it buys is that the arm's subject is *found* rather than assumed, which is what 575 says from the other
 side.
 
-### 8. Four defects that are this round's own
+### 8. A file whose cost crosses the floor in the suite and not alone (finding 578)
+
+`verify:local` passed on the first tree this round published, and failed an hour later on a tree that differed by
+documentation only:
+
+```
+check-test-budgets: step-process.test.ts: its slowest test takes 1635 ms and the file states no budget, so its
+verdict is decided by vitest's 5000 ms default
+```
+
+Both runs measured the same suite. The reading belongs to the machine rather than to the file: every test in
+`step-process.test.ts` spawns a child, and the slowest -- *does not leave the script it materialised behind* --
+reads **940 ms** alone and **1 635 ms** inside the suite, where it shares four cores with 256 other files. The
+floor is 1 000 ms, so the same test sits **6%** under it on a quiet box and **63%** over it on a busy one, and the
+number that decided the difference was one the file never wrote.
+
+| reading | value |
+| --- | --- |
+| alone, eleven tests | **940 ms** |
+| inside the suite, four cores, 257 files | **1 635 ms** |
+| two copies of the file at once | 783 / 820 ms -- a second copy is not what makes it expensive |
+| the rule's floor | 1 000 ms |
+| declared | **4 000 ms**: 2.4x the suite's reading, 4.3x the isolated one, below the default |
+
+The declaration is the repair, and it tightens rather than relaxes: 4 000 is below the 5 000 the file used to
+inherit, so a step that genuinely hangs is caught a second sooner, and this file's verdict is now decided by a
+number somebody wrote. The gate reads **36** files stating a budget where it read **35**, and the closest to its
+own is this one at **41%**.
+
+**It also corrects the direction finding 571 taught.** That round sized a budget from the runner's reading,
+because the local one was flattering by half; this one sizes it from the suite's, because the isolated one is. The
+sentence is the same in both -- *the reading that matters is the one taken where the test runs* -- and neither is
+the number a developer sees when they run the file by itself.
+
+### 9. Four defects that are this round's own
 
 1. **The constant's comment put the whole-row ruler at v3.66**, and the arm was built at v3.65 -- volume-13's
    ledger is where that number is written, and the comment was written from memory. Caught by reading the
@@ -2040,7 +2075,7 @@ side.
    same floor carried it too, and there it was deleted rather than corrected, because a count of a population
    that grows is a count that decays.
 
-### 9. Falsification
+### 10. Falsification
 
 Seven edits, **nine** reds. Each deletes one judgement this round added, and the red has to be the
 fixture written for it:
@@ -2069,10 +2104,10 @@ fixture written for it:
 | the lists | `## Open` **27 -> 27** (one closed, one opened), `## Closed` **53 -> 54**, one space of **81** ids with none missing |
 | the index | **67,565 -> 67,555** bytes |
 | the record | **77,191 -> 80,444** bytes over 54 entries, in **two** files (49,545 + 30,899) |
-| the volumes | **17**, and this round is the fourth in `volume-17.md` (**148,280** bytes) |
+| the volumes | **17**, and this round is the fourth in `volume-17.md` (**150,547** bytes) |
 | the falsifications | seven edits, **nine** reds |
 | gate sites / scripts / throws | **144** / **67 of 98** / **99** -- no new exit and no new script |
-| the budgets | **35** files state one -- unchanged: no new suite |
+| the budgets | **35 -> 36** files state one: `step-process.test.ts` at **1 635 ms** in the suite, declared at **4 000 ms** |
 | LLM calls | **0** |
 
 ### Left open

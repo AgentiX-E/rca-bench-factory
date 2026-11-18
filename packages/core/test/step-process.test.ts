@@ -179,7 +179,27 @@ beforeAll(async () => {
   reapBudgetMs = Math.max(REAP_FLOOR_MS, reapWorstMs * 20);
 });
 
-describe('one step, run as CI would run it', () => {
+/**
+ * The clock this suite's verdict is decided by, stated because nobody else states it.
+ *
+ * ## The file that crossed the floor under load and not alone (finding 578)
+ *
+ * Every test here spawns a child and waits for it, so the cost is the machine's rather than
+ * the file's: the slowest -- *does not leave the script it materialised behind* -- reads
+ * **940 ms** alone and **1 635 ms** inside the suite, where it shares four cores with 256
+ * other files. The budget rule's floor is 1 000 ms, so the same tree has two verdicts:
+ * `verify:local` passed this gate at v3.113's ledger and failed it an hour later on a tree
+ * that differed by documentation only, and the number that decided the difference was
+ * vitest's 5 000 ms default, which this file never wrote.
+ *
+ * **4 000 ms**, which is 2.4x the reading inside the suite and 4.3x the isolated one -- and
+ * below the default, so a step that genuinely hangs is caught sooner than it was. The rule
+ * wants twice the reading, and the reading is the suite's: a file measured alone would have
+ * been sized for a machine this one is never run on.
+ */
+const SUITE_BUDGET_MS = 4_000;
+
+describe('one step, run as CI would run it', { timeout: SUITE_BUDGET_MS }, () => {
   it('runs the body from the step the plan produced and returns', async () => {
     const marker = join(SCRATCH, 'plain.txt');
     await runStep({ key: 'a / one', run: `printf '%s' one > ${marker}`, cwd: '.', shell: undefined, env: {} });

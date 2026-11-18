@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–577, from the rounds recorded in `progress/volume-15.md` through `progress/volume-17.md`.
+Findings 542–578, from the rounds recorded in `progress/volume-15.md` through `progress/volume-17.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -1885,3 +1885,53 @@ The rule costs one comparison per section and it closes the silence on the other
 subject is now *found* -- one record, belonging to a named round, in a file that names rounds -- rather than
 assumed. What it leaves is the count: **25** records in those three volumes have no owner, and nothing states
 the number.
+
+## Finding 578 — a file whose cost crosses the budget floor in the suite and not alone
+
+`verify:local` passed on the tree v3.114 first published, and an hour later failed on a tree that differed by
+documentation only:
+
+```
+check-test-budgets: step-process.test.ts: its slowest test takes 1635 ms and the file states no budget, so its
+verdict is decided by vitest's 5000 ms default; state one on the suite
+```
+
+Two runs of one suite, two verdicts, and the number that decided the difference was one the file never wrote.
+
+## The reading belongs to the machine
+
+Every test in `step-process.test.ts` spawns a child and waits for it, so the cost is the box's:
+
+| reading | value |
+| --- | --- |
+| alone, eleven tests | **940 ms** |
+| inside the suite, four cores, 257 files | **1 635 ms** |
+| two copies of the file at once | 783 / 820 ms |
+| the rule's floor | 1 000 ms |
+
+The slowest test -- *does not leave the script it materialised behind* -- sits **6%** under the floor on a quiet
+box and **63%** over it on a busy one. That is the structural part: a test within 6% of the threshold has a
+verdict that flips with the machine, and the flip is invisible until two runs are compared, because each run
+prints a number that is right about the run it measured.
+
+**A second copy is not what makes it expensive**, and the measurement says so: two copies at once read 783 and
+820 ms, both below the floor. What costs is the suite's own concurrency -- 257 files sharing four cores -- which
+is the condition the gate exists for and the condition a developer never reproduces by running the file.
+
+## The repair, and the direction it corrects
+
+The suite now states **4 000 ms**, which is 2.4x the reading inside the suite and 4.3x the isolated one -- and
+**below** the 5 000 ms the file used to inherit, so the declaration tightens rather than relaxes, and a step that
+genuinely hangs is caught a second sooner. The gate reads **36** files stating a budget where it read **35**, and
+the closest to its own is this one at **41%**.
+
+Finding 571 sized a budget from the **runner's** reading, because the local one was flattering by half. This one
+sizes it from the **suite's**, because the isolated one is. The sentence is the same in both, and it is the one
+this gate has now taught twice: *the reading that matters is the one taken where the test runs*, and neither is
+the number a developer sees when they run the file by itself.
+
+## What this does not establish
+
+It does not establish that 4 000 ms is the file's cost -- it is a claim about the clock, and the readings that
+would argue with it are 940 ms and 1 635 ms. It also does not make the test faster: the cost is eleven spawns,
+and shrinking it would mean testing a process group without starting one.
