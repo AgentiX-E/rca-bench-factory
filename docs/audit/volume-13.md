@@ -1,6 +1,6 @@
 # Audit · volume 13
 
-Findings 542–569, from the rounds recorded in `progress/volume-15.md` through `progress/volume-17.md`.
+Findings 542–571, from the rounds recorded in `progress/volume-15.md` through `progress/volume-17.md`.
 
 ## Finding 542 — the 246 directories that could not be reproduced were counted as refusals, and a refusal is not a statement about the corpus
 
@@ -1593,3 +1593,99 @@ argument list" on top reds three more.
 compared against the copy, not against a parser. What was measured is that the two disagree only where the
 copy has no rule, and that the question the file asks is answered the same way -- which is the weaker claim and
 the one the evidence supports.
+
+## Finding 570 — the rule that keeps two lists apart was a rule about text, and the copy that satisfies both refusals was green
+
+v3.111 split the live list in two -- `## Open` in the index, `## Closed` in a record -- and held the split
+with two refusals: a struck entry in the live list is history filed as work, an unstruck entry in the record is
+work filed as history. Both read **one bullet**. Neither compares the two files, and the tiling that justified
+the move was checked once, by hand: seventy-six entries hashed before and after, twenty-eight plus forty-eight.
+
+The gap between the two refusals is a bullet that satisfies both. A round closes an entry, appends it to the
+record **struck**, and forgets to delete it from the live list -- where it is **unstruck**, and therefore a
+legal entry asking for work. One residual in two places, one of them saying `Closed by finding N`, and no rule
+in the tree can see it: the two copies are different text by construction, so a comparison of text has nothing
+to compare. The live list also grows by the copy, in a file that could not grow.
+
+v3.111 wrote exactly that rule and deleted it in the same round, with the reason recorded:
+
+> a copy left in the live list is struck, and the live-strike refusal already catches it, so the only shape the
+> copy rule could have seen was one the earlier rule had refused
+
+True of one shape. The shape a forgotten deletion produces is the other one, and it was not considered. Measured
+rather than argued: the guard as it stood at `176ec7b` was checked out and run over a document that is one
+residual in two places, and it printed
+
+```
+check-open-list: OK (2 entry(ies) across 2 section(s) ...: 1 open with a reason, 1 closed by a finding)
+```
+
+exit 0. So the rule was reachable. What it lacked was an identity to compare: with no name on an entry, "the
+same entry" is a claim about words, and the two copies of a closure are never the same words.
+
+**The repair is a name.** Every entry of the two lists carries `O-001`, three digits, right after the bullet and
+outside every mark the headline carries. The two lists share one space, the space is **dense** -- 1..N between
+them, N the number of entries both files hold -- and three defects are refused by that alone:
+
+| the defect | the line the guard prints |
+| --- | --- |
+| a copy | `the id O-079 names two entries -- one here and one at docs/progress.md` |
+| a deletion | `the two lists hold 78 entr(ies) and their ids run to 79, so the ids skip O-010` |
+| an invented id | the same hole from the other side: a number taken twice, or a number skipped |
+
+The convention that a new entry takes `max + 1` stops being a convention: any other number leaves a hole, so
+the set is what the round has to satisfy.
+
+**Two accidents, performed on the shipped tree.** The copy -- the closure appended to the record with its live
+entry left in place -- produced two diagnostics, one of which (`the id O-079 names two entries`) the old guard
+could not have produced. The deletion -- `O-010` removed from the live list and nowhere else, with the currency
+stamp edited to **26** so that its arithmetic still agreed with the section -- produced **one**: every other
+rule passed, and `the ids skip O-010` was the only line that said anything. That is the accident the tiling
+equation was measured for and could not guard.
+
+**Six falsifications, fifteen reds.** Removing the no-id refusal: **1**. The duplicate-id refusal: **1** -- the
+fixture is the copy, and nothing else in the suite refuses it. Report the gap while leaving the summary line
+printing `1..N`: **1**, which is a summary that can be false. The width refusal: **1**. The whole id block,
+check and summary: **3**, the shipped lists among them. Asking the **records** for ids as well: **8**, because
+the 558 entries of the frozen records have none, and a rule that wanted them would demand a repair of every
+round ever written.
+
+**What this does not establish.** That the id says the text is the same entry. A closure can arrive carrying
+the id of an entry whose words were rewritten, and no reading of two files tells that from a closure -- the
+entry it replaced is gone; a rename is invisible for the same reason. What the id makes impossible is the
+**silent** version of either, which is the version that loses work: it is the thing a reader greps, and a grep
+that finds it in the record leads to the sentence that closed it. The ceiling is 999 and the width is fixed
+rather than padded, because `O-100` must not match the front of `O-1000`; an id of another width is refused
+with its own diagnostic instead of being read as no id at all, since "this entry has no id" about an entry that
+has one is a message that sends a reader to the wrong place.
+
+## Finding 571 — the budget rule met its first file that crossed the floor as the suite grew, and the head was green locally
+
+`check-test-budgets` refuses a file whose slowest test is at or above **1 000 ms** while the number in force is
+vitest's inherited `5 000 ms` default: the verdict is then decided by a number nobody wrote for that file. The
+rule had fired three times, each time on a file that arrived with a slow test.
+
+This time it fired on a head that had been pushed as green. CI run `44216469780`, on `63707bfd3`:
+
+```
+check-test-budgets: category-derivation.test.ts: its slowest test takes 1044 ms and the file states no budget,
+  so its verdict is decided by vitest's 5000 ms default; state one on the suite --
+  'R. the row order the alternative reading depends on counts the corpus verdicts t' is the test that will decide it
+```
+
+The reading is `counts the corpus verdicts that a permutation can change`, a loop over the corpus and a product
+over its rows. Locally the whole file runs in **493 ms**, so no local run could have said this -- and the
+suite had just grown by seven tests that spawn a Node process each, which is the contention that carried a
+corpus loop over the floor. **A performance rule whose reading only CI takes is a rule with a local blind spot,
+and this is what that costs: a red head.**
+
+The repair is the one the gate's message asks for, with the measurement the message does not supply: the
+declaration goes on suite `R` rather than on the file, **3 000 ms** -- 2.9x the runner's reading, and the
+smallest round number above the gate's own 2x rule, so the next round does not have to justify it again. The
+count of files that state a budget moved **34 -> 35**, and the reading that decides this file's verdict is now
+a number written in this file.
+
+**What this does not establish.** That the file is fast. 1 044 ms for a corpus loop on a four-CPU runner is the
+cost of the corpus, and the budget makes it a stated one rather than a cheaper one. The gate's job is to refuse
+a verdict decided by a number nobody chose; it is not a performance budget, and this repair does not pretend
+to be one.

@@ -1605,9 +1605,9 @@ of them the pre-existing set assertion, because the new fixture's own URL made t
 
 | item | value |
 | --- | --- |
-| `core` test suite | **257 files, 6637 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **261 files, 6824 tests passed** (as of this commit) |
+| `core` test suite | **257 files, 6637 tests passed** (at v3.111) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.111) |
+| repo test suite | **261 files, 6824 tests passed** (at v3.111) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6,626 -> 6,637, +11**: seven for the split (two refusals, the suffix refusal, the two-file population, the shipped record, the index's pointer to it, and the owner selection) and four for the scanner |
 | the index | **133,309 -> 66,673** bytes; `## Open` **98,927 -> 32,177**; the record **0 -> 71,572** over 51 entries |
@@ -1630,3 +1630,104 @@ of them the pre-existing set assertion, because the new fixture's own URL made t
 - **The record is not split by size.** It is 69,785 bytes after two rounds of closures and nothing bounds it,
   because it is a record and records grow.
   `[open: the volume budget's argument -- a document a reader cannot diff -- applies to it at some size, and the number that size is has not been measured]`
+
+## v3.112 · an entry's name, and the copy that both refusals walk past
+
+**The live list was carrying an entry that had already written down why it could not be closed by argument.**
+
+> **An entry has no identity, so keeping the two lists apart is a rule about text.** The split's tiling --
+> forty-eight closures plus twenty-eight open entries are the seventy-six the list held -- was checked once, by
+> hashing each entry before and after the move, and that check is a measurement rather than a guard. ... What
+> nothing catches is the accident that matters -- a closure pasted into the record while its live entry is
+> edited into a different claim.
+
+The entry asked for an id per entry, and one clause of it was wrong. It said the copy rule "could not be
+reached", because a copy left in the live list is struck and the live-strike refusal has already refused that.
+The clause is true of one shape and false of the shape a forgotten deletion produces: **unstruck in the live
+list, struck in the record**. Run against a document of exactly that shape, the guard as it stood at `176ec7b`
+printed `OK (2 entry(ies) across 2 section(s) ... 1 open with a reason, 1 closed by a finding)`. Measured, not
+argued -- the script from that commit was checked out and run over the fixture. So the rule v3.111 wrote and
+deleted was reachable all along; what it lacked was a comparison the text cannot make, because the two copies
+differ by the strike by construction.
+
+**The identity.** Every entry of the two lists now carries a token: `O-001`, three digits, right after the
+bullet and outside every mark the headline carries -- `- O-001 · **The claim.**`. One space shared by both
+files, and **dense**: the two files hold 1..N between them with nothing missing, recomputed on every run. That
+buys three refusals, and the third is the one that stops a round inventing a number:
+
+| the defect | what the guard says |
+| --- | --- |
+| a copy | `the id O-079 names two entries -- one here and one at docs/progress.md` |
+| a deletion | `the two lists hold 78 entr(ies) and their ids run to 79, so the ids skip O-010` |
+| an invented id | the same hole, from the other side: a number taken twice or a number skipped |
+
+And the arithmetic replaces a convention: **a new entry takes one more than the highest id the two lists
+hold**, because any other number leaves a hole. A round no longer has to remember the rule; it has to satisfy
+the set.
+
+**Two accidents, performed on the shipped tree rather than imagined.** Closing an entry and forgetting to
+delete it -- the record copy struck, the live copy left -- produced two diagnostics: the stamp's count, which
+is the one the old guard had, and `the id O-079 names two entries`, which is the one it could not have. Then
+the deletion: `O-010` removed from the live list and nowhere else, and the stamp edited to **26** so that the
+count agreed with the section. The old guard would have been green -- every other rule passed -- and the
+only line that said anything was `the ids skip O-010`. That is the accident the tiling equation was measured
+for and could not guard, and it is a guard now.
+
+**Six falsifications, fifteen reds.** Removing the no-id refusal: **1**. The duplicate-id refusal: **1** --
+the fixture is the copy, and nothing else in the suite refuses it. The gap message while leaving the summary
+line printing `1..N`: **1**, which is the shape of a summary that can be false. The width refusal: **1**. The
+whole id block, check and summary together: **3**, the shipped lists among them. Asking the **records** for
+ids as well: **8**, because the 558 entries of the frozen records have none and a rule that wanted them would
+demand a repair of every round ever written.
+
+**What the id cannot say, and why that is written down rather than implied.** It cannot say the text is the
+same entry: a closure can arrive carrying the id of an entry whose words were rewritten, and no reading of two
+files tells that from a closure -- the entry it replaced is gone. Nor can it see a rename. What it makes
+impossible is the **silent** version of either, which is the version that loses work: the id is what a reader
+greps, and a grep that finds it in the record leads to the sentence that closed it, in the round's own words.
+The ceiling is 999 and the width is fixed, because `O-100` must not match the front of `O-1000`; an id that is
+not three digits is refused with its own diagnostic rather than read as no id at all.
+
+**The head this round started from was red, in a step no local run performs.** `63707bfd3` -- v3.111's
+documentation commit -- failed CI at `Every test's cost against the budget it declares`:
+`category-derivation.test.ts` measured **1 044 ms** on the runner and the file states no budget, so vitest's
+inherited `5 000 ms` default was deciding a verdict nobody had written for it. Locally the whole file runs in
+**493 ms**, which is why every local run was green; the suite had also just grown by seven spawn-driven tests,
+which is the contention that put a corpus loop over the floor. The repair is a declaration, as the gate's own
+message asks: **`R_BUDGET_MS = 3_000`** on suite `R`, 2.9x the runner's reading and the smallest round number
+above the gate's 2x rule (finding 571). The count of files that state a budget moved **34 -> 35**.
+
+**The closure is two edits, and the number is counted.** `O-027` left the live list in this round -- the entry
+above, closed by finding 570 -- and its id went with it, which is why the live list holds `O-001`..`O-026` and
+`O-028`, and why that hole is not a gap: `O-027` is in the record, struck, saying what closed it. The seventy-
+nine entries were stamped by backfill in this round, the live list first and then the record in its own order,
+and the two files' numbers were assigned together rather than argued about afterwards.
+
+### Readings
+
+> Ledger for `v3.112`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **257 files, 6644 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **261 files, 6831 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
+| new tests | **6,637 -> 6,644, +7**: five refusals (no id, a copy, a gap, a four-digit id, and the record's scope) and two readings (the space across two files, and the shipped lists as 1..79) |
+| the lists | `## Open` **28 -> 27**, `## Closed` **51 -> 52**, one space of **79** ids with none missing |
+| the index | **66,779 -> 66,861** bytes; the record **70,196 -> 73,552** over 52 entries |
+| the volumes | **17**, and this round is the second in `volume-17.md` |
+| the falsifications | six edits, **15** reds; two accidents performed on the shipped tree |
+| the budgets | **34 -> 35** files state one: `category-derivation.test.ts` at **1 044 ms** on the runner, declared at **3 000 ms** |
+| gate sites / scripts / throws | **144** / **67 of 98** / **99** -- no new exit and no new script |
+| the live list | **28 -> 27**: one closed, none opened |
+| LLM calls | **0** |
+
+### Left open
+
+- **The row arm's cross-file population has never run on the shipped tree.** A fixture carries both sections
+  in one file, so the two-file population is exercised only by a document that is not the shipped one.
+  `[open: the first record that names a residual its own round closed exercises it, and until then the population is two files on fixtures only]`
+- **The record is not split by size.** `docs/progress/closed.md` is **73,552** bytes after three rounds of
+  closures, and nothing bounds it: it is a record, and records grow.
+  `[open: the volume budget's argument -- a document a reader cannot diff -- applies to it at some size, and the size has not been measured]`
