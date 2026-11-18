@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 257 core + 4 cli |
-| Test lines | 111,923 core + 3,242 cli |
-| Tests | 6,637 core + 187 cli |
+| Test lines | 112,101 core + 3,242 cli |
+| Tests | 6,644 core + 187 cli |
 | Tracked files | 665 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -532,11 +532,20 @@ Both headings were called `Open` until finding 207, which is how the same reader
 fifty-eight answers, one of which was current. The rename was the repair; a sentence saying
 which was which would have left the names lying.
 
-Most entries below are **limits** rather than tasks: each names something this repository
-does not do, why, and what would close it. The last one is a question this round could not
-settle.
+**Every entry carries an id**, `O-001` to `O-0NN`, right after the bullet and outside the claim:
+`- O-001 · **The claim.**`. One space, shared with [the record](progress/closed.md), and **dense** -- the two
+files hold 1..N between them with nothing missing, which is what `check-open-list.mjs` recomputes on every run
+(finding 570). Two consequences a round has to live with. **A new entry takes one more than the highest number
+the two lists hold**, because any other number leaves a hole: the convention is now arithmetic. And **an entry
+still leaves by being closed**, carrying its id into the record -- a hole in the space is refused as an entry
+that left without being closed, and an id in two files is refused as the copy that both of the split's
+refusals walk past. A closure is therefore always two edits, and the number of open entries below is
+counted, not remembered.
 
-Checked at v3.111: **28** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Most entries below are **limits** rather than tasks: each names something this repository
+does not do, why, and what would close it.
+
+Checked at v3.112: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -581,7 +590,7 @@ prints both counts and had never asked whether they were talking about one set. 
 which is why this list is longer rather than shorter, and the newest round's record must quote an entry it
 is a row about rather than paraphrase one that no `grep` will find.
 
-- **Anchor 4 is closed for the three RCAEval anchors only, and only once a
+- O-001 · **Anchor 4 is closed for the three RCAEval anchors only, and only once a
   real-corpus run has been recorded.** The 11 fetchable assets cover
   `rcaeval-re1`, `rcaeval-re2` and `rcaeval-re3`. The other six score targets —
   both OpenRCA targets, RCA100, AIOps2025, Cloud-OpsBench and ITBench — have no
@@ -590,7 +599,7 @@ is a row about rather than paraphrase one that no `grep` will find.
   claim than "the fourth anchor is closed" and it is the accurate one.
   `[open: the six remaining score targets -- both OpenRCA targets, RCA100, AIOps2025, Cloud-OpsBench and ITBench -- still have no automated fetch, so for them the fourth anchor rests on the synthetic path alone]`
 
-- **The OpenRCA shard-cache route does not work, and the registry said it did.**
+- O-002 · **The OpenRCA shard-cache route does not work, and the registry said it did.**
   `golden-master/official-assets.json` used to give, as the alternative for
   OpenRCA 1.0, "reach it through the AgentiX-E/openrca-* shard repositories...
   which already cache it on a runner". Measured on 2026-09-20:
@@ -613,7 +622,7 @@ is a row about rather than paraphrase one that no `grep` will find.
   not done.
   `[open: making the six shard repositories a source means having them publish an artifact instead of populating a cache, which is a change in those repositories and is not made here]`
 
-- **Active injection is planned, not performed.** `src/fault/injector.ts` emits a
+- O-003 · **Active injection is planned, not performed.** `src/fault/injector.ts` emits a
   Chaos Mesh document for each of the five kinds and reads the controller's report
   back, and both halves are pure -- a probe over the source finds no `fetch`, `exec`,
   `kubectl`, `child_process` or filesystem access at all. Applying the document needs a
@@ -624,14 +633,14 @@ is a row about rather than paraphrase one that no `grep` will find.
   remaining work is a cluster runner. See finding 51.
   `[open: applying the document needs a cluster, and a test that needs a cluster is a test that does not run in CI, so the remaining work is a cluster runner rather than another unit test]`
 
-- **The Chaos Mesh mapping is asserted against a hand-written table, not against the
+- O-004 · **The Chaos Mesh mapping is asserted against a hand-written table, not against the
   CRD.** The mapping was derived from the documentation and is asserted for internal
   consistency and for the `TimeChaos` trap specifically -- no test validates it with a
   live `kubectl apply --dry-run=server`, so a field renamed upstream would not be
   caught here.
   `[open: no test validates the mapping with a live kubectl apply --dry-run=server, so a field renamed upstream would still not be caught here]`
 
-- **The corpus's label table reached two call sites, and the product's front door was not one of
+- O-005 · **The corpus's label table reached two call sites, and the product's front door was not one of
   them.** v3.35 named the corpus's eleven fault types; v3.36 measured how far that reading travelled,
   and the answer was two places -- the census and `scripts/check-official.mjs`. Every other way into the
   product reads a fault type through `ingestPrimeDataset`, which asked the descriptor for a category and
@@ -644,7 +653,7 @@ is a row about rather than paraphrase one that no `grep` will find.
   and census files pass without it, including the `zzz` case that must stay unstamped. See finding 346.
   `[open: the five code-level names read out of the paper still reach no target -- nothing exports a fault's name]`
 
-- **The export enumeration covers the whole package.** `cli/`, `ingest/`,
+- O-006 · **The export enumeration covers the whole package.** `cli/`, `ingest/`,
   `transform/`, `pack/`, `util/`, `llm/`, `fault/`, `evolution/`, `report/` and
   `entity/` were exempted in `UNENUMERATED` module by module, each with a reason
   pointing at another mechanism -- the CLI reference gate, the structure-dispatch
@@ -685,13 +694,13 @@ is a row about rather than paraphrase one that no `grep` will find.
   reading as if it covered execution.
   `[open: the list proves an export exists and is listed; the coverage gate proves it runs; no instrument states *how* it is exercised, and the completeness of index.ts as a surface still rests on pack-manifest-completeness and the package exports field]`
 
-- **`glm-embedding-3` benchmark scheduling** is out of scope for this package;
+- O-007 · **`glm-embedding-3` benchmark scheduling** is out of scope for this package;
   the LLM-dependent paths here are behind a provider-agnostic abstraction.
   `[open: the LLM-dependent paths here sit behind a provider-agnostic abstraction, and
   scheduling a benchmark against a hosted embedding model belongs to whichever package
   owns the model rather than to this one]`
 
-- **The attempts recorded before v3.57 name no tip, and the file is one attempt behind.** All five
+- O-008 · **The attempts recorded before v3.57 name no tip, and the file is one attempt behind.** All five
   carry `rev: null`, because their rows never named a commit and a reader that filled one in would
   be inventing the fact the field exists to report. The attempt that carries this round's push is
   appended after the ref has moved, so it lands in the tree one push later.
@@ -699,7 +708,7 @@ is a row about rather than paraphrase one that no `grep` will find.
   `0 with a named tip` -- is the measure of how much of the history predates it; and an attempt
   cannot record itself in the push that carries it, so the file is always its own last reader]`
 
-- **P13: a mutation is one substitution.** Every mutation battery in this repository makes a
+- O-009 · **P13: a mutation is one substitution.** Every mutation battery in this repository makes a
   single edit, so a rule that is only wrong when two edits are made together is covered by
   none of them. v3.57 measured the prediction instead of restating it: every **pair** of its
   thirteen substitutions was applied and restored together, and **78 pairs, 78 red, 0 survived**.
@@ -707,12 +716,12 @@ is a row about rather than paraphrase one that no `grep` will find.
   changes neither of which is in the battery is still unmeasured, and so is a mutation of the
   assertion rather than of the code]`
 
-- **`backend`'s install bound has not met a slow day.** The 16-minute bound is sized from a
+- O-010 · **`backend`'s install bound has not met a slow day.** The 16-minute bound is sized from a
   648-second cold runner and a 273-second ordinary one.
   `[open: no recorded run has installed prometheus from a mirror slower than 648 seconds, and
   the bound will be re-sized from the first one that does rather than guessed at now]`
 
-- **The sensitivity shards are cut by file count, not by cost.** Both hold 25 claimant files, and
+- O-011 · **The sensitivity shards are cut by file count, not by cost.** Both hold 25 claimant files, and
   the step that does the work measured **439 s** in shard 1 against **199 s** in shard 2 on run
   `466` -- and **248 s** against **387 s**, the other way round, on the run that split them
   (v3.54). Near-equal claim counts (55 and 64) predict neither number, so the cost is per-file
@@ -721,27 +730,27 @@ is a row about rather than paraphrase one that no `grep` will find.
   published where a plan can read it, and a rule for when that recording is stale; the shard's own
   bound is the backstop, so the split is expensive rather than unsafe, by 240 s of every run]`
 
-- **The remote's history and the local one share no name above a boundary 272 commits old.** Every
+- O-012 · **The remote's history and the local one share no name above a boundary 272 commits old.** Every
   push here rebuilds a commit from the local revision, so the remote's tip is a reconstruction rather
   than the object this checkout holds: below the boundary the two agree byte for byte, and above it
   they are two histories that carry the same trees. That is why a record's `the remote tip is <sha>`
   line names a commit no local command can print.
   `[open: convergence means rewriting the remote's history, and this channel refuses to move a ref backwards by design -- a force push is the one ref update it will not make, so the two histories stay two]`
 
-- **The currency line proves a round counted the list, not that it read it.** The stamp at the top of
+- O-013 · **The currency line proves a round counted the list, not that it read it.** The stamp at the top of
   this section -- fifteen entries open, read at v3.65 -- is arithmetic over the entries below it, and the guard recomputes it. A number
   computed from the guard cannot disagree with the guard, so the stamp is sharp about the count and
   silent about whether a round looked at any entry -- and v3.63 and v3.64 each printed a number that
   was wrong about the thing it stood for.
   `[open: the one sentence a round cannot fake is an entry's headline saying what closed it, and that shape is required of a struck entry only -- a round's reading of the entries it leaves open is still a count, which is the half this stamp cannot check]`
 
-- **The base search reads one remote tip per branch this checkout does not have.** `locateBaseAmongRefs`
+- O-014 · **The base search reads one remote tip per branch this checkout does not have.** `locateBaseAmongRefs`
   walks every remote head whose commit is not in the local ancestry and asks the transport for its
   tree, stopping early only when a candidate lands at depth one. The cost is the repository's branch
   count rather than the push's size.
   `[open: bounding it needs a reading of how many twin tips a real push meets, and this repository holds five refs -- no attempt here has met enough of them to size a bound, so a constant chosen now would be sized from this repository alone]`
 
-- **A bounded ref count is a floor, not a count.** `refs()` walks at most ten pages of a hundred and
+- O-015 · **A bounded ref count is a floor, not a count.** `refs()` walks at most ten pages of a hundred and
   answers `complete: false` when it stops, so the sentence a reader acts on says "at least". The bound
   is unexercised rather than wrong: this repository holds five refs, and the walk has never stopped.
   `[open: only a repository of more than a thousand refs would make the walk stop early, and this one holds five -- the floor is stated as a floor, and the sentence that reads it is the only thing that could turn it into a count]`
@@ -775,7 +784,7 @@ is a row about rather than paraphrase one that no `grep` will find.
   the risk sat: the guard fed G5 **one case per bundle**, so even a working pairwise arm would have
   been silent, and the ten identical copies in `check-fault-cases.test.ts` passed for that reason.
 
-- **A record's terms are a map of strings to numbers, so nothing can say which keys a rule writes.**
+- O-016 · **A record's terms are a map of strings to numbers, so nothing can say which keys a rule writes.**
   The aggregate reads `evidenceHits` and `la` out of `OfficialCaseScore.terms` with index access,
   and `noUncheckedIndexedAccess` therefore hands it `number | undefined` for a key that target's
   producer writes every time. One of the two reads keeps a `?? 0` because of it -- the summed one,
@@ -797,7 +806,7 @@ is a row about rather than paraphrase one that no `grep` will find.
   another target writes, which is the shape where a wrong key silently answers 0 and no report test
   pins it, or a `?? 0` in a sum whose 0 is a wrong answer rather than a no-op]`
 
-- **A window can still outlive the sentence that describes it, when the sentence is prose.** The two
+- O-017 · **A window can still outlive the sentence that describes it, when the sentence is prose.** The two
   repairs in v3.73 were each pointed at the right number by a *string*: a log body reading
   `degradation window 09:12-09:30 UTC` and a checkpoint description reading "the two hours between the
   deploy at 09:00 and the revert at 11:00". Nothing compares either with `window.end`, and the guard
@@ -805,7 +814,7 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: a place where a window's two endpoints are cited as data rather than written in a sentence --
   the same question `signalRef` answered for a reading's identity]`
 
-- **A case that states no level publishes a default beside a floor that may outrank it.** `difficulty`
+- O-018 · **A case that states no level publishes a default beside a floor that may outrank it.** `difficulty`
   carries the documented `unset -> medium` row, so a case with a three-step chain and no annotation
   prints `medium` beside a `difficulty_floor` of `hard`: two words that disagree, and nothing that says
   which is which. The shipped corpus holds **0 of 34** such cases, which makes the repair a rule whose
@@ -814,7 +823,7 @@ is a row about rather than paraphrase one that no `grep` will find.
   could refuse the case outright.
   `[open: which of the three, decided by a corpus that has one -- the shipped thirty-four have none]`
 
-- **`docs/acceptance.md` is 96 KB and grows by clause per round.** L3 is 284 lines and L4 is 405;
+- O-019 · **`docs/acceptance.md` is 96 KB and grows by clause per round.** L3 is 284 lines and L4 is 405;
   L0, L1, L2 and L5 are 14, 7, 7 and 6, so the obvious split by layer would produce four files
   of a dozen lines.
   `[open: the axis is "current rule" against "how it was reached", not the layer -- the
@@ -836,27 +845,27 @@ is a row about rather than paraphrase one that no `grep` will find.
   thirty that never carried the row stay as they were. The finding is the defect; this is the rule it
   asked for, written in the round after it.
 
-- **Cloud-OpsBench has no established vendor.** The field held `arXiv 2603.00468`, which is a citation,
+- O-020 · **Cloud-OpsBench has no established vendor.** The field held `arXiv 2603.00468`, which is a citation,
   and the contract page answered the mismatch by renaming its row to `Reference`; the value is `null`
   now and the page prints `*not established*`. The other six formats name an institution.
   `[open: the paper's author block has to be read and quoted, the way `openrca-2.0`'s was this round,
   and until it is the field stays empty -- a near-miss is what the row was doing before]`
 
-- **Two prose targets cite a paper no digest pins.** `itbench` and `cloud-opsbench` print an arXiv id
+- O-021 · **Two prose targets cite a paper no digest pins.** `itbench` and `cloud-opsbench` print an arXiv id
   beside the one the oracle corpus pins (`openrca-2.0`, 962,086 bytes, sha256 recorded), so the
   identifier is a claim no transfer measured.
   `[open: each needs a sha256 and a byte count, or a declaration saying the identifier is all this
   repository read -- `official-assets.json` already has both states for data assets and neither for a
   paper]`
 
-- **The ceiling of 8 has never been measured where it is not oversubscription.** Every reading of eight
+- O-022 · **The ceiling of 8 has never been measured where it is not oversubscription.** Every reading of eight
   workers in this repository is on a 4-CPU quota, where eight is 2x and the row is the *cost* of getting the
   allowance wrong (89% of the stall budget, 93% of the memory limit). On a machine that can feed it, eight
   workers is not oversubscription and the row would be a different number -- and no such machine has run
   this suite.
   `[open: one full-suite run on nine or more usable CPUs, with the same harness and the same report]`
 
-- **How close a *failing* run comes to its ceiling is unmeasured.** The margin divides a per-test
+- O-023 · **How close a *failing* run comes to its ceiling is unmeasured.** The margin divides a per-test
   duration by the budget that governs it, and the duration comes from a vitest JSON report that only
   baseline runs are asked for. A run whose product is a failure is read for its exit code, so the
   question the margin answers for the 61 witnesses is unanswered for the 220 mutants -- including the
@@ -864,7 +873,7 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: a per-test duration from runs whose verdict is the exit code, which is one report per mutant
   run -- the name is free now (finding 544), the duration is not]`
 
-- **An in-row `#` inside a block scalar is read by nothing, and 13 of them are in this tree.** `echo hi  # why`
+- O-024 · **An in-row `#` inside a block scalar is read by nothing, and 13 of them are in this tree.** `echo hi  # why`
   and `echo "a # b"` cannot be told apart at the YAML layer: both are content of a block whose language YAML
   does not record, so the reader takes the row-leading `#` -- the one shape that is a comment in shell, Python,
   Ruby and make alike -- and declines the rest. Every one of the 13 is a shell string today, so the rule costs
@@ -872,14 +881,14 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: a reader for the in-row `#`, which needs the block's language rather than the file's -- a `run: |`
   holding shell and a `path: |` holding paths are the same bytes to YAML]`
 
-- **`crossesProcessBoundary` answers a weaker question than the table used to claim.** It asks whether a body takes
+- O-025 · **`crossesProcessBoundary` answers a weaker question than the table used to claim.** It asks whether a body takes
   an input the test does not hold, not whether the function can be called: `workflowPath` reads the environment and
   is now tested by setting it, with the value restored in a `finally`. The rule is honest about the gap and the
   gap is the point -- a predicate strong enough to prove uncallability would have to name something no test can
   construct, and no symbol in this tree answers to that.
   `[open: a symbol that is genuinely uncallable would need an exit that ends the worker, or an input no test can build, as its marker; the table is empty because every symbol examined could be called]`
 
-- **The row arm's cross-file population has never run on the shipped tree.** Since v3.111 a round's record
+- O-026 · **The row arm's cross-file population has never run on the shipped tree.** Since v3.111 a round's record
   may name a residual the round *closed*, and that entry is in `progress/closed.md` rather than in `## Open`,
   so the population the arm compares against is both files. The fixture in `check-open-list.test.ts` proves the
   rule -- a row naming a closed entry resolves -- but a fixture is one file with both sections in it, and no
@@ -887,16 +896,7 @@ is a row about rather than paraphrase one that no `grep` will find.
   built, argued for, and never executed where it matters.
   `[open: the first round whose record names a residual it closed will exercise the path, and nothing before then will; the alternative is a two-file fixture, which needs a second flag on a gate that has one]`
 
-- **An entry has no identity, so keeping the two lists apart is a rule about text.** The split's tiling --
-  forty-eight closures plus twenty-eight open entries are the seventy-six the list held -- was checked once, by
-  hashing each entry before and after the move, and that check is a measurement rather than a guard. A rule that
-  compared the two files by identity was written and deleted in the same round because it could not be reached:
-  a copy left in the live list is struck, and the live-strike refusal already catches it, so the only shape the
-  copy rule could have seen was one the earlier rule had refused. What nothing catches is the accident that
-  matters -- a closure pasted into the record while its live entry is edited into a different claim.
-  `[open: an id per entry would make the tiling a rule rather than a measurement, which is what the audit log already does with finding numbers; it is a change to every entry in both files, so it is a round of its own]`
-
-- **The record is not split by size.** `docs/progress/closed.md` is **69,785** bytes after two rounds of
+- O-027 · **The record is not split by size.** `docs/progress/closed.md` is **69,785** bytes after two rounds of
   closures, and nothing bounds it: it is a record, and records grow. The argument that produced the volume
   budget -- a document a reader cannot diff, and a push that carries all of it -- applies to this file at some
   size, and that size has not been measured.
@@ -936,7 +936,7 @@ and this table.
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
-| [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
+| [volume-17.md](progress/volume-17.md) | 14 | v3.99 | v3.112 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

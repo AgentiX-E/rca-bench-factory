@@ -74,10 +74,30 @@ function runOn(body: string) {
 }
 
 /**
+ * The entry, with an id, because both live lists require one and a fixture has to obey the
+ * rule it is written to demonstrate.
+ *
+ * The token goes first, right after the bullet's `- `, and outside every mark the headline may
+ * carry: `- O-001 · **The claim.**`. Inside the bold would read better and is wrong for two of
+ * the three shapes the shipped lists use -- a struck entry's first `**` belongs to its closure,
+ * not to its claim, so a helper that aimed at the bold would put the id in the middle of the
+ * sentence that closed the entry and the guard would then say the entry had none.
+ */
+function withId(entry: string, n: number): string {
+  const id = `O-${String(n).padStart(3, '0')}`;
+  const [head = '', ...rest] = entry.split('\n');
+  return [`- ${id} · ${head.slice(2)}`, ...rest].join('\n');
+}
+
+/**
  * One pass's `### Open` section, in the shape the shipped document uses.
  *
  * The reason is long enough to pass the length rule on purpose: a fixture that failed
  * for two reasons at once could not say which branch was reached.
+ *
+ * No ids here, and that is a rule rather than an oversight: a round's record is frozen, it
+ * never moves an entry anywhere, and the 559 entries of the shipped records carry none. The
+ * test at the end of this file holds that scope still.
  */
 function openSection(title: string, entries: string[]): string {
   return `## ${title}\n\n### Left open\n\n${entries.join('\n')}\n`;
@@ -89,9 +109,14 @@ function openSection(title: string, entries: string[]): string {
  * The second spelling, and the one that had no reader for as long as it existed. A
  * fixture written only with `### Open` cannot tell the two apart, which is why the four
  * tests below it use this instead.
+ *
+ * `from` is the first id, because the ids of the two lists are **one space**: a document that
+ * carries both sections numbers them together, and numbering each from 1 would collide the
+ * first entry of each -- the refusal the id rule exists for, reached by a fixture that is not
+ * about it.
  */
-function indexOpen(entries: string[]): string {
-  return `## Headline\n\ntext\n\n## Open\n\n${entries.join('\n')}\n\n## Pass log\n\nbody\n`;
+function indexOpen(entries: string[], from = 1): string {
+  return `## Headline\n\ntext\n\n## Open\n\n${entries.map((entry, i) => withId(entry, from + i)).join('\n')}\n\n## Pass log\n\nbody\n`;
 }
 
 const CLOSED_ENTRY = '- ~~An old item.~~ **Closed by finding 150**: the consumer arrived.';
@@ -104,8 +129,8 @@ const CLOSED_ENTRY = '- ~~An old item.~~ **Closed by finding 150**: the consumer
  * a fixture that left one in `## Open` would be testing the refusal rather than the rule the
  * test names.
  */
-function closedSection(entries: string[]): string {
-  return `## Closed\n\n${entries.join('\n')}\n`;
+function closedSection(entries: string[], from = 1): string {
+  return `## Closed\n\n${entries.map((entry, i) => withId(entry, from + i)).join('\n')}\n`;
 }
 
 /**
@@ -303,7 +328,8 @@ describe('docs · the guard reads its subject, not the first sample of it', () =
     // Reachable only because two levels are read now. An entry counted in both a
     // `## Open` and the `### Left open` it sits inside makes `N open with a reason` a number
     // that depends on how the document is headed rather than on how much is open.
-    const nested = `## Open\n\n${OPEN_ENTRY}\n\n### Left open\n\n${CLOSED_ENTRY}\n\n## Pass log\n\nbody\n`;
+    const nested =
+      `## Open\n\n${withId(OPEN_ENTRY, 1)}\n\n### Left open\n\n${CLOSED_ENTRY}\n\n## Pass log\n\nbody\n`;
     const r = runOn(nested);
     expect(r.code).toBe(1);
     expect(r.out).toContain('sits inside the');
@@ -332,13 +358,13 @@ describe('docs · the guard reads its subject, not the first sample of it', () =
 describe('docs · the live list says when it was read, and how much it holds', () => {
   const ROUND = '## v3.62 -- the round that read it';
   const withStamp = (entries: string[], stamp: string | null) =>
-    `${ROUND}\n\nbody\n\n## Open\n\n${stamp === null ? '' : `${stamp}\n\n`}${entries.join('\n')}\n\n## Pass log\n\nbody\n`;
+    `${ROUND}\n\nbody\n\n## Open\n\n${stamp === null ? '' : `${stamp}\n\n`}${entries.map((entry, i) => withId(entry, 1 + i)).join('\n')}\n\n## Pass log\n\nbody\n`;
 
   it('passes when the stamp names the newest round and counts the entries below it', () => {
     // The closed entry is in the record, which is a second section of the same document: the
     // stamp counts the live list, and the record is not part of that count even when the two
     // files are one fixture.
-    const r = runOn(withStamp([OPEN_ENTRY], 'Checked at v3.62: **1** entry open.') + closedSection([CLOSED_ENTRY]));
+    const r = runOn(withStamp([OPEN_ENTRY], 'Checked at v3.62: **1** entry open.') + closedSection([CLOSED_ENTRY], 2));
     expect(r.out).toContain('the live list was read at v3.62 and holds 1 open entr(ies)');
     expect(r.out).toContain('the newest round this corpus names is v3.62');
     expect(r.code).toBe(0);
@@ -394,7 +420,7 @@ describe('docs · the live list says when it was read, and how much it holds', (
       '  ~~[open: an old sub-item]~~ Closed by finding 343, which settled the sub-item only.',
       '  [open: the entry itself is still open, and this is the sentence that says why it is]',
     ].join('\n');
-    const r = runOn(indexOpen([quoted]) + closedSection([CLOSED_ENTRY]));
+    const r = runOn(indexOpen([quoted]) + closedSection([CLOSED_ENTRY], 2));
     expect(r.code).toBe(0);
     expect(r.out).toContain('1 open with a reason, 1 closed by a finding');
   });
@@ -460,7 +486,7 @@ describe('docs · the headline and the reason have to agree about whether an ent
       '- A residual whose caveat was settled a round later.',
       '- ~~A residual whose caveat was settled a round later.~~',
     );
-    const r = runOn(closedSection([whole]) + indexOpen([OPEN_ENTRY]));
+    const r = runOn(closedSection([whole]) + indexOpen([OPEN_ENTRY], 2));
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain('1 open with a reason, 1 closed by a finding');
   });
@@ -488,7 +514,7 @@ describe('docs · the headline and the reason have to agree about whether an ent
       '  ~~[open: an old sub-item]~~ Closed by finding 343, which settled the sub-item only.',
       '  [open: the entry itself is still open, and this is the sentence that says why it is]',
     ].join('\n');
-    const r = runOn(indexOpen([quoted]) + closedSection([CLOSED_ENTRY]));
+    const r = runOn(indexOpen([quoted]) + closedSection([CLOSED_ENTRY], 2));
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain('1 open with a reason, 1 closed by a finding');
   });
@@ -519,7 +545,8 @@ describe('docs · a record written as a table is read as rows, and a third spell
   const suffix = (body: string) => `### Left open, in the order the goal is reached\n\n${body}\n`;
   // The record after the live list's own section, not inside it: a `###` heading under `## Open`
   // is the nested-list refusal, which is a different rule and has its own test.
-  const page = (record: string) => `## Headline\n\ntext\n\n## Open\n\n${OPEN_ENTRY}\n\n## Pass log\n\nbody\n\n${record}`;
+  const page = (record: string) =>
+    `## Headline\n\ntext\n\n## Open\n\n${withId(OPEN_ENTRY, 1)}\n\n## Pass log\n\nbody\n\n${record}`;
 
   it('counts a suffix-form record whose body is a table, and says its rows were not judged', () => {
     // Four columns, because that is the shape the nineteen shipped records use and the guard
@@ -545,7 +572,10 @@ describe('docs · a record written as a table is read as rows, and a third spell
   });
 
   it('refuses a third spelling of either name, so a list cannot leave its reader quietly', () => {
-    const r = runOn(`## Headline\n\ntext\n\n## Open\n\n${OPEN_ENTRY}\n\n### Left open (unfinished)\n\n${OPEN_ENTRY.replace('- A residual.', '- Another.')}\n\n## Pass log\n\nbody\n`);
+    const r = runOn(
+      `## Headline\n\ntext\n\n## Open\n\n${withId(OPEN_ENTRY, 1)}\n\n### Left open (unfinished)\n\n` +
+        `${OPEN_ENTRY.replace('- A residual.', '- Another.')}\n\n## Pass log\n\nbody\n`,
+    );
     expect(r.code).toBe(1);
     expect(r.out).toContain('begins with one of the list names this guard');
     expect(r.out).toContain('would have no reader');
@@ -587,7 +617,8 @@ describe('docs · a record written as a table is read as rows, and a third spell
  */
 describe('docs · the rows a table-form record holds, counted from the record', () => {
   const suffix = (body: string) => `### Left open, in the order the goal is reached\n\n${body}\n`;
-  const page = (record: string) => `## Headline\n\ntext\n\n## Open\n\n${OPEN_ENTRY}\n\n## Pass log\n\nbody\n\n${record}`;
+  const page = (record: string) =>
+    `## Headline\n\ntext\n\n## Open\n\n${withId(OPEN_ENTRY, 1)}\n\n## Pass log\n\nbody\n\n${record}`;
   const HEAD = TABLE_HEAD;
   const row = (n: number) => `| **P${String(n % 9)}** | residual ${String(n)} | unchanged | nothing |`;
 
@@ -697,7 +728,7 @@ describe('docs · a record may not be the only place a residual lives', () => {
   /** One round whose record is `body`, over a live list holding exactly one entry. */
   const page = (body: string) =>
     `## ${ROUND} — a round\n\n### Left open, in the order the goal is reached\n\n${TABLE_HEAD}\n${body}\n\n` +
-    `## Open\n\n${LIVE}\n\nChecked at ${ROUND}: **1** entries open\n\n## Pass log\n\nbody\n`;
+    `## Open\n\n${withId(LIVE, 1)}\n\nChecked at ${ROUND}: **1** entries open\n\n## Pass log\n\nbody\n`;
 
   it('accepts a row whose item quotes an entry the live list holds', () => {
     const r = runOn(page(`| **P1** | ${QUOTED} | unchanged | nothing |`));
@@ -724,7 +755,9 @@ describe('docs · a record may not be the only place a residual lives', () => {
       '| **P1** | a residual the list does not hold, written before the rule | unchanged | nothing |\n\n';
     const newer = `## ${ROUND} — a round\n\n### Left open, in the order the goal is reached\n\n${TABLE_HEAD}\n` +
       `| **P1** | ${QUOTED} | unchanged | nothing |\n\n`;
-    const r = runOn(`${older}${newer}## Open\n\n${LIVE}\n\nChecked at ${ROUND}: **1** entries open\n\n## Pass log\n\nbody\n`);
+    const r = runOn(
+      `${older}${newer}## Open\n\n${withId(LIVE, 1)}\n\nChecked at ${ROUND}: **1** entries open\n\n## Pass log\n\nbody\n`,
+    );
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain(`the ${ROUND} record's 1 row(s) were judged, and every one of them quotes an entry`);
   });
@@ -745,7 +778,7 @@ describe('docs · a record may not be the only place a residual lives', () => {
     const newer =
       `## ${ROUND} — a round\n\n### Left open\n\n` +
       `- ${QUOTED}. [open: the reason this is still work, long enough to be a reason a reader acts on]\n\n` +
-      `## Open\n\n${LIVE}\n\nChecked at ${ROUND}: **1** entries open\n\n## Pass log\n\nbody\n`;
+      `## Open\n\n${withId(LIVE, 1)}\n\nChecked at ${ROUND}: **1** entries open\n\n## Pass log\n\nbody\n`;
     const r = runOn(`${older}${newer}`);
     expect(r.code, r.out).toBe(0);
     // Zero table rows are judged -- the newest round wrote none -- and the entry that *was*
@@ -779,7 +812,7 @@ describe('docs · a record may not be the only place a residual lives', () => {
  */
 describe('docs · the live list holds work, the record holds closures, and neither drifts', () => {
   /** A document with one open entry, as the shallowest fixture that can carry a refusal. */
-  const live = (entry: string) => `## Open\n\n${entry}\n\n## Pass log\n\nbody\n`;
+  const live = (entry: string) => `## Open\n\n${withId(entry, 1)}\n\n## Pass log\n\nbody\n`;
 
   it('refuses a struck entry in the live list, and names the file the closure belongs in', () => {
     // The refusal that keeps the split. Without it the closures drift back one strike at a
@@ -799,7 +832,7 @@ describe('docs · the live list holds work, the record holds closures, and neith
     // The mirror, and the worse direction: the only list a reader consults for what is left to
     // do is `## Open`, so an unstruck bullet here is work that will never be done and will never
     // be seen to be undone.
-    const r = runOn(`## Closed\n\n${OPEN_ENTRY}\n`);
+    const r = runOn(`## Closed\n\n${withId(OPEN_ENTRY, 1)}\n`);
     expect(r.code).toBe(1);
     expect(r.out).toContain('work is filed as history');
     expect(r.out).toContain('no reader of the live list will see it');
@@ -822,8 +855,8 @@ describe('docs · the live list holds work, the record holds closures, and neith
     const body = '| **P1** | the closure the round recorded | unchanged | nothing |';
     const r = runOn(
       `## v9.9 — a round\n\n### Left open, in the order the goal is reached\n\n${TABLE_HEAD}\n${body}\n\n` +
-        `## Open\n\n${OPEN_ENTRY}\n\nChecked at v9.9: **1** entry open\n\n## Pass log\n\nbody\n\n` +
-        `## Closed\n\n- ~~the closure the round recorded~~ **Closed by finding 150**, which settled it.\n`,
+        `## Open\n\n${withId(OPEN_ENTRY, 1)}\n\nChecked at v9.9: **1** entry open\n\n## Pass log\n\nbody\n\n` +
+        `## Closed\n\n- ~~**O-002 · the closure the round recorded**~~ **Closed by finding 150**, which settled it.\n`,
     );
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain("the v9.9 record's 1 row(s) were judged, and every one of them quotes an entry");
@@ -862,5 +895,132 @@ describe('docs · the live list holds work, the record holds closures, and neith
     // place that tells them where it went. Nothing else in the tree asserts this link.
     const index = readFileSync(resolve(ROOT, 'docs', 'progress.md'), 'utf8');
     expect(index).toContain('progress/closed.md');
+  });
+});
+
+/**
+ * An entry needed a name of its own, because the rule that keeps the two lists apart is a
+ * rule about text.
+ *
+ * v3.111 moved forty-eight closures out of the live list and into a file, and the move was
+ * checked **once, by hand**: seventy-six entries in, seventy-six out, twenty-eight plus
+ * forty-eight. That is a measurement, and a measurement of the one edit is not a rule about
+ * the next edit. Nothing in the tree held the pair together afterwards, and the pair has a
+ * hole in it that both of the split's refusals walk past:
+ *
+ * - an entry copied into the record **struck**, and left in the live list **unstruck**, is a
+ *   legal bullet on both sides -- history where history belongs, and work where work does. It
+ *   is one residual counted twice, and a reader who acts on the live one is acting on a
+ *   closure.
+ *
+ * The hole is not a shape anyone could close with more text rules, because the two copies are
+ * textually different by construction: one is struck and the other is not. It closes with an
+ * **identity** -- every entry of the two lists carries an id, the two lists share one id space,
+ * and the space is dense. Then:
+ *
+ * - a copy is one id in two places, which is refused outright;
+ * - a deletion is a hole in the space, which is refused as an entry that left without being
+ *   closed;
+ * - and "the next entry takes max + 1" stops being a convention to remember. It is the only
+ *   number that leaves the space dense, so a round that invents another one is refused.
+ *
+ * ## What the id does not do
+ *
+ * It does not say the text is the same entry. A closure can arrive in the record carrying the
+ * id of an entry whose words were rewritten, and no reading of two files can tell that from a
+ * closure -- the entry it replaced is gone. Nor can it see a rename. What it makes impossible
+ * is the **silent** version of either: the id is the thing a reader greps, and a grep that
+ * finds it in `## Closed` says which sentence closed it.
+ *
+ * The token is three digits wide, so the space ends at 999, and the width is fixed rather than
+ * padded to fit because `O-100` must not match the front of `O-1000` in a prefix grep. The
+ * refusal is below, and it fires on the ids a rewrite of this guard is most likely to meet
+ * first rather than on a list anybody will reach.
+ */
+/** The `- ` lines of one section of one file, because the index carries records as well. */
+function sectionEntries(text: string, heading: string): string[] {
+  const lines = text.split('\n');
+  const start = lines.findIndex((line) => line.trim() === heading);
+  const rest = start === -1 ? [] : lines.slice(start + 1);
+  const end = rest.findIndex((line) => /^## /.test(line));
+  return (end === -1 ? rest : rest.slice(0, end)).filter((line) => /^- /.test(line));
+}
+
+describe('docs · every entry has an identity, so nothing can leave the two lists unrecorded', () => {
+  const OTHER = '- Another residual. [open: another reason, long enough to be a reason a reader acts on]';
+
+  it('refuses an entry that carries no id, and says where the token goes', () => {
+    // The fixture is the state the shipped lists were in until v3.112: a perfectly good entry
+    // that no rule can hold across a move, because nothing names it.
+    const r = runOn(`## Open\n\n${OPEN_ENTRY}\n\n## Pass log\n\nbody\n`);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('carries no id');
+    expect(r.out).toContain('a move cannot be told from a deletion');
+    expect(r.out).toContain('right after the bullet');
+  });
+
+  it('reads the two files as one id space, because a closure keeps the id it was opened with', () => {
+    // The move, as a fixture: `O-002` is in the record and the live list holds the ids either
+    // side of it. Nothing in either file is contiguous on its own, and the pair is dense --
+    // which is what "one space, two files" means.
+    const r = runOn(
+      `## Open\n\n${withId(OPEN_ENTRY, 1)}\n${withId(OTHER, 3)}\n\n## Pass log\n\nbody\n\n${closedSection([CLOSED_ENTRY], 2)}`,
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('3 entr(ies) with ids 1..3, and none is missing');
+  });
+
+  it('refuses an id that names two entries, which is the copy both of the split refusals walk past', () => {
+    // One residual in two places: struck in the record, unstruck in the live list. Each side
+    // satisfies its own refusal, so until the ids arrived this document was green -- and a
+    // reader of the live list would have done work that says `Closed by finding 150`.
+    const r = runOn(indexOpen([OPEN_ENTRY]) + closedSection([CLOSED_ENTRY]));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('names two entries');
+    expect(r.out).toContain('O-001');
+    expect(r.out).toContain('a reused id hides a closure');
+  });
+
+  it('refuses a gap, because a gap is an entry that left without arriving in the record', () => {
+    // The deletion the tiling equation could not see: `O-002` is simply gone from both files,
+    // and the live list is one entry shorter with nothing to say why.
+    const r = runOn(
+      `## Open\n\n${withId(OPEN_ENTRY, 1)}\n${withId(OTHER, 3)}\n\n## Pass log\n\nbody\n`,
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('the ids skip O-002');
+    expect(r.out).toContain('an entry leaves these lists only by being closed');
+  });
+
+  it('refuses an id four digits wide, because a prefix grep for O-100 must not find O-1000', () => {
+    const wide = '- **O-1000 · An item.** [open: a reason long enough to stand as one, and this is it]';
+    const r = runOn(`## Open\n\n${wide}\n\n## Pass log\n\nbody\n`);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('O-1000 is 4 digits wide');
+    expect(r.out).toContain('the token is three');
+  });
+
+  it('does not ask a round record for ids, because a record is frozen and moves nothing', () => {
+    // The scope, held still. There are 559 entries in the shipped records; a rule that required
+    // ids of them would demand a repair of every round ever written, and the guard's own
+    // docstring says why a frozen corpus is not judged.
+    const r = runOn(openSection('Pass 1', [OPEN_ENTRY, CLOSED_ENTRY]));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).not.toContain('carries no id');
+  });
+
+  it('reads the shipped lists as one dense space, which is the tiling as a guard and not a measurement', () => {
+    // Non-vacuity, and the number is counted from the files rather than pinned: a pinned
+    // seventy-nine would have to be re-signed by every closure, and the point of the id is that
+    // the *next* one is arithmetic.
+    const shipped = spawnSync('node', [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
+    expect(shipped.status, `${shipped.stdout}${shipped.stderr}`).toBe(0);
+    // The entries of the two sections, not the bullets of the two files: the index also
+    // carries every round's `### Left open` record, and those entries have no ids by design.
+    const entries =
+      sectionEntries(readFileSync(resolve(ROOT, 'docs', 'progress.md'), 'utf8'), '## Open').length +
+      sectionEntries(readFileSync(resolve(ROOT, 'docs', 'progress', 'closed.md'), 'utf8'), '## Closed').length;
+    expect(entries, 'the two lists hold no entry, so nothing below is a reading').toBeGreaterThan(50);
+    expect(shipped.stdout).toContain(`${String(entries)} entr(ies) with ids 1..${String(entries)}, and none is missing`);
   });
 });

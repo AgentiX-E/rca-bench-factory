@@ -1663,7 +1663,25 @@ describe('Q. the census is complete and every consumer is roled', () => {
 // R. The reading's row order is load-bearing, and was unchecked
 // ---------------------------------------------------------------------------
 
-describe('R. the row order the alternative reading depends on', () => {
+/**
+ * The budget for the reading in `R`, and the run that made this file state one.
+ *
+ * `check-test-budgets` refuses a file whose slowest test is at or above **1 000 ms** while the
+ * number in force is vitest's inherited 5 000 ms default: the verdict is then decided by a number
+ * nobody wrote for this file. This file had none, and the runner measured
+ * `counts the corpus verdicts that a permutation can change` at **1 044 ms** -- the CI run of
+ * `63707bfd3`, the first run after the suite grew by seven spawn-driven tests. Locally the same
+ * reading is **493 ms for the whole file**, so no local run would have said it, and the reading
+ * that decides is the one CI writes (finding 567).
+ *
+ * **3 000 ms** is 2.9x the runner's reading: the smallest round number above the gate's 2x rule
+ * that does not need a new justification next round. The test is a loop over the corpus and a
+ * product over its rows, so a corpus three times this size is a change the assertions above would
+ * report long before this number would.
+ */
+const R_BUDGET_MS = 3_000;
+
+describe('R. the row order the alternative reading depends on', { timeout: R_BUDGET_MS }, () => {
   function substringUnder(order: readonly string[], slug: string): string {
     const normalized = slug.trim().toLowerCase().replace(/[\s_]+/g, '-').replace(/[^a-z0-9-]/g, '');
     for (const category of order) {

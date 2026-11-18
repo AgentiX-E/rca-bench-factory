@@ -316,6 +316,85 @@ function spellingOf(heading) {
   return null;
 }
 
+/**
+ * The token that names an entry, and the round that found the lists needing one (finding 570).
+ *
+ * ## What the split was held by, and what it was not
+ *
+ * v3.111 moved forty-eight closures out of the live list into a file, and checked the move once,
+ * by hand: seventy-six entries in, seventy-six out, twenty-eight plus forty-eight. That is a
+ * measurement of one edit, and it decays the moment the next edit is made -- the same decay every
+ * published count in this repository has, with a worse consequence, because the thing that decays
+ * here is the answer to "is anything open that nobody is told about".
+ *
+ * Both of the split's refusals read a single bullet. Neither compares the two files, so the hole
+ * between them is a bullet that satisfies both: an entry **copied** into the record struck and
+ * left in the live list unstruck is history where history belongs and work where work does. One
+ * residual, two answers, and no rule that could tell -- the two copies are different text by
+ * construction, so nothing textual can pair them.
+ *
+ * ## Identity, and what it makes checkable
+ *
+ * Every entry of the two lists carries an id: `O-001`, three digits, right after the bullet's
+ * `- ` and outside every mark the headline carries -- `- O-001 · **The claim.**`. The two lists
+ * share **one** id space, and the space is **dense** -- 1..N, N the number of entries the two
+ * files hold together. Three defects are refused by that alone:
+ *
+ * | defect | what it looks like |
+ * | --- | --- |
+ * | a copy | one id in two files: `O-002` in `## Open` and in `## Closed` |
+ * | a deletion | a hole: the ids run to forty and thirty-nine entries are present |
+ * | an invented id | the same hole, from the other side: a new entry that took a number already spent |
+ *
+ * And the arithmetic that used to be a convention becomes the only thing that keeps the set
+ * legal: **a new entry takes one more than the highest id the two lists hold**, because any other
+ * number leaves a hole. The round that raises a residual no longer has to remember the rule; it
+ * has to satisfy the set.
+ *
+ * ## What an id cannot say, stated rather than left to look like more
+ *
+ * It cannot say the text is the same entry. A closure can arrive in the record carrying the id of
+ * an entry whose words were rewritten, and no reading of two files can tell that from a closure:
+ * the entry it replaced is gone, and the id is all that is left of it. Nor can it see a rename
+ * (`O-007` closed by an entry that was `O-007` all along, saying something else). What it makes
+ * impossible is the **silent** version of either, which is the version that loses work: the id is
+ * what a reader greps, and a grep that finds it in `## Closed` leads to the sentence that closed
+ * it, in the round's own words.
+ *
+ * ## Why three digits, and why the width is refused rather than padded
+ *
+ * The space ends at 999. A fixed width is what makes a prefix grep safe -- `O-100` must not match
+ * the front of `O-1000` -- and padding to the size of today's list would make every id a different
+ * width as the list grows, which is a token nobody can grep. An id that is not three digits is
+ * refused with its own diagnostic rather than read as no id at all, because "this entry has no id"
+ * about an entry that has one is a message that sends a reader to the wrong place.
+ */
+const ID = /^O-(\d+)\b/;
+
+/**
+ * The id a headline carries, or `null` when it carries none.
+ *
+ * The leading marks are tolerated rather than required, because the position of the id is a rule
+ * about reading and not about markup: a headline may start with `**` (a bold claim), with `~~**`
+ * (a struck claim, which is the common shape in the record) or with `**~~` (the one entry whose
+ * strike sits inside its bold), and all three carry the same token in the same place. A pattern
+ * written for one of them would stop reading the id of an entry whose author wrote it the other
+ * way, and the refusal it would produce -- "this entry has no id" -- would be false.
+ *
+ * @param {string} headline the entry's first line
+ * @returns {{ token: string, digits: string } | null}
+ */
+function idOf(headline) {
+  const lead = headline.replace(/^-\s+/, '').replace(/^[~*`\s]+/, '');
+  const match = ID.exec(lead);
+  return match === null ? null : { token: match[0], digits: match[1] };
+}
+
+/** The token for a number, so one width is written in one place. */
+function idToken(n) {
+  return `O-${String(n).padStart(3, '0')}`;
+}
+
 /** A heading that begins with one of the list names without being a spelling this guard reads. */
 const NEARLY = /^#{2,3} (?:Open|Left open|Closed)\b/;
 
@@ -579,6 +658,13 @@ function check() {
   // being read when the answer becomes available.
   const records = [];
   const rounds = [];
+  // The ids of the two lists, in one map, because they are one space (finding 570). Pooled here
+  // for the same reason `listed` is: the live list is in the index and the record is in a file, and
+  // a duplicate id is a fact about both of them.
+  const ids = new Map();
+  let idEntries = 0;
+  let idProblems = 0;
+  let idLabel = '';
   let tables = 0;
   let tableRows = 0;
   for (const [position, doc] of DOCS.entries()) {
@@ -719,6 +805,43 @@ function check() {
         const headline = item.split('\n')[0];
         const first = headline.slice(2).trim();
         listed.push(item);
+        // The entry's identity, read before either refusal, so that an entry refused for being
+        // struck where it stands still contributes its id to the space: a document with two
+        // defects should say both, and a set that silently lost the id of the entry it was
+        // already refusing would report the second defect as a gap (finding 570).
+        //
+        // The requirement is these two lists and not the records, and that scope is a statement
+        // about what an id is for: a record is frozen, it moves nothing, and its entries are how
+        // a round reported itself. A rule that wanted ids of them would demand a repair of every
+        // round ever written.
+        if (kind === 'live' || kind === 'closed') {
+          idEntries += 1;
+          const id = idOf(headline);
+          if (id === null) {
+            idProblems += 1;
+            problems.push(
+              `${from.label}: an entry carries no id, so a move cannot be told from a deletion -- put ` +
+                '`O-NNN · ` right after the bullet, at one more than the highest number the two lists ' +
+                `hold: ${first.slice(0, 80)}`,
+            );
+          } else if (id.digits.length !== 3) {
+            idProblems += 1;
+            problems.push(
+              `${from.label}: the id ${id.token} is ${String(id.digits.length)} digits wide and the token ` +
+                `is three, so a prefix grep for ${idToken(Number(id.digits.slice(0, 3)))} would find it: ` +
+                `${first.slice(0, 80)}`,
+            );
+          } else if (ids.has(id.token)) {
+            idProblems += 1;
+            problems.push(
+              `${from.label}: the id ${id.token} names two entries -- one here and one at ` +
+                `${String(ids.get(id.token))} -- so a reused id hides a closure: ${first.slice(0, 80)}`,
+            );
+          } else {
+            ids.set(id.token, `${from.label}: ${first.slice(0, 60)}`);
+            if (idLabel === '') idLabel = from.label;
+          }
+        }
         // The split, enforced. Two refusals, one per side, and they are the whole reason the
         // record is a separate file rather than a section that happens to be long today.
         //
@@ -827,6 +950,47 @@ function check() {
       }: ${total - closed} open with a reason, ${closed} closed by a finding)`,
     );
     stampChecks({ live, rounds, problems });
+  }
+
+  // The id space, checked once the walk has read both files.
+  //
+  // ## Why it is here rather than inside the walk
+  //
+  // The space is a fact about the two lists together, and the two lists are two files. A check that
+  // ran per document would compare the ids of the live list with the ids of the live list, and call
+  // the space dense at forty while the record held the other thirty-nine -- which is finding 568's
+  // lesson (an arm whose population was what it had read rather than what the list holds) applied to
+  // a set instead of to a row.
+  //
+  // ## Why a gap is a defect and not a gap
+  //
+  // An entry has exactly one way out of these lists: it is closed, and a closure carries its id into
+  // the record. So every number is spent once and stays spent, and the numbers that are present are
+  // 1..N with nothing missing. A hole is therefore the one thing a reader of the live list cannot see
+  // -- a residual that was deleted rather than closed -- and it is the shape v3.111's tiling equation
+  // was measured for and could not guard.
+  //
+  // The check is skipped when an id was missing or repeated, and that is deliberate: the space is
+  // only dense if it is complete, so a document already refused for an unreadable id would also be
+  // reported as having a hole in it, and the second message would be about the first message's
+  // subject. One defect, one diagnostic.
+  if (idEntries > 0 && idProblems === 0) {
+    const numbers = [...ids.keys()].map((token) => Number(token.slice(2))).sort((a, b) => a - b);
+    const top = numbers[numbers.length - 1] ?? 0;
+    const missing = [];
+    for (let n = 1; n <= top; n += 1) if (!ids.has(idToken(n))) missing.push(idToken(n));
+    if (missing.length > 0) {
+      problems.push(
+        `${idLabel}: the two lists hold ${String(idEntries)} entr(ies) and their ids run to ` +
+          `${String(top)}, so the ids skip ${missing.slice(0, 4).join(', ')}${
+            missing.length > 4 ? ` and ${String(missing.length - 4)} more` : ''
+          } -- an entry leaves these lists only by being closed, and a closure carries its id with it`,
+      );
+    } else {
+      console.log(
+        `check-open-list: ${String(idEntries)} entr(ies) with ids 1..${String(idEntries)}, and none is missing`,
+      );
+    }
   }
 
   // The newest round's record, matched against the list.
