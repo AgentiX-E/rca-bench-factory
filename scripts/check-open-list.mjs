@@ -448,9 +448,11 @@ function plain(text) {
  * quotes and the dash, collapse the whitespace, drop the case and the trailing full stop, then
  * require twenty characters of the row to appear inside an entry. Twenty is a floor taken from the
  * corpus rather than from principle -- the shortest row that names anything is 25 characters, so a
- * rule that accepted `see above` would be accepting a coincidence. Measured at v3.114, under the same
- * ruler: the **80** entries of the two lists have **80** distinct first twenty characters, so no row
- * that begins with an entry's words can be mistaken for a row about a different entry.
+ * rule that accepted `see above` would be accepting a coincidence. Measured at v3.115, under the same
+ * ruler: the **81** entries of the two lists have **81** distinct first twenty characters, so no row
+ * that begins with an entry's words can be mistaken for a row about a different entry. The sentence
+ * said eighty until this round: it was measured before the round that wrote it added `O-081`, which is
+ * the decay every published count has and the reason this one is re-derived rather than remembered.
  *
  * What the code did instead, from v3.65 to v3.113, was require the **whole** row (finding 574). That
  * is not a stricter reading of the same rule, it is a different rule: it demands that a round's own
@@ -495,7 +497,7 @@ const STAMP = /Checked at (v\d+\.\d+): \*\*(\d+)\*\* (?:entry|entries) open/g;
 const ROUND = /^## (v(\d+)\.(\d+))\b/;
 
 /**
- * Which spelling of the two names a heading is, and why the exact string was not enough.
+ * Which spelling of the names a heading is, and why the exact string was not enough.
  *
  * `sections()` used to match the heading with `wanted.has(trimmed)`, so a heading that gained a
  * suffix stopped being read -- silently, with the count unchanged and nothing in the output
@@ -514,25 +516,93 @@ const ROUND = /^## (v(\d+)\.(\d+))\b/;
  * The rows were not entries, so nothing was miscounted -- what was missing was the statement
  * that they were not judged, and a refusal for any third spelling.
  *
- * So there are two known spellings and one refusal:
+ * ## The refusal was written as a prefix of the two names that existed (finding 579)
+ *
+ * The refusal is `NEARLY = /^#{2,3} (?:Open|Left open|Closed)\b/`, so it fires on a third spelling
+ * that *shares a prefix with one of the two* -- `### Left open (unfinished)`, which the test beside
+ * it drives -- and says nothing about a third spelling that shares none. The corpus then wrote
+ * two:
+ *
+ * | spelling | rounds | form | rows |
+ * | --- | --- | --- | --- |
+ * | `### Left open` | 145 | entries | -- |
+ * | `### Left open, in the order the goal is reached` | 25 | table | 188 |
+ * | `### Leftovers, in the order that reaches the goal` | 17 | table | 106 |
+ * | `### What is left, in the order it has to happen` | 5 | table | 24 |
+ *
+ * Twenty-two records of 217 were read by nothing: not counted, their columns never compared with
+ * the vocabulary, their rows never put in front of the arm, and the summary printed
+ * `25 record(s) in table form (188 row(s))` over a corpus that held 47 and 318. What makes those
+ * two a record is not the name -- it is a table whose first column is `priority`, which is the
+ * shape 47 of the corpus's 555 tables have and no other table has -- so the names are published
+ * here and the refusal moves onto the body (see `recordTableUnderUnknownHeading`).
+ *
+ * So there are five known spellings, and the fifth was measured before it was granted:
  *
  * - `## Open` -- the live list, read as entries;
  * - `### Left open` -- a record, read as entries;
- * - `### Left open, <anything>` -- a record in table form: its rows are counted, its shape is
- *   checked, and the summary says its rows were not judged;
- * - anything else beginning `## Open` or `### Left open` -- refused, because a document that
- *   renames a list has moved it out of its reader's reach and must say so.
+ * - `### Left open, <anything>`, `### Leftovers, <anything>`, `### What is left, <anything>` -- a
+ *   record in table form: its rows are counted, its shape is checked, and the summary says its
+ *   rows were not judged;
+ * - anything else beginning `## Open`, `### Left open` or `## Closed` -- refused, because a
+ *   document that renames a list has moved it out of its reader's reach and must say so;
+ * - a `priority` table under any other heading -- refused for the same reason, by the shape
+ *   rather than by the name.
  */
 function spellingOf(heading) {
   if (heading === '## Open') return { kind: 'live', form: 'entries' };
   if (heading === '### Left open') return { kind: 'record', form: 'entries' };
-  if (/^### Left open,/.test(heading)) return { kind: 'record', form: 'table' };
+  // Three names, one form. The two later ones are the corpus's renaming of the first, and each is
+  // here because it was measured: 17 rounds wrote `Leftovers` and 5 wrote `What is left`.
+  if (/^### (?:Left open|Leftovers|What is left),/.test(heading)) return { kind: 'record', form: 'table' };
   // The record of closures. Its own kind rather than `record`, because the two are asked
   // different questions: a round's record may hold an entry that is still open (a round can
   // leave something undone), and this one may not -- everything here is closed, or it is
   // work filed as history and nobody will ever do it.
   if (heading === '## Closed') return { kind: 'closed', form: 'entries' };
   return null;
+}
+
+/**
+ * A record's table under a heading `spellingOf` does not read, found by its body.
+ *
+ * The refusal above is keyed to the names, so it can only catch a rename that keeps a prefix. The
+ * corpus's two renames kept none, and twenty-two records left the guard's reach without a word.
+ * This is the same rule asked of the thing the name stands in for: a table whose first column is
+ * `priority` is a record whatever the heading above it says, and a heading this guard does not
+ * read is the silence the prefix rule was written to prevent.
+ *
+ * The property is measured rather than assumed. `priority` is the first column of **47** of the
+ * progress corpus's 555 tables, and every one of those 47 is a round's record -- so the rule has
+ * no false positive on this corpus and one true one for every future rename.
+ *
+ * ## The heading a table sits under is the last heading before it
+ *
+ * Not "the nearest heading of the same or a shallower level", which is what `sections()` means by
+ * a span and what this function used first: a round heading is `##`, its record is `###` underneath
+ * it, so the round's span contains the record's table and the rule reported **every** round in the
+ * corpus as an orphan on its first run. A table belongs to the heading directly above it, whatever
+ * the level, and that is the whole of this function's scope rule.
+ */
+function recordTableUnderUnknownHeading(lines) {
+  const found = [];
+  for (let i = 0; i + 1 < lines.length; i += 1) {
+    if (!/^\s*\|/.test(lines[i] ?? '') || !/^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1] ?? '')) continue;
+    if ((cellsOf(lines[i] ?? '')[0] ?? '').toLowerCase() !== 'priority') continue;
+    let at = -1;
+    for (let j = i - 1; j >= 0; j -= 1) {
+      if (/^#{2,3} /.test(lines[j] ?? '')) {
+        at = j;
+        break;
+      }
+    }
+    // The table's rows, so the diagnostic can say how much is unread rather than that something is.
+    let rows = 0;
+    for (let k = i + 2; k < lines.length && /^\s*\|/.test(lines[k] ?? ''); k += 1) rows += 1;
+    if (at === -1 || spellingOf((lines[at] ?? '').trim()) !== null) continue;
+    found.push({ line: at, heading: (lines[at] ?? '').trim(), rows });
+  }
+  return found;
 }
 
 /**
@@ -624,23 +694,62 @@ const NEARLY = /^#{2,3} (?:Open|Left open|Closed)\b/;
  * summary makes a second one: that these rows were **not judged**. A reader who wants to judge
  * them, or to check what a round left undone, needs the same four cells for every row: what
  * priority the residual had, what it was, what the round's own account of it is, and what the
- * next step is. Nineteen records use exactly these four, in this order, and 147 rows fill them.
+ * next step is. Forty-two records use exactly these four names, in this order, and 294 rows fill
+ * them.
  *
  * So the names are required rather than assumed. Finding 463 is the argument: a heading that
  * gained a comma moved nineteen records out of this guard's reach, and a column that stops
  * being called `state` moves the same records out of a reader's grep -- while the count of
  * "rows nobody judged" goes up by nothing. The check costs one `includes` per column.
+ *
+ * ## The fourth column has two names, and that is measured rather than granted
+ *
+ * Five of the 47 records name it `next` (`### What is left, in the order it has to happen`, which
+ * v3.99 to v3.102 wrote) and 42 name it `next step` (finding 580). A vocabulary that has one word
+ * for a column the corpus spells two ways refuses five frozen records for a rename no round may
+ * repair, and a vocabulary that says nothing about the second word is the drift this whole
+ * round is about. So the second spelling is published here, held as a fact about the corpus:
+ * two names, counted, with the count in the sentence a reader sees.
  */
 const COLUMNS = ['priority', 'item', 'state', 'next step'];
 
-/** The cells of one pipe line, with the outer pipes removed and each cell trimmed. */
+/** The names each column may carry. One column, two spellings, and 42 records say the first. */
+const COLUMN_NAMES = new Map([['next step', ['next step', 'next']]]);
+
+/** Whether a header names this column, under any of the spellings the corpus uses. */
+function namesColumn(header, column) {
+  return (COLUMN_NAMES.get(column) ?? [column]).some((spelling) => header.includes(spelling));
+}
+
+/**
+ * The cells of one pipe line, with the outer pipes removed and each cell trimmed.
+ *
+ * ## Why the split is on *unescaped* pipes (finding 581)
+ *
+ * GFM's table rule is that a literal pipe inside a cell is written `\|`, **including inside a
+ * code span** -- a pipe is the cell separator before any inline parsing happens, so a code span
+ * does not protect it. This corpus has one such cell: `volume-16.md:1210` names `` `run: |` ``,
+ * the YAML block scalar, and it was written unescaped, so the row renders as five cells under a
+ * four-column header and the `next` column loses its text.
+ *
+ * `split('|')` counted every pipe, which made the two halves of that defect one defect: the
+ * unescaped row was a five-cell row (true, and the refusal's own subject), and a row repaired
+ * the only way the format allows -- escaped -- was **also** five cells, so the remedy the
+ * diagnostic asks for was the one form this reader could not accept. The escape is undone here
+ * rather than left in the cell, because a cell's `state` is read as prose: `\|` is how the pipe
+ * is written, not what the sentence says.
+ *
+ * The limit, stated: a cell whose text genuinely ends in a backslash reads that backslash as
+ * escaping the pipe after it. No row in the corpus does, and a Markdown table has no spelling
+ * for it either -- `\\|` separates the cells too.
+ */
 function cellsOf(line) {
   return line
     .trim()
     .replace(/^\|/, '')
     .replace(/(?<!\\)\|$/, '')
-    .split('|')
-    .map((cell) => cell.trim());
+    .split(/(?<!\\)\|/)
+    .map((cell) => cell.trim().replace(/\\\|/g, '|'));
 }
 
 /**
@@ -678,12 +787,14 @@ function tableShape(lines) {
         'line a reader cannot tell from a row',
     };
   }
-  const missing = COLUMNS.filter((column) => !header.includes(column));
+  const missing = COLUMNS.filter((column) => !namesColumn(header, column));
   if (missing.length > 0) {
     return {
       rows: 0,
       problem:
-        `names ${header.join(' | ')} and not ${missing.join(', ')}, so a reader who looks for the ` +
+        `names ${header.join(' | ')} and not ${missing
+          .map((column) => (COLUMN_NAMES.get(column) ?? [column]).map((one) => `\`${one}\``).join(' or '))
+          .join(', ')}, so a reader who looks for the ` +
         'column a record of residuals has kept since v3.45 finds nothing',
     };
   }
@@ -720,7 +831,7 @@ function tableShape(lines) {
       };
     }
   }
-  return { rows: rows.length, problem: null, rowLines: rows };
+  return { rows: rows.length, problem: null, rowLines: rows, header };
 }
 
 /**
@@ -916,6 +1027,20 @@ function check() {
   let idLabel = '';
   let tables = 0;
   let tableRows = 0;
+  // Every record section the walk read, whether it owns a round or not. The difference from
+  // `records.length` is the population that has no judge: the twenty-five records of the
+  // `## Pass N` era name no round, so the arm below cannot find them -- and until this round
+  // nothing counted them either (O-081). A number a rule cannot reach still has to be a number
+  // somebody printed, or "unjudged" is a suspicion rather than a reading.
+  let recordSections = 0;
+  // Split by whether a round owns the section, because the two halves answer different questions
+  // and one of them cannot be derived from `records`: a record refused for its shape never reaches
+  // that array, and counting the population from it would report the refused one as a record with
+  // no round -- a true sentence about the array and a false one about the corpus.
+  let ownedRecords = 0;
+  let ownerlessRecords = 0;
+  /** The rounds that wrote a record, whatever the record's shape turned out to be. */
+  const recordRounds = new Set();
   // The record's files, discovered before the walk and their problems reported first: a file that
   // was never opened is a fact about the corpus, and every verdict below is computed from the
   // corpus it was given. Reporting it after the walk would put the largest defect last.
@@ -978,6 +1103,18 @@ function check() {
         );
       }
     }
+    // And the same silence asked of the body, because the refusal above is keyed to the names and
+    // the corpus's two renames shared no prefix with either (finding 579). A table whose first
+    // column is `priority` is a record whatever its heading says: 47 of this corpus's 555 tables
+    // begin with that column and every one of them is a round's record.
+    for (const orphan of recordTableUnderUnknownHeading(text.split('\n'))) {
+      problems.push(
+        `${from.label}: the \`${orphan.heading}\` at line ${String(orphan.line + 1)} holds a table whose ` +
+          `first column is \`priority\`, which is only ever a record's, and its heading is none of the ` +
+          `four names this guard reads -- so the record's ${String(orphan.rows)} row(s) are counted by ` +
+          'nothing: rename it to `### Left open, <anything>` or to one of the names the corpus uses',
+      );
+    }
     const found = sections(text, doc.headings);
     // The rounds this corpus says happened. Read from every file, because a volume is
     // where a round is written and the index is where the list is: the stamp has to be
@@ -1017,6 +1154,22 @@ function check() {
       // written as a table, which has rows rather than entries (finding 463).
       const spelling = spellingOf(section.heading) ?? { kind: 'record', form: 'entries' };
       const kind = spelling.kind;
+      // The nearest round heading above this section. Computed once, before either form is read,
+      // because the population count is a fact about the section and not about whether its shape
+      // turned out to be readable: a record refused for holding five cells in a row still belongs
+      // to its round, and counting it from `records` would report it as a record with no round.
+      //
+      // A record with no round above it is a fixture, or a document from before rounds had
+      // headings, and it is read for its shape and not for the company its rows keep.
+      const owner = roundAt.filter((one) => one.line < section.index).at(-1) ?? null;
+      if (kind === 'record') {
+        recordSections += 1;
+        if (owner === null) ownerlessRecords += 1;
+        else {
+          ownedRecords += 1;
+          recordRounds.add(owner.round);
+        }
+      }
       const items = entries(section.lines);
       if (spelling.form === 'table') {
         const shape = tableShape(section.lines);
@@ -1032,15 +1185,23 @@ function check() {
         }
         tables += 1;
         tableRows += shape.rows;
-        // Which round wrote this record: the nearest round heading above it. A record with no
-        // round above it is a fixture, or a document from before rounds had headings, and it is
-        // read for its shape and not for the company its rows keep.
-        const owner = roundAt.filter((one) => one.line < section.index).at(-1) ?? null;
+        // The item is the cell under the column **named** `item`, at the position this header puts
+        // it in. `COLUMNS.indexOf('item')` was the position instead of the name, so a table that
+        // named its columns in another order passed the shape check -- which asks whether the
+        // header names the four -- and had its item read out of whatever sat second. None of the
+        // 47 records reorders them, so this is a floor rather than a repair: the check and the
+        // read now use the same name (finding 580).
+        //
+        // No refusal for a header with no `item`: `tableShape` has already refused it, and a
+        // second refusal would be a branch no document can reach. The `?? ''` is the total form
+        // of the read, and a row that came out empty is refused by the arm below as too short to
+        // name anything.
+        const itemAt = (shape.header ?? []).indexOf('item');
         if (owner !== null) {
           records.push({
             label: from.label,
             owner,
-            items: (shape.rowLines ?? []).map((row) => cellsOf(row)[COLUMNS.indexOf('item')] ?? ''),
+            items: (shape.rowLines ?? []).map((row) => cellsOf(row)[itemAt] ?? ''),
           });
         }
         return;
@@ -1066,7 +1227,6 @@ function check() {
       // body is where the reading is, and a row is a claim about a subject rather than a copy of
       // the paragraph.
       if (kind === 'record') {
-        const owner = roundAt.filter((one) => one.line < section.index).at(-1) ?? null;
         // A record is found by the round heading above it, and a record with no heading above it is
         // found by nothing: it never reaches `records`, so the arm that judges rows never sees it,
         // and the entries it holds are still counted -- the summary would report a larger corpus with
@@ -1411,9 +1571,11 @@ function check() {
   //
   // The selection is "the first record whose owner is the newest round", so a round that wrote two
   // records would have one judged and the other passed in silence -- an arm whose subject is *the*
-  // newest record, with two candidates. Nothing shipped does this (zero of 195 rounds, measured at
-  // v3.114), and the refusal is scoped to the newest round for the reason every rule here is scoped
-  // that way: only that round can still merge its two halves.
+  // newest record, with two candidates. Nothing shipped does this, and the denominator of that
+  // sentence was wrong for a round: "195" was the number of records the arm could see, not the
+  // number of rounds, and the corpus names **210** rounds. The claim holds at 210 (no round owns
+  // two of the 217 record sections), and the refusal is scoped to the newest round for the reason
+  // every rule here is scoped that way: only that round can still merge its two halves.
   const newestRound = rounds.reduce(
     (best, one) =>
       best === null ||
@@ -1467,6 +1629,18 @@ function check() {
       );
     }
   }
+  // The record population, printed rather than left to be inferred from the arm's silence. Two
+  // numbers, and each answers a question a rule cannot: how many records no round owns (the
+  // `## Pass N` volumes name no round, so the arm looks up for an owner and finds none -- 25 today,
+  // measured here for the first time, which is O-081), and how many rounds wrote no record at all
+  // (a round may leave nothing open, and a round that lost its record looks the same from the
+  // round's side -- 18 today). Neither is a refusal: a frozen record cannot be given a round, and
+  // a round with nothing left open needs no record. A report is what makes the two countable.
+  console.log(
+    `check-open-list: ${String(recordSections)} record(s): ${String(ownedRecords)} under a round and ` +
+      `${String(ownerlessRecords)} under none; ${String(rounds.length)} round(s), ` +
+      `${String(rounds.length - recordRounds.size)} of them wrote none`,
+  );
   console.log(
     `check-open-list: ${String(tables)} record(s) in table form (${String(tableRows)} row(s)); ` +
       (newestRecord === null

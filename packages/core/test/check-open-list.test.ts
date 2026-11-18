@@ -188,6 +188,35 @@ const OPEN_ENTRY =
 const BARE_ENTRY = '- A residual with no marker at all.';
 
 /**
+ * Every table in a document whose first column is `priority`, and the rows under it.
+ *
+ * The property is the one the guard refuses on: a record is a table that starts with the
+ * priority column whatever its heading says. Counting it here, from the corpus rather than from
+ * a list of names, is the check that was missing on the day the record was renamed -- the
+ * guard's count agreed with its own spelling table and nobody asked the corpus (finding 579).
+ *
+ * Deliberately not `cellsOf`: this counts a header's first cell and the pipe lines under the
+ * rule, which is all a census needs, and a copy of the reader would agree with the reader.
+ */
+function priorityTables(text: string): { tables: number; rows: number } {
+  const lines = text.split('\n');
+  let tables = 0;
+  let rows = 0;
+  for (let i = 0; i + 1 < lines.length; i += 1) {
+    if (!/^\s*\|/.test(lines[i] ?? '') || !/^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1] ?? '')) continue;
+    const first = (lines[i] ?? '').trim().replace(/^\|/, '').split('|')[0]?.trim().toLowerCase();
+    let j = i + 2;
+    while (j < lines.length && /^\s*\|/.test(lines[j] ?? '')) j += 1;
+    if (first === 'priority') {
+      tables += 1;
+      rows += j - (i + 2);
+    }
+    i = j;
+  }
+  return { tables, rows };
+}
+
+/**
  * There was a copy of the guard's two regexes here, and five tests drove it.
  *
  * It is gone, and finding 203 is why: the guard's closure rule was `/~~|Closed by
@@ -233,19 +262,50 @@ describe('docs · the shipped list, as the guard reads it', () => {
       .flatMap((file) => file.text.split('\n'))
       .filter((line) => {
         const trimmed = line.trim();
-        // Three spellings, because the guard reads three: the live list, a record of entries,
-        // and a record written as a table (`### Left open, in the order the goal is reached`),
-        // which has had no reader since v3.45 -- finding 463. Counting only the first two here
-        // would make this test agree with the guard while both ignored nineteen records.
-        return trimmed === '## Open' || trimmed === '### Left open' || /^### Left open,/.test(trimmed);
+        // Five spellings, because the guard reads five: the live list, a record of entries, and
+        // three records written as tables. The comment here said "three" for as long as the guard
+        // read three, and the corpus had five -- `### Leftovers, in the order that reaches the
+        // goal` and `### What is left, in the order it has to happen` were written by 22 rounds
+        // and read by nothing (finding 579). A test that enumerates the names a guard knows is a
+        // test that goes blind on the same day, which is why the count below is taken from the
+        // body as well.
+        return (
+          trimmed === '## Open' ||
+          trimmed === '### Left open' ||
+          /^### Left open,/.test(trimmed) ||
+          /^### Leftovers,/.test(trimmed) ||
+          /^### What is left,/.test(trimmed)
+        );
       }).length;
     expect(sections, 'the guard read a different number of lists than the document has').toBe(headings);
     expect(entries, 'the parts do not add up to the whole').toBe(open + closed);
-    // And the rows a record carries are not entries: a record's rows are counted on their own
+    // The rows a record carries are not entries: a record's rows are counted on their own
     // line, because they are a different kind of object -- the log states them separately and so
     // does the guard, and a document whose records held entries would be refused by the arm that
     // reads them.
     expect(shipped.stdout).toMatch(/record\(s\) in table form \(\d+ row\(s\)\)/);
+    // The count of record tables, taken from the body rather than from the names. The line above
+    // accepts any number; this one holds that number to the corpus, so a heading the guard does
+    // not know is a red test on the day the round that renames it is written (finding 579).
+    const counted = /(\d+) record\(s\) in table form \((\d+) row\(s\)\)/.exec(shipped.stdout);
+    const corpus = progressCorpus().reduce(
+      (all, file) => {
+        const one = priorityTables(file.text);
+        return { tables: all.tables + one.tables, rows: all.rows + one.rows };
+      },
+      { tables: 0, rows: 0 },
+    );
+    expect(Number(counted?.[1]), 'the guard counted a different number of record tables than the corpus holds').toBe(
+      corpus.tables,
+    );
+    expect(Number(counted?.[2]), 'the guard counted a different number of rows than those tables hold').toBe(
+      corpus.rows,
+    );
+    // Non-vacuity in both directions: the corpus holds more record tables than the two spellings
+    // v3.114 could read (25), and more than one of the names, so neither side of the comparison is
+    // a constant.
+    expect(corpus.tables).toBeGreaterThan(25);
+    expect(corpus.rows).toBeGreaterThan(corpus.tables);
     // Non-vacuity in the other direction: the shipped document has at least one
     // closure, so "closed by a finding" is a reading rather than a constant zero.
     expect(closed).toBeGreaterThan(0);
@@ -626,6 +686,139 @@ describe('docs · a record written as a table is read as rows, and a third spell
 });
 
 /**
+ * The names the corpus gave the record, and the refusal that was written for the third one.
+ *
+ * v3.63 found that the record gained a suffix at v3.45 and nineteen tables left the guard's
+ * reach, and answered with two spellings and a refusal:
+ *
+ * ```
+ * const NEARLY = /^#{2,3} (?:Open|Left open|Closed)\b/;
+ * ```
+ *
+ * The refusal is keyed to the names that existed, so it catches a third spelling that shares a
+ * prefix with one of them -- `### Left open (unfinished)`, which the test above drives -- and
+ * says nothing about a third spelling that shares none. The corpus then wrote two: `###
+ * Leftovers, in the order that reaches the goal` (17 rounds) and `### What is left, in the order
+ * it has to happen` (5). Twenty-two records were read by nothing at all, and the summary said
+ * `25 record(s) in table form (188 row(s))` where the corpus held 47 and 318 (finding 579).
+ *
+ * What makes those two records is not the name. It is a table whose first column is `priority`:
+ * 47 of the progress corpus's 555 tables begin with that column, and every one of them is a
+ * round's record. So the refusal moves onto the thing the name was standing in for -- the body
+ * -- and the names join the table.
+ */
+describe('docs · a record is found by its body, and every name the corpus gave it is read', () => {
+  const page = (record: string) =>
+    `## Headline\n\ntext\n\n## Open\n\n${withId(OPEN_ENTRY, 1)}\n\n## Pass log\n\nbody\n\n${record}`;
+  const ROW = '| **P1** | a residual | unchanged | nothing |';
+
+  it('reads a record under the name the corpus gave it', () => {
+    const r = runOn(page(`### Leftovers, in the order that reaches the goal\n\n${TABLE_HEAD}\n${ROW}\n`));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 record(s) in table form (1 row(s))');
+  });
+
+  it('reads a record whose fourth column is spelled `next`', () => {
+    // Five of the 22 records name the column `next`; the other 42 name it `next step`. The
+    // vocabulary is two words rather than one, and the refusal that compares a header with it
+    // says both (finding 580).
+    const r = runOn(
+      page(
+        '### What is left, in the order it has to happen\n\n' +
+          `| priority | item | state | next |\n| --- | --- | --- | --- |\n${ROW}\n`,
+      ),
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 record(s) in table form (1 row(s))');
+  });
+
+  it("refuses a record's table under a heading the guard does not read", () => {
+    // The heading is invented and the body is not. This is what the prefix rule was reaching
+    // for: a rule that fires on the shape costs the next rename a red gate instead of
+    // twenty-two records nobody reads.
+    const r = runOn(page(`### The leftovers of round 12\n\n${TABLE_HEAD}\n${ROW}\n`));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('`### The leftovers of round 12`');
+    expect(r.out).toContain('first column is `priority`');
+  });
+
+  it('does not refuse a table that is not a record', () => {
+    // The ledger every round writes: two columns, and the first is not `priority`. A rule keyed
+    // on "a table under a heading this guard does not read" would refuse it, and it is a table.
+    const r = runOn(page('### Readings\n\n| item | value |\n| --- | --- |\n| entries | 1 |\n'));
+    expect(r.code, r.out).toBe(0);
+  });
+
+  it('counts a cell holding an escaped pipe as one cell', () => {
+    // GFM requires a literal pipe in a cell to be written `\|`, including inside a code span.
+    // The reader split on every pipe, so the only remedy its own diagnostic allows was read as
+    // a fifth cell (finding 581).
+    const r = runOn(
+      page(
+        '### Leftovers, in the order that reaches the goal\n\n' +
+          `${TABLE_HEAD}\n| **P1** | a residual | unchanged | a \`run: \\|\` block |\n`,
+      ),
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 record(s) in table form (1 row(s))');
+  });
+
+  it('refuses the unescaped pipe, which is the shape the corpus shipped once', () => {
+    const r = runOn(
+      page(
+        '### Leftovers, in the order that reaches the goal\n\n' +
+          `${TABLE_HEAD}\n| **P1** | a residual | unchanged | a \`run: |\` block |\n`,
+      ),
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('has 5 cell(s) under a header that names 4');
+  });
+
+  it('reads the item from the column its header names, not from the second one', () => {
+    // The shape check asks whether the header *names* the four columns, and the row arm then
+    // took the item by **position**. A table that named its columns in another order passed the
+    // check and had its item read out of whatever sat second -- none of the 47 does today, which
+    // is what makes this a floor rather than a repair (finding 580).
+    const r = runOn(
+      '## v9.9 — a round\n\n### Left open, in the order the goal is reached\n\n' +
+        '| item | priority | state | next step |\n| --- | --- | --- | --- |\n' +
+        '| A residual the live list also carries | **P1** | unchanged | nothing |\n\n' +
+        `## Open\n\n${withId('- A residual the live list also carries. [open: the reason this is still work is long enough]', 1)}\n\n` +
+        'Checked at v9.9: **1** entries open\n\n## Pass log\n\nbody\n',
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain("the v9.9 record's 1 row(s) were judged");
+  });
+
+  it('says how many records have no round, and how many rounds wrote none', () => {
+    // O-081 asked for this number rather than for a refusal: a record in the `## Pass N` volumes
+    // names no round and can never be merged into one. The second number is the other half, and
+    // it is what makes the arm's own sentence -- a round has one record -- a statement about
+    // rounds rather than about the records the arm could see (finding 579).
+    const r = runOn(
+      '## v9.8 — a round\n\n### Left open\n\n' +
+        '- A residual. [open: the reason this is still work is long enough to read]\n\n' +
+        '## v9.9 — a round\n\n### Readings\n\n| item | value |\n| --- | --- |\n| entries | 1 |\n\n' +
+        `## Open\n\n${withId(OPEN_ENTRY, 1)}\n\nChecked at v9.9: **1** entries open\n\n## Pass log\n\nbody\n`,
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 record(s): 1 under a round and 0 under none; 2 round(s), 1 of them wrote none');
+  });
+
+  it('counts a record whose file names no round, rather than losing it', () => {
+    // The `## Pass N` era: twenty-five records in three volumes that carry no `## vX.Y` heading at
+    // all. The arm cannot judge them -- it looks up for an owner and finds none -- and the count
+    // is the repair, because a population nobody printed is a population nobody can check.
+    const r = runOn(
+      `${indexOpen([OPEN_ENTRY])}\n### Left open\n\n` +
+        '- A residual the file never dated. [open: the reason this is still work is long enough to read]\n',
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 record(s): 0 under a round and 1 under none; 0 round(s), 0 of them wrote none');
+  });
+});
+
+/**
  * The rows the guard said it did not judge, and how many of them there were.
  *
  * v3.63 gave the table-form record a reader and a sentence: `19 record(s) in table form
@@ -696,7 +889,10 @@ describe('docs · the rows a table-form record holds, counted from the record', 
     const renamed = '| priority | item | note | next step |\n| --- | --- | --- | --- |\n| **P2** | residual | unchanged | nothing |';
     const r = runOn(page(suffix(renamed)));
     expect(r.code).toBe(1);
-    expect(r.out).toContain('and not state');
+    // Quoted, because the diagnostic names the column as a word a reader greps for -- and since
+    // v3.115 it names every spelling the column may carry, so `next step` reads as `next step` or
+    // `next` rather than as one of the two (finding 580).
+    expect(r.out).toContain('and not `state`');
   });
 
   it('refuses a header with a row directly under it, because the rule is what separates them', () => {
@@ -728,17 +924,29 @@ describe('docs · the rows a table-form record holds, counted from the record', 
     expect(r.out).toContain('`state` cell is empty');
   });
 
-  it('reads the shipped corpus as 147 rows, which is a number no pipe-line count produces', () => {
-    // The third opinion. 147 is derived here from the *content* of the rows -- a record's first
-    // cell is a bold priority -- and the guard must arrive at the same number from the
-    // structure. 185, the number v3.63 printed, is 147 + 2 x 19.
+  it('reads the shipped corpus as 318 rows, and the bold-cell count is 130 short of them', () => {
+    // The third opinion, and the one that had to be repaired.
+    //
+    // 147 was derived here from the *content* of the rows -- "a record's first cell is a bold
+    // priority" -- and compared with what the guard arrived at from the structure. The premise
+    // was true of the 25 records the guard could read and false of the 22 it could not: those
+    // name a plain priority, which is the convention v3.81's own prose explains, so a census
+    // keyed on the bold cell agreed with a population that was 22 records short (finding 582).
+    //
+    // The derivation is the structure now: the rows under a table whose first column is
+    // `priority`, counted from the file, which is the property the guard refuses on. The bold
+    // count is still taken, and held *below* it -- the 130 rows of the records no bold-cell
+    // census can see are the number this round found.
     const shipped = spawnSync('node', [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
     expect(shipped.status, shipped.stdout + shipped.stderr).toBe(0);
-    const rows = progressCorpus()
+    const bold = progressCorpus()
       .flatMap((file) => file.text.split('\n'))
       .filter((line) => /^\|\s*\*\*P\d+/.test(line.trim())).length;
-    expect(rows, 'the corpus holds no priority rows, so this arm is vacuous').toBeGreaterThan(100);
-    expect(shipped.stdout).toContain(`(${String(rows)} row(s))`);
+    const structural = progressCorpus().reduce((n, file) => n + priorityTables(file.text).rows, 0);
+    expect(bold, 'the corpus holds no bold priority rows, so the comparison is vacuous').toBeGreaterThan(100);
+    expect(structural, 'the bold-cell census caught up with the structure, so the gap is gone').toBeGreaterThan(bold);
+    expect(shipped.stdout).toContain(`(${String(structural)} row(s))`);
+    expect(shipped.stdout).not.toContain(`(${String(bold)} row(s))`);
     expect(shipped.stdout).not.toContain('(185 row(s))');
   });
 });
