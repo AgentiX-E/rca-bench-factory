@@ -26,16 +26,14 @@ after v3.111 appends at the end, and the two orders diverge from here on. That i
 than repaired, because imposing closure order on entries written before v3.111 would mean
 inventing dates.
 
-**Every entry carries an id, and this file holds the higher half of the space.** The fifty-two
-entries here are `O-028` to `O-079` in the order they stand; the live list holds `O-001` to
-`O-027`. The two files are one space, it is dense -- 1..79 with nothing missing -- and
-`check-open-list.mjs` recomputes both facts on every run (finding 570). The numbers were assigned
-by backfill in the order the two files happened to hold on the day identity arrived, the live list
-first, so they say **which entry a bullet is** and not when it closed. From this round on a closure
-arrives carrying the id its live entry had, which is the id the entry was opened with: the order in
-this file is the closing order, and the numbers inside it are not monotone. That is the same
-divergence the paragraph above describes, now visible, and it is the reason an entry's id is worth
-grepping for.
+**Every entry carries an id, and the ids were a backfill.** Writing them was one edit in v3.112, and
+the order it walked is the only thing their numbers record: the live list first, `O-001` to `O-027`, then
+this file in the order its entries stood, `O-028` to `O-079`. So a number here says **which entry a bullet
+is**, not when it closed, and not which half of the space a file keeps -- the two files are one space, it is
+dense (`1..N` with nothing missing, recomputed by `check-open-list.mjs` on every run, finding 570), and a
+closure appended from now on carries the id its live entry had. The order in this file is the closing order;
+the numbers inside it are not monotone, and that is the same divergence the paragraph above describes, now
+visible in a second place.
 
 - O-028 · ~~**The aggregate-table comparison has not been re-run against the corpus.** **Closed by finding 533 and finding
   534, which are what the re-run found.**~~ Run `43444874640` round-tripped `rcaeval-re2`

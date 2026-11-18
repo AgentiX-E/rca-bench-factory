@@ -998,6 +998,21 @@ describe('docs · every entry has an identity, so nothing can leave the two list
     expect(r.code).toBe(1);
     expect(r.out).toContain('O-1000 is 4 digits wide');
     expect(r.out).toContain('the token is three');
+    expect(r.out).toContain('a prefix grep for O-100 would find it');
+  });
+
+  it('refuses an id narrower than three, and does not accuse it of the prefix defect', () => {
+    // The other direction is a different defect, and the first version of this refusal said the
+    // wrong one: `grep O-009` does not match `O-9`, so "a prefix grep would find it" sends a reader
+    // looking for a collision that cannot exist. What a narrow id does is part the space's spelling
+    // from its numbers -- `O-9` stands where `O-009` is missing, so the guard would report a hole
+    // over the entry that fills it.
+    const narrow = '- **O-9 · An item.** [open: a reason long enough to stand as one, and this is it]';
+    const r = runOn(`## Open\n\n${narrow}\n\n## Pass log\n\nbody\n`);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('O-9 is 1 digit(s) wide');
+    expect(r.out).toContain('it is not O-009');
+    expect(r.out).not.toContain('a prefix grep for O-009 would find it');
   });
 
   it('does not ask a round record for ids, because a record is frozen and moves nothing', () => {

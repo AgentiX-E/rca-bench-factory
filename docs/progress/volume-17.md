@@ -1692,8 +1692,8 @@ not three digits is refused with its own diagnostic rather than read as no id at
 documentation commit -- failed CI at `Every test's cost against the budget it declares`:
 `category-derivation.test.ts` measured **1 044 ms** on the runner and the file states no budget, so vitest's
 inherited `5 000 ms` default was deciding a verdict nobody had written for it. Locally the whole file runs in
-**493 ms**, which is why every local run was green; the suite had also just grown by seven spawn-driven tests,
-which is the contention that put a corpus loop over the floor. The repair is a declaration, as the gate's own
+**493 ms**, which is why every local run was green; the suite had also just grown by the spawn-driven tests this round
+added, which is the contention that put a corpus loop over the floor. The repair is a declaration, as the gate's own
 message asks: **`R_BUDGET_MS = 3_000`** on suite `R`, 2.9x the runner's reading and the smallest round number
 above the gate's 2x rule (finding 571). The count of files that state a budget moved **34 -> 35**.
 
@@ -1709,13 +1709,13 @@ and the two files' numbers were assigned together rather than argued about after
 
 | item | value |
 | --- | --- |
-| `core` test suite | **257 files, 6644 tests passed** (as of this commit) |
+| `core` test suite | **257 files, 6645 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **261 files, 6831 tests passed** (as of this commit) |
+| repo test suite | **261 files, 6832 tests passed** (as of this commit) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
-| new tests | **6,637 -> 6,644, +7**: five refusals (no id, a copy, a gap, a four-digit id, and the record's scope) and two readings (the space across two files, and the shipped lists as 1..79) |
+| new tests | **6,637 -> 6,645, +8**: six refusals (no id, a copy, a gap, a four-digit id, a one-digit id, and the record's scope) and two readings (the space across two files, and the shipped lists as 1..79) |
 | the lists | `## Open` **28 -> 27**, `## Closed` **51 -> 52**, one space of **79** ids with none missing |
-| the index | **66,779 -> 66,861** bytes; the record **70,196 -> 73,552** over 52 entries |
+| the index | **66,779 -> 66,861** bytes; the record **70,196 -> 73,447** over 52 entries |
 | the volumes | **17**, and this round is the second in `volume-17.md` |
 | the falsifications | six edits, **15** reds; two accidents performed on the shipped tree |
 | the budgets | **34 -> 35** files state one: `category-derivation.test.ts` at **1 044 ms** on the runner, declared at **3 000 ms** |
@@ -1728,6 +1728,6 @@ and the two files' numbers were assigned together rather than argued about after
 - **The row arm's cross-file population has never run on the shipped tree.** A fixture carries both sections
   in one file, so the two-file population is exercised only by a document that is not the shipped one.
   `[open: the first record that names a residual its own round closed exercises it, and until then the population is two files on fixtures only]`
-- **The record is not split by size.** `docs/progress/closed.md` is **73,552** bytes after three rounds of
+- **The record is not split by size.** `docs/progress/closed.md` is **73,447** bytes after three rounds of
   closures, and nothing bounds it: it is a record, and records grow.
   `[open: the volume budget's argument -- a document a reader cannot diff -- applies to it at some size, and the size has not been measured]`

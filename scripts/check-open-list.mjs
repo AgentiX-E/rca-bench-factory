@@ -824,12 +824,25 @@ function check() {
                 '`O-NNN · ` right after the bullet, at one more than the highest number the two lists ' +
                 `hold: ${first.slice(0, 80)}`,
             );
-          } else if (id.digits.length !== 3) {
+          } else if (id.digits.length > 3) {
+            // The grep the width protects, named as the token that would swallow this one.
             idProblems += 1;
             problems.push(
               `${from.label}: the id ${id.token} is ${String(id.digits.length)} digits wide and the token ` +
                 `is three, so a prefix grep for ${idToken(Number(id.digits.slice(0, 3)))} would find it: ` +
                 `${first.slice(0, 80)}`,
+            );
+          } else if (id.digits.length < 3) {
+            // The other direction, and it is not the same defect: a narrow id is a *second spelling* of a
+            // number, so the space would report a hole at the padded token while the entry that fills it
+            // stands here. A message that said "a prefix grep would find it" of this id would be false --
+            // `grep O-009` does not match `O-9` -- and would send a reader to look for a collision that
+            // does not exist.
+            idProblems += 1;
+            problems.push(
+              `${from.label}: the id ${id.token} is ${String(id.digits.length)} digit(s) wide and the token ` +
+                `is three, so it is not ${idToken(Number(id.digits))} and the space would report a hole where ` +
+                `this entry stands: ${first.slice(0, 80)}`,
             );
           } else if (ids.has(id.token)) {
             idProblems += 1;

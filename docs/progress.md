@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 257 core + 4 cli |
-| Test lines | 112,101 core + 3,242 cli |
-| Tests | 6,644 core + 187 cli |
+| Test lines | 112,116 core + 3,242 cli |
+| Tests | 6,645 core + 187 cli |
 | Tracked files | 665 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
