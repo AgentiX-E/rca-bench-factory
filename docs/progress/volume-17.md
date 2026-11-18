@@ -2096,9 +2096,9 @@ fixture written for it:
 
 | item | value |
 | --- | --- |
-| `core` test suite | **257 files, 6663 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **261 files, 6850 tests passed** (as of this commit) |
+| `core` test suite | **257 files, 6663 tests passed** (at v3.114) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.114) |
+| repo test suite | **261 files, 6850 tests passed** (at v3.114) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6,658 -> 6,663, +5**: the vacuity refusal, the twenty-character fixture, the two-record refusal, the record-above-its-round refusal, and the two-file closure fixture |
 | the lists | `## Open` **27 -> 27** (one closed, one opened), `## Closed` **53 -> 54**, one space of **81** ids with none missing |
@@ -2120,3 +2120,218 @@ fixture written for it:
   the `## Pass N` era name no round, so finding 577's refusal steps over them by asking the file; the count is
   what is missing, not the rule.
   `[open: the exemption is a reading of three file names, and a count would say what it covers; the repair is a report rather than a refusal because a record in those volumes can never be merged into a round]`
+
+## v3.115 · the record had four names, and the guard read the two it had written down
+
+The live list's last word about the arm was a count nobody had taken:
+
+> **Twenty-five records are judged by nothing, and the number has never been counted.** The three volumes
+> of the `## Pass N` era name no round, so finding 577's refusal steps over them by asking the file.
+
+Counting them took one line and found something else. The plan for this round was a measurement of the
+row arm's *pairing* -- whether one entry's first twenty characters can resolve two rows, or one row two
+entries -- and that measurement answered **no**: of 567 record rows, 553 match no entry, 14 match exactly
+one, and **0** match more than one, so the ambiguity the round went looking for is not in this corpus.
+What the same walk showed is that the corpus holds **217** records and the guard was reading **195** of
+them. The missing 22 had been written by rounds between `v3.81` and `v3.102` under names the guard's
+spelling table did not carry, and no output of any run had ever said so.
+
+### 1. Four names, and a table that carried two
+
+`spellingOf` is the guard's whole idea of what a list is called. It held four entries: `## Open`,
+`### Left open`, `### Left open, <anything>` and `## Closed`. The corpus had written two more:
+
+| spelling | rounds | form | rows | read before this round |
+| --- | --- | --- | --- | --- |
+| `### Left open` | 145 | entries | -- | yes |
+| `### Left open, in the order the goal is reached` | 25 | table | 188 | yes |
+| `### Leftovers, in the order that reaches the goal` | 17 | table | 106 | **no** |
+| `### What is left, in the order it has to happen` | 5 | table | 24 | **no** |
+
+The property that makes the last two a record is not the name: it is a table whose first column is
+`priority`. The corpus is unambiguous about that column -- of **555** tables in the progress corpus,
+**47** begin with it, and every one of the 47 is a round's record. The guard counted 25 records and 188
+rows; the corpus held 47 and 318 (finding 579).
+
+### 2. The refusal existed, and it was written as a prefix of the two names that existed
+
+v3.63 wrote the refusal this round is about, and it wrote it as one pattern:
+
+```js
+const NEARLY = /^#{2,3} (?:Open|Left open|Closed)\b/;
+```
+
+A regex built out of `Left open` matches a heading that **begins** with it, so the third spelling it was
+written to catch is a spelling that shares a prefix with one of the first two -- which is exactly the
+shape its own fixture drives (`### Left open (unfinished)`, refused, green). `Leftovers` begins with
+`Left` and `What is left` begins with `What`, so both arrived, twenty-two times, and the rule printed
+nothing.
+
+### 3. What the silence cost, and the number inside the arm
+
+The 22 records' rows were never counted, their columns were never compared with the vocabulary, and
+every refusal written for a record's shape stood unreached over them -- which is section 5 and section 6.
+The sharper cost is a number inside a rule. Finding 575 added "a round has one record" and measured it:
+
+> Nothing shipped does this (zero of 195 rounds, measured at v3.114).
+
+**195 was the number of records the arm could see.** The arm's `rounds` holds `## vX.Y` headings, and
+there were **210** of them when the round started, over **217** record sections: 192 belonged to a
+round, 25 did not, and **18 rounds wrote no record at all**. The claim survives at 210 -- no round owns two of the 217 -- and its
+denominator was the arm's own population, which is the defect the arm exists to refuse, one level up.
+
+Two numbers wear the word *round* in this corpus and neither document says so: the volume gate counts
+**263** `##` entry headings -- 50 `## Pass N`, 211 numbered rounds, and two others -- while the arm
+counts the 211 numbered ones, because a `## Pass N` heading carries no number and cannot be compared
+with a stamp. The sentence above is about the second count. The first is right for its own subject:
+the volume gate is asking how many rounds a file holds, and a `## Pass 7` round is a round.
+
+### 4. The repair: the names join the table, and the refusal moves onto the body
+
+Adding two names would have repaired this corpus and left the next rename invisible, so the round did
+both. `spellingOf` reads four record names now, each with its count in the comment; and
+`recordTableUnderUnknownHeading` asks the question a name cannot lie about -- is the first column
+`priority`? -- of every table in the document. A table under a heading the spelling table does not read
+is refused, with its row count in the sentence. On this corpus the rule fires 47 times with the names
+taken out and 0 times with them in, and it has no false positive: no other table begins with that column.
+
+Its first scope was wrong in the way this guard's scopes have been wrong before. The function took the
+body a `##` heading *spans*, which is what `sections()` means by a span, and a round heading is `##`
+while its record is `###` underneath -- so every round in the corpus was reported as an orphan and
+thirteen tests said so on the first run. The scope is one line: a table belongs to the heading directly
+above it, whatever the level.
+
+The arm's population is printed now, on every run:
+
+```
+check-open-list: 217 record(s): 192 under a round and 25 under none; 210 round(s), 18 of them wrote none
+```
+
+That is `O-081`'s number, and the second pair is the correction to finding 575's denominator. It is a
+report rather than a refusal for the reason the entry gave: a record in the `## Pass N` volumes can
+never be merged into a round, and a round may legitimately leave nothing open. The line above is the
+corpus as this round found it; a run after this record was written prints **218**, **193** and **211**,
+because this round is the twenty-second record the guard could not see and is now one of the ones it can.
+
+### 5. The two defects that stood in the unread half (finding 580)
+
+A refusal nothing can reach is not a rule, and the 22 sections held two instances of refusals written
+years of rounds earlier.
+
+`volume-16.md:1210` is a row of a `What is left` table whose last cell names the YAML block scalar as
+`` `run: |` ``. A pipe inside a Markdown table cell separates the cells, code span or not, so that row
+renders as five cells under a four-column header -- the exact shape `tableShape` refuses, and a refusal
+that has existed since v3.64. The row was written by `v3.98` and its section was one of the 22, so for
+the seventeen rounds it existed no run reached it.
+
+And the fourth column has two names: **42** records spell it `next step` and **5** spell it `next`, whose
+294 and 24 rows are the whole of the 318. A vocabulary with one word for a column the corpus spells two
+ways refuses five frozen records for a rename no round may repair, so the second spelling is published,
+with both counts in the comment and both names in the diagnostic.
+
+The same section moved the item read off a position and onto a name: the shape check asks whether the
+header names the four columns, and the row arm then took `cellsOf(row)[COLUMNS.indexOf('item')]` -- so a
+table that ordered its columns differently would pass the check and have its item read out of whatever
+sat second. None of the 47 reorders, which makes this a floor; the fixture reorders the header and makes
+the arm resolve a row against a live entry.
+
+### 6. The remedy its own diagnostic asks for (finding 581)
+
+`cellsOf` split a row on every pipe. The two `replace` calls in the same three lines show the author knew
+a pipe can be escaped -- the last one refuses to strip a `\|` off the end of a line -- and the `split`
+undoes it. So the refusal in section 5 asked for a repair it would refuse again: a cell cannot hold a
+literal pipe except by escaping it, and an escaped pipe was counted as a separator.
+
+The escape is not hypothetical in this tree. A three-column prose table in `v3.82` names
+`order\|cpu\|>=\|high\|count/min`, six escaped pipes in one cell, and the old reader counted it as
+**eleven** cells. Among the 318 record rows the count was **0** using the escape and **1** holding an
+unescaped pipe -- the row of section 5 -- so both halves of that row were unreachable, the wrong one and
+the repaired one. The split is on unescaped pipes now, the escape is undone inside the cell because a
+cell's `state` is prose, and the guard's own row count is 318 rather than the 313 it printed while a
+refused table was dropped from a census that adds after the refusal.
+
+### 7. The round that explained the arm's row rule (finding 582)
+
+`v3.81`'s record is a `Leftovers` table with a plain priority column, and its prose explains why -- with
+four claims the corpus refutes. A bold first cell is not what the guard reads (it stopped reading cells
+at v3.63); no cell of that table was counted, bold or plain, because the heading was one of the 22; the
+`v3.80` it compares itself with wrote no record at all, which is true of 18 of the 210 rounds; and the
+"count of bold priority rows" it says disagreed with the guard is a count the guard has never printed.
+
+The fourth claim had readers, and that is why it matters. `acceptance.md` derives the table-form record's
+row count "from the content (a record's first cell is a bold priority)", and the test named
+`reads the shipped corpus as 147 rows` derives it the same way. Both agreed with a population 22 records
+short, and a census keyed on the bold cell finds **188** rows where the structural one finds **318** --
+because the 130 rows in the renamed records name a plain priority, which is what the paragraph itself
+explains. The paragraph is rewritten to what the corpus says, the acceptance bullet keeps its dated
+number beside the measurement that shows what the derivation covered, and the test derives the count
+from the structure and holds the bold-cell census *below* it.
+
+### 8. Five defects that are this round's own
+
+Each was found by running the thing rather than by reading it, and each is here because the round that
+writes "a count nobody took" has to take its own.
+
+1. **The orphan rule refused all three known names.** It passed `spellingOf` the heading with the `### `
+   stripped, so the spelling table did not recognise the spelling it had just matched. Twenty-five
+   diagnostics on the first run.
+2. **Its first scope reported every round in the corpus as an orphan**, because a round's record is a
+   `###` inside the `##` span the function took as the section. Thirteen red tests.
+3. **The population line counted `records.length`**, so a record refused for its shape was reported as
+   "under none" -- 191 and 26 where the corpus holds 192 and 25. A true sentence about the array and a
+   false one about the corpus, which is the defect this guard is about. The two halves are counted where
+   the owner is resolved, before either form is read.
+4. **A refused table is dropped from the census.** `tableShape` returning a problem made the row loop
+   `return` before `tables` and `tableRows` were incremented, so the summary printed 46 and 313 over a
+   corpus of 47 and 318. The refusal is about the shape; the count is about the corpus; one may not
+   delete the other.
+5. **`80` entries with `80` distinct first twenty characters** in the ruler's comment -- measured before
+   the round that wrote it added `O-081`, which makes it 81 and 81. Re-derived rather than remembered,
+   which is what the same paragraph says about every count in this repository.
+
+### 9. Falsification
+
+Eight edits, **forty** reds. Each takes one judgement away, and the red has to be the fixture written for
+it -- the pairs that red more than one are the shipped-corpus readings, which is the point of deriving
+them from the file:
+
+| edit | red |
+| --- | --- |
+| the first name the corpus gave the record is taken away | 7 |
+| the second name is taken away | 5 |
+| the split goes back to every pipe, and the escape stays in the cell | 5 |
+| the fourth column loses its second spelling | 5 |
+| the refusal keyed on the body is taken away | 1 -- `refuses a record's table under a heading the guard does not read` |
+| the item goes back to being read by position | 1 -- `reads the item from the column its header names` |
+| the orphan rule loses its scope | 15 |
+| a record with no round stops being counted | 1 -- `counts a record whose file names no round` |
+
+### Readings
+
+> Ledger for `v3.115`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **257 files, 6672 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **261 files, 6859 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
+| new tests | **6,663 -> 6,672, +9**: four names and the `next` spelling, the orphan refusal, the escaped and the unescaped pipe, the item read by name, and the two halves of the population line |
+| the lists | `## Open` **27 -> 28** (one closed, two opened), `## Closed` **54 -> 55**, one space of **83** ids with none missing |
+| the records read | **25 of 47** table-form records before, **47 of 47** after; **188 of 318** rows before, **318 of 318** after |
+| the population | **218** record sections: **193** under a round and **25** under none; **211** rounds, **18** of them wrote none -- **217**, **192** and **210** when the round started, and the 22 records it found are in the 193 |
+| the index | **67,555 -> 68,687** bytes |
+| the record | **80,444 -> 82,170** bytes over 55 entries, in **two** files (49,545 + 32,625) |
+| the volumes | **17**, and this round is the fifth in `volume-17.md` (**165,220** bytes) |
+| the falsifications | eight edits, **forty** reds |
+| gate sites / scripts / throws | **144** / **67 of 98** / **99** -- no new exit and no new script |
+| the budgets | **36** files state one -- unchanged: no test file was added |
+| LLM calls | **0** |
+
+### Left open
+
+- **The structural rule reads a table's first column, so a record that reorders its columns is a record to a
+  reader and not to the guard.** Counted as `O-082`.
+  `[open: a header that names the four columns in any order is a record by the same argument, and the price is a scan of every table in the corpus rather than of the tables whose first cell is already known to be a priority]`
+- **Eighteen rounds wrote no record, and nothing can say whether that was a choice.** Counted as `O-083`.
+  `[open: a round that leaves nothing open could say so in its own body, in one sentence, and then an absence would be a choice; nothing in the corpus writes one, so the rule would have to be written against the newest round and applied backwards]`

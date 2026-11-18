@@ -1196,14 +1196,27 @@ from an anecdote again.
   about the same entry, and the two agree. v3.63 is the demonstration -- the stamp said 13, the guard
   said 13, the file said 11 -- and the only thing that could disagree with both was a reader.
 
-### A record's spelling (v3.63)
+### A record's spelling (v3.63, widened at v3.115)
 
-- **Three headings are read, and every other spelling beginning with either name is refused.**
-  `## Open` is the live list read as entries; `### Left open` is a record read as entries;
-  `### Left open, <suffix>` is a record read as **rows**. Anything else beginning `## Open` or
-  `### Left open` is a red build, because a document that renames a list must not be able to move it
-  out of its reader's reach in silence -- which is what happened at v3.45, when the record's heading
-  gained a comma and nineteen records stopped being read (finding 463).
+- **Every record name the corpus uses is read, and a `priority` table under any other heading is
+  refused.** `## Open` is the live list read as entries; `### Left open` is a record read as
+  entries; `### Left open, <suffix>`, `### Leftovers, <suffix>` and `### What is left, <suffix>` are
+  records read as **rows**. Anything else beginning `## Open` or `### Left open` is a red build,
+  because a document that renames a list must not be able to move it out of its reader's reach in
+  silence -- which is what happened at v3.45, when the record's heading gained a comma and nineteen
+  records stopped being read (finding 463).
+- **The prefix refusal caught only a prefix, and the corpus renamed the record twice without one.**
+  `NEARLY = /^#{2,3} (?:Open|Left open|Closed)\b/` fires on a third spelling that shares a prefix
+  with one of the two names, which is the shape its own test drives. The corpus's next two renames
+  shared none: `### Leftovers, in the order that reaches the goal` (17 rounds) and `### What is left,
+  in the order it has to happen` (5). Twenty-two records of 217 were read by nothing for between
+  twelve and thirty-four rounds, and the summary said `25 record(s) in table form (188 row(s))` over
+  a corpus that held 47 and 318 (finding 579). The refusal is keyed on the body now: a table whose
+  first column is `priority` is a record whatever its heading says, and 47 of this corpus's 555
+  tables begin with that column while no other table does.
+- **The fourth column has two names.** Five of the 47 records name it `next` and 42 name it
+  `next step`; a vocabulary with one word for it refused five frozen records for a rename no round
+  may repair, so both are published (finding 580).
 - **A table-form record is counted and declared unjudged.** Every summary line states how many such
   records were read and how many rows they hold, and says the rows were not judged. A table-form
   record that holds no table, or that carries an entry, is refused: zero rows would let an empty
@@ -1226,7 +1239,10 @@ from an anecdote again.
   cell. Nineteen headers and 147 rows violate none of them; the arms exist for the twentieth record.
 - **The number is derived twice.** `147` is computed here from the content (a record's first cell is a
   bold priority) and the guard computes it from the structure, and the test holds the two together --
-  which is the check that would have caught 185 on the day it was printed.
+  which is the check that would have caught 185 on the day it was printed. That derivation is 130 rows
+  short of the corpus as it stands: the 22 records v3.115 found name a **plain** priority, which is the
+  convention v3.81's prose explains, so a census keyed on the bold cell agreed with a population that
+  was 22 records short (finding 582). The derivation in the test is the structure now.
 - **What is not claimed.** The `state` column is not judged: 78 distinct values over 147 rows, a median
   of 75 characters. That is a reading, not a state, and a vocabulary for it would mean rewriting
   nineteen frozen records. Capturing a column is not judging a value.

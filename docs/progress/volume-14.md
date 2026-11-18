@@ -830,14 +830,22 @@ ahead of the twelve missing columns an empty header cannot have. The same read f
 | P2 | the index grows every round | unchanged | measure the distance to the ceiling first |
 | P3 | coverage numbers have no reader that computes them | unchanged | teach `docs:check` to read a report |
 
-The priority column is plain rather than bold, and that is not typography: `**P0**` in the first
-cell of a row is what `check-open-list.mjs` reads as a *table-form record's row*, and this table is a
-round's leftovers rather than the live list -- its items are the next steps of the round, and three
-of the five already have an entry of their own in `docs/progress.md`. A bold cell here would be
-counted by the arm that asks whether a record's rows quote a live entry, and the row that does not
-quote one would be reported as a residual a reader of the list is not told about. Round `v3.80` wrote
-the same table under the same heading with bold cells, which is how the difference was found: the
-count of bold priority rows in the corpus stopped equalling the count the guard printed.
+The priority column is plain rather than bold, and at the time this was written the reason looked
+like typography: a bold cell was believed to be what `check-open-list.mjs` reads as a *table-form
+record's row*, and this table is a round's leftovers rather than the live list -- its items are the
+next steps of the round, and three of the five already have an entry of their own in
+`docs/progress.md`. A bold cell, the sentence went on, would be counted by the arm that asks whether
+a record's rows quote a live entry, and the row that does not quote one would be reported as a
+residual a reader of the list is not told about.
+
+Both halves of that were wrong, and v3.115 found it (finding 582). The guard stopped reading bold
+cells at v3.63, when it moved to the section's heading and the pipe lines beneath it; and what kept
+this table quiet was neither the bold cell nor the plain one but the **heading**: `### Leftovers, in
+the order that reaches the goal` is one of twenty-two record sections the guard did not read at all
+until v3.115, so no cell here was counted, however it was marked (finding 579). The round it compared
+itself with wrote no such table either -- `v3.80` left no record section, which is true of eighteen
+of this corpus's 210 rounds -- and the "count of bold priority rows" that was said to disagree with
+the guard is a count the guard has never printed.
 
 
 **The lesson.** This round's finding was not a wrong number -- it was a number **nobody had taken**.

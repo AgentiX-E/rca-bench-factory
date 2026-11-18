@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 257 core + 4 cli |
-| Test lines | 112,511 core + 3,242 cli |
-| Tests | 6,663 core + 187 cli |
+| Test lines | 112,719 core + 3,242 cli |
+| Tests | 6,672 core + 187 cli |
 | Tracked files | 666 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.114: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.115: **28** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -900,14 +900,24 @@ is a row about rather than paraphrase one that no `grep` will find.
   within what was opened, which is the sentence finding 572 is about.
   `[open: a recursive walk would need a rule for what a file one level down means -- an archive is not the record, and a record in two places is the thing the numbering refuses -- so the widening waits for a statement about where the record lives]`
 
-- O-081 · **Twenty-five records are judged by nothing, and the number has never been counted.** `roundAt` reads
-  `## vX.Y` headings, and the three volumes written before rounds had numbers name their rounds `## Pass N`,
-  so every `### Left open` in volumes 01 to 03 has no owner: `records` never holds it, and the arm that judges
-  rows cannot reach it. They are frozen, so no round can repair them and no rule can require a repair -- which
-  is why finding 577's refusal asks the **file** whether it names rounds instead of asking the record. What is
-  missing is the count: the exemption is a reading of three file names, so a fourth volume of that era, or a
-  record written above its round inside one of the three, would be exempt without a word.
-  `[open: an arm that reports how many records have no owner would turn the exemption into a number; it is a report rather than a refusal because the three volumes cannot be repaired]`
+- O-082 · **The structural rule reads a table's first column, so a record that reorders its columns is a record
+  to a reader and not to the guard.** `recordTableUnderUnknownHeading` asks whether `cellsOf(header)[0]` is
+  `priority`, which is what makes it precise over this corpus -- 47 of 555 tables begin with that column and every
+  one is a round's record -- and what makes it blind in the other direction: a table ordered `| item | priority |
+  state | next step |` under `### The leftovers of round 12` is refused by nothing, and its rows are counted by
+  nothing either, because `spellingOf` does not know the name. The guard would read such a record correctly if it
+  could see it -- the item comes from the column its header names since v3.115 -- so what is missing is the
+  seeing. None of the 47 reorders its columns; the rule is one cell wide where the vocabulary it enforces is four.
+  `[open: a header that names the four columns in any order is a record by the same argument, and the price is a scan of every table in the corpus rather than of the tables whose first cell is already known to be a priority]`
+
+- O-083 · **Eighteen rounds wrote no record, and nothing can say whether that was a choice.** The population line
+  prints `210 round(s), 18 of them wrote none`, and the two shapes it covers are indistinguishable: `v3.70` to
+  `v3.80` left no record for eleven consecutive rounds, `v3.103` to `v3.107` for five, and `v2.15` and `v2.39` for
+  one each -- while `v3.81`, the round immediately after the eleven, wrote its record under a name the guard did
+  not read. A round with nothing left open and a round whose record was filed somewhere else produce the same
+  number, which is what makes this a reading rather than a defect: the counting was the repair, and the deciding
+  is what is left.
+  `[open: a round that leaves nothing open could say so in its own body, in one sentence, and then an absence would be a choice; nothing in the corpus writes one, so the rule would have to be written against the newest round and applied backwards]`
 
 ## Pass log
 
@@ -942,7 +952,7 @@ and this table.
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
-| [volume-17.md](progress/volume-17.md) | 16 | v3.99 | v3.114 |
+| [volume-17.md](progress/volume-17.md) | 17 | v3.99 | v3.115 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

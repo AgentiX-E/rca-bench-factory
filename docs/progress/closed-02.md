@@ -340,3 +340,19 @@
   is a fixture now. All seventy-nine entries were stamped in this round, and the tiling is a guard: the set is
   1..79 with none missing, recomputed on every run, and the next entry's number is the only number that keeps it
   that way.
+
+- ~~O-081 · **Twenty-five records are judged by nothing, and the number has never been counted.** `roundAt` reads
+  `## vX.Y` headings, and the three volumes written before rounds had numbers name their rounds `## Pass N`,
+  so every `### Left open` in volumes 01 to 03 has no owner: `records` never holds it, and the arm that judges
+  rows cannot reach it. They are frozen, so no round can repair them and no rule can require a repair -- which
+  is why finding 577's refusal asks the **file** whether it names rounds instead of asking the record. What is
+  missing is the count: the exemption is a reading of three file names, so a fourth volume of that era, or a
+  record written above its round inside one of the three, would be exempt without a word.~~
+  ~~`[open: an arm that reports how many records have no owner would turn the exemption into a number; it is a report rather than a refusal because the three volumes cannot be repaired]`~~
+  **Closed by finding 579.** The count is printed on every run now: `217 record(s): 192 under a round and 25 under
+  none; 210 round(s), 18 of them wrote none`. The first pair is this entry's number, and it is 25 -- the twenty-five
+  `## Pass N` records, unchanged since the entry was written. The second pair is what the round found while
+  printing it: the arm's own rule, "a round has one record", had been measured against **195**, the number of
+  records the arm could see, rather than against the **210** rounds the corpus names -- and the answer held
+  (no round owns two of the 217 sections) only after 22 records the guard could not read were added back. The
+  exemption is still a reading of three file names and still cannot be repaired. What it is not is uncounted.
