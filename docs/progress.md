@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 257 core + 4 cli |
-| Test lines | 112,744 core + 3,242 cli |
-| Tests | 6,672 core + 187 cli |
+| Test lines | 112,995 core + 3,242 cli |
+| Tests | 6,684 core + 187 cli |
 | Tracked files | 667 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.115: **28** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.116: **28** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -910,14 +910,13 @@ is a row about rather than paraphrase one that no `grep` will find.
   seeing. None of the 47 reorders its columns; the rule is one cell wide where the vocabulary it enforces is four.
   `[open: a header that names the four columns in any order is a record by the same argument, and the price is a scan of every table in the corpus rather than of the tables whose first cell is already known to be a priority]`
 
-- O-083 · **Eighteen rounds wrote no record, and nothing can say whether that was a choice.** The population line
-  prints `210 round(s), 18 of them wrote none`, and the two shapes it covers are indistinguishable: `v3.70` to
-  `v3.80` left no record for eleven consecutive rounds, `v3.103` to `v3.107` for five, and `v2.15` and `v2.39` for
-  one each -- while `v3.81`, the round immediately after the eleven, wrote its record under a name the guard did
-  not read. A round with nothing left open and a round whose record was filed somewhere else produce the same
-  number, which is what makes this a reading rather than a defect: the counting was the repair, and the deciding
-  is what is left.
-  `[open: a round that leaves nothing open could say so in its own body, in one sentence, and then an absence would be a choice; nothing in the corpus writes one, so the rule would have to be written against the newest round and applied backwards]`
+- O-084 · **The arm cannot see what a round changed, so a round that raises an entry writes no record and nothing
+  says so.** The live list holds the current state, and a round's effect on it exists only in git: eleven of the
+  seventeen rounds that wrote no record **opened** at least one entry, by their own ledger rows, and the arm reads
+  neither the row nor the diff. The corpus has a name for the round on a closure ("Closed by finding N", which
+  resolves to a round through the finding) and none on an entry, so the owner of a residual is a fact recorded at
+  the moment it stops being open rather than at the moment it starts.
+  `[open: an entry that named the round that raised it would make "this round opened something and wrote no record" a rule; the entry carries an id and a reason and no round, and adding one is a change to the format every round writes]`
 
 ## Pass log
 
@@ -952,7 +951,7 @@ and this table.
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
-| [volume-17.md](progress/volume-17.md) | 17 | v3.99 | v3.115 |
+| [volume-17.md](progress/volume-17.md) | 18 | v3.99 | v3.116 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

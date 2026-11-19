@@ -1204,7 +1204,7 @@ from an anecdote again.
   about the same entry, and the two agree. v3.63 is the demonstration -- the stamp said 13, the guard
   said 13, the file said 11 -- and the only thing that could disagree with both was a reader.
 
-### A record's spelling (v3.63, widened at v3.115)
+### A record's spelling (v3.63, widened at v3.115 and v3.116)
 
 - **Every record name the corpus uses is read, and a `priority` table under any other heading is
   refused.** `## Open` is the live list read as entries; `### Left open` is a record read as
@@ -1229,6 +1229,15 @@ from an anecdote again.
   records were read and how many rows they hold, and says the rows were not judged. A table-form
   record that holds no table, or that carries an entry, is refused: zero rows would let an empty
   record pass as a record, and an entry under a heading the guard reads as rows would have no judge.
+- **The fifth name is a list, and the body rule reads both halves.** The rule added in v3.115 asks
+  whether a table's first column is `priority` and therefore only ever sees tables. `### Not fixed
+  here` -- `v2.15`'s addendum, two entries with reasons -- is a record in **entries** form, and a
+  section whose body is nothing but top-level bullets and their continuation lines, at least one of
+  them an open entry with an unstruck headline, is a record whatever its heading says (finding 586).
+  One section of the corpus answers to it. A heading that begins with a list name and is none of them
+  (`### Open`) is still **refused rather than read**, because the rename exists so that a reader who
+  greps for what is open finds one list, and a body rule that adopted the old name would leave that
+  enforced by nothing.
 - **What is not claimed.** The rows are not judged. Their `state` column is the round's own account,
   and there is no vocabulary it must come from; that is the entry v3.63 raised and did not close.
 
@@ -1254,6 +1263,30 @@ from an anecdote again.
 - **What is not claimed.** The `state` column is not judged: 78 distinct values over 147 rows, a median
   of 75 characters. That is a reading, not a state, and a vocabulary for it would mean rewriting
   nineteen frozen records. Capturing a column is not judging a value.
+
+### A round is a number (v3.116)
+
+- **One number names one round, and an addendum is a section of one.** A `## vX.Y, addendum` heading
+  repeats its round's number by design -- the corpus has one, `v2.15`'s, written when the gate that
+  round had just installed failed on it -- and it is not a round. A second `## vX.Y` heading is
+  refused: two sections under one number make "which record did this round write" a question about
+  position.
+- **The numbers are dense, and that is a second derivation of the count.** Inside an era every
+  increment is a round: 94 numbers in `v2` (`v2.06`..`v2.99`) and 116 in `v3` (`v3.00`..`v3.115`),
+  which is 210 with none empty. A gap is refused, because in this log a number nothing uses is a round
+  that was lost or renumbered. An era begins at `.00` and is the next one, so `v9.99 -> v10.00` is
+  consecutive and `v9.99 -> v10.01` is not; the minors are not a two-digit field, because `v3.99` is
+  followed by `v3.100`.
+- **The population line counts rounds and says which units it counted.** It reads `220 record(s): 195
+  under a round and 25 under none; 211 round(s) + 1 addendum(s), 17 of them wrote none`. The last
+  number was `rounds.length - recordRounds.size` -- a count of headings minus a count of distinct
+  names -- and the corpus's one repeated number was therefore published as a round that wrote nothing
+  (finding 585). It is counted from the rounds now, and the addendum is printed beside them so a
+  reader who was told "211 rounds" by every earlier round can see where that number came from.
+- **What is not claimed.** That the seventeen rounds which wrote no record chose to. Eleven of them
+  opened at least one entry by their own ledger, one says it closed a hole "rather than filed", and
+  five say nothing (finding 587); the arm reads none of that, because it sees the list as it stands and
+  not what a round did to it.
 
 ### A record may not be the only place a residual lives (v3.65)
 

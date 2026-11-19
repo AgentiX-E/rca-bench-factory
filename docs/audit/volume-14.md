@@ -1,6 +1,6 @@
 # Audit · volume 14
 
-Findings 579–584, from the round recorded in `progress/volume-17.md` as `v3.115`.
+Findings 579–587, from the rounds recorded in `progress/volume-17.md` as `v3.115` and `v3.116`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -273,3 +273,146 @@ Files that state a budget: **36 -> 37**.
 That 4,000 is this file's cost. It is a number about a clock on a box, and what can refute it is a
 reading above 2,000 ms inside the suite -- which would be a report to act on rather than a red to
 retry. It also does not make the file cheaper: seventeen `python3` launches are what these tests are.
+
+## Finding 585 — the population line subtracted a count of names from a count of headings
+
+`check-open-list.mjs` prints, on every run, how many records the corpus holds and how many rounds
+wrote none. The line read:
+
+```
+check-open-list: 218 record(s): 193 under a round and 25 under none; 211 round(s), 18 of them wrote none
+```
+
+Two of those five numbers are right by construction and add up (193 + 25 = 218). The fourth and the
+fifth are not a pair at all:
+
+```js
+`${String(rounds.length)} round(s), ${String(rounds.length - recordRounds.size)} of them wrote none`
+```
+
+`rounds` holds one entry per **heading** matching `^## (v\d+\.\d+)\b`, and `recordRounds` is a `Set`
+of round **names**. The corpus repeats one number:
+
+```
+docs/progress/volume-04.md:1059: ## v2.15, addendum — the gate I ran could not fail
+```
+
+so the subtraction counted the repetition as a round that wrote nothing, and the answer -- 18 -- is
+neither the number of headings that wrote none nor the number of rounds that did:
+
+| what is counted | judgement | value |
+| --- | --- | --- |
+| headings matching `ROUND` | `/^## (v(\d+)\.(\d+))\b/` | 211 |
+| distinct round numbers | `new Set(...)` | 210 |
+| names that wrote a record | `recordRounds.size` | 193 |
+| names that wrote none, counted | `ascending.filter((r) => !recordRounds.has(r.round))` | 17 |
+| names that wrote none, subtracted | `rounds.length - recordRounds.size` | 18 |
+
+### The second derivation, which the corpus already had
+
+A count this log trusts is one derived twice, and this one needs no heading: the numbers are dense.
+`v2.06`..`v2.99` is 94 slots and `v3.00`..`v3.115` is 116, all occupied -- 210, which is what the
+headings say once the addendum is set aside. The duplicate is therefore not a curiosity but a
+counter-example, and it is the only one.
+
+### The repair
+
+An addendum is a section of its round (`ADDENDUM`), it is in the owner table so a record below it
+finds its round, and it is not in `rounds`. Three rules then hold the number line: a number headed
+twice is refused, a gap inside an era is refused, and an era must begin at `.00` and be the next one.
+The population line counts instead of subtracting, and prints the addenda beside the rounds:
+`211 round(s) + 1 addendum(s), 17 of them wrote none`.
+
+The first version of the density rule assumed a two-digit minor field and refused the shipped corpus
+on its first run -- `the round numbers go from v3.99 to v3.100, so 0 number(s) in between name no
+round`. A refusal about a gap that reports zero missing numbers is the rule describing its own
+mistake, and this corpus is where `v3` passed its hundredth round while `v2` stopped at `v2.99`.
+
+### What it does not claim
+
+That 211 was never a fact. It was a count of headings, which is what the volume gate asks for and what
+its own table lists. What it was not is a count of rounds, and the line said rounds.
+
+## Finding 586 — the record's fifth name was in the form the body rule did not read
+
+`### Not fixed here` -- `docs/progress/volume-04.md:1104`, `v2.15`'s addendum -- holds two entries:
+
+```
+- **`check-no-mock` still reads comments as code.** `[open: the alternative is a comment stripper ...]`
+- **The verification recipe is still prose.** `[open: nothing in the repository states how to check ...]`
+```
+
+It is a record to any reader. To the guard it was a heading no table of names held, in a document
+whose body rule -- added one round earlier -- asks whether a table's first column is `priority`. A
+record written as bullets has no first column, so that rule could not see it: the shape space has two
+halves and v3.115 covered one.
+
+Because the section sits under the addendum, the round it belongs to was in the population line as a
+round that wrote nothing, while it wrote two promises -- the 18th of the eighteen `O-083` was opened
+for.
+
+### Measured before granted
+
+The question "which headings hold a bullet with a reason" answers fourteen, and thirteen of those are
+prose quoting an entry. The question a name cannot lie about is whether the section is **nothing but**
+entries:
+
+| predicate over the progress corpus | sections |
+| --- | --- |
+| a bullet somewhere in the body carries `[open:` | 14 |
+| … and no prose starts at column zero | 4 |
+| … and at least one entry's headline is not struck | 1 |
+| … and it is named none of the five names | 1 (`### Not fixed here`) |
+
+The strike test is the corpus's own definition of a closure (`CLOSED`, finding 458), so this is one
+predicate asked a second question rather than a second predicate.
+
+### The line between reading a body and refusing a name
+
+`### Open` is the name the volumes used for the record until finding 207 renamed it, and `NEARLY`
+refuses it. With a body rule, that heading *has* a reader, and the first version duly adopted it --
+turning the diagnostic beside it into a false sentence ("a list written under it would have no
+reader") and taking the rename rule's only enforcement with it. The resolution keeps the refusal: a
+heading that begins with a list name and is none of them is refused, not read.
+
+### What it does not claim
+
+That the name table is now complete. It claims that a record written as a list is found by its shape,
+whatever the next rename calls it, and that the shape is one section of this corpus wide.
+
+## Finding 587 — eleven of the seventeen rounds that "wrote none" had opened an entry
+
+`O-083` said the absence was undecidable: a round with nothing left open and a round whose record was
+filed elsewhere produced the same number. Reading the seventeen, in their own ledgers, splits them
+three ways:
+
+| what the round's own ledger says | rounds | count |
+| --- | --- | --- |
+| it opened at least one entry | `v3.70`–`v3.77`, `v3.79`, `v3.80`, `v3.107` | 11 |
+| it closed one and filed nothing | `v3.78` -- "closed in this same round rather than filed" | 1 |
+| nothing about the list at all | `v2.39`, `v3.103`–`v3.106` | 5 |
+
+Eleven rows like this one:
+
+```
+| list | **20 -> 21**: one closed, two opened |
+```
+
+A round that raises a residual has left something open by construction, so for eleven of seventeen the
+record is **missing rather than empty**, and the neutral reading the line published was wrong for them.
+The one that supports it says so in prose; the five that are silent are the only ones the arm genuinely
+cannot judge.
+
+### Why no rule came out of it
+
+The signal is a **diff**, and the corpus holds a state: `## Open` is the list as it stands, and what a
+round did to it exists in git. An entry carries an id and a reason and no round, while a closure
+carries the finding that closed it -- so the owner of a residual is recorded at the moment it stops
+being open, never at the moment it starts. That is `O-084`, and the format change it needs is not one
+this round could take.
+
+### What it does not claim
+
+That the eleven are defects to repair. Their records are frozen and nothing may append to them. What it
+claims is narrower and about the arm: the number it printed as a reading was, for eleven of seventeen,
+a report of something absent that the round itself says was there.

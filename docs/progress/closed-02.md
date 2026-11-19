@@ -356,3 +356,22 @@
   records the arm could see, rather than against the **210** rounds the corpus names -- and the answer held
   (no round owns two of the 217 sections) only after 22 records the guard could not read were added back. The
   exemption is still a reading of three file names and still cannot be repaired. What it is not is uncounted.
+
+- O-083 · ~~**Eighteen rounds wrote no record, and nothing could say whether that was a choice.**
+  The population line printed `210 round(s), 18 of them wrote none`, and the two shapes it covered were
+  indistinguishable: `v3.70` to `v3.80` left no record for eleven consecutive rounds, `v3.103` to `v3.107` for five,
+  and `v2.15` and `v2.39` for one each -- while `v3.81`, the round immediately after the eleven, wrote its record
+  under a name the guard did not read. A round with nothing left open and a round whose record was filed somewhere
+  else produced the same number, which is what made this a reading rather than a defect: the counting was the
+  repair, and the deciding was what was left.~~
+  ~~`[open: a round that leaves nothing open could say so in its own body, in one sentence, and then an absence would be a choice; nothing in the corpus writes one, so the rule would have to be written against the newest round and applied backwards]`~~
+  **Closed by finding 587.** The eighteen were seventeen, and one of them was not a round that wrote nothing: the
+  addendum's count was a subtraction of headings from names (finding 585), and `v2.15`'s addendum wrote
+  `### Not fixed here` -- two entries with reasons, under a name the table did not hold and in the form the body
+  rule of v3.115 did not read (finding 586). The entry's premise does not survive the seventeen: asked what their
+  own ledgers say, **eleven** of them opened at least one entry in the live list, so the record is missing rather
+  than empty; **one** (`v3.78`) says it closed a hole "in this same round rather than filed", which is the only
+  sentence in the corpus that supports the neutral reading; and **five** say nothing about the list at all. The
+  corpus can say, and eleven of seventeen say the opposite of what the line implied. What replaces the entry is
+  narrower: the arm cannot see what a round **changed**, so the rule it would take is one the corpus cannot hold
+  (`O-084`).
