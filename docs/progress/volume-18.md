@@ -1524,6 +1524,21 @@ workflow and compares the sentence against its own arithmetic.
 | the budgets | **37** files state one -- unchanged: no test file was added |
 | LLM calls | **0** |
 
+### A boundary found by the wrong anchor, in the writing of this section
+
+The external tracker's round section was appended to `09-推进进度追踪.md` and then its trailing block was
+replaced, and the replacement cut at `s.index('### 遗留')` -- **the first** `### 遗留` in a file whose every
+round since v3.60 ends with one -- rather than at the last. The commit that carried it deleted 7,159 lines:
+every section from `v3.112` to `v3.118`. The next commit restored the file from the previous revision and
+re-applied the section, and the reading after the repair is **10** sections where the damaged file had **3**.
+
+It belongs in this record and not in the audit log, because it is a defect in a script this round typed
+rather than in the tree: the audit log's findings are about files the repository ships. What it shares with
+them is the shape -- **a boundary found by the wrong anchor**, one occurrence instead of the last, which is
+finding 590's subject (a citation window that ended at the wrong period) arriving in the written record of
+the round that was about boundaries. The check is one line and neither script had it:
+`assert '## v3.118' in out -- and the same assertion three paragraphs up would have caught this one.
+
 ### Left open
 
 - The local rehearsal's fourth step failed twice at a settled tree, and five rehearsals of the same sequence
