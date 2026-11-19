@@ -441,9 +441,9 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 257 core + 4 cli |
-| Test lines | 113,184 core + 3,242 cli |
-| Tests | 6,691 core + 187 cli |
-| Tracked files | 667 |
+| Test lines | 113,274 core + 3,242 cli |
+| Tests | 6,700 core + 187 cli |
+| Tracked files | 668 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.117: **29** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.118: **30** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -918,12 +918,23 @@ is a row about rather than paraphrase one that no `grep` will find.
   the moment it stops being open rather than at the moment it starts.
   `[open: an entry that named the round that raised it would make "this round opened something and wrote no record" a rule; the entry carries an id and a reason and no round, and adding one is a change to the format every round writes]`
 
-- O-085 · **The suite's substring assertions were never censused, and the two this arm had could not fail.** Finding
-  589 repaired them: `toContain('0 closed by a finding')` was satisfied by `30 closed by a finding`, and the
-  assertion had been read as a claim about the wrong subject for as long as it existed. The shape is a `toContain`
-  of a count that a larger number's tail satisfies, and it is possible wherever a test reads a number out of a
-  sentence -- which is most of this tree's gate tests, and none of them was read for it.
-  `[open: the reader that takes a count as the digits between a delimiter and its label exists now and two places use it; applying it to every assertion in the suite that quotes a number needs the count of those places, and each one has to be read to see whether its subject could grow past it]`
+- O-085 · **The suite's counting assertions are censused, and none of them is empty, and the question a census
+  cannot ask is whether the number belongs to the subject the sentence names.** Finding 589 opened this with
+  `toContain('0 closed by a finding')`, satisfied by `30 closed by a finding`, and the assertion had been read as a
+  claim about the wrong subject for as long as it existed. v3.118 measured the population: **240** assertions whose
+  literal argument begins with a digit, each one mutated by prefixing a `9`, and **240** of them go red -- so no
+  assertion in this suite is satisfied by a number it does not read. What a substitution cannot reach is the other
+  half: finding 589's assertion survives the substitution and is still wrong, because its subject was the live list
+  and the line counts the index and its volumes (finding 594).
+  `[open: 240 assertions whose literal begins with a digit, all of them red when the digit moves; finding 589's assertion passed that test and was still wrong, because its subject was the live list and the line counts the index and its volumes -- one assertion at a time, and no substitution reaches it]`
+
+- O-086 · **One volume writes its sections two ways, and the form is the only thing a reader could key on.**
+  `volume-17.md` holds **44** headings spelled `### One · …` and **42** spelled `### 1. …`, because the
+  convention changed while the volume was being written. Both are English and both are readable, so this is
+  a shape rather than a language defect -- and the reason it is worth a line is that it is the *third*
+  spelling in the log: `volume-09.md` writes `### One: `, `volume-12.md` writes `### One — `,
+  `volume-13.md` wrote `### One · `.
+  `[open: v3.118 unified the twenty-eight headings that carried a Han numeral into the separator of the volume they stood in, which left each volume internally consistent and four volumes differing from each other; making the log agree with itself costs a renumbering of 86 headings and buys a form that no reader in this tree keys on yet]`
 
 ## Pass log
 
@@ -958,7 +969,8 @@ and this table.
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
-| [volume-17.md](progress/volume-17.md) | 19 | v3.99 | v3.117 |
+| [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
+| [volume-18.md](progress/volume-18.md) | 7 | v3.112 | v3.118 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

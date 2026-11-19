@@ -1320,8 +1320,36 @@ from an anecdote again.
   is a substring of `30 closed by a finding`, and an assertion of the first passed for every round
   while the line said the second (finding 589). A number in prose is the digits between a delimiter and
   their label: `countIn(line, 'closed (')` reads the number that stands there, or fails.
-- **What is not claimed.** That every test which reads a count out of a sentence has a boundary. This
-  round fixed the two the arm had and did not census the suite for the shape.
+- **What is not claimed.** That every test which reads a count out of a sentence has a boundary. v3.117
+  fixed the two the arm had; v3.118 censused the shape and found the population is **240** `toContain`
+  literals that begin with a digit, and that **all 240** fail when the digit is prefixed -- so no
+  assertion in the suite is reading nothing, and the residue is the other half of the question: an
+  assertion whose *subject* is wrong can still be satisfied, which no substitution can see (finding 593).
+
+### The unit a heading is judged in (v3.118)
+
+- **The documents are English, and a quotation is not prose.** A fenced block, a code span and a block
+  quote carry another document's bytes verbatim, and the reader skips all three. Everything else is
+  this repository's prose, and prose has to be English.
+- **The unit is a property of the position, not of the document.** A paragraph is judged in runs of
+  **eight** Han characters, because the things this log legitimately quotes are two to seven
+  characters long (`金标`, `未测量`, a cited file name inside a code span). A heading is judged in
+  **one** Han character, or one ideographic comma, because it is a skeleton row and there is no
+  citation that could stand at the front of it. Twenty-eight headings -- `### 一、`, `### Five、` and
+  twenty-six like them -- stood in three volumes of this log under a reader that was green about
+  every one (finding 591, finding 592).
+- **A chapter mark with a Han numeral is a pointer, not a term.** `§六` names a section of a document
+  whose skeleton is supposed to be English, so it is read as prose in its own right; `§6.2` is the
+  spelling and is left alone. The unit there is two characters and the number reported is one
+  (finding 592).
+- **The number the line prints is a character count, and the line says so.** The heading unit admits a
+  mark, so a line that said `N Han character(s) of prose` would have been false for the one heading in
+  the log that carries no Han character at all. The report says `character(s)`, and the summary says
+  `run(s) of non-English prose` (finding 592).
+- **What is not claimed.** That a paragraph of seven Han characters is caught. It is not, and that is
+  the price of the eight-character unit rather than an oversight: the unit cannot tell a quoted term
+  from a short sentence, and the corpus is what put the threshold where it is. The heading unit is
+  the part of the rule that does not pay that price.
 
 ### A record may not be the only place a residual lives (v3.65)
 

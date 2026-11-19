@@ -1,10 +1,19 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { HAN_RUN, check, documentsIn, hanProseIn, proseReport, withoutCodeSpans } from '../../../scripts/docs-language.mjs';
+import {
+  HAN_RUN,
+  HAN_SECTION_REF,
+  HEADING_PROSE,
+  check,
+  documentsIn,
+  hanProseIn,
+  proseReport,
+  withoutCodeSpans,
+} from '../../../scripts/docs-language.mjs';
 
 /**
  * The documents of this repository are English, and this is the reader that says so.
@@ -81,7 +90,7 @@ describe('the language of a document', { timeout: 30_000 }, () => {
     const dir = treeOf({ 'docs/page.md': `# Page\n\n${HAN(8)}${HAN(8)}.\n` });
     const { status, out } = run(dir);
     expect(out).toContain('docs/page.md:3:');
-    expect(out).toContain('16 Han character(s) of prose');
+    expect(out).toContain('16 character(s) of prose');
     expect(out).toContain("this repository's documents are written in English");
     expect(out).toContain('FAILED');
     expect(status).toBe(1);
@@ -126,7 +135,7 @@ describe('the language of a document', { timeout: 30_000 }, () => {
     // and a line that was refused becomes a line that passes.
     const dir = treeOf({ 'docs/page.md': `# Page\n\n\`oops ${HAN(8)}${HAN(8)}.\n` });
     const { status, out } = run(dir);
-    expect(out).toContain('16 Han character(s) of prose');
+    expect(out).toContain('16 character(s) of prose');
     expect(status).toBe(1);
   });
 
@@ -153,7 +162,7 @@ describe('a row break inside a paragraph', { timeout: 30_000 }, () => {
     const dir = treeOf({ 'docs/page.md': `# Page\n\n${HAN(4)}\n${HAN(4)}.\n` });
     const { status, out } = run(dir);
     expect(out).toContain('docs/page.md:3:');
-    expect(out).toContain('8 Han character(s) of prose across 2 row(s)');
+    expect(out).toContain('8 character(s) of prose across 2 row(s)');
     expect(status).toBe(1);
   });
 
@@ -170,10 +179,21 @@ describe('a row break inside a paragraph', { timeout: 30_000 }, () => {
   it('does not let a heading continue the row above it', () => {
     // A heading ends the paragraph in both directions, and this fixture is the one the
     // first version of this file got wrong: it put the quote *after* a blank row, so the
-    // paragraph had already ended and the flush under test could not be reached. The row
-    // before the heading is prose here, and there is no blank row between them.
-    const dir = treeOf({ 'docs/page.md': `# Page\n\n${HAN(4)}\n## ${HAN(4)}\n${HAN(4)}.\n` });
-    expect(run(dir).status).toBe(0);
+    // paragraph had already ended and the flush under test could not be reached.
+    //
+    // **What it asserted was still empty**, and this round found it: the assertion was
+    // `status === 0`, and a status of zero is what this fixture produces whether the
+    // heading flushes or not -- `## ` stands between the character before it and the
+    // character after it, so no run of eight can cross either way. The rule is about the
+    // **breaks**, so the witness is what has to be read: two paragraphs of one row cross
+    // nothing, and a heading that did not flush would be one paragraph of three rows and
+    // cross two. And once a heading is judged in its own unit, the heading is reported as
+    // itself -- four characters, on its own line -- which is the second half of the same
+    // statement.
+    const text = `# Page\n\n${HAN(4)}\n## ${HAN(4)}\n${HAN(4)}.\n`;
+    const report = proseReport(text);
+    expect(report.pairs).toBe(0);
+    expect(report.hits).toEqual([{ line: 4, text: HAN(4), length: 4 }]);
   });
 
   it('does not let prose continue across a fence', () => {
@@ -197,7 +217,7 @@ describe('a row break inside a paragraph', { timeout: 30_000 }, () => {
     // and without the fixture the exclusion would be invisible on a tree that is LF.
     const dir = treeOf({ 'docs/page.md': `# Page\r\n\r\n${HAN(4)}\r\n${HAN(4)}.\r\n` });
     const { status, out } = run(dir);
-    expect(out).toContain('8 Han character(s) of prose across 2 row(s)');
+    expect(out).toContain('8 character(s) of prose across 2 row(s)');
     expect(status).toBe(1);
   });
 
@@ -233,7 +253,77 @@ describe('the reading, at its edges', () => {
     const real = check(ROOT);
     expect(real.ok).toBe(true);
     expect(real.documents).toBeGreaterThan(40);
-    expect(real.summary).toContain('0 run(s) of Han prose');
+    expect(real.summary).toContain('0 run(s) of non-English prose');
+  });
+});
+
+/**
+ * Two positions, two units, and the twenty-eight headings that lived in the gap between them.
+ *
+ * The rule this file applies is a run of eight Han characters, and the number is calibrated
+ * against citations: a file name, a section number, a term quoted from a table. A heading is
+ * not a citation. It is the document's own skeleton, so what goes wrong there is the number at
+ * the front -- `### \u4e00\u3001` is one character and `### Five\u3001` is none, and neither
+ * can ever be a run of eight. Twenty-eight headings across three volumes of the progress log
+ * stood in English documents under a reader that was green about every one of them.
+ *
+ * The unit is therefore a property of the **position**, not of the document. A paragraph is a
+ * sentence and may quote; a heading is a label and may not. The fixtures below are that shape
+ * and its three neighbours: an English heading, a quoted file name, and a chapter mark whose
+ * numeral is Arabic -- which is what this log writes when it points at a section of a paper
+ * rather than at one of its own.
+ */
+describe('a heading is judged in its own unit, and a section reference in its own', () => {
+  it('states both units, and applies them', () => {
+    expect(HEADING_PROSE.source).toBe('[\\p{Script=Han}\\u3001]+');
+    expect(HAN_SECTION_REF.source).toBe('\u00a7\\p{Script=Han}');
+  });
+
+  it('reports a heading numbered in Han, which no run of eight can see', () => {
+    expect(proseReport('### \u4e00\u3001The rows nobody judged\n').hits).toEqual([
+      { line: 1, text: '\u4e00\u3001', length: 2 },
+    ]);
+  });
+
+  it('reports the ideographic comma an English numeral was left with', () => {
+    // The one heading in the log that was half-translated: the word is English and the
+    // separator is not, so the character count is zero and only the mark is left to read.
+    expect(proseReport('### Five\u3001What the gates cost to extend\n').hits).toEqual([
+      { line: 1, text: '\u3001', length: 1 },
+    ]);
+  });
+
+  it('leaves an English heading alone, whichever separator the volume chose', () => {
+    for (const separator of [': ', ' \u2014 ', ' \u00b7 ']) {
+      expect(proseReport(`### One${separator}A heading\n`).hits).toEqual([]);
+    }
+  });
+
+  it('leaves a quoted file name in a heading alone, because a quotation is not prose', () => {
+    expect(proseReport('### the `04-\u91cc\u7a0b\u7891\u4e0e\u8def\u7ebf\u56fe.md` page\n').hits).toEqual([]);
+  });
+
+  it('reports a chapter mark followed by a Han numeral, which is a heading\'s name quoted', () => {
+    expect(proseReport('The measurement in \u00a7\u516d and the artifact are one fact.\n').hits).toEqual([
+      { line: 1, text: '\u00a7\u516d', length: 1 },
+    ]);
+  });
+
+  it('leaves a chapter mark followed by an Arabic numeral alone, because that is the spelling', () => {
+    expect(proseReport('The measurement in \u00a76.2 and the artifact are one fact.\n').hits).toEqual([]);
+  });
+
+  it('reports two characters as a heading and not as a sentence, which is the whole rule', () => {
+    const two = HAN(2);
+    expect(proseReport(`## ${two}\n`).hits).toEqual([{ line: 1, text: two, length: 2 }]);
+    expect(proseReport(`${two}\n`).hits).toEqual([]);
+  });
+
+  it('finds the three volumes that carried the headings clean, which is what the repair left', () => {
+    for (const name of ['volume-09.md', 'volume-12.md', 'volume-13.md']) {
+      const report = proseReport(readFileSync(join(ROOT, 'docs/progress', name), 'utf8'));
+      expect(report.hits, name).toEqual([]);
+    }
   });
 });
 
@@ -258,7 +348,7 @@ describe('a hard break written with a backslash', { timeout: 30_000 }, () => {
     const dir = treeOf({ 'docs/page.md': wrapped('\\') });
     const { status, out } = run(dir);
     expect(out).toContain('docs/page.md:3:');
-    expect(out).toContain('8 Han character(s) of prose across 2 row(s)');
+    expect(out).toContain('8 character(s) of prose across 2 row(s)');
     expect(status).toBe(1);
   });
 

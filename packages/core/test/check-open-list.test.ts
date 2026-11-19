@@ -1235,7 +1235,7 @@ describe('docs · a section that is only entries is a record, whatever its headi
     expect(r.out).toContain('0 record(s): 0 under a round and 0 under none');
   });
 
-  it('reads the shipped corpus as 221 records, with the addendum counted in', () => {
+  it('reads the shipped corpus as 222 records, with the addendum counted in', () => {
     // The shipped reading, and the rounds it carries: v3.115 found 22 records under two names the
     // guard did not read (218 -> its own), v3.116 found the addendum's record under a name and a form
     // it did not read (219), v3.117's record makes 220 and this round's makes 221. The rounds are
@@ -1244,7 +1244,7 @@ describe('docs · a section that is only entries is a record, whatever its headi
     const shipped = spawnSync('node', [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
     expect(shipped.status, shipped.stdout + shipped.stderr).toBe(0);
     expect(shipped.stdout).toContain(
-      '221 record(s): 196 under a round and 25 under none; 212 round(s) + 1 addendum(s), 17 of them wrote none',
+      '222 record(s): 197 under a round and 25 under none; 213 round(s) + 1 addendum(s), 17 of them wrote none',
     );
   });
 });

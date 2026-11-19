@@ -775,8 +775,8 @@ outside the ledger because it is not a push: `refs/heads/v3.60-pointer` names ex
 The branch names a commit **272 commits old**, and that is not a choice: it is the newest commit
 the two histories agree on. A pointer push can only name a commit the local repository has and the
 remote holds, and on this repository that set is the oldest 237 -- so the first real creation this
-channel ever made had to hang off the far side of the rename boundary. The measurement of §六 and
-the artifact of §七 are the same fact, read two ways.
+channel ever made had to hang off the far side of the rename boundary. The measurement in section 6 and
+the artifact in section 7 are the same fact, read two ways.
 
 The slowest request of the round is that `POST /git/refs`: **13 997 ms** for a call that carries
 no object at all. A budget argued from "a ref write is cheap" would be wrong by an order of
@@ -1034,7 +1034,7 @@ onto a wrong name, and the second would keep the battery quiet exactly when it w
 | site proofs | **203** proved sites across **58** test files (`verify-site-proofs.mjs --list`) |
 | the history | `golden-master/publish-readings.json`: **16 attempts**, 269 rows. Attempt 14 is the creation that was refused by its own plan (2 requests, no object), 15 the creation that succeeded (35 requests, three commits, `POST /git/refs`), 16 the `master` push onto the same window (31 requests, one `PATCH`) |
 
-The pushes this round made are described in §七. The row for the push that publishes *this*
+The pushes this round made are described in section 7. The row for the push that publishes *this*
 commit cannot be in it -- a push cannot record itself inside itself -- so the ledger below is one
 attempt behind by construction, which is the lag the gate prints rather than one it hides.
 
@@ -1199,7 +1199,7 @@ The second finding came from reading an entry that had never been measured: a sp
 differing "by seconds", whose two jobs differ by four minutes, in the opposite direction to the round
 that made the split.
 
-### 一、The count was computed from the rule it was defending
+### One — The count was computed from the rule it was defending
 
 v3.62 shipped two halves in one commit. The first was a repair: a strikethrough anywhere in an entry
 had closed two **live** entries, because each quotes a sub-item a later round closed, and the rule
@@ -1245,7 +1245,7 @@ A struck headline, a struck reason, the closure after them. The two entries used
 half is what a rule keyed on one sentence cannot read. The repair strikes the two headlines and keeps
 the struck reasons, because the reason is the record of what was open.
 
-### 二、A sentence that cannot fail
+### Two — A sentence that cannot fail
 
 The live list carried this about the sensitivity split:
 
@@ -1272,7 +1272,7 @@ measure it, on the machine that pays it.
 What the round could do was remove the unfalsifiable sentence. The entry now states both measurements,
 the direction, and the two candidates that fail.
 
-### 三、Nineteen records left the reader, and nothing said so
+### Three — Nineteen records left the reader, and nothing said so
 
 The third finding came from the guard's own output. It printed the number of sections it read --
 `164` -- and the corpus has `183` headings that begin with one of the two names. The difference is
@@ -1310,7 +1310,7 @@ record counted as rows -- and the 147 that are rows is finding 464's measurement
 That last clause is the honest half. The guard counts a row and refuses an entry; it does not judge a
 row's `state` column, and it says so every run rather than passing over nineteen records in silence.
 
-### 四、What changed
+### Four — What changed
 
 Two rules in `check-open-list.mjs`, because a disagreement has two ends: a **closed** entry may not
 carry an unstruck reason (history in the headline, work in the body), and an **open** entry's reason may

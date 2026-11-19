@@ -5,7 +5,7 @@ when a round closes it*. This round began there and found that the sentence it h
 `19 record(s) in table form (185 row(s)) whose rows were not judged` -- was the third defect in three
 rounds of the same family: a number printed as evidence that is not the number it claims to be.
 
-### 一、The rows nobody judged were counted as pipe lines
+### One · The rows nobody judged were counted as pipe lines
 
 ```js
 const rows = section.lines.filter((line) => /^\s*\|/.test(line)).length;
@@ -27,7 +27,7 @@ would write -- a `=== 0` against a number that cannot be `1`, whose only case wa
 written for. And the test beside it asserted `3 row(s)` for a one-row table and passed: a test written
 to match an output inherits the output's mistake.
 
-### 二、The shape was said to be checked, and nothing about the shape was checked
+### Two · The shape was said to be checked, and nothing about the shape was checked
 
 The comment above the third spelling says *its rows are counted, its shape is checked*. The code
 counted and checked nothing: not the header, not its names, not the rule, not one row's cells --
@@ -49,7 +49,7 @@ break by accident:
 The last is the only judgement on a cell the guard says it does not judge, and locating a column is
 not reading a value. Not one of the 147 is empty, so it is a floor stated as a floor.
 
-### 三、The column is not a state, and the entry's premise was refuted by measuring it
+### Three · The column is not a state, and the entry's premise was refuted by measuring it
 
 The live list asked for a closed vocabulary for the `state` column. The measurement says there is
 nothing to close:
@@ -119,7 +119,7 @@ have to be true for this number to be wrong, and then look there*. This round po
 number it had printed without looking -- `Checked at v3.64: **11** entries open` -- and the number was
 right about its own section and wrong about the log.
 
-### 一、The only P1 in this document lived in a record, and the list never held it
+### One · The only P1 in this document lived in a record, and the list never held it
 
 The guard printed two counts in one line and had never compared them: **11** entries open, and **7
 row(s)** in the newest round's record. They are not supposed to be the same set -- a record carries what
@@ -150,7 +150,7 @@ document further out.
 been under-reporting should do -- and by an arm that refuses the shape: the newest round's record may
 not name a residual the live list does not hold.
 
-### 二、A row is a paraphrase, and a paraphrase is a sentence with no second reader
+### Two · A row is a paraphrase, and a paraphrase is a sentence with no second reader
 
 The four rows above are why the arm exists; the two in italics are why it is a **quotation** rule rather
 than a "does this resemble an entry" rule. Both describe entries that exist, in words that appear in
@@ -167,7 +167,7 @@ nothing appends to it. A rule that judged the older twenty would be a rule deman
 forbids, so the arm reads the one record that can still be edited -- the same scope, and the same
 argument, as the currency stamp's comparison with the newest round.
 
-### 三、The rule this round added for a third defect was already there, and the corpus is what said so
+### Three · The rule this round added for a third defect was already there, and the corpus is what said so
 
 The round also went looking for a fourth defect, on a reading that looked airtight: the guard requires
 a closure to name what closed it, the requirement is a **pattern** -- `Closed|Narrowed|Retracted` within
@@ -204,7 +204,7 @@ describing its absence is convincing: **the audit is a corpus, and a claim about
 reading it**. And a new guard has to be justified against the guards that exist, which is a search this
 round performed only by accident -- by breaking its own prose.
 
-### 四、The twenty kilobytes of headroom ran out, and the instruction was to split the index
+### Four · The twenty kilobytes of headroom ran out, and the instruction was to split the index
 
 The four entries and the paragraph above are what pushed `docs/progress.md` from 90,886 to 93,828 bytes,
 and `check-progress-volumes.mjs` has printed the relation since v2.35: `index N of smallest volume M`.
@@ -285,7 +285,7 @@ right -- this repository proves *export conformance* and has never proved *task 
 its fact layer was wrong five times, twice by quoting our own documents. That is why the first repair is
 about documents rather than gates.
 
-### 一、The count that had a reader
+### One · The count that had a reader
 
 `docs/acceptance.md` said `Measured at 105 of 105 in both halves`. The inventory held **204 proved
 claims across 58 files** and **127 failure sites**, and had done for twenty-four rounds. Nothing read
@@ -307,7 +307,7 @@ documents that speak in the present, and a line that dates itself (`at v3.41`) i
 missing thing was never the vocabulary; it was the decision that a specification is also a document that
 goes stale** (finding 471).
 
-### 二、A table that named the ids and described other mutations
+### Two · A table that named the ids and described other mutations
 
 The L3 matrix had been read back by `test/mutation.test.ts` for its **ids** only, under a comment
 explaining that prose could not be validated mechanically. Measured, **thirteen of the eighteen rows
@@ -321,7 +321,7 @@ list. The column was a hand-copied projection, which is the one kind of prose th
 therefore the kind whose drift is nobody's job to notice. Both columns are projections now, and both are
 compared (finding 472).
 
-### 三、Thirty of thirty, printed as evidence of health
+### Three · Thirty of thirty, printed as evidence of health
 
 G4 asks three questions and none of them is *is this set separable at all*. The corpus's success line
 had been answering it for as long as the corpus has had telemetry:
@@ -351,7 +351,7 @@ sentence. That pair is a test, not a demonstration: the corpus is copied, the de
 the refusal asserted. It is the only form of "the rule can be violated" that survives the round that
 writes it (finding 473).
 
-### 四、Three of thirty was a hyphen
+### Four · Three of thirty was a hyphen
 
 The same review reported **3 of 30** task texts naming their own root-cause component. That number came
 from `query.includes(component)` and was wrong in the safe direction:
@@ -370,11 +370,11 @@ goes -- and the reading is **0 of 30**. The arm is `LEAK_IN_QUERY`, and it makes
 `answerKeyIsolated: true` an earned claim rather than an asserted one: all nineteen cases declared
 themselves isolated while their prompts opened with their own answer (finding 474).
 
-### 五、The ledger for the round had no coverage row
+### Five · The ledger for the round had no coverage row
 
 The four repairs above added two gate arms, one `purpose` vocabulary and a rule with four shapes. The
 round's own ledger listed its tests, its mutations and its claims -- and carried **no coverage row at
-all**. That is the same defect as 一、 one level up: a reading nobody publishes is a reading nobody
+all**. That is the same defect as the first section, one level up: a reading nobody publishes is a reading nobody
 measures, and the thing it would have measured was this round's own code.
 
 The omission is not this round's invention. Of the **54** `### Readings` blocks in this log, **24**
@@ -464,7 +464,7 @@ The previous round ended with a list of four defects and a note that the next on
 contract pages carried three copies of one version and no equation. Reading that entry closely, the
 version was the least of it.
 
-### 一、Six rows, seven pages, and nothing compared a row with the field it restated
+### One · Six rows, seven pages, and nothing compared a row with the field it restated
 
 Each page under `docs/targets/` opens with a table: vendor, venue, contract version, emitter, CLI
 target id, modalities, timezone. Every row is a projection of `scripts/format-spec.mjs`. Measured
@@ -509,7 +509,7 @@ The vendor is the one claim here no gate can derive, so it is quoted: `golden-ma
 gains `upstream.affiliation` with the paper's own line, the URL it was read from and the date, and a
 test asserts the published vendor is a substring of it. An edit to either side is refused.
 
-### 二、The generator wrote the documents; the gate checked the site
+### Two · The generator wrote the documents; the gate checked the site
 
 `gen-examples.mjs` owns three artefacts and, under `--check`, compared exactly one: `site/assets/data.js`.
 `syncDocExamples` and `syncDocFields` ran only in write mode, so a hand-edited field table or a stale
@@ -531,7 +531,7 @@ and the other half written, with no sentence saying which is which, which is fin
 enumeration is separate and explicit -- for every spec the page carries exactly one target block and one
 field marker per documented file, thirty markers checked against the specification's own list.
 
-### 三、The ledger owes the coverage row, and the rule is judged on the round being written
+### Three · The ledger owes the coverage row, and the rule is judged on the round being written
 
 v3.66 found that 30 of the log's first 54 `### Readings` blocks carry no coverage row, and left the
 rule in the list because a rule over history would have been red from the day it existed. This round
@@ -540,7 +540,7 @@ four numbers for `core` and four for `cli`. The asymmetry is asserted rather tha
 builds a two-round volume where the older round has no row and the newest does, and requires silence --
 because 30 of 54 is exactly the population that argument is about.
 
-### 四、What the gates cost to retarget
+### Four · What the gates cost to retarget
 
 Six injections in `gate-tests-battery.py` anchored on lines this round moved. All six were retargeted,
 none deleted, and three were added for the guarantees that did not exist before (a `--check` that would
@@ -588,7 +588,7 @@ down: the gate existed, was named after the work, and measured the artifact that
 
 ## v3.68 — a pollution gate that compared a case with everything except another case
 
-### 一、Four arms, and none of them read a case against a case
+### One · Four arms, and none of them read a case against a case
 
 G5 is the anti-pollution gate. Its four arms read one case against a regular expression, a
 fingerprint from a public benchmark, a boolean the case asserts about itself, and the component name
@@ -617,7 +617,7 @@ an empty set would then have to be reported as either a duplicate or a skip, and
 bound `Date.parse` cannot read is **declined** rather than parsed: NaN propagates into the ratio, every
 comparison against NaN is false, and the pair is reported clean over a window nobody read.
 
-### 二、The corpus guard asked the gate one case at a time
+### Two · The corpus guard asked the gate one case at a time
 
 `check-fault-cases.mjs` asks G5 of every case, and builds the bundle as `{ cases: [parsedCase] }`. For
 the four arms above that shape is right. `DUPLICATE_CASE` compares a case with the ones before it, and
@@ -638,7 +638,7 @@ statement about where each arm reads its subject, not a preference: the four per
 already been asked with a better subject line, and reporting them twice would report one defect under
 two names.
 
-### 三、With no witness in the corpus, the maximum is the evidence
+### Three · With no witness in the corpus, the maximum is the evidence
 
 435 pairs, all within one system, and the closest is 0.25 against a line at 0.90. A rule whose only
 failure is synthetic is a rule this list has learned to distrust, so the repair was not to skip the
@@ -664,7 +664,7 @@ came from a shorter stop-word list than the one that shipped. All three are far 
 conclusion never moved and the reading did, three times. The open-list entry now carries the figure
 the rule computes, and a test asserts the number rather than a bound so the next drift is a red test.
 
-### 四、Two numbers that were readings once
+### Four · Two numbers that were readings once
 
 `readPromptLeaks` argues for its normalisation with `3 of 30` against `19 of 30`. Both were true when
 written and both stopped being true in **the same round**: v3.66's `b16892f` rewrote the corpus's task
@@ -686,7 +686,7 @@ count (derived), and the coverage figure (neither, and therefore the one that wa
 not "guard everything". It is that a number with two copies needs one of them to be computed rather
 than remembered.
 
-### Five、What the gates cost to extend
+### Five · What the gates cost to extend
 
 Seven injections were added, one per guard the new arms carry, because a fixture is the whole evidence
 here rather than a second opinion: **28 injections became 35, witnesses 33 became 41** (the stop-word

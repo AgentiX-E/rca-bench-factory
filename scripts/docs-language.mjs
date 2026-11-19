@@ -77,6 +77,42 @@ const SKIP = new Set(['node_modules', 'out', '.git', 'coverage', 'dist', 'site']
  */
 export const HAN_RUN = /\p{Script=Han}{8,}/u;
 
+/**
+ * What a **heading** is judged in: one Han character, or the ideographic comma.
+ *
+ * The eight-character unit above is calibrated against citations, and a heading has no
+ * citation in it. It has a skeleton -- a number and a title -- and the number is where a
+ * document that was written in Chinese and then half-translated keeps its accident:
+ * `### 一、The rows nobody judged …` is one Han character, and `### Five、What the gates
+ * cost to extend` is none at all, so twenty-eight headings across three volumes were
+ * invisible to every reader in this tree for as long as they stood.
+ *
+ * Two characters, and both are stated rather than guessed. `\p{Script=Han}` is the
+ * character class this file already trusts. `\u3001` is the ideographic comma, which no
+ * English heading writes -- English writes `,` or `—` -- and which is therefore a trace
+ * of the Chinese numbering it was copied from rather than a mark this repository chose.
+ * A punctuation mark is not a word, so judging a heading in this unit reports the heading
+ * rather than a run of prose, and the number it contributes is the number of characters a
+ * reader would have to translate, which is one.
+ *
+ * Code spans are removed before this runs, exactly as they are for a paragraph: a heading
+ * may quote a file name (`04-里程碑与路线图.md`), and a quotation is not this
+ * repository's prose whichever row it sits on.
+ */
+export const HEADING_PROSE = /[\p{Script=Han}\u3001]+/u;
+
+/**
+ * A section number written with a Han numeral -- `§六` -- which is a heading's name
+ * quoted in a sentence.
+ *
+ * This is structure rather than vocabulary, which is why it gets a rule of its own: a
+ * term quoted from another document (`金标`, `未测量`) is a word this log may carry, and
+ * a chapter mark followed by a Chinese numeral is a pointer into a skeleton that is
+ * supposed to be English. The unit is two characters and the numeral is one of them, so
+ * the number reported is one; what is refused is the pointer, not the word.
+ */
+export const HAN_SECTION_REF = /§\p{Script=Han}/u;
+
 /** Every markdown document under `root`, as paths relative to it, in sort order. */
 export function documentsIn(root = ROOT) {
   const out = [];
@@ -147,6 +183,12 @@ export function withoutCodeSpans(line) {
 
 /** A global copy of `HAN_RUN`, because a run is searched for repeatedly rather than once. */
 const HAN_RUN_ALL = new RegExp(HAN_RUN.source, 'gu');
+
+/** A global copy of the heading unit, for the same reason. */
+const HEADING_PROSE_ALL = new RegExp(HEADING_PROSE.source, 'gu');
+
+/** A global copy of the section-reference unit, for the same reason. */
+const HAN_SECTION_REF_ALL = new RegExp(HAN_SECTION_REF.source, 'gu');
 
 /** An ATX heading, which is one row and cannot be the continuation of the row above it. */
 const ATX_HEADING = /^ {0,3}#{1,6}(\s|$)/;
@@ -237,8 +279,14 @@ function paragraphsOf(rows) {
  * on both sides of it. `spanning` is present only when a run crosses a row break, so a run
  * inside one row produces the object it produced before this rule existed -- a caller that
  * compared shapes against the old reader compares the same shapes.
+ *
+ * `pattern` is the **unit**, and it is a parameter because the two positions do not agree
+ * about one: a paragraph is judged in runs of eight (`HAN_RUN`), and a heading in single
+ * characters (`HEADING_PROSE`). The join, the line mapping and the witness are the same
+ * either way, so they are written once. A global copy is required -- `matchAll` refuses a
+ * pattern that cannot be advanced -- and both callers pass one.
  */
-function scanParagraph(rows) {
+function scanParagraph(rows, pattern = HAN_RUN_ALL) {
   const found = [];
   const starts = [];
   let at = 0;
@@ -247,7 +295,7 @@ function scanParagraph(rows) {
     at += row.body.length;
   }
   const joined = rows.map((row) => row.body).join('');
-  for (const match of joined.matchAll(HAN_RUN_ALL)) {
+  for (const match of joined.matchAll(pattern)) {
     const end = match.index + match[0].length;
     let index = 0;
     while (index + 1 < starts.length && starts[index + 1] <= match.index) index += 1;
@@ -261,7 +309,13 @@ function scanParagraph(rows) {
 
 /** Every prose run in `rows`, which may hold more than one paragraph. */
 export function hanRunsIn(rows) {
-  return paragraphsOf(rows).flatMap(scanParagraph);
+  // `(part) => scanParagraph(part)` rather than `flatMap(scanParagraph)`: the second
+  // argument of a `flatMap` callback is the **index**, and this function's second parameter
+  // is the unit. Passing the function directly put `0`, `1`, `2` … where a pattern belongs,
+  // every paragraph was scanned for the literal `0`, and the comment reader went silent --
+  // four tests, one of them in the comment reader's own file, said so before this line was
+  // written. A default argument is not a guard against an argument that arrives.
+  return paragraphsOf(rows).flatMap((part) => scanParagraph(part));
 }
 
 /**
@@ -310,9 +364,22 @@ export function proseReport(text) {
       // it from continuing the row above -- `## ` is not Han, so no run reaches across it --
       // and nothing may continue it. Counting it inside the paragraph would put a break in
       // the witness that no run can ever cross.
+      //
+      // The **unit** is the other half of this branch. A heading is a skeleton row rather
+      // than a sentence, so the eight-character run that measures a paragraph would report
+      // every heading in the log as clean, and does: `### 一、` is one character and
+      // `### Five、` is none, and both stood in three volumes until this line was written.
       flush();
-      for (const hit of scanParagraph([row])) hits.push(hit);
+      for (const hit of scanParagraph([row], HEADING_PROSE_ALL)) hits.push(hit);
       return;
+    }
+    // A chapter mark followed by a Han numeral is a pointer into a skeleton that is
+    // supposed to be English, and it is one character, which no run of eight can see.
+    // Reported here rather than in `scanParagraph` because its unit is not the paragraph's
+    // and it is not joined across rows: `§` and its numeral are one row or they are not a
+    // section reference at all.
+    for (const found of row.body.matchAll(HAN_SECTION_REF_ALL)) {
+      hits.push({ line: row.line, text: found[0], length: 1 });
     }
     paragraph.push(row);
   });
@@ -414,7 +481,7 @@ export function check(root = ROOT) {
     for (const hit of report.hits) {
       runs += 1;
       errors.push(
-        `${name}:${String(hit.line)}: \`${hit.text}\` -- ${String(hit.length)} Han character(s) of prose` +
+        `${name}:${String(hit.line)}: \`${hit.text}\` -- ${String(hit.length)} character(s) of prose` +
           `${hit.spanning === undefined ? '' : ` across ${String(hit.spanning)} row(s)`}: ` +
           "this repository's documents are written in English, and the documents that are not are the " +
           'external ones, which a block quote or a code span carries verbatim',
@@ -430,7 +497,7 @@ export function check(root = ROOT) {
     pairs,
     summary:
       `check-docs-language: ${errors.length === 0 ? 'OK' : 'FAILED'} — ${String(documents.length)} ` +
-      `document(s), ${String(runs)} run(s) of Han prose outside a quotation, ${String(pairs)} row ` +
+      `document(s), ${String(runs)} run(s) of non-English prose outside a quotation, ${String(pairs)} row ` +
       'break(s) held inside a paragraph' +
       (errors.length === 0 ? '' : `; first: ${errors[0] ?? ''}`),
   };

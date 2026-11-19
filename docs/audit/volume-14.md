@@ -1,6 +1,6 @@
 # Audit · volume 14
 
-Findings 579–590, from the rounds recorded in `progress/volume-17.md` as `v3.115`, `v3.116` and `v3.117`.
+Findings 579–594, from the rounds recorded in `progress/volume-17.md` and `progress/volume-18.md` as `v3.115` through `v3.118`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -573,3 +573,211 @@ closure that names nothing.
 
 The shipped split moved **43 → 44** findings and **10 → 9** rounds. Finding 588's line is where the
 correction shows.
+
+## Finding 591 — the rule measured a paragraph in runs of eight and a heading in the same unit
+
+`docs-language.mjs` reads the tree's documents and refuses the ones that are not English. Its unit
+was one number, stated once:
+
+```js
+export const HAN_RUN = /\p{Script=Han}{8,}/u;
+```
+
+and the file's header defends the eight: *the things this repository legitimately carries in Chinese
+are short -- a cited file name, a section number, a term quoted from a table. All of them are two to
+seven characters.* That is a statement about **citations**, and it is true. A heading is not a
+citation. It is the document's own skeleton, and what a half-translated document leaves at the front
+of a skeleton row is a number:
+
+```
+### 一、an absence and an omission are the same bytes
+### Two: the five cases that looked like they had a line
+```
+
+The first row holds **one** Han character. The second holds none. Neither can ever be a run of
+eight, so the reader that was written to refuse a fourth Chinese round was green about **28**
+headings across **three** volumes:
+
+| volume | headings numbered in Han | of which a Han numeral | of which an English numeral and an ideographic comma |
+| --- | --- | --- | --- |
+| `volume-09.md` | 3 | 3 | 0 |
+| `volume-12.md` | 4 | 4 | 0 |
+| `volume-13.md` | 21 | 20 | 1 |
+| | **28** | **27** | **1** |
+
+### Why nothing went red
+
+The rule was never asked about a heading. `proseReport` did have an ATX branch -- a heading flushes
+the paragraph and is judged alone -- and that branch called `scanParagraph([row])`, which used the
+one unit the file exported. A branch that knows a heading is a different *shape* and applies the
+paragraph's *unit* to it is the same defect as a counter that admits three authorities under one
+noun (finding 588): the shape was recognised, and the measure taken was the measure of something
+else.
+
+### The repair
+
+The unit is a parameter of the scan, and the position chooses it:
+
+```js
+function scanParagraph(rows, pattern = HAN_RUN_ALL) { ... }
+...
+for (const hit of scanParagraph([row], HEADING_PROSE_ALL)) hits.push(hit);
+```
+
+with `HEADING_PROSE = /[\p{Script=Han}\u3001]+/u` -- one or more of a Han character or the
+ideographic comma, which is finding 592's half of the same rule. The join, the line mapping and the
+`pairs` witness are written once and shared, because they are properties of the paragraph rather
+than of the unit; only the pattern differs.
+
+The corpus was repaired in the direction each volume already pointed: `volume-09.md` writes
+`### One: `, `volume-12.md` writes `### One — `, `volume-13.md` writes `### One · `, so each of the
+28 headings was relabelled in its **own** volume's separator. No heading level, no number and no
+finding was touched; the three `§六`/`§七` pointers in `volume-12.md` and the one `一、` pointer in
+`volume-13.md` were relabelled with them, because a pointer into a skeleton that has been renamed is
+a pointer at nothing.
+
+### What it does not claim
+
+That a paragraph is now measured correctly. It is measured exactly as before -- runs of eight -- and
+a seven-character Chinese sentence in a paragraph is still invisible. That is the price the threshold
+pays for not refusing `金标` and `未测量`, and it is stated in the file's header rather than
+discovered. What changed is the position that does not pay it.
+
+## Finding 592 — a heading's separator was a mark no character class contains, and the line called it a Han character
+
+One of the 28 headings that finding 591 counts is not a Chinese numeral at all:
+
+```
+### Five、What the gates cost to extend
+```
+
+`volume-13.md`, line 689. The word is English and the separator is `、`, so `\p{Script=Han}` matches
+**nothing** in that row: narrowing the heading's unit from eight characters to one would still have
+left it green. It is the only row of its kind in the tree, and it is the clearest evidence of what
+happened -- a volume that was being translated into English one heading at a time, with the
+numbering moved first and the punctuation left behind.
+
+### The line the repair would have produced
+
+Narrowing the unit alone turns `### 一、` into a report of one character and `### Five、` into a
+report of none, and the error line was
+
+```
+docs/…:689: `…` -- 1 Han character(s) of prose: this repository's documents are written in English …
+```
+
+`、` is not a Han character. The sentence would have been false in the one place a reader goes to
+learn what was refused, and the summary (`N run(s) of Han prose`) would have been false for the same
+reason. This is the third appearance in three rounds of one shape -- the noun beside a number names
+one thing and the number counts another -- and it was caught the way the other two were: by writing
+the fixture for the neighbouring rule and reading what the line actually said.
+
+### The repair
+
+Three statements, each narrow:
+
+- `HEADING_PROSE` includes `\u3001`, because a heading writes `,` or `—` and the ideographic comma
+  is a trace of the numbering it was copied from rather than a mark this repository chose.
+- the error line says `N character(s) of prose`, which is what it counts in both positions: a run of
+  Han in a paragraph, a single Han character or a mark in a heading.
+- the summary says `run(s) of non-English prose`, because a heading can be refused for a mark that
+  is not in any script.
+
+### What it does not claim
+
+That every punctuation mark outside ASCII is a defect. Only this one is read, and only in a heading
+or after a chapter mark. A `—` and a `·` are separators three volumes chose deliberately and are
+left alone; the fixture asserts all three separators pass.
+
+## Finding 593 — a test proved a break by asserting a status that no implementation could raise
+
+`check-docs-language.test.ts` had this test, and its comment shows it was written to catch a real
+bug in its own fixture:
+
+```ts
+it('does not let a heading continue the row above it', () => {
+  const dir = treeOf({ 'docs/page.md': `# Page\n\n${HAN(4)}\n## ${HAN(4)}\n${HAN(4)}.\n` });
+  expect(run(dir).status).toBe(0);
+});
+```
+
+The rule under test is that a heading flushes the paragraph, so nothing joins across it. The
+assertion is that no run of eight was found. **That assertion is true whether the flush happens or
+not**: `## ` stands between the characters before it and the characters after it, and `#` is not
+Han, so no run can cross a heading in either implementation. The fixture is four characters, four
+characters and four characters, and eight is the threshold.
+
+### The reading that can fail
+
+The reader already publishes the witness for exactly this: `pairs`, the number of row breaks that
+fell inside a paragraph and were crossed by the join. Measured on the fixture:
+
+| implementation | paragraphs | `pairs` |
+| --- | --- | --- |
+| a heading flushes (the rule) | `[line 3]`, `[line 4]`, `[line 5]` | **0** |
+| a heading does not flush | `[line 3, line 4, line 5]` | **2** |
+
+So the test asserted the one number that cannot tell the two apart, and the number that can was
+printed beside it on every run.
+
+### The repair
+
+The test reads the witness, and the second half of the same statement comes free from finding 591's
+unit -- the heading is reported as itself, on its own line, four characters:
+
+```ts
+const report = proseReport(text);
+expect(report.pairs).toBe(0);
+expect(report.hits).toEqual([{ line: 4, text: HAN(4), length: 4 }]);
+```
+
+Under the old unit the second assertion would have been `[]`, which is why the first version of this
+test could not be written this way: the rule and its witness were both invisible, and `status` was
+the only number left.
+
+### What it does not claim
+
+That this was the only test in the suite whose assertion is satisfied by every implementation. It is
+the one a repaired reader exposed, on the round that changed the unit it reads in. Finding 594 is
+the census of the neighbouring shape and finds a different answer.
+
+## Finding 594 — the census of counting assertions is 240, and every one of them moves with its digit
+
+`O-085` was opened by finding 589 with a premise and no population: *the shape is a `toContain` of a
+count that a larger number's tail satisfies, and it is possible wherever a test reads a number out of
+a sentence -- the population is unknown.* This round measured it.
+
+### The population
+
+Every `toContain`/`toInclude` in `packages/core/test` and `packages/cli/test` whose literal argument
+begins with a digit, excluding the ones under `.not.` (a negation is satisfied by absence and cannot
+be tested this way):
+
+| | |
+| --- | --- |
+| test files | **268** |
+| `toContain`/`toInclude` with a literal argument | **2,736** |
+| ... whose literal begins with a digit | **249** |
+| ... not under `.not.` | **240** |
+| ... of those, a digit run followed by a word (a count and its label) | **211** |
+
+### The measurement
+
+Each of the 240 was mutated in place -- a `9` inserted before its first digit, so `1 open with a
+reason` became `91 open with a reason` -- and the test file was run. **240 red, 0 green.** No
+assertion in the suite is satisfied by a number it does not read: every one of them fails when the
+digits move.
+
+### What this does not answer, and why the entry stays open
+
+A substitution proves the assertion depends on its digits. It cannot prove the digits are the ones
+that belong there. Finding 589's assertion was `toContain('0 closed by a finding')` against a line
+that said `30 closed by a finding`; mutate it to `90 closed` and it goes red, because the line does
+not contain it -- and the assertion was still wrong, because its **subject** was the live list and
+the line counts the index and its volumes. That is a semantic question about one assertion at a
+time, and no substitution reaches it.
+
+So `O-085` is narrowed rather than closed: the population is known, none of it is empty, and what
+remains is the part a reader has to do. The structural repair -- reading a count as a number
+(`countIn`) rather than as a substring -- is what makes the shape impossible, and it is applied in
+the two places finding 589 repaired.

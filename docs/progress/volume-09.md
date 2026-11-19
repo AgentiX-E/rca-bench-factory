@@ -933,7 +933,7 @@ list the last report left is the corpus's telemetry: 19 of 30 cases carry no log
 span, and every gate was green about it. That number was not a defect. It was a sentence pretending
 to be one.
 
-### 一、an absence and an omission are the same bytes
+### One: an absence and an omission are the same bytes
 
 `logs` and `traces` are lists. A case with no line and a case nobody had filled in both hold nothing,
 so the readout printed `logs in 11 of 30, traces in 5 of 30` -- true, and about the wrong subject.
@@ -945,7 +945,7 @@ refusals in `fault/modality-evidence.ts`: `missing`, `both`, `empty`, `unreadabl
 share. An empty list is refused rather than read as a synonym, because it is the one spelling that
 can also mean "nobody filled this in".
 
-### 二、the five cases that looked like they had a line
+### Two: the five cases that looked like they had a line
 
 Five of the nineteen texts contain a word a keyword rule would have called log-shaped. Read one at a
 time, **one** turned out to carry a line and **two** turned out to repeat a declared number:
@@ -961,7 +961,7 @@ time, **one** turned out to carry a line and **two** turned out to repeat a decl
 The two refusals are finding 327's rule in a modality it had not been applied to: a number a
 declaration already holds does not become evidence by being written again in prose.
 
-### 三、six cases cross a call, and one of them quotes a duration
+### Three: six cases cross a call, and one of them quotes a duration
 
 Where a span pair would come from is measurable: a chain step whose two ends belong to services the
 graph connects with `calls`. Six of the twenty-five spanless cases do. Exactly one of their texts
