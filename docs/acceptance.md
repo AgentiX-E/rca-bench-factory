@@ -1234,7 +1234,9 @@ from an anecdote again.
   here` -- `v2.15`'s addendum, two entries with reasons -- is a record in **entries** form, and a
   section whose body is nothing but top-level bullets and their continuation lines, at least one of
   them an open entry with an unstruck headline, is a record whatever its heading says (finding 586).
-  One section of the corpus answers to it. A heading that begins with a list name and is none of them
+  Measured over the progress corpus: 1,311 level-2 and level-3 sections are named none of the
+  five, 202 of them hold an entry with a reason, and **one** holds no prose at column zero --
+  which is the one. A heading that begins with a list name and is none of them
   (`### Open`) is still **refused rather than read**, because the rename exists so that a reader who
   greps for what is open finds one list, and a body rule that adopted the old name would leave that
   enforced by nothing.

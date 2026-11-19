@@ -359,10 +359,10 @@ entries:
 
 | predicate over the progress corpus | sections |
 | --- | --- |
-| a bullet somewhere in the body carries `[open:` | 14 |
-| … and no prose starts at column zero | 4 |
-| … and at least one entry's headline is not struck | 1 |
-| … and it is named none of the five names | 1 (`### Not fixed here`) |
+| a level-2 or level-3 section whose name is none of the five | 1,311 |
+| … holds an entry that carries a reason | 202 |
+| … and holds no prose at column zero | 1 |
+| … and at least one of those entries is unstruck | 1 (`### Not fixed here`) |
 
 The strike test is the corpus's own definition of a closure (`CLOSED`, finding 458), so this is one
 predicate asked a second question rather than a second predicate.

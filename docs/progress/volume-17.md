@@ -2470,11 +2470,12 @@ recorded` sections paraphrase a closed entry, `### 一、The count was computed 
 defending` strikes the one it quotes, and two of `acceptance.md`'s examples are examples. Asked the
 question the name cannot lie about -- *is this section nothing but entries?* -- the answer is one:
 
-| predicate | sections |
+| predicate over the progress corpus | sections |
 | --- | --- |
-| `[open:` appears in a bullet somewhere in the body | 14 |
-| … and the section holds no prose at column zero | **1** |
-| … and at least one entry's headline is not struck | **1** (`### Not fixed here`, 2 entries) |
+| a level-2 or level-3 section whose name is none of the five | 1,311 |
+| … holds an entry that carries a reason | 202 |
+| … and holds no prose at column zero | **1** |
+| … and at least one of those entries is unstruck | **1** (`### Not fixed here`, 2 entries) |
 
 So the repair is not a sixth name -- finding 579 measured what a name table costs, and the corpus
 has already renamed this list twice. It is the property: **a section whose body is nothing but
@@ -2569,6 +2570,11 @@ diff is in git rather than in the corpus -- `O-084`.
    (refused: a shared reason is a placeholder), and one wrote a record whose items appear in no
    entry (refused: a residual a reader is not told about). Both are the arm working, on fixtures
    written by the round that was changing it.
+4. **The first draft of this section's own census mixed units.** It said "14 sections hold a reason,
+   4 hold no prose, 1 is a record" -- and 14 was a count of **heading names** while 4 was a count of
+   **sections**. The round that repaired a subtraction of two units had published one, in the table
+   it built to justify the repair. Taken again in one unit: 1,311 sections are named none of the
+   five, 202 of them hold an entry with a reason, and 1 holds no prose at column zero.
 
 ### 8. Falsification
 
@@ -2609,7 +2615,7 @@ The arm was restored byte for byte (`diff -q` against the backup) and the file i
 | the number line | **210** distinct numbers, dense: 94 in `v2` (`v2.06`..`v2.99`) and 116 in `v3` (`v3.00`..`v3.115`), one era boundary, one repeated number |
 | the index | **68,687 -> 68,617** bytes -- one entry out, one in, and the new one is shorter |
 | the record | **82,170 -> 84,152** bytes over 56 entries, in **two** files (49,545 + 34,607) |
-| the volumes | **17**, and this round is the sixth in `volume-17.md` (**182,385** bytes) |
+| the volumes | **17**, and this round is the sixth in `volume-17.md` (**182,945** bytes) |
 | the falsifications | nine edits, **thirty-five** reds |
 | gate sites / scripts / throws | **144** / **67 of 98** / **99** -- no new exit and no new script |
 | the budgets | **37** files state one -- unchanged: no test file was added |
