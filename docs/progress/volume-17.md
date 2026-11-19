@@ -2605,9 +2605,9 @@ The arm was restored byte for byte (`diff -q` against the backup) and the file i
 
 | item | value |
 | --- | --- |
-| `core` test suite | **257 files, 6684 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **261 files, 6871 tests passed** (as of this commit) |
+| `core` test suite | **257 files, 6684 tests passed** (at v3.116) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.116) |
+| repo test suite | **261 files, 6871 tests passed** (at v3.116) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6,672 -> 6,684, +12**: the addendum count, a number headed twice, a gap, the era boundary and an era that does not begin at `.00`, the addendum's record, and the entries body rule in five shapes |
 | the lists | `## Open` **28 -> 28** (one closed, one opened), `## Closed` **55 -> 56**, one space of **84** ids with none missing |
@@ -2628,3 +2628,180 @@ The arm was restored byte for byte (`diff -q` against the backup) and the file i
   so. `[open: eleven of the seventeen rounds that wrote none added an entry by their own ledger, and the arm reads neither the row nor the diff -- an entry carrying the round that raised it is the format change that would make this a rule]`
 - The structural rule reads a table's first column, so a record that reorders its columns is a record to a
   reader and not to the guard. `[open: none of the 47 records reorders its columns, so this is a floor -- the widening costs a scan of every table in the corpus rather than of the ones whose first cell is already a priority]`
+
+## v3.117 · the line named one authority and counted three, and a sentence ended inside a version number
+
+`O-084` asked for a cross-tab of what each round closed, which needs a closure's finding and a
+finding's round. Reading the closures to build it found three defects, and none of them was the
+cross-tab: the arm's summary line, the window it reads a citation through, and a test that had been
+asserting a zero for forty rounds.
+
+### 1. The counter stood for three authorities and the line printed one (finding 588)
+
+The summary line, every run, one per document:
+
+```
+check-open-list: OK (601 entry(ies) across 221 section(s) of docs/progress.md and its volumes: 571 open with a reason, 30 closed by a finding)
+check-open-list: OK (56 entry(ies) across 2 section(s) of docs/progress/closed.md and docs/progress/closed-02.md: 0 open with a reason, 56 closed by a finding)
+```
+
+`closed` is one counter and one branch, and that branch accepts **three** authorities -- the guard's
+own docstring has said so since the round that tightened the closure rule:
+
+| authority | how a closure says it | record | index and volumes |
+| --- | --- | --- | --- |
+| a finding | `**Closed by finding 573.**` | **43** | **29** |
+| a round | `**Closed by v3.78**`, `**Closed by Pass 15**` | **10** | **0** |
+| not a finding | `**Closed without a finding:** …` | **3** | **1** |
+| | | **56** | **30** |
+
+One pattern matched all three (`finding\s+\d+|Pass\s+\d+|v\d+\.\d+`), so the counter could only be the
+count of the three together -- and the noun beside it was the name of one. The three denials are
+`O-032`, `O-033` and `O-036`, whose own words are *closed without a finding*, and the line counted them
+into "closed by a finding". Over both documents: **73 findings, 9 rounds, 4 denials**, published as
+**86 closed by a finding**.
+
+### 2. Why two numbers were checked and the noun was not
+
+The suite held this line in two places, and both questions are the ones a wrong noun survives:
+`entries` is asserted to be `open + closed`, which is arithmetic and is exactly what the line gets
+right, and `closed` is asserted to be greater than zero, which is non-vacuity. A count can be
+arithmetically perfect and published under the wrong name. Neither assertion can see a noun, which is
+why the noun was the one thing in the line nothing asked about.
+
+The repair decides the authority where the closure is accepted, in the order the docstring states it:
+a **finding** outranks everything, because it is the only authority a reader can check against a
+heading, and a round named in the same sentence (`Closed at v3.97 by finding 540`) is where the
+finding was filed; a **denial** outranks a round, because it is the writer's explicit sentence and a
+version in the sentence after it is not a closure. The total is the **sum** of the three rather than a
+fourth count beside them, so a total that disagreed with its parts cannot be produced:
+
+```
+... 30 closed (29 by a finding, 0 by a round, 1 without one)
+... 56 closed (44 by a finding, 9 by a round, 3 without one)
+```
+
+### 3. The sentence ended at the period in `v3.81` (finding 590)
+
+The fixture that was written for the precedence above -- `Closed at v3.97 by finding 540` -- went red
+on its first run, and for a reason the round was not looking for. The citation pattern was
+
+```js
+const CITED = /(?:Closed|Narrowed|Retracted)\b[^.]{0,120}?\b(?:finding\s+\d+|Pass\s+\d+|v\d+\.\d+)/;
+```
+
+and `[^.]` is not "one sentence", it is "no full stop", in a corpus whose nouns include version
+numbers. `O-057` closes like this:
+
+```
+- O-057 · **~~The modality comparison holds two maps of every row's signature.~~ Closed at v3.81 by measuring
+  it and replacing the shape (finding 511).**
+```
+
+**58** characters from the verb to the citation, half the window, and the window could not reach it:
+the first `.` on the way is the one in `v3.81`. The arm read what it had, found no finding in it, and
+filed the closure under the **round** it had read. Every bullet of the record, the index and the
+seventeen volumes -- **797** of them -- was read twice, once with each window: exactly **one** reads
+differently, and it is `O-057`.
+
+The boundary is stated positively now -- a period **followed by whitespace** ends the sentence, and a
+period between digits does not:
+
+```js
+const CLAUSE = String.raw`(?:(?!\.\s)[\s\S])`;
+```
+
+`[\s\S]` rather than `.` because a citation wraps (`**Closed by\nfinding 170**` is the shape eleven
+entries use), and the lookahead is asserted at every position, so the lazy count may cross a version
+and may not cross a full stop. The split moved **43 -> 44** findings and **10 -> 9** rounds.
+
+### 4. The zero that was the last digit of thirty (finding 589)
+
+The repair of the noun was refused by a test in this arm:
+
+```ts
+expect(index).toContain('0 closed by a finding');
+```
+
+under the comment *"every entry it holds is open … A zero here is the split"*. The line says **30
+closed by a finding**, and `30 closed by a finding` contains `0 closed by a finding`. The assertion had
+passed for every round since it was written; the noun was what exposed it, because the noun changed and
+the substring vanished.
+
+The comment was wrong twice: the line is the index **and its seventeen volumes**, not the live list,
+and the volumes' records close thirty entries -- the count was never meant to be zero. So it was a
+claim about the wrong subject, satisfied by the right number's tail. A count in a sentence is now read
+as the digits between a delimiter and their label:
+
+```ts
+const found = new RegExp(`(?:^|[^\\d])(\\d+) ${escaped}`).exec(line);
+```
+
+which reads 30 out of ` 30 closed` and 130 out of ` 130 closed`, and can read neither as a zero.
+
+### 5. This round's own three defects
+
+1. **The second reading was copied from the defect it was meant to catch.** `authorityTally()` -- the
+   corpus reading that holds the published split to the record's bullets -- was written with `[^.]`,
+   the window section 3 removed. After the repair the test read **43 / 10 / 3** while the guard printed
+   **44 / 9 / 3**, and went red on the shipped corpus: a second reading that copies the first one's
+   rule agrees with it about its defects, which is the reason this file's header says there is no copy
+   of the guard's regexes in it.
+2. **A fixture written for one rule found another.** The precedence fixture (`Closed at v3.97 by finding
+   540`) failed as a *finding* case and the round went looking for why. Section 3 is the answer, and it
+   was found by a test that was not about it.
+3. **The ad-hoc census read the wrong half of a bullet, twice.** The first classification pass counted
+   **17** findings in the record against the **44** it holds, because it read each bullet's first line
+   and the citations are on the continuation lines -- the same class of error as finding 590, one level
+   up: a reading bounded by a line break. And the first `countIn` would have taken `closed (` as a
+   regex group, which the round escaped before it was ever run.
+
+### 6. Falsification
+
+Nine edits, seventy-eight reds:
+
+| edit | reds |
+| --- | --- |
+| the three authorities collapse into the first | 11 |
+| a denial falls through to the round | 9 |
+| a denial is read as a round, because the round is asked first | 7 |
+| the window stops at any period again | 8 |
+| the total is one authority's count again | 8 |
+| a closure that names nothing is accepted | 9 |
+| the line publishes the total and no split | 14 |
+| a count is read as a substring again | 6 |
+| the corpus reading keeps the old window | 6 |
+
+Both files were restored byte for byte (`diff -q` against the backup), and the arm is **103** tests.
+
+### Readings
+
+> Ledger for `v3.117`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **257 files, 6691 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **261 files, 6878 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
+| new tests | **6684 -> 6691, +7**: the three authorities in one document, a finding named beside a round, a denial named beside a round, a closure that names nothing, the shipped split against the record's bullets, a citation behind a version, and a citation in the sentence after the closure |
+| the lists | `## Open` **28 -> 29** (one opened, none closed), `## Closed` **56 -> 56**, one space of **85** ids with none missing |
+| the records read | **220 -> 221** sections: **195 -> 196** under a round, **25** under none |
+| the population | **212** round(s) + **1** addendum(s), **17** of them wrote none |
+| the number line | **211** distinct numbers, dense: 94 in `v2`, 117 in `v3` (`v3.00`..`v3.117`) |
+| the split | **44 / 9 / 3** of 56 in the record, **29 / 0 / 1** of 30 in the index and volumes -- was `56` and `30`, both under one authority's name |
+| the index | **68,617 -> 69,456** bytes -- one entry in, and the stamp of the round that raised it |
+| the record | **84,152** bytes over 56 entries, in **two** files |
+| the volumes | **17**, and this round is the seventh in `volume-17.md` (**193,493** bytes of 200,000) |
+| the falsifications | nine edits, **seventy-eight** reds |
+| gate sites / scripts / throws | **144** / **67 of 98** / **99** -- no new exit and no new script |
+| the budgets | **37** files state one -- unchanged: no test file was added |
+| LLM calls | **0** |
+
+### Left open
+
+- The arm cannot see what a round changed, so a round that raises an entry writes no record and nothing says
+  so. `[open: the closure side of this log names a round; the opening side names nothing, so "which round raised this" is a question the format cannot be asked -- and eleven of seventeen rounds are the evidence that it is asked of a reader instead]`
+- The structural rule reads a table's first column, so a record that reorders its columns is a record to a
+  reader and not to the guard. `[open: a record is found by the position of a cell rather than by the name in it, and 47 of 47 do not reorder -- a floor that a corpus of 555 tables could only be widened against by reading every one of them]`
+- The suite's substring assertions were never censused. `[open: 589 read the two this arm had, and the shape is a count quoted by a toContain that a larger number's tail satisfies -- the population is every assertion in the suite that quotes a number, and no one has counted it]`

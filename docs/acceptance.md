@@ -1290,6 +1290,39 @@ from an anecdote again.
   five say nothing (finding 587); the arm reads none of that, because it sees the list as it stands and
   not what a round did to it.
 
+### The authority a closure names, and the line that publishes it (v3.117)
+
+- **A closure names one of three authorities, and the summary counts which.** A closure may cite a
+  **finding** (`Closed by finding 573`), a **round** (`Closed by v3.78`, `Closed by Pass 15`, because
+  this log names rounds in two eras), or say it was **not a finding** (`Closed without a finding: …`,
+  `Closed in this pass …`). The line publishes the three and their total: `56 closed (44 by a finding,
+  9 by a round, 3 without one)`. It used to publish one number under one authority's name, and
+  thirteen of the record's fifty-six closures do not name a finding -- three of them say so in their
+  own words (finding 588).
+- **A finding outranks a round, and a denial outranks a round.** `Closed at v3.97 by finding 540` is
+  one closure with two names in it: the round is where the finding was filed and the finding is what a
+  reader can check against a heading, so it counts as a finding. `Closed without a finding: …` is the
+  writer's explicit sentence, and a version number in the sentence that follows it is not a closure.
+- **The total is the sum of the three.** Not a fourth counter beside them: a total accumulated
+  separately can disagree with its parts, and a total summed from them cannot.
+- **What is not claimed.** That the third authority is true. An entry that says no finding closed it
+  is reporting on work outside this tree -- a workflow, a scratch helper, a run -- and nothing here can
+  check that. What is claimed is that each number names the authority it counted.
+
+### A closure's sentence, and the period a version number carries (v3.117)
+
+- **The citation has to be in the closure's own sentence, and a sentence ends at a period followed by
+  whitespace.** `O-057` closes `Closed at v3.81 by measuring it and replacing the shape (finding 511)`
+  -- 58 characters, inside any window, and unreadable to the rule that excluded the character `v3.81`
+  contains. The window stops at `\.\s` now, which is what "one sentence" was always meant to be, and it
+  is measured over 797 bullets with exactly one reading differently (finding 590).
+- **A count in a sentence is read with a boundary, in a gate and in a test.** `0 closed by a finding`
+  is a substring of `30 closed by a finding`, and an assertion of the first passed for every round
+  while the line said the second (finding 589). A number in prose is the digits between a delimiter and
+  their label: `countIn(line, 'closed (')` reads the number that stands there, or fails.
+- **What is not claimed.** That every test which reads a count out of a sentence has a boundary. This
+  round fixed the two the arm had and did not census the suite for the shape.
+
 ### A record may not be the only place a residual lives (v3.65)
 
 - **The newest round's record is read against the live list.** Every row's `item` cell must quote an

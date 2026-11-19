@@ -268,6 +268,83 @@ function listOnlyRecords(): number {
 }
 
 /**
+ * A count read out of a sentence, with the boundary in front of it (finding 589).
+ *
+ * ## The zero that was a digit of thirty
+ *
+ * The test below this helper asserted `toContain('0 closed by a finding')` and its comment said
+ * the live list closes nothing. The line it read says **30** closed, and `30 closed by a finding`
+ * contains `0 closed by a finding`, so the assertion passed from the round that wrote it until
+ * the round that changed the noun beside it -- it was a claim about a number that could not
+ * distinguish its subject from the last digit of another.
+ *
+ * A count in a sentence is the number between a delimiter and its label, so this reads one: a
+ * digit run that is not preceded by a digit, and the label right after it. `30 closed` reads
+ * thirty and `130 closed` reads a hundred and thirty, which is the property a bare `toContain`
+ * cannot have.
+ *
+ * @param line one line of a gate's output
+ * @param label the words the count stands in front of
+ * @returns the number, asserted to be there rather than defaulted
+ */
+function countIn(line: string, label: string): number {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const found = new RegExp(`(?:^|[^\\d])(\\d+) ${escaped}`).exec(line);
+  expect(found, `no count stands in front of "${label}" in: ${line}`).not.toBeNull();
+  return Number((found ?? [])[1]);
+}
+
+/**
+ * The record's closures, split by the authority each bullet names (finding 588).
+ *
+ * ## What this is, and what it is not
+ *
+ * It is the record read a second time, over the one file the closures live in, and it exists to
+ * hold the published split to the corpus. It is **not** the definition of the rule: the three
+ * fixtures in the describe below state the rule as behaviour -- which authority wins when a
+ * sentence names two, and what "without a finding" outranks -- and they are what goes red if the
+ * precedence moves. What this side adds is the count, which no fixture can state: the record's
+ * 56 closures are 43 findings, 10 rounds and 3 denials, and a line that printed one number under
+ * one authority's name could not be asked whether that was still true.
+ *
+ * The window and the precedence are deliberately the same words as the guard's, because a second
+ * reading of a rule that disagreed with the first would be a second rule. The division is:
+ * fixtures pin the rule, this pins the numbers.
+ */
+function authorityTally(): { finding: number; round: number; none: number } {
+  const tally = { finding: 0, round: 0, none: 0 };
+  // A period followed by whitespace ends the sentence; the one inside `v3.81` does not (finding
+  // 590). Written as the same lookahead the guard uses, for the reason the docstring above gives.
+  const closure = String.raw`(?:Closed|Narrowed|Retracted)\b(?:(?!\.\s)[\s\S]){0,120}?`;
+  for (const file of shippedRecord()) {
+    let bullet: string | null = null;
+    const flush = () => {
+      if (bullet === null) return;
+      const text = bullet;
+      bullet = null;
+      if (!/~~/.test(text.split('\n')[0] ?? '')) return;
+      if (new RegExp(`${closure}\\bfinding\\s+\\d+`).test(text)) tally.finding += 1;
+      else if (/Closed without a finding|Closed in this pass/.test(text)) tally.none += 1;
+      else if (new RegExp(`${closure}\\b(?:Pass\\s+\\d+|v\\d+\\.\\d+)`).test(text)) tally.round += 1;
+    };
+    for (const line of file.text.split('\n')) {
+      if (/^- /.test(line)) {
+        flush();
+        bullet = line;
+        continue;
+      }
+      if (/^\s+\S/.test(line) && bullet !== null) {
+        bullet += `\n${line}`;
+        continue;
+      }
+      if (/^\S/.test(line)) flush();
+    }
+    flush();
+  }
+  return tally;
+}
+
+/**
  * There was a copy of the guard's two regexes here, and five tests drove it.
  *
  * It is gone, and finding 203 is why: the guard's closure rule was `/~~|Closed by
@@ -293,7 +370,7 @@ describe('docs · the shipped list, as the guard reads it', () => {
     // instead held to the document's own headings, counted here from the file, and the
     // entry count to the two parts it is made of.
     const summary = shipped.stdout.match(
-      /check-open-list: OK \((\d+) entry\(ies\) across (\d+) section\(s\) of docs\/progress\.md(?: and its volumes)?: (\d+) open with a reason, (\d+) closed by a finding\)/,
+      /check-open-list: OK \((\d+) entry\(ies\) across (\d+) section\(s\) of docs\/progress\.md(?: and its volumes)?: (\d+) open with a reason, (\d+) closed \((\d+) by a finding, (\d+) by a round, (\d+) without one\)\)/,
     );
     expect(summary, `the guard's summary changed shape: ${shipped.stdout}`).not.toBeNull();
     const numbers = (summary ?? []).slice(1).map(Number);
@@ -301,6 +378,14 @@ describe('docs · the shipped list, as the guard reads it', () => {
     const sections = numbers[1] ?? 0;
     const open = numbers[2] ?? 0;
     const closed = numbers[3] ?? 0;
+    // The three the line separates, and the sum it publishes as their total (finding 588). The
+    // arithmetic below is what makes the last one a reading rather than a fourth number: the
+    // guard sums the three, so a total that disagreed with them would be a defect on its own,
+    // and a noun that named one of the three would be invisible to this test for as long as the
+    // arithmetic held -- which is exactly how long it was invisible.
+    const byFinding = numbers[4] ?? 0;
+    const byRound = numbers[5] ?? 0;
+    const withoutOne = numbers[6] ?? 0;
     // The corpus, not one path: the lists moved into the volumes with the rounds
     // they belong to (finding 197), and a test that counted headings in the index
     // alone would compare the guard's 47 against the index's 1.
@@ -364,8 +449,13 @@ describe('docs · the shipped list, as the guard reads it', () => {
     expect(corpus.tables).toBeGreaterThan(25);
     expect(corpus.rows).toBeGreaterThan(corpus.tables);
     // Non-vacuity in the other direction: the shipped document has at least one
-    // closure, so "closed by a finding" is a reading rather than a constant zero.
+    // closure, so the count is a reading rather than a constant zero.
     expect(closed).toBeGreaterThan(0);
+    // And the total is the three the line names, added up (finding 588). This is the one
+    // relationship the old line could not be asked: it published a single number under one
+    // authority's name, so `closed` was checked for being positive and for summing with `open`,
+    // and neither question is about what it counts.
+    expect(byFinding + byRound + withoutOne, 'the three authorities do not add up to the total').toBe(closed);
   });
 
   it('declares the script it spawns, because gate-sites rule 7 reconciles it', () => {
@@ -582,7 +672,7 @@ describe('docs · the live list says when it was read, and how much it holds', (
     ].join('\n');
     const r = runOn(indexOpen([quoted]) + closedSection([CLOSED_ENTRY], 2));
     expect(r.code).toBe(0);
-    expect(r.out).toContain('1 open with a reason, 1 closed by a finding');
+    expect(r.out).toContain('1 open with a reason, 1 closed (1 by a finding, 0 by a round, 0 without one)');
   });
 
   it('reads the reason of such an entry, so a placeholder inside one is still refused', () => {
@@ -648,7 +738,7 @@ describe('docs · the headline and the reason have to agree about whether an ent
     );
     const r = runOn(closedSection([whole]) + indexOpen([OPEN_ENTRY], 2));
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('1 open with a reason, 1 closed by a finding');
+    expect(r.out).toContain('1 open with a reason, 1 closed (1 by a finding, 0 by a round, 0 without one)');
   });
 
   it('refuses a closed entry that still carries a reason a reader would act on', () => {
@@ -676,7 +766,97 @@ describe('docs · the headline and the reason have to agree about whether an ent
     ].join('\n');
     const r = runOn(indexOpen([quoted]) + closedSection([CLOSED_ENTRY], 2));
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('1 open with a reason, 1 closed by a finding');
+    expect(r.out).toContain('1 open with a reason, 1 closed (1 by a finding, 0 by a round, 0 without one)');
+  });
+});
+
+/**
+ * A closure names one of three authorities, and the line now says which (finding 588).
+ *
+ * The rule accepted all three from the round that wrote it; the population line published the
+ * total as *"closed by a finding"*, which is one of the three names for a set of three things.
+ * The four fixtures state the precedence, and the last test holds the shipped split to the
+ * record's own bullets.
+ */
+describe('docs · a closure names one of three authorities, and the line says which', () => {
+  const BY_ROUND = '- ~~An old item.~~ **Closed by v3.78**, which is the case and the measurement.';
+  const WITHOUT = '- ~~An old item.~~ **Closed without a finding**: the fix was in a scratch helper outside this tree.';
+
+  it('counts the three apart, and publishes each beside the total', () => {
+    const r = runOn(indexOpen([OPEN_ENTRY], 1) + closedSection([CLOSED_ENTRY, BY_ROUND, WITHOUT], 2));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 open with a reason, 3 closed (1 by a finding, 1 by a round, 1 without one)');
+  });
+
+  it('counts an entry once, under the finding, when its sentence names a round as well', () => {
+    // `Closed at v3.97 by finding 540` is one closure with two names in it. The round is where the
+    // finding was filed; the finding is what a reader can check against a heading, so it wins.
+    const both = '- ~~An old item.~~ **Closed at v3.97 by finding 540**, which read the row it refused.';
+    const r = runOn(indexOpen([OPEN_ENTRY], 1) + closedSection([both], 2));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 closed (1 by a finding, 0 by a round, 0 without one)');
+  });
+
+  it('reads a citation that arrives after a version, because a version\u2019s period is not a full stop', () => {
+    // O-057's own sentence: the closure names the round it happened in and the finding it was,
+    // and the finding is 48 characters past the verb -- behind a `.` that belongs to `v3.81`. The
+    // window stopped there and the arm filed the closure under the round (finding 590).
+    const afterVersion =
+      '- ~~An old item.~~ **Closed at v3.81 by measuring it and replacing the shape (finding 511).** ' +
+      'The reading came from a probe that names the module it measured.';
+    const r = runOn(indexOpen([OPEN_ENTRY], 1) + closedSection([afterVersion], 2));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 closed (1 by a finding, 0 by a round, 0 without one)');
+  });
+
+  it('still refuses a citation in the sentence after the closure', () => {
+    // The other side of the same boundary, and the reason the window exists at all: a closure
+    // followed by a sentence about some other finding does not cite it.
+    const later =
+      '- ~~An old item.~~ **Closed by the workflow.** Finding 150 later found something else in the ' +
+      'same file, and that is a different item.';
+    const r = runOn(indexOpen([OPEN_ENTRY], 1) + closedSection([later], 2));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('does not say what closed it');
+  });
+
+  it('reads "without a finding" as the denial it is, and not as the round named after it', () => {
+    // The third authority is the writer's own sentence, and a version in the sentence that
+    // follows it is not a closure. Reading the two in the other order made the record's three
+    // denials into three rounds -- the same error as the line's noun, one level down.
+    const denial =
+      '- ~~An old item.~~ **Closed without a finding**: the fix landed in a scratch helper outside ' +
+      'this tree, and v3.121 will need it again.';
+    const r = runOn(indexOpen([OPEN_ENTRY], 1) + closedSection([denial], 2));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 closed (0 by a finding, 0 by a round, 1 without one)');
+  });
+
+  it('still refuses a closure that names none of the three', () => {
+    const bare = '- ~~An old item.~~ The consumer arrived.';
+    const r = runOn(indexOpen([OPEN_ENTRY], 1) + closedSection([bare], 2));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('a closed entry is struck through and does not say what closed it');
+  });
+
+  it('prints the split the record\u2019s own bullets give, and all three parts are non-zero', () => {
+    const shipped = spawnSync('node', [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
+    expect(shipped.status, `${shipped.stdout}${shipped.stderr}`).toBe(0);
+    const line = shipped.stdout.split('\n').find((one) => one.includes('of docs/progress/closed'));
+    expect(line, `the guard printed no line for the record: ${shipped.stdout}`).toBeDefined();
+    const derived = authorityTally();
+    // Non-vacuity on all three: a corpus with no round-closed entry or no denial would let the
+    // split be printed correctly while saying nothing, and the round that found this one is the
+    // only reason to believe three authorities is not one authority written three ways.
+    expect(derived.finding, 'the record cites no finding, so the split is not a reading').toBeGreaterThan(0);
+    expect(derived.round, 'the record names no round, so the second authority is untested here').toBeGreaterThan(0);
+    expect(derived.none, 'the record holds no denial, so the third authority is untested here').toBeGreaterThan(0);
+    expect(line).toContain(
+      `${String(derived.finding)} by a finding, ${String(derived.round)} by a round, ${String(derived.none)} without one`,
+    );
+    expect(countIn(line ?? '', 'closed ('), 'the total is not the three the line names').toBe(
+      derived.finding + derived.round + derived.none,
+    );
   });
 });
 
@@ -1055,16 +1235,16 @@ describe('docs · a section that is only entries is a record, whatever its headi
     expect(r.out).toContain('0 record(s): 0 under a round and 0 under none');
   });
 
-  it('reads the shipped corpus as 220 records, with the addendum counted in', () => {
-    // The shipped reading, and the two rounds it carries: v3.115 found 22 records under two names the
+  it('reads the shipped corpus as 221 records, with the addendum counted in', () => {
+    // The shipped reading, and the rounds it carries: v3.115 found 22 records under two names the
     // guard did not read (218 -> its own), v3.116 found the addendum's record under a name and a form
-    // it did not read (219), and this round's own record makes 220. The rounds are **211** and the
-    // addendum is one: the line printed `211 round(s)` and `18 of them wrote none` while subtracting a
-    // count of names from a count of headings (finding 585).
+    // it did not read (219), v3.117's record makes 220 and this round's makes 221. The rounds are
+    // **212** and the addendum is one: the line printed `211 round(s)` and `18 of them wrote none`
+    // while subtracting a count of names from a count of headings (finding 585).
     const shipped = spawnSync('node', [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
     expect(shipped.status, shipped.stdout + shipped.stderr).toBe(0);
     expect(shipped.stdout).toContain(
-      '220 record(s): 195 under a round and 25 under none; 211 round(s) + 1 addendum(s), 17 of them wrote none',
+      '221 record(s): 196 under a round and 25 under none; 212 round(s) + 1 addendum(s), 17 of them wrote none',
     );
   });
 });
@@ -1492,7 +1672,8 @@ describe('docs · the live list holds work, the record holds closures, and neith
       .split('\n')
       .find((one) => one.includes('of docs/progress/closed'));
     expect(line, `the guard printed no line for the record: ${shipped.stdout}`).toBeDefined();
-    expect(line).toContain(`0 open with a reason, ${closures} closed by a finding`);
+    expect(line).toContain(`0 open with a reason, ${String(closures)} closed (`);
+    expect(countIn(line, 'closed ('), 'the total the line prints is not the bullets the record holds').toBe(closures);
     // And every file of the set is named in that one line: a summary that counted a file it did not
     // name would let a reader check the total against the wrong file.
     for (const file of record) expect(line).toContain(file.name);
@@ -1502,7 +1683,15 @@ describe('docs · the live list holds work, the record holds closures, and neith
     // it rather than inferred from a green build.
     const index = shipped.stdout.split('\n').find((one) => one.includes('of docs/progress.md and its volumes:'));
     expect(index, `the guard printed no line for the live list: ${shipped.stdout}`).toBeDefined();
-    expect(index).toContain('0 closed by a finding');
+    // This assertion used to read `toContain('0 closed by a finding')`, and its comment said the
+    // live list closes nothing. Both were wrong: the line is the index **and its volumes**, the
+    // volumes' records close thirty, and the zero matched the last digit of that thirty (finding
+    // 589). What is true of this line is its arithmetic, which is what is read now, and the
+    // closures it counts are held to the bullets the volumes hold just below.
+    const indexLine = index ?? '';
+    expect(countIn(indexLine, 'entry(ies)'), 'the parts do not add up to the whole').toBe(
+      countIn(indexLine, 'open with a reason') + countIn(indexLine, 'closed ('),
+    );
   });
 
   it('names the record from the index, so a closure is one link away from the list that closed it', () => {
@@ -1718,7 +1907,7 @@ describe('docs · the record is a set of files, and the set has to be complete b
     const r = runOnRecord({ 'closed.md': recordOf(2, 2), 'closed-02.md': recordOf(4, 2) }, indexOne());
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain('closed.md and ');
-    expect(r.out).toContain(': 0 open with a reason, 4 closed by a finding');
+    expect(r.out).toContain(': 0 open with a reason, 4 closed (4 by a finding, 0 by a round, 0 without one)');
     expect(r.out).toContain('5 entr(ies) with ids 1..5, and none is missing');
   });
 

@@ -362,8 +362,61 @@ function continuationBoundary(text, from, first) {
  * claim is about.
  */
 const CLOSED = /~~/;
-const CITED = /(?:Closed|Narrowed|Retracted)\b[^.]{0,120}?\b(?:finding\s+\d+|Pass\s+\d+|v\d+\.\d+)/;
-const UNCITED = /(?:Closed without a finding|Closed in this pass)[\s\S]{40,}/;
+/**
+ * The window between a closure's verb and its citation: one sentence (finding 590).
+ *
+ * It was `[^.]{0,120}?`, and a period is not what ends a sentence here: it is a character that
+ * `v3.81` contains. `O-057` closes with **Closed at v3.81 by measuring it and replacing the shape
+ * (finding 511)** -- fifty-eight characters between the verb and the citation, inside any sane
+ * window, and unreadable to a pattern that stops at the first `.` because the first `.` is the
+ * version's. The arm filed that closure under a **round**, and the round's own number is what it
+ * read.
+ *
+ * So the boundary is stated positively: a **period followed by whitespace** ends the sentence,
+ * which is what the old rule was reaching for, and a period between digits does not. The class is
+ * `[\s\S]` rather than `.` because a citation wraps -- `**Closed by\nfinding 170**` is the shape
+ * eleven entries of this corpus use -- and the lookahead is asserted at every position, so the
+ * lazy count can cross a version but not a full stop.
+ */
+const CLAUSE = String.raw`(?:(?!\.\s)[\s\S])`;
+const BY_FINDING = new RegExp(String.raw`(?:Closed|Narrowed|Retracted)\b${CLAUSE}{0,120}?\bfinding\s+\d+`);
+const BY_ROUND = new RegExp(String.raw`(?:Closed|Narrowed|Retracted)\b${CLAUSE}{0,120}?\b(?:Pass\s+\d+|v\d+\.\d+)`);
+const WITHOUT_FINDING = /(?:Closed without a finding|Closed in this pass)[\s\S]{40,}/;
+
+/**
+ * Which of the three authorities closed an entry, and why the arm has to know.
+ *
+ * ## The line said "by a finding" and counted three things (finding 588)
+ *
+ * The docstring above names three authorities and the rule accepted all three, because a
+ * single pattern matched them: `finding\s+\d+|Pass\s+\d+|v\d+\.\d+`. The population line
+ * then published the total as *"N closed by a finding"* -- one noun for a set it had just
+ * decided not to separate. On the shipped corpus the noun is false for **13 of 56**:
+ * ten closures name a round and three say, in the corpus's own words, `Closed without a
+ * finding`. The record of closures was the one place the difference was visible, because
+ * a reader of `closed.md` reads each sentence; the line was the one place it was not.
+ *
+ * So the three are decided here, in the order the docstring states them, and the caller
+ * counts which one answered. **A finding outranks everything**: an entry that names one
+ * has a reader that can check the citation against a heading, and a round named in the
+ * same sentence ("Closed at v3.97 by finding 540") is where it was filed rather than what
+ * closed it. **"Without a finding" outranks a round**, because it is the writer's
+ * explicit denial and a version number in the sentence that follows it ("the fix was in
+ * a scratch helper outside this tree, and v3.121 will need it again") is not a closure.
+ *
+ * The arm cannot check that the third authority is *true* -- a closure that says no
+ * finding closed it is reporting on work outside this tree -- and it does not pretend to:
+ * what it can check is that the published number names the authority it counted.
+ *
+ * @param {string} item one bullet, continuation lines included
+ * @returns {'finding' | 'round' | 'none' | null} which authority, or `null` for none
+ */
+function closureAuthority(item) {
+  if (BY_FINDING.test(item)) return 'finding';
+  if (WITHOUT_FINDING.test(item)) return 'none';
+  if (BY_ROUND.test(item)) return 'round';
+  return null;
+}
 
 /**
  * The entry's own reason, and why it is the **last** marker rather than the first.
@@ -1149,7 +1202,11 @@ function check() {
     const reasons = new Map();
     const live = [];
     let total = 0;
-    let closed = 0;
+    // Three counts and not a running total, because the line below publishes three numbers
+    // and `closed` is the sum of them rather than a fourth reading of the same bullets
+    // (finding 588). A total accumulated beside three counters can disagree with them; a
+    // total summed from them cannot, and the shipped corpus is where a reader can check it.
+    const closures = { finding: 0, round: 0, none: 0 };
     let sectionsSeen = 0;
     let headings = 0;
     let labelled = files[0].label;
@@ -1474,8 +1531,9 @@ function check() {
             );
             continue;
           }
-          if (CITED.test(item) || UNCITED.test(item)) {
-            closed += 1;
+          const authority = closureAuthority(item);
+          if (authority !== null) {
+            closures[authority] += 1;
             continue;
           }
           problems.push(
@@ -1540,12 +1598,18 @@ function check() {
       );
       continue;
     }
+    // The sum, not a fourth count: `closed` is arithmetic over the three the rule separates,
+    // and the parentheses after it name each one. A line that published the total alone had
+    // to borrow one authority's name for it, and 13 of the record's 56 closures do not name
+    // a finding (finding 588).
+    const closed = closures.finding + closures.round + closures.none;
     console.log(
       `check-open-list: OK (${total} entry(ies) across ${sectionsSeen} section(s) of ${nameOf(
         doc,
         files,
         labelled,
-      )}: ${total - closed} open with a reason, ${closed} closed by a finding)`,
+      )}: ${total - closed} open with a reason, ${closed} closed (${String(closures.finding)} by a ` +
+        `finding, ${String(closures.round)} by a round, ${String(closures.none)} without one))`,
     );
     stampChecks({ live, rounds, problems });
   }

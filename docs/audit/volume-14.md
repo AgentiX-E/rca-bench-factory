@@ -1,6 +1,6 @@
 # Audit · volume 14
 
-Findings 579–587, from the rounds recorded in `progress/volume-17.md` as `v3.115` and `v3.116`.
+Findings 579–590, from the rounds recorded in `progress/volume-17.md` as `v3.115`, `v3.116` and `v3.117`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -416,3 +416,160 @@ this round could take.
 That the eleven are defects to repair. Their records are frozen and nothing may append to them. What it
 claims is narrower and about the arm: the number it printed as a reading was, for eleven of seventeen,
 a report of something absent that the round itself says was there.
+
+## Finding 588 — the line said "by a finding" and counted three authorities
+
+`check-open-list.mjs` closes every run with a population line, one per document it reads:
+
+```
+check-open-list: OK (601 entry(ies) across 221 section(s) of docs/progress.md and its volumes:
+                  571 open with a reason, 30 closed by a finding)
+check-open-list: OK (56 entry(ies) across 2 section(s) of docs/progress/closed.md and
+                  docs/progress/closed-02.md: 0 open with a reason, 56 closed by a finding)
+```
+
+`closed` is a single counter, incremented by one branch, and that branch accepts **three** authorities.
+The guard's own docstring has said so since the round that tightened the rule: a closure may name a
+**finding** (`Closed by finding 170`), a **round** (`Closed by Pass 15`, `Closed by v3.78`, because this
+log names rounds in two eras), or **explicitly not a finding** (`Closed without a finding: …`,
+`Closed in this pass …`). One pattern matched all three -- `finding\s+\d+|Pass\s+\d+|v\d+\.\d+` -- so
+the counter could only ever be the count of the three together, and the noun beside it was the name of
+one.
+
+Read over the record, the noun is false for **thirteen of fifty-six**:
+
+| authority | how the record says it | closures |
+| --- | --- | --- |
+| a finding | `**Closed by finding 573.**` | **43** |
+| a round | `**Closed by v3.78**`, `**Closed by Pass 15**` | **10** |
+| not a finding | `**Closed without a finding:** the fix was in a scratch helper outside this tree` | **3** |
+| | | **56** |
+
+The three denials are `O-032`, `O-033` and `O-036`, and they are the clearest evidence: their own words
+are *"closed without a finding"*, and the line counted them into "closed by a finding". The index's
+line has the same shape and one instance -- `Closed in this pass by the run itself` in `volume-03.md` --
+so the whole corpus is **73 findings, 9 rounds and 4 denials**, published as **86 closed by a finding**.
+
+### Why nothing went red
+
+Two numbers were held to the corpus by the suite, and neither question is about a noun. `entries` is
+asserted to be `open + closed` -- arithmetic, which is exactly what the line gets right -- and `closed`
+is asserted to be greater than zero, which is non-vacuity. A count can be arithmetically perfect and
+still be published under the wrong name; that is the defect, and the test was asked the two questions
+that cannot see it.
+
+### The repair
+
+The three authorities are decided where the closure is accepted, in the order the docstring states them,
+and the caller counts which one answered. **A finding outranks everything**, because it is the only
+authority a reader can check against a heading -- a round named in the same sentence (`Closed at v3.97
+by finding 540`) is where it was filed, not what closed it. **A denial outranks a round**, because it is
+the writer's explicit sentence and a version number in the sentence that follows it is not a closure.
+The total is now the **sum** of the three rather than a fourth count beside them, so a total that
+disagreed with its parts cannot be produced, and the parentheses publish the split:
+
+```
+... 571 open with a reason, 30 closed (29 by a finding, 0 by a round, 1 without one)
+... 0 open with a reason, 56 closed (44 by a finding, 9 by a round, 3 without one)
+```
+
+The forty-four is finding 590's; it was forty-three until a window was repaired in the same round.
+
+### What it does not claim
+
+That a closure's third authority is true. An entry that says no finding closed it is reporting on work
+outside this tree -- a workflow, a scratch helper -- and no reader of this corpus can check that. What
+is claimed is the property the line publishes about itself: that each number names the authority it
+counted, and that the total is those numbers added up.
+
+## Finding 589 — an assertion of zero that was the last digit of thirty
+
+In `check-open-list.test.ts`, in the test that reads the shipped record and the live list as one corpus:
+
+```ts
+const index = shipped.stdout.split('\n').find((one) => one.includes('of docs/progress.md and its volumes:'));
+expect(index).toContain('0 closed by a finding');
+```
+
+The comment above it read *"every entry it holds is open, because a struck one is refused above. A zero
+here is the split, stated where a reader of the gate's output sees it"*. The line it read says **30
+closed by a finding**. `30 closed by a finding` contains `0 closed by a finding`, so the assertion
+passed -- and passed for every round since it was written, because a substring cannot tell a number from
+the last digit of a larger one.
+
+The comment was wrong twice. The line is the index **and its seventeen volumes**, not the live list, and
+the volumes' records close thirty entries: the count was never meant to be zero. So the assertion was a
+claim about the wrong subject that happened to be satisfied by the right number's tail. Finding 588's
+repair is what exposed it -- the noun changed, the substring vanished, and the test went red for the
+first time.
+
+### The repair
+
+A count in a sentence is the number between a delimiter and its label, so the suite reads one that way:
+
+```ts
+function countIn(line: string, label: string): number {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const found = new RegExp(`(?:^|[^\\d])(\\d+) ${escaped}`).exec(line);
+  expect(found, `no count stands in front of "${label}" in: ${line}`).not.toBeNull();
+  return Number((found ?? [])[1]);
+}
+```
+
+It reads 30 out of ` 30 closed`, 130 out of ` 130 closed`, and it cannot read a zero out of either. Two
+places use it now: the record's line is held to the bullets the record holds, and the index's line is
+held to its own arithmetic -- `entry(ies) = open with a reason + closed` -- which is the one property
+that line publishes and the one the old assertion was standing in front of.
+
+### What it does not claim
+
+That this was the only substring assertion of its kind. It is the one this arm had; the same shape --
+`toContain('0 …')` satisfied by a number ending in zero -- is possible wherever a test reads a count out
+of a sentence, and this round did not census the suite for it.
+
+## Finding 590 — a sentence ended at the period in `v3.81`
+
+The citation pattern was
+
+```js
+const CITED = /(?:Closed|Narrowed|Retracted)\b[^.]{0,120}?\b(?:finding\s+\d+|Pass\s+\d+|v\d+\.\d+)/;
+```
+
+and `[^.]` is not "one sentence": it is "no full stop", in a corpus whose nouns include version numbers.
+`O-057` closes like this:
+
+```
+- O-057 · **~~The modality comparison holds two maps of every row's signature.~~ Closed at v3.81 by measuring
+  it and replacing the shape (finding 511).**
+```
+
+From the verb to the citation is **58 characters** -- half the window -- and the window could not reach
+it, because the first `.` on the way is the one in `v3.81`. The pattern stopped there, found no citation
+in what it had, and the arm filed the closure under the **round** it had read: `Closed at v3.81`. The
+entry names its finding, and the line said it named a round.
+
+### Measured over the corpus
+
+Every bullet of the record, the index and the seventeen volumes -- **797** of them -- read twice: once
+with the window that stops at any period, once with a window that stops at a period **followed by
+whitespace**. Exactly one bullet reads differently, and it is `O-057`. That is the whole population
+today: a version number followed by a citation is a shape this log had used once, and the count of it
+was zero for as long as nothing could see it.
+
+### The repair
+
+The boundary is stated positively, which is what `[^.]` was reaching for:
+
+```js
+const CLAUSE = String.raw`(?:(?!\.\s)[\s\S])`;
+```
+
+A period followed by whitespace ends the sentence; a period between digits does not. `[\s\S]` rather
+than `.` because a citation wraps -- `**Closed by\nfinding 170**` is the shape eleven entries use -- and
+the lookahead is asserted at **every** position, so the lazy count may cross a version and may not cross
+a full stop. Two fixtures hold the two sides: a closure whose finding arrives after `v3.81` is a
+finding, and `**Closed by the workflow.** Finding 150 later found something else` is still refused as a
+closure that names nothing.
+
+The shipped split moved **43 → 44** findings and **10 → 9** rounds. Finding 588's line is where the
+correction shows.

@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 257 core + 4 cli |
-| Test lines | 112,995 core + 3,242 cli |
-| Tests | 6,684 core + 187 cli |
+| Test lines | 113,184 core + 3,242 cli |
+| Tests | 6,691 core + 187 cli |
 | Tracked files | 667 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.116: **28** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.117: **29** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -918,6 +918,13 @@ is a row about rather than paraphrase one that no `grep` will find.
   the moment it stops being open rather than at the moment it starts.
   `[open: an entry that named the round that raised it would make "this round opened something and wrote no record" a rule; the entry carries an id and a reason and no round, and adding one is a change to the format every round writes]`
 
+- O-085 · **The suite's substring assertions were never censused, and the two this arm had could not fail.** Finding
+  589 repaired them: `toContain('0 closed by a finding')` was satisfied by `30 closed by a finding`, and the
+  assertion had been read as a claim about the wrong subject for as long as it existed. The shape is a `toContain`
+  of a count that a larger number's tail satisfies, and it is possible wherever a test reads a number out of a
+  sentence -- which is most of this tree's gate tests, and none of them was read for it.
+  `[open: the reader that takes a count as the digits between a delimiter and its label exists now and two places use it; applying it to every assertion in the suite that quotes a number needs the count of those places, and each one has to be read to see whether its subject could grow past it]`
+
 ## Pass log
 
 The rounds are recorded in the volumes below, in the order they were run. They were one
@@ -951,7 +958,7 @@ and this table.
 | [volume-14.md](progress/volume-14.md) | 11 | v3.73 | v3.83 |
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
-| [volume-17.md](progress/volume-17.md) | 18 | v3.99 | v3.116 |
+| [volume-17.md](progress/volume-17.md) | 19 | v3.99 | v3.117 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
