@@ -1365,7 +1365,7 @@ are **101** tests.
 | repo test suite | **261 files, 6887 tests passed** (at v3.118) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6691 -> 6700, +9**: a Han-numbered heading, the ideographic comma, an English heading under three separators, a quoted file name in a heading, a chapter mark with a Han numeral, one with an Arabic numeral, two characters as a heading and not as a sentence, the three volumes read clean, and both units stated |
-| the lists | `## Open` **29 -> 30** (one opened, none closed), `## Closed` **56 -> 56**, one space of **86** ids with none missing |
+| the lists | `## Open` **29 -> 31** (two opened, none closed), `## Closed` **56 -> 56**, one space of **87** ids with none missing |
 | the records read | **221 -> 222** sections: **196 -> 197** under a round, **25** under none |
 | the population | **213** round(s) + **1** addendum(s), **17** of them wrote none |
 | the number line | **212** distinct numbers, dense: 94 in `v2`, 118 in `v3` (`v3.00`..`v3.118`) |
@@ -1400,3 +1400,8 @@ are **101** tests.
   and 42 spelled "### 1.", and the four volumes that came before it each chose a different separator;
   making the log agree with itself costs a renumbering of 86 headings and buys a form no reader in this
   tree keys on yet]`
+- The local rehearsal's fourth step failed twice and passed three times, and nothing names why.
+  `[open: pnpm lint alone is green in 4m20s and --only Lint is green in 4m18s, and CI's lint job is green on
+  this tree, so the two reds are inside a seven-member aggregate that prints nothing when it exits 1 -- the
+  step is printed and what it wrote is not, and a repeated run that captured each member's output would name
+  the member in one pass]`
