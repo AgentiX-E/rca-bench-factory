@@ -1147,9 +1147,9 @@ Both files were restored byte for byte (`diff -q` against the backup), and the a
 
 | item | value |
 | --- | --- |
-| `core` test suite | **257 files, 6700 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **261 files, 6887 tests passed** (as of this commit) |
+| `core` test suite | **257 files, 6700 tests passed** (at v3.117) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.117) |
+| repo test suite | **261 files, 6887 tests passed** (at v3.117) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6684 -> 6691, +7**: the three authorities in one document, a finding named beside a round, a denial named beside a round, a closure that names nothing, the shipped split against the record's bullets, a citation behind a version, and a citation in the sentence after the closure |
 | the lists | `## Open` **28 -> 29** (one opened, none closed), `## Closed` **56 -> 56**, one space of **85** ids with none missing |
@@ -1405,3 +1405,136 @@ are **101** tests.
   this tree, so the two reds are inside a seven-member aggregate that prints nothing when it exits 1 -- the
   step is printed and what it wrote is not, and a repeated run that captured each member's output would name
   the member in one pass]`
+
+## v3.119 · A field named for a source answered no for two reasons, and the line read them as one
+
+**Twenty-one of this tree's eighty-three CI steps are bounded by their job's budget. The gate's own
+summary said they were not.**
+
+The line it prints once per run had a clause that read `62 of 83 step(s) bounded`. Measured: **83 steps,
+62 declaring a `timeout-minutes` of their own, 21 bounded by the job above them, 0 unbounded.** The
+number was right and the noun was three times wider than it, so a reader who did the subtraction the
+sentence invites -- 83 minus 62 -- was told that a quarter of the workflow runs with no ceiling at all.
+
+### The value the noun inherited its defect from
+
+Not the sentence. `stepsOf`, the reader that resolves every step's budget, wrote
+
+```js
+inheritedFrom: own === '' ? null : 'step',
+```
+
+for a field whose name is a **question about where a bound comes from** and whose two values answer a
+narrower one -- *did the step write it?* The workflow has three answers and the value had two. A step the
+job bounds and a step nothing bounds were the same `null`, so the summary could not print the second
+number even if it had wanted to: the number did not exist anywhere downstream.
+
+This is finding 588 one level down. There the noun was wider than the count; here the **value** is
+narrower than its own name, and the count and the noun both inherited it.
+
+### The second reader of the same value
+
+`R4` refuses a job that bounds some of its steps and not the others, and it asked
+`step.inheritedFrom === null`. Repairing the field alone would have silenced the rule: a mixed job's
+inherited step would carry `'job'` and walk past a refusal written for `null`, with the rule still in the
+file, still reached, still looking correct. The condition is `!== 'step'` now -- the rule's question is
+*did this step declare one*, and the field answers *where did it come from*, two questions that were the
+same expression only while the field had two values. `ci-budget.test.ts`'s mixed-job case is what holds
+them apart, and it is the case that would have gone red.
+
+### A superlative with no subject
+
+The third defect was in the same clause one step further along, and it took a workflow this tree does not
+have to see: one whose every step inherits its job's budget has no ratio to report, so `tightest.ratio`
+stays `Infinity` and `tightest.name` stays `''`. The shipped module, run against a two-step fixture of
+that shape, printed
+
+```
+check-ci-budget: OK — 1 job(s) recorded, 0 of 2 step(s) bounded, 2 min measured (as of run 41637098008);
+bounds total 0 min; tightest  at unmeasuredx; no job leans on its own budget; ...
+```
+
+Two defects in one measured sentence, and the first is this round's subject seen from the other end:
+`0 of 2 step(s) bounded` for a job that bounds both of them. The second is a superlative with an empty
+subject and a unit with no number, which is the shape a reader skips -- and a clause a reader skips is a
+clause that is not printed.
+
+The branch that says so is written out now, because the state is reachable and is not an error:
+
+```
+no step carries a bound of its own, so nothing here is tight
+```
+
+### Three counts, because the reader's question has three answers
+
+The clause publishes the partition rather than two of its terms, and all three are counted where the step
+is seen rather than derived by subtraction (finding 588: a total summed from three counters cannot
+disagree with them, and a total accumulated beside them can):
+
+```
+62 of 83 step(s) carry their own `timeout-minutes`, 21 are bounded by their jobs' budget, and 0 have none
+```
+
+What the repair does not change: `bounds total 305 min` still sums declared bounds only, because a job's
+budget is not a bound any one step owns and counting it would charge the same twenty minutes once per
+step; and the rules that size a bound against its measurement are untouched, because the population they
+argue about is the sixty-two and always was.
+
+### Falsifications
+
+Seven edits to `scripts/ci-budget.mjs`, each a way the repair could have been written and not been one,
+each followed by `test/ci-budget.test.ts` alone. The module was restored byte for byte after every run
+(`git diff --stat` unchanged).
+
+| the edit | reds |
+| --- | --- |
+| the field keeps two values, so a job-bounded step is filed with the unbounded ones | 2 |
+| the field keeps two values the other way, so a step nothing reaches is called bounded | 1 |
+| `R4` goes back to asking the field for `null`, which no inherited step carries now | 1 |
+| the inherited population is counted as zero | 2 |
+| the third number is assumed rather than counted | 1 |
+| the empty-subject branch is removed, and the superlative prints with no noun again | 1 |
+| the old clause comes back, counting one population under the noun of three | 5 |
+
+**Thirteen reds across seven mutations.** The fifth is the one worth reading twice: it changes
+`reached += 1` to `reached += 0`, which is the same shape as the defect -- a number that is stated rather
+than measured -- and one case catches it, because that case counts the populations itself from the
+workflow and compares the sentence against its own arithmetic.
+
+### Readings
+
+> Ledger for `v3.119`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **257 files, 6704 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **261 files, 6891 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
+| new tests | **6700 -> 6704, +4**: the two populations of a bound, the step nothing reaches, the superlative with no subject, and the shipped workflow's partition counted on both sides |
+| the rewritten cases | **2**: `stepsOf` reads an inherited bound as `'job'` rather than as none, and the cost line names both populations |
+| the line | **8** job(s), **62** of **83** steps with their own bound, **21** on their job's, **0** with none, **305** min of bounds, **50** min measured, **7** reading(s) -- **5 of them** recomputed independently from `ci.yml` and `golden-master/ci-baseline.json` and agreeing, and the sixth (`62 of 83` under the old noun) being the defect |
+| the lists | `## Open` **31 -> 31** (none opened, none closed), `## Closed` **56 -> 56**, one space of **87** ids with none missing |
+| the records read | **222 -> 223** sections: **197 -> 198** under a round, **25** under none |
+| the population | **213 -> 214** round(s) + **1** addendum(s), **17** of them wrote none |
+| the number line | **212 -> 213** distinct numbers, dense: 94 in `v2`, 119 in `v3` (`v3.00`..`v3.119`) |
+| the rehearsal | five runs of `install` / `build` / `typecheck` / `lint`: **three green** (lint **267**, **262**, **263** s) and **two red**, both on a tree carrying a deliberately red test, both attributed in **13** lines |
+| the falsifications | seven edits, **thirteen** reds |
+| gate sites / scripts / throws | **144** / **67 of 98** / **99** -- no new exit and no new script |
+| the budgets | **37** files state one -- unchanged: no test file was added |
+| LLM calls | **0** |
+
+### Left open
+
+- The local rehearsal's fourth step failed twice at a settled tree, and five rehearsals of the same sequence
+  have not produced a third. `[open: the aggregate has eight members and it is not mute -- a red in it named
+  its claimant file, its test and its assertion in thirteen lines -- so what remains is the red that was not
+  caused by a red tree, and the next one has to be read at the terminal, because `failureReport` names the
+  step, the directory, the command and the exit code and nothing the step wrote]`
+- The structural rule reads a table's first column, so a record that reorders its columns is a record to a
+  reader and not to the guard. `[open: a record is found by the position of a cell rather than by the name in
+  it, and 47 of 47 do not reorder -- a floor that a corpus of 555 tables could only be widened against by
+  reading every one of them]`
+- One volume writes its sections two ways. `[open: volume-17.md holds 44 headings spelled "### One ·" and 42
+  spelled "### 1.", and the four volumes that came before it each chose a different separator; making the log
+  agree with itself costs a renumbering of 86 headings and buys a form no reader in this tree keys on yet]`

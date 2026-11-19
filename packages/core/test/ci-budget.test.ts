@@ -48,10 +48,17 @@ const GATE = join(ROOT, 'scripts', 'check-ci-budget.mjs');
 const MEASURE = join(ROOT, 'scripts', 'measure-ci-baseline.mjs');
 const DECLARATIONS = join(ROOT, 'golden-master', 'ci-declarations.json');
 
-/** One job of a fixture workflow: an id, its label, its budget, and its steps. */
+/**
+ * One job of a fixture workflow: an id, its label, its budget, and its steps.
+ *
+ * `minutes` has three states, and the difference between the last two is the whole
+ * subject of the population cases below: omitted means the default thirty, `null`
+ * means the job declares no budget at all, so a step that declares none of its own is
+ * reached by nothing.
+ */
 interface FixtureJob {
   id: string;
-  minutes?: number;
+  minutes?: number | null;
   name?: string;
   steps: string[];
 }
@@ -63,7 +70,9 @@ function workflowText(jobs: FixtureJob[]): string {
     lines.push(`  ${job.id}:`);
     lines.push(`    name: ${job.name ?? job.id}`);
     lines.push('    runs-on: ubuntu-latest');
-    lines.push(`    timeout-minutes: ${String(job.minutes ?? 30)}`);
+    // A job that declares nothing states nothing: writing `timeout-minutes: null`
+    // would be a bound whose value is the word "null", which is a different workflow.
+    if (job.minutes !== null) lines.push(`    timeout-minutes: ${String(job.minutes ?? 30)}`);
     lines.push('    steps:');
     lines.push(...job.steps);
   }
@@ -181,10 +190,13 @@ describe('the arithmetic of one job', () => {
     expect(errors).toEqual([]);
   });
 
-  it('reads a step that inherits the job budget as declaring none of its own', () => {
+  it('reads a step that inherits the job budget as bound by the job, and not by nothing', () => {
     const workflow = oneJob([...inherited('Slow battery')]);
     const [only] = stepsOf(workflow, 'batteries');
-    expect(only.inheritedFrom).toBe(null);
+    // The field is called `inheritedFrom`, and it said `null` for a step that inherits
+    // the job's budget: a step reached by a number was filed with the steps reached by
+    // none, so the summary could not tell the two apart and printed them as one.
+    expect(only.inheritedFrom).toBe('job');
     // The number is still there -- it is the job's -- which is exactly why a rule
     // written against `minutes === null` would have said nothing.
     expect(only.minutes).toBe(30);
@@ -500,10 +512,97 @@ describe('the step the recording has not measured yet', () => {
     const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)]);
     const recording = recordingOf({ batteries: { steps: { 'Slow battery': 351 } } });
     const declared = budgetSummary(workflow, recording, null, { declared: [declarationOf()] });
-    expect(declared).toContain('2 of 2 step(s) bounded');
+    expect(declared).toContain('2 of 2 step(s) carry their own `timeout-minutes`');
     expect(declared).toContain('1 step(s) declared and awaiting the run that measures them');
     expect(declared).toContain('batteries / Quick battery');
     expect(budgetSummary(workflow, recording)).toContain('no step is declared unmeasured');
+  });
+
+  /**
+   * A bound reaches a step one of two ways, and one way of none.
+   *
+   * The summary used to say `62 of 83 step(s) bounded`, and 62 was the count of steps
+   * that **declare** a `timeout-minutes` of their own. The other 21 are bounded by their
+   * job's budget, so the sentence read as though 21 steps were unbounded when the tree
+   * had none. It is the shape this audit keeps finding -- a number that is right and a
+   * noun that is wider than the number -- and here it was produced by a field: a step
+   * that inherits the job's budget carried `inheritedFrom: null`, the same value a step
+   * reached by nothing carries, so the two populations were one population downstream.
+   *
+   * Three numbers rather than two, because the question a reader asks of the line is
+   * "is anything unbounded", and a summary that answers it by arithmetic leaves the
+   * reader to do the arithmetic.
+   */
+  describe('the two populations of a bound', () => {
+    it('counts the steps a job bounds apart from the steps that bound themselves', () => {
+      const workflow = workflowOf([
+        { id: 'batteries', minutes: 30, steps: [...step('Own one', 12), ...step('Own two', 12)] },
+        { id: 'artefacts', minutes: 15, steps: [...inherited('Carried by the job')] },
+      ]);
+      const recording = recordingOf({
+        batteries: { minutes: 30, steps: { 'Own one': 60, 'Own two': 60 } },
+        artefacts: { minutes: 15, steps: { 'Carried by the job': 60 } },
+      });
+      const summary = budgetSummary(workflow, recording);
+      expect(summary).toContain('2 of 3 step(s) carry their own `timeout-minutes`');
+      expect(summary).toContain('1 is bounded by its job');
+      expect(summary).toContain('0 have none');
+    });
+
+    it('counts a step no budget reaches rather than folding it in with the inherited ones', () => {
+      const workflow = workflowOf([
+        { id: 'batteries', minutes: 30, steps: [...step('Own one', 12)] },
+        { id: 'artefacts', minutes: null, steps: [...inherited('Reached by nothing')] },
+      ]);
+      const recording = recordingOf({
+        batteries: { minutes: 30, steps: { 'Own one': 60 } },
+        artefacts: { minutes: null, steps: { 'Reached by nothing': 60 } },
+      });
+      const summary = budgetSummary(workflow, recording);
+      expect(summary).toContain('1 of 2 step(s) carry their own `timeout-minutes`');
+      expect(summary).toContain('0 are bounded by their jobs');
+      expect(summary).toContain('1 has none');
+    });
+
+    it('says nothing is tight when no step carries a bound, instead of naming an empty one', () => {
+      // The tightest bound is a ratio, and a workflow with no own bounds has no ratio to
+      // report. The first version printed `tightest  at unmeasuredx` -- a sentence whose
+      // subject is empty and whose unit has no number, which is the shape a reader skips.
+      const workflow = oneJob([...inherited('Carried one'), ...inherited('Carried two')], 30);
+      const recording = recordingOf({
+        batteries: { minutes: 30, steps: { 'Carried one': 60, 'Carried two': 60 } },
+      });
+      const summary = budgetSummary(workflow, recording);
+      expect(summary).toContain('no step carries a bound of its own, so nothing here is tight');
+      expect(summary).not.toContain('unmeasuredx');
+      expect(summary).not.toContain('tightest  at');
+    });
+
+    it('agrees with the workflow this tree ships, counting the populations itself', () => {
+      // Derived on both sides: the numbers come from the workflow through this file's own
+      // reading, and the sentence comes from the module. A step added to `ci.yml` moves
+      // both, and a summary that stopped counting one population would disagree here
+      // without any number in this file having to be edited.
+      const workflow = readWorkflow(readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8'));
+      const baseline = JSON.parse(readFileSync(join(ROOT, 'golden-master', 'ci-baseline.json'), 'utf8'));
+      let own = 0;
+      let carried = 0;
+      let reached = 0;
+      for (const job of jobsOf(workflow)) {
+        for (const step of stepsOf(workflow, job.id)) {
+          if (step.inheritedFrom === 'step') own += 1;
+          else if (step.inheritedFrom === 'job') carried += 1;
+          else reached += 1;
+        }
+      }
+      const summary = budgetSummary(workflow, baseline);
+      expect(own + carried + reached).toBe(workflow.steps.length);
+      expect(summary).toContain(
+        `${String(own)} of ${String(workflow.steps.length)} step(s) carry their own \`timeout-minutes\``,
+      );
+      expect(summary).toContain(`${String(carried)} are bounded by their jobs`);
+      expect(summary).toContain(`${String(reached)} have none`);
+    });
   });
 
   it('keeps the shipped declarations naming exactly the steps the recording has not measured', () => {
@@ -846,7 +945,9 @@ describe('the recording the gate reads', () => {
       recordingOf({ batteries: { steps: { 'Slow battery': 351, 'Quick battery': 4 } } }),
     );
     expect(summary).toContain('1 job(s) recorded');
-    expect(summary).toContain('2 of 2 step(s) bounded');
+    expect(summary).toContain('2 of 2 step(s) carry their own `timeout-minutes`');
+    expect(summary).toContain('0 are bounded by their jobs');
+    expect(summary).toContain('0 have none');
     expect(summary).toContain('6 min measured');
     expect(summary).toContain('as of run 41637098008');
     expect(summary).toContain('bounds total 15 min');

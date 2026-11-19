@@ -1,6 +1,6 @@
 # Audit · volume 14
 
-Findings 579–594, from the rounds recorded in `progress/volume-17.md` and `progress/volume-18.md` as `v3.115` through `v3.118`.
+Findings 579–596, from the rounds recorded in `progress/volume-17.md` and `progress/volume-18.md` as `v3.115` through `v3.119`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -781,3 +781,89 @@ So `O-085` is narrowed rather than closed: the population is known, none of it i
 remains is the part a reader has to do. The structural repair -- reading a count as a number
 (`countIn`) rather than as a substring -- is what makes the shape impossible, and it is applied in
 the two places finding 589 repaired.
+
+## Finding 595 — the field named "inherited from" answered no for two different reasons
+
+The budget gate prints one line per run, and one clause of it read `62 of 83 step(s) bounded`.
+This tree has **eighty-three steps, sixty-two of which declare a `timeout-minutes` of their own,
+twenty-one of which are bounded by their job's budget, and none of which is unbounded**. The
+clause published the first number under a noun that covers all three, so a reader who subtracted
+-- the arithmetic the sentence invites -- was told that twenty-one steps run with no bound at all.
+
+### Where the two populations became one
+
+Not in the sentence. In `stepsOf`, the reader that resolves every step's budget:
+
+```js
+inheritedFrom: own === '' ? null : 'step',
+```
+
+The field is named for **where the bound comes from**, and it answered a narrower question -- *did
+the step write one?* -- with two values where the workflow has three answers. A step the job
+bounds and a step nothing bounds were the same `null`, so every reader downstream saw one
+population. The summary could not have printed the second number: the number did not exist.
+
+That is finding 588's shape one level down. There the noun was wider than the count; here the
+**value** is narrower than its own name, and the noun inherited the defect from it.
+
+### The second reader of the same value, which the repair had to keep
+
+`R4` refuses a job that bounds some of its steps and not the others, and it asked
+`step.inheritedFrom === null`. Fixing the field without touching that condition would have
+silenced the rule -- a mixed job's inherited step would have carried `'job'` and slipped past a
+refusal written for `null`. Nothing in the source would have looked wrong: the rule would still
+be there, still be reached by its own test... except that the test would have gone red, which is
+the only reason the change is safe to make. The condition is `!== 'step'` now, because the
+question the rule asks is *does this step declare one*, and the field answers where a bound comes
+from. Two questions, two predicates, and the test at `ci-budget.test.ts` that fires `R4` is what
+holds them apart.
+
+### The three numbers, and why there are three
+
+A reader's question is *is anything unbounded here*, and the arithmetic that answers it is the
+work the line exists to save. So the clause publishes the partition and not two of its terms:
+
+```
+62 of 83 step(s) carry their own `timeout-minutes`, 21 are bounded by their jobs' budget, and 0 have none
+```
+
+All three are counted where the step is seen, never derived by subtraction (finding 588: a total
+computed from three counters cannot disagree with them; a total accumulated beside them can).
+
+### What the repair does not change
+
+`bounds total 305 min` still sums the bounds steps declare, because a job's budget is not a bound
+any one step owns and adding it would count the same twenty minutes once per step. The rules that
+size a bound against its measurement (`R4`, `R5`, `R10`) are about declared bounds and are
+untouched: the population they argue about is the sixty-two, and it always was.
+
+## Finding 596 — a workflow with no declared bound printed a superlative with no subject
+
+The same line carries the tightest ratio, and the ratio is `Infinity` when no step declares a
+bound -- the initial value, never replaced. The sentence did not check:
+
+```js
+`${tightest.name} at ${Number.isFinite(tightest.ratio) ? ... : 'unmeasured'}x`
+```
+
+Run against a two-step job whose steps inherit its budget, the shipped module printed:
+
+```
+check-ci-budget: OK — 1 job(s) recorded, 0 of 2 step(s) bounded, 2 min measured (as of run 41637098008);
+bounds total 0 min; tightest  at unmeasuredx; no job leans on its own budget; ...
+```
+
+Two defects in one clause, and the first is finding 595 seen from the other end: **`0 of 2 step(s)
+bounded`** for a job that bounds both of them. The second is the empty subject -- `tightest  at
+unmeasuredx`, a superlative with no noun and a unit with no number. A reader skips it, which is
+the same as not printing it.
+
+The branch that says so is now written out, because the state is reachable and is not an error:
+a workflow whose every step inherits its job's budget is a workflow with no ratio to report.
+
+```
+no step carries a bound of its own, so nothing here is tight
+```
+
+The fixture is the one that produced the string above, and it is a test now, asserting both that
+the sentence appears and that `unmeasuredx` does not.

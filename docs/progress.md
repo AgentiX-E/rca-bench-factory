@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 257 core + 4 cli |
-| Test lines | 113,274 core + 3,242 cli |
-| Tests | 6,700 core + 187 cli |
+| Test lines | 113,380 core + 3,242 cli |
+| Tests | 6,704 core + 187 cli |
 | Tracked files | 668 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.118: **31** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.119: **31** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -936,18 +936,20 @@ is a row about rather than paraphrase one that no `grep` will find.
   `volume-13.md` wrote `### One · `.
   `[open: v3.118 unified the twenty-eight headings that carried a Han numeral into the separator of the volume they stood in, which left each volume internally consistent and four volumes differing from each other; making the log agree with itself costs a renumbering of 86 headings and buys a form that no reader in this tree keys on yet]`
 
-- O-087 · **The local rehearsal's fourth step failed twice and passed three times, and nothing names why.**
-  `verify:local` was run five times on this round's tree. The first failed at step 27 on `docs:check`, and that
-  was real -- the repository table said 667 tracked files while the tree held 668, because the census was taken
-  before the split's new volume was committed. After that was fixed, two runs failed at **step 4**, `pnpm lint`,
-  and the third finished **OK (35 command(s) covering 48 of the 58 run steps, 35m19s)**. `pnpm lint` alone is
-  green (4m20s), `verify-local.mjs --only Lint` is green (2 commands, 4m18s), and CI's
-  `build / typecheck / lint / coverage / mutation` job is `success` on the same tree. What is missing is the
-  output of the step that failed: `verify:local` prints the step, the command and the reason, but not what the
-  command wrote, so two reds left no evidence behind.
-  `[open: the failure is inside a seven-member aggregate, and the aggregate prints nothing when it exits 1 -- a
-  repeated run that captures each member's output would name the member in one pass, and until it does, "it
-  passed the third time" is the one explanation this log is not allowed to accept]`
+- O-087 · **The local rehearsal's fourth step failed twice at a settled tree, and five rehearsals of the same
+  sequence have not produced a third.**
+  The entry used to end `the aggregate prints nothing when it exits 1`, and that is false as a general claim.
+  Five rehearsals of `install` / `build` / `typecheck` / `lint` -- the four steps CI runs before anything else --
+  were run with every byte of every step captured: **three greens** (lint at 267 s, 262 s, 263 s) and **two
+  reds**, both on trees that were deliberately carrying a red test, both attributed in **thirteen lines** that
+  name the claimant file, the test and the assertion and end `verify-site-proofs: FAILED -- 13 problem(s)`. The
+  aggregate also has **eight members**, not seven: `check-no-mock`, `check-no-secrets`, `check-no-vendored-data`,
+  `check-official-registry`, `check-no-absolute-paths`, `check-no-unsafe-shell`, `verify-scorer-stability` and
+  `verify-site-proofs`, and it is the last one that reaches through to the suite.
+  `[open: what remains is the red that was not caused by a red tree, which no run of this sequence has produced;
+  the two historical reds left their words in a transcript the report does not reproduce, so the next one has to
+  be read at the terminal -- `failureReport` names the step, the directory, the command and the exit code, and
+  nothing the step wrote]`
 
 ## Pass log
 
@@ -983,7 +985,7 @@ and this table.
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
-| [volume-18.md](progress/volume-18.md) | 7 | v3.112 | v3.118 |
+| [volume-18.md](progress/volume-18.md) | 8 | v3.112 | v3.119 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

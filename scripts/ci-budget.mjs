@@ -191,9 +191,17 @@ export const STEP_PROMISE_KEYS = ['name', 'minutes'];
 /**
  * The steps of one job, in order, with the budget each declares.
  *
- * `inheritedFrom` is `'step'` only when the step writes its own `timeout-minutes`;
- * a step that inherits the job's has the same number and no bound of its own, which
- * is the difference this module exists to see.
+ * `inheritedFrom` says **where a step's bound comes from**, and it has three values
+ * because there are three answers: `'step'` when the step writes its own
+ * `timeout-minutes`, `'job'` when the only number above it is the job's, and `null`
+ * when nothing bounds it at all.
+ *
+ * It used to have two, and `null` meant both of the last two. A step the job bounds and
+ * a step nothing bounds were the same value, so every reader downstream -- the summary's
+ * count, the rule that refuses a job bounding some of its steps and not others -- saw one
+ * population where the workflow has two. The summary said `62 of 83 step(s) bounded` for
+ * a workflow whose unbounded steps were zero, and a reader who subtracted was told 21
+ * steps run unbounded. Finding 595.
  */
 export function stepsOf(workflow, job) {
   return workflow.steps
@@ -201,11 +209,12 @@ export function stepsOf(workflow, job) {
     .map((step) => {
       const own = step.values?.['timeout-minutes'] ?? '';
       const resolved = timeoutOf(own, step.jobTimeout ?? '');
+      const jobBound = (step.jobTimeout ?? '') !== '';
       return {
         name: step.name,
         run: step.run,
         minutes: resolved.minutes,
-        inheritedFrom: own === '' ? null : 'step',
+        inheritedFrom: own !== '' ? 'step' : jobBound ? 'job' : null,
         error: resolved.error,
       };
     });
@@ -939,7 +948,7 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
       const seconds = secondsOf(record, step.name);
       if (step.error !== null) {
         errors.push(`\`${job.id} / ${step.name}\`: ${step.error}`);
-      } else if (step.inheritedFrom === null && bounded > 0) {
+      } else if (step.inheritedFrom !== 'step' && bounded > 0) {
         errors.push(
           `\`${job.id} / ${step.name}\` declares no \`timeout-minutes\` of its own while ` +
             `${String(bounded)} other step(s) of the same job do, so a hang here is charged to the ` +
@@ -1162,6 +1171,8 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   let measured = 0;
   let steps = 0;
   let bounded = 0;
+  let carried = 0;
+  let reached = 0;
   let bounds = 0;
   let jobCount = 0;
   const excused = [];
@@ -1184,6 +1195,12 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
       const seconds = secondsOf(record, step.name) ?? 0;
       jobSeconds += seconds;
       steps += 1;
+      // Three populations, counted where the step is seen rather than subtracted from
+      // `steps` once the other two are known: a total derived by subtraction is a number
+      // two readers can derive differently (finding 588), and this line publishes all
+      // three so that the reader does not have to.
+      if (step.inheritedFrom === 'job') carried += 1;
+      else if (step.inheritedFrom === null) reached += 1;
       if (step.inheritedFrom === 'step') {
         bounded += 1;
         bounds += step.minutes * 60;
@@ -1243,12 +1260,20 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
         "and `R5`'s deadline only gains room";
   // The tightest bound names the reading it is tight against, because that is the number
   // `R10` would refuse it for and a reader has to be able to go and look at that run.
+  //
+  // A workflow whose steps all inherit their job's budget has no ratio to report, and the
+  // first version reported one anyway: it printed `tightest  at unmeasuredx`, a sentence
+  // with an empty subject and a unit with no number. The branch that says so is written
+  // out because a reader who skipped the clause would read the `;` before it as a
+  // measurement that came back blank.
   const tightestText =
-    `${tightest.name} at ${Number.isFinite(tightest.ratio) ? tightest.ratio.toFixed(1) : 'unmeasured'}x` +
-    (tightest.worst === null
-      ? ''
-      : ` of the slowest reading of its command (${String(tightest.worst.seconds)} s in ` +
-        `\`${tightest.worst.job} / ${tightest.worst.step}\`, run ${String(tightest.worst.run)})`);
+    bounded === 0
+      ? 'no step carries a bound of its own, so nothing here is tight'
+      : `${tightest.name} at ${Number.isFinite(tightest.ratio) ? tightest.ratio.toFixed(1) : 'unmeasured'}x` +
+        (tightest.worst === null
+          ? ''
+          : ` of the slowest reading of its command (${String(tightest.worst.seconds)} s in ` +
+            `\`${tightest.worst.job} / ${tightest.worst.step}\`, run ${String(tightest.worst.run)})`);
   const readingsText =
     parsedReadings === null
       ? 'no history of readings to compare against'
@@ -1259,7 +1284,10 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
           `${String(parsedReadings.rows[parsedReadings.rows.length - 1]?.run)}`;
   return (
     `check-ci-budget: OK — ${String(jobCount)} job(s) recorded, ${String(bounded)} of ${String(steps)} ` +
-    `step(s) bounded, ${String(Math.round(measured / 60))} min measured (as of run ` +
+    `step(s) carry their own \`timeout-minutes\`, ${String(carried)} ` +
+    `${carried === 1 ? 'is' : 'are'} bounded by ${carried === 1 ? "its job's" : "their jobs'"} budget, ` +
+    `and ${String(reached)} ${reached === 1 ? 'has' : 'have'} none, ` +
+    `${String(Math.round(measured / 60))} min measured (as of run ` +
     `${String(baseline.run)}); bounds total ${String(Math.round(bounds / 60))} min; tightest ` +
     `${tightestText}; ` +
     `${excusedText}; ${declaredText}; ${jobsText}; ${widenedText}; ${readingsText}; ` +

@@ -1351,6 +1351,30 @@ from an anecdote again.
   from a short sentence, and the corpus is what put the threshold where it is. The heading unit is
   the part of the rule that does not pay that price.
 
+### A bound has three sources, and a count has one noun (v3.119)
+
+- **A step's budget comes from the step, from its job, or from nowhere.** Three answers, so the field
+  that says where it came from has three values: `'step'`, `'job'`, `null`. It had two for as long as
+  the gate has existed, and `null` meant both of the last two -- so a step the job bounds and a step
+  nothing bounds were the same value, and every reader downstream saw one population (finding 595).
+- **A count's noun may not be wider than the count.** The summary said `62 of 83 step(s) bounded`, where
+  62 counts declared bounds and the workflow has 83 steps of which **none** is unbounded: 21 are bounded
+  by their job. The arithmetic the sentence invites -- 83 minus 62 -- answered a question with the wrong
+  answer, which is worse than not asking it. The clause publishes all three numbers (finding 595).
+- **The population a rule argues about is stated by the rule's own predicate.** `R4` refuses a job that
+  bounds some of its steps and not the others, and its condition was `=== null` -- the field's old
+  two-valued reading. Repairing the field alone would have silenced the rule with nothing in the source
+  looking wrong; the condition is `!== 'step'`, which is the question the rule actually asks, and the
+  mixed-job test is what holds the two apart (finding 595).
+- **A superlative with no subject is not printed.** A workflow whose every step inherits its job's
+  budget has no ratio to report, so the shipped line printed `tightest  at unmeasuredx`. The state is
+  reachable and is not an error, so the branch that says `no step carries a bound of its own, so nothing
+  here is tight` is written out rather than left to a reader to interpret (finding 596).
+- **What is not claimed.** That the three numbers sum to the step count by construction: they are
+  counted independently, and one case recomputes the partition from `ci.yml` and holds the sentence
+  against its own arithmetic. A step added to the workflow moves both sides; a summary that stopped
+  counting a population would disagree with the file rather than with a number written in a test.
+
 ### A record may not be the only place a residual lives (v3.65)
 
 - **The newest round's record is read against the live list.** Every row's `item` cell must quote an
