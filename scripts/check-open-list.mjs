@@ -497,6 +497,22 @@ const STAMP = /Checked at (v\d+\.\d+): \*\*(\d+)\*\* (?:entry|entries) open/g;
 const ROUND = /^## (v(\d+)\.(\d+))\b/;
 
 /**
+ * A second section of a round that was already written: `## v2.15, addendum -- ...`.
+ *
+ * The number repeats by design, and that is the whole reason this regex exists. The arm counted
+ * the headings of `ROUND` and called the result "rounds" (**211**), then subtracted the number of
+ * distinct round names that wrote a record (**193**) and published the difference as "18 of them
+ * wrote none". Two operands, two units: the corpus has **210** round numbers -- 94 in the `v2`
+ * era and 116 in `v3`, dense from `v2.06` to `v3.115` -- and **17** of them wrote no record. The
+ * one duplicate heading is this one, and it was carrying the difference (finding 585).
+ *
+ * So a round is a **number**, an addendum is a **section of a round**, and the two are counted
+ * separately: the population line prints `210 round(s) + 1 addendum(s)` because a reader who has
+ * been told "211 rounds" by every earlier round deserves to see where that number came from.
+ */
+const ADDENDUM = /^## (v(\d+)\.(\d+)), addendum\b/;
+
+/**
  * Which spelling of the names a heading is, and why the exact string was not enough.
  *
  * `sections()` used to match the heading with `wanted.has(trimmed)`, so a heading that gained a
@@ -835,6 +851,57 @@ function tableShape(lines) {
 }
 
 /**
+ * Whether a section's body is nothing but entries, and how many of them are open.
+ *
+ * ## Why the body and not the name
+ *
+ * `spellingOf` is a table of names, and the corpus has already used one more than it holds:
+ * `### Not fixed here` is a record -- two entries, each a headline with a reason, written by
+ * `v2.15`'s addendum -- and it is the only name in the corpus that a reader would call a record
+ * and this guard read as prose. The first repair, in the same round, was to add the name to the
+ * table. That is the repair finding 579 measured the cost of: a name table grows one rename at a
+ * time, and the next rename is invisible until somebody counts the corpus again.
+ *
+ * What cannot lie is the **body**. A record written as bullets has a shape no round's prose has:
+ * the section holds nothing but top-level bullets and their continuation lines -- no sentence
+ * starts at column zero -- and at least one of those bullets is an open entry, whose headline is
+ * not struck. The struck test is the corpus's own definition of a closure (`CLOSED`, finding 458)
+ * rather than a second predicate written here, and the reason is read with `reasonOf`, so an
+ * entry that quotes a marker inside itself is still read by its own last one.
+ *
+ * Scoped to the section, not to the file: a plan's numbered list is a plan, and the only thing
+ * that separates it from a record is that its bullets carry no reason a reader could act on.
+ *
+ * @param {string[]} lines the section's body, headings of level 4 and deeper included
+ * @returns {number} the open entries it holds, or `0` when the body is not a list of entries
+ */
+function openEntriesInList(lines) {
+  let bullets = 0;
+  for (const line of lines) {
+    if (line.trim() === '') continue;
+    if (/^- /.test(line)) {
+      bullets += 1;
+      continue;
+    }
+    // A continuation line is indented, and a rule closes the section. Everything else is prose --
+    // **including a heading**, and that one is not a technicality: a round's body holds its
+    // `### Left open`, so a body that accepted headings would make every round a record holding a
+    // record. The nested-section refusal caught it on the first run of the first fixture.
+    if (/^\s/.test(line) || /^---+\s*$/.test(line)) continue;
+    return 0;
+  }
+  if (bullets === 0) return 0;
+  let open = 0;
+  for (const item of entries(lines)) {
+    const marker = reasonOf(item);
+    if (marker === null) continue;
+    if (CLOSED.test(item.split('\n')[0])) continue;
+    open += 1;
+  }
+  return open;
+}
+
+/**
  * Every section whose heading is one of `headings`, in document order, with its span.
  *
  * A deeper heading inside a section (`#### x`) stays in it; a heading of the same
@@ -846,6 +913,17 @@ function tableShape(lines) {
  * possible in a way one spelling did not: a `### Left open` inside a `## Open` is two
  * sections whose entry counts overlap, and a guard that reported `2 section(s)` without
  * saying so would be publishing a number it cannot defend.
+ *
+ * A heading this file does not know is read anyway when its **body** is a list of entries
+ * (`openEntriesInList`): that is the half of the shape space the body rule of v3.115 did not
+ * cover, because it was written for tables and a table is not a list. The cost is that every
+ * level-2 and level-3 heading in the corpus is sliced and looked at, which is why the walk stops
+ * at level 3: a level-1 heading's span is the file, and no record has ever been written at `#`.
+ *
+ * The one exception is a heading the rename refusal (`NEARLY`) already claims: `### Open` is
+ * refused because the corpus renamed it, and a body rule that adopted it would satisfy that
+ * refusal with a body and lose the only rule the corpus has for "one name per list" (finding 207).
+ * A heading that begins with a list name and is none of them is refused, not read.
  */
 function sections(doc, headings) {
   const wanted = new Set(headings);
@@ -854,21 +932,23 @@ function sections(doc, headings) {
   for (let index = 0; index < lines.length; index += 1) {
     const level = (/^#+/.exec(lines[index]) ?? [''])[0].length;
     const trimmed = lines[index].trim();
-    if (level > 0 && (wanted.has(trimmed) || spellingOf(trimmed) !== null)) {
-      heads.push({ index, level, heading: trimmed });
-    }
+    const named = wanted.has(trimmed) || spellingOf(trimmed) !== null;
+    const nearly = !named && NEARLY.test(trimmed);
+    if (level > 0 && (named || (level <= 3 && !nearly))) heads.push({ index, level, heading: trimmed, named });
   }
-  return heads.map((head) => {
-    let end = lines.length;
-    for (let j = head.index + 1; j < lines.length; j += 1) {
-      const level = (/^#+/.exec(lines[j]) ?? [''])[0].length;
-      if (level > 0 && level <= head.level) {
-        end = j;
-        break;
+  return heads
+    .map((head) => {
+      let end = lines.length;
+      for (let j = head.index + 1; j < lines.length; j += 1) {
+        const level = (/^#+/.exec(lines[j]) ?? [''])[0].length;
+        if (level > 0 && level <= head.level) {
+          end = j;
+          break;
+        }
       }
-    }
-    return { ...head, end, lines: lines.slice(head.index + 1, end) };
-  });
+      return { ...head, end, lines: lines.slice(head.index + 1, end) };
+    })
+    .filter((head) => head.named || openEntriesInList(head.lines) > 0);
 }
 
 /** The entries of a section: a `- ` line and the continuation lines indented under it. */
@@ -1014,6 +1094,11 @@ function check() {
   // being read when the answer becomes available.
   const records = [];
   const rounds = [];
+  // The addenda, counted apart from the rounds because they are sections of a round rather than
+  // rounds (finding 585): the number repeats, so an addendum that joined `rounds` would make the
+  // printed total a count of headings -- which is what it was, and what the subtraction of two
+  // different units turned into a wrong number.
+  const addenda = [];
   // The ids of the two lists, in one map, because they are one space (finding 570). Pooled here
   // for the same reason `witnesses` is: the live list is in the index and the record is in a file, and
   // a duplicate id is a fact about both of them.
@@ -1124,9 +1209,32 @@ function check() {
     // "which round wrote this table" is a question about position rather than about text.
     const roundAt = [];
     text.split('\n').forEach((line, index) => {
+      // An addendum is a section of its round, and it is in `roundAt` for the reason a record
+      // looks **up**: `v2.15`'s `### Not fixed here` sits under the addendum, and a round table
+      // that stopped at the plain headings would make that record ownerless. It is not in
+      // `rounds`, because it is not a round (finding 585).
+      const addendum = ADDENDUM.exec(line);
+      if (addendum !== null) {
+        const one = {
+          line: index,
+          round: addendum[1],
+          major: Number(addendum[2]),
+          minor: Number(addendum[3]),
+          label: from.label,
+        };
+        addenda.push(one);
+        roundAt.push(one);
+        return;
+      }
       const match = ROUND.exec(line);
       if (match === null) return;
-      const one = { line: index, round: match[1], major: Number(match[2]), minor: Number(match[3]) };
+      const one = {
+        line: index,
+        round: match[1],
+        major: Number(match[2]),
+        minor: Number(match[3]),
+        label: from.label,
+      };
       rounds.push(one);
       roundAt.push(one);
     });
@@ -1567,6 +1675,59 @@ function check() {
   // been requiring the **whole** row, and no test could tell, because a self-witnessing row
   // satisfies any ruler however strict it is. `ROW_QUOTE` is the published ruler, implemented.
   //
+  // ## A round is a number (finding 585)
+  //
+  // The population line printed `211 round(s), 18 of them wrote none`, and both numbers were
+  // wrong in the same way: `211` counted **headings** (the corpus has 210 round numbers, and
+  // `## v2.15, addendum` repeats one) while `18` was `rounds.length - recordRounds.size` -- a
+  // heading count minus a count of distinct names. Two operands, two units, and the difference
+  // was published as a fact about the corpus. The number of rounds is 210, the number that wrote
+  // no record is 17, and the pair of them is what `O-083` had been reading as 18.
+  //
+  // One number names one round, and the corpus proves it without any heading at all: the numbers
+  // are dense, 94 in the `v2` era (v2.06..v2.99) and 116 in `v3` (v3.00..v3.115), 210 slots with
+  // none empty. That gives the count a second derivation -- the range and the density give the
+  // number the headings must reach -- which is the only kind of count this log trusts. Both
+  // halves of it are rules below: a number headed twice is refused, and a number no round uses
+  // is refused, because in a corpus where every increment is a round a gap is a round that was
+  // lost or renumbered.
+  const firstHead = new Map();
+  for (const one of rounds) {
+    const seen = firstHead.get(one.round);
+    if (seen === undefined) {
+      firstHead.set(one.round, one);
+      continue;
+    }
+    problems.push(
+      `${one.label}: the round ${one.round} is headed twice (lines ${String(seen.line + 1)} and ` +
+        `${String(one.line + 1)}), so one number names two rounds and "which record did this round ` +
+        `write" becomes a question about position -- an addendum is \`## ${one.round}, addendum\``,
+    );
+  }
+  const ascending = [...firstHead.values()].sort((a, b) => a.major - b.major || a.minor - b.minor);
+  for (let i = 1; i < ascending.length; i += 1) {
+    const before = ascending[i - 1];
+    const after = ascending[i];
+    // Two rules, because the corpus has two eras and the minors do not run in a fixed width: `v3`
+    // goes from `v3.00` to `v3.115`, so `v3.99` is followed by `v3.100` and not by `v4.00`, while
+    // `v2` stops at `v2.99`. Within a major the numbers are every increment; a new major begins at
+    // `.00` and is the next one.
+    if (after.major === before.major) {
+      if (after.minor === before.minor + 1) continue;
+      problems.push(
+        `${after.label}: the round numbers go from ${before.round} to ${after.round}, so ` +
+          `${String(after.minor - before.minor - 1)} number(s) in between name no round -- every ` +
+          'increment is a round in this log, and a gap is a round it lost or renumbered',
+      );
+      continue;
+    }
+    if (after.major === before.major + 1 && after.minor === 0) continue;
+    problems.push(
+      `${after.label}: the rounds go from ${before.round} to ${after.round}, so this era neither ` +
+        'continues the last one nor begins at `.00` -- an era starts at its first round and a number ' +
+        'nothing uses is a round the log lost or renumbered',
+    );
+  }
   // ## One round, one record (finding 575)
   //
   // The selection is "the first record whose owner is the newest round", so a round that wrote two
@@ -1585,26 +1746,28 @@ function check() {
         : best,
     null,
   );
-  // A round writes **one** record, and two under one heading is two answers to "what did this round
-  // leave open" -- with this arm judging whichever `find` reached first and passing the other in
-  // silence (finding 575). The shape is finding 162's (`a document that gains a list must gain a
+  // A **section** writes one record, and two under one heading is two answers to "what did this
+  // round leave open" -- with this arm judging whichever `find` reached first and passing the other
+  // in silence (finding 575). The shape is finding 162's (`a document that gains a list must gain a
   // reader for it`), one kind over: the second list here has no reader at all, because the arm's
   // subject is a round's record and a round has one.
   //
-  // The scope is the newest round, which is the only one whose record can still be merged; a frozen
-  // round's second section would be a demand for a repair the corpus forbids. That costs nothing
-  // today -- measured at v3.114, no shipped record belongs to a round that wrote two -- so this is a
-  // floor that closes the silence before it has a tenant.
-  const sameRound =
-    newestRound === null ? [] : records.filter((one) => one.owner.round === newestRound.round);
-  if (sameRound.length > 1) {
+  // The key is the heading's **line**, not its number, and finding 585 is why: a round may hold an
+  // addendum, `v2.15` does, and its addendum wrote a second record (`### Not fixed here`). Keyed by
+  // number, this rule would refuse a round for using the form the corpus invented for a round that
+  // ran twice; keyed by heading, it refuses what it means -- two records under one heading. The
+  // scope stays the newest round: a frozen round's second section would be a demand for a repair
+  // the corpus forbids. Measured at v3.116, no heading holds two.
+  const sameHeading =
+    newestRound === null ? [] : records.filter((one) => one.owner.line === newestRound.line);
+  if (sameHeading.length > 1) {
     problems.push(
-      `${sameRound[1].label}: the ${newestRound.round} round wrote ${String(sameRound.length)} records, so ` +
-        `"what that round left open" has ${String(sameRound.length)} answers and only the first of them is ` +
-        'judged -- merge them under one heading, because a round has one record',
+      `${sameHeading[1].label}: the ${newestRound.round} round wrote ${String(sameHeading.length)} records ` +
+        `under one heading, so "what that round left open" has ${String(sameHeading.length)} answers and ` +
+        'only the first of them is judged -- merge them under one heading, because a heading holds one record',
     );
   }
-  const newestRecord = sameRound[0] ?? null;
+  const newestRecord = sameHeading[0] ?? null;
   let quotedRows = 0;
   if (newestRecord !== null) {
     const population = witnesses.map((one) => plain(one));
@@ -1629,17 +1792,24 @@ function check() {
       );
     }
   }
-  // The record population, printed rather than left to be inferred from the arm's silence. Two
-  // numbers, and each answers a question a rule cannot: how many records no round owns (the
-  // `## Pass N` volumes name no round, so the arm looks up for an owner and finds none -- 25 today,
-  // measured here for the first time, which is O-081), and how many rounds wrote no record at all
-  // (a round may leave nothing open, and a round that lost its record looks the same from the
-  // round's side -- 18 today). Neither is a refusal: a frozen record cannot be given a round, and
-  // a round with nothing left open needs no record. A report is what makes the two countable.
+  // The record population, printed rather than left to be inferred from the arm's silence. Each of
+  // these numbers answers a question a rule cannot: how many records no round owns (the `## Pass N`
+  // volumes name no round, so the arm looks up for an owner and finds none -- 25 today, measured in
+  // v3.115, which is O-081), and how many rounds wrote no record at all (a round may leave nothing
+  // open, and a round that lost its record looks the same from the round's side). Neither is a
+  // refusal: a frozen record cannot be given a round, and a round with nothing left open needs no
+  // record. A report is what makes the two countable.
+  //
+  // Counted, not subtracted (finding 585). The last number used to be
+  // `rounds.length - recordRounds.size`, which is a count of headings minus a count of distinct
+  // names; the corpus repeated one number, so the difference counted the repetition as a round that
+  // wrote nothing. A number two readers can derive differently is a number one of them is wrong
+  // about, so this one is derived once: the rounds without a record, counted from the rounds.
+  const wroteNone = ascending.filter((one) => !recordRounds.has(one.round)).length;
   console.log(
     `check-open-list: ${String(recordSections)} record(s): ${String(ownedRecords)} under a round and ` +
-      `${String(ownerlessRecords)} under none; ${String(rounds.length)} round(s), ` +
-      `${String(rounds.length - recordRounds.size)} of them wrote none`,
+      `${String(ownerlessRecords)} under none; ${String(firstHead.size)} round(s) + ` +
+      `${String(addenda.length)} addendum(s), ${String(wroteNone)} of them wrote none`,
   );
   console.log(
     `check-open-list: ${String(tables)} record(s) in table form (${String(tableRows)} row(s)); ` +

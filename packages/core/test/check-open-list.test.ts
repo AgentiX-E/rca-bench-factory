@@ -217,6 +217,57 @@ function priorityTables(text: string): { tables: number; rows: number } {
 }
 
 /**
+ * The sections that are records because their **body** is one, and whose heading the five names miss.
+ *
+ * The second half of the shape space. `priorityTables` counts the tables that begin with a
+ * `priority` column -- the property the guard refuses a record on -- and this counts the sections
+ * that hold nothing but entries and are named none of the names the corpus uses. Taken from the
+ * corpus rather than from a sixth string, for the reason `priorityTables` gives: a census that
+ * enumerates the names goes blind on the same day as the guard (finding 579), and this one is
+ * about the day it goes blind on the *body* (finding 586).
+ *
+ * The predicate is deliberately the plain one -- no prose at column zero, and at least one bullet
+ * whose headline is not struck and which carries a reason -- and not a call into the guard.
+ */
+function listOnlyRecords(): number {
+  const named = (heading: string) =>
+    heading === '## Open' ||
+    heading === '### Left open' ||
+    /^### (?:Left open|Leftovers|What is left),/.test(heading);
+  let count = 0;
+  for (const file of progressCorpus()) {
+    const lines = file.text.split('\n');
+    for (let i = 0; i < lines.length; i += 1) {
+      const head = /^(#{2,3}) (.*)$/.exec(lines[i] ?? '');
+      if (head === null) continue;
+      const level = (head[1] ?? '').length;
+      let end = lines.length;
+      for (let j = i + 1; j < lines.length; j += 1) {
+        const one = /^(#+)\s/.exec(lines[j] ?? '');
+        if (one !== null && (one[1] ?? '').length <= level) {
+          end = j;
+          break;
+        }
+      }
+      const body = lines.slice(i + 1, end);
+      if (named(lines[i]?.trim() ?? '')) continue;
+      const prose = body.some((line) => {
+        if (line.trim() === '') return false;
+        if (/^- /.test(line)) return false;
+        if (/^\s/.test(line)) return false;
+        if (/^---+\s*$/.test(line)) return false;
+        if (/^#+\s/.test(line)) return false;
+        return true;
+      });
+      if (prose) continue;
+      const open = body.filter((line) => /^- /.test(line)).some((line) => /\[open:/.test(line) && !/~~/.test(line));
+      if (open) count += 1;
+    }
+  }
+  return count;
+}
+
+/**
  * There was a copy of the guard's two regexes here, and five tests drove it.
  *
  * It is gone, and finding 203 is why: the guard's closure rule was `/~~|Closed by
@@ -277,7 +328,13 @@ describe('docs · the shipped list, as the guard reads it', () => {
           /^### What is left,/.test(trimmed)
         );
       }).length;
-    expect(sections, 'the guard read a different number of lists than the document has').toBe(headings);
+    // And the sixth name is not a name: `### Not fixed here` is a record because its **body** is
+    // nothing but entries, and the count here is taken from that property rather than from a sixth
+    // string -- a census that enumerated it would go blind on the same day the guard did (finding
+    // 586). `listOnlyRecords` counts the sections whose heading the five names miss.
+    const byBody = listOnlyRecords();
+    expect(byBody, 'the corpus holds no record whose heading the five names miss, so the census is vacuous').toBeGreaterThan(0);
+    expect(sections, 'the guard read a different number of lists than the document has').toBe(headings + byBody);
     expect(entries, 'the parts do not add up to the whole').toBe(open + closed);
     // The rows a record carries are not entries: a record's rows are counted on their own
     // line, because they are a different kind of object -- the log states them separately and so
@@ -802,7 +859,7 @@ describe('docs · a record is found by its body, and every name the corpus gave 
         `## Open\n\n${withId(OPEN_ENTRY, 1)}\n\nChecked at v9.9: **1** entries open\n\n## Pass log\n\nbody\n`,
     );
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('1 record(s): 1 under a round and 0 under none; 2 round(s), 1 of them wrote none');
+    expect(r.out).toContain('1 record(s): 1 under a round and 0 under none; 2 round(s) + 0 addendum(s), 1 of them wrote none');
   });
 
   it('counts a record whose file names no round, rather than losing it', () => {
@@ -814,7 +871,201 @@ describe('docs · a record is found by its body, and every name the corpus gave 
         '- A residual the file never dated. [open: the reason this is still work is long enough to read]\n',
     );
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('1 record(s): 0 under a round and 1 under none; 0 round(s), 0 of them wrote none');
+    expect(r.out).toContain(
+      '1 record(s): 0 under a round and 1 under none; 0 round(s) + 0 addendum(s), 0 of them wrote none',
+    );
+  });
+});
+
+/**
+ * A round is a number, and an addendum is a section of one.
+ *
+ * The population line said `211 round(s), 18 of them wrote none`, and both numbers were wrong in
+ * the same way: `211` counted **headings** while `18` was a heading count minus a count of
+ * distinct round names. The corpus repeats one number -- `## v2.15, addendum` -- so the difference
+ * counted the repetition as a round that wrote nothing. There are **210** rounds, **17** of them
+ * wrote no record, and one addendum.
+ *
+ * The count is derivable without a single heading: the numbers are dense inside each era, 94 of
+ * them in `v2` (v2.06..v2.99) and 116 in `v3` (v3.00..v3.115), which is 210 slots with none empty.
+ * That is why the two rules below refuse a number headed twice and a number no round uses: in a
+ * corpus where every increment is a round, a gap is a round the log lost, and the two together are
+ * the second derivation of a count this project only trusts twice.
+ */
+describe('docs · a round is a number, and the number line is dense', () => {
+  const ITEM = 'A residual the live list also carries.';
+  // Every open entry needs its own reason: the guard refuses two entries that share one, because a
+  // shared reason is a placeholder that will be re-signed without being read.
+  const reason = (n: number) => `reason ${String(n)}: this is still work and the reason is long enough`;
+  const record = (n: number) => `### Left open\n\n- ${ITEM} [open: ${reason(n)}]\n\n`;
+  const page = (stamp: string, rounds: string) =>
+    `## Headline\n\ntext\n\n## Open\n\n${withId(`- ${ITEM} [open: ${reason(90)}]`, 1)}\n\n` +
+    `Checked at ${stamp}: **1** entries open\n\n## Pass log\n\nbody\n\n${rounds}`;
+
+  it('counts a round once, and prints the addendum beside the count', () => {
+    // v9.9's addendum repeats its number by design, so a count of headings is 3 while the corpus
+    // has 2 rounds. The line says both numbers, because a reader who was told `211 rounds` by every
+    // earlier round deserves to see where that number came from (finding 585).
+    const r = runOn(
+      page(
+        'v9.9',
+        `## v9.8 — a round\n\n${record(1)}` +
+          `## v9.9 — a round\n\n${record(2)}` +
+          '## v9.9, addendum — the gate I ran could not fail\n\n### Readings\n\n| item | value |\n| --- | --- |\n| x | 1 |\n\n',
+      ),
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('2 round(s) + 1 addendum(s), 0 of them wrote none');
+  });
+
+  it('refuses a round number headed twice', () => {
+    // Two plain headings under one number is one number naming two rounds, and every question this
+    // file asks -- which record did the round write, is the stamp current -- becomes a question
+    // about position. The addendum form is the escape, and the refusal names it.
+    const r = runOn(page('v9.9', `## v9.9 — a\n\n${record(1)}## v9.9 — b\n\nbody\n\n`));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('the round v9.9 is headed twice');
+    expect(r.out).toContain('an addendum is `## v9.9, addendum`');
+  });
+
+  it('counts a round that wrote nothing once, even when its number is headed twice', () => {
+    // The number this round repaired. The line used to be `rounds.length - recordRounds.size`: a
+    // count of **headings** minus a count of distinct **names**. A repeated number therefore
+    // reported a round that wrote nothing, in a corpus where the repetition was the only thing
+    // wrong. The refusal and the count are two readers of one fact, and both have to say it.
+    const r = runOn(
+      page('v9.9', `## v9.9 — a\n\n${record(1)}## v9.9 — b\n\n${record(2)}`),
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('1 round(s) + 0 addendum(s), 0 of them wrote none');
+  });
+
+  it('refuses a gap in the round numbers', () => {
+    // Two rounds whose numbers are two apart: one number names no round, so either a round is
+    // missing from the log or a round was renumbered. Both are things a reader has to be told.
+    const r = runOn(page('v9.10', `## v9.8 — a\n\n${record(1)}## v9.10 — b\n\n${record(2)}`));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('the round numbers go from v9.8 to v9.10, so 1 number(s) in between name no round');
+  });
+
+  it('reads the era boundary as the next round rather than as a gap', () => {
+    // `v9.99` is followed by `v10.00` and not by `v9.100`: an era begins at `.00`. The shipped
+    // corpus has exactly one of these, `v2.99 -> v3.00`, and a rule that read it as a 900-number
+    // gap would refuse the corpus it was written for.
+    const r = runOn(page('v10.00', `## v9.99 — a\n\n${record(1)}## v10.00 — b\n\n${record(2)}`));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('2 round(s) + 0 addendum(s), 0 of them wrote none');
+  });
+
+  it('refuses an era that does not begin at its first round', () => {
+    const r = runOn(page('v10.01', `## v9.99 — a\n\n${record(1)}## v10.01 — b\n\n${record(2)}`));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('neither continues the last one nor begins at `.00`');
+  });
+
+  it("reads an addendum's record as the round's, and not as a second round's", () => {
+    // The shipped shape: `v2.15` wrote `### Left open`, then its addendum wrote `### Not fixed
+    // here`. Keyed by number, the one-record rule would refuse the form the corpus invented for a
+    // round that ran twice; keyed by heading, both records find their round and neither is a round
+    // of its own (findings 575, 585).
+    const r = runOn(
+      page(
+        'v9.9',
+        `## v9.9 — a round\n\n${record(1)}` +
+          '## v9.9, addendum — the gate I ran could not fail\n\n### Not fixed here\n\n' +
+          `- **A promise the addendum made.** \`[open: ${reason(2)}]\`\n\n`,
+      ),
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain(
+      '2 record(s): 2 under a round and 0 under none; 1 round(s) + 1 addendum(s), 0 of them wrote none',
+    );
+  });
+});
+
+/**
+ * The fifth name is a list, and the body rule of v3.115 was written for a table.
+ *
+ * `### Not fixed here` is `v2.15`'s addendum: two entries, each a headline with a reason. It is a
+ * record to any reader and it was prose to this guard -- and because it sits under an addendum, the
+ * round it belongs to was counted among the rounds that wrote nothing, while it wrote two
+ * promises. The body rule added in v3.115 asks whether a section's first cell is `priority` and
+ * therefore only ever sees tables, which is one half of the shape space; this is the other half.
+ *
+ * The repair is not a sixth name -- finding 579 measured what a name table costs. It is the
+ * property a name cannot lie about: the section holds **nothing but** top-level bullets and their
+ * continuation lines, and at least one of them is an open entry, read with the same strike test the
+ * live list uses. A plan is a list of bullets too, and what separates it from a record is that its
+ * bullets carry no reason a reader could act on.
+ */
+describe('docs · a section that is only entries is a record, whatever its heading says', () => {
+  const reason = (n: number) => `reason ${String(n)}: this is still work and the reason is long enough`;
+  const page = (round: string) =>
+    `## Headline\n\ntext\n\n## Open\n\n${withId(OPEN_ENTRY, 1)}\n\nChecked at v9.9: **1** entries open\n\n` +
+    `## Pass log\n\nbody\n\n${round}`;
+
+  it('counts it as a record, and reads the entries it holds', () => {
+    // The two promises are in the live list as well, because the arm judges the newest round's
+    // record against the entries and a record that names a residual nothing carries is refused --
+    // which is the reader this section lacked until now.
+    const r = runOn(
+      `## Headline\n\ntext\n\n## Open\n\n` +
+        `${withId(`- A promise. [open: ${reason(1)}]`, 1)}\n${withId(`- A second promise. [open: ${reason(2)}]`, 2)}\n\n` +
+        'Checked at v9.9: **2** entries open\n\n## Pass log\n\nbody\n\n' +
+        '## v9.9 — a round\n\n### Not fixed here\n\n' +
+        `- A promise. [open: ${reason(1)}]\n- A second promise. [open: ${reason(2)}]\n`,
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 record(s): 1 under a round and 0 under none');
+    // Non-vacuity: the section is not merely counted, its entries are judged. A count with no
+    // reader is what this file exists to refuse, one level up from an entry with no reader.
+    expect(r.out).toContain('4 open with a reason');
+    expect(r.out).toContain("the v9.9 record's 2 row(s) were judged");
+  });
+
+  it('refuses a short reason inside it, which is only reachable if its entries are read', () => {
+    const r = runOn(page('## v9.9 — a round\n\n### Not fixed here\n\n- **A promise.** `[open: too short]`\n'));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('the open reason is 9 character(s)');
+  });
+
+  it('does not count a section that mixes prose with entries', () => {
+    // The list a round writes in its own words: a sentence at column zero, then bullets. It is a
+    // round's prose, not its record, and the property that separates them is the prose.
+    const r = runOn(
+      page(
+        '## v9.9 — a round\n\n### What I did not fix\n\nThe list below is what this round left.\n\n' +
+          `- **A promise.** \`[open: ${reason(1)}]\`\n`,
+      ),
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('0 record(s): 0 under a round and 0 under none');
+  });
+
+  it('does not count a list whose entries are all struck', () => {
+    // A list of closures is not a record: the corpus keeps closures in one place, `## Closed`, and
+    // a stricken headline is its own definition of one (finding 458).
+    const r = runOn(
+      page(
+        '## v9.9 — a round\n\n### What this round closed\n\n' +
+          `- ~~**A promise.**~~ ~~\`[open: ${reason(1)}]\`~~\n`,
+      ),
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('0 record(s): 0 under a round and 0 under none');
+  });
+
+  it('reads the shipped corpus as 220 records, with the addendum counted in', () => {
+    // The shipped reading, and the two rounds it carries: v3.115 found 22 records under two names the
+    // guard did not read (218 -> its own), v3.116 found the addendum's record under a name and a form
+    // it did not read (219), and this round's own record makes 220. The rounds are **211** and the
+    // addendum is one: the line printed `211 round(s)` and `18 of them wrote none` while subtracting a
+    // count of names from a count of headings (finding 585).
+    const shipped = spawnSync('node', [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
+    expect(shipped.status, shipped.stdout + shipped.stderr).toBe(0);
+    expect(shipped.stdout).toContain(
+      '220 record(s): 195 under a round and 25 under none; 211 round(s) + 1 addendum(s), 17 of them wrote none',
+    );
   });
 });
 
