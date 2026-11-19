@@ -353,9 +353,9 @@ for.
 
 ### Measured before granted
 
-The question "which headings hold a bullet with a reason" answers fourteen, and thirteen of those are
-prose quoting an entry. The question a name cannot lie about is whether the section is **nothing but**
-entries:
+The question "which sections hold a bullet with a reason" answers 202, and almost every one of them is
+prose around an entry -- a paraphrase, a quotation, the round's own account. The question a name cannot
+lie about is whether the section is **nothing but** entries:
 
 | predicate over the progress corpus | sections |
 | --- | --- |

@@ -2406,7 +2406,7 @@ distinct round **names** -- and `recordRounds` is a `Set` of names, so the corpu
 number was counted as a round that wrote nothing. Two operands, two units, and the difference
 published as a fact about the corpus.
 
-The units differ by exactly one section, and the corpus names it:
+The two units differ by exactly one heading, and the corpus names it:
 
 ```
 docs/progress/volume-04.md:1059: ## v2.15, addendum — the gate I ran could not fail
@@ -2421,9 +2421,8 @@ docs/progress/volume-04.md:1059: ## v2.15, addendum — the gate I ran could not
 | names that wrote none, **subtracted** | `rounds.length - recordRounds.size` | **18** |
 
 An addendum is not a round: it is a second section of one, written when the round was interrupted
-and resumed. `v2.15`'s addendum is what a `## v2.15` heading would have been if the summary had been
-written twice -- and the corpus has exactly one, in volume-04, at the round where the gate the round
-had just installed failed on it.
+and resumed -- `v2.15`'s was written because the gate that round had just installed failed on it.
+The corpus has exactly one, in volume-04, and it is the only place where a number is written twice.
 
 ### 2. The number line, and the count that does not need a heading
 
@@ -2464,11 +2463,12 @@ Two entries, each a headline with a reason, under a name no table of names held 
 form, which is the half of the shape space the body rule of v3.115 never looked at. That rule asks
 whether a table's first column is `priority`, and this section is not a table.
 
-The corpus does not have many of these. Asked which headings hold a bullet with a reason, the answer
-is fourteen, and thirteen of them are prose quoting an entry: the `### What the previous pass
-recorded` sections paraphrase a closed entry, `### 一、The count was computed from the rule it was
-defending` strikes the one it quotes, and two of `acceptance.md`'s examples are examples. Asked the
-question the name cannot lie about -- *is this section nothing but entries?* -- the answer is one:
+Almost every one of those sections is prose. **1,311** level-2 and level-3 sections are named
+none of the five, and **202** of them hold a bullet carrying a reason -- the `### What the previous
+pass recorded` sections paraphrase a closed entry, `### 一、The count was computed from the rule it
+was defending` strikes the one it quotes, and the paragraphs around them are the round's account.
+Asked the question the name cannot lie about -- *is this section nothing but entries?* -- one
+answers yes:
 
 | predicate over the progress corpus | sections |
 | --- | --- |
@@ -2508,7 +2508,8 @@ if (/^\s/.test(line) || /^---+\s*$/.test(line)) continue;
 return 0;                              // everything else is prose -- a heading included
 ```
 
-and the population line, counted rather than subtracted:
+and the population line, counted rather than subtracted -- this is the corpus as the round found it,
+before it wrote the record whose absence would have made it 211 rounds and 18:
 
 ```
 check-open-list: 219 record(s): 194 under a round and 25 under none; 210 round(s) + 1 addendum(s), 17 of them wrote none
@@ -2556,7 +2557,7 @@ and eleven of the seventeen say the opposite of what the line implied. What repl
 and true: the arm cannot see what a round changed, because `## Open` holds the current list and the
 diff is in git rather than in the corpus -- `O-084`.
 
-### 7. This round's own three defects
+### 7. This round's own four defects
 
 1. **The body rule read a round as a record.** Allowing a heading inside the body made every round
    own a record, because a round's body holds its `### Left open`. The nested-section refusal said
@@ -2615,7 +2616,7 @@ The arm was restored byte for byte (`diff -q` against the backup) and the file i
 | the number line | **210** distinct numbers, dense: 94 in `v2` (`v2.06`..`v2.99`) and 116 in `v3` (`v3.00`..`v3.115`), one era boundary, one repeated number |
 | the index | **68,687 -> 68,617** bytes -- one entry out, one in, and the new one is shorter |
 | the record | **82,170 -> 84,152** bytes over 56 entries, in **two** files (49,545 + 34,607) |
-| the volumes | **17**, and this round is the sixth in `volume-17.md` (**182,945** bytes) |
+| the volumes | **17**, and this round is the sixth in `volume-17.md` (**183,040** bytes) |
 | the falsifications | nine edits, **thirty-five** reds |
 | gate sites / scripts / throws | **144** / **67 of 98** / **99** -- no new exit and no new script |
 | the budgets | **37** files state one -- unchanged: no test file was added |
