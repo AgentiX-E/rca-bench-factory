@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 257 core + 4 cli |
-| Test lines | 113,380 core + 3,242 cli |
-| Tests | 6,704 core + 187 cli |
+| Test lines | 113,619 core + 3,242 cli |
+| Tests | 6,715 core + 187 cli |
 | Tracked files | 668 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.119: **31** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.120: **34** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -950,6 +950,32 @@ is a row about rather than paraphrase one that no `grep` will find.
   the two historical reds left their words in a transcript the report does not reproduce, so the next one has to
   be read at the terminal -- `failureReport` names the step, the directory, the command and the exit code, and
   nothing the step wrote]`
+- O-088 · **Two hundred and three rounds before this one carry no closing reading, and 12 of 215 do.**
+  `R7` refuses a recording older than the run the ledger's newest `| CI |` row reports, and the ledger's
+  newest row sat under `v3.54` for **65 rounds** (`volume-11.md:1464`), so a recording from any run newer than
+  `42160224254` passed -- including one **three CI runs behind** the tree. `R11` is the repair: the newest
+  round's section must carry a row that names a run and states `**<n> of <m> jobs success**`, with `m` equal
+  to `ci.yml`'s job count, and the green line prints how many rounds back the row it compares against sits.
+  `[open: the other 203 rows would each have to name a run nobody wrote down here, and a row written from
+  memory is the one thing a recording may never do -- the gap is stated as a distance, and the rule is about
+  the present]`
+- O-089 · **The install step's spread is 52x and a bound can only sit above it.**
+  `apt-get install prometheus` measured **17 s** on a warm runner and **888 s** on `44516888528`; the 16-minute
+  bound was **1.08x** that day, and the multiple is two. It is **30** minutes now (2.0x) and the `backend`
+  job's ceiling moved **34 -> 48**.
+  `[open: a slow mirror and a hang look the same to `timeout-minutes`, so the bound covers the worst day
+  recorded and the day that beats 888 s will raise it again -- the step is an external install, and no
+  arithmetic can bound a network]]
+- O-090 · **The budget rule divides by a reading the box decides, and this box is shared.**
+  `check-test-budgets` refuses a file whose slowest test takes more than half its stated budget, and the
+  reading comes from the vitest report -- one afternoon produced **1 635**, **2 091** and **2 873 ms** for
+  `step-process.test.ts` as the host's load average moved from **1.2** to **6.9** (this box is four cores
+  inside a shared host). A budget that satisfies the rule on a quiet box fails on a loaded one, so the
+  repair is a number that ratchets with the box: `step-process.test.ts` went **4 000 -> 6 000** ms this
+  round, 2.1x the slowest reading and 6.4x the isolated one.
+  `[open: the ratio is against a number the machine decides, and no declaration of intent can turn it into
+  a property of the test -- what would is a budget taken from the isolated reading, which is a different
+  question (a file measured alone is sized for a machine this one is never run on)]`
 
 ## Pass log
 
@@ -985,7 +1011,7 @@ and this table.
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
-| [volume-18.md](progress/volume-18.md) | 8 | v3.112 | v3.119 |
+| [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

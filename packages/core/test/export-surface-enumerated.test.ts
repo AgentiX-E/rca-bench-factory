@@ -1763,7 +1763,16 @@ describe('the gate can actually fail', () => {
  * says it *runs* — and the division is only sound while that threshold is what
  * it says. Which is what the first test below pins.
  */
-describe('the claim this list makes, and the instrument that makes the other one', () => {
+/**
+ * The budget this suite's own tests run under.
+ *
+ * Measured: the slowest case here takes **1 049 ms**, past the floor at which
+ * `check-test-budgets` stops letting vitest's 5 000 ms default decide a verdict -- the file
+ * grew a case this round and crossed the line with it. 4 000 ms is 3.8 times the reading.
+ */
+const SUITE_BUDGET_MS = 4_000;
+
+describe('the claim this list makes, and the instrument that makes the other one', { timeout: SUITE_BUDGET_MS }, () => {
   it('leaves execution to a gate that requires every function to run', () => {
     // The precondition. If `functions` is ever lowered, "every export is
     // executed" stops being true for the whole surface at once, and this list

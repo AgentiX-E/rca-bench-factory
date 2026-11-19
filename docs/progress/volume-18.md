@@ -1507,9 +1507,9 @@ workflow and compares the sentence against its own arithmetic.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **257 files, 6704 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **261 files, 6891 tests passed** (as of this commit) |
+| `core` test suite | **257 files, 6704 tests passed** (at v3.119) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.119) |
+| repo test suite | **261 files, 6891 tests passed** (at v3.119) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6700 -> 6704, +4**: the two populations of a bound, the step nothing reaches, the superlative with no subject, and the shipped workflow's partition counted on both sides |
 | the rewritten cases | **2**: `stepsOf` reads an inherited bound as `'job'` rather than as none, and the cost line names both populations |
@@ -1553,3 +1553,180 @@ the round that was about boundaries. The check is one line and neither script ha
 - One volume writes its sections two ways. `[open: volume-17.md holds 44 headings spelled "### One ·" and 42
   spelled "### 1.", and the four volumes that came before it each chose a different separator; making the log
   agree with itself costs a renumbering of 86 headings and buys a form no reader in this tree keys on yet]`
+
+## v3.120 · The second opinion had not been written for 65 rounds, and the rule that read it could not say so
+
+**This tree's 215 round sections carry 12 closing readings. The newest is under `v3.54`, sixty-five rounds
+behind the log's own end** -- and `R7`, the rule whose whole job is to compare the recording with the round
+that reports it, was comparing it with that row.
+
+### The measurement
+
+`R7` refuses a recording older than the run the ledger's newest `| CI |` row reports. Its summary clause
+printed, until this round:
+
+```
+the ledger's newest run is 42160224254; the recording (43720087959) is newer, 3 earlier row(s) name no run
+```
+
+Every number in that clause is true. The row is in `volume-11.md:1464`, under `## v3.54 — a job no run had
+measured, and the budget only CI can spend`. Between that row and the end of the log there are **65 rounds**,
+and **three CI runs** happened after the recording the clause calls "newer":
+
+| | |
+| --- | --- |
+| round sections in `docs/progress/` | **215** |
+| of them carrying a `| CI |` row | **12** |
+| rows in total | **15** (3 name no run) |
+| newest row | `volume-11.md:1464`, under `v3.54` |
+| rounds after it | **65** (`v3.55` … `v3.119`) |
+| CI runs newer than the recording | **3** (`44488303256`, `44513651597`, `44516888528`) |
+
+So the rule was not wrong: it was reading a reference that had stopped moving. A recording from any run newer
+than `42160224254` passed, however many runs had happened since -- and nothing in the tree could notice,
+because the only thing `R7` looks at is the row, and a row that is never written is a row that never
+disagrees.
+
+### Why the row stopped
+
+Not a decision. Volumes 12 through 18 contain **zero** closing readings, and volume 11 contains seven; the
+convention was followed for a while and then quietly dropped, which is the shape every unread rule in this
+repository has had: **a convention nothing reads is a convention that decays at whatever rate its author's
+attention decays.** The row's own comment says what it is for -- "the ledger is where a round says which run
+it ended on" -- and the reading of it here had no way to ask whether anybody still did.
+
+### R11 -- the newest round ends on a closing reading of *this* workflow
+
+Two clauses, both about the present rather than about the 203 rounds behind it. Backfilling those from memory
+would be inventing provenance, which is the one thing a recording may never do, so the rule asks only what the
+round being written can answer:
+
+- **the newest round's section carries a `| CI |` row that names a run.** A ledger read with no row at all
+  now refuses rather than returning early -- that early return is what made an empty ledger indistinguishable
+  from an agreeing one.
+- **that row states `**<n> of <m> jobs success**`**, with `m` equal to `ci.yml`'s job count and `n` equal to
+  `m`.
+
+The second clause is not decoration. This repository draws run ids from one sequence for **two** workflows,
+and `ledger-runs.mjs` says so in a paragraph that was written precisely because it could not be enforced: "a
+row labelled `CI` is assumed to cite runs of *this* workflow". Last round's report called
+`44516888822` a CI run with "eight jobs". Measured:
+
+```
+44516888822  1 job    Round-trip a synthetic corpus in t...
+44516888528  8 jobs   every proved exit can disappear wi..., injection batteries..., ...
+```
+
+One job, not eight, and it is the `Anchor round trip` workflow. The tally makes that mistake a refusal
+instead of a paragraph: `**1 of 1 job success**` cannot pass a workflow that declares 8.
+
+### The recording was not merely stale -- it was hiding three bounds
+
+`measure-ci-baseline.mjs 44516888528` rewrote the recording, and the gate immediately refused **three**
+steps:
+
+| step | bound | newest day | ratio | what it was sized on |
+| --- | --- | --- | --- | --- |
+| `Install a backend this repository did not write` | 16 min | **888 s** | **1.08x** | a 648 s cold-runner day, when the slowest it had seen was 273 s |
+| `Every gate can be shown to fail` | 9 min | **295 s** | **1.83x** | 254 s, three rounds ago |
+| `Gate-test battery (…)` | 8 min | **250 s** | **1.92x** | 231 s, the run the recording held |
+
+The multiple is two, and each of the three was under it. Nothing had changed in `ci.yml`; the day these bounds
+were written against had simply been replaced by a slower one, and the recording was three runs behind the
+tree. **A recording that is never refreshed is a set of bounds that are never asked the question**, and the
+decayed ledger is what kept the question from being asked.
+
+The repairs are the arithmetic the rules already demand:
+
+- the install is a mirror step, and its spread is now **17 s to 888 s -- 52x**; a bound that cannot hold a bad
+  network day reports slowness as a hang, so 16 minutes became **30** (2.0x the slowest day) and the
+  `backend` job's ceiling moved **34 -> 48** (the floor's 15 + 30 + the reader's 3);
+- `Every gate can be shown to fail`: **9 -> 10** minutes (2.03x);
+- `Gate-test battery`: **8 -> 9** minutes (2.16x).
+
+The rest of the workflow's bounds moved with the recording, and the summary's `bounds total` and `measured`
+are recomputed from it rather than typed.
+
+### Falsifications
+
+Seven edits, each a way the repair could have been written and not been one, each followed by
+`test/ci-budget.test.ts` and `test/ledger-runs.test.ts` alone, with the two modules restored byte for byte
+after every run.
+
+| the edit | reds |
+| --- | --- |
+| the newest round is allowed to end with no row, which is the state the log was in | 3 |
+| a row that names no run counts as the round having ended | 1 |
+| the tally is not required, so `**five jobs green**` closes a round | 1 |
+| `m` is compared with nothing, so a one-job run passes a workflow with eight | 1 |
+| `n` is not compared with `m`, so a red job passes beside the word success | 1 |
+| the section index is dropped from the reader, so a row is read and its position is not | 10 |
+| the empty ledger returns early again, which is the pre-repair shape | 1 |
+
+**Eighteen reds across seven mutations.** The sixth is the one worth reading twice: it leaves every rule
+intact and removes only the *index*, and ten cases catch it -- three in the reader's own file, seven where the
+rules ask a log a question the log can no longer answer. "This log has rows" and "this round has one" are two
+facts, and the second is the one the rule needs.
+
+### Readings
+
+> Ledger for `v3.120`.
+
+| item | value |
+| --- | --- |
+| CI | run `44516888528` on `f733160b`: **8 of 8 jobs success** -- `every proved exit` **7.1**, `injection batteries (two probes)` **13.4**, `cold tree` **0.4**, `build / typecheck / lint / coverage / mutation` **7.8**, `every proved exit (shard 2)` **11.2**, `a backend this repository did not write` **15.3**, `golden master` **0.9**, `injection batteries (one step each)` **14.1** min; **15.3 min of wall clock** |
+| `core` test suite | **257 files, 6715 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **261 files, 6902 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
+| new tests | **6704 -> 6715, +11**: three for the reader's section index, and eight for `R11` -- a round with no row, a row that names no run, a row with no tally, a tally counting the wrong number of jobs, a tally whose successes fall short, a caller with no sections, an empty ledger, and the gate driven end to end |
+| the rewritten cases | **1**: the empty-directory shape now carries `sections: []` |
+| the ledger | **15 rows -> 16**, the newest in the newest round; **12 -> 13** round sections with a reading; the **65** rounds behind it stated rather than backfilled |
+| the recording | `43720087959` -> **`44516888528`**: **8** job(s), **83** step(s), **3** CI runs newer than the one it replaced |
+| the bounds | 3 steps raised (**16->30**, **9->10**, **8->9** min), 1 job ceiling (**34->48**); the partition still **62 of 83 / 21 / 0** |
+| the readings | **7 -> 8** day(s) in `ci-readings.json`; the slowest day of the install moved **273 -> 888 s** |
+| the budgets | **37 -> 39** files state one -- `export-surface-enumerated.test.ts` (**1 049 ms**) and `gate-steps.test.ts` (**1 398 ms**), both at **4 000 ms** -- and one raised: `step-process.test.ts` **4 000 -> 6 000** ms, 2.1x the slowest of its three readings |
+| falsifications | seven edits, **eighteen** reds |
+| the number line | **213 -> 214** distinct numbers, dense: 94 in `v2`, 120 in `v3` (`v3.00`..`v3.120`) |
+| LLM calls | **0** |
+
+### The first rehearsal failed at step 8, and it was right
+
+`verify:local` ran 35 commands over 1h 3m and came back `FAILED at 8/35`: `check-test-budgets` refused
+two files, `export-surface-enumerated.test.ts` at **1 049 ms** and `gate-steps.test.ts` at **1 398 ms**,
+neither of which states a budget -- so their verdicts were being decided by vitest's 5 000 ms default. The
+second is this round's own doing: the case that reads the runner's plan grew a comment and a ceiling, and
+the file crossed the 1 000 ms floor with it. The repair is the one the rule asks for and the one finding 578
+established: a `SUITE_BUDGET_MS` of **4 000** on the suite (2.9x and 3.8x the two readings), stated on the
+describe that holds the slow case rather than on the case, because a stall does not respect test boundaries.
+
+The step was then run alone -- `verify:local --only "Every test's cost against the budget it declares"`
+-- and came back `OK (1 command(s), 1 of the 48 local steps)`. The full rehearsal was run again.
+
+It failed at step 27, and again on something this round had moved: `check-repository-table` said the
+repository row held `113,595 core` test lines while the tree held **113,615**, because the count was taken
+before the two `SUITE_BUDGET_MS` blocks added twenty lines. That is the shape finding 586 recorded -- *a
+number derived before the change it describes* -- arriving in the round that keeps telling other rounds
+about it. The count is taken from the tree now.
+
+The third rehearsal ran **1h 2m** and failed at step 8 for a reason that had nothing to do with the tree:
+`step-process.test.ts` measured **2 873 ms** against its 4 000 ms budget (0.72) and
+`typecheck-entrypoint.test.ts` **15 376 ms** against 30 000 (0.51). The same tree had produced **1 635 ms**
+for the first of them an hour earlier, and a re-taken report produced **2 091 ms** -- three readings of one
+file, spanning 1.76x, on a box that is four cores inside a shared host (the load average was **6.9** while
+the rehearsal ran, against 1.2 when the quiet reading was taken). The budget is **6 000** ms now, 2.1x the
+slowest of the three and 6.4x the isolated one; the ratio rule that demanded it is `O-090`.
+
+### Left open
+
+- Two hundred and three rounds before this one carry no closing reading, and 12 of 215 do. `[open: the rows
+  are the only place a round says which run it ended on, and backfilling them would name runs nobody
+  recorded -- the rule is about the present, and the gap is a fact about the past that the summary now prints
+  as a distance in rounds]`
+- The budget rule divides by a reading the box decides, and this box is shared. `[open: one file measured
+  1 635, 2 091 and 2 873 ms within an afternoon as the host's load average moved from 1.2 to 6.9, so a budget
+  that satisfies 2x on a quiet box fails on a loaded one -- and the repair is a number that ratchets with the
+  box rather than a property of the test]`
+- The install step's spread is 52x and a bound can only sit above it. `[open: 17 s to 888 s is the mirror, not
+  the step, and no `timeout-minutes` can tell a slow mirror from a hang -- the bound now covers the worst day
+  seen, and the day that is slower than 888 s will raise it again]`

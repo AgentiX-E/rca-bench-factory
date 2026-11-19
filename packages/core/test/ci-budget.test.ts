@@ -673,7 +673,12 @@ describe('the step the recording has not measured yet', () => {
     );
     const ledger = join(dir, 'volumes');
     mkdirSync(ledger);
-    writeFileSync(join(ledger, 'volume-01.md'), '## v0.1\n\n> Ledger for `v0.1`.\n\n| item | value |\n| --- | --- |\n| suite | 1 |\n');
+    // The log ends the way `R11` asks it to: this case is about the declarations file, and a
+    // fixture that failed the round rule would be answering a question it did not ask.
+    writeFileSync(
+      join(ledger, 'volume-01.md'),
+      '## v0.1\n\n> Ledger for `v0.1`.\n\n| CI | run `41637098008` on `abc1234`: **1 of 1 job success** |\n',
+    );
     const result = spawnSync(process.execPath, [GATE], {
       encoding: 'utf8',
       env: {
@@ -688,6 +693,9 @@ describe('the step the recording has not measured yet', () => {
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('check-ci-budget: OK');
+    // The distance is printed on the green line: a row that exists states an id, and nothing
+    // in an id says whether it was written this week or 65 rounds ago.
+    expect(result.stdout).toContain(', in the newest round');
     expect(result.stdout).toContain('1 step(s) declared and awaiting the run that measures them');
     expect(result.stdout).toContain('batteries / Quick battery');
   });
@@ -934,6 +942,159 @@ describe('the recording against the round that reports it', () => {
     });
     expect(unnamed.status).toBe(1);
     expect(unnamed.stderr).toContain('names no run');
+  });
+});
+
+/**
+ * A volume holding the sections this case wrote, with the rows each one carries.
+ *
+ * Written as text and read by the shipped reader rather than assembled as an object,
+ * because the rule under test is about *where* a row sits: a fixture that built the
+ * section index by hand could agree with the rule about a structure the parser never
+ * produces, and the two would then be wrong together.
+ */
+function volumeOf(sections: { head: string; rows?: string[] }[]): string {
+  return sections
+    .map((one) =>
+      [
+        `## ${one.head}`,
+        '',
+        `> Ledger for \`${one.head.split(' ')[0]}\`.`,
+        '',
+        ...(one.rows ?? []),
+        '',
+      ].join('\n'),
+    )
+    .join('\n');
+}
+
+function ledgerFrom(sections: { head: string; rows?: string[] }[], name = 'volume-01.md') {
+  const dir = mkdtempSync(join(tmpdir(), 'rca-ci-round-'));
+  writeFileSync(join(dir, name), volumeOf(sections));
+  return readLedger(dir);
+}
+
+/** A closing reading in the form `R11` asks for, citing the run this fixture's recording holds. */
+const CLOSING = '| CI | run `41637098008` on `abc1234`: **1 of 1 job success** -- 2 min |';
+
+describe('the round the ledger ends on', () => {
+  it('refuses a newest round that ends without a closing reading, and counts the rounds since', () => {
+    // The defect, measured: the shipped log's newest `| CI |` row sat under `v3.54` while the
+    // newest round was `v3.119` -- 65 rounds later. `R7` compares the recording with that row,
+    // so a recording from any run newer than a 65-round-old one passed, and the staleness of
+    // the recording was invisible for as long as the log stayed unwritten.
+    const ledger = ledgerFrom([
+      { head: 'v0.1 — first', rows: [CLOSING] },
+      { head: 'v0.2 — second' },
+      { head: 'v0.3 — third' },
+    ]);
+    const errors = ledgerErrors(
+      recordingOf({ batteries: { steps: { 'One battery': 351 } } }),
+      ledger,
+    ).join('\n');
+    expect(errors).toContain('the newest round (`v0.3`');
+    expect(errors).toContain('has no closing reading that names a run');
+    expect(errors).toContain('2 round(s) back');
+  });
+
+  it('accepts a newest round whose closing reading states the run and the tally', () => {
+    const workflow = oneJob([...step('One battery', 12)]);
+    const ledger = ledgerFrom([
+      { head: 'v0.1 — first' },
+      { head: 'v0.2 — second', rows: [CLOSING] },
+    ]);
+    expect(ledgerErrors(recordingOf({ batteries: { steps: { 'One battery': 351 } } }), ledger)).toEqual(
+      [],
+    );
+    // The tally's `1 of 1` is read against this workflow's own job count, so the case says
+    // the two agree rather than assuming a fixture with one job is one job.
+    expect(jobsOf(workflow)).toHaveLength(1);
+  });
+
+  it('refuses a row that sits in the newest round and names no run', () => {
+    // The difference between "the round wrote a row" and "the round wrote a row about a run":
+    // a row without an id is a sentence about a job count, and `R7` has nothing to compare.
+    const ledger = ledgerFrom([
+      { head: 'v0.1 — first', rows: ['| CI | **five jobs green** on the fourth push |'] },
+    ]);
+    const errors = ledgerErrors(
+      recordingOf({ batteries: { steps: { 'One battery': 351 } } }),
+      ledger,
+    ).join('\n');
+    expect(errors).toContain('has no closing reading that names a run');
+  });
+
+  it('refuses a closing reading that states no tally of jobs', () => {
+    // A run id with no verdict: the row says a run happened and not what it found, which is
+    // how an `Anchor round trip` run was reported as a CI run with eight jobs last round.
+    const ledger = ledgerFrom([
+      { head: 'v0.1 — first', rows: ['| CI | run `41637098008` on `abc1234`: all green -- 2 min |'] },
+    ]);
+    const errors = ledgerErrors(
+      recordingOf({ batteries: { steps: { 'One battery': 351 } } }),
+      ledger,
+    ).join('\n');
+    expect(errors).toContain('states no tally of jobs');
+  });
+
+  it('refuses a tally that counts a different number of jobs than the workflow declares', () => {
+    const workflow = workflowOf([
+      { id: 'batteries', steps: [...step('One battery', 12)] },
+      { id: 'verify', steps: [...step('One test', 5)] },
+    ]);
+    const ledger = ledgerFrom([{ head: 'v0.1 — first', rows: [CLOSING] }]);
+    const errors = ledgerErrors(
+      recordingOf({ batteries: { steps: { 'One battery': 351 } } }),
+      ledger,
+      workflow,
+    ).join('\n');
+    expect(errors).toContain('reports **1 job(s)**');
+    expect(errors).toContain('and `ci.yml` declares **2**');
+  });
+
+  it('refuses a tally whose successes fall short of the jobs it counts', () => {
+    // A closing reading is a green run. A row that states `**1 of 2 jobs success**` is a row
+    // reporting a red job beside the word "success", and a round cannot close on one.
+    const workflow = workflowOf([
+      { id: 'batteries', steps: [...step('One battery', 12)] },
+      { id: 'verify', steps: [...step('One test', 5)] },
+    ]);
+    const ledger = ledgerFrom([
+      { head: 'v0.1 — first', rows: ['| CI | run `41637098008` on `abc1234`: **1 of 2 jobs success** |'] },
+    ]);
+    const errors = ledgerErrors(
+      recordingOf({ batteries: { steps: { 'One battery': 351 } } }),
+      ledger,
+      workflow,
+    ).join('\n');
+    expect(errors).toContain('closes a round on a red run');
+  });
+
+  it('says nothing about the round when the caller offered no sections', () => {
+    // The same convention `R7` follows: a caller that did not pass a section index has not
+    // asked the question, and a rule that answered "fine" would be a rule that passed for
+    // the wrong reason.
+    const errors = ledgerErrors(
+      recordingOf({ batteries: { steps: { 'One battery': 351 } } }),
+      ledgerFixture(),
+    ).join('\n');
+    expect(errors).not.toContain('closing reading');
+  });
+
+  it('refuses through the gate, with the round named, rather than only inside a function', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rca-ci-round-gate-'));
+    writeFileSync(
+      join(dir, 'volume-01.md'),
+      '## v0.1 — a round\n\n> Ledger for `v0.1`.\n\n| item | value |\n',
+    );
+    const result = spawnSync(process.execPath, [GATE], {
+      encoding: 'utf8',
+      env: { ...process.env, RCA_CI_LEDGER: dir },
+    });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('check-ci-budget: FAILED');
+    expect(result.stderr).toContain('has no closing reading that names a run');
+    expect(result.stderr).toContain('no round before it has one either');
   });
 });
 

@@ -87,17 +87,30 @@ export function runsIn(line) {
 export function ledgerRows(name, text) {
   const rows = [];
   const unnamed = [];
-  const lines = text.split('\n');
+  const sections = [];
   let tail = null;
+  let section = null;
+  const lines = text.split('\n');
   lines.forEach((line, index) => {
+    // The section a row sits in is the round it closed, and it is a second index into the
+    // same line rather than a second reading of it: `R7` goes on comparing the row it
+    // always compared, and `R11` asks the question the row's position answers.
+    if (line.startsWith('## ')) {
+      section = { file: name, line: index + 1, head: line.slice(3), rows: [] };
+      sections.push(section);
+      return;
+    }
     if (!CI_ROW.test(line)) return;
     const runs = runsIn(line);
     const row = { file: name, line: index + 1, runs };
     tail = row;
     if (runs.length === 0) unnamed.push(row);
     else rows.push(row);
+    if (section !== null) {
+      section.rows.push({ file: name, line: index + 1, runs, text: line });
+    }
   });
-  return { rows, unnamed, tail };
+  return { rows, unnamed, tail, sections };
 }
 
 /** The newest run cited by any row: run ids increase with the run, so the maximum is the last. */
@@ -126,11 +139,12 @@ export function readLedger(dir = VOLUMES) {
       .filter((name) => /^volume-\d+\.md$/.test(name))
       .sort();
   } catch {
-    return { read: false, rows: [], unnamed: [], newest: null, tail: null };
+    return { read: false, rows: [], unnamed: [], newest: null, tail: null, sections: [] };
   }
 
   const rows = [];
   const unnamed = [];
+  const sections = [];
   let tail = null;
   for (const name of names) {
     const one = ledgerRows(name, readFileSync(join(dir, name), 'utf8'));
@@ -139,6 +153,7 @@ export function readLedger(dir = VOLUMES) {
     // the shape, and the refusal is right -- the argument limit is reached silently.
     for (const row of one.rows) rows.push(row);
     for (const row of one.unnamed) unnamed.push(row);
+    for (const section of one.sections) sections.push(section);
     // The last volume that carries a CI row holds the newest one: volumes are ordered by
     // the rounds they hold, and a round cannot report a run before the round before it.
     tail = one.tail ?? tail;
@@ -153,5 +168,6 @@ export function readLedger(dir = VOLUMES) {
     unnamed,
     newest: newestOf(rows),
     tail,
+    sections,
   };
 }

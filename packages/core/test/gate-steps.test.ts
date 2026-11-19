@@ -1866,7 +1866,18 @@ describe('what a failed run says', () => {
   });
 });
 
-describe('scripts/verify-local.mjs as a command', () => {
+/**
+ * The budget this suite's own tests run under.
+ *
+ * Measured: the slowest case here takes **1 398 ms** -- it spawns the runner and reads the
+ * plan it prints -- which is inside vitest's 5 000 ms default but past the floor at which
+ * `check-test-budgets` stops letting the default decide. Stated on the suite rather than on
+ * the case, for the reason `timeout-budget.test.ts` records: a stall does not respect test
+ * boundaries. 4 000 ms is 2.9 times the reading.
+ */
+const SUITE_BUDGET_MS = 4_000;
+
+describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, () => {
   it('prints the plan, including every reason for not running a step', () => {
     const result = spawnSync(process.execPath, [SCRIPT, '--list'], { cwd: ROOT, encoding: 'utf8' });
     expect(result.status, result.stderr).toBe(0);
@@ -1901,8 +1912,12 @@ describe('scripts/verify-local.mjs as a command', () => {
     // prometheus` measured 37 s in one run and 296 s in the next, and once a job is over
     // the line the floor applies to every step. What is left as a pool is the two jobs
     // whose steps are seconds long, where the floor would be the whole bound.
+    // 34 -> 48 in v3.120: the install step's bound moved 16 -> 30 minutes after the recording was
+    // refreshed and the mirror's slowest day turned out to be 888 s (finding 599), and the ceiling
+    // is the floor's sum (15) + the install (30) + the reader (3). The two local steps this line
+    // counts are still two and their largest is still 3m: the install runs on the runner, not here.
     expect(result.stdout).toContain(
-      "backend bounds all 2 of its step(s) on its own (largest 3m of the job's 34m)",
+      "backend bounds all 2 of its step(s) on its own (largest 3m of the job's 48m)",
     );
     expect(result.stdout).toContain('artefacts 15m across 9 step(s)');
     expect(result.stdout).toContain('cold-tree 20m across 4 step(s)');
@@ -1922,7 +1937,10 @@ describe('scripts/verify-local.mjs as a command', () => {
     // and 22 s of setup puts the 1500 s bound's deadline at 1522 s.
     expect(result.stdout).toContain("largest 22m of the job's 26m");
     expect(result.stdout).toContain('batteries bounds all 14 of its step(s) on its own');
-    expect(result.stdout).toContain("largest 9m of the job's 25m");
+    // 9 -> 10 in v3.120: `Every gate can be shown to fail` measured 295 s, and twice that is 590 s,
+    // which is 4 s past ten minutes (finding 599). The assertion follows the bound, which follows
+    // the measurement -- it is the plan's own number rather than a preference.
+    expect(result.stdout).toContain("largest 10m of the job's 25m");
     expect(result.stdout).toContain('batteries-heavy bounds all 4 of its step(s) on its own');
     // 25 -> 27 in v3.55's close-out: the 15-minute backend-support bound plus the 632 s
     // its predecessors account for on their slowest recorded days is 1532 s, which does

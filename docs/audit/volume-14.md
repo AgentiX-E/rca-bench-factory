@@ -1,6 +1,6 @@
 # Audit · volume 14
 
-Findings 579–596, from the rounds recorded in `progress/volume-17.md` and `progress/volume-18.md` as `v3.115` through `v3.119`.
+Findings 579–599, from the rounds recorded in `progress/volume-17.md` and `progress/volume-18.md` as `v3.115` through `v3.120`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -867,3 +867,87 @@ no step carries a bound of its own, so nothing here is tight
 
 The fixture is the one that produced the string above, and it is a test now, asserting both that
 the sentence appears and that `unmeasuredx` does not.
+
+## Finding 597 — the rule compared the recording with a row the log had stopped writing
+
+`R7`'s whole content is a comparison: the recording's run must not be older than the run the ledger's
+newest closing reading reports. The gate printed that comparison on every green run, and it read
+
+```
+the ledger's newest run is 42160224254; the recording (43720087959) is newer, 3 earlier row(s) name no run
+```
+
+Measured, in the same tree:
+
+| | |
+| --- | --- |
+| round sections in `docs/progress/` | **215** |
+| of them carrying a `| CI |` row | **12** |
+| rows in total | **15** (3 name no run) |
+| the newest row | `volume-11.md:1464`, under `## v3.54` |
+| rounds after it | **65** (`v3.55` … `v3.119`) |
+| CI runs newer than the recording | **3** |
+
+The rule was correct and its reference was dead. A recording from any run newer than
+`42160224254` passed -- including the one in the tree, which was three CI runs behind -- and nothing could
+notice, because the only thing `R7` reads is the row, and a row that is never written never disagrees with
+anything.
+
+### The shape
+
+Every unread rule in this repository has had this shape, but here it is one level down: the rule *is* read,
+and the thing it reads is written by hand, by a convention, with nothing counting whether the convention still
+holds. A convention that nothing measures decays at the rate its author's attention decays, and this one
+decayed to zero for 65 rounds while the gate kept printing agreement.
+
+### The repair, and what it does not do
+
+`R11` is about the present: **the newest round's section carries a `| CI |` row that names a run and states
+`**<n> of <m> jobs success**`**, with `m` equal to `ci.yml`'s job count and `n` equal to `m`. A ledger read
+with no row at all now refuses instead of returning early -- that early return is what made an empty ledger
+indistinguishable from an agreeing one.
+
+It does not backfill the **203** rounds that carry none. Naming runs for them now would be inventing
+provenance, which is the one thing a recording may never do, and the log states the gap instead: the green
+line prints how many rounds back the row it is comparing against sits (`65 round(s) before 'v3.119'`), so the
+distance is visible on the same line a reader already looks at.
+
+## Finding 598 — a run id is not a CI run id, and nothing in the ledger could tell
+
+This repository runs two workflows, `CI` and `Anchor round trip`, and their run ids are drawn from **one**
+sequence. `ledger-runs.mjs` says so in a paragraph that also says it cannot be enforced -- "a row labelled
+`CI` is assumed to cite runs of *this* workflow" -- and last round's report did exactly what the paragraph
+warns about:
+
+```
+44516888822  1 job    Round-trip a synthetic corpus in t...
+44516888528  8 jobs   every proved exit can disappear wi..., injection batteries..., ...
+```
+
+`44516888822` was reported as a CI run with eight jobs. It has one job and it is the other workflow. No gate
+objected, because the row said `CI` and the row is the evidence.
+
+The tally in `R11` makes that mistake a refusal: `**1 of 1 job success**` cannot pass a workflow that declares
+8, and the refusal names the sequence rather than the row.
+
+## Finding 599 — three bounds were under the multiple, and the stale recording was why nobody asked
+
+Refreshing the recording from the newest CI run (`44516888528`) produced three refusals, none of which had
+anything to do with the refresh:
+
+| step | bound | newest day | ratio | what the bound was sized on |
+| --- | --- | --- | --- | --- |
+| `Install a backend this repository did not write` | 16 min | **888 s** | **1.08x** | a 648 s cold-runner day |
+| `Every gate can be shown to fail` | 9 min | **295 s** | **1.83x** | 254 s, three rounds before |
+| `Gate-test battery (…)` | 8 min | **250 s** | **1.92x** | 231 s, the day the recording held |
+
+The multiple is two. Each of the three was under it, and each was written against a day that a slower one had
+since replaced. `ci.yml` had not changed; the recording had, and the recording was three runs behind the tree
+-- which is finding 597's consequence arriving in the arithmetic: **a recording that is never refreshed is a
+set of bounds that are never asked the question.**
+
+The repairs are the arithmetic the rules demand, and the installation's is the interesting one: `apt-get
+install prometheus` is a mirror, its spread is now **17 s to 888 s (52x)**, and no `timeout-minutes` can tell a
+slow mirror from a hang. 16 minutes became **30** (2.0x the slowest day) and the `backend` job's ceiling moved
+**34 -> 48** (the floor's 15 + 30 + the reader's 3). `Every gate can be shown to fail` moved **9 -> 10**
+(2.03x) and `Gate-test battery` **8 -> 9** (2.16x).

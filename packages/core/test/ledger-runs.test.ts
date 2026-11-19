@@ -77,6 +77,53 @@ describe('which rows are closing readings', () => {
   });
 });
 
+describe('the section a row belongs to', () => {
+  it('carries every section of a volume, with the rows written inside it', () => {
+    // The row is enough for `R7`, which compares one number with another. It is not enough
+    // for `R11`, which asks whether the *newest round* ended on a row: that question is
+    // about where the row sits, and a reader that kept only the row could not ask it.
+    const text = [
+      '## v0.1 — first',
+      '',
+      '| CI | run `41658872002` |',
+      '',
+      '## v0.2 — second',
+      '',
+      '| item | value |',
+      '',
+    ].join('\n');
+    const read = ledgerRows('volume-01.md', text);
+    expect(read.sections.map((one) => [one.head, one.line, one.rows.length])).toEqual([
+      ['v0.1 — first', 1, 1],
+      ['v0.2 — second', 5, 0],
+    ]);
+  });
+
+  it('keeps the row exactly as it was, and the section beside it rather than on it', () => {
+    // Two readers of one line, not two readings of it: the row that `R7` compares has the
+    // shape it always had, so the comparison cannot start disagreeing with the parser.
+    const read = ledgerRows('volume-01.md', volume([NAMED]));
+    expect(read.rows[0]).toEqual({ file: 'volume-01.md', line: 5, runs: [41670923224] });
+    expect(read.sections[0].rows[0]).toEqual({
+      file: 'volume-01.md',
+      line: 5,
+      runs: [41670923224],
+      text: NAMED,
+    });
+  });
+
+  it('gathers the sections of every volume in file order', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rca-ledger-'));
+    writeFileSync(join(dir, 'volume-01.md'), volume(['| CI | run `41658872002` |']));
+    writeFileSync(join(dir, 'volume-02.md'), '## v0.2 — second\n\n> Ledger for `v0.2`.\n');
+    const read = readLedger(dir);
+    expect(read.sections.map((one) => [one.file, one.head])).toEqual([
+      ['volume-01.md', 'v0.1 — a round'],
+      ['volume-02.md', 'v0.2 — second'],
+    ]);
+  });
+});
+
 describe('the newest run across volumes', () => {
   it('takes the maximum rather than the last, because a round may correct an older run', () => {
     expect(
@@ -116,7 +163,7 @@ describe('reading a directory of volumes', () => {
     // with no ledger has nothing to be stale against, and a tree whose ledger was not read
     // has a question nobody asked.
     const read = readLedger(join(tmpdir(), 'rca-ledger-absent-directory'));
-    expect(read).toEqual({ read: false, rows: [], unnamed: [], newest: null, tail: null });
+    expect(read).toEqual({ read: false, rows: [], unnamed: [], newest: null, tail: null, sections: [] });
   });
 
   it('carries the last row of the last volume that has one', () => {

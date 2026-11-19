@@ -1351,6 +1351,31 @@ from an anecdote again.
   from a short sentence, and the corpus is what put the threshold where it is. The heading unit is
   the part of the rule that does not pay that price.
 
+### A closing reading is a row the newest round carries (v3.120)
+
+- **The newest round ends on a closing reading.** Its `## ` section contains a `| CI |` row that names a run.
+  Before this rule the log's newest row sat under `v3.54` for **65 rounds**, and `R7` -- the rule that compares
+  the recording with that row -- went on agreeing with it: a recording from any run newer than
+  `42160224254` passed, including one three CI runs behind the tree (finding 597).
+- **A ledger read with no row at all is refused, not skipped.** `ledgerErrors` used to return early when the
+  newest row was `null`, which made an empty ledger indistinguishable from an agreeing one. The round's
+  reading is asked about before the tail now.
+- **The row states `**<n> of <m> jobs success**`.** `m` is `ci.yml`'s job count and `n` is `m`. A run id says
+  a run happened, not which workflow ran: this repository draws ids from one sequence for `CI` and for
+  `Anchor round trip`, and the round that wrote this rule reported a one-job `Anchor round trip` run as a CI
+  run with eight (finding 598).
+- **The gap behind the rule is printed rather than backfilled.** **203** rounds carry no closing reading.
+  Naming runs for them now would be inventing provenance, so the green line prints how many rounds back the
+  row it compares against sits, and the log states the number.
+- **A recording is refreshed from the newest CI run, and the refresh is where stale bounds are found.** Three
+  bounds were under the multiple of their newest measured day -- **1.08x**, **1.83x**, **1.92x** -- and no
+  rule had asked, because the recording was three runs old (finding 599). The refresh refused all three, and
+  the repairs are the arithmetic: **16 -> 30**, **9 -> 10**, **8 -> 9** minutes and the `backend` ceiling
+  **34 -> 48**.
+- **What is not claimed.** That every bound is 2x the worst day it will ever see: the install step is a mirror
+  whose spread is 17 s to 888 s, and no `timeout-minutes` can tell a slow mirror from a hang. The bound covers
+  the worst day recorded, and the day that beats it will raise it again.
+
 ### A bound has three sources, and a count has one noun (v3.119)
 
 - **A step's budget comes from the step, from its job, or from nowhere.** Three answers, so the field

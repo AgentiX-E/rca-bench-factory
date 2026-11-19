@@ -220,11 +220,11 @@ jobs:
     # because `apt-get install prometheus` is a mirror having a good or a bad day. Once
     # the line is crossed the floor applies to every step, and seven steps at three
     # minutes are 21 -- one more than the ceiling it had, so the job could not be
-    # bounded at all. The ceiling is the floor's sum (15) plus the install's bound (16)
-    # plus the reader's (3): the install is sized by the 648 s measured on a cold runner
-    # rather than by the 37 s of a warm one, because a bound that fits the fast day is a
-    # bound that fires on the slow day.
-    timeout-minutes: 34
+    # bounded at all. The ceiling is the floor's sum (15) plus the install's bound (30)
+    # plus the reader's (3): the install is sized by the slowest day the mirror has had
+    # (888 s on 44516888528) rather than by the 37 s of a warm one, because a bound that
+    # fits the fast day is a bound that fires on the slow day (finding 599).
+    timeout-minutes: 48
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -252,12 +252,13 @@ jobs:
 
       # The gate starts the server on a port of its own, reads it, reads it again with a label the
       # server does not set, and stops it. A missing binary fails the step with the package name
-      # rather than reading as a broken reader. 16 minutes is 1.5 times the 648 s this step
-      # measured on a cold runner and 3.5 times the 273 s of run 42165763231: the spread
-      # belongs to the mirror, and a bound sized on the fast day would report the slow day as
-      # a hang.
+      # rather than reading as a broken reader. The spread belongs to the mirror: 17 s on a warm
+      # runner, 273 s on 42165763231, 648 s on a cold one, and **888 s** on 44516888528 -- a factor
+      # of 52 between the fastest and the slowest day. 30 minutes is 2.0 times the slowest of them
+      # (finding 599): the 16 minutes this replaced was 1.08 times it, and a bound that cannot hold
+      # a bad network day reports slowness as a hang.
       - name: Install a backend this repository did not write
-        timeout-minutes: 16
+        timeout-minutes: 30
         run: sudo apt-get update -qq && sudo apt-get install -y -qq prometheus
 
       - name: A reader, against that backend
@@ -547,8 +548,11 @@ jobs:
       # that name it, all of them are caught. This step is what keeps that true: a
       # gate that can be emptied without a test noticing, or that no test names at
       # all, fails the build.
+      #
+      # 10 minutes is 2.0 times the slowest day (295 s on 44516888528); the 9 it replaced
+      # was 1.83 times it, which the multiple refuses (finding 599).
       - name: Every gate can be shown to fail
-        timeout-minutes: 9
+        timeout-minutes: 10
         run: node scripts/verify-gates-are-testable.mjs
 
       # The three batteries below were written, repaired, and never invoked. Each
@@ -593,8 +597,11 @@ jobs:
       # Both are reported rather than papered over; the redundant one is listed
       # in the battery's `EXPECTED_SURVIVORS` with its reason, and the run fails
       # if it ever turns into a genuine survivor.
+      #
+      # 9 minutes is 2.16 times the slowest day (250 s on 44516888528); the 8 it replaced was
+      # 1.92 times it, which the multiple refuses (finding 599).
       - name: Gate-test battery (each gate's test provably fails when its guard is removed)
-        timeout-minutes: 8
+        timeout-minutes: 9
         run: python3 scripts/injection/gate-tests-battery.py
 
       # `check-doc-counts.mjs` read three shapes of a published count while the

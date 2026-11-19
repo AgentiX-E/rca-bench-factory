@@ -672,6 +672,110 @@ function historyErrors(baseline, parsed) {
   return errors;
 }
 
+/** A round heading: a volume's `## ` sections are rounds or the round's own parts. */
+const ROUND_HEAD = /^v\d+\.\d+\b/;
+
+/** A closing reading's tally of jobs, in the form `R11` asks for it. */
+const TALLY = /\*\*(\d+) of (\d+) jobs? success\*\*/;
+
+/** The label of a round heading: `v3.119 · ...` is `v3.119`. */
+function roundLabel(head) {
+  return head.split(' ')[0];
+}
+
+/**
+ * R11 -- the newest round ends on a closing reading of *this* workflow.
+ *
+ * ## Why the rule exists at all
+ *
+ * `R7` refuses a recording older than the run the ledger's newest row reports, and it
+ * was silent for **65 rounds**: the newest `| CI |` row in the shipped log sat under
+ * `v3.54` while the log's newest round was `v3.119`, so a recording from any run newer
+ * than a 65-round-old one passed. Nothing was wrong with `R7`'s arithmetic; the thing it
+ * compares against had stopped being written, and a rule whose reference decays is a rule
+ * that passes for a reason it cannot see. This one is the rule about the reference.
+ *
+ * ## Why the newest round rather than every round
+ *
+ * The log holds 215 rounds and 12 closing readings, because the convention was followed
+ * for a while and then not. Backfilling the other 203 from memory would be inventing
+ * provenance -- the one thing a recording may never do -- so the rule is about the
+ * present: the round that is being written has to end on a run. The gap behind it is
+ * stated in the summary, where a reader can see how far back the last row is.
+ *
+ * ## Why the tally, and not only the run id
+ *
+ * A run id says a run happened; it does not say which workflow ran. This repository
+ * draws run ids from one sequence for two workflows (`CI` and `Anchor round trip`), and
+ * the round that wrote this rule reported an `Anchor round trip` run -- one job -- as a
+ * CI run with eight, which is the defect the sentence about the sequence in
+ * `ledger-runs.mjs` predicted and did not prevent. `**<n> of <m> jobs success**` is
+ * checkable: `m` against `ci.yml`'s job count, `n` against `m`.
+ */
+function closingErrors(ledger, workflow) {
+  const sections = Array.isArray(ledger.sections) ? ledger.sections : null;
+  // A caller that passed no section index has not asked the question, for the reason
+  // `ledger` itself is optional: silence would otherwise be indistinguishable from
+  // agreement.
+  if (sections === null) return [];
+  const rounds = sections.filter((one) => ROUND_HEAD.test(one.head));
+  if (rounds.length === 0) return [];
+  const newest = rounds[rounds.length - 1];
+  const named = newest.rows.filter((one) => one.runs.length > 0);
+  if (named.length === 0) {
+    // The distance is counted in rounds rather than in run ids: run ids are sparse, so the
+    // difference between two of them reads as a count of runs and is not one.
+    let lastSection = null;
+    let lastRow = null;
+    for (const one of rounds) {
+      for (const row of one.rows) {
+        if (row.runs.length === 0) continue;
+        lastSection = one;
+        lastRow = row;
+      }
+    }
+    return [
+      `the newest round (\`${roundLabel(newest.head)}\` at \`${newest.file}:${String(newest.line)}\`) has no ` +
+        'closing reading that names a run' +
+        (lastRow === null
+          ? ', and no round before it has one either'
+          : `: the last one is \`${lastRow.file}:${String(lastRow.line)}\`, ` +
+            `${String(rounds.length - 1 - rounds.indexOf(lastSection))} round(s) back`) +
+        '. `R7` compares the recording with that row, so a recording from any run newer than it passes ' +
+        'however many runs have happened since -- end the round with a row: ' +
+        '`| CI | run \`<id>\` on \`<commit>\`: **<n> of <m> jobs success** -- ... |`',
+    ];
+  }
+  const errors = [];
+  const row = named[named.length - 1];
+  const at = `\`${row.file}:${String(row.line)}\``;
+  const tally = TALLY.exec(row.text ?? '');
+  if (tally === null) {
+    return [
+      `the newest round's closing reading (${at}) states no tally of jobs: write ` +
+        '`**<n> of <m> jobs success**` into the row, because a run id alone says a run happened and ' +
+        'not which workflow it was -- this repository has two, and their run ids share one sequence',
+    ];
+  }
+  const [reported, counted] = [Number(tally[1]), Number(tally[2])];
+  const declared = workflow === null || workflow === undefined ? null : jobsOf(workflow).length;
+  if (declared !== null && counted !== declared) {
+    errors.push(
+      `the newest round's closing reading (${at}) reports **${String(counted)} job(s)** and \`ci.yml\` ` +
+        `declares **${String(declared)}**: a run id is not a CI run id -- \`CI\` and \`Anchor round trip\` ` +
+        'draw from one sequence, so a row can cite a run whose jobs are not these',
+    );
+  }
+  if (reported !== counted) {
+    errors.push(
+      `the newest round's closing reading (${at}) reports **${String(reported)} of ${String(counted)}**: ` +
+        'a row that states fewer successes than jobs closes a round on a red run, and a closing reading ' +
+        'is a green one -- the round has to end after the repair, not beside it',
+    );
+  }
+  return errors;
+}
+
 /**
  * R7 -- the recording is not older than the round that reports it.
  *
@@ -692,10 +796,13 @@ function historyErrors(baseline, parsed) {
  * would refuse, and so would its repair, for ever. A round cites one run; the refresh run
  * goes uncited, which is why the summary can read `the recording is newer` and be right.
  */
-export function ledgerErrors(baseline, ledger) {
+export function ledgerErrors(baseline, ledger, workflow = null) {
   if (ledger === null || ledger === undefined || ledger.read !== true) return [];
-  if (ledger.tail === null) return [];
-  const errors = [];
+  // The round's reading is asked about before the tail is, because an empty ledger is the
+  // case `R11` exists for: a log with no `| CI |` row at all used to end the function here,
+  // and the silence that followed was indistinguishable from agreement.
+  const errors = [...closingErrors(ledger, workflow)];
+  if (ledger.tail === null) return errors;
   if (ledger.tail.runs.length === 0) {
     errors.push(
       `the ledger's newest closing reading (\`${ledger.tail.file}:${String(ledger.tail.line)}\`) ` +
@@ -748,7 +855,7 @@ function narrowed(record, job) {
  */
 export function budgetErrors(workflow, baseline, ledger = null, declarations = null, readings = null) {
   const parsed = readDeclarations(workflow, declarations);
-  const errors = [...ledgerErrors(baseline, ledger), ...parsed.errors];
+  const errors = [...ledgerErrors(baseline, ledger, workflow), ...parsed.errors];
   const declared = parsed.declared;
   const declaredJobs = parsed.jobs;
 
@@ -1132,6 +1239,30 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
 }
 
 /**
+ * How far behind the newest round the row `R7` compares against sits, in rounds.
+ *
+ * Printed on the green line because `R11` is a rule about a number a reader cannot see:
+ * the row that exists prints an id, and nothing in that id says whether it was written
+ * this week or 65 rounds ago. The distance is counted in rounds rather than in run ids,
+ * for the reason `ledgerErrors` counts it that way -- ids are sparse, so a difference
+ * between two of them reads as a count of runs and is not one.
+ */
+function ledgerWhere(ledger) {
+  const sections = Array.isArray(ledger.sections) ? ledger.sections : null;
+  if (sections === null || ledger.newest === null) return '';
+  const rounds = sections.filter((one) => ROUND_HEAD.test(one.head));
+  if (rounds.length === 0) return '';
+  const home = sections.find(
+    (one) => one.file === ledger.newest.file && one.rows.some((row) => row.line === ledger.newest.line),
+  );
+  const index = home === undefined ? -1 : rounds.indexOf(home);
+  if (index < 0) return '';
+  const behind = rounds.length - 1 - index;
+  const newest = roundLabel(rounds[rounds.length - 1].head);
+  return behind === 0 ? ', in the newest round' : `, ${String(behind)} round(s) before \`${newest}\``;
+}
+
+/**
  * How the recording compares with the newest run the ledger reports.
  *
  * Printed rather than implied, because the comparison is the whole content of `R7`: a
@@ -1155,7 +1286,7 @@ function ledgerText(ledger, baseline) {
     ledger.newest.run === baseline.run
       ? ' (the recording)'
       : `; the recording (${String(baseline.run)}) is newer`;
-  return `the ledger's newest run is ${String(ledger.newest.run)}${relation}${unnamed}`;
+  return `the ledger's newest run is ${String(ledger.newest.run)}${relation}${ledgerWhere(ledger)}${unnamed}`;
 }
 
 /**
