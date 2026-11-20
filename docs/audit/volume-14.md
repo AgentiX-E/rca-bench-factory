@@ -1769,6 +1769,12 @@ exemption can be kept from growing quietly.
 The four jobs that gained the history are `sensitivity`, `sensitivity-shard`, `batteries` and `batteries-heavy`, and
 the other three (`verify`, `artefacts`, `cold-tree`) already had it for the reasons their own comments give.
 
+The first reading taken after the four jobs gained the history is run `44752384940`, and the two rules that size
+bounds fired on it: `verify`'s ceiling **24 -> 25** min (its slowest day **722** s, **1.99x**) and the `Lint` step
+**16 -> 17** min (**497** s, **1.92x**). Neither number is argued down here -- a bound under twice its reading is a
+bound that fires on a slow runner rather than on a hung one -- and `Lint`, which runs the 34 claimants through
+`verify-site-proofs`, is where the day sits.
+
 ### Falsifications
 
 | the edit | reds |

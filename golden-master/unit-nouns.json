@@ -261,7 +261,6 @@
     {
       "noun": "round(s)",
       "gates": [
-        "check-ci-budget",
         "check-open-list",
         "check-progress-volumes"
       ]
@@ -374,15 +373,6 @@
       "relation": "three language gates count runs of prose in the wrong script and print `0`, and `check-fault-cases` counts baseline runs; the noun is shared and nothing else is"
     },
     {
-      "noun": "round(s)",
-      "gates": [
-        "check-ci-budget",
-        "check-open-list",
-        "check-progress-volumes"
-      ],
-      "relation": "one population read by two, and a third gate that counts a different quantity under the same word -- the distinct `vX.YY` numbers the log's records carry, the `## vX.YY` headings the volumes hold, and the distance in rounds between the ledger's newest run and this round; the two counts agree and no arithmetic forces them to, which is why the equality is printed rather than assumed"
-    },
-    {
       "noun": "row break(s)",
       "gates": [
         "check-comments-language",
@@ -414,6 +404,14 @@
         "check-fault-cases"
       ],
       "relation": "two unrelated kinds of reading -- a step's measured seconds in `check-ci-budget` and a checkpoint's declaration in `check-fault-cases`"
+    },
+    {
+      "noun": "round(s)",
+      "gates": [
+        "check-open-list",
+        "check-progress-volumes"
+      ],
+      "relation": "one population read twice -- the `vX.YY` numbers the log's records carry and the `## vX.YY` headings the volumes hold, both taken from `populationsOf` in `progress-volumes.mjs`; the second gate also prints the `Pass` rounds it counts beside them, and no arithmetic forces the two numbers to agree, which is why the equality is printed rather than assumed"
     },
     {
       "noun": "volume(s)",

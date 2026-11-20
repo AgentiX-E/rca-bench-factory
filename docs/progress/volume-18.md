@@ -2383,7 +2383,7 @@ one round, and it is red in four places while every one of its numbers was right
 | the rules | the relation replaces the coincidence as the unit of judgement; `checkout >= what the claimant reads` |
 | falsifications | ten edits, **twenty** reds |
 | the population | **47 of 228** record(s) in table form against **318** rows, unchanged by this round |
-| the census | **54 unit noun(s) in 71 gate/noun pair(s)**, **9** shared with **9** relations, **4** coincidences -- the fourth is `round(s)`, which no earlier run could see, and the pairs are one more than the round began with because `check-ci-budget` prints `1 round(s)` about the distance to this record, so a shared noun gained a gate and its relation was refused until it was rewritten |
+| the census | **54 unit noun(s) in 70 gate/noun pair(s)**, **9** shared and **9** relations, **4** coincidences -- `221 round(s)` and `1 addendum(s)` agreeing across the two readers of the log's population, and one pair fewer than v3.125 reported because `check-ci-budget` stopped printing `N round(s)` the moment its recording became the newest round's, which is the census's population moving with the corpus rather than with the tree |
 | open entries | **38 -> 38**: `O-096` closed by findings 609 and 611, `O-097` opened for the relation that is written rather than derived |
 | LLM calls | **0** |
 
@@ -2440,6 +2440,7 @@ which is why the quoted lines are the quiet ones.
 | `Check out` on run `44741826563`, jobs with full history | **3.0** s |
 | `Check out` on the same run, jobs without | **1.0-2.0** s |
 | the history | 34 MB against 5.1 MB for one commit |
+| the bounds the new reading moved | `verify`'s ceiling **24 -> 25** min (its slowest day is **722** s, 1.99x) and the `Lint` step **16 -> 17** min (**497** s, 1.92x) -- both fired on the first reading taken after this round's checkout change |
 
 ### Falsifications
 
@@ -2463,7 +2464,7 @@ at the call rather than joining an edit made uniform by its siblings.
 
 | item | value |
 | --- | --- |
-| CI | run `44698243645` on `4d253c91`: **8 of 8 jobs success** -- the newest green run before this round, and the one the recording is taken from |
+| CI | run `44752384940` on `8a7c9b68`: **8 of 8 jobs success** -- the newest run, and the one the recording is taken from |
 | `core` test suite | **258 files, 6771 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
 | repo test suite | **262 files, 6958 tests passed** (as of this commit) |

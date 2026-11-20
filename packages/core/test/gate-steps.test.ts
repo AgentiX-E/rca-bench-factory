@@ -1923,11 +1923,11 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     expect(result.stdout).toContain('cold-tree 20m across 4 step(s)');
     expect(result.stdout).not.toContain('verify 15m across');
     expect(result.stdout).toContain('verify bounds all 8 of its step(s) on its own');
-    // 18 -> 21 in v3.123: the ceiling answers a different question from the step's deadline --
-    // does it hold a slower *day* -- and `verify`'s slowest day is 601 s, so 18 minutes was
-    // 1.80x it (finding 605). The largest bound is still `Lint`'s 14m: the ceiling moved and
-    // no step bound did.
-    expect(result.stdout).toContain("largest 16m of the job's 24m");
+    // 24 -> 25 in v3.126, and the largest step bound with it: the first reading taken after four
+    // jobs took the full history put `verify`'s slowest day at 722 s, which is 1.99x of 24 minutes,
+    // and `Lint` -- the step that runs the 34 claimants -- at 497 s, which is 1.92x of 16. Both
+    // rules fired on the same reading (finding 605 is the rule, finding 614 the round).
+    expect(result.stdout).toContain("largest 17m of the job's 25m");
     // 3 -> 4 in v3.52: the sensitivity job's one battery became two, because a step can
     // now be declared for one recording instead of being folded into a neighbour's name.
     expect(result.stdout).toContain('sensitivity bounds all 4 of its step(s) on its own');
@@ -2268,11 +2268,11 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     // And what the run spent, so the budget is a measurement rather than a limit
     // nobody looks at until it fires.
     expect(result.stdout).toContain('budget:  verify');
-    // The ceiling is read from the workflow rather than asserted as a preference: 18 -> 21 in
-    // v3.123, because the ceiling answers for the slowest *day* and `verify`'s is 601 s
-    // (finding 605). A pin on the number rather than on where it comes from would be a second
-    // copy of the workflow's arithmetic in a test.
-    expect(result.stdout).toContain('of 24m');
+    // The ceiling is read from the workflow rather than asserted as a preference: 24 -> 25 in
+    // v3.126, because the ceiling answers for the slowest *day* and `verify`'s is 722 s. A pin on
+    // the number rather than on where it comes from would be a second copy of the workflow's
+    // arithmetic in a test.
+    expect(result.stdout).toContain('of 25m');
   });
 
   it('runs a step in the directory the workflow names, which is the whole claim about that key', () => {
