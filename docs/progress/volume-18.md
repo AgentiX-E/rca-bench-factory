@@ -2130,7 +2130,7 @@ edit no assertion in the tree could have caught before this round: both numbers 
 
 | item | value |
 | --- | --- |
-| CI | run `44656781771` on `51fa6ff6`: **8 of 8 jobs success**, **14 min 38 s** of wall clock |
+| CI | run `44695923790` on `a1d983cd`: **8 of 8 jobs success**, **15 min 15 s** of wall clock |
 | `core` test suite | **257 files, 6737 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
 | repo test suite | **261 files, 6924 tests passed** (as of this commit) |
@@ -2141,6 +2141,7 @@ edit no assertion in the tree could have caught before this round: both numbers 
 | falsifications | six edits, **twenty-six** reds |
 | the population | **47 of 227** record(s) in table form, against **318** rows -- and **227** is the record population on the line above it, not a second number |
 | the ceilings | **21** / **34** / **31** minutes: 2.10x, 2.02x and 2.02x their jobs' slowest days |
+| the recording | `44656781771` -> **`44695923790`**: 8 job(s), 83 step(s), **11** readings in the history; measured **54** min against 51, and every ceiling still holds its multiple |
 | open entries | **38 -> 38**: `O-093` closed by finding 605, `O-095` opened for the day between twice the slowest and the sum |
 | LLM calls | **0** |
 
