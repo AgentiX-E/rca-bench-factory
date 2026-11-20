@@ -14,6 +14,7 @@ import {
   hungTestClause,
   hungTests,
   longestTest,
+  failureDetail,
   outputTail,
   hookFile,
   parseHollows,
@@ -390,6 +391,36 @@ describe('site-proofs · what a red run says about itself', () => {
     // line is quoted as one line.
     expect(outputTail('only this')).toEqual(['only this']);
     expect(outputTail('')).toEqual([]);
+  });
+
+  it('quotes a report as a report and a silent run as a tail, and never one as the other', () => {
+    // Finding 613. A claimant that printed a report says which test failed; a claimant that
+    // printed nothing says nothing, and the caller used to stop there -- three CI runs were
+    // diagnosed by guesswork from a filename and an exit code.
+    const reported = [
+      ' FAIL  test/x.test.ts > adds up',
+      'AssertionError: expected 1 to be 2 // Object.is equality',
+      '      Tests  1 failed (1)',
+    ].join('\n');
+    expect(failureDetail(reported)).toEqual([
+      'FAIL  test/x.test.ts > adds up',
+      'AssertionError: expected 1 to be 2 // Object.is equality',
+      'Tests  1 failed (1)',
+    ]);
+    // The same function on a run that printed no report gives the tail, labelled: the two are
+    // not the same claim, so they are not printed in the same voice.
+    const died = ['', ' RUN  v3.2.4 /repo', 'stdout | x.test.ts', 'it did nothing', ''].join('\n');
+    expect(failureDetail(died)).toEqual([
+      '(the run printed no report; its last lines were)',
+      'RUN  v3.2.4 /repo',
+      'stdout | x.test.ts',
+      'it did nothing',
+    ]);
+    // A run that printed one line is quoted as one line, and the label still says what it is.
+    expect(failureDetail('ENOENT: no such file')).toEqual([
+      '(the run printed no report; its last lines were)',
+      'ENOENT: no such file',
+    ]);
   });
 
   it('reads an exhausted test budget, and only when a test is what ran out of time', () => {

@@ -2359,6 +2359,70 @@ describe('the plan is a claim about this repository', () => {
 });
 
 /**
+ * The checkout a job needs is the checkout its steps read (finding 612).
+ *
+ * ## What went wrong
+ *
+ * `actions/checkout` fetches one commit unless it is told otherwise. The `verify` job never
+ * told it, and one of the claimants `verify-site-proofs` runs there is `unit-nouns.test.ts`,
+ * which spawns the census, which spawns `check-repository-table`. That gate prints
+ * `Commits (at \`e22e2de\`) = 536` and reads the revision out of `git rev-list`, so in a
+ * one-commit checkout it refuses: "the revision `e22e2de` does not resolve to a commit". The
+ * census went red, the claimant was reported as a file that did not pass, and the log named
+ * no reason -- three runs were diagnosed by guesswork. Measured in a depth-1 clone of this
+ * repository before the workflow was repaired.
+ *
+ * ## Why this is a test rather than a comment
+ *
+ * A comment at the checkout says what somebody knew on the day; the rule is about a
+ * relationship between two parts of one file -- what a step runs, and what its checkout
+ * fetched -- and a relationship is what a test can hold. The subjects are the jobs whose
+ * steps run a claimant or the documentation gates, because those are the ones that reach a
+ * gate that reads the history.
+ */
+describe('a job that runs a claimant checks out the history the claimant reads', () => {
+  const WORKFLOW = readFileSync(resolve(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
+
+  /** The jobs of the shipped workflow, as `[id, block]`, with the `on:` block left out. */
+  function jobs() {
+    const parts = WORKFLOW.split(/^ {2}([a-z][a-z0-9-]*):$/m);
+    const out = [];
+    for (let i = 1; i < parts.length; i += 2) {
+      if (parts[i + 1].includes('runs-on:')) out.push([parts[i], parts[i + 1]]);
+    }
+    return out;
+  }
+
+  it('gives every job that runs a claimant or the documentation gate the full history', () => {
+    // The commands that reach a gate: the aggregate, the claimant verifier, the suite, and
+    // the coverage run. `pnpm build` and `pnpm typecheck` reach none of them.
+    const reaching = /(docs:check|verify-site-proofs|pnpm test|test:coverage)/;
+    const matched = [];
+    for (const [id, block] of jobs()) {
+      const runs = block
+        .split('\n')
+        .filter((line) => /^\s+(run:|with:)?\s*/.test(line) && reaching.test(line))
+        .filter((line) => /^\s+-?\s*run:|^\s+run:/.test(line));
+      if (runs.length === 0) continue;
+      matched.push(id);
+      expect(block, `${id} runs a claimant and checks out one commit`).toContain('fetch-depth: 0');
+    }
+    // Non-vacuity: the rule is about jobs that exist, and a regex that matched nothing would
+    // pass over a workflow in which every checkout was shallow.
+    expect(matched.length).toBeGreaterThanOrEqual(3);
+    expect(matched).toContain('verify');
+  });
+
+  it('leaves a job that only builds and type-checks with the default checkout', () => {
+    // The other side of the rule, so that it is a rule rather than "every job fetches
+    // everything": `backend` installs a third-party binary and runs no claimant.
+    const backend = jobs().find(([id]) => id === 'backend');
+    expect(backend, 'the workflow no longer has a backend job').toBeDefined();
+    expect(backend[1]).not.toContain('fetch-depth');
+  });
+});
+
+/**
  * Which workflow file a run reads, and the one variable that moves it.
  *
  * ## Why the function, when both callers are spawned

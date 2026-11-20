@@ -72,7 +72,7 @@ import { fileURLToPath } from 'node:url';
 import {
   blindScripts,
   claimedSites,
-  failureSummary,
+  failureDetail,
   hookFile,
   parseReached,
   parseThrows,
@@ -200,9 +200,14 @@ function traceOf(file, hook) {
   if (result.status !== 0) {
     // A file whose own tests fail is not evidence about anybody's proof, and
     // crediting it would make a red suite look like a measurement.
+    // A run that printed no report at all -- a crash, a kill, a runner that died on an RPC
+    // deadline -- used to leave the reader with a file, an exit code and nothing else, and
+    // three CI runs were diagnosed by guesswork because of it (finding 613). `outputTail` was
+    // written for exactly this and called by nobody: a repair that is in the tree and not in
+    // the path is the shape this campaign files most often, and `failureDetail` is the path.
     return {
       problem: `${file} did not pass, so its claims are unmeasured`,
-      detail: [...failureSummary(`${result.stdout ?? ''}\n${result.stderr ?? ''}`), rerun(file)],
+      detail: [...failureDetail(`${result.stdout ?? ''}\n${result.stderr ?? ''}`), rerun(file)],
     };
   }
   const text = existsSync(trace) ? readFileSync(trace, 'utf8') : '';

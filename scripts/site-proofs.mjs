@@ -437,6 +437,23 @@ export function outputTail(text, lines = 3) {
 }
 
 /**
+ * What a failed claimant run's output is worth as evidence, in the lines a reader gets.
+ *
+ * Two shapes, and the difference between them is the whole point. A run that printed a report
+ * says which test failed and what it said, and `failureSummary` quotes it. A run that printed
+ * **nothing** -- a crash, a kill, a runner that died on an RPC deadline -- yields no summary at
+ * all, and the caller that stopped there left a reader with a file, an exit code and no
+ * evidence. Three CI runs were diagnosed by guesswork because of that (finding 613), which is
+ * why the empty case now quotes the tail under a line that says it is a tail rather than a
+ * report: the two are not the same claim and must not be printed in the same voice.
+ */
+export function failureDetail(output) {
+  const summary = failureSummary(output);
+  if (summary.length > 0) return summary;
+  return ['(the run printed no report; its last lines were)', ...outputTail(output)];
+}
+
+/**
  * The per-test budget a run exhausted, or `null` if it finished inside it.
  *
  * Vitest says `Test timed out in 30000ms.` when a test exceeds its ceiling, and that

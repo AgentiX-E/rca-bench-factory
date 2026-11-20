@@ -58,9 +58,19 @@ jobs:
     # two test files were added, not because anything in the job changed.
     timeout-minutes: 24
     steps:
+      # Full history, for the same reason the documentation job has it: this job runs the
+      # claimants through `verify-site-proofs`, and one of them is `unit-nouns.test.ts`,
+      # which spawns the census, which spawns `check-repository-table`. That gate prints
+      # `Commits (at `e22e2de`) = 536` and reads the revision out of `git rev-list`, so a
+      # depth-1 checkout -- the default -- refuses it with "the revision `e22e2de` does not
+      # resolve to a commit", the census goes red, and the claimant is reported as a file
+      # that did not pass (finding 612). Measured in a depth-1 clone of this repository
+      # before it was repaired here.
       - name: Check out
         timeout-minutes: 3
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         timeout-minutes: 3
