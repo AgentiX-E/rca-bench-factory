@@ -375,3 +375,23 @@
   corpus can say, and eleven of seventeen say the opposite of what the line implied. What replaces the entry is
   narrower: the arm cannot see what a round **changed**, so the rule it would take is one the corpus cannot hold
   (`O-084`).
+
+- O-093 · ~~**`batteries` holds 108 minutes of step bounds inside a 25 minute ceiling.**~~ `R6` was the only
+  rule about a job's budget and it refused a **narrower** one, so nothing asked whether the bounds inside a
+  ceiling could fire before the ceiling does -- and the entry's own answer, a comparison of a ceiling with the
+  sum of the bounds inside it, was measured in v3.123 and refused: six preparation steps carry a three-minute
+  floor each, so every job in the workflow holds at least **21** minutes of bounds, including the two whose
+  whole day is under a minute, and a ceiling sized to hold them would be twenty times the day it bounds.
+  ~~`[open: the repair is another job split, which is what the same arithmetic said once before when it moved
+  the batteries from 30 minutes to 25 -- and the rule that would say so is a comparison of a ceiling with a
+  sum, which no round has written because every existing job would fail it]`~~
+  **Closed by finding 605**, which is the rule that can be written instead: a ceiling has to hold twice its
+  job's slowest recorded **day**, the same multiple `R4` and `R10` already demand of a step bound, read from
+  one reading rather than from a composite of ten -- `verify` **18** min over **601** s (**1.80x**),
+  `batteries` **25** over **1 012** s (**1.48x**) and `batteries-heavy` **27** over **921** s (**1.76x**)
+  were under it, and the three are **21** / **34** / **31** now. `batteries` is the one that moves against a
+  recorded decision: v3.121 lowered it from 30 to 25 on the argument that a budget has to hold the bounds of
+  its own steps, and that argument is the one finding 604 refuses. The sum is still printed, per job now
+  (**finding 604**): `bounds total 327 min in 8 ceiling(s)`, the closest ceiling named with the day it was
+  measured against. What the closure leaves behind is the day between twice the slowest and the sum, which is
+  `O-095`.

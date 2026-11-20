@@ -1351,6 +1351,33 @@ from an anecdote again.
   from a short sentence, and the corpus is what put the threshold where it is. The heading unit is
   the part of the rule that does not pay that price.
 
+### A subset is not a second population, and a ceiling is a bound (v3.123)
+
+- **`226 record(s)` on one line and `47 record(s) in table form` on the next** -- one noun over two
+  populations, with no word on the page saying the 47 is inside the 226. Both numbers were right, which is
+  why two assertions that each held one number to the corpus could not see it (finding 603).
+- **The line says how many it is a part of.** `47 of 227 record(s) are in table form (318 row(s))`, with the
+  denominator taken from the same variable the population line prints, so the two lines cannot disagree while
+  both are arithmetic; the shipped-corpus case reads both out of one run and holds them equal.
+- **`bounds total 327 min` beside `51 min measured` was a division across eight ceilings**, and the
+  comparison that decides whether a bound can fire -- a job's bounds against the ceiling above them -- was
+  printed by no line. The sum now says how many denominators it has (`in 8 ceiling(s)`) and the ceiling gets a
+  superlative with the day it was measured against (finding 604).
+- **The sum is not the rule, and it was measured before it was refused.** Six of eight jobs hold more bounds
+  than their ceiling, and no ceiling could fix it: the six shared preparation steps carry a three-minute floor
+  each, so every job holds at least 21 minutes of bounds -- 21 minutes in a job whose whole day is 46 seconds.
+  A ceiling that cannot fire is the same defect as a bound that cannot (finding 604).
+- **`R12`: a ceiling holds twice its job's slowest recorded day**, the multiple `R4` and `R10` already demand
+  of a step bound. The day is one reading summed, not a composite of each command's slowest day; a reading
+  with a step missing is skipped rather than summed, and ties go to the newer run (finding 605).
+- **Three ceilings were under it and moved**: `verify` **18 -> 21** (1.80x), `batteries` **25 -> 34**
+  (1.48x), `batteries-heavy` **27 -> 31** (1.76x). `batteries` moves against v3.121's own reduction, and the
+  comment at the job says why: that reduction's argument is the one finding 604 refuses.
+- **What is not promised.** A day between twice the slowest and the sum still reaches the ceiling with every
+  step inside its own bound, and neither of the two failures it could produce names a step (`O-095`). The
+  workflow-wide sum is still printed and still unjudged: it is arithmetically right about a population no rule
+  is about.
+
 ### One line, one partition: an entry of the live list is not an entry of a record (v3.122)
 
 - **`597 open with a reason` was printed over a live list that held 37**, forty lines above the stamp that

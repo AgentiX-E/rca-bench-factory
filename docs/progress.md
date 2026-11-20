@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 257 core + 4 cli |
-| Test lines | 113,906 core + 3,242 cli |
-| Tests | 6,728 core + 187 cli |
+| Test lines | 114,083 core + 3,242 cli |
+| Tests | 6,737 core + 187 cli |
 | Tracked files | 668 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.122: **38** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.123: **38** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -995,15 +995,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: correcting them would be editing frozen records to satisfy a rule invented after them, which is the
   asymmetry the coverage row already lives with -- 30 of the log's first 54 ledgers carry none -- so the five
   are stated in the round that found them rather than rewritten]`
-- O-093 · **`batteries` holds 108 minutes of step bounds inside a 25 minute ceiling.**
-  `R6` is the only rule about a job's budget and it refuses a **narrower** one, so nothing asks whether the
-  bounds inside a ceiling can fire before the ceiling does. For `batteries` the sum is **108** minutes of
-  bounds in **25** minutes, and after v3.121 raised the two heavy steps the pair is **13 + 12 = 25** -- the
-  job's death and the second step's expiry are the same instant, and the verdict a hang produces is "the job
-  timed out", which is the sentence these bounds exist to replace.
-  `[open: the repair is another job split, which is what the same arithmetic said once before when it moved
-  the batteries from 30 minutes to 25 -- and the rule that would say so is a comparison of a ceiling with a
-  sum, which no round has written because every existing job would fail it]`
 - O-094 · **Thirty closures live in rounds' records, and the record of closures does not hold them.**
   The two lists were split at v3.111 so that history had one home, and the split's two refusals are
   `kind`-scoped: a struck entry in the live list is refused, an unstruck entry in the record of closures is
@@ -1016,6 +1007,20 @@ is a row about rather than paraphrase one that no `grep` will find.
   the round is frozen -- but which of the two homes a closure has when the round that closes it also
   restates it is not decided anywhere, and the answer decides whether 30 records are corrected or the rule
   is scoped; neither can be done by a round that is not allowed to edit a frozen record]`
+- O-095 · **The ceiling is twice the slowest day, and a day slower than that still dies unnamed.**
+  `R12` refuses a ceiling under twice a job's slowest recorded day, and v3.123 raised the three that were
+  under it: `verify` **18 -> 21**, `batteries` **25 -> 34**, `batteries-heavy` **27 -> 31**. What the rule
+  does not say is what happens between twice that day and the sum of the bounds inside the job: `batteries`
+  holds **83** minutes of step bounds in a **34**-minute ceiling, so a day of **2 100** s -- 2.08x its
+  slowest recorded day of **1 012** s -- reaches the ceiling with every step still inside its own bound. The
+  rule that would cover it, `ceiling >= the sum of the bounds`, was measured before it was written and
+  refused: the six preparation steps every job shares carry a three-minute floor each, so **every** job in
+  the workflow holds at least **21** minutes of bounds, the two whose whole day is under a minute included,
+  and a ceiling sized to hold them would be twenty times the day it bounds.
+  `[open: which of the two failures a slow-but-not-hung day should produce -- the job's death, which names
+  nothing, or a ceiling inflated until it cannot fire, which names nothing either -- is a decision no round
+  has made; the third answer, a job split small enough that the sum fits, is what the same arithmetic said
+  twice before, and the six preparation steps make it a split that shares its setup rather than repeats it]`
 
 ## Pass log
 
@@ -1051,7 +1056,7 @@ and this table.
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
-| [volume-18.md](progress/volume-18.md) | 11 | v3.112 | v3.122 |
+| [volume-18.md](progress/volume-18.md) | 12 | v3.112 | v3.123 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

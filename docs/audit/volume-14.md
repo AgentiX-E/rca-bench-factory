@@ -1156,3 +1156,179 @@ fourteen cases -- the most of any edit here.
   in `WHERE` would throw inside `phraseOf` -- a crash rather than a refusal with a sentence, and no fixture
   reaches it, because there is no fixture with a fourth kind. The table is total over three kinds by the
   corpus's arithmetic and by nothing that reads it.
+
+## Finding 603 — the second line counted a subset with the noun of the whole
+
+The two lines the round before this one left standing, printed in one run:
+
+```
+check-open-list: 226 record(s): 201 under a round and 25 under none; 217 `vX.YY` round(s) + 1 addendum(s), 17 of them wrote none
+check-open-list: 47 record(s) in table form (318 row(s)); the v3.122 record's 2 row(s) were judged, and every one of them matches an entry on its first 20 characters
+```
+
+**One noun, two populations, two lines apart.** 226 is every record the walk read; 47 is the ones written as
+tables. There is no arithmetic that puts 47 beside 226 -- 47 + 226 is not a number of anything, and 226 - 47
+is not printed -- so a reader holding both lines has to decide, unaided, whether a table-form record **is** a
+record or is a fourth kind of object the first line did not count. It is a record: `spellingOf` gives it
+`kind: 'record'` and `form: 'table'`, the `recordSections += 1` arm runs for it, and so does `tables += 1`.
+The containment is by construction -- `form: 'table'` is only ever produced together with `kind: 'record'` --
+and nothing on the page said so.
+
+This is finding 602's shape at the smallest possible radius, and finding 600's shape one line below it. There
+the two readers were two gates printing `215` and `268`; here they are two lines of one gate printing `226`
+and `47`. The defect is not that either number is wrong -- both are right -- it is that a **subset was
+printed with the noun of the whole**, which reads as a second population.
+
+### The repair
+
+The line says how many it is a part of:
+
+```
+check-open-list: 47 of 226 record(s) are in table form (318 row(s)); the v3.122 record's 2 row(s) were judged, ...
+```
+
+The denominator is `recordSections` -- the same variable the line above prints -- so the two lines cannot
+disagree while both are arithmetic. That is the difference between a repair and a second number: a
+denominator computed here and there would be a pair a reader has to hold equal, which is the pair finding 600
+exists about.
+
+### What the test can now assert, and could not before
+
+`rowSections` was already held to the corpus (`47`), and the record population was already held to it (`226`),
+and **neither assertion could see the defect**, because both numbers were right. The shipped-corpus case now
+reads both lines out of one run of the guard and holds the denominator to the population printed above it:
+
+```js
+const counted = /(\d+) of (\d+) record\(s\) are in table form \((\d+) row\(s\)\)/.exec(shipped.stdout);
+const recordLine = /(\d+) record\(s\): \d+ under a round and \d+ under none/.exec(shipped.stdout);
+expect(Number(counted?.[2])).toBe(Number(recordLine?.[1]));
+```
+
+plus a non-vacuity case -- the numerator is *less* than the denominator, so a corpus in which every record
+were a table could not pass the `of` as a constant.
+
+### Falsifications
+
+| the edit | reds |
+| --- | --- |
+| the denominator made `recordSections + 1` | 6 |
+| the denominator dropped entirely, the line as it was | 6 |
+
+**Twelve reds across two edits**, both rest on the six fixtures and the shipped-corpus case that pin the
+sentence -- and the second is the round's own defect restored verbatim: the line as it stood for one round.
+
+## Finding 604 — `bounds total 327 min` beside `51 min measured`, and the comparison that decides nothing
+
+`check-ci-budget` printed, on the shipped tree:
+
+```
+check-ci-budget: OK — 8 job(s) recorded, 62 of 83 step(s) carry their own `timeout-minutes`, 21 are bounded by their jobs' budget, and 0 have none, 51 min measured (as of run 44656781771); bounds total 327 min; tightest ...
+```
+
+Two numbers a reader can divide, and the division is meaningless: **327 minutes of declared bounds over 51
+minutes of measured time, across eight jobs with eight different ceilings.** A bound is arithmetic inside one
+job -- it has to expire before *that* ceiling -- and the workflow-wide sum is a number about nothing that ran.
+It was defended, correctly, as a sum of one population (the bounds steps declare) rather than of a mixed one
+(finding 596's "what the repair does not change"), and that defence is why the defect survived: the number is
+right and the question it invites is not answerable.
+
+What was printed by no line is the comparison that decides whether a bound can fire at all: **a job's bounds
+against the ceiling above them.** `R4` asks it of each bound (`bound + prefix-measured <= ceiling`), and the
+summary asked it of nothing.
+
+### The repair
+
+The sum keeps its population and gains its denominators; the ceiling gets a superlative of its own, with the
+day it was measured against:
+
+```
+... bounds total 327 min in 8 ceiling(s); the closest ceiling batteries at 34 min over its slowest day of 1012 s (2.0x, run 44576264388), and no job is under 2x; tightest ...
+```
+
+`in 8 ceiling(s)` is what says the workflow-wide division has eight denominators rather than one, and
+`no job is under 2x` is a claim about **every** job -- checkable, because `R12` (finding 605) refuses the
+first one that is.
+
+### Why the sum is not the rule
+
+The obvious repair is a rule that a job's ceiling must hold the sum of its bounds. It was measured before it
+was written and refused:
+
+| job | ceiling | own bounds | sum / ceiling |
+| --- | --- | --- | --- |
+| `verify` | 18 | 53 min | 2.94 |
+| `backend` | 48 | 48 min | 1.00 |
+| `sensitivity` | 26 | 46 min | 1.77 |
+| `sensitivity-shard` | 26 | 43 min | 1.65 |
+| `batteries` | 25 | 83 min | 3.32 |
+| `batteries-heavy` | 27 | 54 min | 2.00 |
+| `artefacts` | 15 | 0 min (13 steps inherit) | 0.00 |
+| `cold-tree` | 20 | 0 min (8 steps inherit) | 0.00 |
+
+Six of eight jobs hold more bounds than any ceiling they have, and **no ceiling could fix it**: the six
+preparation steps every job shares carry a three-minute floor each, so the sum of bounds is at least 21
+minutes in *every* job, including the two whose whole day is under a minute. A rule that made those sums fit
+would demand ceilings of 21 minutes for a 46-second job and 83 for one that takes 15 -- ceilings twenty times
+the day they bound, which is the same defect as a bound that cannot fire, one level up: **a ceiling that
+cannot fire is not a bound either.** The floor exists because a measurement cannot see a cold package index,
+so the sum it produces is not a claim about a day; the day is, and the rule belongs on the day.
+
+## Finding 605 — the ceiling had no multiple, and three jobs were under twice their own slowest day
+
+`R4` and `R10` demand that a step's bound be at least twice the slowest reading of its command, on the
+argument that a runner twice as slow must still finish rather than be refused for being slow. Nothing asked
+it of the job ceiling. Measured against `ci-readings.json`, on the shipped workflow:
+
+| job | ceiling | slowest day | multiple | run |
+| --- | --- | --- | --- | --- |
+| `verify` | 18 min | 601 s | **1.80x** | `44656781771` |
+| `batteries` | 25 min | 1012 s | **1.48x** | `44576264388` |
+| `batteries-heavy` | 27 min | 921 s | **1.76x** | `44576264388` |
+| `sensitivity` | 26 min | 675 s | 2.31x | `42142175689` |
+| `sensitivity-shard` | 26 min | 669 s | 2.33x | `44516888528` |
+| `backend` | 48 min | 910 s | 3.16x | `44516888528` |
+| `artefacts` | 15 min | 179 s | 5.03x | `42172498744` |
+| `cold-tree` | 20 min | 127 s | 9.45x | `42160224254` |
+
+A day eleven per cent slower than one `verify` has already run reaches the ceiling with every step still
+inside its own bound, and the verdict is `the job timed out` -- the sentence every bound in `ci-budget.mjs`
+exists to replace, in the job where eleven of twelve steps carry one.
+
+### The rule
+
+`R12`: a job's ceiling must be at least twice its slowest recorded day. The day comes from `jobDays`, which
+sums **one reading**; a reading that measured only some of the job's steps is skipped rather than summed,
+because a total with a hole in it is smaller than the day, and a ceiling argued from it would be argued from
+a fast day. Ties go to the newer run, the rule `worstReadingFor` already follows.
+
+The sum of each command's slowest reading -- the composite `R4`'s prefix uses -- is deliberately **not** the
+number here. `R4` asks where a bound sits in a job, and there a mixture of slow days is the worst case. A
+ceiling is a claim about a day, and a composite of ten days is a day no run ever produced: a number a reader
+cannot go and look at, which is the one thing every other number in that file can be.
+
+### The repair
+
+| job | was | now | multiple of its slowest day |
+| --- | --- | --- | --- |
+| `verify` | 18 min | **21** | 2.10x |
+| `batteries` | 25 min | **34** | 2.02x |
+| `batteries-heavy` | 27 min | **31** | 2.02x |
+
+`batteries` is the one that moves against a recorded decision, and the record says so where it stood: v3.121
+lowered it from 30 to 25 because *a job's budget has to hold the bounds of its own steps* -- the argument
+finding 604 refuses above. The two heavy bounds still add up to more than the ceiling, and that is now a
+stated property rather than a hidden one; the numbers a hang is charged to are the two 13/12-minute step
+bounds, and those fire long before 34 minutes.
+
+### Falsifications
+
+| the edit | reds |
+| --- | --- |
+| `R12`'s comparison made `false` | 3 |
+| the hole-skip removed from `jobDays` | 7 |
+| the summary's ceiling clause dropped | 2 |
+| `jobDays` restricted to the recording, ignoring the history | 2 |
+
+**Fourteen reds across four edits.** The second is the one that would have passed for the wrong reason: with
+the skip removed, a reading with a step missing is summed as if the step took nothing, so every ceiling in
+the file is argued from a fast day -- and the three cases that name the day go red.

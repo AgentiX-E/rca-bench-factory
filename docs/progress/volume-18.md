@@ -1990,9 +1990,9 @@ cases, the most of any edit here.
 | item | value |
 | --- | --- |
 | CI | run `44656781771` on `51fa6ff6`: **8 of 8 jobs success**, **14 min 38 s** of wall clock |
-| `core` test suite | **257 files, 6728 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **261 files, 6915 tests passed** (as of this commit) |
+| `core` test suite | **257 files, 6728 tests passed** (at v3.122) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.122) |
+| repo test suite | **261 files, 6915 tests passed** (at v3.122) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6725 -> 6728, +3**: the live bucket and the stamp asserted equal, a document with no live list printing no live clause, and the smallest corpus holding both kinds |
 | the sentences moved | **11**: five fixtures pinning the composite line, the three that read `closed (`, the two that pinned `N entry(ies) across N section(s)`, and the shipped summary and id line |
@@ -2020,3 +2020,136 @@ cases, the most of any edit here.
   asked about. `[open: this round closed the noun that had a second reader in the same file, and left the
   ones that have none; the repair is a declared unit per summary, and no round has measured which of the
   nine are ambiguous]`
+
+## v3.123 · One noun over two lines, and the ceiling that had no multiple
+
+The round before this one ended with a pair it had not measured: `226 record(s): 201 under a round and 25
+under none` on one line, `47 record(s) in table form` on the next. Measuring that pair took one clause. The
+same question asked of the CI budgets -- *what does this number have to be twice* -- took a rule and three
+sized ceilings, and it found the ceiling had never been asked at all.
+
+### The measurement
+
+Three lines from one run of the shipped tree:
+
+```
+check-open-list: 226 record(s): 201 under a round and 25 under none; 217 `vX.YY` round(s) + 1 addendum(s), 17 of them wrote none
+check-open-list: 47 record(s) in table form (318 row(s)); the v3.122 record's 2 row(s) were judged, ...
+check-ci-budget: OK — 8 job(s) recorded, 62 of 83 step(s) carry their own `timeout-minutes`, ..., 51 min measured (as of run 44656781771); bounds total 327 min; tightest backend / Install a backend this repository did not write at 2.0x ...
+```
+
+**47 is inside 226, and neither line said so.** Both numbers were right, which is why no test could see it:
+the corpus case already held 47 to the number of `priority` tables and 226 to the number of record sections,
+and a subset that is counted correctly beside its whole is invisible to two assertions that each hold one
+number to one population. That is finding 602 one line down and finding 600 one gate down: a reader holding
+two lines has to derive a relation the page never states.
+
+**And `bounds total 327 min` beside `51 min measured` is a division across eight different ceilings.** It was
+defended in this log as a sum of one population -- the bounds steps declare -- and it is: the defect is that
+the comparison a bound's life depends on (a job's bounds against the ceiling above them) was printed by no
+line, while the workflow-wide pair invited exactly that division.
+
+### The ceiling had no multiple
+
+`R4` and `R10` ask a step bound for twice the slowest reading of its command. The job ceiling was asked only
+`R6` -- not narrower than the recording's -- and measured against `ci-readings.json`:
+
+| job | ceiling | slowest day | multiple | run |
+| --- | --- | --- | --- | --- |
+| `verify` | 18 min | 601 s | **1.80x** | `44656781771` |
+| `batteries` | 25 min | 1012 s | **1.48x** | `44576264388` |
+| `batteries-heavy` | 27 min | 921 s | **1.76x** | `44576264388` |
+| `sensitivity` | 26 min | 675 s | 2.31x | `42142175689` |
+| `sensitivity-shard` | 26 min | 669 s | 2.33x | `44516888528` |
+| `backend` | 48 min | 910 s | 3.16x | `44516888528` |
+| `artefacts` | 15 min | 179 s | 5.03x | `42172498744` |
+| `cold-tree` | 20 min | 127 s | 9.45x | `42160224254` |
+
+A day eleven per cent slower than one `verify` has already run reaches its ceiling with every step still
+inside its own bound, and the verdict is `the job timed out`: the sentence eleven of its twelve bounds exist
+to replace.
+
+### The rule the entry asked for, measured and refused
+
+`O-093` asked for the other rule -- a ceiling that holds the sum of the bounds inside it -- and said no round
+had written it because every job would fail it. Both halves were right, and the second is why it should never
+be written:
+
+| job | ceiling | own bounds | sum / ceiling |
+| --- | --- | --- | --- |
+| `verify` | 18 | 53 min | 2.94 |
+| `backend` | 48 | 48 min | 1.00 |
+| `sensitivity` | 26 | 46 min | 1.77 |
+| `sensitivity-shard` | 26 | 43 min | 1.65 |
+| `batteries` | 25 | 83 min | 3.32 |
+| `batteries-heavy` | 27 | 54 min | 2.00 |
+
+The six preparation steps every job shares carry a three-minute floor each, so **no** ceiling could satisfy
+that rule without becoming twenty times the day it bounds -- `artefacts` measures 46 s in a workflow-wide
+minimum of 21 minutes of bounds. A ceiling that cannot fire is the same defect as a bound that cannot, one
+level up. So the rule is the multiple, and the sum stays a printed number rather than a judge.
+
+### The repairs
+
+1. **The table-form line says how many it is a part of.** `47 of 227 record(s) are in table form`, with the
+   denominator taken from `recordSections` -- the same variable the population line prints -- so the two lines
+   cannot disagree while both are arithmetic. It read `47 of 226` before this round's own record section
+   existed, and both numbers moved together when it appeared, which is the repair behaving as a relation.
+2. **The sum gains its denominators, and the ceiling gains a superlative.**
+   `bounds total 327 min in 8 ceiling(s); the closest ceiling batteries at 34 min over its slowest day of
+   1012 s (2.0x, run 44576264388), and no job is under 2x`.
+3. **`R12`: a ceiling holds twice its job's slowest recorded day.** The day comes from `jobDays`, which sums
+   **one** reading; a reading that measured only some of the job's steps is skipped rather than summed,
+   because a total with a hole in it is smaller than the day. Ties go to the newer run.
+4. **The day is not a composite of slow days.** `R4`'s prefix sums each command's slowest reading because it
+   is about a bound's position, where a mixture is the worst case; a ceiling is about a day, and a composite
+   of ten days is a day no run ever produced.
+5. **Three ceilings move**: `verify` 18 -> 21, `batteries` 25 -> 34, `batteries-heavy` 27 -> 31. `batteries`
+   moves against v3.121's own reduction, and the comment at the job says so where the reduction was argued:
+   that argument is the one finding 604 refuses.
+
+### Falsifications
+
+Each edit was followed by the one test file that owns it, with the module restored byte for byte.
+
+| the edit | reds |
+| --- | --- |
+| the table-form denominator made `recordSections + 1` | 6 |
+| the table-form denominator dropped, the line as it stood | 6 |
+| `R12`'s comparison made `false` | 3 |
+| the hole-skip removed from `jobDays` | 7 |
+| the summary's ceiling clause dropped | 2 |
+| `jobDays` restricted to the recording, ignoring the history | 2 |
+
+**Twenty-six reds across six edits.** The second is this round's own defect restored verbatim, and it is the
+edit no assertion in the tree could have caught before this round: both numbers stay right.
+
+### Readings
+
+> Ledger for `v3.123`.
+
+| item | value |
+| --- | --- |
+| CI | run `44656781771` on `51fa6ff6`: **8 of 8 jobs success**, **14 min 38 s** of wall clock |
+| `core` test suite | **257 files, 6737 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **261 files, 6924 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
+| new tests | **6728 -> 6737, +9**: six for `R12` (the refusal, the exact multiple, the history's day, the hole, no ceiling, the summary's count) and three for `jobDays` |
+| the sentences moved | **11**: five open-list fixtures, the shipped case's regex and the new equality, and four pins in `gate-steps.test.ts` -- `18m` -> `21m`, `25m` -> `34m`, `27m` -> `31m`, `of 18m` -> `of 21m` |
+| the rules | `R12` in `ci-budget.mjs`, with `jobDays` as the reader it argues from |
+| falsifications | six edits, **twenty-six** reds |
+| the population | **47 of 227** record(s) in table form, against **318** rows -- and **227** is the record population on the line above it, not a second number |
+| the ceilings | **21** / **34** / **31** minutes: 2.10x, 2.02x and 2.02x their jobs' slowest days |
+| open entries | **38 -> 38**: `O-093` closed by finding 605, `O-095` opened for the day between twice the slowest and the sum |
+| LLM calls | **0** |
+
+### Left open
+
+- **The ceiling is twice the slowest day, and a day slower than that still dies unnamed.** `batteries` holds
+  **83** minutes of step bounds in a **34**-minute ceiling, so a 2 100 s day -- 2.08x its slowest recorded day
+  -- reaches the ceiling with every step still inside its own bound, and the workflow-wide sum
+  (`bounds total 327 min in 8 ceiling(s)`) is arithmetically right about a population no rule is about.
+  `[open: the two failures a slow-but-not-hung day can produce name nothing either way -- the job's death, or
+  a ceiling inflated until it cannot fire -- and the third answer, a split small enough that the sum fits,
+  needs a shared setup job rather than six repeated ones]`
