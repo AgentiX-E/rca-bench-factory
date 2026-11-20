@@ -1063,3 +1063,96 @@ recorded in `O-092` instead. And the rule reads a row's **presence** of the numb
 that writes `215 -> 216` passes because 216 is the count, which is the intended reading -- a round that has
 just moved the number states both -- but a round that writes a correct number beside an incorrect sentence is
 not seen, and no parser over free prose would see it.
+
+## Finding 602 — one gate printed 597 open over a list that held 37, two lines apart
+
+`pnpm docs:check` printed, in one run and from one walk:
+
+```
+check-open-list: OK (627 entry(ies) across 226 section(s) of docs/progress.md and its volumes: 597 open with a reason, 30 closed (29 by a finding, 0 by a round, 1 without one))
+check-open-list: the live list was read at v3.121 and holds 37 open entr(ies), and the newest round this corpus names is v3.121
+```
+
+**597 and 37, both labelled "open", forty lines apart, and both true.** 597 was every bullet in every
+list section the walk read; 37 was the live list. The difference is 560 restatements -- one per round, of
+the same residuals, in the `### Left open` a round closes with and a volume freezes. A reader who took 597
+away believed sixteen times what was true, and nothing in either sentence said which population it meant.
+
+| kind (`spellingOf`) | sections | entries | open | closed |
+| --- | --- | --- | --- | --- |
+| `live` -- the index's `## Open` | 1 | 37 | **37** | 0 |
+| `record` -- a round's `### Left open` | 178 | 590 | **560** | **30** |
+| `closed` -- the record of closures | 2 | 56 | 0 | **56** |
+
+The line's `627` was the first two rows added; its `597` was their open states added. Neither number was
+wrong, and the walk had known which kind it was reading all along -- `spellingOf` returns it and the kind
+is used for every refusal below. The summary threw the kind away at the one place a reader reads.
+
+### Finding 589 saw this line and fixed the half it had a failing test for
+
+589's subject was the same line: it is the index **and its volumes**, the volumes' records close thirty,
+and a test that read `0 closed by a finding` was matching the last digit of that thirty. The repair was
+to stop reading the line's words and read its arithmetic.
+
+The arithmetic held. `597 = 37 + 560` is arithmetic, and `627 = 37 + 560 + 30` is arithmetic, so the
+test 589 left behind was green for eight rounds over a sentence that published sixteen times the truth.
+**The half that was repaired was the half that had a failing test**, and the open half had none because
+both of its numbers were correct about their own subject.
+
+That is finding 600 at a smaller radius. There the two readers were two gates and the repair was to make
+them compare; here the two readers are two lines of one gate, the smaller number was **already printed
+twice**, and nobody compared them. A comparison that exists in the output is not a comparison that exists.
+
+### The repairs
+
+1. **The population is a partition summed from its parts, not a total counted beside them.** `tallyOf(kind)`
+   holds each kind's open count, closed count and the three closure authorities (finding 588); the number in
+   the parentheses is their sum, so the line's arithmetic is true by construction.
+2. **Each clause names the population it counts** -- `37 open in the live list`, `560 open restated in the
+   log's records`, `30 closed in the log's records`, `56 closed in the record of closures`. `restated` is
+   the word that separates work from the record of work as it stood at a round.
+3. **A clause appears only for a kind the document holds.** The record of closures printed
+   `0 open in the live list` for eight rounds over a section it does not have.
+4. **The section count is split for the same reason.** `627 entry(ies) across 226 section(s)` was a
+   division nobody asked for: **47** of those sections are records in table form, holding **318** rows and no
+   entries, and they are counted on their own line. The line reads `179 of 226` -- the sections the entries
+   came from, then the walk's coverage.
+5. **The id line names its two lists.** `94 entr(ies) with ids 1..94 (38 in the live list, 56 in the record
+   of closures)`; 94 is not a third population, it is those two added, and now both are on the page.
+6. **The two lines are asserted to agree.** A shipped-corpus case reads the live bucket out of the summary
+   and the count out of the stamp and holds them equal -- so the pair that could drift for eight rounds
+   cannot drift silently again.
+
+### Falsifications
+
+Eight edits, each followed by `test/check-open-list.test.ts` alone and a byte-for-byte restore:
+
+| the edit | reds |
+| --- | --- |
+| the closed clause dropped from every bucket | 12 |
+| the restatement bucket named the live list | 3 |
+| the live list dropped from the partition | 12 |
+| the total summed from the open states alone | 3 |
+| the live list and the records pooled into one tally | 14 |
+| a zero open state printed as a count | 7 |
+| the id line's two populations swapped | 4 |
+| the closing parenthesis of the summary moved inside the clause | 1 |
+
+**Fifty-six reds.** The fifth is this finding as a mutation: restoring the pooling is one line, and it reds
+fourteen cases -- the most of any edit here.
+
+### What this does not cover
+
+- **The vocabulary is still two gates wide.** `finding(s)`, `citation(s)`, `entry(ies)`, `row(s)` are printed
+  by nine gates and no other gate is asked what each means; this round closed the noun that had a second
+  reader in the same file (`O-091`).
+- **Thirty closures sit in rounds' records** -- nine in `volume-02`, eleven in `volume-03`, ten across
+  `volume-05` to `volume-09`, all before the split at v3.111: the split's two refusals are kind-scoped and
+  nothing refuses a strike inside a round's record. The line counted them for the first time here, which
+  is why they are now a number; which home a closure has when the round that closes it also restates it is
+  decided nowhere (`O-094`).
+- **A clause's wording is not guarded.** A bucket named `in the log's records` where it meant the live list
+  reds tests, because the fixtures pin the sentences; but a *fourth* kind added to `spellingOf` without a row
+  in `WHERE` would throw inside `phraseOf` -- a crash rather than a refusal with a sentence, and no fixture
+  reaches it, because there is no fixture with a fourth kind. The table is total over three kinds by the
+  corpus's arithmetic and by nothing that reads it.

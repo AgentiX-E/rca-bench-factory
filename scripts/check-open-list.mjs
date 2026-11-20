@@ -635,6 +635,47 @@ function spellingOf(heading) {
 }
 
 /**
+ * Where each kind's entries stand, in the words the summary line uses for them (finding 602).
+ *
+ * The three kinds are the three populations the walk has always known it was reading, and the
+ * summary used to publish them as one: `597 open with a reason` over a live list that held 37.
+ * An entry of the live list is **work**; an entry of a round's record is **the same work as it
+ * stood at that round**, restated once per round and frozen there; an entry of the record of
+ * closures is **history**. `restated` is the word that carries the difference, and it is the
+ * reason this table exists rather than a single string used three times.
+ */
+const WHERE = {
+  live: { open: 'in the live list', closed: 'in the live list' },
+  record: { open: "restated in the log's records", closed: "in the log's records" },
+  closed: { open: 'in the record of closures', closed: 'in the record of closures' },
+};
+
+/** The kinds in the order the summary prints them: work, its restatement, history. */
+const KIND_ORDER = ['live', 'record', 'closed'];
+
+/**
+ * One kind's share of a document's population, as the summary states it.
+ *
+ * A state with no entries contributes no clause: a document with a live list says nothing about
+ * closures, because a live list may not hold one (a struck entry there is refused below), and a
+ * clause reading `0 closed` over it would be a number a reader has to discount. A kind the
+ * document does not hold contributes nothing at all, which is why this is a function of the
+ * tally rather than of the kind's name.
+ */
+function phraseOf(kind, tally) {
+  const where = WHERE[kind];
+  const parts = [];
+  if (tally.open > 0) parts.push(`${String(tally.open)} open ${where.open}`);
+  if (tally.closed > 0) {
+    parts.push(
+      `${String(tally.closed)} closed ${where.closed} (${String(tally.finding)} by a finding, ` +
+        `${String(tally.round)} by a round, ${String(tally.none)} without one)`,
+    );
+  }
+  return parts.join(', ');
+}
+
+/**
  * A record's table under a heading `spellingOf` does not read, found by its body.
  *
  * The refusal above is keyed to the names, so it can only catch a rename that keeps a prefix. The
@@ -1163,6 +1204,12 @@ function check() {
   // wrong and a set of files can.
   const ordered = [];
   let idEntries = 0;
+  // The id space's own partition (finding 602). The space is one number over two lists, and the
+  // line used to publish the total alone: `93 entr(ies) with ids 1..93` over a live list of 37 and
+  // a record of 56. 93 is not a third population -- it is those two added -- and a reader can now
+  // add them, because both numbers are on the page beside it.
+  let idInLive = 0;
+  let idInClosed = 0;
   let idProblems = 0;
   let idLabel = '';
   let tables = 0;
@@ -1203,13 +1250,35 @@ function check() {
     // same list read at two times.
     const reasons = new Map();
     const live = [];
-    let total = 0;
-    // Three counts and not a running total, because the line below publishes three numbers
-    // and `closed` is the sum of them rather than a fourth reading of the same bullets
-    // (finding 588). A total accumulated beside three counters can disagree with them; a
-    // total summed from them cannot, and the shipped corpus is where a reader can check it.
-    const closures = { finding: 0, round: 0, none: 0 };
+    // The population, split by the kind of section each entry sits in (finding 602).
+    //
+    // ## Why one number was not enough
+    //
+    // `spellingOf` has always returned the kind, and the walk has always known which one it was
+    // reading. The summary threw that away -- one `total`, one running count of open entries --
+    // so it printed `597 open with a reason` over a live list that held **37**, while the
+    // currency stamp printed the 37 forty lines below. Both numbers were right about their own
+    // subject, and neither said what its subject was: finding 600's defect, one file in, where
+    // the two populations had been collected by the same loop and published under one noun.
+    //
+    // ## The shape of the repair
+    //
+    // A tally per kind, holding the two states the walk can reach and the three authorities a
+    // closure may name (finding 588). The line prints the tallies of the kinds the document
+    // actually has, so `627` reads as `37 + 560 + 30` on the page instead of as a single number
+    // a reader has to take on faith.
+    const tallies = new Map();
+    const tallyOf = (kind) => {
+      if (!tallies.has(kind)) tallies.set(kind, { open: 0, closed: 0, finding: 0, round: 0, none: 0 });
+      return tallies.get(kind);
+    };
     let sectionsSeen = 0;
+    // How many of them hold **entries**. A section of a record in table form is read by the same
+    // walk and contributes rows, not entries, so it is in `sectionsSeen` and not in this -- and the
+    // two numbers are what keeps `N entry(ies) across M section(s)` from being a division nobody
+    // asked for. `627 across 226` read as 2.8 entries a section, over 45 sections that hold none
+    // of them: the same conflation as the open count, one clause to the left (finding 602).
+    let entrySections = 0;
     let headings = 0;
     let labelled = files[0].label;
     for (const from of files) {
@@ -1380,7 +1449,11 @@ function check() {
         );
         return;
       }
-      total += items.length;
+      // The section's share of the population, created before its entries are read so that a
+      // section whose every entry is refused still has a bucket -- a refusal is a red gate, and a
+      // line that quietly dropped the population a refusal was about would be a second defect.
+      const tally = tallyOf(kind);
+      entrySections += 1;
       // A record written as bullets is a record too.
       //
       // From v3.70 the rounds write `### Left open` with entries instead of a table, and the row
@@ -1437,6 +1510,8 @@ function check() {
         // round ever written.
         if (kind === 'live' || kind === 'closed') {
           idEntries += 1;
+          if (kind === 'live') idInLive += 1;
+          else idInClosed += 1;
           const id = idOf(headline);
           if (id === null) {
             idProblems += 1;
@@ -1535,7 +1610,8 @@ function check() {
           }
           const authority = closureAuthority(item);
           if (authority !== null) {
-            closures[authority] += 1;
+            tally[authority] += 1;
+            tally.closed += 1;
             continue;
           }
           problems.push(
@@ -1565,6 +1641,7 @@ function check() {
           continue;
         }
         openHere += 1;
+        tally.open += 1;
         const open = marker;
         const reason = open[1].trim();
         if (reason.length < 40) {
@@ -1600,18 +1677,34 @@ function check() {
       );
       continue;
     }
-    // The sum, not a fourth count: `closed` is arithmetic over the three the rule separates,
-    // and the parentheses after it name each one. A line that published the total alone had
-    // to borrow one authority's name for it, and 13 of the record's 56 closures do not name
-    // a finding (finding 588).
-    const closed = closures.finding + closures.round + closures.none;
+    // The population as a partition, summed from the tallies rather than counted beside them.
+    //
+    // ## Why the sum is taken here rather than accumulated
+    //
+    // `total` used to be a running count of bullets, so a document whose entries were all refused
+    // published a total that no bucket explained. Summing the buckets makes the line's arithmetic
+    // true by construction: a reader adding the clauses gets the number in the parentheses, or the
+    // guard is refusing something and the gate is red anyway.
+    //
+    // ## Why the clauses are the kinds of this document
+    //
+    // `live` / `record` / `closed` in that order -- work, its restatement, history. A kind the
+    // document does not hold is not named, and a state with no entries is not named either, so the
+    // line of a record of closures is one clause and the line of the index and its volumes is
+    // three. That is the difference between a partition and a vocabulary: the shape follows the
+    // population instead of the population being forced into one sentence.
+    const kinds = KIND_ORDER.filter((kind) => tallies.has(kind));
+    const clauses = kinds.map((kind) => phraseOf(kind, tallies.get(kind))).filter((one) => one !== '');
+    const total = kinds.reduce((sum, kind) => {
+      const one = tallies.get(kind);
+      return sum + one.open + one.closed;
+    }, 0);
     console.log(
-      `check-open-list: OK (${total} entry(ies) across ${sectionsSeen} section(s) of ${nameOf(
+      `check-open-list: OK (${String(total)} entry(ies) across ${String(entrySections)} of ${String(sectionsSeen)} section(s) of ${nameOf(
         doc,
         files,
         labelled,
-      )}: ${total - closed} open with a reason, ${closed} closed (${String(closures.finding)} by a ` +
-        `finding, ${String(closures.round)} by a round, ${String(closures.none)} without one))`,
+      )}: ${clauses.join('; ')})`,
     );
     stampChecks({ live, rounds, problems });
   }
@@ -1652,7 +1745,9 @@ function check() {
       );
     } else {
       console.log(
-        `check-open-list: ${String(idEntries)} entr(ies) with ids 1..${String(idEntries)}, and none is missing`,
+        `check-open-list: ${String(idEntries)} entr(ies) with ids 1..${String(idEntries)} ` +
+          `(${String(idInLive)} in the live list, ${String(idInClosed)} in the record of closures), ` +
+          'and none is missing',
       );
     }
     // The sequence, which is the property a set of files has and a single file does not. A boundary

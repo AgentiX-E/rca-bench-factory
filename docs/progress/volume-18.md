@@ -1863,9 +1863,9 @@ these bounds exist to replace. That is `O-093`, opened here because raising them
 | item | value |
 | --- | --- |
 | CI | run `44576264388` on `9b8413f1e`: **8 of 8 jobs success**, **14 min** of wall clock |
-| `core` test suite | **257 files, 6725 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **261 files, 6912 tests passed** (as of this commit) |
+| `core` test suite | **257 files, 6725 tests passed** (at v3.121) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.121) |
+| repo test suite | **261 files, 6912 tests passed** (at v3.121) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6715 -> 6725, +10**: four for the population line (the four kinds beside their total, a heading of no name, the shaped-like-a-round refusal, the sum on the shipped log), five for the number line (a row counted before its round, the arrow's last number, a larger number, no row at all, a closed round's row), and one for the cut a long quote gets |
 | the sentences moved | **7**: the six fixture cases that pin `check-open-list`'s population line, and the shipped-corpus sentence, which now states `215` as `vX.YY` rounds and derives the number the other gate prints |
@@ -1892,3 +1892,131 @@ these bounds exist to replace. That is `O-093`, opened here because raising them
   can never fire before the job does, and the two heavy steps now bound at **13 + 12 = 25** make the job's
   death and their own expiry the same instant; the repair is another job split, which is what the arithmetic
   already said once when it moved the batteries from 30 to 25]`
+
+## v3.122 · One line, three populations: `597 open` over a list that held 37
+
+The round before this one measured a word printed by two gates and found two populations. It left a
+sentence saying where to look next: *"one word inside one gate"*, and named the pair -- the summary's
+`627 entry(ies)` and the id line's `93 entr(ies) with ids 1..93`. Measuring that pair found something
+larger, forty lines above it.
+
+### The measurement
+
+`pnpm docs:check` printed, in one run:
+
+```
+check-open-list: OK (627 entry(ies) across 226 section(s) of docs/progress.md and its volumes: 597 open with a reason, 30 closed (29 by a finding, 0 by a round, 1 without one))
+check-open-list: the live list was read at v3.121 and holds 37 open entr(ies), and the newest round this corpus names is v3.121
+```
+
+**597 and 37, two lines apart, both called "open", and both true.** 597 was every bullet in every list
+section the walk read; 37 was the live list. The difference is not drift: it is 560 restatements, one per
+round, of the same residuals -- the `### Left open` a round closes with, frozen in a volume and counted
+again by the next round's summary. A reader who took 597 away believed 16 times what was true.
+
+The population as v3.121 printed it, by the kind of section each entry sits in:
+
+| kind | sections | entries | open | closed |
+| --- | --- | --- | --- | --- |
+| `live` -- the index's `## Open` | 1 | 37 | **37** | 0 |
+| `record` -- a round's `### Left open` | 178 | 590 | **560** | **30** |
+| `closed` -- the record of closures | 2 | 56 | 0 | **56** |
+| **the line's own total** | **181** | **683** | | |
+
+627 = 37 + 560 + 30, and the two lines that were published as one number were the first row and the sum
+of the first two.
+
+### Why the round that fixed this line did not fix it
+
+Finding 589 found the same line mixing populations, and its subject was the **closed** half: the line was
+the index *and its volumes*, the volumes' records close thirty, and the test that read it was asserting
+`0 closed by a finding` off the last digit of that thirty. The repair was to read the line's arithmetic
+instead of its words -- and the arithmetic held, because 597 = 37 + 560 is arithmetic too. **589 fixed the
+half it had a failing test for.** The open half had no failing test, because both numbers were right.
+
+That is finding 600's lesson at a smaller radius: there the two readers were two gates and the fix was to
+make them compare; here the two readers are two lines of one gate, and they were already comparable --
+`37` was printed twice -- and nobody compared them. A comparison that exists in the output is not a
+comparison that exists.
+
+### The repairs
+
+1. **The population is a partition, summed from tallies rather than counted beside them.** `tallyOf(kind)`
+   holds each kind's open count, closed count and the three closure authorities; the total in the
+   parentheses is their sum, so the line's arithmetic is true by construction rather than by a rule that
+   can disagree with its parts.
+2. **Each clause names the population it counts.** `37 open in the live list`; `560 open restated in the
+   log's records`; `30 closed in the log's records`; and for the record of closures, `56 closed in the
+   record of closures`. `restated` is the word that carries the difference between work and the record of
+   work at a moment.
+3. **A clause appears only for a kind the document holds.** A document that is nothing but the record of
+   closures printed `0 open in the live list` for eight rounds, over a section it does not have; the line
+   now has one clause there and three in the index.
+4. **The section count is split too.** `627 entry(ies) across 226 section(s)` was a division nobody asked
+   for: 47 of those 226 are records in table form, holding 318 rows and no entries, and they are counted on
+   their own line. The line says `179 of 226` -- the sections the entries were drawn from, and the walk's
+   coverage, in that order.
+5. **The id line names its two lists.** `94 entr(ies) with ids 1..94 (38 in the live list, 56 in the record
+   of closures)` -- 94 is not a third population, it is those two added, and a reader can now add them
+   because both numbers are on the page.
+6. **The two lines are asserted to agree.** A shipped-corpus case reads the live bucket out of the summary
+   and the count out of the stamp and holds them equal, so the pair that could disagree for eight rounds
+   now cannot move separately.
+
+### Falsifications
+
+Eight edits, each followed by `test/check-open-list.test.ts` alone, with the module restored byte for byte
+after every run.
+
+| the edit | reds |
+| --- | --- |
+| the closed clause dropped from every bucket | 12 |
+| the restatement bucket named the live list | 3 |
+| the live list dropped from the partition | 12 |
+| the total summed from the open states alone | 3 |
+| the live list and the records pooled into one tally | 14 |
+| a zero open state printed as a count | 7 |
+| the id line's two populations swapped | 4 |
+| the closing parenthesis of the summary moved inside the clause | 1 |
+
+**Fifty-six reds across eight mutations.** The fifth is the round's thesis as a mutation: pooling the two
+kinds back into one tally -- which is what the code did before this round, in one line -- reds fourteen
+cases, the most of any edit here.
+
+### Readings
+
+> Ledger for `v3.122`.
+
+| item | value |
+| --- | --- |
+| CI | run `44656781771` on `51fa6ff6`: **8 of 8 jobs success**, **14 min 38 s** of wall clock |
+| `core` test suite | **257 files, 6728 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **261 files, 6915 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
+| new tests | **6725 -> 6728, +3**: the live bucket and the stamp asserted equal, a document with no live list printing no live clause, and the smallest corpus holding both kinds |
+| the sentences moved | **11**: five fixtures pinning the composite line, the three that read `closed (`, the two that pinned `N entry(ies) across N section(s)`, and the shipped summary and id line |
+| the rules | `check-open-list` **+0** -- its repair is a partition, and the partition is the same walk |
+| falsifications | eight edits, **fifty-six** reds |
+| the population | **630 entry(ies) across 180 of 227**: **38** open in the live list; **562** restated; **30** closed in the records; and **56** in the record of closures -- the reading taken after this round's own record, which is why it is two more than the measurement above |
+| the ids | **93 -> 94** (`38 + 56`), printed as its two lists for the first time |
+| the number line | **216 -> 217** distinct numbers, dense: 94 in `v2` (`v2.06`..`v2.99`), 123 in `v3` (`v3.00`..`v3.122`) |
+| the recording | `44576264388` -> **`44656781771`**: 8 job(s), 83 step(s), 10 readings in the history; the bounds held, so no ceiling moved |
+| open entries | **37 -> 38** (`O-094`) |
+| LLM calls | **0** |
+
+### Left open
+
+- **Thirty closures live in rounds' records, and the record of closures does not hold them.** The split's
+  two refusals are kind-scoped -- a strike in the live list, an unstruck bullet in the record of closures --
+  and nothing refuses a strike inside a round's record. Thirty are there -- nine in `volume-02`, eleven in
+  `volume-03`, ten across `volume-05` to `volume-09` -- and this round counted them for the first time
+  because the line now says which list holds what.
+  `[open: which home a closure has when the round that closes it also restates it is decided nowhere, and
+  the answer decides whether thirty frozen records are corrected or the rule is scoped -- and the round that
+  would decide is the one allowed to edit them, which is none]`
+- **The summaries of the other gates name their nouns, and nothing compares them.** `finding(s)`,
+  `citation(s)`, `entry(ies)`, `row(s)`, `section(s)` -- nine gates print counts whose nouns no other gate is
+  asked about. `[open: this round closed the noun that had a second reader in the same file, and left the
+  ones that have none; the repair is a declared unit per summary, and no round has measured which of the
+  nine are ambiguous]`

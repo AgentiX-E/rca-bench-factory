@@ -1351,6 +1351,30 @@ from an anecdote again.
   from a short sentence, and the corpus is what put the threshold where it is. The heading unit is
   the part of the rule that does not pay that price.
 
+### One line, one partition: an entry of the live list is not an entry of a record (v3.122)
+
+- **`597 open with a reason` was printed over a live list that held 37**, forty lines above the stamp that
+  printed the 37. 597 was every bullet in every list section; 37 was the live list; the difference is **560**
+  restatements of the same residuals in rounds' records (finding 602). Both numbers were true and neither
+  sentence said what its subject was.
+- **The population is a partition of tallies, summed from its parts.** `630 entry(ies) across 180 of 227
+  section(s) ...: 38 open in the live list; 562 open restated in the log's records, 30 closed in the log's
+  records (29 by a finding, 0 by a round, 1 without one)`. The total is the sum of the clauses, so it cannot
+  disagree with them.
+- **Every clause names the population it counts** -- the live list, the log's records, the record of closures
+  -- and a clause appears only for a kind the document holds: the record of closures printed
+  `0 open in the live list` for eight rounds over a section it does not have.
+- **The section count is split for the same reason.** `179 of 226`: **47** of those sections are records in
+  table form, holding **318** rows and no entries, and they are counted on their own line.
+- **The id line names its two lists.** `94 entr(ies) with ids 1..94 (38 in the live list, 56 in the record of
+  closures)`; 94 is those two added, and both numbers are now on the page to be added.
+- **The stamp and the summary are asserted to agree**, by a shipped-corpus case that reads both out of the
+  output rather than from a literal -- the pair that could drift for eight rounds cannot drift silently.
+- **What is not promised.** The other nine gates' nouns (`finding(s)`, `citation(s)`, `entry(ies)`, `row(s)`)
+  still have no reader that asks what they cover (`O-091`). Thirty closures live in rounds' records and nothing
+  decides which home a closure has when the round that closes it restates it (`O-094`). And a fourth kind added
+  to `spellingOf` without a row in `WHERE` would throw rather than refuse, because no fixture has a fourth kind.
+
 ### A word that counts a population says which population (v3.121)
 
 - **`268 round(s)` and `215 round(s)` were printed forty lines apart over one corpus.** `check-progress-volumes`

@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 257 core + 4 cli |
-| Test lines | 113,816 core + 3,242 cli |
-| Tests | 6,725 core + 187 cli |
+| Test lines | 113,906 core + 3,242 cli |
+| Tests | 6,728 core + 187 cli |
 | Tracked files | 668 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.121: **37** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.122: **38** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1004,6 +1004,18 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: the repair is another job split, which is what the same arithmetic said once before when it moved
   the batteries from 30 minutes to 25 -- and the rule that would say so is a comparison of a ceiling with a
   sum, which no round has written because every existing job would fail it]`
+- O-094 · **Thirty closures live in rounds' records, and the record of closures does not hold them.**
+  The two lists were split at v3.111 so that history had one home, and the split's two refusals are
+  `kind`-scoped: a struck entry in the live list is refused, an unstruck entry in the record of closures is
+  refused. Nothing refuses a struck entry inside a **round's record** -- the `### Left open` a round closes
+  with -- and 30 of them are there, nine in `volume-02`, eleven in `volume-03` and ten across `volume-05` to
+  `volume-09`, every one of them written before the split at v3.111, each a closure the record of closures cannot name.
+  v3.122 counted them for the first time, because the population line now says where each number came from;
+  until then they were the last 30 of a `627 entry(ies)` whose `30 closed` did not say which list held them.
+  `[open: what the entries mean is decided -- they are history restated in the round that closed them, and
+  the round is frozen -- but which of the two homes a closure has when the round that closes it also
+  restates it is not decided anywhere, and the answer decides whether 30 records are corrected or the rule
+  is scoped; neither can be done by a round that is not allowed to edit a frozen record]`
 
 ## Pass log
 
@@ -1039,7 +1051,7 @@ and this table.
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
-| [volume-18.md](progress/volume-18.md) | 10 | v3.112 | v3.121 |
+| [volume-18.md](progress/volume-18.md) | 11 | v3.112 | v3.122 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
