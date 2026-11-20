@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { sourcesIn } from '../../../scripts/comment-language.mjs';
 import { progressCorpus } from '../../../scripts/docs-corpus.mjs';
 
 /**
@@ -303,6 +304,24 @@ describe('check-doc-counts', () => {
     expect(out).toMatch(/OK \((\d+) published count/);
     const n = Number(out.match(/OK \((\d+) published count/)![1]);
     expect(n).toBeGreaterThanOrEqual(5);
+  });
+
+  // The denominator of `67 of the 474 file(s)`, held to the walk it names (finding 606).
+  //
+  // The summary says a subset is inside a population, and `67` alone would read as a second
+  // population of files -- which is exactly what `check-comments-language`'s `474 file(s)` nine
+  // lines above already means. Two assertions are needed and neither is enough: the numerator is
+  // held to the inventory, the denominator to the walk, and a hardcoded 474 in the guard would
+  // pass the first while going stale against the second.
+  it('says of how many files the gate-site proofs are, and takes the denominator from the walk', () => {
+    const r = spawnSync('node', [SCRIPT, '--measured', MEASURED], { cwd: ROOT, encoding: 'utf8' });
+    const out = `${r.stdout}${r.stderr}`;
+    const files = sourcesIn(ROOT).length;
+    expect(out).toContain(`of the ${String(files)} file(s) the source walk reads`);
+    // And the numerator is not the denominator: a corpus in which every source file proved a
+    // gate site would make the `of` a constant.
+    const numerator = Number(/across (\d+) of the \d+ file\(s\)/.exec(out)![1]);
+    expect(numerator).toBeLessThan(files);
   });
 
   // The non-vacuity test above drives the guard against the shipped document
@@ -620,7 +639,10 @@ describe('check-doc-counts -- the gate-site counts it holds to the inventory', (
     );
     expect(r.code).toBe(1);
     expect(r.out).toContain(`publishes "${stale} of ${stale} claim(s)"`);
-    expect(r.out).toContain(`the inventory holds ${CLAIMS} claim(s) across ${FILES} file(s)`);
+    // The message names the denominator as well as the count, because the summary does: the 67 are
+    // `of the 474 file(s) the source walk reads`, and a verdict that omitted the `of` would be
+    // quoting half of the sentence the reader is being asked to repair (finding 606).
+    expect(r.out).toContain(`the inventory holds ${CLAIMS} claim(s) across ${FILES} of the`);
     // Once per line, not once per shape: the sentence matches two of the three shapes and a second
     // verdict on the same sentence is a second repair the reader has to make.
     expect(r.out.match(/publishes "/g)?.length).toBe(1);

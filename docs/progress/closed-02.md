@@ -376,6 +376,24 @@
   narrower: the arm cannot see what a round **changed**, so the rule it would take is one the corpus cannot hold
   (`O-084`).
 
+- O-091 · ~~**The summaries of the other gates name their nouns, and nothing compares them.**~~ The entry said
+  the nine remaining guards "print counts under nouns no other guard shares". Measured by the gate it asked
+  for, the first half is false: **9 nouns are printed by two or more gates** -- `file(s)` 4, `row(s)` 4,
+  `run(s)` 4, `row break(s)` 3, `addendum(s)`, `comment(s)`, `reading(s)`, `round(s)` and `volume(s)` 2 each --
+  and three of the four nouns the entry named are among them. The second half was the whole finding, and it is
+  finding 607: `8 row(s)` is printed by `check-fault-cases` for a case's pre-injection window and by
+  `check-repository-table` for the rows under `## Repository`, both right, four lines apart in one log and
+  indistinguishable from one number printed twice.
+  ~~`[open: the census stopped at the pair because those two printed the same word, and a rule over the others
+  needs a vocabulary of units first -- no round has measured which of those nouns are ambiguous, and a rule
+  invented before its measurement is the shape finding 585 repaired twice]`~~
+  **Closed by finding 607**, and by finding 606 for the one relation that is arithmetic: `check-unit-nouns` is the reader the entry asked for -- it derives the
+  census from the eighteen gates, prints the shared nouns and the coincidences, and holds the vocabulary in
+  `golden-master/unit-nouns.json` with which two gates print one number, and no counts. The one noun whose
+  relation is arithmetic got it (finding 606): `67 of the 474 file(s) the source walk reads`, with the
+  denominator derived and rule 6 refusing to print an `of` whose inclusion has stopped holding. What the
+  closure leaves behind is the relations the census names but does not compute, which is `O-096`.
+
 - O-093 · ~~**`batteries` holds 108 minutes of step bounds inside a 25 minute ceiling.**~~ `R6` was the only
   rule about a job's budget and it refused a **narrower** one, so nothing asked whether the bounds inside a
   ceiling could fire before the ceiling does -- and the entry's own answer, a comparison of a ceiling with the

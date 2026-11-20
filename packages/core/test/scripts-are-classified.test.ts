@@ -186,6 +186,13 @@ const REGISTER: Record<string, Entry> = {
       'table", and three copies of "this corpus carries no samples array" -- the last three over the same ' +
       'file, which is why only the first of them could ever have fired.',
   },
+  'unit-nouns.mjs': {
+    class: 'data',
+    why:
+      'The vocabulary of unit nouns, the census over it, and the coincidences it finds. It is pure: ' +
+      '`nounsIn` reads a line, `censusOf` folds the gates\' summaries, `coincidencesOf` names a count ' +
+      'two gates print for different populations. The gate that runs it is `check-unit-nouns.mjs`.',
+  },
   'staged-mutation.mjs': {    class: 'data',
     why:
       'The comparison a commit boundary needs: for every file a mutation battery recorded, is the ' +
@@ -430,6 +437,14 @@ const REGISTER: Record<string, Entry> = {
       'them naming nothing.',
   },
   'check-open-list.mjs': { class: 'gate' },
+  'check-unit-nouns.mjs': {
+    class: 'gate',
+    why:
+      'The reader O-091 asked for. Eight unit nouns are printed by more than one gate, and the count 8 ' +
+      'is printed as `row(s)` by two of them for two unrelated tables -- a fault case\'s pre-injection ' +
+      'window and the rows under `## Repository`. Both lines are right; read four lines apart in a CI ' +
+      'log they are indistinguishable from one number printed twice, and nothing in the tree asked.',
+  },
   'check-official-registry.mjs': { class: 'gate' },
   'check-official.mjs': { class: 'gate' },
   'check-readme-sample.mjs': { class: 'gate' },

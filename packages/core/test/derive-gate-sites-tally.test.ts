@@ -356,8 +356,14 @@ describe('the two baskets are a partition of the calls, not a remainder', { time
     // of that module's own branches. What makes the pair worth a paragraph is the direction: the
     // eleven rounds above each moved the inventory by reading something new, and this one moves it by
     // making an old reading falsifiable.
-    expect(calls).toBe(162);
-    expect(sites).toBe(144);
+    // 164/145 is v3.124's, and the pair moves together for the fourteenth round. This one adds a
+    // reader whose subject is not a figure but the **vocabulary the figures are written in**: nine
+    // unit nouns are printed by more than one gate, and the count `8` is printed as `row(s)` by two
+    // of them for two unrelated tables. The pair moves by two calls and one site because the exit is
+    // a single `fail()` and the other call is the `--write` that regenerates the inventory -- the
+    // shape v3.98 and v3.99 established, one call further out.
+    expect(calls).toBe(164);
+    expect(sites).toBe(145);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

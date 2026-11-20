@@ -92,7 +92,7 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   the `sensitivity` job runs `verify-sites-are-sensitive.mjs`, which asks whether that
   file **notices** the exit's absence -- one run per claim with that site's code
   replaced by success, and a baseline run per file so a red claimant cannot be
-  credited with catching anything. Measured at **229 of 229** claim(s) across 66 file(s).
+  credited with catching anything. Measured at **230 of 230** claim(s) across 67 file(s).
   The figure was 105 of 105 in both halves at v3.41, and it drifted for twenty-four rounds
   because nothing read the sentence -- an external reviewer quoted the 105 as the current
   state, which is what a number with no reader costs. `check-doc-counts` reads it now:
@@ -1350,6 +1350,29 @@ from an anecdote again.
   the price of the eight-character unit rather than an oversight: the unit cannot tell a quoted term
   from a short sentence, and the corpus is what put the threshold where it is. The heading unit is
   the part of the rule that does not pay that price.
+
+### The nouns the gates count in, and the reader that compares them (v3.124)
+
+- **`67 file(s)` was one of the `474` and no line said so.** The 67 are the tests that prove a gate site, the
+  474 are the files the comment guard reads, and the inclusion is `67 of 67` by construction; `37 file(s)` and
+  `6 file(s)` are outside both. Four summaries, one noun, three relations, none stated (finding 606).
+- **The `of` is derived, not written.** `67 of the 474 file(s) the source walk reads`, with the denominator
+  from `sourcesIn(ROOT)` -- the same walk that produces the other number -- so a test file added tomorrow moves
+  both; and rule 6 refuses the sentence while any gate site is proved by a file the walk does not read.
+- **Nine unit nouns are printed by more than one gate**, and the count `8` is printed as `row(s)` by two of
+  them for two unrelated tables -- a case's pre-injection window and the rows under `## Repository`
+  (finding 607). Nothing in the tree asked, so `O-091`'s premise that the nouns were private was measured
+  false: `finding(s)` and `citation(s)` are private, `row(s)` is printed by four gates.
+- **`check-unit-nouns` is the reader.** It derives the census from the eighteen gates, prints the shared nouns
+  and the coincidences, and holds the vocabulary in `golden-master/unit-nouns.json`: which gate prints which
+  noun, which two print one number, and **no counts**, because they move every round.
+- **A coincidence carries a sentence a person wrote.** One population read twice (`1 addendum(s)`, both from
+  `populationsOf`) and two populations under one noun (`8 row(s)`) are not the same claim, and the output
+  cannot tell them apart; `--write` will not invent a reading and an unread coincidence is a refusal
+  (finding 608). The judgement is keyed by the noun and the gate pair, never by the count.
+- **What is not promised.** The census names the populations but computes almost none of the relations
+  between them: `volume(s)` -- 14 audit volumes and 18 progress volumes, two lines apart -- is disjoint by
+  directory and nothing says so (`O-096`).
 
 ### A subset is not a second population, and a ceiling is a bound (v3.123)
 

@@ -102,6 +102,7 @@ import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CURRENT_MARKERS, SCOPES, SCOPE_NOTES, scopeOf } from './doc-counts-vocabulary.mjs';
 import { checkCountAdditivity } from './doc-count-additivity.mjs';
+import { sourcesIn } from './comment-language.mjs';
 import { progressCorpus } from './docs-corpus.mjs';
 import { claimedSites } from './site-proofs.mjs';
 
@@ -233,6 +234,11 @@ const MIN_REASON = 40;
 const GATE_SITE_CLAIMS = [
   { name: 'N of N claim(s)', re: /(\d+)\s+of\s+(\d+)\s+claim\(s\)/g, fields: ['claims', 'claims'] },
   {
+    name: 'N claim(s) across M of K file(s)',
+    re: /(\d+)\s+claim\(s\)\s+across\s+(\d+)\s+of\s+(\d+)\s+file\(s\)/g,
+    fields: ['claims', 'files', 'sourceFiles'],
+  },
+  {
     name: 'N claim(s) across M file(s)',
     re: /(\d+)\s+claim\(s\)\s+across\s+(\d+)\s+file\(s\)/g,
     fields: ['claims', 'files'],
@@ -274,14 +280,33 @@ function presentTenseDocuments() {
  * `claimedSites` is the same function the two proof gates use to decide what to run. Reading it here
  * is one artefact and one implementation; a copy in `doc-counts.json` would be a second of each,
  * and the copy would be the one that went stale.
+ *
+ * ## Why `files` now has a denominator
+ *
+ * The summary printed `229 claim(s) across 66 file(s)`, and `check-comments-language` printed
+ * `471 file(s)` nine lines away. Both numbers are `file(s)`, and 66 is *inside* 471 -- every gate
+ * site is proved by a test, and the comment guard reads every source file -- but no line said so,
+ * so a reader holding the two had to decide whether they were two populations or one counted twice.
+ * That is finding 603 one gate up, and the repair is the same `of`, with the denominator derived
+ * from the walk rather than written down: a number copied here would go stale the first time a test
+ * file was added, which is every round.
+ *
+ * The denominator is only sound while the inclusion holds, so rule 6 refuses a gate site proved by
+ * a file the source walk does not read. Without it the sentence would be arithmetic over two
+ * populations that only happen to nest.
  */
 function gateSiteReading() {
   const inventory = JSON.parse(readFileSync(resolve(ROOT, 'golden-master', 'gate-sites.json'), 'utf8'));
   const claimed = claimedSites(inventory);
+  const sources = new Set(sourcesIn(ROOT));
+  const files = new Set(claimed.map((claim) => claim.file));
+  const outside = [...files].filter((file) => !sources.has(file)).sort();
   return {
     sites: Array.isArray(inventory.sites) ? inventory.sites.length : 0,
     claims: claimed.length,
-    files: new Set(claimed.map((claim) => claim.file)).size,
+    files: files.size,
+    sourceFiles: sources.size,
+    outside,
   };
 }
 
@@ -656,10 +681,30 @@ function main() {
     reported.add(key);
     problems.push(
       `${key}: publishes "${claim.text}", but the inventory holds ` +
-        `${String(derived.claims)} claim(s) across ${String(derived.files)} file(s) and ` +
+        `${String(derived.claims)} claim(s) across ${String(derived.files)} of the ` +
+        `${String(derived.sourceFiles)} file(s) the source walk reads and ` +
         `${String(derived.sites)} failure site(s). The numbers come from golden-master/gate-sites.json, ` +
         `which derive-gate-sites.mjs --check holds to the tree; if this sentence is a record of an older ` +
         `tree, date it ("(at v3.40)") so a reader can tell it from the current state.`,
+    );
+  }
+
+  // 6. The denominator of `66 of the 473` is only a denominator while the 66 are inside it.
+  //
+  //    The sentence this round wrote is arithmetic over two populations, and arithmetic over two
+  //    populations is exactly what finding 600 was about: `66 of 473` means the 66 are part of the
+  //    473, and if a gate site were ever proved by a file the comment guard does not read, the `of`
+  //    would be the same kind of false -- a relation printed with nothing checking that it holds.
+  //    The inclusion is not a coincidence of the tree; it is a rule, and this is the sentence that
+  //    says so. It also names what would repair it, because the repair is not to drop the `of`.
+  const split = gateSiteReading();
+  if (split.outside.length > 0) {
+    problems.push(
+      `${split.outside.length} gate site(s) are proved by a file the source walk does not read, ` +
+        `starting with ${split.outside[0]}: the summary says '${String(split.files)} of the ` +
+        `${String(split.sourceFiles)} file(s) the source walk reads', and a proof outside that walk ` +
+        `makes the partition false. Either move the proof into a source file, or teach ` +
+        `comment-language.mjs's SOURCE_EXTENSIONS the kind of file it lives in.`,
     );
   }
 
@@ -672,7 +717,7 @@ function main() {
     `check-doc-counts: OK (${read.length} published count(s), each naming its scope; ` +
       `scope(s) covered: ${scopes}; ${excused} unread phrase(s) excused in writing; ` +
       `${siteClaims} gate-site claim(s) agreeing with ${String(sites.claims)} claim(s) across ` +
-      `${String(sites.files)} file(s))`,
+      `${String(sites.files)} of the ${String(sites.sourceFiles)} file(s) the source walk reads)`,
   );
 }
 

@@ -440,10 +440,10 @@ document that described it as downloading the data was describing an intention.
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 98 |
 | Source lines | 34,609 |
-| Test files | 257 core + 4 cli |
-| Test lines | 114,083 core + 3,242 cli |
-| Tests | 6,737 core + 187 cli |
-| Tracked files | 668 |
+| Test files | 258 core + 4 cli |
+| Test lines | 114,342 core + 3,242 cli |
+| Tests | 6,752 core + 187 cli |
+| Tracked files | 672 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -976,16 +976,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: the ratio is against a number the machine decides, and no declaration of intent can turn it into
   a property of the test -- what would is a budget taken from the isolated reading, which is a different
   question (a file measured alone is sized for a machine this one is never run on)]`
-- O-091 · **The summaries of the other gates name their nouns, and nothing compares them.**
-  v3.121 reconciled the two gates that printed one word for two populations (finding 600) and asserted the
-  agreement: the shipped-corpus case derives `215` through `readVolumes` and requires
-  `check-open-list` to print it. The other nine guards print counts under nouns no other guard shares --
-  `finding(s)` in `check-audit-volumes`, `citation(s)` in `check-citations`, `entry(ies)` in
-  `check-open-list`'s two lists, `row(s)` in its table census -- and no reader asks what population each noun
-  covers.
-  `[open: the census stopped at the pair because those two printed the same word, and a rule over the others
-  needs a vocabulary of units first -- no round has measured which of those nouns are ambiguous, and a rule
-  invented before its measurement is the shape finding 585 repaired twice]`
 - O-092 · **Five ledger rows state a count of the log that is one behind it.**
   `v3.116`..`v3.120` each counted the `vX.YY` numbers before their own heading was written -- **210**, **211**,
   **212**, **212 -> 213**, **213 -> 214** against **211**, **212**, **213**, **214**, **215** -- and `v3.120`'s
@@ -1021,6 +1011,18 @@ is a row about rather than paraphrase one that no `grep` will find.
   nothing, or a ceiling inflated until it cannot fire, which names nothing either -- is a decision no round
   has made; the third answer, a job split small enough that the sum fits, is what the same arithmetic said
   twice before, and the six preparation steps make it a split that shares its setup rather than repeats it]`
+- O-096 · **The census names the populations; it computes almost none of the relations between them.**
+  `check-unit-nouns` prints **53** unit nouns in **69** gate/noun pairs and names the **9** that more than
+  one gate prints, with the **3** counts that coincide across gates. What it does not compute is whether
+  those populations overlap: `file(s)` has an `of` only because `check-doc-counts` derives its denominator
+  from `sourcesIn`, and `row(s)` -- four gates, the numbers **9**, **318**, **1**, **8** and **8** -- has no
+  relation at all. `volume(s)` is the sharpest case the census names without answering: `14 volume(s)` in
+  `check-audit-volumes` and `18 volume(s)` in `check-progress-volumes`, two lines apart in one log, disjoint
+  by directory and nothing on the page saying so.
+  `[open: the four populations of `file(s)` are not all reachable from a data module yet -- `check-citations`
+  still walks its own corpus -- so the relation can be computed for one noun and asserted for none of the
+  others; which of them is worth a reader first is a measurement, and the pair worth acting on is the one
+  whose two numbers are equal, which is why `row(s)` came first]`
 
 ## Pass log
 

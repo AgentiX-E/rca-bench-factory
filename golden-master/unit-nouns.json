@@ -1,0 +1,436 @@
+{
+  "nouns": [
+    {
+      "noun": "addendum(s)",
+      "gates": [
+        "check-open-list",
+        "check-progress-volumes"
+      ]
+    },
+    {
+      "noun": "answer(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "backend(s)",
+      "gates": [
+        "check-backend-support"
+      ]
+    },
+    {
+      "noun": "baseline run(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "bash block(s)",
+      "gates": [
+        "check-user-guide"
+      ]
+    },
+    {
+      "noun": "candidate(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "case(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "ceiling(s)",
+      "gates": [
+        "check-ci-budget"
+      ]
+    },
+    {
+      "noun": "character(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "checkpoint(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "citation(s)",
+      "gates": [
+        "check-citations"
+      ]
+    },
+    {
+      "noun": "claim(s)",
+      "gates": [
+        "check-doc-counts"
+      ]
+    },
+    {
+      "noun": "comment opener(s)",
+      "gates": [
+        "check-comments-language"
+      ]
+    },
+    {
+      "noun": "comment(s)",
+      "gates": [
+        "check-comments-language",
+        "check-workflow-language"
+      ]
+    },
+    {
+      "noun": "comparable assertion(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "distinct string(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "document(s)",
+      "gates": [
+        "check-docs-language"
+      ]
+    },
+    {
+      "noun": "earlier row(s)",
+      "gates": [
+        "check-ci-budget"
+      ]
+    },
+    {
+      "noun": "entr(ies)",
+      "gates": [
+        "check-open-list"
+      ]
+    },
+    {
+      "noun": "entry(ies)",
+      "gates": [
+        "check-open-list"
+      ]
+    },
+    {
+      "noun": "enum call(s)",
+      "gates": [
+        "check-data-model-vocabularies"
+      ]
+    },
+    {
+      "noun": "exported table(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "file(s)",
+      "gates": [
+        "check-citations",
+        "check-comments-language",
+        "check-doc-counts",
+        "check-workflow-language"
+      ]
+    },
+    {
+      "noun": "finding(s)",
+      "gates": [
+        "check-audit-volumes"
+      ]
+    },
+    {
+      "noun": "gate-site claim(s)",
+      "gates": [
+        "check-doc-counts"
+      ]
+    },
+    {
+      "noun": "heading(s)",
+      "gates": [
+        "check-progress-volumes"
+      ]
+    },
+    {
+      "noun": "job(s)",
+      "gates": [
+        "check-ci-budget"
+      ]
+    },
+    {
+      "noun": "log assertion(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "mark(s)",
+      "gates": [
+        "check-workflow-language"
+      ]
+    },
+    {
+      "noun": "name(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "near-duplicate(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "neighbour(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "number(s)",
+      "gates": [
+        "check-citations"
+      ]
+    },
+    {
+      "noun": "open entr(ies)",
+      "gates": [
+        "check-open-list"
+      ]
+    },
+    {
+      "noun": "overlapping window(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "pair(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "pin(s)",
+      "gates": [
+        "check-roundtrip-record"
+      ]
+    },
+    {
+      "noun": "published count(s)",
+      "gates": [
+        "check-doc-counts"
+      ]
+    },
+    {
+      "noun": "reading(s)",
+      "gates": [
+        "check-ci-budget",
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "record(s)",
+      "gates": [
+        "check-open-list"
+      ]
+    },
+    {
+      "noun": "reference(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "round(s)",
+      "gates": [
+        "check-open-list",
+        "check-progress-volumes"
+      ]
+    },
+    {
+      "noun": "row break(s)",
+      "gates": [
+        "check-comments-language",
+        "check-docs-language",
+        "check-workflow-language"
+      ]
+    },
+    {
+      "noun": "row(s)",
+      "gates": [
+        "check-fault-cases",
+        "check-l4-status",
+        "check-open-list",
+        "check-repository-table"
+      ]
+    },
+    {
+      "noun": "run(s)",
+      "gates": [
+        "check-comments-language",
+        "check-docs-language",
+        "check-fault-cases",
+        "check-workflow-language"
+      ]
+    },
+    {
+      "noun": "sample(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "scope(s)",
+      "gates": [
+        "check-doc-counts"
+      ]
+    },
+    {
+      "noun": "section(s)",
+      "gates": [
+        "check-open-list"
+      ]
+    },
+    {
+      "noun": "step(s)",
+      "gates": [
+        "check-ci-budget"
+      ]
+    },
+    {
+      "noun": "time-valued parameter(s)",
+      "gates": [
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "unread phrase(s)",
+      "gates": [
+        "check-doc-counts"
+      ]
+    },
+    {
+      "noun": "vocabulary(ies)",
+      "gates": [
+        "check-data-model-vocabularies"
+      ]
+    },
+    {
+      "noun": "volume(s)",
+      "gates": [
+        "check-audit-volumes",
+        "check-progress-volumes"
+      ]
+    }
+  ],
+  "shared": [
+    {
+      "noun": "file(s)",
+      "gates": [
+        "check-citations",
+        "check-comments-language",
+        "check-doc-counts",
+        "check-workflow-language"
+      ]
+    },
+    {
+      "noun": "row(s)",
+      "gates": [
+        "check-fault-cases",
+        "check-l4-status",
+        "check-open-list",
+        "check-repository-table"
+      ]
+    },
+    {
+      "noun": "run(s)",
+      "gates": [
+        "check-comments-language",
+        "check-docs-language",
+        "check-fault-cases",
+        "check-workflow-language"
+      ]
+    },
+    {
+      "noun": "row break(s)",
+      "gates": [
+        "check-comments-language",
+        "check-docs-language",
+        "check-workflow-language"
+      ]
+    },
+    {
+      "noun": "addendum(s)",
+      "gates": [
+        "check-open-list",
+        "check-progress-volumes"
+      ]
+    },
+    {
+      "noun": "comment(s)",
+      "gates": [
+        "check-comments-language",
+        "check-workflow-language"
+      ]
+    },
+    {
+      "noun": "reading(s)",
+      "gates": [
+        "check-ci-budget",
+        "check-fault-cases"
+      ]
+    },
+    {
+      "noun": "round(s)",
+      "gates": [
+        "check-open-list",
+        "check-progress-volumes"
+      ]
+    },
+    {
+      "noun": "volume(s)",
+      "gates": [
+        "check-audit-volumes",
+        "check-progress-volumes"
+      ]
+    }
+  ],
+  "coincidences": [
+    {
+      "noun": "addendum(s)",
+      "gates": [
+        "check-open-list",
+        "check-progress-volumes"
+      ],
+      "reading": "one population and one reader -- both take it from `populationsOf` in `progress-volumes.mjs`, so the number is shared rather than merely equal"
+    },
+    {
+      "noun": "file(s)",
+      "gates": [
+        "check-comments-language",
+        "check-doc-counts"
+      ],
+      "reading": "one population and one reader -- `check-doc-counts` takes its denominator from `sourcesIn` in `comment-language.mjs`, the same walk that produces the other, so the agreement is by construction rather than a coincidence of this week"
+    },
+    {
+      "noun": "row(s)",
+      "gates": [
+        "check-fault-cases",
+        "check-repository-table"
+      ],
+      "reading": "two tables and one noun -- the rows of a fault case's pre-injection window and the rows under `## Repository`, which no arithmetic relates"
+    }
+  ]
+}

@@ -2131,9 +2131,9 @@ edit no assertion in the tree could have caught before this round: both numbers 
 | item | value |
 | --- | --- |
 | CI | run `44695923790` on `a1d983cd`: **8 of 8 jobs success**, **15 min 15 s** of wall clock |
-| `core` test suite | **257 files, 6737 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **261 files, 6924 tests passed** (as of this commit) |
+| `core` test suite | **257 files, 6737 tests passed** (at v3.123) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.123) |
+| repo test suite | **261 files, 6924 tests passed** (at v3.123) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6728 -> 6737, +9**: six for `R12` (the refusal, the exact multiple, the history's day, the hole, no ceiling, the summary's count) and three for `jobDays` |
 | the sentences moved | **11**: five open-list fixtures, the shipped case's regex and the new equality, and four pins in `gate-steps.test.ts` -- `18m` -> `21m`, `25m` -> `34m`, `27m` -> `31m`, `of 18m` -> `of 21m` |
@@ -2154,3 +2154,4 @@ edit no assertion in the tree could have caught before this round: both numbers 
   `[open: the two failures a slow-but-not-hung day can produce name nothing either way -- the job's death, or
   a ceiling inflated until it cannot fire -- and the third answer, a split small enough that the sum fits,
   needs a shared setup job rather than six repeated ones]`
+
