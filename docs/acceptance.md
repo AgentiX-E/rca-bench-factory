@@ -1351,6 +1351,33 @@ from an anecdote again.
   from a short sentence, and the corpus is what put the threshold where it is. The heading unit is
   the part of the rule that does not pay that price.
 
+### A census prints the numbers, and a claimant gets the history it reads (v3.125)
+
+- **`volume(s) by 2` named the gates and never their numbers.** One gate prints `14 volume(s)` and another
+  `18`, forty lines apart in the same log, and the reader built to hold two populations of one word together
+  held the names (finding 609).
+- **The line is one per shared noun**, with every gate's number, the qualifier that number carried, the mark
+  that two gates print an equal count, and the relation a person wrote.
+- **The relation is required of all nine shared nouns**, not of the three whose counts happen to be equal:
+  the coincidences were a special case and `coincidences` left the inventory. `--write` refreshes the
+  vocabulary and preserves every relation; a shared noun without one is a refusal.
+- **A qualifier is read and carried.** `219 `vX.YY` round(s)` carries no number under a pattern that allows
+  only a parenthetical, so `round(s)` was shared by two gates with no count under it and `219` against `219`
+  was invisible; the census's coincidences went **3 -> 4** when it was read (finding 610).
+- **What the census could not size, it now names.** `budget(s)`, `scope(s)` and `enum call(s)` state no number
+  this reader can read, and they are printed as such -- a headline that is a measurement rather than a floor
+  (finding 611).
+- **A job that runs a claimant fetches the history the claimant reads.** `check-repository-table` derives
+  `Commits (at `e22e2de`) = 536` from `git rev-list`, and `actions/checkout` fetches one commit unless told
+  otherwise: a `--depth 1` clone refuses the gate, the census goes red, and the claimant is reported as a file
+  that did not pass. `verify` takes `fetch-depth: 0`, and a test holds the relationship in both directions
+  (finding 612).
+- **A failure that prints no report is quoted, not diagnosed.** `failureDetail` returns the report when there
+  is one and the run's tail under a label when there is not; `outputTail` had been written for exactly that
+  case and imported by nobody (finding 613).
+- **What is not promised.** The relation is a sentence, and the census holds no sets to contradict it --
+  `volume(s)` is disjoint by directory only because a person said so (`O-097`).
+
 ### The nouns the gates count in, and the reader that compares them (v3.124)
 
 - **`67 file(s)` was one of the `474` and no line said so.** The 67 are the tests that prove a gate site, the

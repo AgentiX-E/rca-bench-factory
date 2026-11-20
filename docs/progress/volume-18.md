@@ -2272,9 +2272,9 @@ all three, every run, with the sentence a person wrote for each.
 | item | value |
 | --- | --- |
 | CI | run `44698243645` on `4d253c91`: **8 of 8 jobs success**, **13 min 19 s** -- the run that verified the tree this round started from; this round's own run is taken on it and recorded here afterwards, which is how every round's row is written |
-| `core` test suite | **258 files, 6754 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **262 files, 6941 tests passed** (as of this commit) |
+| `core` test suite | **258 files, 6754 tests passed** (at v3.124) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.124) |
+| repo test suite | **262 files, 6941 tests passed** (at v3.124) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: the new code is `scripts/`, which the `core` coverage run does not include |
 | new tests | **6737 -> 6754, +17**: sixteen in `unit-nouns.test.ts` (eleven over the pure readers, one for the coincidences' judgement, four over the gate itself) and one in `check-doc-counts.test.ts` holding the denominator to the walk |
 | the new gate | `check-unit-nouns.mjs`, 21st step of `docs:check`, reading the eighteen gates before it in **2.5 s** |
@@ -2297,3 +2297,104 @@ all three, every run, with the sentence a person wrote for each.
   and reaching them is a change to four gates rather than to this one.
   `[open: which of those four is worth a reader first is a measurement, not a decision -- the pair
   that a reader can act on is the one whose two numbers are equal, which is why `row(s)` came first]`
+
+## v3.125 · The census printed which gates share a noun, and never what they counted
+
+The round before this one built the census and left a sentence it could not answer: `volume(s)` is printed by
+two gates, and the two numbers were printed forty lines apart. Measuring that sentence took one line per noun,
+and the line exposed a wall the census had been standing behind since it was written -- a wall built by the
+repair two rounds before it.
+
+### The measurement
+
+Three lines from one `docs:check`:
+
+```
+check-unit-nouns: OK — 54 unit noun(s) in 70 gate/noun pair(s); 9 of them are printed by more than one gate: file(s) by 4, row(s) by 4, run(s) by 4, row break(s) by 3, addendum(s) by 2, comment(s) by 2, reading(s) by 2, round(s) by 2, volume(s) by 2; and 3 count(s) coincide across gates: ...
+check-audit-volumes: OK — 14 volume(s), 605 finding(s), 1–608; ...
+check-progress-volumes: OK — 18 volume(s), 272 heading(s): 219 `vX.YY` round(s), 1 addendum(s), 50 `Pass` round(s), 2 unnumbered; ...
+```
+
+**`volume(s) by 2`.** The gate that exists to hold two populations of one word together printed the number of
+gates and never the numbers. It is finding 603's defect one gate over, and the same defence is available and
+has the same hole: both numbers are right, so no assertion about either could see it.
+
+**And the census could not have printed one of them even if it had tried.** `round(s)` is one of the nine, and
+the census recorded no count under it at all -- because both gates write `` 219 `vX.YY` round(s) `` and the
+reader demanded the number at the end of the text in front of the noun. The qualifier that finding 600's repair
+inserted to say *which* era a round belongs to is exactly the character the reader could not see past.
+
+### Five defects
+
+| # | the defect | the evidence |
+| --- | --- | --- |
+| **609** | the summary names the gates and not their numbers | `volume(s) by 2` against one gate's 14 and another's 18 |
+| **610** | the qualifier finding 600 added is invisible to the reader finding 607 added | `round(s)` shared by two gates with `[]` under both, and `219`/`219` -- a real coincidence -- unreachable |
+| **611** | three uses whose number the reader could not see were dropped in silence | `budget(s)`, `scope(s)`, `enum call(s)`; and `1248 '#' mark(s)` recovered by the same repair |
+| **612** | the `verify` job ran a claimant against a one-commit checkout | `check-repository-table` refuses `Commits (at `e22e2de`) = 536` in a `--depth 1` clone; three CI runs lost to it |
+| **613** | `outputTail` was written for the failure that then had no explanation, and imported by nobody | the CI log's four lines naming a file, an exit code, and nothing else |
+
+### The repairs
+
+1. **One line per shared noun**, holding every gate's number with the qualifier it carried, the fact that a count
+   two gates print agrees, and the relation a person wrote.
+2. **The relation is the judgement, and it is required of all nine.** The three coincidences were a special case
+   of the nine, so `coincidences` left the inventory and the refusal moved from "a coincidence nobody has read"
+   to "a shared noun nobody has related" -- strictly stronger, and one section shorter.
+3. **The qualifier is captured and travels with the count**: parenthesised, backticked, quoted. `94 (38+56)
+   character(s)` still reads 94, and `219 `vX.YY` round(s)` now reads 219 with its era attached.
+4. **`unreadableOf` prints what the census could not size**, so the headline is a measurement rather than a floor.
+5. **`fetch-depth: 0` on the `verify` job**, with the reason at the checkout and a test that holds the
+   relationship: a job whose steps run a claimant or the documentation gate must fetch the history the claimant
+   reads. Both directions asserted.
+6. **`failureDetail`** chooses between a report and a labelled tail, so the next silent red explains itself.
+
+### Falsifications
+
+| the edit | reds |
+| --- | --- |
+| the line prints `N gate(s)` instead of the numbers | 4 |
+| the relation ignored, every shared noun printed `unclassified` | 3 |
+| the qualifier dropped rather than carried, the count still read | 1 |
+| `BEFORE` as it stood, qualifiers reaching no number | 4 |
+| the numbers sorted ascending instead of in the gate's order | 3 |
+| the unreadable uses dropped again, as they were | 1 |
+| `fetch-depth: 0` removed from `verify` | 1 |
+| `fetch-depth: 0` added to `backend`, which runs no claimant | 1 |
+| `failureDetail` returning `failureSummary` alone, as it was | 1 |
+| the label dropped, so a tail reads as a report | 1 |
+
+**Ten edits, twenty reds.** The fourth is the most interesting of them: the mutant is the reader as it stood for
+one round, and it is red in four places while every one of its numbers was right.
+
+### Readings
+
+> Ledger for `v3.125`.
+
+| item | value |
+| --- | --- |
+| CI | run `44698243645` on `4d253c91`: **8 of 8 jobs success** -- the newest run, and the one the recording is taken from |
+| `core` test suite | **258 files, 6767 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **262 files, 6954 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
+| new tests | **6754 -> 6767, +13**: ten for the census (qualifier, quoted qualifier, three words away, order, relation lines, the agreeing mark, the gate with no number, unreadable uses, the stated count, the committed shape), one for `failureDetail`, two for the checkout rule |
+| the sentences moved | **13**: the census's inventory and summary, the refusal, `--write`'s merge, and the two refusal tests rebuilt from a derivation of the fixture rather than from the shipped document |
+| the rules | the relation replaces the coincidence as the unit of judgement; `checkout >= what the claimant reads` |
+| falsifications | ten edits, **twenty** reds |
+| the population | **47 of 228** record(s) in table form against **318** rows, unchanged by this round |
+| the census | **54 unit noun(s) in 71 gate/noun pair(s)**, **9** shared with **9** relations, **4** coincidences -- the fourth is `round(s)`, which no earlier run could see, and the pairs are one more than the round began with because `check-ci-budget` prints `1 round(s)` about the distance to this record, so a shared noun gained a gate and its relation was refused until it was rewritten |
+| open entries | **38 -> 38**: `O-096` closed by findings 609 and 611, `O-097` opened for the relation that is written rather than derived |
+| LLM calls | **0** |
+
+### Left open
+
+- **The relation a shared noun carries is a sentence, and the census cannot contradict it.** `volume(s)` is
+  disjoint by directory and `row(s)` is four tables, and both are true statements about a corpus no data module
+  exposes as a set. Holding the sets would answer `disjoint` arithmetically; reaching them is a change to four
+  gates, and the census would then be able to refuse a relation the sets contradict -- the difference between a
+  judgement and a claim. The clone finding 612 added to the `verify` job is one more thing in that job's day, and
+  `R12` is the rule that will refuse the ceiling if it moves the day far enough.
+  `[open: which of the four sets is worth a reader first is a measurement -- `file(s)` is the one whose two
+  agreeing numbers come from one walk and whose two disagreeing ones come from two, so it is the noun whose
+  relation a reader would act on if it were wrong]`

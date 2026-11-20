@@ -413,3 +413,25 @@
   (**finding 604**): `bounds total 327 min in 8 ceiling(s)`, the closest ceiling named with the day it was
   measured against. What the closure leaves behind is the day between twice the slowest and the sum, which is
   `O-095`.
+
+- O-096 · ~~**The census names the populations; it computes almost none of the relations between them.**~~
+  `check-unit-nouns` printed **53** unit nouns in **69** gate/noun pairs (the numbers of the round it was written
+  in; the tree holds **54** and **70**, because a round was written between the measurement and the reading) and
+  named the **9** that more than one gate prints, with the **3** counts that coincide. What it did not compute was
+  whether those populations overlap: `file(s)` has an `of` only because `check-doc-counts` derives its
+  denominator from `sourcesIn`, and `row(s)` -- four gates, the numbers **9**, **318**, **1**, **8** and **8** --
+  had no relation at all. `volume(s)` was the sharpest case the census named without answering: **14** volumes in
+  `check-audit-volumes` and **18** in `check-progress-volumes`, two lines apart in one log, disjoint by directory
+  and nothing on the page saying so.
+  **Closed by finding 609 and by finding 611**, which are the two halves of "the census named them and printed nothing":
+  the summary printed `volume(s) by 2` -- the gates, never their numbers -- and it now prints a line per shared
+  noun holding every gate's number with the qualifier that number carried, the fact that a count two gates print
+  agrees, and the relation a person wrote. The relation is required of all nine rather than of the three whose
+  counts happen to be equal, which is strictly stronger than what the entry asked for; `coincidences` left the
+  inventory because the three were a special case of the nine. Two things the entry could not have known:
+  `round(s)` -- one of its nine -- carried **no count at all** in either gate, because the qualifier finding 600's
+  repair inserted is a wall the reader could not see past, so `219` against `219` was unreachable and became the
+  census's **fourth** coincidence the moment it was read; and three uses whose number the reader could not see
+  (`budget(s)`, `scope(s)`, `enum call(s)`) were dropped in silence, so the headline counted what it happened to
+  read. What the closure leaves behind is the sentence itself: the relation is written by a person and the census
+  holds no sets to contradict it, which is `O-097`.

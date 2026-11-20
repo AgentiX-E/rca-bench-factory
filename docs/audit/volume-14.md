@@ -1496,3 +1496,205 @@ true. `keyOf` keys on the noun and the gate pair, and the counts stay out of the
 
 The third is the census committing its own defect: a function word read as part of a noun puts one population
 in the census twice under two names, which is what the census exists to find.
+
+## Finding 609 — the census printed which gates share a noun and never what they counted
+
+One run of the shipped tree, three lines:
+
+```
+check-unit-nouns: OK — 54 unit noun(s) in 70 gate/noun pair(s); 9 of them are printed by more than one gate: file(s) by 4, row(s) by 4, run(s) by 4, row break(s) by 3, addendum(s) by 2, comment(s) by 2, reading(s) by 2, round(s) by 2, volume(s) by 2; ...
+check-audit-volumes: OK — 14 volume(s), 605 finding(s), 1–608; largest volume-03.md at 279,893 of 280,000 bytes
+check-progress-volumes: OK — 18 volume(s), 272 heading(s): 219 `vX.YY` round(s), 1 addendum(s), 50 `Pass` round(s), 2 unnumbered
+```
+
+**`volume(s) by 2`.** The gate whose whole purpose is to hold two populations of one word together printed the
+number of gates and never the numbers. `14` and `18` are printed by the two gates, forty lines apart in the same
+log, and the reader that exists to put them on one line put `by 2` there instead.
+
+This is finding 603's defect one gate over, with the same defence available and the same reason it is not a
+defence: both numbers were right. It is also the sharpest case `O-096` names, and the reason it was invisible is
+arithmetic rather than editorial -- the summary's shape was `noun by N`, a sentence about the vocabulary, and no
+line in it was ever a sentence about a count.
+
+### The repair
+
+One line per shared noun, holding every gate's number and the qualifier that number carried:
+
+```
+check-unit-nouns: volume(s) — 14 in check-audit-volumes; 18 in check-progress-volumes — two disjoint directories of volumes -- `docs/audit` holds 14 and `docs/progress` 18, and no file is in both
+check-unit-nouns: row(s) — 8 in check-fault-cases; 9 in check-l4-status; 318, 1 in check-open-list; 8 in check-repository-table (a count two gates print agrees) — four tables and one word -- ...
+```
+
+The relation is the sentence a person writes, and the inventory now demands one per shared noun rather than one per
+coincidence: the three coincidences were a special case of the nine, and a noun whose two numbers differ is exactly
+the case a reader is left to guess about. `coincidences` therefore leaves the inventory -- which counts happen to
+be equal is derived every run, and printing the nine made the three redundant -- and the gate refuses a shared noun
+with no relation instead of a coincidence with no reading, which is strictly stronger.
+
+### Falsifications
+
+| the edit | reds |
+| --- | --- |
+| the line prints `N gate(s)` instead of the numbers | 4 |
+| the relation ignored, every shared noun printed `unclassified` | 3 |
+
+## Finding 610 — the qualifier that finding 600's repair inserted is a wall this reader could not see past
+
+Finding 600 made `check-open-list` and `check-progress-volumes` say which era a round is:
+`219 `vX.YY` round(s)` beside `50 `Pass` round(s)`. Finding 607's census read the noun and the number, and
+`BEFORE` demanded the number at the end of the text in front of the noun, modulo a parenthetical:
+
+```js
+const BEFORE = /(\d[\d,]*)\s*(?:\([^)]*\)\s*)?$/;
+```
+
+`219 `vX.YY` round(s)` therefore had **no number at all**. Measured on the shipped tree:
+
+```
+round(s) :: check-open-list [] | check-progress-volumes []
+```
+
+`round(s)` is one of the nine shared nouns, printed by two gates, and **no count under it had ever reached the
+census**. The coincidence `219`/`219` -- the same number of rounds from the log's records and from the volumes'
+headings, which is the one pair of numbers in this census a reader would most want compared -- was invisible to the
+reader built to find exactly that.
+
+The qualifier is not decoration. It is the word that says **which** population the number counts, which is why
+finding 600 put it there, and a reader that reached past it while dropping it would have restored finding 600's
+defect inside the census's own line. So the qualifier is captured and travels with the count:
+
+```js
+const BEFORE = /(\d[\d,]*)((?:\s*(?:\([^)]*\)|`[^`]*`|'[^']*'))*)\s*$/;
+```
+
+and the printed line is `219 `vX.YY`, 50 `Pass` in check-progress-volumes` -- the numbers with the words that make
+them numbers of something.
+
+### What the repair changed in the census's own answer
+
+`3 count(s) coincide across gates` became **4**: `219 round(s)` joins `1 addendum(s)`, `474 file(s)` and
+`8 row(s)`. The fourth was there all along and unreadable.
+
+### Falsifications
+
+| the edit | reds |
+| --- | --- |
+| the qualifier dropped rather than carried, the count still read | 1 |
+| `BEFORE` as it stood, qualifiers reaching no number | 4 |
+| the numbers sorted ascending instead of in the gate's order | 3 |
+
+## Finding 611 — three uses whose number the reader could not see were dropped in silence
+
+`censusOf` pushed a count only when it had one. The uses it could not size were dropped without a word, so the
+headline `54 unit noun(s) in 70 gate/noun pair(s)` was a count of what happened to be readable, with nothing in the
+sentence to say how much was not:
+
+```
+budget(s)                  "…21 are bounded by their jobs' budget, and 0 have none"
+scope(s)                   "484 published count(s), each naming its scope; scope(s) covered: core, cli, repo"
+enum call(s)               "8 inline z.enum call(s) remain in schema.ts"
+mark(s)                    "1248 '#' mark(s)"          <- readable once a quoted qualifier counted
+```
+
+`mark(s)` is the one finding 610's repair recovered: `'#'` is the same shape as `` `vX.YY` ``, a qualifier between a
+number and its noun. The other three state no number at all, or state one with three words in between -- `8 inline
+z.enum call(s)` -- and guessing which number in a line belongs to which noun is the defect, not the repair.
+
+### The repair
+
+`unreadableOf` reports them by noun and gate, and the summary names them:
+
+```
+... and 3 noun(s) are printed somewhere with no number this reader can read: budget(s) in check-ci-budget; enum call(s) in check-data-model-vocabularies; scope(s) in check-doc-counts
+```
+
+A census that says what it could not read is a census whose headline is a measurement rather than a floor.
+
+### Falsification
+
+| the edit | reds |
+| --- | --- |
+| the unreadable uses dropped again, as they were | 1 |
+
+## Finding 612 — the job that runs a claimant checked out one commit
+
+`verify-site-proofs` runs each claimant file alone. One of them, `unit-nouns.test.ts`, spawns the census, which
+spawns eighteen gates, one of which is `check-repository-table`. That gate derives eight rows from the tree and
+reads the history out of git:
+
+```
+check-repository-table: OK (8 row(s) under ## Repository, every one derived from the tree: Commits (at `e22e2de`) = 536, ...)
+```
+
+`actions/checkout` fetches **one commit** unless it is told otherwise. The `verify` job never told it, so in CI the
+gate refused -- and the sentence it printed is the one a reader needs:
+
+```
+  - ## Repository 'Commits': the revision `e22e2de` does not resolve to a commit
+check-repository-table: FAILED
+```
+
+Measured in a `git clone --depth 1` of this repository before anything was changed here. The census then reported
+`check-repository-table exited 1`, the claimant was filed as a file that did not pass, the `Lint` step failed, and
+every later step in `verify` -- including the coverage run -- was skipped. Three CI runs were spent on it: run
+`44712270443`, run `44720657722` and run `44726319839`, the last of which is the one whose log says which file.
+
+### The repair
+
+`fetch-depth: 0` on the `verify` job's checkout, with the reason written where the next reader will look, and a test
+that holds the relationship rather than the line: **a job whose steps run a claimant or the documentation gate must
+check out the history the claimant reads.** Both directions are asserted -- a job that reaches a gate and does not
+fetch must fail, and a job that only builds must not be made to -- because "every job fetches everything" is a rule
+nobody could defend and "every job fetches one commit" is the defect.
+
+The two jobs that already had it are the documentation job and `cold-tree`, each for its own stated reason; the
+rule is what says the third one needed it too.
+
+### Falsifications
+
+| the edit | reds |
+| --- | --- |
+| `fetch-depth: 0` removed from `verify` | 1 |
+| `fetch-depth: 0` added to `backend`, which runs no claimant | 1 |
+
+## Finding 613 — the function written for exactly this failure was called by nobody
+
+Finding 612 could not be diagnosed from the log, and that is a second defect. The log said:
+
+```
+verify-site-proofs: some claims could not be measured at all:
+  packages/core/test/unit-nouns.test.ts did not pass, so its claims are unmeasured
+    run it alone: node ... run packages/core/test/unit-nouns.test.ts --reporter=dot
+verify-site-proofs: FAILED -- 2 problem(s)
+```
+
+No test named, no error line, no totals. `failureSummary` yields nothing for output carrying none of the three, and
+it says so in its own comment -- right above `outputTail`, whose comment ends:
+
+> The caller then had a file, an exit code, and nothing else.
+
+`outputTail` was written for that case, documented for that case, and **`verify-site-proofs.mjs` never imported it**.
+The repair that the tree had already reasoned its way to was one `import` away from the path it was written for,
+which is the shape this campaign files most often: present, green, and absent from the place it matters.
+
+### The repair
+
+`failureDetail` -- a pure reader in `site-proofs.mjs` -- chooses between the two:
+
+```js
+export function failureDetail(output) {
+  const summary = failureSummary(output);
+  if (summary.length > 0) return summary;
+  return ['(the run printed no report; its last lines were)', ...outputTail(output)];
+}
+```
+
+The label is the point. A report and a tail are not the same claim, and printing them in the same voice would be
+this campaign's oldest defect in the other direction: a sentence that reads like a diagnosis and is a quotation.
+
+### Falsifications
+
+| the edit | reds |
+| --- | --- |
+| `failureDetail` returning `failureSummary` alone, as it was | 1 |
+| the label dropped, so a tail reads as a report | 1 |
