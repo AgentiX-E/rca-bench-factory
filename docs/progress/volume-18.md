@@ -1370,7 +1370,7 @@ are **101** tests.
 | the population | **213** round(s) + **1** addendum(s), **17** of them wrote none |
 | the number line | **212** distinct numbers, dense: 94 in `v2`, 118 in `v3` (`v3.00`..`v3.118`) |
 | the heading repair | **28** headings in **3** volumes -- **27** a Han numeral, **1** an English numeral and an ideographic comma -- and **4** pointers relabelled with them (**3** `§` references, **1** `一、`) |
-| the census | **268** files, **2,736** literals, **249** starting with a digit, **240** outside a negation, **240 red**, **0 green** |
+| the census | **53 unit noun(s) in 69 gate/noun pair(s)**, **9** shared and **9** relations, **4** coincidences, and **2** nouns printed with no number this reader can read (`enum call(s)`, `scope(s)`) -- v3.125 reported **54** in **71**, and both of the missing pairs left through `check-ci-budget`: it printed `2 round(s)` until its recording became the newest round's, and `budget(s)` until the widening it reported (`verify` 24 -> 25) was applied. The census counts what the gates print on the run it reads, which is why a population can shrink when a round repairs something |
 | the language reading | `docs:check`: **53** document(s), **0** run(s) of non-English prose, **40,370** row break(s) held inside a paragraph |
 | the index | **69,456 -> 70,753** bytes -- one entry in and one entry rewritten |
 | the record | **84,152** bytes over 56 entries, in **two** files |
@@ -2464,7 +2464,7 @@ at the call rather than joining an edit made uniform by its siblings.
 
 | item | value |
 | --- | --- |
-| CI | run `44752384940` on `8a7c9b68`: **8 of 8 jobs success** -- the newest run, and the one the recording is taken from |
+| CI | run `44756845473` on `2abd1da2`: **8 of 8 jobs success** -- the run of the commit this record is in, and the one the recording is taken from |
 | `core` test suite | **258 files, 6771 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
 | repo test suite | **262 files, 6958 tests passed** (as of this commit) |
