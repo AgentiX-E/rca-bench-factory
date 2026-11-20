@@ -39,14 +39,20 @@ jobs:
     # Not a performance assertion: a job that hangs has to be reported as a budget
     # being spent rather than six hours later.
     #
-    # 15 until v3.55, and 18 now, because the deadline was being argued from a fast day.
+    # 15 until v3.55, 18 from v3.55, and 21 from v3.123.
+    #
+    # v3.55 raised it to 18 because the deadline was being argued from a fast day:
     # `Lint`'s 14-minute bound plus the steps in front of it is 1019 s once each of those
-    # steps is counted at its slowest recorded day rather than at the day of the
-    # recording -- 164 s of that prefix is the shell install at 153 s instead of 9 --
-    # and 1019 does not fit in 900. `Test with coverage` was the second one out, at 902.
-    # 18 is a minute more than the longest deadline, so the step bound still fires before
-    # the job does rather than with it.
-    timeout-minutes: 18
+    # steps is counted at its slowest recorded day, and 1019 does not fit in 900.
+    #
+    # That answers where a *bound* sits. v3.123 asked the other question -- does the
+    # ceiling hold a slower *day* -- and found 18 minutes over this job's slowest day of
+    # 601 s (run 44656781771), which is 1.80x. A day eleven per cent slower reaches the
+    # ceiling with every step still inside its own bound, and the sentence the run reports
+    # names the job rather than a step, which is the defect every bound in this file
+    # exists to remove. 21 minutes is twice that day, rounded up to the next whole minute,
+    # and `check-ci-budget`'s `R12` is the rule that says so.
+    timeout-minutes: 21
     steps:
       - name: Check out
         timeout-minutes: 3
@@ -453,12 +459,17 @@ jobs:
   batteries:
     name: injection batteries, one step each (no survivors, no inert)
     runs-on: ubuntu-latest
-    # 25 rather than 30, and the reduction is the arithmetic rather than a saving: a
-    # job's budget has to hold the bounds of its own steps, and a bound is twice the
-    # measurement. What is left here measures 674 s (11 min) and its longest bound
-    # expires at 14 min, so 25 is 11 minutes of room that CI can actually spend --
-    # where 30 held a bound that could not fire before the job did.
-    timeout-minutes: 25
+    # 30 until v3.121, 25 in v3.121, and 34 from v3.123.
+    #
+    # v3.121 lowered it to 25 on the argument that a job's budget has to hold the bounds of
+    # its own steps. v3.123 measured the argument and refused it: the six preparation steps
+    # carry a three-minute floor each, so *every* job in this workflow holds more bounds than
+    # any ceiling it could be given (this one: 83 minutes), and a ceiling sized to hold them
+    # would be a ceiling that cannot fire either -- the same defect as a bound that cannot.
+    # The comparison that does have a measurement behind it is the ceiling against the day:
+    # this job's slowest is 1012 s (run 44576264388), 25 minutes was 1.48x it, and 34 is
+    # twice it. `R4`'s per-step deadlines are unchanged by the widening and only gain room.
+    timeout-minutes: 34
     steps:
       - name: Check out
         timeout-minutes: 3
@@ -949,12 +960,14 @@ jobs:
   batteries-heavy:
     name: injection batteries, the two that rewrite a probe a hundred times
     runs-on: ubuntu-latest
-    # 914 s measured, 22 min for the bound chain, 25 declared -- and 27 from v3.55, when
-    # the deadline started counting the prefix at its slowest recorded day: the 15-minute
+    # 914 s measured, 22 min for the bound chain, 25 declared -- 27 from v3.55, when the
+    # deadline started counting the prefix at its slowest recorded day: the 15-minute
     # backend-support bound plus 632 s in front of it is 1532 s, which is 25.5 minutes and
-    # does not fit in 25. 27 is that deadline rounded up to the next whole minute plus one,
-    # which is the smallest amount of room the workflow's unit can express.
-    timeout-minutes: 27
+    # does not fit in 25.
+    #
+    # 31 from v3.123, and it is the other question: this job's slowest day is 921 s (run
+    # 44576264388), 27 minutes was 1.76x it, and 31 is twice it.
+    timeout-minutes: 31
     steps:
       - name: Check out
         timeout-minutes: 3

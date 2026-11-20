@@ -1923,7 +1923,11 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     expect(result.stdout).toContain('cold-tree 20m across 4 step(s)');
     expect(result.stdout).not.toContain('verify 15m across');
     expect(result.stdout).toContain('verify bounds all 8 of its step(s) on its own');
-    expect(result.stdout).toContain("largest 14m of the job's 18m");
+    // 18 -> 21 in v3.123: the ceiling answers a different question from the step's deadline --
+    // does it hold a slower *day* -- and `verify`'s slowest day is 601 s, so 18 minutes was
+    // 1.80x it (finding 605). The largest bound is still `Lint`'s 14m: the ceiling moved and
+    // no step bound did.
+    expect(result.stdout).toContain("largest 14m of the job's 21m");
     // 3 -> 4 in v3.52: the sensitivity job's one battery became two, because a step can
     // now be declared for one recording instead of being folded into a neighbour's name.
     expect(result.stdout).toContain('sensitivity bounds all 4 of its step(s) on its own');
@@ -1945,13 +1949,17 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     // and the multiple refused it. The largest bound in `batteries` is now the same as the ceiling --
     // 13m of 25m, with the battery's 12m beside it -- which is the arithmetic `O-093` is about: the
     // two heavy bounds add up to the job's budget exactly, so a hang there is the job timing out.
-    expect(result.stdout).toContain("largest 13m of the job's 25m");
+    // 25 -> 34 in v3.123, and the reason is the same sentence for the third time: the two
+    // heavy bounds summing to the ceiling was never the defect `O-093` named. The ceiling
+    // answers for the slowest *day* -- 1012 s here -- and 25 minutes was 1.48x it.
+    expect(result.stdout).toContain("largest 13m of the job's 34m");
     expect(result.stdout).toContain('batteries-heavy bounds all 4 of its step(s) on its own');
     // 25 -> 27 in v3.55's close-out: the 15-minute backend-support bound plus the 632 s
     // its predecessors account for on their slowest recorded days is 1532 s, which does
     // not fit in 1500. The step bound did not move; only the ceiling above it did, which
     // is the point -- a deadline is a property of the prefix, not of the step.
-    expect(result.stdout).toContain("largest 18m of the job's 27m");
+    // 27 -> 31 in v3.123: 921 s is this job's slowest day, and 27 minutes was 1.76x it.
+    expect(result.stdout).toContain("largest 18m of the job's 31m");
     expect(result.stdout).toContain('a hang there names the step rather than the job');
     // And the condition, which is the last default this runner had to state: a step
     // runs only after the ones before it have passed, which is GitHub's default and
@@ -2260,7 +2268,11 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     // And what the run spent, so the budget is a measurement rather than a limit
     // nobody looks at until it fires.
     expect(result.stdout).toContain('budget:  verify');
-    expect(result.stdout).toContain('of 18m');
+    // The ceiling is read from the workflow rather than asserted as a preference: 18 -> 21 in
+    // v3.123, because the ceiling answers for the slowest *day* and `verify`'s is 601 s
+    // (finding 605). A pin on the number rather than on where it comes from would be a second
+    // copy of the workflow's arithmetic in a test.
+    expect(result.stdout).toContain('of 21m');
   });
 
   it('runs a step in the directory the workflow names, which is the whole claim about that key', () => {

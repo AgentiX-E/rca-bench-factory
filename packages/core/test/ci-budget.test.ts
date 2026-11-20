@@ -12,9 +12,11 @@ import {
   budgetErrors,
   budgetSummary,
   commandOf,
+  jobDays,
   jobsOf,
   ledgerErrors,
   readDeclarations,
+  readReadings,
   stepsOf,
 } from '../../../scripts/ci-budget.mjs';
 import { readWorkflow } from '../../../scripts/gate-steps.mjs';
@@ -1111,7 +1113,16 @@ describe('the recording the gate reads', () => {
     expect(summary).toContain('0 have none');
     expect(summary).toContain('6 min measured');
     expect(summary).toContain('as of run 41637098008');
-    expect(summary).toContain('bounds total 15 min');
+    // The workflow-wide sum now says how many denominators it has (finding 604): `bounds total
+    // 327 min` beside `51 min measured` invites a division, and the division is over eight
+    // different ceilings rather than over one.
+    expect(summary).toContain('bounds total 15 min in 1 ceiling(s)');
+    // And the ceiling gets its own reading, with the day it was measured against -- the
+    // comparison that decides whether a bound can fire before the job dies.
+    expect(summary).toContain(
+      'the closest ceiling batteries at 30 min over its slowest day of 355 s (5.1x, run 41637098008), ' +
+        'and no job is under 2x',
+    );
     // The tightest ratio names the battery, because a ratio without a subject invites
     // the reader to supply one (finding 294).
     expect(summary).toContain('tightest batteries / Slow battery at 2.1x');
@@ -1872,7 +1883,13 @@ describe('a job the recording has never measured', () => {
     // the source of the block rather than running a workflow, so what it holds is that
     // no case was added without naming the limit of its own apparatus.
     const source = readFileSync(fileURLToPath(import.meta.url), 'utf8');
-    const block = source.slice(source.indexOf("describe('a job the recording has never measured'"));
+    const opens = source.indexOf("describe('a job the recording has never measured'");
+    // And where the block *ends*, which was the end of the file. A slice with no right edge
+    // is not a block: every case added after it joined the count, so this assertion held the
+    // block's cases against a total that grew with somebody else's (finding 604's shape, in a
+    // test). The next `describe(` is the boundary, and the last block of the file has none.
+    const after = source.slice(opens + 1).indexOf('\ndescribe(');
+    const block = after === -1 ? source.slice(opens) : source.slice(opens, opens + 1 + after);
     const cases = (block.match(/\n  it\('/g) ?? []).length;
     // Only comment lines beginning with the mark count. A bare substring search also
     // finds this case's own pattern and its prose, and a self-counting assertion would
@@ -1963,5 +1980,134 @@ describe('the recorder and a declared job', () => {
     expect(result.stderr).toContain('names a declared job');
     expect(result.stderr).toContain('a borrow is not a run');
     expect(result.stdout).toBe('');
+  });
+});
+
+/**
+ * The ceiling's own multiple (finding 605).
+ *
+ * `R4` and `R10` size a *step* bound from what that step measured and demand twice the
+ * slowest day its command has had. The job *ceiling* -- the number a hang is charged to
+ * when no bound fires -- was asked nothing at all beyond `R6`'s "not narrower than the
+ * recording's", and three jobs of the shipped workflow sat under twice their own slowest
+ * day: `verify` 18 min over 601 s, `batteries` 25 over 1012 s, `batteries-heavy` 27 over
+ * 921 s. On a day ten per cent slower than one this repository has already run, each of
+ * them dies at the ceiling with every step still inside its own bound, and the sentence a
+ * reader gets is the one every bound in this file exists to replace.
+ *
+ * The day is a real run rather than a composite: `jobDays` sums the job's steps in one
+ * reading, and a reading that measured only some of them is skipped rather than summed,
+ * because a total with a hole in it is a fast day.
+ */
+describe('the ceiling, and the day it has to hold', () => {
+  it('refuses a ceiling under twice the job\'s slowest day, and names the run', () => {
+    // 355 s of job in a 6 min ceiling: 360 s of budget against 710 s of expectation.
+    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)], 6);
+    const errors = budgetErrors(
+      workflow,
+      recordingOf({ batteries: { steps: { 'Slow battery': 351, 'Quick battery': 4 } } }),
+    ).join('\n');
+    expect(errors).toContain('`batteries` is bounded at 6 min and its slowest recorded day is 355 s');
+    expect(errors).toContain('run 41637098008');
+    expect(errors).toContain('which is 1.01x');
+    expect(errors).toContain('raise the ceiling to 12 min, or split the job');
+  });
+
+  it('accepts a ceiling at exactly twice the day, because the rule is a multiple and not a margin', () => {
+    // 12 min = 720 s, and twice 355 s is 710: the smallest integer minute that passes. The
+    // recording declares the same ceiling, because `R6` refuses a narrower one than the run
+    // that sized the bounds -- a different rule, and a fixture that broke it would pass this
+    // case for that rule's reason.
+    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)], 12);
+    const errors = budgetErrors(
+      workflow,
+      recordingOf({ batteries: { minutes: 12, steps: { 'Slow battery': 351, 'Quick battery': 4 } } }),
+    );
+    expect(errors).toEqual([]);
+  });
+
+  it('reads the slowest day of the history, not the day being recorded', () => {
+    // The recording is a fast day (100 s). An older run took 1 000 s, which is the day the
+    // ceiling has to hold: 30 min = 1 800 s against 2 000 s of expectation.
+    const workflow = oneJob([...step('Slow battery', 12)], 30);
+    const recording = recordingOf({ batteries: { steps: { 'Slow battery': 100 } } });
+    const slow = readingsOf(workflow, recording);
+    const slower = JSON.parse(JSON.stringify(slow));
+    slower.readings[0].run = 41000000000;
+    slower.readings[0].jobs['batteries']['Slow battery'].seconds = 1000;
+    const readings = { readings: [slower.readings[0], slow.readings[0]] };
+    const errors = budgetErrors(workflow, recording, null, null, readings).join('\n');
+    expect(errors).toContain('its slowest recorded day is 1000 s (run 41000000000)');
+    expect(errors).toContain('raise the ceiling to 34 min');
+  });
+
+  it('skips a reading that measured only some of the job, rather than summing a hole', () => {
+    // A reading missing one step is not a day: 100 s of it would pass a 5 min ceiling, and
+    // the day that actually happened (recorded here as 900 s over two steps) is the one the
+    // rule refuses.
+    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)], 5);
+    const recording = recordingOf({ batteries: { steps: { 'Slow battery': 600, 'Quick battery': 300 } } });
+    const partial = readingsOf(workflow, recording);
+    delete partial.readings[0].jobs['batteries']['Quick battery'];
+    const errors = budgetErrors(workflow, recording, null, null, partial).join('\n');
+    expect(errors).toContain('its slowest recorded day is 900 s');
+    // And the reading that could not be summed is not silently the answer: the recording is
+    // the day, and it is the one named.
+    expect(errors).toContain('run 41637098008');
+  });
+
+  it('says nothing about a job that declares no ceiling, because there is no number to hold', () => {
+    const workflow = oneJob([...step('Slow battery', 12)], null);
+    const errors = budgetErrors(
+      workflow,
+      recordingOf({ batteries: { minutes: null, steps: { 'Slow battery': 351 } } }),
+    ).join('\n');
+    expect(errors).not.toContain('slowest recorded day');
+  });
+
+  it('counts the jobs under the multiple in the summary, so the rule is visible from a green run', () => {
+    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)], 6);
+    const summary = budgetSummary(
+      workflow,
+      recordingOf({ batteries: { steps: { 'Slow battery': 351, 'Quick battery': 4 } } }),
+    );
+    expect(summary).toContain('the closest ceiling batteries at 6 min over its slowest day of 355 s (1.0x');
+    expect(summary).toContain('and 1 job(s) under 2x');
+  });
+});
+
+describe('one reading, summed into one day', () => {
+  it('adds the steps of a single reading rather than the slowest reading of each step', () => {
+    // The distinction `jobDays` exists for: 351 s and 4 s on the same day is a 355 s day, and
+    // a composite of each command's slowest day would be a day no run ever had -- which is
+    // exactly what `R4`'s prefix uses, and why this rule does not reuse it.
+    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)]);
+    const recording = recordingOf({ batteries: { steps: { 'Slow battery': 351, 'Quick battery': 4 } } });
+    const days = jobDays(workflow, recording, readReadings(readingsOf(workflow, recording)));
+    expect(days.get('batteries')).toEqual({ seconds: 355, run: 41637098008 });
+  });
+
+  it('skips a reading with a hole in it, because a total with a hole is a fast day', () => {
+    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)]);
+    const recording = recordingOf({ batteries: { steps: { 'Slow battery': 351, 'Quick battery': 4 } } });
+    const partial = readingsOf(workflow, recording);
+    delete partial.readings[0].jobs['batteries']['Quick battery'];
+    // Every job entry is still a non-empty object, so the reader accepts the file: the hole is
+    // a step the reading did not time, and only the sum can notice.
+    const days = jobDays(workflow, recording, readReadings(partial));
+    expect(days.get('batteries'), 'a reading missing a step was summed as a day').toEqual({
+      seconds: 355,
+      run: 41637098008,
+    });
+  });
+
+  it('takes the slowest day, with ties going to the newer run', () => {
+    const workflow = oneJob([...step('Slow battery', 12)]);
+    const recording = recordingOf({ batteries: { steps: { 'Slow battery': 100 } } });
+    const one = readingsOf(workflow, recording).readings[0];
+    const older = { ...one, run: 41000000000, jobs: { batteries: { 'Slow battery': { ...one.jobs['batteries']['Slow battery'], seconds: 900 } } } };
+    const newer = { ...one, run: 42000000000, jobs: { batteries: { 'Slow battery': { ...one.jobs['batteries']['Slow battery'], seconds: 900 } } } };
+    const days = jobDays(workflow, recording, readReadings({ readings: [older, newer, one] }));
+    expect(days.get('batteries')).toEqual({ seconds: 900, run: 42000000000 });
   });
 });

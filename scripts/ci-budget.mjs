@@ -604,6 +604,58 @@ export function worstReadingFor(rows, command) {
 }
 
 /**
+ * The slowest **day** each job has had, and the run it was.
+ *
+ * A bound is sized from one step's seconds; a *ceiling* is sized from the whole job's, and
+ * the whole job's only exists for a run that measured every step of it. So a day is a
+ * reading whose job entry holds every step the workflow declares **now**, summed, and the
+ * slowest such reading wins with ties going to the newer run -- the same tie rule
+ * `worstReadingFor` follows, and for the same reason: the answer has to be a function of the
+ * file rather than of the order somebody appended in.
+ *
+ * The sum of the slowest reading *per command* is deliberately not used here, though `R4`'s
+ * prefix uses exactly that number. `R4` asks where a bound sits in a job, and there a mixture
+ * of slow days is the worst case. A ceiling is about a day, and a composite of ten days is a
+ * day no run has ever produced: it would be a number a reader cannot go and look at, which is
+ * the one thing every other number in this file can be.
+ *
+ * A reading that measured only some of the job's steps is skipped rather than summed: a total
+ * with a hole in it is smaller than the day, and a ceiling argued from it would be argued from
+ * a fast day -- the mistake `R10` exists to prevent at the step level.
+ */
+export function jobDays(workflow, baseline, readings = null) {
+  const days = new Map();
+  const recorded = baseline?.jobs ?? {};
+  for (const job of jobsOf(workflow)) {
+    const names = stepsOf(workflow, job.id).map((one) => one.name);
+    if (names.length === 0) continue;
+    let best = null;
+    const day = (seconds, run) => {
+      if (best === null || seconds > best.seconds || (seconds === best.seconds && run > best.run)) {
+        best = { seconds, run };
+      }
+    };
+    const record = recorded[job.id];
+    if (record !== undefined && names.every((name) => typeof record.steps?.[name] === 'number')) {
+      day(
+        names.reduce((all, name) => all + record.steps[name], 0),
+        baseline.run,
+      );
+    }
+    for (const row of readings?.rows ?? []) {
+      const measured = names.map((name) => row.steps.get(`${job.id}\u0000${name}`));
+      if (measured.some((one) => one === undefined)) continue;
+      day(
+        measured.reduce((all, one) => all + one.seconds, 0),
+        row.run,
+      );
+    }
+    if (best !== null) days.set(job.id, best);
+  }
+  return days;
+}
+
+/**
  * `R10` -- the history is the recording's, and the recording is the history's last day.
  *
  * Two directions, and both are about the same defect: a reading that exists in one file
@@ -889,6 +941,10 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
   if (jobs.length === 0) {
     return [...errors, 'ci.yml has no job, so the recording describes nothing that runs'];
   }
+  // The slowest day of each job, computed once: `R12` refuses against it and `budgetSummary`
+  // prints the tightest one, and two computations of one number is the shape finding 588
+  // repaired -- a reader would have no way to tell which of the two was the gate's.
+  const days = jobDays(workflow, baseline, historyKnown ? parsedReadings : null);
 
   // R2 -- the recording and the workflow describe the same jobs. Both directions,
   // because the two mistakes are different: a job nobody measured has no bound
@@ -1144,6 +1200,33 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
       }
       if (typeof seconds === 'number') before += slowest(step, seconds);
     }
+
+    // R12 -- the ceiling has a multiple too (finding 605).
+    //
+    // `R4` and `R10` ask a step bound for twice the slowest day its command has had, on the
+    // argument that a runner twice as slow must still finish rather than be refused for being
+    // slow. Nothing asked it of the job *ceiling*, and the ceiling is the number that turns a
+    // hang into `the job timed out` -- the verdict every bound in this file exists to replace.
+    // The shipped workflow had three ceilings under twice their job's slowest day: `verify` 18
+    // min over 601 s (1.80x), `batteries` 25 over 1012 s (1.48x), `batteries-heavy` 27 over
+    // 921 s (1.76x). A day ten per cent slower than one this repository has already run reaches
+    // the ceiling with every step still inside its own bound, and the sentence a reader gets
+    // names no step at all.
+    //
+    // The day comes from `jobDays`, which is a real run and not a composite of slow days: a
+    // ceiling is a claim about a day, and a claim about a day has to be checkable against one.
+    const day = days.get(job.id);
+    if (day !== undefined && job.timeoutMinutes !== null && MULTIPLE * day.seconds > job.timeoutMinutes * 60) {
+      const needed = Math.ceil((MULTIPLE * day.seconds) / 60);
+      errors.push(
+        `\`${job.id}\` is bounded at ${String(job.timeoutMinutes)} min and its slowest recorded day is ` +
+          `${String(day.seconds)} s (run ${String(day.run)}), which is ` +
+          `${(day.seconds === 0 ? Infinity : (job.timeoutMinutes * 60) / day.seconds).toFixed(2)}x: the ` +
+          `ceiling is under ${String(MULTIPLE)} times that day, so a day twice as slow reaches it with ` +
+          'every step still inside its own bound and the verdict names the job rather than the step -- ' +
+          `raise the ceiling to ${String(needed)} min, or split the job`,
+      );
+    }
   }
 
   // R9 -- what a promise about a whole job owes, once the workflow and the recording
@@ -1306,14 +1389,33 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   let reached = 0;
   let bounds = 0;
   let jobCount = 0;
+  let ceilings = 0;
   const excused = [];
   let tightest = { name: '', ratio: Infinity, worst: null };
   const widened = [];
+  // The ceiling's own reading: the job whose ceiling is closest to twice its slowest day.
+  // It is a separate superlative from `tightest`, which is about one *step's* bound against
+  // one *step's* measured seconds -- the two answer different questions and a summary that
+  // printed one of them under the other's name would be finding 588 again.
+  const days = jobDays(workflow, baseline, historyKnown ? parsedReadings : null);
+  let closest = { name: '', ratio: Infinity, minutes: 0, day: null };
+  let under = 0;
 
   for (const job of jobsOf(workflow)) {
     const record = recorded[job.id];
     if (record === undefined) continue;
     jobCount += 1;
+    // A ceiling is a number a hang is charged to, so the summary counts them: `bounds total
+    // 327 min` beside `51 min measured` invites a division across eight different ceilings,
+    // and the count is what says the division has eight denominators rather than one
+    // (finding 604).
+    if (job.timeoutMinutes !== null) ceilings += 1;
+    const day = days.get(job.id);
+    if (day !== undefined && job.timeoutMinutes !== null) {
+      const ratio = day.seconds === 0 ? Infinity : (job.timeoutMinutes * 60) / day.seconds;
+      if (ratio < MULTIPLE) under += 1;
+      if (ratio < closest.ratio) closest = { name: job.id, ratio, minutes: job.timeoutMinutes, day };
+    }
     // `R6` accepts a wider budget than the reading was taken under, and a reader has to
     // see that it did: a summary that said nothing would make the exception look like the
     // recording's own number.
@@ -1405,6 +1507,22 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
           ? ''
           : ` of the slowest reading of its command (${String(tightest.worst.seconds)} s in ` +
             `\`${tightest.worst.job} / ${tightest.worst.step}\`, run ${String(tightest.worst.run)})`);
+  // The ceiling's reading, printed beside the tightest *step* bound and never folded into it
+  // (finding 604). Before this clause the summary published a workflow-wide `bounds total` next
+  // to a workflow-wide `measured`, and the one comparison that decides whether a bound can fire
+  // -- a job's bounds against the ceiling above them -- was printed by no line at all. The
+  // count of ceilings is what says the workflow-wide division has eight denominators, and the
+  // superlative names the one with the least room, which is the number `R12` refuses under.
+  const ceilingText =
+    closest.day === null
+      ? 'no job has both a ceiling and a measured day to put them together'
+      : `${closest.name} at ${String(closest.minutes)} min over its slowest day of ` +
+        `${String(closest.day.seconds)} s (` +
+        `${Number.isFinite(closest.ratio) ? closest.ratio.toFixed(1) : 'unmeasured'}x, run ` +
+        `${String(closest.day.run)}), and ` +
+        (under === 0
+          ? `no job is under ${String(MULTIPLE)}x`
+          : `${String(under)} job(s) under ${String(MULTIPLE)}x`);
   const readingsText =
     parsedReadings === null
       ? 'no history of readings to compare against'
@@ -1419,7 +1537,8 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
     `${carried === 1 ? 'is' : 'are'} bounded by ${carried === 1 ? "its job's" : "their jobs'"} budget, ` +
     `and ${String(reached)} ${reached === 1 ? 'has' : 'have'} none, ` +
     `${String(Math.round(measured / 60))} min measured (as of run ` +
-    `${String(baseline.run)}); bounds total ${String(Math.round(bounds / 60))} min; tightest ` +
+    `${String(baseline.run)}); bounds total ${String(Math.round(bounds / 60))} min in ` +
+    `${String(ceilings)} ceiling(s); the closest ceiling ${ceilingText}; tightest ` +
     `${tightestText}; ` +
     `${excusedText}; ${declaredText}; ${jobsText}; ${widenedText}; ${readingsText}; ` +
     `${ledgerText(ledger, baseline)}`
