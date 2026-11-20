@@ -1981,8 +1981,20 @@ function check() {
       `${String(ownerlessRecords)} under none; ${String(firstHead.size)} \`vX.YY\` round(s) + ` +
       `${String(addenda.length)} addendum(s), ${String(wroteNone)} of them wrote none`,
   );
+  // ## The second line counted a subset with the noun of the whole (finding 603)
+  //
+  // The line above publishes `226 record(s)`; this one published `47 record(s) in table form`.
+  // One noun, two populations, and no word saying the second is inside the first -- the shape
+  // findings 600 and 602 repaired one line up: `226` and `47` are not two counts of two things a
+  // reader can add, and the only way to read them without the corpus was to guess whether a
+  // table-form record is a record or a fourth kind of object. It is a record: `spellingOf` gives
+  // it `kind: 'record'` and `form: 'table'`, so it is counted in `recordSections` *and* in
+  // `tables`, by construction rather than by coincidence -- 47 of the 226, and the other 179 hold
+  // entries. The denominator is printed rather than left to the reader, and it is the same
+  // variable the line above prints, so the two lines cannot disagree while both are arithmetic.
   console.log(
-    `check-open-list: ${String(tables)} record(s) in table form (${String(tableRows)} row(s)); ` +
+    `check-open-list: ${String(tables)} of ${String(recordSections)} record(s) are in table form ` +
+      `(${String(tableRows)} row(s)); ` +
       (newestRecord === null
         ? 'the newest round wrote none, so no row was judged'
         : `the ${newestRecord.owner.round} record's ${String(quotedRows)} row(s) were judged, and every one ` +

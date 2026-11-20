@@ -454,11 +454,24 @@ describe('docs · the shipped list, as the guard reads it', () => {
     // line, because they are a different kind of object -- the log states them separately and so
     // does the guard, and a document whose records held entries would be refused by the arm that
     // reads them.
-    expect(shipped.stdout).toMatch(/record\(s\) in table form \(\d+ row\(s\)\)/);
+    //
+    // And the line says **of how many** (finding 603). It printed `47 record(s) in table form`
+    // under a line that printed `226 record(s)`, one noun over two populations and no word saying
+    // one is inside the other: 47 + 226 describes nothing, and 47 of 226 is the corpus. The
+    // denominator is the population, so the assertion is not that the number is fixed -- it is
+    // that the number printed here **is** the number printed there. A subset that quotes a
+    // denominator of its own is the defect; a subset that quotes the whole's is the repair, and
+    // the equality below is the only line that can tell them apart.
+    const counted = /(\d+) of (\d+) record\(s\) are in table form \((\d+) row\(s\)\)/.exec(shipped.stdout);
+    expect(counted, `the table-form line lost its denominator: ${shipped.stdout}`).not.toBeNull();
+    const recordLine = /(\d+) record\(s\): \d+ under a round and \d+ under none/.exec(shipped.stdout);
+    expect(recordLine, 'the record population has no line to compare the subset with').not.toBeNull();
+    expect(Number(counted?.[2]), "the subset's denominator is not the record population printed above it").toBe(
+      Number(recordLine?.[1]),
+    );
     // The count of record tables, taken from the body rather than from the names. The line above
     // accepts any number; this one holds that number to the corpus, so a heading the guard does
     // not know is a red test on the day the round that renames it is written (finding 579).
-    const counted = /(\d+) record\(s\) in table form \((\d+) row\(s\)\)/.exec(shipped.stdout);
     const corpus = progressCorpus().reduce(
       (all, file) => {
         const one = priorityTables(file.text);
@@ -469,8 +482,14 @@ describe('docs · the shipped list, as the guard reads it', () => {
     expect(Number(counted?.[1]), 'the guard counted a different number of record tables than the corpus holds').toBe(
       corpus.tables,
     );
-    expect(Number(counted?.[2]), 'the guard counted a different number of rows than those tables hold').toBe(
+    expect(Number(counted?.[3]), 'the guard counted a different number of rows than those tables hold').toBe(
       corpus.rows,
+    );
+    // Non-vacuity of the `of`: a corpus in which every record were a table would print
+    // `226 of 226` and prove nothing about the subset. The shipped log has records of both
+    // forms -- which is why the denominator is not a constant 1 either way.
+    expect(Number(counted?.[1]), 'every record is a table, so the subset is the whole and the `of` is untested').toBeLessThan(
+      Number(counted?.[2]),
     );
     // Non-vacuity in both directions: the corpus holds more record tables than the two spellings
     // v3.114 could read (25), and more than one of the names, so neither side of the comparison is
@@ -974,7 +993,7 @@ describe('docs · a record written as a table is read as rows, and a third spell
     // test written against an output inherits the output's mistake (finding 464).
     const r = runOn(page(suffix('| priority | item | state | next step |\n| --- | --- | --- | --- |\n| **P1** | a residual | unchanged | nothing |')));
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('1 record(s) in table form (1 row(s)); the newest round wrote none, so no row was judged');
+    expect(r.out).toContain('1 of 1 record(s) are in table form (1 row(s)); the newest round wrote none, so no row was judged');
   });
 
   it('refuses an entry sitting under a record that is written as a table', () => {
@@ -1031,7 +1050,7 @@ describe('docs · a record is found by its body, and every name the corpus gave 
   it('reads a record under the name the corpus gave it', () => {
     const r = runOn(page(`### Leftovers, in the order that reaches the goal\n\n${TABLE_HEAD}\n${ROW}\n`));
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('1 record(s) in table form (1 row(s))');
+    expect(r.out).toContain('1 of 1 record(s) are in table form (1 row(s))');
   });
 
   it('reads a record whose fourth column is spelled `next`', () => {
@@ -1045,7 +1064,7 @@ describe('docs · a record is found by its body, and every name the corpus gave 
       ),
     );
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('1 record(s) in table form (1 row(s))');
+    expect(r.out).toContain('1 of 1 record(s) are in table form (1 row(s))');
   });
 
   it("refuses a record's table under a heading the guard does not read", () => {
@@ -1076,7 +1095,7 @@ describe('docs · a record is found by its body, and every name the corpus gave 
       ),
     );
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('1 record(s) in table form (1 row(s))');
+    expect(r.out).toContain('1 of 1 record(s) are in table form (1 row(s))');
   });
 
   it('refuses the unescaped pipe, which is the shape the corpus shipped once', () => {
@@ -1314,10 +1333,10 @@ describe('docs · a section that is only entries is a record, whatever its headi
     expect(r.out).toContain('0 record(s): 0 under a round and 0 under none');
   });
 
-  it('reads the shipped corpus as 226 records, with the addendum counted in', () => {
+  it('reads the shipped corpus as 227 records, with the addendum counted in', () => {
     // The shipped reading, and the rounds it carries: v3.115 found 22 records under two names the
     // guard did not read (218 -> its own), v3.116 found the addendum's record under a name and a form
-    // it did not read (219), and every round since has added one -- v3.122's is the 226th. The rounds
+    // it did not read (219), and every round since has added one -- v3.123's is the 227th. The rounds
     // are **217** and the addendum is one: the line used to print `211 round(s)` and `18 of them wrote
     // none` while subtracting a count of names from a count of headings (finding 585), and since
     // v3.121 it says which era its number counts, because the gate next door was printing a count of
@@ -1330,7 +1349,7 @@ describe('docs · a section that is only entries is a record, whatever its headi
     const shipped = spawnSync('node', [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
     expect(shipped.status, shipped.stdout + shipped.stderr).toBe(0);
     expect(shipped.stdout).toContain(
-      '226 record(s): 201 under a round and 25 under none; 217 `vX.YY` round(s) + 1 addendum(s), 17 of them wrote none',
+      '227 record(s): 202 under a round and 25 under none; 218 `vX.YY` round(s) + 1 addendum(s), 17 of them wrote none',
     );
     // One corpus, two readers, one number. `check-progress-volumes` counts these same rounds to
     // print the population beside its heading count, and the agreement between the two is the only
@@ -1387,7 +1406,7 @@ describe('docs · the rows a table-form record holds, counted from the record', 
     // `filter(/^\s*\|/)`, this reported 3 -- and so did the test that shipped with it.
     const r = runOn(page(suffix(`${HEAD}\n| **P1** | a residual | unchanged | nothing |`)));
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('1 record(s) in table form (1 row(s)); the newest round wrote none, so no row was judged');
+    expect(r.out).toContain('1 of 1 record(s) are in table form (1 row(s)); the newest round wrote none, so no row was judged');
   });
 
   it('counts five rows in a five-row record, so the number is the record and not the file', () => {
