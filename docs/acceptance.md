@@ -1889,3 +1889,29 @@ from an anecdote again.
   It is entry 27 in the live list, with the number that makes it a candidate for the next round: 168 of
   the run's failures were `modalities`, so the function that decides them is the busiest in the round trip
   and the only one whose memory has never been measured.
+
+### Every job fetches the history its claimants read, and a coloured run is still read (v3.126)
+
+- **The rule was a list of commands, and the list was the defect.** v3.125 repaired `verify` and wrote the rule
+  as `docs:check|verify-site-proofs|pnpm test|test:coverage`. `sensitivity` runs
+  `verify-sites-are-sensitive.mjs`, which spawns one vitest per claimant, and it was not on the list -- so the
+  next run moved the same red one job over with nothing changed in between (finding 614). Measured in a
+  `git clone --depth 1`: `check-repository-table` refuses `e22e2de`, the census goes red, and `unit-nouns.test.ts`
+  fails 1 of its 26 cases.
+- **The default is the safe answer now.** Every job fetches the full history; a job that does not is named in
+  the test together with the commands that make it safe, and each of that job's `run:` lines is read against the
+  list one at a time. A fifth command fails the test, which is the only way an exemption can be kept from growing
+  quietly.
+- **The cost is measured rather than argued.** On run `44741826563` the jobs with full history spent **3.0** s
+  checking out and the ones without **1.0-2.0** s, and the history is 34 MB against 5.1 MB for one commit.
+- **A reader of a failed run reads the run, not the pipe.** `failureSummary`, `outputTail` and `hungTests` anchor
+  their patterns at the start of a line, and vitest writes `FAIL` through a terminal: the line begins with an
+  escape, so all three matched nothing and the battery printed "the run printed no report" while the report sat
+  three lines above it, in colour (finding 615).
+- **The escapes are stripped at the boundary** -- `decoloured` -- rather than the patterns widened: a widened
+  pattern is a pattern about terminals, and the next terminal writes a different sequence.
+- **The one reader that did not need it is left alone.** `exhaustedTestBudget` is not anchored, so removing the
+  strip from it reds no test; it keeps `String(text)` and says why at the call.
+- **What is not promised.** A claimant's own JSON report is on disk -- the battery asks for it for the margin and
+  never reads its `failureMessages` -- so a second route to the same evidence exists and is not taken here.
+

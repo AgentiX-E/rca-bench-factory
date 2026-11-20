@@ -1698,3 +1698,156 @@ this campaign's oldest defect in the other direction: a sentence that reads like
 | --- | --- |
 | `failureDetail` returning `failureSummary` alone, as it was | 1 |
 | the label dropped, so a tail reads as a report | 1 |
+
+## Finding 614 — the rule was a list of the commands somebody thought of, and the next command was not on it
+
+### What the tree said
+
+Run `44741826563` (the first run of v3.125) finished **7 of 8 jobs**, and the job that failed was `sensitivity`, at
+shard 1 of 2:
+
+```
+verify-sites-are-sensitive: some claimants could not be measured at all:
+  packages/core/test/unit-nouns.test.ts does not pass on its own (exit 1), so its claims are unmeasured
+    its own output ends:    Start at  13:10:56
+    its own output ends:    Duration  5.05s (transform 168ms, setup 90ms, collect 97ms, tests 4.53s, ...)
+    its own output ends: JSON report written to /tmp/rca-sensitive-PpPRVb/32.json
+```
+
+The three quoted lines are the healthiest lines in the run. `verify` -- the job v3.125 had just repaired -- passed.
+
+### Measured, in a depth-1 clone
+
+The same three facts as finding 612, re-measured rather than assumed, because the failing file was the same file:
+
+| command, in `git clone --depth 1` | result |
+| --- | --- |
+| `node scripts/check-repository-table.mjs` | `the revision `e22e2de` does not resolve to a commit` |
+| `node scripts/check-unit-nouns.mjs` | `FAILED — check-repository-table exited 1, so its summary is not the one this tree reports` |
+| `vitest run packages/core/test/unit-nouns.test.ts` | `Tests 1 failed \| 25 passed (26)`, exit 1 |
+
+`git rev-list --count HEAD` answers `1` in that clone and `650` in the full one.
+
+### Why the previous repair did not hold
+
+Finding 612's repair was a test, and its subjects were the jobs whose steps run "a claimant or the documentation
+gates", written as a hand-made list:
+
+```js
+const reaching = /(docs:check|verify-site-proofs|pnpm test|test:coverage)/;
+```
+
+The `sensitivity` job's step is `node scripts/verify-sites-are-sensitive.mjs --shard 1/2`. It is not in the list,
+and it runs claimants: it spawns one vitest per claimant, which is how `unit-nouns.test.ts` came to be there at all.
+So the repair was correct about the job in front of it and blind to the next job over, and the red moved from
+`verify` to `sensitivity` with **nothing changed in between**. Two versions of one rule, each a list of the commands
+somebody thought of; the list is the defect.
+
+### The repair
+
+The safe answer is the default now. Every job checks out the full history, and a job that does not is named in the
+test with the commands that make it safe:
+
+```yaml
+jobs:
+  # Every job checks out the full history, except `backend`. ... (findings 612 and 614)
+```
+
+`backend` installs prometheus and reads it through a reader of this repository's own; it spawns no test file. Its
+exemption is held by the second case, which reads its `run:` lines one at a time and requires each to be one of the
+four it is exempt for -- so a fifth command fails the test and forces the decision, which is the only way an
+exemption can be kept from growing quietly.
+
+### What it costs, measured rather than argued
+
+| reading | value |
+| --- | --- |
+| `Check out` on the jobs that had full history, run `44741826563` | 3.0 s |
+| `Check out` on the jobs that did not | 1.0-2.0 s |
+| the repository's history | 34 MB, against 5.1 MB for one commit (5.1 MB / 1.13 s for `--depth 1` locally) |
+
+The four jobs that gained the history are `sensitivity`, `sensitivity-shard`, `batteries` and `batteries-heavy`, and
+the other three (`verify`, `artefacts`, `cold-tree`) already had it for the reasons their own comments give.
+
+### Falsifications
+
+| the edit | reds |
+| --- | --- |
+| `fetch-depth: 0` removed from `sensitivity` | 1 -- `sensitivity runs claimants and checks out one commit` |
+| a fifth `run:` line added to the exempt `backend` | 1 -- `backend is exempt but runs `node scripts/verify-site-proofs.mjs`` |
+| `verify` added to the exemption list | 2 -- an exempt job that already has the history, and one whose commands are not on the list |
+
+## Finding 615 — the reader of failures was written where the output has no colour
+
+### What the tree said
+
+The same run, the same claimant, and the reason it was invisible. `failureSummary` looks for three shapes:
+
+```js
+.filter((line) => /^\s*FAIL\s+\S/.test(line))
+/^(AssertionError|Error|TypeError|RangeError|ReferenceError|SyntaxError|UnhandledPromiseRejection)\b/
+lines.find((line) => /^\s*Tests\s+\d/.test(line))
+```
+
+In the CI log none of them matched, and the battery fell back to the tail -- which is why the three healthiest lines
+of the run were printed as evidence. The reason is in the log itself: the tail it quoted carries escapes.
+
+```
+    its own output ends: \x1b[2m   Start at \x1b[22m 13:10:56
+```
+
+Vitest writes its failure block through a terminal, and a terminal carries more than the words:
+
+```
+\x1b[41m\x1b[1m FAIL \x1b[22m\x1b[49m packages/core/test/unit-nouns.test.ts\x1b[2m > \x1b[22mthe gate holds ...
+\x1b[31m\x1b[1mAssertionError\x1b[22m: check-unit-nouns: FAILED -- check-repository-table exited 1, ...
+\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[31m1 failed\x1b[39m\x1b[22m\x1b[2m | \x1b[22m\x1b[1m\x1b[32m25 passed\x1b[39m\x1b[22m\x1b[90m (26)\x1b[39m
+```
+
+Every anchor sees an escape where the word should be. The run below is the same command with `FORCE_COLOR=1`:
+216 escapes, `failureSummary` empty, `hungTests` empty, `exhaustedTestBudget` `null`.
+
+### Why nothing caught it
+
+All four readers are tested against output that has no colour, and locally it never does: a pipe is not a terminal,
+so the suite's own children print plain text. The tests were green and the gate was blind in the one place it runs.
+This is finding 613 one level up -- there the function was written and never imported; here it is imported and
+cannot see.
+
+### The repair
+
+One reader, at the boundary, and the four functions call it:
+
+```js
+export function decoloured(text) {
+  return String(text).replace(/\u001b\[[0-9;]*[A-Za-z]/g, '');
+}
+```
+
+The escapes are removed rather than the patterns widened, because the patterns are about vitest's words and the
+escapes are about the pipe this process happens to be attached to. A widened pattern would be a pattern about
+terminals, and the next terminal would write a different sequence.
+
+`hungTests` matters most: its clause is what tells "ran out of time" from "is wrong", and it reads the same `FAIL`
+line. In CI that clause was being fed a coloured line and answering with nothing.
+
+One reader was measured and **left alone**. `exhaustedTestBudget` looks for `Test timed out in 30000ms` with no
+anchor, so the escape in front of the sentence sits between characters the pattern does not constrain. Removing
+`decoloured` from that call reds no test, which is the reading that says the defect was never there; the reason is
+written at the call rather than a uniform edit applied because three siblings needed one.
+
+### Falsifications
+
+| the edit | reds |
+| --- | --- |
+| `decoloured` removed from `failureSummary` and `hungTests` | 2 -- the coloured report and the coloured hang |
+| `decoloured` removed from `outputTail` | 1 |
+| `decoloured` removed from `exhaustedTestBudget` | 0 -- measured, and the reason it keeps `String` |
+| the strip written as `[` .. `m` rather than as the escape | 5 -- `a [2m b` is prose, and four readings follow it |
+
+### What is not claimed
+
+The claimant's own JSON report is on disk -- the battery asks for `--reporter=json` for the margin and never reads
+its `failureMessages` -- so a second route to the same evidence exists and is not taken here. The text is what the
+battery already has, and it is now readable.
+

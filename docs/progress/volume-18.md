@@ -2374,9 +2374,9 @@ one round, and it is red in four places while every one of its numbers was right
 | item | value |
 | --- | --- |
 | CI | run `44698243645` on `4d253c91`: **8 of 8 jobs success** -- the newest run, and the one the recording is taken from |
-| `core` test suite | **258 files, 6767 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **262 files, 6954 tests passed** (as of this commit) |
+| `core` test suite | **258 files, 6767 tests passed** (at v3.125) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.125) |
+| repo test suite | **262 files, 6954 tests passed** (at v3.125) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6754 -> 6767, +13**: ten for the census (qualifier, quoted qualifier, three words away, order, relation lines, the agreeing mark, the gate with no number, unreadable uses, the stated count, the committed shape), one for `failureDetail`, two for the checkout rule |
 | the sentences moved | **13**: the census's inventory and summary, the refusal, `--write`'s merge, and the two refusal tests rebuilt from a derivation of the fixture rather than from the shipped document |
@@ -2398,3 +2398,99 @@ one round, and it is red in four places while every one of its numbers was right
   `[open: which of the four sets is worth a reader first is a measurement -- `file(s)` is the one whose two
   agreeing numbers come from one walk and whose two disagreeing ones come from two, so it is the noun whose
   relation a reader would act on if it were wrong]`
+
+## v3.126 — the wall was one job narrow, and the failure was printed in the three healthiest lines
+
+### What the round began with
+
+The first run of v3.125 -- `44741826563` on `4195f2d7` -- finished **7 of 8**. The job that passed was `verify`,
+the one v3.125 had just given the full history; the job that failed was `sensitivity`, on the file v3.124 had
+taught to read every gate's number.
+
+```
+verify-sites-are-sensitive: some claimants could not be measured at all:
+  packages/core/test/unit-nouns.test.ts does not pass on its own (exit 1), so its claims are unmeasured
+    its own output ends:    Start at  13:10:56
+    its own output ends:    Duration  5.05s (transform 168ms, setup 90ms, collect 97ms, tests 4.53s, ...)
+    its own output ends: JSON report written to /tmp/rca-sensitive-PpPRVb/32.json
+```
+
+Two defects in one report, and neither of them is in the census. The file fails because its checkout is one commit
+deep (**finding 614**): the three measurements finding 612 took are re-taken in `git clone --depth 1` and answer the
+same way. And the reason it fails is not in the report because three of the four readers of a failed run were
+written where a pipe is not a terminal (**finding 615**): the runner's own bytes carry `\x1b[2m   Start at \x1b[22m`,
+which is why the quoted lines are the quiet ones.
+
+### The two defects
+
+| finding | the shape | the repair | falsified by |
+| --- | --- | --- | --- |
+| 614 | the rule "a job that runs a claimant fetches the history the claimant reads" was a hand-made list of four commands, and `verify-sites-are-sensitive` -- a script that runs 34 claimants of its own -- was not on it, so finding 612's repair moved the red one job over, unchanged | the safe answer is the default: every job fetches the history, and the one exemption (`backend`) is a job whose `run:` lines are read one at a time against the four commands it is exempt for | **3** edits, **4** reds |
+| 615 | `failureSummary`, `outputTail` and `hungTests` anchor their patterns at the start of a line, and a coloured `FAIL` starts with an escape; the battery printed "the run printed no report" with the report three lines above it, in colour | one reader at the boundary (`decoloured`) called by the three; the fourth reader was measured not to need it and is left as it was | **4** edits, **8** reds |
+
+### The measurements this round rests on
+
+| reading | value |
+| --- | --- |
+| `node scripts/check-repository-table.mjs`, in `git clone --depth 1` | `the revision `e22e2de` does not resolve to a commit` |
+| `node scripts/check-unit-nouns.mjs`, same clone | `FAILED -- check-repository-table exited 1, so its summary is not the one this tree reports` |
+| `vitest run packages/core/test/unit-nouns.test.ts`, same clone | `Tests 1 failed | 25 passed (26)`, exit 1 |
+| `git rev-list --count HEAD`, shallow against full | **1** against **650** |
+| escapes in the coloured claimant run | **216**, and `failureSummary` empty on it |
+| `Check out` on run `44741826563`, jobs with full history | **3.0** s |
+| `Check out` on the same run, jobs without | **1.0-2.0** s |
+| the history | 34 MB against 5.1 MB for one commit |
+
+### Falsifications
+
+| the edit | reds |
+| --- | --- |
+| `fetch-depth: 0` removed from `sensitivity` | 1 |
+| a fifth `run:` line added to the exempt `backend` | 1 |
+| `verify` added to the exemption list | 2 |
+| `decoloured` removed from `failureSummary` and `hungTests` | 2 |
+| `decoloured` removed from `outputTail` | 1 |
+| `decoloured` removed from `exhaustedTestBudget` | 0 -- the reading that says the defect was never there |
+| the strip written as `[` .. `m` rather than as the escape | 5 |
+
+**Seven edits, twelve reds**, and the sixth is the one that decided a line of the repair: a reader whose pattern is
+not anchored cannot be blinded by what precedes the word, so `exhaustedTestBudget` keeps `String(text)` and says why
+at the call rather than joining an edit made uniform by its siblings.
+
+### Readings
+
+> Ledger for `v3.126`.
+
+| item | value |
+| --- | --- |
+| CI | run `44698243645` on `4d253c91`: **8 of 8 jobs success** -- the newest green run before this round, and the one the recording is taken from |
+| `core` test suite | **258 files, 6771 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **262 files, 6958 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: the round added one reader and three calls to it, every one of them taken |
+| new tests | **6767 -> 6771, +4**: the coloured report, the coloured tail, the strip and its counter-case (`a [2m b` is prose), and the coloured hang |
+| the sentences moved | **3**: the checkout note above `jobs:`, the exemption's justification in the test, and the comment at `exhaustedTestBudget` |
+| the rules | every job fetches the history unless it is the named exemption; a reader of a run reads the run, not the pipe it came through |
+| falsifications | seven edits, **twelve** reds |
+| the population | **47 of 230** record(s) in table form against **318** rows |
+| the census | **54 unit noun(s) in 71 gate/noun pair(s)**, **9** shared and **9** relations, **4** coincidences -- `221 round(s)` and `1 addendum(s)` agreeing across the two readers of the log's population, while `check-ci-budget` prints `2 round(s)` about the distance to this record |
+| open entries | **38 -> 38**: no entry closed and none opened -- both defects were of the shape this campaign removes rather than of the kind it files |
+| LLM calls | **0** |
+
+### Left open
+
+- **The ceiling is twice the slowest day, and a day slower than that still dies unnamed.** `batteries` holds **83**
+  minutes of step bounds inside a **34**-minute ceiling, so a day of **2 100** s reaches the ceiling with every step
+  still inside its own bound, and the rule that would cover it -- a ceiling at least the sum of the bounds --
+  was measured and refused because six preparation steps carry a three-minute floor in every job. The third answer
+  is the one the same arithmetic gave twice before: a job split small enough that the sum fits, which is a split
+  that shares its setup rather than repeating it.
+  `[open: which of the two failures a slow-but-not-hung day should produce -- the job's death, which names nothing,
+  or a ceiling inflated until it cannot fire, which names nothing either]`
+- **The relation a shared noun carries is a sentence, and the census cannot contradict it.** Nine nouns are printed
+  by more than one gate and each carries a `relation` a person wrote; the census holds summaries, not sets, so
+  `row(s)` being four tables is a claim it can print and not check. This round added a fourth thing to that
+  sentence's neighbourhood -- a claimant whose output arrives coloured -- and did not touch the question.
+  `[open: which of the four sets is worth a reader first is a measurement -- `file(s)` is the one whose two
+  agreeing numbers come from one walk and whose two disagreeing ones come from two]`
+
