@@ -261,6 +261,7 @@
     {
       "noun": "round(s)",
       "gates": [
+        "check-ci-budget",
         "check-open-list",
         "check-progress-volumes"
       ]
@@ -349,7 +350,8 @@
         "check-comments-language",
         "check-doc-counts",
         "check-workflow-language"
-      ]
+      ],
+      "relation": "four walks over four corpora -- the 37 documentation files `check-citations` anchors its findings in, the source walk's 474 (printed by two gates because one takes its denominator from the other), and the 6 workflow files"
     },
     {
       "noun": "row(s)",
@@ -358,7 +360,8 @@
         "check-l4-status",
         "check-open-list",
         "check-repository-table"
-      ]
+      ],
+      "relation": "four tables and one word -- a fault case's pre-injection window, the L4 registry, the record tables of the log, and the rows under `## Repository`; that `8` appears twice is the corpus rather than a count two gates share"
     },
     {
       "noun": "run(s)",
@@ -367,7 +370,17 @@
         "check-docs-language",
         "check-fault-cases",
         "check-workflow-language"
-      ]
+      ],
+      "relation": "three language gates count runs of prose in the wrong script and print `0`, and `check-fault-cases` counts baseline runs; the noun is shared and nothing else is"
+    },
+    {
+      "noun": "round(s)",
+      "gates": [
+        "check-ci-budget",
+        "check-open-list",
+        "check-progress-volumes"
+      ],
+      "relation": "one population read by two, and a third gate that counts a different quantity under the same word -- the distinct `vX.YY` numbers the log's records carry, the `## vX.YY` headings the volumes hold, and the distance in rounds between the ledger's newest run and this round; the two counts agree at 220 and no arithmetic forces them to, which is why the equality is printed rather than assumed"
     },
     {
       "noun": "row break(s)",
@@ -375,68 +388,40 @@
         "check-comments-language",
         "check-docs-language",
         "check-workflow-language"
-      ]
+      ],
+      "relation": "one noun over three disjoint corpora -- the sources, the documentation and the workflows -- so no row break is counted by two of them"
     },
     {
       "noun": "addendum(s)",
       "gates": [
         "check-open-list",
         "check-progress-volumes"
-      ]
+      ],
+      "relation": "one population and one reader -- both take it from `populationsOf` in `progress-volumes.mjs`, so the number is shared rather than merely equal"
     },
     {
       "noun": "comment(s)",
       "gates": [
         "check-comments-language",
         "check-workflow-language"
-      ]
+      ],
+      "relation": "two disjoint corpora -- the comments of the sources and the comments of the workflows -- and the smaller is 4.7 per cent of the larger with no member in common"
     },
     {
       "noun": "reading(s)",
       "gates": [
         "check-ci-budget",
         "check-fault-cases"
-      ]
-    },
-    {
-      "noun": "round(s)",
-      "gates": [
-        "check-open-list",
-        "check-progress-volumes"
-      ]
+      ],
+      "relation": "two unrelated kinds of reading -- a step's measured seconds in `check-ci-budget` and a checkpoint's declaration in `check-fault-cases`"
     },
     {
       "noun": "volume(s)",
       "gates": [
         "check-audit-volumes",
         "check-progress-volumes"
-      ]
-    }
-  ],
-  "coincidences": [
-    {
-      "noun": "addendum(s)",
-      "gates": [
-        "check-open-list",
-        "check-progress-volumes"
       ],
-      "reading": "one population and one reader -- both take it from `populationsOf` in `progress-volumes.mjs`, so the number is shared rather than merely equal"
-    },
-    {
-      "noun": "file(s)",
-      "gates": [
-        "check-comments-language",
-        "check-doc-counts"
-      ],
-      "reading": "one population and one reader -- `check-doc-counts` takes its denominator from `sourcesIn` in `comment-language.mjs`, the same walk that produces the other, so the agreement is by construction rather than a coincidence of this week"
-    },
-    {
-      "noun": "row(s)",
-      "gates": [
-        "check-fault-cases",
-        "check-repository-table"
-      ],
-      "reading": "two tables and one noun -- the rows of a fault case's pre-injection window and the rows under `## Repository`, which no arithmetic relates"
+      "relation": "two disjoint directories of volumes -- `docs/audit` holds 14 and `docs/progress` 18, and no file is in both"
     }
   ]
 }

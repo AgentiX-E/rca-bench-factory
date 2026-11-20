@@ -5,7 +5,7 @@
  * ## The defect this gate is the reader for
  *
  * `O-091` asked what population each unit noun covers and no reader answered. The measure
- * is in `scripts/unit-nouns.mjs`: eight nouns are printed by more than one gate, and the
+ * is in `scripts/unit-nouns.mjs`: nine nouns are printed by more than one gate, and the
  * count `8` is printed as `row(s)` by **two** of them for two unrelated tables --
  * `check-fault-cases`'s pre-injection window and `check-repository-table`'s `## Repository`
  * rows. Both lines are right. Read in a CI log four lines apart, they are indistinguishable
@@ -14,21 +14,34 @@
  * Finding 600 was this shape across two gates printing *different* numbers for one word, and
  * its repair was a third reader that derived one number from the other and asserted they
  * agreed. Here the two numbers agree and the populations do not, so the repair is not an
- * assertion but a **reading**: one line that holds every unit noun beside the gates that use
- * it and says how many of those counts coincide.
+ * assertion but a **reading**: one line per unit noun holding every gate's numbers and the
+ * sentence a person wrote about what the gates count.
+ *
+ * ## What the first version of this gate got wrong
+ *
+ * It printed the gates' names and never their numbers -- `volume(s) by 2`, where one gate
+ * prints `14 volume(s)` and the other `18` (finding 609) -- so a reader of this gate alone
+ * could not see that the two numbers differ, let alone whether the two fourteens are the same
+ * volumes. And it could not have seen the other pair even with the numbers printed, because it
+ * demanded a number immediately before the noun and both gates write `` 219 `vX.YY` round(s) ``:
+ * the qualifier finding 600's repair inserted is a wall this reader could not see past, so
+ * `round(s)` was listed as shared by two gates with no count under it at all (finding 610).
+ * Three nouns whose number the reader could not read were dropped without a word, which made
+ * the headline a count of what it happened to read (finding 611).
  *
  * ## What is refused
  *
  * The inventory in `golden-master/unit-nouns.json` is derived from the gates and committed,
  * the way `golden-master/gate-sites.json` is. A gate that starts printing a noun another gate
  * already prints -- or stops -- changes the inventory, and the change is a diff a reviewer
- * reads rather than a fact nobody wrote down. `--write` regenerates it; `--check` is what
- * `docs:check` runs.
+ * reads rather than a fact nobody wrote down. `--write` regenerates the vocabulary and leaves
+ * every `relation` where a person put it; running the gate with no flag is what `docs:check`
+ * does, and it refuses rather than writes.
  *
  * The counts are deliberately **not** in the inventory. They move every round, and an
  * inventory that went red for a reason its subject has nothing to do with is the crying-wolf
- * defect this campaign has recorded more than once. What is committed is the vocabulary and
- * which coincidences exist.
+ * defect this campaign has recorded more than once. What is committed is the vocabulary, which
+ * nouns more than one gate prints, and the judgement about each of those.
  *
  * ## Why the gates are spawned rather than imported
  *
@@ -40,7 +53,7 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
-import { censusOf, coincidencesOf, inventoryOf, keyOf, summaryOf } from './unit-nouns.mjs';
+import { UNSTATED, censusOf, inventoryOf, keyOf, relationsOf, summaryOf } from './unit-nouns.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const SELF = 'check-unit-nouns';
@@ -160,12 +173,18 @@ if (census.size === 0) {
 
 const derived = inventoryOf(census);
 
-/** The judgement the inventory carries and no derivation can produce: what a coincidence means. */
-function judgementsIn(document) {
+/**
+ * The judgement the inventory carries and no derivation can produce: what a shared noun means.
+ *
+ * It is keyed by the noun and its gates, so a sentence written for `volume(s)` in one round is
+ * still the sentence the next round reads, and a gate entering or leaving the list is a diff
+ * rather than a silent re-use of somebody else's answer.
+ */
+function relationsIn(document) {
   const out = new Map();
-  for (const one of document?.coincidences ?? []) {
-    if (typeof one.reading === 'string' && one.reading !== '') {
-      out.set(keyOf(one), one.reading);
+  for (const one of document?.shared ?? []) {
+    if (typeof one.relation === 'string' && one.relation !== '') {
+      out.set(keyOf(one), one.relation);
     }
   }
   return out;
@@ -196,22 +215,25 @@ function readInventory(path) {
 const committed = readInventory(INVENTORY);
 
 if (process.argv.includes('--write')) {
-  // The readings are merged rather than regenerated: a coincidence is either one population
-  // read twice or two populations under one noun, and which it is cannot be derived from the
-  // output. `--write` therefore refreshes the vocabulary and leaves every existing judgement
-  // where a person put it, so regenerating the inventory cannot quietly answer a question.
-  const judgements = judgementsIn(committed);
+  // The relations are merged rather than regenerated: two gates printing one noun are either
+  // counting one population twice or two populations under one word, and which it is cannot be
+  // derived from the output. `--write` therefore refreshes the vocabulary and leaves every
+  // existing judgement where a person put it, so regenerating the inventory cannot quietly
+  // answer a question.
+  const relations = relationsIn(committed);
   const merged = {
     ...derived,
-    coincidences: derived.coincidences.map((one) => {
-      const reading = judgements.get(keyOf(one));
-      return reading === undefined ? { ...one, reading: null } : { ...one, reading };
+    shared: derived.shared.map((one) => {
+      const relation = relations.get(keyOf(one));
+      return relation === undefined ? { ...one, relation: null } : { ...one, relation };
     }),
   };
-  // The merge keeps the reading and drops the count: the inventory records which two gates print
-  // one number for two populations, and the number itself is printed by every run.
+  // The merge keeps the relation and drops every count: the inventory records which gates share a
+  // noun and what a person decided that means, and the numbers themselves are printed every run.
   writeFileSync(INVENTORY, `${JSON.stringify(merged, null, 2)}\n`);
-  console.log(`check-unit-nouns: wrote ${relative(ROOT, INVENTORY)} — ${summaryOf(census, judgementsIn(merged))}`);
+  const stated = relationsIn(merged);
+  console.log(`check-unit-nouns: wrote ${relative(ROOT, INVENTORY)} — ${summaryOf(census, stated)}`);
+  for (const line of relationsOf(census, stated)) console.log(`check-unit-nouns: ${line}`);
   process.exit(0);
 }
 
@@ -222,27 +244,27 @@ if (committed === null) {
   );
 }
 
-const judgements = judgementsIn(committed);
+const relations = relationsIn(committed);
 
-// A coincidence nobody has read is the state this gate exists to end: two gates printing one
-// number under one noun is either agreement or an accident, and the output cannot say which.
-// So the inventory records a sentence per coincidence, `--write` will not invent one, and a
-// new one is a failure until a person writes it.
-// The message names the count, so it is read from the census rather than from the inventory: the
-// inventory deliberately holds no counts (they move every round), and a message assembled from it
+// A shared noun nobody has read is the state this gate exists to end: two gates printing one noun
+// are either counting one population twice or two populations under one word, and the output
+// cannot say which. So the inventory records a relation per shared noun, `--write` will not invent
+// one, and a new one is a failure until a person writes it.
+//
+// The refusal names the numbers, so they are read from the census rather than from the inventory:
+// the inventory deliberately holds none (they move every round), and a sentence assembled from it
 // said `undefined addendum(s)` until this line was changed.
-const unread = coincidencesOf(census).filter((one) => !judgements.has(keyOf(one)));
+const suffix = ` — ${UNSTATED}`;
+const unread = relationsOf(census, relations).filter((line) => line.endsWith(suffix));
 if (unread.length > 0) {
   fail(
-    `${String(unread.length)} count(s) coincide across gates and no record says whether that is one population or two: ` +
-      unread
-        .map((one) => `${String(one.count)} ${one.noun} in ${one.gates.join(' and ')}`)
-        .join('; '),
-    'add a `reading` to that entry of golden-master/unit-nouns.json: the sentence is the judgement, and no derivation can make it',
+    `${String(unread.length)} noun(s) are printed by more than one gate and no record says whether that is one population or two: ` +
+      unread.map((line) => line.slice(0, line.length - suffix.length)).join('; '),
+    'add a `relation` to that entry of golden-master/unit-nouns.json: the sentence is the judgement, and no derivation can make it',
   );
 }
 
-const stored = JSON.stringify({ ...committed, coincidences: (committed.coincidences ?? []).map(({ reading, ...rest }) => rest) });
+const stored = JSON.stringify({ ...committed, shared: (committed.shared ?? []).map(({ relation, ...rest }) => rest) });
 const fresh = JSON.stringify(derived);
 if (stored !== fresh) {
   // Said as a difference rather than as a comparison of two documents: the author needs to
@@ -256,14 +278,18 @@ if (stored !== fresh) {
     else if (was.get(noun) !== gatesAt) moved.push(`${noun}: ${was.get(noun)} -> ${gatesAt}`);
   }
   for (const noun of was.keys()) if (!now.has(noun)) moved.push(`${noun} is no longer printed`);
-  const wasCoincident = new Set((committed.coincidences ?? []).map((one) => `${one.noun} ${String(one.count)}`));
-  const nowCoincident = new Set(derived.coincidences.map((one) => `${one.noun} ${String(one.count)}`));
-  for (const one of nowCoincident) if (!wasCoincident.has(one)) moved.push(`${one} now coincides across gates`);
-  for (const one of wasCoincident) if (!nowCoincident.has(one)) moved.push(`${one} no longer coincides`);
+  const wasShared = new Set((committed.shared ?? []).map((one) => keyOf(one)));
+  const nowShared = new Set(derived.shared.map((one) => keyOf(one)));
+  for (const one of nowShared) if (!wasShared.has(one)) moved.push(`${one} is now shared across gates, and no relation is recorded for it`);
+  for (const one of wasShared) if (!nowShared.has(one)) moved.push(`${one} is no longer shared`);
   fail(
     `the unit-noun inventory disagrees with the gates: ${moved.length === 0 ? 'the documents differ where no noun did, so the shape changed' : moved.join('; ')}`,
     'run `node scripts/check-unit-nouns.mjs --write` and read the diff: a new shared noun is a population nobody has asked about yet',
   );
 }
 
-console.log(`check-unit-nouns: OK — ${summaryOf(census, judgements)}`);
+console.log(`check-unit-nouns: OK — ${summaryOf(census, relations)}`);
+// One line per shared noun, because the sentence that had to be added is a sentence about a pair
+// of numbers and nine of those inside one line is not a summary. This is finding 609's repair:
+// the gate printed the gates' names and never what they counted.
+for (const line of relationsOf(census, relations)) console.log(`check-unit-nouns: ${line}`);
