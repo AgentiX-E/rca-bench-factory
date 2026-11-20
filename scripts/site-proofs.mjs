@@ -388,6 +388,32 @@ export function blindScripts(text) {
 }
 
 /**
+ * A run's output with the colour its runner added taken back out (finding 615).
+ *
+ * Every reader below looks for the *shape of a line*: `FAIL` at its start, `Tests`
+ * followed by a number, `Test timed out in 30000ms`, a bare `witness on`. Vitest writes
+ * all of them through a terminal, and a terminal carries more than the words: its red
+ * `FAIL` arrives as `\u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m`, so a pattern anchored
+ * at the start of a line sees an escape where the word was. Three of the readers were
+ * written against an uncoloured run -- a pipe is not a terminal, so the suite's own children
+ * print none of these escapes -- and in CI, where the reporter does colour, every one of them
+ * silently matched nothing. The battery reported `unit-nouns.test.ts does not pass on its
+ * own` with "its own output ends" and three lines of healthy-looking summary, while the
+ * `FAIL` line, the `AssertionError` and the totals were three lines above it, in colour.
+ *
+ * Measurement: `FORCE_COLOR=1` on the same file made all three of `failureSummary`'s
+ * patterns miss and the empty list was reported as "the run printed no report". The fourth
+ * reader, `exhaustedTestBudget`, is not anchored and was measured not to need this: removing
+ * the call from it reds nothing, so it keeps `String`, and the reason is written at its call.
+ *
+ * The escapes are removed rather than the patterns widened, because the patterns are about
+ * vitest's words and the escapes are about the pipe this process happens to be attached to.
+ */
+export function decoloured(text) {
+  return String(text).replace(/\u001b\[[0-9;]*[A-Za-z]/g, '');
+}
+
+/**
  * What a failed run said about itself, in at most four lines.
  *
  * The gate used to report a claimant whose own tests were red as *unmeasured*, which
@@ -398,7 +424,7 @@ export function blindScripts(text) {
  * none of them yields no summary rather than an invented one.
  */
 export function failureSummary(text) {
-  const lines = String(text).split('\n');
+  const lines = decoloured(text).split('\n');
   const picked = [];
   const failed = lines
     .filter((line) => /^\s*FAIL\s+\S/.test(line))
@@ -429,7 +455,7 @@ export function failureSummary(text) {
  * rather than a diagnosis, which is the difference the two functions are for.
  */
 export function outputTail(text, lines = 3) {
-  const all = String(text)
+  const all = decoloured(text)
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line !== '');
@@ -469,6 +495,10 @@ export function failureDetail(output) {
  * send a reader to the wrong number.
  */
 export function exhaustedTestBudget(text) {
+  // Not decoloured, and measured rather than assumed: this pattern is not anchored to the
+  // start of a line, so the escape in front of the sentence sits between two characters the
+  // pattern does not constrain. Removing `decoloured` from this call reds no test (finding
+  // 615), which is the reading that says the defect was never here.
   const match = /Test timed out in (\d+)ms/.exec(String(text));
   if (match === null) return null;
   const ms = Number(match[1]);
@@ -512,7 +542,7 @@ export function exhaustedTestBudget(text) {
  * Returns `[{ file, name }]`, in the order the run reported them.
  */
 export function hungTests(text) {
-  const lines = String(text).split('\n');
+  const lines = decoloured(text).split('\n');
   const starts = [];
   for (let i = 0; i < lines.length; i += 1) {
     if (/^\s*FAIL\s+\S/.test(lines[i])) starts.push(i);

@@ -2359,9 +2359,9 @@ describe('the plan is a claim about this repository', () => {
 });
 
 /**
- * The checkout a job needs is the checkout its steps read (finding 612).
+ * The history a job needs is the history its steps read (findings 612 and 614).
  *
- * ## What went wrong
+ * ## What went wrong, twice
  *
  * `actions/checkout` fetches one commit unless it is told otherwise. The `verify` job never
  * told it, and one of the claimants `verify-site-proofs` runs there is `unit-nouns.test.ts`,
@@ -2369,18 +2369,31 @@ describe('the plan is a claim about this repository', () => {
  * `Commits (at \`e22e2de\`) = 536` and reads the revision out of `git rev-list`, so in a
  * one-commit checkout it refuses: "the revision `e22e2de` does not resolve to a commit". The
  * census went red, the claimant was reported as a file that did not pass, and the log named
- * no reason -- three runs were diagnosed by guesswork. Measured in a depth-1 clone of this
- * repository before the workflow was repaired.
+ * no reason -- three runs were diagnosed by guesswork (finding 612). Measured in a depth-1
+ * clone of this repository both times.
  *
- * ## Why this is a test rather than a comment
+ * The repair was a test whose subjects were the jobs whose steps run "a claimant or the
+ * documentation gates", written as a hand-made list of commands: `docs:check`,
+ * `verify-site-proofs`, `pnpm test`, `test:coverage`. The list did not hold
+ * `verify-sites-are-sensitive`, which runs claimants of its own, so the next run moved the
+ * same red from `verify` to `sensitivity` with nothing changed in between (finding 614). Two
+ * versions of one rule, each a list of the commands somebody thought of, each missing the
+ * same thing: a script that runs test files.
  *
- * A comment at the checkout says what somebody knew on the day; the rule is about a
- * relationship between two parts of one file -- what a step runs, and what its checkout
- * fetched -- and a relationship is what a test can hold. The subjects are the jobs whose
- * steps run a claimant or the documentation gates, because those are the ones that reach a
- * gate that reads the history.
+ * ## Why the rule is a default now rather than a list
+ *
+ * The safe answer is the default: every job fetches the history, and a job that does not is
+ * named here with the commands that make it safe. A new job is then correct without its
+ * author knowing this file exists, which is the property both lists lacked. The cost is
+ * measured rather than argued: on run 44741826563 the jobs with full history spent 3.0 s
+ * checking out and the others 1.0-2.0 s, and the history is 34 MB against 5.1 MB for one
+ * commit.
+ *
+ * The exemption is not a comment. `backend`'s `run:` lines are read one at a time and each
+ * must be one of the four it is exempt for, so a fifth command fails here and forces the
+ * decision -- the only way an exemption can be kept from growing quietly.
  */
-describe('a job that runs a claimant checks out the history the claimant reads', () => {
+describe('every job fetches the history its claimants read', () => {
   const WORKFLOW = readFileSync(resolve(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
 
   /** The jobs of the shipped workflow, as `[id, block]`, with the `on:` block left out. */
@@ -2393,32 +2406,53 @@ describe('a job that runs a claimant checks out the history the claimant reads',
     return out;
   }
 
-  it('gives every job that runs a claimant or the documentation gate the full history', () => {
-    // The commands that reach a gate: the aggregate, the claimant verifier, the suite, and
-    // the coverage run. `pnpm build` and `pnpm typecheck` reach none of them.
-    const reaching = /(docs:check|verify-site-proofs|pnpm test|test:coverage)/;
-    const matched = [];
-    for (const [id, block] of jobs()) {
-      const runs = block
-        .split('\n')
-        .filter((line) => /^\s+(run:|with:)?\s*/.test(line) && reaching.test(line))
-        .filter((line) => /^\s+-?\s*run:|^\s+run:/.test(line));
-      if (runs.length === 0) continue;
-      matched.push(id);
-      expect(block, `${id} runs a claimant and checks out one commit`).toContain('fetch-depth: 0');
-    }
-    // Non-vacuity: the rule is about jobs that exist, and a regex that matched nothing would
+  /**
+   * The one job allowed to check out a single commit, and the commands that make it safe.
+   *
+   * `backend` installs a third-party binary and reads it through a reader of this
+   * repository's own; it spawns no test file, so no gate of its own reads the log.
+   */
+  const EXEMPT = new Map([
+    [
+      'backend',
+      [
+        'pnpm install --frozen-lockfile',
+        'pnpm build',
+        'sudo apt-get update -qq && sudo apt-get install -y -qq prometheus',
+        'node scripts/verify-reader-against-backend.mjs',
+      ],
+    ],
+  ]);
+
+  it('gives the full history to every job that is not exempt', () => {
+    const all = jobs();
+    // Non-vacuity: the rule is about jobs that exist, and a split that found nothing would
     // pass over a workflow in which every checkout was shallow.
-    expect(matched.length).toBeGreaterThanOrEqual(3);
-    expect(matched).toContain('verify');
+    expect(all.length).toBeGreaterThanOrEqual(8);
+    expect(all.length - EXEMPT.size).toBeGreaterThanOrEqual(6);
+    for (const [id, block] of all) {
+      if (EXEMPT.has(id)) {
+        expect(block, `${id} is exempt and still asks for history`).not.toContain('fetch-depth');
+        continue;
+      }
+      expect(block, `${id} runs claimants and checks out one commit`).toContain('fetch-depth: 0');
+    }
   });
 
-  it('leaves a job that only builds and type-checks with the default checkout', () => {
-    // The other side of the rule, so that it is a rule rather than "every job fetches
-    // everything": `backend` installs a third-party binary and runs no claimant.
-    const backend = jobs().find(([id]) => id === 'backend');
-    expect(backend, 'the workflow no longer has a backend job').toBeDefined();
-    expect(backend[1]).not.toContain('fetch-depth');
+  it('keeps the exempt job running only the commands it is exempt for', () => {
+    for (const [id, allowed] of EXEMPT) {
+      const found = jobs().find(([other]) => other === id);
+      expect(found, `${id} is exempt and the workflow no longer has it`).toBeDefined();
+      const runs = found[1]
+        .split('\n')
+        .map((line) => /^\s+(?:-\s+)?run:\s*(.*)$/.exec(line))
+        .filter((match) => match !== null)
+        .map((match) => match[1].trim());
+      expect(runs.length, `${id} runs nothing at all`).toBeGreaterThanOrEqual(1);
+      for (const run of runs) {
+        expect(allowed, `${id} is exempt but runs \`${run}\``).toContain(run);
+      }
+    }
   });
 });
 

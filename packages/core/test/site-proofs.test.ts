@@ -9,6 +9,7 @@ import {
   blindScripts,
   claimedSites,
   claimsByFile,
+  decoloured,
   exhaustedTestBudget,
   failureSummary,
   hungTestClause,
@@ -365,6 +366,27 @@ describe('site-proofs · what a red run says about itself', () => {
     expect(failureSummary(many)).not.toContain('FAIL  c.test.ts > three');
   });
 
+  it('reads a run that came through a terminal, where every word is wrapped in escapes', () => {
+    // The measured shape (finding 615), taken byte for byte from a run with `FORCE_COLOR=1`.
+    // `FAIL` arrives as an escape, a background colour, the word, and two more escapes; the
+    // error line starts with its own; `Tests` is preceded by the dim escape. Anchored at the
+    // start of a line, all three patterns therefore saw an escape where the word was, and the
+    // battery printed "its own output ends" with the report three lines above it. Locally the
+    // same run prints no colour at all -- a pipe is not a terminal -- which is why every one of
+    // these three cases was green while the gate that depends on them was blind in CI.
+    const coloured = [
+      '\u001b[31m\u2500\u2500\u2500 Failed Tests 1 \u001b[39m',
+      '\u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m packages/core/test/x.test.ts\u001b[2m > \u001b[22madds up',
+      '\u001b[31m\u001b[1mAssertionError\u001b[22m: expected 2 to be 3 // Object.is equality',
+      '\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[31m1 failed\u001b[39m\u001b[22m',
+    ].join('\n');
+    expect(failureSummary(coloured)).toEqual([
+      'FAIL  packages/core/test/x.test.ts > adds up',
+      'AssertionError: expected 2 to be 3 // Object.is equality',
+      'Tests  1 failed',
+    ]);
+  });
+
   it('quotes the tail of a run whose output carries no report at all', () => {
     // The other half of the same question. A run that dies before printing a report --
     // vitest exiting non-zero with every test passing is the measured case -- has no
@@ -391,6 +413,24 @@ describe('site-proofs · what a red run says about itself', () => {
     // line is quoted as one line.
     expect(outputTail('only this')).toEqual(['only this']);
     expect(outputTail('')).toEqual([]);
+  });
+
+  it('quotes the tail without the colour, because a tail is evidence and escapes are not', () => {
+    // Finding 615 from the other end. The two lines CI quoted were the two most innocent
+    // in the run -- `Start at` and `Duration` -- and they arrived carrying escapes that the
+    // log kept and the reader could not use. What is quoted is the run's words.
+    expect(
+      outputTail('\u001b[2m   Start at \u001b[22m 13:10:56\nJSON report written to /tmp/x.json'),
+    ).toEqual(['Start at  13:10:56', 'JSON report written to /tmp/x.json']);
+  });
+
+  it('takes the escapes out of a line and leaves the brackets alone', () => {
+    // The rule is the escape, not the bracket: `[2m` written as prose is prose, and a
+    // stripper that removed it would be editing the run rather than reading it.
+    expect(decoloured('\u001b[1mFAIL\u001b[22m')).toBe('FAIL');
+    expect(decoloured('\u001b[38;5;196mred\u001b[39m and \u001b[0mplain')).toBe('red and plain');
+    expect(decoloured('a [2m b')).toBe('a [2m b');
+    expect(decoloured('')).toBe('');
   });
 
   it('quotes a report as a report and a silent run as a tail, and never one as the other', () => {
@@ -520,6 +560,18 @@ describe('site-proofs · what a red run says about itself', () => {
     expect(hungTests('[vitest-worker]: Timeout calling "onTaskUpdate"')).toEqual([]);
     expect(hungTests(REPORT)).toEqual([]);
     expect(hungTests('')).toEqual([]);
+  });
+
+  it('names the test that hung in a run that came through a terminal', () => {
+    // The clause this feeds is the one that tells "ran out of time" from "is wrong", and in
+    // CI it was fed a coloured `FAIL` line and answered with nothing (finding 615). The word
+    // is four characters in and the escape is six: widening the pattern would have been a
+    // pattern about terminals rather than a reader about runs.
+    const coloured = [
+      '\u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m test/a.test.ts\u001b[2m > \u001b[22mwaits forever',
+      '\u001b[31m\u2192 Test timed out in 30000ms.\u001b[39m',
+    ].join('\n');
+    expect(hungTests(coloured)).toEqual([{ file: 'test/a.test.ts', name: 'waits forever' }]);
   });
 
   it('invents nothing when the report carries none of those lines', () => {

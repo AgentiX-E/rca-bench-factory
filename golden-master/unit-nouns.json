@@ -380,7 +380,7 @@
         "check-open-list",
         "check-progress-volumes"
       ],
-      "relation": "one population read by two, and a third gate that counts a different quantity under the same word -- the distinct `vX.YY` numbers the log's records carry, the `## vX.YY` headings the volumes hold, and the distance in rounds between the ledger's newest run and this round; the two counts agree at 220 and no arithmetic forces them to, which is why the equality is printed rather than assumed"
+      "relation": "one population read by two, and a third gate that counts a different quantity under the same word -- the distinct `vX.YY` numbers the log's records carry, the `## vX.YY` headings the volumes hold, and the distance in rounds between the ledger's newest run and this round; the two counts agree and no arithmetic forces them to, which is why the equality is printed rather than assumed"
     },
     {
       "noun": "row break(s)",

@@ -20,6 +20,24 @@ permissions:
 
 jobs:
 
+  # Every job checks out the full history, except `backend`.
+  #
+  # `actions/checkout` fetches one commit unless it is told otherwise, and a claimant that
+  # spawns a gate reading the log refuses in such a checkout: `check-repository-table` prints
+  # `Commits (at `e22e2de`) = 536`, resolves the revision out of `git rev-list`, and answers
+  # "the revision `e22e2de` does not resolve to a commit" (finding 612). The rule used to be a
+  # list of the commands thought to reach a gate -- `docs:check`, `verify-site-proofs`,
+  # `pnpm test`, `test:coverage` -- and the list missed `verify-sites-are-sensitive`, which runs
+  # claimants of its own: `verify` was repaired and the same red moved to `sensitivity`
+  # unchanged, one run later (finding 614). So the safe answer is the default now and the
+  # exemption is named, which is what `packages/core/test/gate-steps.test.ts` holds: every job
+  # fetches the history unless it is `backend`, and `backend`'s steps are checked one by one
+  # against the four commands it is allowed to run.
+  #
+  # Measured rather than argued: on run 44741826563 the jobs that had full history spent 3.0 s
+  # checking out and the ones that did not spent 1.0-2.0 s, and the history is 34 MB against
+  # 5.1 MB for one commit.
+
   # The verification steps, split out from the batteries below by finding 166.
   #
   # What the split is for: the single job that carried all of this had a
@@ -58,14 +76,8 @@ jobs:
     # two test files were added, not because anything in the job changed.
     timeout-minutes: 24
     steps:
-      # Full history, for the same reason the documentation job has it: this job runs the
-      # claimants through `verify-site-proofs`, and one of them is `unit-nouns.test.ts`,
-      # which spawns the census, which spawns `check-repository-table`. That gate prints
-      # `Commits (at `e22e2de`) = 536` and reads the revision out of `git rev-list`, so a
-      # depth-1 checkout -- the default -- refuses it with "the revision `e22e2de` does not
-      # resolve to a commit", the census goes red, and the claimant is reported as a file
-      # that did not pass (finding 612). Measured in a depth-1 clone of this repository
-      # before it was repaired here.
+      # Full history: see the note above `jobs:` (findings 612 and 614). This is the job the
+      # first of those two was found in.
       - name: Check out
         timeout-minutes: 3
         uses: actions/checkout@v4
@@ -335,6 +347,8 @@ jobs:
       - name: Check out
         timeout-minutes: 3
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         timeout-minutes: 3
@@ -440,6 +454,8 @@ jobs:
       - name: Check out
         timeout-minutes: 3
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         timeout-minutes: 3
@@ -496,6 +512,8 @@ jobs:
       - name: Check out
         timeout-minutes: 3
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         timeout-minutes: 3
@@ -994,6 +1012,8 @@ jobs:
       - name: Check out
         timeout-minutes: 3
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         timeout-minutes: 3
