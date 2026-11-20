@@ -168,6 +168,12 @@ describe('a coincidence is a count two gates print, and zero is not one', () => 
 });
 
 describe('the gate holds the shipped inventory to the shipped gates', () => {
+  // The one case that reads the shipped tree, and the only expensive one: the census spawns the
+  // eighteen gates, which is 2.5 s on an idle machine. Under `verify-site-proofs` every child also
+  // carries the exit hook, which writes to one trace file, and the same run takes long enough to
+  // hit vitest's five-second default -- a timeout that would report the gate as unproven rather
+  // than as slow. The budget is declared here rather than in a config, because it is this case
+  // that costs it.
   it('agrees with the tree it is run against, and prints the coincidences it found', () => {
     const result = run();
     expect(result.status, result.stderr).toBe(0);
@@ -176,7 +182,7 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     expect(result.stdout).toContain('8 row(s) in check-fault-cases and check-repository-table (two tables and one noun');
     expect(result.stdout).toContain('unit noun(s)');
     expect(result.stdout).toMatch(/\d+ of them are printed by more than one gate/);
-  });
+  }, 120_000);
 
   // The three refusals below hand the gate a recorded census instead of running eighteen gates.
   // `--readings` is the fixture door: the refusal is about what the gate does with a document, and
