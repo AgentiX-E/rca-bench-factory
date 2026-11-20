@@ -1675,9 +1675,9 @@ facts, and the second is the one the rule needs.
 | item | value |
 | --- | --- |
 | CI | run `44516888528` on `f733160b`: **8 of 8 jobs success** -- `every proved exit` **7.1**, `injection batteries (two probes)` **13.4**, `cold tree` **0.4**, `build / typecheck / lint / coverage / mutation` **7.8**, `every proved exit (shard 2)` **11.2**, `a backend this repository did not write` **15.3**, `golden master` **0.9**, `injection batteries (one step each)` **14.1** min; **15.3 min of wall clock** |
-| `core` test suite | **257 files, 6715 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **261 files, 6902 tests passed** (as of this commit) |
+| `core` test suite | **257 files, 6715 tests passed** (at v3.120) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.120) |
+| repo test suite | **261 files, 6902 tests passed** (at v3.120) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6704 -> 6715, +11**: three for the reader's section index, and eight for `R11` -- a round with no row, a row that names no run, a row with no tally, a tally counting the wrong number of jobs, a tally whose successes fall short, a caller with no sections, an empty ledger, and the gate driven end to end |
 | the rewritten cases | **1**: the empty-directory shape now carries `sections: []` |
@@ -1730,3 +1730,165 @@ slowest of the three and 6.4x the isolated one; the ratio rule that demanded it 
 - The install step's spread is 52x and a bound can only sit above it. `[open: 17 s to 888 s is the mirror, not
   the step, and no `timeout-minutes` can tell a slow mirror from a hang -- the bound now covers the worst day
   seen, and the day that is slower than 888 s will raise it again]`
+
+## v3.121 · Two gates printed one word for two populations, and one of the numbers was a heading count
+
+**`pnpm docs:check` prints `268 round(s)` and `215 round(s)` forty lines apart, over one corpus**, and
+neither line says what its word means. 268 is every `## ` heading the volumes hold; 215 is the distinct
+`vX.YY` numbers. The gap is not drift and not rounding: it is one addendum, fifty `Pass` rounds of the log's
+older era, and two sections that carry no number at all.
+
+### The measurement
+
+```
+check-progress-volumes: OK — 18 volume(s), 268 round(s); largest volume-03.md at 127,029 of 200,000 bytes; …
+check-open-list: 224 record(s): 199 under a round and 25 under none; 215 round(s) + 1 addendum(s), 17 of them wrote none
+```
+
+Both sentences are true of their own subject, which is why both survived every gate that reads them. What
+the corpus actually holds, by kind:
+
+| kind | count | what it is |
+| --- | --- | --- |
+| `vX.YY` round | **215** | the numbering this log calls a round, and the only one `check-open-list` looks an owner up by |
+| `vX.YY, addendum` | **1** | `v2.15`'s second section -- a section **of** a round, which is why 585 counts it apart |
+| `Pass N` round | **50** | the log's older era; a record in those volumes has no round to be owned by, which is the 25 in "under none" |
+| no name at all | **2** | `## Finding 124` and `## Iteration — F-41 / F-42 / F-43` |
+| **headings** | **268** | what `check-progress-volumes` walked, published as "round(s)" |
+
+### Why the round that fixed this did not fix it
+
+Finding 585 found exactly this error **inside `check-open-list`**: the population line subtracted a count of
+round names from a count of round headings and published the difference as "18 rounds wrote none". The repair
+counted the rounds and printed them apart from the addendum. What it did not do was look at the number in the
+other gate's summary -- 268, `order.length`, every heading a volume holds -- because 585's subject was the arm
+that had failed, and a summary is not part of any arm.
+
+The lesson is about where the second opinion lives. 585 fixed the number whose two derivations disagreed
+**inside one expression**; here the two derivations never meet, so nothing could disagree. Each gate was right
+about its own subject and neither said what that subject was.
+
+### The repairs
+
+1. **The summary prints the partition** -- `268 heading(s): 215 vX.YY round(s), 1 addendum(s), 50 Pass
+   round(s), 2 unnumbered` -- so the total can be added up on the page. The buckets are a partition of
+   `labelOf`, which returns `Pass N`, `vX.YY`, `vX.YY, addendum`, or null: every entry lands in exactly one
+   bucket, so the four numbers add up to the total by construction rather than by a rule that could disagree
+   with them, and a heading of no known kind is counted as `unnumbered` rather than dropped.
+2. **`check-open-list` names its era.** Its 215 is printed as the count of `vX.YY` rounds, which is what it
+   counts; the word it was using was the whole corpus's.
+3. **A heading shaped like a round that `progress-volumes` cannot label is refused.** `check-open-list`
+   identifies a round with `\b` after the number; `VERSION` here needs a space and then a title. `## v3.62`
+   followed by anything is a round to one reader and "unnumbered" to the other -- one heading, two counts,
+   and the difference arriving as a word that reads like a rounding.
+4. **The agreement is asserted, not printed.** The shipped-corpus case derives the version count through
+   `readVolumes` and asserts that `check-open-list` prints it. A second literal would let one reader move
+   while the other stayed green, which is the shape of the defect: two sentences, no comparison.
+
+### The same defect was in the row that counts rounds by hand
+
+While measuring the population, the ledger's own `| the number line |` row turned out to be one behind the
+log -- and behind it for five rounds:
+
+| ledger | row said | the corpus held |
+| --- | --- | --- |
+| `v3.116` | **210** | **211** |
+| `v3.117` | **211** | **212** |
+| `v3.118` | **212** | **213** |
+| `v3.119` | **212 -> 213** | **214** |
+| `v3.120` | **213 -> 214** | **215** |
+
+Each was the count of the log **as it stood before that round's own heading**, quoted with a range ending at
+the round before it. The row agreed with itself and not with the log it sits in -- finding 586's shape (a
+number derived before the change it describes) surviving in the one row whose whole job is to be a count.
+The `v3.120` row even prints its own contradiction: `94 in v2, 120 in v3 (v3.00..v3.120)`, and that range is
+**121** numbers.
+
+The repair is a rule rather than five corrections: **a row that says how many numbers this corpus has must
+state the number it has**, derived through `populationsOf` rather than quoted. It is judged where the
+coverage row is judged -- on the round that can still be written -- so the five rows stay the records they
+are, and the rule fired on the shipped tree the moment it existed, which is how it was known to work
+(finding 601).
+
+### Falsifications
+
+Nine edits, each a way the repair could have been written and not been one, each followed by
+`test/progress-volumes.test.ts` and `test/check-open-list.test.ts` alone, with both modules restored byte for
+byte after every run.
+
+| the edit | reds |
+| --- | --- |
+| the addendum counted into the version bucket | 3 |
+| a heading of no name counted as a `Pass` round | 3 |
+| the shaped-like-a-round guard removed | 1 |
+| the total printed as the version count | 4 |
+| the era qualifier dropped from `check-open-list` | 7 |
+| the `Pass` bucket named without its era | 4 |
+| the heading count published as a round count | 1 |
+| the number-line rule removed | 2 |
+| the thousands separator left in the cell | 1 |
+
+**Twenty-six reds across nine mutations.** The fifth is the loudest for a reason worth reading twice: dropping
+one qualifier from one line reds **seven** cases, six of them fixtures that pin the line and one that derives
+the two readers' agreement. A word carrying a population is not a cosmetic choice.
+
+### The refresh found the two bounds the round before had just raised
+
+Writing this round's `| CI |` row named run `44576264388`, and the recording was `44516888528` -- so the gate
+refused before any test ran: *"a recording older than the round that reports it describes a tree nobody
+shipped"*. That is `R7` doing exactly what v3.120 built it for, on the first round that had a new run to
+report. The refresh then refused two steps, both of them bounds v3.120 had raised one round earlier:
+
+| step | bound | newest day | ratio | what the bound was sized on |
+| --- | --- | --- | --- | --- |
+| `Every gate can be shown to fail` | 10 min | **368 s** | **1.63x** | 295 s, the run before |
+| `Gate-test battery (…)` | 9 min | **336 s** | **1.61x** | 250 s, the run before |
+
+Both were 2.0x+ the day they were written against, and the next run was 25% and 34% slower. Nothing changed in
+the workflow: `verify-gates-are-testable` empties 67 scripts and the battery runs 64 injections, and how long
+that takes depends on the box. **A bound is twice a day, and a day is not a property of the step** -- the
+repair is the arithmetic again: **10 -> 13** minutes (2.12x) and **9 -> 12** minutes (2.14x).
+
+The ceiling was the interesting part. It did not move, and the gate accepted that: the only rule about a job's
+budget is `R6`, which refuses a **narrower** one, and nothing compares a ceiling with the sum of the bounds
+inside it -- for `batteries` that sum is **108** minutes against a ceiling of **25**. The two heavy steps now
+bound at **13 + 12 = 25**, which is the ceiling exactly: if either of them hangs for its whole allowance, the
+job dies at the same instant its own bound expires, and the verdict says "the job timed out" -- the sentence
+these bounds exist to replace. That is `O-093`, opened here because raising them is what made it exact.
+
+### Readings
+
+> Ledger for `v3.121`.
+
+| item | value |
+| --- | --- |
+| CI | run `44576264388` on `9b8413f1e`: **8 of 8 jobs success**, **14 min** of wall clock |
+| `core` test suite | **257 files, 6725 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **261 files, 6912 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
+| new tests | **6715 -> 6725, +10**: four for the population line (the four kinds beside their total, a heading of no name, the shaped-like-a-round refusal, the sum on the shipped log), five for the number line (a row counted before its round, the arrow's last number, a larger number, no row at all, a closed round's row), and one for the cut a long quote gets |
+| the sentences moved | **7**: the six fixture cases that pin `check-open-list`'s population line, and the shipped-corpus sentence, which now states `215` as `vX.YY` rounds and derives the number the other gate prints |
+| the rules | `check-progress-volumes` **+1** (the number line), `check-open-list` **+0** -- its repair is a qualifier and a test |
+| the recording | `44516888528` -> **`44576264388`**: **8** job(s), **83** step(s), **9** reading(s) in the history, taken by the refresh this round's own CI row made necessary |
+| the bounds | 2 steps raised -- `Every gate can be shown to fail` **10 -> 13** min (2.12x the 368 s day) and `Gate-test battery` **9 -> 12** min (2.14x the 336 s day); the `batteries` ceiling unmoved at **25**, which is the sum of the two heavy bounds exactly (`O-093`) |
+| falsifications | nine edits, **twenty-six** reds |
+| the number line | **215 -> 216** distinct numbers, dense: 94 in `v2` (`v2.06`..`v2.99`), 121 in `v3` (`v3.00`..`v3.120`); the row had said **213 -> 214** |
+| the population | **268 heading(s): 215 / 1 / 50 / 2**, printed on every run |
+| LLM calls | **0** |
+
+### Left open
+
+- The summaries of the other gates name their nouns and nothing compares them. `[open: the census here is two
+  gates because those two printed one word; nine other gates print `finding(s)`, `citation(s)`, `entry(ies)`
+  and `row(s)` and no reader asks what population each is about -- the repair would be a vocabulary of units,
+  and no round has measured which of those nouns are ambiguous]`
+- Five ledger rows state a count of the log that is one behind it, and the rule reads only the newest round.
+  `[open: correcting `v3.116`..`v3.120` would be editing frozen records to satisfy a rule invented after them,
+  which is the asymmetry the coverage row already lives with -- the five are stated here rather than rewritten,
+  and a reader adding them up is told that they lag by one]`
+- `batteries` holds **108** minutes of step bounds inside a **25** minute ceiling. `[open: no rule compares a
+  ceiling with the sum of the bounds inside it -- `R6` refuses only a narrower one -- so most of those bounds
+  can never fire before the job does, and the two heavy steps now bound at **13 + 12 = 25** make the job's
+  death and their own expiry the same instant; the repair is another job split, which is what the arithmetic
+  already said once when it moved the batteries from 30 to 25]`

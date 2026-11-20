@@ -561,7 +561,9 @@ const ROUND = /^## (v(\d+)\.(\d+))\b/;
  *
  * So a round is a **number**, an addendum is a **section of a round**, and the two are counted
  * separately: the population line prints `210 round(s) + 1 addendum(s)` because a reader who has
- * been told "211 rounds" by every earlier round deserves to see where that number came from.
+ * been told "211 rounds" by every earlier round deserves to see where that number came from. Since
+ * finding 600 the number also carries its era -- `210 \`vX.YY\` round(s)` -- because
+ * `check-progress-volumes` prints a count of headings under the same word.
  */
 const ADDENDUM = /^## (v(\d+)\.(\d+)), addendum\b/;
 
@@ -1870,9 +1872,18 @@ function check() {
   // wrote nothing. A number two readers can derive differently is a number one of them is wrong
   // about, so this one is derived once: the rounds without a record, counted from the rounds.
   const wroteNone = ascending.filter((one) => !recordRounds.has(one.round)).length;
+  // ## The word "round" now says which era (finding 600)
+  //
+  // This line printed `215 round(s)`, and `check-progress-volumes` printed `268 round(s)` for every
+  // `## ` heading the volumes hold -- fifty `Pass` rounds, one addendum and two sections with no
+  // number among them. Both sentences were true of their own subject and neither said what that
+  // subject was, so a reader holding two gates' output had to guess which 215 the 268 was counting.
+  // The subject here is the `vX.YY` numbering: this arm looks up a record's owner by round number,
+  // and a `Pass` round has none, which is the population it prints as "under none". Naming the era
+  // is what makes the two lines reconcilable -- 215 + 1 + 50 + 2 = 268, all four printed there.
   console.log(
     `check-open-list: ${String(recordSections)} record(s): ${String(ownedRecords)} under a round and ` +
-      `${String(ownerlessRecords)} under none; ${String(firstHead.size)} round(s) + ` +
+      `${String(ownerlessRecords)} under none; ${String(firstHead.size)} \`vX.YY\` round(s) + ` +
       `${String(addenda.length)} addendum(s), ${String(wroteNone)} of them wrote none`,
   );
   console.log(

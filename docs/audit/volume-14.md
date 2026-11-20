@@ -951,3 +951,115 @@ install prometheus` is a mirror, its spread is now **17 s to 888 s (52x)**, and 
 slow mirror from a hang. 16 minutes became **30** (2.0x the slowest day) and the `backend` job's ceiling moved
 **34 -> 48** (the floor's 15 + 30 + the reader's 3). `Every gate can be shown to fail` moved **9 -> 10**
 (2.03x) and `Gate-test battery` **8 -> 9** (2.16x).
+
+## Finding 600 — two gates printed one word for two populations, and neither line said which
+
+`pnpm docs:check` prints, six lines apart in one log:
+
+```
+check-progress-volumes: OK — 18 volume(s), 268 round(s); largest volume-03.md at 127,029 of 200,000 bytes; …
+check-open-list: 224 record(s): 199 under a round and 25 under none; 215 round(s) + 1 addendum(s), 17 of them wrote none
+```
+
+268 rounds and 215 rounds, over one corpus. Both numbers are right and neither is about the thing the
+other is about. 268 is `order.length`: **every** `## ` heading the volumes hold. 215 is `firstHead.size`:
+the distinct `vX.YY` numbers. The difference is not rounding, and it is not four rounds' worth of drift:
+
+| kind | count | what it is |
+| --- | --- | --- |
+| `vX.YY` round | **215** | one number, one round |
+| `vX.YY, addendum` | **1** | a second section of `v2.15` |
+| `Pass N` round | **50** | the log's older era, a numbering the other gate does not look up |
+| no name at all | **2** | `## Finding 124` and `## Iteration — F-41 / F-42 / F-43` |
+| **total headings** | **268** | what `check-progress-volumes` walked |
+
+This is **finding 585's error**, in the file next door: a count of headings published as a count of rounds.
+585 found it inside `check-open-list` and repaired the thing that was wrong there -- `rounds.length -
+recordRounds.size`, a heading count minus a name count, published as "18 rounds wrote none". It printed the
+population from `firstHead.size` and left the subtraction alone. **The same mixture was one file away and
+the round did not look**, because the defect and its repair were both described in terms of the arm that had
+failed, and the summary is not part of any arm.
+
+What made it survive 585 is worth naming, because it is the general form: 585's subject was *a number two
+readers can derive differently*, and it fixed the number whose two derivations disagreed **inside one
+expression**. Two files each deriving one number correctly is not a disagreement a reader can see -- it is
+two sentences that are each true, printed 40 lines apart in the same log, one of them using "round" for
+something the other would not call a round.
+
+The repairs, in the order the reader meets them:
+
+1. **The summary prints the partition, not a word for it**, so the total can be added up on the page:
+
+   ```
+   check-progress-volumes: OK — 18 volume(s), 268 heading(s): 215 `vX.YY` round(s), 1 addendum(s),
+     50 `Pass` round(s), 2 unnumbered; largest volume-03.md at 127,029 of 200,000 bytes; …
+   ```
+
+   The buckets are a partition of `labelOf`, which returns
+   `Pass N`, `vX.YY`, `vX.YY, addendum`, or null -- every entry lands in exactly one, so the four numbers add
+   up to the total by construction rather than by a rule that could disagree with them.
+2. **`check-open-list` names its era**: `215` is printed as the count of `vX.YY` rounds, which is what it
+   counts -- one era, not the corpus. The word it used was the whole corpus's.
+3. **A heading shaped like a round that `this` module cannot label is refused.** `check-open-list` identifies
+   a round with `\b` after the number and this module's `VERSION` requires a space and then a title, so
+   `## v3.62` followed by anything is a round to one reader and "unnumbered" to the other -- one heading, two
+   counts, and the difference arriving as a word that reads like a rounding. Nothing shipped does this; the
+   refusal is for the heading the next round writes in a hurry.
+4. **The agreement is asserted, not printed.** The shipped-corpus test derives the version count through
+   `readVolumes` and asserts that `check-open-list` prints it. A second literal would have let one reader move
+   while the other stayed green, which is the shape of the defect: two sentences, no comparison.
+
+Seven edits were made to prove the new reading is not decorative -- addendum into the version bucket,
+unnumbered into `Pass`, the shape guard removed, the total printed as the version count, the era qualifier
+dropped from either line, and the heading count published as a number count -- and **all seven turned the
+suite red**.
+
+What this does not cover, stated rather than implied: there is no rule that a summary's noun must name its
+unit. The census here is two gates because those two printed the same word; nine other gates print counts
+whose nouns are unshared (`finding(s)`, `citation(s)`, `entry(ies)`, `row(s)`) and nothing compares them. The
+class is "a noun in a summary is a claim about a population", and it has no reader -- only this round's pair.
+
+## Finding 601 — the row that counts the rounds was counted before the round that wrote it
+
+Every recent ledger carries a row stating how many `vX.YY` numbers the log holds. Five of them were one
+behind the log they sit in:
+
+| ledger | the row said | the corpus held | what the row's own range names |
+| --- | --- | --- | --- |
+| `v3.116` | **210** | **211** | `v3.00..v3.115` -- the round **before** it |
+| `v3.117` | **211** | **212** | `v3.00..v3.117` |
+| `v3.118` | **212** | **213** | `v3.00..v3.118` |
+| `v3.119` | **212 -> 213** | **214** | `v3.00..v3.119` |
+| `v3.120` | **213 -> 214** | **215** | `v3.00..v3.120` -- **121** numbers for a count of 120 |
+
+Each number is the count of the log **as it stood before that round's own heading existed**, and each row is
+internally consistent with the range it quotes: 94 + 120 = 214. What it is not consistent with is the log,
+which holds one more, because the round writing the row is in it.
+
+That is finding 586's shape -- **a number derived before the change it describes** -- surviving in the one row
+whose whole job is to be a count. 586 was found in a test-file count taken before two budget blocks were added;
+this is the same mistake with the same mechanism, five times, in prose that is checked by nothing. The row was
+written after the round's body and before its own heading, which is the natural order of writing and the wrong
+order of counting.
+
+The repair is a rule rather than five corrections, because five corrections would leave the sixth round free to
+make the same mistake:
+
+> A ledger row that states a count of this corpus must state the count the corpus has.
+
+`NUMBER_LINE_ROW` reads the row where a round writes one; `populationsOf` derives the number, so it is the
+corpus's rather than a literal that rots; and `statesNumber` matches the count on both sides of the digits
+after stripping the separators a ledger writes, so `3` is not found inside `3,150`. The rule is judged on the
+round that can still be written, for the reason the coverage row is (finding 475): thirty of the log's first
+fifty-four ledgers carry no coverage row, a rule over history would have been red from the day it existed, and
+a rule that is always red is a rule every reader skips.
+
+It fired on the shipped tree the moment it existed, quoting `v3.120`'s row and the 215 the corpus holds --
+which is how it was known to work before any fixture was written for it.
+
+Two limits, stated rather than implied. The five rows stay as they were written: correcting a frozen record to
+satisfy a rule invented after it is the thing the coverage row already refuses to do, and the five are
+recorded in `O-092` instead. And the rule reads a row's **presence** of the number, not its meaning: a round
+that writes `215 -> 216` passes because 216 is the count, which is the intended reading -- a round that has
+just moved the number states both -- but a round that writes a correct number beside an incorrect sentence is
+not seen, and no parser over free prose would see it.

@@ -1351,6 +1351,37 @@ from an anecdote again.
   from a short sentence, and the corpus is what put the threshold where it is. The heading unit is
   the part of the rule that does not pay that price.
 
+### A word that counts a population says which population (v3.121)
+
+- **`268 round(s)` and `215 round(s)` were printed forty lines apart over one corpus.** `check-progress-volumes`
+  printed `order.length` -- every `## ` heading its volumes hold -- and `check-open-list` printed the distinct
+  `vX.YY` numbers. Both were true of their own subject and neither line said what that subject was
+  (finding 600). The gap is **215** rounds, **1** addendum, **50** `Pass` rounds of the older era and **2**
+  headings with no number.
+- **The summary prints the partition, so the total can be added up on the page.** `268 heading(s): 215 vX.YY
+  round(s), 1 addendum(s), 50 Pass round(s), 2 unnumbered`. The buckets are a partition of `labelOf`'s four
+  outputs, so nothing can be dropped between the total and its parts; a heading of no known kind is counted as
+  `unnumbered` rather than vanishing.
+- **`check-open-list` names its era**, because 215 is one era and the word it used was the whole corpus's.
+- **A heading one reader can name and the other cannot is refused.** `check-open-list` identifies a round by
+  `\b` after the number; `progress-volumes`' `VERSION` needs a space and then a title. `## v3.62` followed by
+  anything was a round to one and "unnumbered" to the other.
+- **The agreement is asserted rather than printed.** The shipped-corpus case derives 215 through `readVolumes`
+  and requires the other gate to print it; a second literal would let one reader move while the other stayed
+  green, which is the shape the defect had.
+- **The row that counts rounds by hand was one behind, five times.** `v3.116`..`v3.120` each stated the count
+  of the log *before* their own heading: **210**, **211**, **212**, **212 -> 213**, **213 -> 214** against
+  **211**..**215**, and `v3.120`'s row prints its own contradiction -- `94 in v2, 120 in v3 (v3.00..v3.120)`,
+  a range of **121** numbers (finding 601).
+- **A stated count must be the count the corpus has.** The number is derived through `populationsOf`, the
+  matcher strips the separators a ledger writes and matches on both sides of the digits (so `3` is not found
+  inside `3,150`), and the rule is judged only on the round that can still be written -- the five frozen rows
+  stay what they said, recorded as `O-092`.
+- **What is not claimed.** That every summary noun now names its population: nine other gates print
+  `finding(s)`, `citation(s)`, `entry(ies)` and `row(s)`, and nothing compares them (`O-091`). And that the
+  number-line row is read for meaning rather than for presence: a row that states the right number beside a
+  wrong sentence is not seen, and no parser over free prose would see it.
+
 ### A closing reading is a row the newest round carries (v3.120)
 
 - **The newest round ends on a closing reading.** Its `## ` section contains a `| CI |` row that names a run.

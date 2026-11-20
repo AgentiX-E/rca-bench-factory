@@ -53,6 +53,15 @@
  * 8. One ledger describes **one tree**: the `(as of \`sha\`)` markers inside a ledger,
  *    where it has any, all name the same commit. A ledger assembled by copying half of
  *    another round's ledger is two measurements under one title.
+ * 9. The summary prints the **population** it counted rather than a word for it:
+ *    `268 heading(s): 215 vX.YY round(s), 1 addendum(s), 50 Pass round(s), 2 unnumbered`.
+ *    It printed `268 round(s)`, and 268 is a count of `## ` headings -- finding 585's error,
+ *    a heading count published as a round count, in the file next door. It survived there
+ *    because 585 repaired a subtraction and left the summary printing the same mixture, and
+ *    `check-open-list` prints **215** for the rounds, so two gates published one word for two
+ *    populations and neither line said which (finding 600). A heading shaped like a round that
+ *    this module cannot label is refused, because the two readers would then count different
+ *    corpora and the difference would arrive as "unnumbered".
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -75,6 +84,16 @@ export const MAX_BYTES = 200_000;
 const PASS = /^## Pass (\d+) (?:—|--) /;
 /** `## v2.06 — …`, and `## v2.15, addendum — …`. */
 const VERSION = /^## v(\d+)\.(\d+)(, addendum)? /;
+/**
+ * A heading that begins the way a round begins, whatever follows the number.
+ *
+ * The other reader of this corpus, `check-open-list.mjs`, identifies a round with
+ * `/^## (v(\d+)\.(\d+))\b/` -- a word boundary, so `## v3.62` followed by anything at all is round
+ * `v3.62`. `VERSION` above needs a space and then a title, which a heading written without one
+ * does not have. Two regexes over one corpus is not a defect; two different answers published as
+ * two populations of the same word is, and that is what the summary was doing (finding 600).
+ */
+const SHAPED_LIKE_ROUND = /^## v\d+\.\d+/;
 /** Any heading that starts an entry, in either era or in the two unnumbered cases. */
 const ENTRY = /^## (?:Pass \d+ |v\d+\.\d+|Finding \d+ |Iteration )/;
 
@@ -91,6 +110,32 @@ export function labelOf(heading) {
   const version = VERSION.exec(heading);
   if (version !== null) return `v${version[1]}.${version[2]}${version[3] ?? ''}`;
   return null;
+}
+
+/**
+ * The entries, partitioned by the kind of name they carry.
+ *
+ * The summary used to print `order.length` as "round(s)", and that number is every `## ` heading a
+ * volume holds -- fifty `Pass` rounds, one addendum and two sections with no number included. The
+ * count of `vX.YY` rounds is the one the rest of this repository means by "round", and it is the
+ * one `check-open-list` prints, so the two lines were publishing 215 and 268 under one word with
+ * nothing on either line to say they were different questions (finding 600).
+ *
+ * The buckets are a **partition** of `labelOf`, which returns `Pass N`, `vX.YY`,
+ * `vX.YY, addendum`, or null: every entry lands in exactly one, so the four numbers add up to the
+ * total by construction rather than by a rule that could disagree with them, and a heading nobody
+ * can name is counted as `unnumbered` instead of disappearing.
+ */
+export function populationsOf(entries) {
+  const populations = { version: 0, addendum: 0, pass: 0, unnumbered: 0 };
+  for (const entry of entries) {
+    const label = entry.label;
+    if (label === null) populations.unnumbered += 1;
+    else if (label.endsWith(', addendum')) populations.addendum += 1;
+    else if (label.startsWith('Pass ')) populations.pass += 1;
+    else populations.version += 1;
+  }
+  return populations;
 }
 
 /**
@@ -166,6 +211,21 @@ const AS_OF = /as of `([0-9a-f]{7,40})`/g;
  */
 const COVERAGE_ROW = /^\|\s*coverage\s*\|\s*(.*?)\s*\|\s*$/;
 
+/**
+ * `| the number line | **215 -> 216** distinct numbers, dense: … |`, the row five rounds have carried.
+ *
+ * Optional, and judged only where it exists and only on the round that can still be written: it is an
+ * editorial row rather than a schema, and a round that says nothing about the number line is not making
+ * a claim that can be wrong. What the row *does* claim is a count of this corpus, and a count of this
+ * corpus is derivable -- so a row that states one has to state this one (finding 601).
+ */
+const NUMBER_LINE_ROW = /^\|\s*(?:the\s+)?number line\s*\|\s*(.*?)\s*\|\s*$/i;
+
+/** Whether a free-form cell states `number` as a number, rather than as part of a longer one. */
+function statesNumber(cell, number) {
+  return new RegExp(`(?:^|[^0-9])${String(number)}(?:[^0-9]|$)`).test(cell.replace(/,/g, ''));
+}
+
 /** One `a / b / c / d` group: statements, branches, functions, lines. */
 const QUAD = /\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?/g;
 
@@ -181,6 +241,7 @@ function ledgerOf(lines, from, to) {
   let first = null;
   const shas = [];
   const coverage = [];
+  let numberLine = null;
   for (const raw of lines.slice(from, to)) {
     if (/^\s*(```|~~~)/.test(raw)) {
       fenced = !fenced;
@@ -189,6 +250,8 @@ function ledgerOf(lines, from, to) {
     if (fenced) continue;
     const row = COVERAGE_ROW.exec(raw.trim());
     if (row !== null) coverage.push({ cell: row[1], quads: (row[1].match(QUAD) ?? []).length });
+    const line = NUMBER_LINE_ROW.exec(raw.trim());
+    if (line !== null) numberLine = line[1];
     if (first === null) {
       if (raw.trim() === '') continue;
       first = raw.trim();
@@ -198,7 +261,7 @@ function ledgerOf(lines, from, to) {
     for (const match of raw.matchAll(AS_OF)) if (!shas.includes(match[1])) shas.push(match[1]);
   }
   const anchor = LEDGER_LINE.exec(first ?? '');
-  return { first, anchor: anchor === null ? null : anchor[1], shas, coverage };
+  return { first, anchor: anchor === null ? null : anchor[1], shas, coverage, numberLine };
 }
 
 /** The line index of a closing section inside one round, or `null` when it holds none. */
@@ -277,6 +340,18 @@ export function readVolumes(dir = VOLUMES) {
     for (const [position, entry] of entries.entries()) {
       const end = entries[position + 1]?.line ?? lines.length;
       entry.sections = closingSectionsIn(lines, entry.line + 1, end);
+      // A heading only one of the two readers can name. `check-open-list` calls `## v3.62 —
+      // title` and `## v3.62-title` the same round; this module labels the first and would file
+      // the second under "unnumbered", so the two summaries would disagree about one heading and
+      // each would be right about its own regex (finding 600). The repair is the title every
+      // other round carries, not a looser pattern: the pattern is what makes a round citable.
+      if (entry.label === null && SHAPED_LIKE_ROUND.test(entry.heading)) {
+        errors.push(
+          `${name}: \`${entry.heading.trim()}\` begins like a round and carries no title this module can ` +
+            'read: rounds are `## vX.YY — what it found`, and `check-open-list` counts that heading as a ' +
+            'round while this one counts it as unnumbered -- write the space and the title (finding 600)',
+        );
+      }
       for (const [section, count] of entry.sections) {
         if (count > 1) {
           errors.push(
@@ -423,6 +498,35 @@ export function readVolumes(dir = VOLUMES) {
     }
   }
 
+  // ## The number line, when a round states one, states this corpus's (finding 601)
+  //
+  // Five ledgers carried a count of the `vX.YY` numbers that was one behind the log: `v3.116` said 210,
+  // `v3.117` 211, `v3.118` 212, `v3.119` 212 -> 213, `v3.120` 213 -> 214, while the corpus held 211, 212,
+  // 213, 214, 215. Each was the count of the log **as it stood before the round's own heading**, quoted
+  // with a range ending at the round before it -- so the row agreed with itself and not with the log it
+  // sits in, which is finding 586's shape (a number derived before the change it describes) surviving in
+  // the one row whose whole job is to be a count.
+  //
+  // The repair is a rule rather than five corrections: a row that says how many numbers this corpus has
+  // must state the number it has. It is judged only on the round that can still be written, for the reason
+  // the coverage row is, and only where the row exists -- a round that says nothing about the number line
+  // is not making a claim. `populationsOf` is the derivation, so the number is the corpus's rather than a
+  // literal that rots.
+  const newestPopulations = populationsOf(order);
+  const stated = newest?.ledger?.numberLine;
+  if (stated != null && !statesNumber(stated, newestPopulations.version)) {
+    // Quoted whole where it fits, because a cell is a table row and half of one is not a quote; cut
+    // with a visible mark where it does not, so an unterminated code span reads as a truncation
+    // rather than as a broken diagnostic.
+    const quote = stated.length > 160 ? `${stated.slice(0, 157)}...` : stated;
+    errors.push(
+      `\`${newest.heading.trim()}\` states its number line as \`${quote}\`, which does not ` +
+        `hold ${String(newestPopulations.version)}: the corpus has ${String(newestPopulations.version)} ` +
+        'distinct `vX.YY` numbers, and a row counted before the round that writes it is one behind -- state ' +
+        'the number this round\'s corpus has (finding 601)',
+    );
+  }
+
   return { volumes, errors, order };
 }
 
@@ -545,6 +649,7 @@ export function check(indexText, dir = VOLUMES) {
   const indexBytes = Buffer.byteLength(indexText, 'utf8');
   const open = volumes.at(-1);
   const openBytes = open?.bytes ?? 0;
+  const populations = populationsOf(order);
   if (open !== undefined && indexBytes >= openBytes) {
     errors.push(
       `docs/progress.md is ${String(indexBytes)} bytes and \`${open.name}\`, the volume that is still ` +
@@ -560,7 +665,9 @@ export function check(indexText, dir = VOLUMES) {
     order,
     summary:
       `check-progress-volumes: ${errors.length === 0 ? 'OK' : 'FAILED'} — ${String(volumes.length)} volume(s), ` +
-      `${String(order.length)} round(s)` +
+      `${String(order.length)} heading(s): ${String(populations.version)} \`vX.YY\` round(s), ` +
+      `${String(populations.addendum)} addendum(s), ${String(populations.pass)} \`Pass\` round(s), ` +
+      `${String(populations.unnumbered)} unnumbered` +
       (fullest === null
         ? ''
         : `; largest ${fullest.name} at ${fullest.bytes.toLocaleString('en-US')} of ` +

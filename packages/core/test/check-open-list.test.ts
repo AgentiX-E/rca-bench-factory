@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { progressCorpus } from '../../../scripts/docs-corpus.mjs';
+import { populationsOf, readVolumes } from '../../../scripts/progress-volumes.mjs';
 
 /**
  * The Open list has now had three entries stop meaning anything, and the sentence
@@ -1039,7 +1040,7 @@ describe('docs · a record is found by its body, and every name the corpus gave 
         `## Open\n\n${withId(OPEN_ENTRY, 1)}\n\nChecked at v9.9: **1** entries open\n\n## Pass log\n\nbody\n`,
     );
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('1 record(s): 1 under a round and 0 under none; 2 round(s) + 0 addendum(s), 1 of them wrote none');
+    expect(r.out).toContain('1 record(s): 1 under a round and 0 under none; 2 `vX.YY` round(s) + 0 addendum(s), 1 of them wrote none');
   });
 
   it('counts a record whose file names no round, rather than losing it', () => {
@@ -1052,7 +1053,7 @@ describe('docs · a record is found by its body, and every name the corpus gave 
     );
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain(
-      '1 record(s): 0 under a round and 1 under none; 0 round(s) + 0 addendum(s), 0 of them wrote none',
+      '1 record(s): 0 under a round and 1 under none; 0 `vX.YY` round(s) + 0 addendum(s), 0 of them wrote none',
     );
   });
 });
@@ -1095,7 +1096,7 @@ describe('docs · a round is a number, and the number line is dense', () => {
       ),
     );
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('2 round(s) + 1 addendum(s), 0 of them wrote none');
+    expect(r.out).toContain('2 `vX.YY` round(s) + 1 addendum(s), 0 of them wrote none');
   });
 
   it('refuses a round number headed twice', () => {
@@ -1117,7 +1118,7 @@ describe('docs · a round is a number, and the number line is dense', () => {
       page('v9.9', `## v9.9 — a\n\n${record(1)}## v9.9 — b\n\n${record(2)}`),
     );
     expect(r.code).toBe(1);
-    expect(r.out).toContain('1 round(s) + 0 addendum(s), 0 of them wrote none');
+    expect(r.out).toContain('1 `vX.YY` round(s) + 0 addendum(s), 0 of them wrote none');
   });
 
   it('refuses a gap in the round numbers', () => {
@@ -1134,7 +1135,7 @@ describe('docs · a round is a number, and the number line is dense', () => {
     // gap would refuse the corpus it was written for.
     const r = runOn(page('v10.00', `## v9.99 — a\n\n${record(1)}## v10.00 — b\n\n${record(2)}`));
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('2 round(s) + 0 addendum(s), 0 of them wrote none');
+    expect(r.out).toContain('2 `vX.YY` round(s) + 0 addendum(s), 0 of them wrote none');
   });
 
   it('refuses an era that does not begin at its first round', () => {
@@ -1158,7 +1159,7 @@ describe('docs · a round is a number, and the number line is dense', () => {
     );
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain(
-      '2 record(s): 2 under a round and 0 under none; 1 round(s) + 1 addendum(s), 0 of them wrote none',
+      '2 record(s): 2 under a round and 0 under none; 1 `vX.YY` round(s) + 1 addendum(s), 0 of them wrote none',
     );
   });
 });
@@ -1235,12 +1236,14 @@ describe('docs · a section that is only entries is a record, whatever its headi
     expect(r.out).toContain('0 record(s): 0 under a round and 0 under none');
   });
 
-  it('reads the shipped corpus as 224 records, with the addendum counted in', () => {
+  it('reads the shipped corpus as 225 records, with the addendum counted in', () => {
     // The shipped reading, and the rounds it carries: v3.115 found 22 records under two names the
     // guard did not read (218 -> its own), v3.116 found the addendum's record under a name and a form
-    // it did not read (219), and every round since has added one -- v3.119's is the 223rd. The rounds
-    // are **214** and the addendum is one: the line printed `211 round(s)` and `18 of them wrote none`
-    // while subtracting a count of names from a count of headings (finding 585).
+    // it did not read (219), and every round since has added one -- v3.121's is the 225th. The rounds
+    // are **216** and the addendum is one: the line used to print `211 round(s)` and `18 of them wrote
+    // none` while subtracting a count of names from a count of headings (finding 585), and since
+    // v3.121 it says which era its number counts, because the gate next door was printing a count of
+    // headings under the same word (finding 600).
     //
     // The sentence is pinned here rather than derived because it is the one line a round can move
     // without touching the guard: a record added to a volume is a record this number counts, and a
@@ -1249,8 +1252,15 @@ describe('docs · a section that is only entries is a record, whatever its headi
     const shipped = spawnSync('node', [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
     expect(shipped.status, shipped.stdout + shipped.stderr).toBe(0);
     expect(shipped.stdout).toContain(
-      '224 record(s): 199 under a round and 25 under none; 215 round(s) + 1 addendum(s), 17 of them wrote none',
+      '225 record(s): 200 under a round and 25 under none; 216 `vX.YY` round(s) + 1 addendum(s), 17 of them wrote none',
     );
+    // One corpus, two readers, one number. `check-progress-volumes` counts these same rounds to
+    // print the population beside its heading count, and the agreement between the two is the only
+    // reason the 215 can be reconciled with the 268 (finding 600). Derived rather than pinned: a
+    // second literal would let one reader move while the other stayed green, which is exactly the
+    // shape the defect had -- two sentences, each true of its own subject, and nothing comparing them.
+    const { order } = readVolumes();
+    expect(shipped.stdout).toContain(`${String(populationsOf(order).version)} \`vX.YY\` round(s)`);
   });
 });
 

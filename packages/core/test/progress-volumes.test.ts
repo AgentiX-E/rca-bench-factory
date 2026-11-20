@@ -9,6 +9,7 @@ import {
   check,
   indexCovers,
   labelOf,
+  populationsOf,
   readVolumes,
   straysIn,
 } from '../../../scripts/progress-volumes.mjs';
@@ -102,6 +103,72 @@ describe('a label a reader can cite', () => {
   });
 });
 
+/**
+ * The population, counted rather than named.
+ *
+ * `check-progress-volumes` printed `268 round(s)`, and 268 is a count of `## ` headings: 215
+ * `vX.YY` rounds, one addendum, fifty `Pass` rounds and two sections that carry no number. That
+ * is finding 585's error -- a heading count published as a round count -- in the file next door,
+ * where it survived because 585 repaired a **subtraction** (`rounds.length - recordRounds.size`,
+ * two operands in two units) and left the summary printing the same mixture (finding 600).
+ * `check-open-list` prints 215 for the rounds, so two gates were publishing one word for two
+ * populations and neither line said which.
+ *
+ * The fix is arithmetic a reader can perform on the page: the total, then the four kinds that
+ * make it. The buckets are a partition of `labelOf` -- it returns `Pass N`, `vX.YY`,
+ * `vX.YY, addendum`, or null -- so nothing can be dropped between the total and its parts, and
+ * the two gates now print the same three characters for the same 215.
+ */
+describe('the population line, which a reader reconciles by adding it up', () => {
+  it('prints the four kinds it counts beside the total they make', () => {
+    const dir = volumesOf({
+      'volume-01.md': '## Pass 1 — one\n',
+      'volume-02.md': '## v2.06 — two\n\n## Finding 124 — three\n\n## v2.15 — four\n\n## v2.15, addendum — five\n',
+    });
+    const result = check(
+      indexFor([
+        ['volume-01.md', 1, 'Pass 1', 'Pass 1'],
+        ['volume-02.md', 4, 'v2.06', 'v2.15, addendum'],
+      ]),
+      dir,
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.summary).toContain(
+      '5 heading(s): 2 `vX.YY` round(s), 1 addendum(s), 1 `Pass` round(s), 1 unnumbered',
+    );
+  });
+
+  it('counts a heading of no known kind as unnumbered rather than dropping it', () => {
+    // The bucket that makes the sum closed. A `## ` heading that names neither era still occupies
+    // a line in a volume, and a total that did not include it would be a total a reader could not
+    // reach by adding the parts.
+    const dir = volumesOf({ 'volume-01.md': '## v2.06 — one\n\n## What the gate could not name\n' });
+    const summary = check(indexFor([['volume-01.md', 2, 'v2.06', 'v2.06']]), dir).summary;
+    expect(summary).toContain('2 heading(s): 1 `vX.YY` round(s), 0 addendum(s), 0 `Pass` round(s), 1 unnumbered');
+  });
+
+  it('refuses a heading shaped like a round that it cannot label', () => {
+    // `check-open-list` reads `## v3.62` followed by anything as round `v3.62` -- its `\b` -- and
+    // this module's `VERSION` needs a space and then a title. One heading, two counts: the other
+    // gate would call it a round and this one would bury it in "unnumbered", which is a word that
+    // reads like a rounding rather than like a defect.
+    const dir = volumesOf({ 'volume-01.md': '## v3.62—no space before the title\n' });
+    const errors = readVolumes(dir).errors.join('\n');
+    expect(errors).toContain('begins like a round');
+    expect(errors).toContain('check-open-list');
+  });
+
+  it('adds up on the shipped log, where every kind is present', () => {
+    // The fixture above proves the format; this proves the corpus exercises all four buckets, so
+    // a reader reconciling 215 against `check-open-list` has the other 53 named for them.
+    const { order } = readVolumes();
+    const populations = populationsOf(order);
+    const total = populations.version + populations.addendum + populations.pass + populations.unnumbered;
+    expect(total).toBe(order.length);
+    expect(Object.values(populations).every((count) => count > 0)).toBe(true);
+  });
+});
+
 describe('the shape of a volume', () => {
   it('accepts contiguous volumes that the index names', () => {
     const dir = volumesOf({
@@ -110,7 +177,7 @@ describe('the shape of a volume', () => {
     });
     const result = check(indexFor([['volume-01.md', 1, 'Pass 1', 'Pass 1'], ['volume-02.md', 1, 'Pass 2', 'Pass 2']]), dir);
     expect(result.errors).toEqual([]);
-    expect(result.summary).toContain('2 volume(s), 2 round(s)');
+    expect(result.summary).toContain('2 volume(s), 2 heading(s): 0 `vX.YY` round(s), 0 addendum(s), 2 `Pass` round(s), 0 unnumbered');
   });
 
   it('names the fullest volume rather than only its size', () => {
@@ -306,7 +373,9 @@ describe('the command, because a gate nobody has seen fail is not a gate', () =>
     const result = run(dir, index);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('check-progress-volumes: OK');
-    expect(result.stdout).toContain('2 round(s)');
+    // Two headings, one of them a `Pass` round and one of them a `vX.YY` round: the total is what
+    // `readVolumes` walked, and the four numbers after it are what the walk found (finding 600).
+    expect(result.stdout).toContain('2 heading(s): 1 `vX.YY` round(s), 0 addendum(s), 1 `Pass` round(s), 0 unnumbered');
   });
 
   it('exits non-zero on a stale row, and the sentence says which file and which numbers', () => {
@@ -584,6 +653,119 @@ describe('the coverage row the newest round owes', () => {
     });
 
     expect(check(indexFor([['volume-01.md', 2, 'v3.01', 'v3.02']]), dir).errors).toEqual([]);
+  });
+});
+
+/**
+ * The number line, and the round that counted it before it existed.
+ *
+ * `v3.116` through `v3.120` each stated how many `vX.YY` numbers the log holds, and each was one behind:
+ * **210**, **211**, **212**, **212 -> 213**, **213 -> 214** against **211**, **212**, **213**, **214**,
+ * **215**. Every one of them was the count of the log *as it stood before that round's own heading*,
+ * quoted with a range ending at the round before it -- so the row agreed with itself and not with the log
+ * it sits in. That is finding 586's shape (a number derived before the change it describes) surviving in
+ * the one row whose whole job is to be a count (finding 601).
+ *
+ * The repair is a rule rather than five corrections: a row that says how many numbers this corpus has
+ * must state the number it has. The number comes from `populationsOf`, so it is derived rather than
+ * quoted, and two things about the test matter -- the arrow form must pass when its **last** number is
+ * the corpus's (that is what a round writes when it has just moved the number), and a closed round's
+ * wrong row must stay a record, for the reason thirty rounds stay bare: a rule over history would be red
+ * from the day it existed.
+ */
+describe('the number line the newest round states', () => {
+  function round(label: string, rows: string[]): string {
+    return [`## ${label} — a round`, '', '### Readings', '', `> Ledger for \`${label}\`.`, '', ...rows, ''].join('\n');
+  }
+
+  const three = {
+    'volume-01.md': [
+      round('v3.01', [COVERAGE]),
+      round('v3.02', [COVERAGE]),
+      round('v3.03', [COVERAGE]),
+    ].join('\n'),
+  };
+  const threeRows: [string, number, string, string][] = [['volume-01.md', 3, 'v3.01', 'v3.03']];
+
+  it('refuses a row counted before the round that writes it', () => {
+    // Three rounds, and the newest states `1 -> 2`: both numbers describe the log as it stood before
+    // `v3.03` was written, which is the reading that made the shipped row one behind for five rounds.
+    const dir = volumesOf({
+      'volume-01.md': [
+        round('v3.01', [COVERAGE]),
+        round('v3.02', [COVERAGE]),
+        round('v3.03', [COVERAGE, '| the number line | **1 -> 2** distinct numbers, dense |']),
+      ].join('\n'),
+    });
+
+    const errors = check(indexFor(threeRows), dir).errors.join('\n');
+
+    expect(errors).toContain('states its number line as `**1 -> 2** distinct numbers');
+    expect(errors).toContain('which does not hold 3');
+    expect(errors).toContain('finding 601');
+  });
+
+  it('accepts the arrow form when its last number is the corpus it sits in', () => {
+    // What a round writes when it has just moved the number: `2 -> 3`. The rule asks whether the row
+    // states the count the corpus holds, not which position in the row it occupies.
+    const dir = volumesOf({
+      'volume-01.md': [
+        round('v3.01', [COVERAGE]),
+        round('v3.02', [COVERAGE]),
+        round('v3.03', [COVERAGE, '| the number line | **2 -> 3** distinct numbers, dense |']),
+      ].join('\n'),
+    });
+    expect(check(indexFor(threeRows), dir).errors).toEqual([]);
+  });
+
+  it('does not read the count as the first group of a larger number', () => {
+    // `3` is inside `3,150`, and a matcher that stopped at the comma would accept a row whose number is
+    // a thousand times the corpus's. The cell is stripped of the separators a ledger writes and matched
+    // on both sides of the digits, so the third digit of a larger number is not the number.
+    const dir = volumesOf({
+      'volume-01.md': [
+        round('v3.01', [COVERAGE]),
+        round('v3.02', [COVERAGE]),
+        round('v3.03', [COVERAGE, '| the number line | **3,150** distinct numbers |']),
+      ].join('\n'),
+    });
+    expect(check(indexFor(threeRows), dir).errors.join('\n')).toContain('which does not hold 3');
+  });
+
+  it('leaves a round that says nothing about the number line alone', () => {
+    expect(check(indexFor(threeRows), volumesOf(three)).errors).toEqual([]);
+  });
+
+  it('cuts a long cell with a mark, so a truncated quote reads as one', () => {
+    // The refusal quotes what it found, whole where it fits. A cell longer than the quote is cut
+    // with `...` -- the alternative is a diagnostic whose opening backtick is closed by a slice, and
+    // an unterminated code span reads as a broken message rather than as a shortened one.
+    const long = `| the number line | ${'a'.repeat(200)} |`;
+    const dir = volumesOf({
+      'volume-01.md': [
+        round('v3.01', [COVERAGE]),
+        round('v3.02', [COVERAGE]),
+        round('v3.03', [COVERAGE, long]),
+      ].join('\n'),
+    });
+
+    const errors = check(indexFor(threeRows), dir).errors.join('\n');
+
+    expect(errors).toContain(`${'a'.repeat(157)}...`);
+    expect(errors).not.toContain('a'.repeat(158));
+  });
+
+  it('leaves a closed round\'s row as the record it is', () => {
+    // The same asymmetry the coverage row has: only the round that can still be written is judged, so
+    // the five shipped rows stay what they said rather than being corrected into agreement.
+    const dir = volumesOf({
+      'volume-01.md': [
+        round('v3.01', [COVERAGE, '| the number line | **0 -> 1** distinct numbers |']),
+        round('v3.02', [COVERAGE]),
+        round('v3.03', [COVERAGE, '| the number line | **2 -> 3** distinct numbers |']),
+      ].join('\n'),
+    });
+    expect(check(indexFor(threeRows), dir).errors).toEqual([]);
   });
 });
 

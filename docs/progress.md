@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 257 core + 4 cli |
-| Test lines | 113,619 core + 3,242 cli |
-| Tests | 6,715 core + 187 cli |
+| Test lines | 113,816 core + 3,242 cli |
+| Tests | 6,725 core + 187 cli |
 | Tracked files | 668 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.120: **34** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.121: **37** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -976,6 +976,34 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: the ratio is against a number the machine decides, and no declaration of intent can turn it into
   a property of the test -- what would is a budget taken from the isolated reading, which is a different
   question (a file measured alone is sized for a machine this one is never run on)]`
+- O-091 · **The summaries of the other gates name their nouns, and nothing compares them.**
+  v3.121 reconciled the two gates that printed one word for two populations (finding 600) and asserted the
+  agreement: the shipped-corpus case derives `215` through `readVolumes` and requires
+  `check-open-list` to print it. The other nine guards print counts under nouns no other guard shares --
+  `finding(s)` in `check-audit-volumes`, `citation(s)` in `check-citations`, `entry(ies)` in
+  `check-open-list`'s two lists, `row(s)` in its table census -- and no reader asks what population each noun
+  covers.
+  `[open: the census stopped at the pair because those two printed the same word, and a rule over the others
+  needs a vocabulary of units first -- no round has measured which of those nouns are ambiguous, and a rule
+  invented before its measurement is the shape finding 585 repaired twice]`
+- O-092 · **Five ledger rows state a count of the log that is one behind it.**
+  `v3.116`..`v3.120` each counted the `vX.YY` numbers before their own heading was written -- **210**, **211**,
+  **212**, **212 -> 213**, **213 -> 214** against **211**, **212**, **213**, **214**, **215** -- and `v3.120`'s
+  row prints its own contradiction: `94 in v2, 120 in v3 (v3.00..v3.120)`, a range of **121** numbers. The
+  rule added in v3.121 reads only the round that can still be written, so those five stay as they were
+  written (finding 601).
+  `[open: correcting them would be editing frozen records to satisfy a rule invented after them, which is the
+  asymmetry the coverage row already lives with -- 30 of the log's first 54 ledgers carry none -- so the five
+  are stated in the round that found them rather than rewritten]`
+- O-093 · **`batteries` holds 108 minutes of step bounds inside a 25 minute ceiling.**
+  `R6` is the only rule about a job's budget and it refuses a **narrower** one, so nothing asks whether the
+  bounds inside a ceiling can fire before the ceiling does. For `batteries` the sum is **108** minutes of
+  bounds in **25** minutes, and after v3.121 raised the two heavy steps the pair is **13 + 12 = 25** -- the
+  job's death and the second step's expiry are the same instant, and the verdict a hang produces is "the job
+  timed out", which is the sentence these bounds exist to replace.
+  `[open: the repair is another job split, which is what the same arithmetic said once before when it moved
+  the batteries from 30 minutes to 25 -- and the rule that would say so is a comparison of a ceiling with a
+  sum, which no round has written because every existing job would fail it]`
 
 ## Pass log
 
@@ -1011,7 +1039,7 @@ and this table.
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
-| [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
+| [volume-18.md](progress/volume-18.md) | 10 | v3.112 | v3.121 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

@@ -549,10 +549,11 @@ jobs:
       # gate that can be emptied without a test noticing, or that no test names at
       # all, fails the build.
       #
-      # 10 minutes is 2.0 times the slowest day (295 s on 44516888528); the 9 it replaced
-      # was 1.83 times it, which the multiple refuses (finding 599).
+      # 13 minutes is 2.12 times the slowest day (368 s on 44576264388); the 10 it replaced
+      # was 1.63 times it, which the multiple refuses -- the second time this bound has been
+      # raised for the same reason, and both times it was the refresh that found it (finding 599).
       - name: Every gate can be shown to fail
-        timeout-minutes: 10
+        timeout-minutes: 13
         run: node scripts/verify-gates-are-testable.mjs
 
       # The three batteries below were written, repaired, and never invoked. Each
@@ -598,10 +599,10 @@ jobs:
       # in the battery's `EXPECTED_SURVIVORS` with its reason, and the run fails
       # if it ever turns into a genuine survivor.
       #
-      # 9 minutes is 2.16 times the slowest day (250 s on 44516888528); the 8 it replaced was
-      # 1.92 times it, which the multiple refuses (finding 599).
+      # 12 minutes is 2.14 times the slowest day (336 s on 44576264388); the 9 it replaced was
+      # 1.61 times it, which the multiple refuses (finding 599).
       - name: Gate-test battery (each gate's test provably fails when its guard is removed)
-        timeout-minutes: 9
+        timeout-minutes: 12
         run: python3 scripts/injection/gate-tests-battery.py
 
       # `check-doc-counts.mjs` read three shapes of a published count while the

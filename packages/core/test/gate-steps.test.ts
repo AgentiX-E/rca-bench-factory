@@ -1940,7 +1940,12 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     // 9 -> 10 in v3.120: `Every gate can be shown to fail` measured 295 s, and twice that is 590 s,
     // which is 4 s past ten minutes (finding 599). The assertion follows the bound, which follows
     // the measurement -- it is the plan's own number rather than a preference.
-    expect(result.stdout).toContain("largest 10m of the job's 25m");
+    //
+    // 10 -> 13 in v3.121: the next run measured the same step at **368 s**, so ten minutes was 1.63x
+    // and the multiple refused it. The largest bound in `batteries` is now the same as the ceiling --
+    // 13m of 25m, with the battery's 12m beside it -- which is the arithmetic `O-093` is about: the
+    // two heavy bounds add up to the job's budget exactly, so a hang there is the job timing out.
+    expect(result.stdout).toContain("largest 13m of the job's 25m");
     expect(result.stdout).toContain('batteries-heavy bounds all 4 of its step(s) on its own');
     // 25 -> 27 in v3.55's close-out: the 15-minute backend-support bound plus the 632 s
     // its predecessors account for on their slowest recorded days is 1532 s, which does
