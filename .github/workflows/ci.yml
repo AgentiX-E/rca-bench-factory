@@ -52,7 +52,11 @@ jobs:
     # names the job rather than a step, which is the defect every bound in this file
     # exists to remove. 21 minutes is twice that day, rounded up to the next whole minute,
     # and `check-ci-budget`'s `R12` is the rule that says so.
-    timeout-minutes: 21
+    #
+    # 24 from v3.124: the recording moved to run 44698243645, where this job's slowest day
+    # is 696 s, and 21 minutes was 1.81x it. `R12` named the number; the day moved because
+    # two test files were added, not because anything in the job changed.
+    timeout-minutes: 24
     steps:
       - name: Check out
         timeout-minutes: 3
@@ -120,11 +124,19 @@ jobs:
         # ceiling had to move and `R6` had nothing to excuse. The general shape -- a bound
         # at exactly twice a reading is a bound that fires on a 5% slower day -- is
         # finding 422, and the margin here is deliberate rather than arithmetic.
-        timeout-minutes: 14
+        #
+        # 16 from v3.124. The measurement moved to 477 s under run 44698243645 -- two new test
+        # files, one of which spawns eighteen gates -- and 14 minutes (840 s) was 1.76x it, which
+        # `R10` refuses: a runner twice as slow would be refused for being slow rather than for
+        # hanging. 960 s plus the 27 s measured in front of it is 987, inside the 24-minute
+        # ceiling this round raised, so no ceiling had to move for this step's sake.
+        timeout-minutes: 16
         run: pnpm lint
 
       - name: Test with coverage (core + cli, ≥95% per dimension, 100% functions)
-        timeout-minutes: 6
+        # 6 until v3.124 and 7 now: run 44698243645 measured 187 s, and twice 187 is 374, which
+        # is 51 s past 360. `R10`.
+        timeout-minutes: 7
         run: pnpm test:coverage
 
       # The published counts, against the run that just happened.

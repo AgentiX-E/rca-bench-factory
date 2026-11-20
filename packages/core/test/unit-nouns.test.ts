@@ -178,6 +178,20 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     expect(result.stdout).toMatch(/\d+ of them are printed by more than one gate/);
   });
 
+  // The three refusals below hand the gate a recorded census instead of running eighteen gates.
+  // `--readings` is the fixture door: the refusal is about what the gate does with a document, and
+  // re-deriving the shipped one four times over costs four suites' worth of processes for a fact
+  // the first case above has already established.
+  const RECORDED = join(scratch, 'readings.json');
+  writeFileSync(
+    RECORDED,
+    JSON.stringify([
+      { gate: 'check-fault-cases', text: 'check-fault-cases: 8 row(s) of the window; 602 finding(s)' },
+      { gate: 'check-repository-table', text: 'check-repository-table: OK (8 row(s) under ## Repository)' },
+      { gate: 'check-open-list', text: 'check-open-list: 318 row(s) in the tables' },
+    ]),
+  );
+
   it('refuses an inventory whose vocabulary has stopped describing the gates', () => {
     const committed = JSON.parse(readFileSync(GOLDEN, 'utf8'));
     const narrowed = {
@@ -186,9 +200,9 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     };
     const path = join(scratch, 'narrowed.json');
     writeFileSync(path, JSON.stringify(narrowed, null, 2));
-    const result = run(['--inventory', path]);
+    const result = run(['--inventory', path, '--readings', RECORDED]);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('row(s) is new, printed by check-fault-cases,check-l4-status');
+    expect(result.stderr).toContain('row(s) is new, printed by check-fault-cases,check-open-list');
     expect(result.stderr).toContain('read the diff');
   });
 
@@ -200,7 +214,7 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     };
     const path = join(scratch, 'unread.json');
     writeFileSync(path, JSON.stringify(unread, null, 2));
-    const result = run(['--inventory', path]);
+    const result = run(['--inventory', path, '--readings', RECORDED]);
     expect(result.status).toBe(1);
     // The count is in the message, and so is what to do about it: `--write` cannot answer this.
     expect(result.stderr).toContain('no record says whether that is one population or two');
@@ -209,7 +223,7 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
   });
 
   it('refuses to run with no inventory at all, and names the file it wanted', () => {
-    const result = run(['--inventory', join(scratch, 'absent.json')]);
+    const result = run(['--inventory', join(scratch, 'absent.json'), '--readings', RECORDED]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('is missing, so the vocabulary has no record');
   });

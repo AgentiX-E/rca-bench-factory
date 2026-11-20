@@ -58,6 +58,17 @@
  */
 
 /**
+ * The census is of a **run**, and a noun a gate prints only in some runs is a real event.
+ *
+ * `check-ci-budget` prints `budget(s) widened since the reading` only when a ceiling moved, so the
+ * vocabulary of a run depends on the tree the run is against -- and the inventory therefore records
+ * `budget(s)` only while a ceiling is being widened. That is not drift to be smoothed over: a noun
+ * entering the log is exactly the moment a reader has to be told what it counts, and the diff this
+ * produces is one line. The alternative -- reading the nouns out of the gates' source instead of
+ * their output -- would make the census a statement about what a gate *could* print, which is the
+ * value-narrower-than-its-name failure this campaign keeps finding.
+ */
+/**
  * The unit-noun marker: a word, an optional second word, and the `(s)` / `(ies)` suffix.
  *
  * `row break(s)` and `gate-site claim(s)` are units in their own right -- the two-word form

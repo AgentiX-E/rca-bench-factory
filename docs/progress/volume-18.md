@@ -2155,3 +2155,145 @@ edit no assertion in the tree could have caught before this round: both numbers 
   a ceiling inflated until it cannot fire -- and the third answer, a split small enough that the sum fits,
   needs a shared setup job rather than six repeated ones]`
 
+## v3.124 · The nouns the gates count in, and the number two of them print
+
+`O-091` asked the question a round can act on: *what population does each unit noun cover, and has
+anyone asked?* Its own answer was that the nouns were private -- "`finding(s)` in
+`check-audit-volumes`, `citation(s)` in `check-citations`, `entry(ies)` in `check-open-list`, `row(s)`
+in its table census -- and no reader asks". Measured, the first half of that is false and the second
+half is the whole finding.
+
+### The measurement
+
+A census over the eighteen gates `docs:check` runs, reading every `N noun(s)` their summaries print:
+
+| | |
+| --- | --- |
+| unit nouns | **53** |
+| gate/noun pairs | **69** |
+| nouns printed by more than one gate | **9** -- `file(s)` 4, `row(s)` 4, `run(s)` 4, `row break(s)` 3, `addendum(s)` 2, `comment(s)` 2, `reading(s)` 2, `round(s)` 2, `volume(s)` 2 |
+| counts of 1 or more printed by two gates under one noun | **3** |
+
+Three of the four nouns the entry named are shared. `row(s)` is printed by four gates --
+
+| gate | the number | what it counts |
+| --- | --- | --- |
+| `check-l4-status` | 9 | rows of the L4 status table that agree with the registry |
+| `check-open-list` | 318, and 1 | rows inside the record tables, and the newest record's rows judged |
+| `check-fault-cases` | **8** | rows in a case's pre-injection window |
+| `check-repository-table` | **8** | rows under `## Repository` |
+
+-- and **two of them print the same number for unrelated tables.** Read four lines apart in a CI log,
+`8 row(s)` twice is indistinguishable from one number printed twice. That is finding 600's shape one
+level up: there, two gates printed *different* numbers for one word and a reader had to reconcile
+them; here four print one word for four populations and the only question that matters -- do they
+overlap? -- is asked by nothing.
+
+### The subset that was already there
+
+`file(s)` is the noun where the answer is arithmetic, and it was the second defect:
+
+```
+check-comments-language: OK — 474 file(s), 25443 comment(s) ...
+check-citations: OK (2419 citation(s) of 602 number(s) across 37 file(s), ...)
+check-doc-counts: OK (... 2 gate-site claim(s) agreeing with 230 claim(s) across 67 file(s))
+check-workflow-language: OK — 6 file(s), 1236 '#' mark(s) ...
+```
+
+**Every one of the 67 is one of the 474**, and that was measured rather than assumed: the 67 are the
+tests that prove a gate site, and the comment guard walks every source file, so the inclusion holds
+`67 of 67`. No line said so. This is finding 603 a gate over -- one noun, two populations, a subset
+printed as if it were a second whole -- and the repair is the same `of`, with the denominator
+**derived from the walk** rather than written down, because a copied 474 would go stale the first
+time a test file was added, which is every round.
+
+The inclusion is a rule, not a coincidence of this tree, so the gate that prints the `of` is the gate
+that refuses to print a false one: a gate site proved by a file the source walk does not read is a
+red run, whose repair is to move the proof or teach the walk a new extension -- not to drop the `of`.
+
+### The reader, and the judgement it cannot make
+
+`check-unit-nouns` derives the census, prints it, and holds the vocabulary in
+`golden-master/unit-nouns.json` the way `gate-sites.json` is held. The counts are **not** committed:
+they move every round, and an inventory that went red for a reason its subject has nothing to do
+with is the crying-wolf defect this campaign has recorded more than once. The committed file records
+which gate prints which noun, and which two gates print one number.
+
+That last part cannot be derived, and the first draft of the summary proved it by getting it wrong.
+It said every coincidence was "one number over two populations and not one population counted
+twice" -- and the first coincidence the census found is `1 addendum(s)` in `check-open-list` and
+`check-progress-volumes`, which **is** one population counted twice: both take it from
+`populationsOf`. A sentence that is right about `8 row(s)` and wrong about `1 addendum(s)` is the
+constant this campaign keeps finding, so the judgement is written by a person, `--write` will not
+invent one, and an unread coincidence is a failure:
+
+```
+check-unit-nouns: FAILED — 3 count(s) coincide across gates and no record says whether that is one
+  population or two: 1 addendum(s) in check-open-list and check-progress-volumes; 474 file(s) in
+  check-comments-language and check-doc-counts; 8 row(s) in check-fault-cases and
+  check-repository-table
+```
+
+The judgement is keyed by the noun and the gate pair, never by the number: `473 file(s)` and
+`474 file(s)` are the same coincidence, and a key that moved with the count would make every added
+source file a red gate whose repair is to retype a sentence that had not stopped being true.
+
+### The coincidence the repair created
+
+The third coincidence did not exist before this round. `check-doc-counts` now prints
+`67 of the 474 file(s)`, `check-comments-language` prints `474 file(s)`, and the two numbers are
+equal **because they are the same walk**: the denominator is `sourcesIn(ROOT)`. So the census had to
+say that, and it says it in the inventory:
+
+> one population and one reader -- `check-doc-counts` takes its denominator from `sourcesIn` in
+> `comment-language.mjs`, the same walk that produces the other, so the agreement is by construction
+> rather than a coincidence of this week
+
+Two gates printing one number is either agreement or an accident, and the output cannot tell them
+apart. `1 addendum(s)` and `474 file(s)` are the first; `8 row(s)` is the second. The census names
+all three, every run, with the sentence a person wrote for each.
+
+### Falsifications
+
+| the edit | reds |
+| --- | --- |
+| `FUNCTION_WORDS` emptied, so `the record(s)` is read as a noun | 1 |
+| zero counted as a coincidence, so three quiet gates read as one number | 1 |
+| one gate's two uses counted as a coincidence | 1 |
+| `keyOf` keyed by the count instead of the gate pair | 2 |
+| the inventory's `reading` accepted as absent rather than refused | 2 |
+| `jobDays`-style denominator hardcoded in the summary instead of `sourcesIn` | 1 |
+| the coincidences committed with their counts, so the file drifts every round | 1 |
+
+### Readings
+
+> Ledger for `v3.124`.
+
+| item | value |
+| --- | --- |
+| CI | run `44698243645` on `4d253c91`: **8 of 8 jobs success**, **13 min 19 s** -- the run that verified the tree this round started from; this round's own run is taken on it and recorded here afterwards, which is how every round's row is written |
+| `core` test suite | **258 files, 6754 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **262 files, 6941 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: the new code is `scripts/`, which the `core` coverage run does not include |
+| new tests | **6737 -> 6754, +17**: sixteen in `unit-nouns.test.ts` (eleven over the pure readers, one for the coincidences' judgement, four over the gate itself) and one in `check-doc-counts.test.ts` holding the denominator to the walk |
+| the new gate | `check-unit-nouns.mjs`, 21st step of `docs:check`, reading the eighteen gates before it in **2.5 s** |
+| the new vocabulary | `scripts/unit-nouns.mjs`: `nounsIn`, `censusOf`, `sharedNounsOf`, `coincidencesOf`, `keyOf`, `inventoryOf`, `summaryOf` |
+| the inventory | `golden-master/unit-nouns.json`: **53** nouns, **9** shared, **3** coincidences, each with a written judgement and **no counts** |
+| the census | **53 unit noun(s) in 69 gate/noun pair(s)**, 9 printed by more than one gate, 3 counts coinciding across gates |
+| the subset | `67 of the 474 file(s) the source walk reads`, and the 67 are inside the 474 by construction, checked by rule 6 |
+| falsifications | seven edits, **nine** reds |
+| the bounds that moved | `Lint` **14 -> 16 min**, `Test with coverage` **6 -> 7**, the `verify` ceiling **21 -> 24**: the recording moved to run `44698243645`, where `Lint` measured 477 s and `verify`'s slowest day is 696 s, and `R10`/`R12` named the three numbers |
+| open entries | **38 -> 38**: `O-091` closed by findings 606 and 607, `O-096` opened for the relations the census names but does not compute |
+| LLM calls | **0** |
+
+### Left open
+
+- **The census names the populations; it computes almost none of the relations between them.**
+  `file(s)` has an `of` because `check-doc-counts` derives its denominator. `row(s)` has four
+  populations and no relation at all, and `volume(s)` -- 14 audit volumes and 18 progress volumes,
+  printed two lines apart -- is disjoint by directory and nothing says so. A census that held the
+  sets would answer that arithmetically; the four sets are not all reachable from a data module yet,
+  and reaching them is a change to four gates rather than to this one.
+  `[open: which of those four is worth a reader first is a measurement, not a decision -- the pair
+  that a reader can act on is the one whose two numbers are equal, which is why `row(s)` came first]`

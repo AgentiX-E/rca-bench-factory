@@ -109,19 +109,45 @@ if (gates.length === 0) {
   );
 }
 
-const readings = [];
-for (const gate of gates) {
-  const run = spawnSync(process.execPath, [resolve(ROOT, 'scripts', `${gate}.mjs`)], {
-    encoding: 'utf8',
-    cwd: ROOT,
-  });
-  if (run.status !== 0) {
-    fail(
-      `${gate} exited ${String(run.status)}, so its summary is not the one this tree reports`,
-      'the census reads the gates as they run; a red gate is repaired before it is counted',
-    );
+/**
+ * One line per gate, in the shape the census reads.
+ *
+ * `--readings <file>` hands the census a recording instead of running eighteen processes, so a
+ * battery can drive a refusal without paying for the census it refuses. It is the same door
+ * `check-doc-counts` takes as `--present` and `--measured`: the flag says the input is a fixture,
+ * and the shipped tree is read the only way a reader can read it.
+ */
+function readingsOf(argv) {
+  const at = argv.indexOf('--readings');
+  if (at === -1) return null;
+  const next = argv[at + 1];
+  if (next === undefined || next.startsWith('--')) {
+    fail('--readings needs a path', 'the flag takes a JSON array of {gate, text} objects');
   }
-  readings.push({ gate, text: `${run.stdout ?? ''}${run.stderr ?? ''}` });
+  return JSON.parse(readFileSync(resolve(next), 'utf8'));
+}
+
+const recorded = readingsOf(process.argv);
+const readings = [];
+if (recorded === null) {
+  for (const gate of gates) {
+    const run = spawnSync(process.execPath, [resolve(ROOT, 'scripts', `${gate}.mjs`)], {
+      encoding: 'utf8',
+      cwd: ROOT,
+    });
+    if (run.status !== 0) {
+      fail(
+        `${gate} exited ${String(run.status)}, so its summary is not the one this tree reports`,
+        'the census reads the gates as they run; a red gate is repaired before it is counted',
+      );
+    }
+    readings.push({ gate, text: `${run.stdout ?? ''}${run.stderr ?? ''}` });
+  }
+} else {
+  // A `for` loop rather than `readings.push(...recorded)`: `spread-append-guard.test.ts` refuses a
+  // spread whose length is a function of the input, and a fixture with ten thousand readings would
+  // overflow the argument limit on the one path a battery is most likely to drive.
+  for (const one of recorded) readings.push(one);
 }
 
 const census = censusOf(readings);

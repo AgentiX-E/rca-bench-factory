@@ -1927,7 +1927,7 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     // does it hold a slower *day* -- and `verify`'s slowest day is 601 s, so 18 minutes was
     // 1.80x it (finding 605). The largest bound is still `Lint`'s 14m: the ceiling moved and
     // no step bound did.
-    expect(result.stdout).toContain("largest 14m of the job's 21m");
+    expect(result.stdout).toContain("largest 16m of the job's 24m");
     // 3 -> 4 in v3.52: the sensitivity job's one battery became two, because a step can
     // now be declared for one recording instead of being folded into a neighbour's name.
     expect(result.stdout).toContain('sensitivity bounds all 4 of its step(s) on its own');
@@ -2272,7 +2272,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     // v3.123, because the ceiling answers for the slowest *day* and `verify`'s is 601 s
     // (finding 605). A pin on the number rather than on where it comes from would be a second
     // copy of the workflow's arithmetic in a test.
-    expect(result.stdout).toContain('of 21m');
+    expect(result.stdout).toContain('of 24m');
   });
 
   it('runs a step in the directory the workflow names, which is the whole claim about that key', () => {
