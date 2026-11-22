@@ -18,6 +18,7 @@ import {
   partitionProblems,
   relationsOf,
   sharedNounsOf,
+  stateOf,
   summaryOf,
   unreadableOf,
   unpartitionedOf,
@@ -199,13 +200,17 @@ describe('a coincidence is a count two gates print, and zero is not one', () => 
     expect(coincidencesOf(census)).toEqual([]);
   });
 
-  it('identifies a shared noun by its noun and its gates, not by the number it happens to be', () => {
-    // `474 file(s)` this round and `473` last round are the same judgement: two gates print one
-    // number for two populations. A judgement keyed by the number would go stale every time a
-    // source file was added, and its repair would be to retype a sentence that had not stopped
-    // being true.
-    expect(keyOf({ noun: 'file(s)', gates: ['a', 'b'], count: 473 })).toBe('file(s)::a+b');
-    expect(keyOf({ noun: 'file(s)', gates: ['a', 'b'], count: 474 })).toBe('file(s)::a+b');
+  it('identifies a judgement by its noun, so a gate joining the noun does not discard a sentence', () => {
+    // `O-099`. The key was the noun **and its gates**, and `check-ci-budget` prints `N round(s)` only
+    // while the ledger is behind -- so `round(s)`'s gate set moved twice inside one round and a
+    // sentence that had not stopped being true was retyped twice. The noun is what a person wrote
+    // about, so the noun is the key; a new gate is refused as unplaced instead.
+    expect(keyOf({ noun: 'round(s)', gates: ['check-open-list'] })).toBe('round(s)');
+    expect(keyOf({ noun: 'round(s)', gates: ['check-open-list', 'check-progress-volumes'] })).toBe('round(s)');
+    // And never the number: `474 file(s)` this round and `473` next are one judgement, because the
+    // question is what each gate counts and not how many files the tree happens to hold.
+    expect(keyOf({ noun: 'file(s)', gates: ['a', 'b'], count: 473 })).toBe('file(s)');
+    expect(keyOf({ noun: 'file(s)', gates: ['a', 'b'], count: 474 })).toBe('file(s)');
   });
 
   it('commits the vocabulary and the shared nouns, and never the counts', () => {
@@ -367,28 +372,28 @@ describe('a population is the unit of the judgement, because a noun is not (find
     // gates, and each way of failing it is a different repair: a gate nobody placed, a gate placed
     // twice, a gate that does not print the noun at all, and an empty group, which reads as a
     // population of nothing.
-    expect(partitionProblems({ ...FILE, populations: [['check-citations'], ['check-comments-language', 'check-doc-counts']] })).toEqual([
+    expect(partitionProblems({ ...FILE, populations: [['check-citations'], ['check-comments-language', 'check-doc-counts']] }, FILE_GATES)).toEqual([
       'check-workflow-language is in no population',
     ]);
     expect(
       partitionProblems({
         ...FILE,
         populations: [['check-citations', 'check-comments-language'], ['check-comments-language', 'check-doc-counts'], ['check-workflow-language']],
-      }),
+      }, FILE_GATES),
     ).toEqual(['check-comments-language is in two populations, so its count is claimed twice']);
     expect(
       partitionProblems({
         ...FILE,
         populations: [['check-citations'], ['check-comments-language', 'check-doc-counts', 'check-nowhere'], ['check-workflow-language']],
-      }),
+      }, FILE_GATES),
     ).toEqual(['check-nowhere is in a population and does not print this noun']);
     expect(
-      partitionProblems({ ...FILE, populations: [['check-citations'], [], ['check-comments-language', 'check-doc-counts'], ['check-workflow-language']] }),
+      partitionProblems({ ...FILE, populations: [['check-citations'], [], ['check-comments-language', 'check-doc-counts'], ['check-workflow-language']] }, FILE_GATES),
     ).toEqual(['a population with no gate in it']);
-    expect(partitionProblems({ ...FILE, populations: null })).toEqual(['nothing says which of its gates read one population']);
+    expect(partitionProblems({ ...FILE, populations: null }, FILE_GATES)).toEqual(['nothing says which of its gates read one population']);
     // The shape this field very nearly took: four names and no groups, which reads as one population
     // holding all four. Refused once, because the other three problems would be consequences of it.
-    expect(partitionProblems({ ...FILE, populations: FILE_GATES })).toEqual([
+    expect(partitionProblems({ ...FILE, populations: FILE_GATES }, FILE_GATES)).toEqual([
       'a population written as "check-citations" rather than as a list of gates',
     ]);
     // And the renderers are given `[]` for such a group rather than the string, so a line printed
@@ -513,6 +518,81 @@ describe('a population is the unit of the judgement, because a noun is not (find
   });
 });
 
+/**
+ * A gate can join a noun between two rounds, and the join must not cost the sentence (`O-099`).
+ *
+ * `check-ci-budget` prints `N round(s)` while the ledger is behind and stops when it catches up, so
+ * `round(s)` is printed by one gate in some runs and two in others -- and it moved in and out twice
+ * inside the round that found this. Under the old key the judgement was keyed by the noun **and its
+ * gates**, so each move discarded the sentence; the refusal then said "no record says whether that is
+ * one population or two" about a record that had said so an hour earlier, and a person retyped it.
+ *
+ * Two changes make the join cheap. The key is the noun, so the record is found. The record lives on
+ * the noun's entry in `nouns` rather than on `shared`, which is derived -- so a noun that stops being
+ * shared for a round keeps its sentence for the round it comes back.
+ */
+describe('a gate joining a noun is refused as unplaced, and the sentence survives (finding 618)', () => {
+  const JUDGEMENT = {
+    noun: 'round(s)',
+    populations: [['check-open-list', 'check-progress-volumes']],
+    relation: 'one set of headings read twice',
+  };
+  const twoGates = censusOf([
+    { gate: 'check-open-list', text: '221 `vX.YY` round(s)' },
+    { gate: 'check-progress-volumes', text: '221 `vX.YY` round(s)' },
+  ]);
+  const threeGates = censusOf([
+    { gate: 'check-open-list', text: '221 `vX.YY` round(s)' },
+    { gate: 'check-progress-volumes', text: '221 `vX.YY` round(s)' },
+    { gate: 'check-ci-budget', text: '1 round(s) the ledger is behind' },
+  ]);
+  const judgements = new Map([[keyOf(JUDGEMENT), JUDGEMENT]]);
+
+  it('reads the record as complete while the gates are the ones it was written for', () => {
+    expect(unstatedOf(twoGates, judgements)).toEqual([]);
+    expect(unpartitionedOf(twoGates, judgements)).toEqual([]);
+    expect(disagreementsOf(twoGates, judgements)).toEqual([]);
+  });
+
+  it('keeps the sentence when a third gate arrives, and names the gate nobody placed', () => {
+    // The sentence is not wrong: two readers of one set still read one set. What changed is that a
+    // third gate prints the noun and the partition says nothing about it, and that is the one thing
+    // the run has to say -- not "the key changed, write the sentence again".
+    expect(unstatedOf(threeGates, judgements)).toEqual([]);
+    expect(unpartitionedOf(threeGates, judgements)).toEqual([
+      {
+        noun: 'round(s)',
+        gates: ['check-ci-budget', 'check-open-list', 'check-progress-volumes'],
+        problems: ['check-ci-budget is in no population'],
+      },
+    ]);
+    // The disagreement check defers rather than reporting a second refusal: a partition that does not
+    // cover this run's gates would make it ask the wrong question.
+    expect(disagreementsOf(threeGates, judgements)).toEqual([]);
+  });
+
+  it('keeps the sentence when the noun stops being shared, which is the same move the other way', () => {
+    // The half a noun-shaped key alone would not fix: `shared` is derived, so `round(s)` leaves that
+    // list the moment `check-ci-budget` falls silent. A judgement stored on the shared entry would go
+    // with it; stored on the noun's entry it does not, and the next round reads it unchanged.
+    const oneGate = censusOf([{ gate: 'check-open-list', text: '221 `vX.YY` round(s)' }]);
+    expect(sharedNounsOf(oneGate)).toEqual([]);
+    expect(unstatedOf(oneGate, judgements)).toEqual([]);
+    expect(unpartitionedOf(oneGate, judgements)).toEqual([]);
+  });
+
+  it('reads the gates this run found, not the ones the record was written with', () => {
+    // The defect the old key hid, stated as an equality: the record says a,b; the tree says a,b,c.
+    // A reader that compares the record with itself answers "nothing is wrong" -- which is what six
+    // callers did, each with its own copy of `judgement.gates`.
+    expect(stateOf(twoGates, judgements, 'round(s)').gates).toEqual(['check-open-list', 'check-progress-volumes']);
+    expect(stateOf(threeGates, judgements, 'round(s)').declared).toBe(false);
+    expect(stateOf(twoGates, judgements, 'round(s)').declared).toBe(true);
+    // A noun with no judgement at all is missing rather than unplaced, and the problems say which.
+    expect(stateOf(twoGates, new Map(), 'round(s)').problems).toEqual(['no entry for this noun']);
+  });
+});
+
 
 describe('the gate holds the shipped inventory to the shipped gates', () => {
   // The one case that reads the shipped tree, and the only expensive one: the census spawns the
@@ -578,23 +658,87 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     return { path, document: JSON.parse(readFileSync(path, 'utf8')) };
   }
 
+  /**
+   * The same document with a judgement written for one noun.
+   *
+   * Since `O-099` the judgements are a list of their own: `nouns` and `shared` are derived from the
+   * census, so a judgement on either would be deleted by the first `--write` in which the noun was
+   * silent. `patch: { relation: null }` is how the "nobody wrote a sentence" state is driven.
+   */
+  function judged(document: { judgements: { noun: string }[] }, noun: string, patch: object) {
+    const exists = document.judgements.some((one) => one.noun === noun);
+    return {
+      ...document,
+      judgements: exists
+        ? document.judgements.map((one) => (one.noun === noun ? { ...one, ...patch } : one))
+        : [...document.judgements, { noun, ...patch }],
+    };
+  }
+
+  /**
+   * A reading in which a fourth gate starts printing `row(s)`.
+   *
+   * The shipped tree has `check-l4-status` printing `row(s)` already, so this is not a hypothetical
+   * shape -- it is the fixture's three gates plus the fourth the real corpus has, and it is how a
+   * gate joining a noun is driven without waiting for one to.
+   */
+  const JOINED = join(scratch, 'joined.json');
+  writeFileSync(
+    JOINED,
+    JSON.stringify([
+      { gate: 'check-fault-cases', text: 'check-fault-cases: 8 row(s) of the window; 602 finding(s)' },
+      { gate: 'check-repository-table', text: 'check-repository-table: OK (8 row(s) under ## Repository)' },
+      { gate: 'check-open-list', text: 'check-open-list: 318 row(s) in the tables' },
+      { gate: 'check-l4-status', text: 'check-l4-status: 9 row(s) in the registry' },
+    ]),
+  );
+
+  /**
+   * A reading in which `row(s)` is printed by one gate, so the noun is no longer shared.
+   *
+   * The three gates are still there and the two other nouns are still printed: a census of one gate
+   * would shrink the whole vocabulary, and the drift this case is about is a noun leaving `shared`,
+   * not a tree losing its gates. `check-open-list` prints `record(s)` here, which is what the log's
+   * tables are counted in -- the reading is a plausible tree rather than a truncated one.
+   */
+  const NARROWED = join(scratch, 'narrowed-readings.json');
+  writeFileSync(
+    NARROWED,
+    JSON.stringify([
+      { gate: 'check-fault-cases', text: 'check-fault-cases: 602 finding(s)' },
+      { gate: 'check-repository-table', text: 'check-repository-table: OK (8 row(s) under ## Repository)' },
+      { gate: 'check-open-list', text: 'check-open-list: 318 record(s) in the tables' },
+    ]),
+  );
+
   it('refuses an inventory whose vocabulary has stopped describing the gates', () => {
     const { path, document } = derive('narrowed.json');
     // The relations are filled first, because `--write` will not invent one: the drift this case is
     // about is a vocabulary that has stopped matching the gates, and a document that is also
     // missing a judgement is refused one step earlier for a different reason.
-    const answered = document.shared.map((one: object) => ({
-      ...one,
+    const answered = judged(document, 'row(s)', {
       relation: 'a sentence a person wrote',
       populations: [['check-fault-cases', 'check-repository-table'], ['check-open-list']],
-    }));
+    });
+    // The vocabulary this case is about: the derived `nouns` list says two gates print `row(s)` and
+    // the readings say three. Narrowing that row rather than deleting it keeps the judgement, so the
+    // refusal that fires is the vocabulary one and not a missing sentence.
     writeFileSync(
       path,
-      JSON.stringify({ ...document, shared: answered, nouns: document.nouns.filter((one: { noun: string }) => one.noun !== 'row(s)') }, null, 2),
+      JSON.stringify(
+        {
+          ...answered,
+          nouns: answered.nouns.map((one: { noun: string }) =>
+            one.noun === 'row(s)' ? { ...one, gates: ['check-fault-cases', 'check-open-list'] } : one,
+          ),
+        },
+        null,
+        2,
+      ),
     );
     const result = run(['--inventory', path, '--readings', RECORDED]);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('row(s) is new, printed by check-fault-cases,check-open-list');
+    expect(result.stderr).toContain('row(s): check-fault-cases,check-open-list -> check-fault-cases,check-open-list,check-repository-table');
     expect(result.stderr).toContain('read the diff');
   });
 
@@ -603,7 +747,7 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     // The fixture shares exactly one noun, so the condition below is the whole of the document's
     // judgements rather than one of them.
     expect(document.shared.map((one: { noun: string }) => one.noun)).toEqual(['row(s)']);
-    writeFileSync(path, JSON.stringify({ ...document, shared: document.shared.map((one: object) => ({ ...one, relation: null })) }, null, 2));
+    writeFileSync(path, JSON.stringify(judged(document, 'row(s)', { relation: null, populations: null }), null, 2));
     const result = run(['--inventory', path, '--readings', RECORDED]);
     expect(result.status).toBe(1);
     // The numbers are in the message, and so is what to do about it: `--write` cannot answer this.
@@ -618,12 +762,11 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     // document would otherwise record a partition the next run refuses, and the two doors would be
     // one rule in name only.
     const { path, document } = derive('writing.json');
-    const answered = document.shared.map((one: object) => ({
-      ...one,
+    const answered = judged(document, 'row(s)', {
       relation: 'a sentence a person wrote',
       populations: [['check-fault-cases', 'check-repository-table'], ['check-open-list']],
-    }));
-    writeFileSync(path, JSON.stringify({ ...document, shared: answered }, null, 2));
+    });
+    writeFileSync(path, JSON.stringify(answered, null, 2));
     const result = run(['--write', '--inventory', path, '--readings', DRIFTED]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('do not agree on a count');
@@ -641,8 +784,8 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     // person, so a document the gate produced itself is refused until both are there. That is the
     // round: a sentence nobody can check is not a judgement, it is a note.
     const { path, document } = derive('unpartitioned.json');
-    const answered = document.shared.map((one: object) => ({ ...one, relation: 'a sentence a person wrote' }));
-    writeFileSync(path, JSON.stringify({ ...document, shared: answered }, null, 2));
+    const answered = judged(document, 'row(s)', { relation: 'a sentence a person wrote' });
+    writeFileSync(path, JSON.stringify(answered, null, 2));
     const result = run(['--inventory', path, '--readings', RECORDED]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('no record says which of them read one population');
@@ -652,12 +795,11 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
 
   it('refuses a partition that leaves one of the noun\'s gates unplaced', () => {
     const { path, document } = derive('broken-partition.json');
-    const answered = document.shared.map((one: object) => ({
-      ...one,
+    const answered = judged(document, 'row(s)', {
       relation: 'a sentence a person wrote',
       populations: [['check-fault-cases', 'check-repository-table']],
-    }));
-    writeFileSync(path, JSON.stringify({ ...document, shared: answered }, null, 2));
+    });
+    writeFileSync(path, JSON.stringify(answered, null, 2));
     const result = run(['--inventory', path, '--readings', RECORDED]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('row(s) (check-open-list is in no population)');
@@ -668,12 +810,11 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     // them changes its reader; the sentence stays and the numbers diverge. The refusal quotes both,
     // because the numbers are the only evidence and the record is the only thing a person can fix.
     const { path, document } = derive('disagreeing.json');
-    const answered = document.shared.map((one: object) => ({
-      ...one,
+    const answered = judged(document, 'row(s)', {
       relation: 'a sentence a person wrote',
       populations: [['check-fault-cases', 'check-repository-table'], ['check-open-list']],
-    }));
-    writeFileSync(path, JSON.stringify({ ...document, shared: answered }, null, 2));
+    });
+    writeFileSync(path, JSON.stringify(answered, null, 2));
     const result = run(['--inventory', path, '--readings', DRIFTED]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('do not agree on a count');
@@ -681,5 +822,89 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     // The same document against the readings it was written from passes, so the refusal is about the
     // divergence rather than about the partition being unusual.
     expect(run(['--inventory', path, '--readings', RECORDED]).status).toBe(0);
+  });
+
+  it('refuses a gate that joined the noun, and leaves the sentence standing', () => {
+    // `O-099` end to end. The record is complete against three gates; a fourth starts printing the
+    // noun; the run says which gate nobody placed and not "write the sentence again" -- and `--write`
+    // preserves the sentence while naming what it could not place.
+    const { path, document } = derive('joined-noun.json');
+    const answered = judged(document, 'row(s)', {
+      relation: 'three tables',
+      populations: [['check-fault-cases', 'check-repository-table'], ['check-open-list']],
+    });
+    writeFileSync(path, JSON.stringify(answered, null, 2));
+    const refused = run(['--inventory', path, '--readings', JOINED]);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain('no record says which of them read one population');
+    expect(refused.stderr).toContain('row(s) (check-l4-status is in no population)');
+    const wrote = run(['--write', '--inventory', path, '--readings', JOINED]);
+    expect(wrote.status, wrote.stderr).toBe(0);
+    // Named rather than silent: the next run refuses this document, and the person reading the
+    // writing has to know that before they read the refusal.
+    expect(wrote.stderr).toContain("row(s) is not partitioned over this run's gates — check-l4-status is in no population");
+    const after = JSON.parse(readFileSync(path, 'utf8'));
+    expect(after.judgements.find((one: { noun: string }) => one.noun === 'row(s)')).toMatchObject({
+      noun: 'row(s)',
+      relation: 'three tables',
+    });
+  });
+
+  it('keeps a judgement through a round in which its noun is not shared', () => {
+    // The half a noun-shaped key alone would not fix. `shared` is derived, so `row(s)` leaves that
+    // list when only one gate prints it -- and a judgement stored on the shared entry would leave
+    // with it. Stored on the noun's entry it survives, and the round the second gate returns is
+    // green without anybody writing the sentence a second time.
+    const { path, document } = derive('lasting.json');
+    writeFileSync(
+      path,
+      JSON.stringify(
+        judged(document, 'row(s)', {
+          relation: 'three tables',
+          populations: [['check-fault-cases', 'check-repository-table'], ['check-open-list']],
+        }),
+        null,
+        2,
+      ),
+    );
+    const narrowed = run(['--write', '--inventory', path, '--readings', NARROWED]);
+    expect(narrowed.status, narrowed.stderr).toBe(0);
+    const after = JSON.parse(readFileSync(path, 'utf8'));
+    expect(after.shared.map((one: { noun: string }) => one.noun)).not.toContain('row(s)');
+    expect(after.judgements.find((one: { noun: string }) => one.noun === 'row(s)')).toMatchObject({
+      noun: 'row(s)',
+      relation: 'three tables',
+    });
+    // The vocabulary is what moved, and it moved to the one gate that still prints the noun.
+    expect(after.nouns.find((one: { noun: string }) => one.noun === 'row(s)').gates).toEqual(['check-repository-table']);
+    // The second gate coming back is the ordinary round after it: `--write` refreshes the vocabulary
+    // and finds the sentence, and the run that follows is green without anybody retyping it.
+    expect(run(['--write', '--inventory', path, '--readings', RECORDED]).status).toBe(0);
+    expect(run(['--inventory', path, '--readings', RECORDED]).status).toBe(0);
+  });
+
+  it('keeps a judgement for a noun no gate printed this round', () => {
+    // `budget(s)` is printed only while a ceiling is being widened, so it is absent from most runs.
+    // A judgement stored on the derived vocabulary would be deleted by the first `--write` in a round
+    // where nothing moved; the list of its own keeps it, and the writing says it kept it.
+    const { path, document } = derive('silent-noun.json');
+    expect(document.judgements).toEqual([]);
+    writeFileSync(
+      path,
+      JSON.stringify(
+        judged(document, 'budget(s)', { relation: 'a widened ceiling, when one is widened', populations: [['check-ci-budget']] }),
+        null,
+        2,
+      ),
+    );
+    const wrote = run(['--write', '--inventory', path, '--readings', RECORDED]);
+    expect(wrote.status, wrote.stderr).toBe(0);
+    expect(wrote.stderr).toContain('budget(s) carries a judgement and no gate printed it this run — kept');
+    const after = JSON.parse(readFileSync(path, 'utf8'));
+    expect(after.judgements).toEqual([
+      { noun: 'budget(s)', populations: [['check-ci-budget']], relation: 'a widened ceiling, when one is widened' },
+    ]);
+    // And the vocabulary it speaks about is unchanged: a judgement does not put a noun in `nouns`.
+    expect(after.nouns.map((one: { noun: string }) => one.noun)).not.toContain('budget(s)');
   });
 });
