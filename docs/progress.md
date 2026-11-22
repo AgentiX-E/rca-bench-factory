@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.127: **38** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.127: **39** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1019,6 +1019,14 @@ is a row about rather than paraphrase one that no `grep` will find.
   discards.
   `[open: whether the label belongs in the inventory, where it rots like every sentence, or in the gate's own line,
   which the census would have to keep -- the two costs are a sentence per gate and a log line per noun]`
+
+- O-099 · **A gate joining a noun discards a sentence that is still true, and it costs two rewrites a round.**
+  `round(s)` gains `check-ci-budget` whenever the ledger's newest run is behind this round, and loses it again when
+  the ledger is refreshed -- so a judgement keyed by the noun and its gates is dropped and refused twice in one
+  round. The rule is right, because a partition drawn around four gates says nothing about a fifth; the price is a
+  sentence that was not wrong being retyped.
+  `[open: whether the key should be the noun, with a newcomer refused until it is placed in a group and the sentence
+  left standing -- the risk being a sentence about four gates that silently covers five]`
 
 ## Pass log
 

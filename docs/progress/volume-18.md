@@ -2599,7 +2599,7 @@ while writing the field, caught by the field.
 | falsifications | nine edits, **fourteen** reds |
 | the population | **47 of 231** record(s) in table form against **318** rows |
 | the census | **53 unit noun(s) in 70 gate/noun pair(s)**, **9** shared, **23** populations, **3** read by more than one gate, **4** coincidences -- `3` forced by a declared population and `1` across two |
-| open entries | **38 -> 37**: `O-097` closed by findings 616 and 617 |
+| open entries | **38 -> 39**: `O-097` closed by findings 616 and 617; `O-098` and `O-099` opened, both found by doing the work |
 | LLM calls | **0** |
 
 ### Left open
@@ -2616,4 +2616,10 @@ while writing the field, caught by the field.
   discards, keeping the count and its qualifier.
   `[open: whether the label belongs in the inventory, where it rots like every sentence, or in the gate's line,
   which the census would have to keep -- a sentence per gate against a log line per noun]`
+- **A gate joining a noun discards a sentence that is still true, and it costs two rewrites a round.** `round(s)`
+  gains `check-ci-budget` while the ledger is behind and loses it when the ledger is refreshed, and a judgement keyed
+  by the noun and its gates goes with it -- twice in this round. The rule is right, because a partition drawn around
+  four gates says nothing about a fifth; the price is a sentence that was not wrong being retyped.
+  `[open: whether the key should be the noun, with a newcomer refused until it is placed and the sentence left
+  standing -- the risk being a sentence about four gates that silently covers five]`
 
