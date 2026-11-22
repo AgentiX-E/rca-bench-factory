@@ -32,12 +32,6 @@
       ]
     },
     {
-      "noun": "budget(s)",
-      "gates": [
-        "check-ci-budget"
-      ]
-    },
-    {
       "noun": "candidate(s)",
       "gates": [
         "check-fault-cases"
@@ -434,7 +428,7 @@
           "check-workflow-language"
         ]
       ],
-      "relation": "two disjoint corpora -- the comments of the sources and the comments of the workflows -- and the smaller is 4.7 per cent of the larger with no member in common"
+      "relation": "two disjoint corpora -- the comments of the sources and the comments of the workflows -- with no member in common and the smaller a small fraction of the larger, which the two counts above state and this sentence no longer copies"
     },
     {
       "noun": "file(s)",
