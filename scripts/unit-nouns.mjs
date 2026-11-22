@@ -220,18 +220,17 @@ export function numbersOf(uses) {
 /**
  * The figures a sentence states, in the order it states them -- and none for a name.
  *
- * A relation is prose and prose may carry a number: four of the nine carry one this round (the two
- * volumes, the four walks' sizes, the two eights, the zero three language gates print). What a
- * sentence may **not** carry is a figure no gate printed, because a figure no gate printed is a copy
- * of nothing: `4.7 per cent` in `comment(s)` was a ratio of two counts taken in some earlier round,
- * and this round's two counts make 4.85 -- a number that moved and took nothing with it
- * (finding 620).
+ * A relation is prose and prose may carry a number: four of the nine carry one this round (two
+ * volumes, three files, one eight, one zero). What a sentence may **not** carry is a figure no gate
+ * printed, because a figure no gate printed is a copy of nothing: `4.7 per cent` in `comment(s)` was
+ * a ratio of two counts taken in some earlier round, and this round's two counts make 4.84 -- a
+ * number that moved and took nothing with it (finding 620).
  *
- * A numeral **glued** to a letter or a hyphen is part of a name rather than a count, and the corpus
- * writes three of those: `check-l4-status` (a gate's name), `L4` (what that gate's registry is
- * called), and `vX.YY`-style labels. Telling them apart by a list of exemptions would be a list to
- * keep equal to the corpus; the glue is a property of the token, and it is what makes `14` a count
- * and `L4` a name without anybody deciding which names exist.
+ * A numeral **glued** to a letter, a hyphen, a dot or an underscore is part of a name rather than a
+ * count, and the corpus writes three of those: `check-l4-status` (a gate's name), `L4` (what that
+ * gate's registry is called), and `v3.129` (a version). Telling them apart by a list of exemptions
+ * would be a list to keep equal to the corpus; the glue is a property of the token, and it is what
+ * makes `14` a count and `L4` a name without anybody deciding which names exist.
  */
 export function figuresOf(relation) {
   if (typeof relation !== 'string') return [];
