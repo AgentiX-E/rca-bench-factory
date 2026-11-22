@@ -2465,9 +2465,9 @@ at the call rather than joining an edit made uniform by its siblings.
 | item | value |
 | --- | --- |
 | CI | run `44756845473` on `2abd1da2`: **8 of 8 jobs success** -- the run of the commit this record is in, and the one the recording is taken from |
-| `core` test suite | **258 files, 6771 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **262 files, 6958 tests passed** (as of this commit) |
+| `core` test suite | **258 files, 6771 tests passed** (at v3.126) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.126) |
+| repo test suite | **262 files, 6958 tests passed** (at v3.126) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: the round added one reader and three calls to it, every one of them taken |
 | new tests | **6767 -> 6771, +4**: the coloured report, the coloured tail, the strip and its counter-case (`a [2m b` is prose), and the coloured hang |
 | the sentences moved | **3**: the checkout note above `jobs:`, the exemption's justification in the test, and the comment at `exhaustedTestBudget` |
@@ -2494,4 +2494,126 @@ at the call rather than joining an edit made uniform by its siblings.
   sentence's neighbourhood -- a claimant whose output arrives coloured -- and did not touch the question.
   `[open: which of the four sets is worth a reader first is a measurement -- `file(s)` is the one whose two
   agreeing numbers come from one walk and whose two disagreeing ones come from two]`
+
+## v3.127 — the judgement was a sentence, and the census checked only that one existed
+
+### What the round began with
+
+`O-097`: nine nouns are printed by more than one gate, each carries a `relation` a person wrote, and nothing in
+the tree could contradict one. The entry asked for the two capabilities that would fix it -- `disjoint` derived
+rather than asserted, and a contradictory relation refused -- and said the price was a change to four gates so the
+census could hold sets.
+
+This round took a cheaper road that gets both: **the partition of a noun's gates into populations**. A group of
+two is the claim that those two gates read one set, and that claim has a consequence in numbers. A set of
+thirty-odd thousand row breaks is not held; the claim that is worth that many members is the claim that two gates count
+them at all.
+
+### The measurement
+
+The nine sentences were read against the gates, and two were wrong in opposite directions (**finding 617**):
+
+| sentence | what the file says |
+| --- | --- |
+| `addendum(s)`: "both take it from `populationsOf` in `progress-volumes.mjs`" | `check-open-list` imports `node:fs`, `./docs-corpus.mjs`, `node:path`, `node:url` -- not `progress-volumes.mjs` |
+| `round(s)`: "both taken from `populationsOf`" **and** "no arithmetic forces the two numbers to agree" | the same file: it is one claim denying the forcing it has just described |
+
+Both conclusions -- one population, so the counts must agree -- were right. The census checked that a sentence
+existed and never what it said.
+
+### The two defects
+
+| finding | the shape | the repair | falsified by |
+| --- | --- | --- | --- |
+| 616 | the judgement was prose, and the part of it a run can decide -- whether two gates read one set, whose consequence is that their counts must agree -- was not separated from the part it cannot | a noun's gates are partitioned into populations, stored beside the sentence; a group of two must have a count in common or the run is refused, and the summary says how many equalities are checked rather than how many sentences are written | **9** edits, **14** reds |
+| 617 | two of the nine sentences were already false, one claiming a shared reader it did not have and one denying a forcing it had just described | both rewritten to say what the files say, and the checkable half moved into `populations` so the sentence keeps only what no run can decide | the readings above |
+
+### What the partition changed in the output
+
+```
+row(s) — ... ; 8 in check-fault-cases; 9 in check-l4-status; 318, 2 in check-open-list; 8 in check-repository-table
+  (a count two gates print agrees, and they are not in one population)
+file(s) — 37 in check-citations; 474 in check-comments-language; 474 in check-doc-counts
+  (one population at 474, and the count agrees); 6 in check-workflow-language
+addendum(s) — 1 in check-open-list; 1 in check-progress-volumes (one population at 1, and the count agrees)
+```
+
+`23` populations over the `9` shared nouns, `3` of them read by more than one gate, and `3` of the `4` coinciding
+counts are now checked instead of assumed, with the fourth printed as what it is. The fourth is printed as what it is: `8 row(s)` is the corpus.
+
+### The first partition written under the rule was refused by the rule
+
+`volume(s)` was written as one group of two -- the audit volumes and the progress volumes, which are two
+directories with no file in common:
+
+```
+check-unit-nouns: FAILED — 1 population(s) the record declares one do not agree on a count:
+  14 and 18 volume(s) in check-audit-volumes and check-progress-volumes
+```
+
+Fourteen and eighteen are not two readings of one set, and the arithmetic said so before a person did. The
+mistake was real -- it was made while writing the inventory this round -- and it is the clearest evidence that the
+field is a claim rather than a comment.
+
+### The measurements this round rests on
+
+| reading | value |
+| --- | --- |
+| `check-open-list`'s imports | `node:fs`, `./docs-corpus.mjs`, `node:path`, `node:url` |
+| `check-progress-volumes`'s corpus | `INDEX`, `VOLUMES` from `progress-volumes.mjs`, labelled by `labelOf` |
+| populations over the nine shared nouns | **23**, of which **3** hold more than one gate |
+| coinciding counts, by attribution | **3** inside a declared population, **1** across two |
+| `check-unit-nouns`, after the partition | `53 unit noun(s) in 70 gate/noun pair(s); ... 3 population(s) are read by more than one gate, and 3 of them agree on a count` |
+
+### Falsifications
+
+| the edit | reds |
+| --- | --- |
+| `volume(s)`'s partition written as one group of two | 1 -- the shipped gate refuses `14 and 18` |
+| `agreementOf` comparing whole sets instead of their intersection | 2 |
+| the "does not print this noun" rule removed | 1 |
+| the "two populations" rule removed | 1 |
+| `coincidencesOf` ceasing to read the partition | 3 |
+| the groups left in the order the document wrote them | 2 |
+| `--write` ceasing to refuse a population that no longer agrees | 1 |
+| a group of two printing its numbers with no note | 2 |
+| the flat-list guard removed | 1 |
+
+**Nine edits, fourteen reds**, and the first is the one that is not a mutation: it is the mistake this round made
+while writing the field, caught by the field.
+
+### Readings
+
+> Ledger for `v3.127`.
+
+| item | value |
+| --- | --- |
+| CI | run `44756845473` on `2abd1da2`: **8 of 8 jobs success** -- the newest run, and the one the recording is taken from |
+| `core` test suite | **258 files, 6784 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **262 files, 6971 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: the round added readers and callers, every branch of them taken |
+| new tests | **6771 -> 6784, +13**: the partition's five failure shapes, the flat-list shape, the common-count reading, the disagreement, the attribution, the summary's count of checked equalities, the two states, the shared formatter, and three gate refusals |
+| the sentences rewritten | **2**: `addendum(s)` and `round(s)` |
+| the rules | a shared noun carries a sentence and a partition; a population of two is checked against its own numbers; `--write` refuses a population that no longer agrees |
+| falsifications | nine edits, **fourteen** reds |
+| the population | **47 of 231** record(s) in table form against **318** rows |
+| the census | **53 unit noun(s) in 70 gate/noun pair(s)**, **9** shared, **23** populations, **3** read by more than one gate, **4** coincidences -- `3` forced by a declared population and `1` across two |
+| open entries | **38 -> 37**: `O-097` closed by findings 616 and 617 |
+| LLM calls | **0** |
+
+### Left open
+
+- **The ceiling is twice the slowest day, and a day slower than that still dies unnamed.** Nothing here touches it:
+  `batteries` still holds **83** minutes of step bounds in a **34**-minute ceiling, and the day between twice its
+  slowest reading and the sum of those bounds is still the one that would die at the ceiling with every step inside
+  its own bound.
+  `[open: what a slow-but-not-hung day should produce -- the job's death, which names nothing, or a ceiling
+  inflated until it cannot fire, which names nothing either]`
+- **A population of one is a label nobody has to write, and the census throws the gate's own line away.**
+  Twenty of the twenty-three populations hold a single gate, so the partition says nothing the gate's name did not;
+  the sentence that would say what `check-l4-status`'s `9 row(s)` counts is the line the census reads and then
+  discards, keeping the count and its qualifier.
+  `[open: whether the label belongs in the inventory, where it rots like every sentence, or in the gate's line,
+  which the census would have to keep -- a sentence per gate against a log line per noun]`
 

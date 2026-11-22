@@ -435,3 +435,27 @@
   (`budget(s)`, `scope(s)`, `enum call(s)`) were dropped in silence, so the headline counted what it happened to
   read. What the closure leaves behind is the sentence itself: the relation is written by a person and the census
   holds no sets to contradict it, which is `O-097`.
+
+- O-097 · ~~**The relation a shared noun carries is a sentence, and the census cannot contradict it.**~~
+  Nine nouns are printed by more than one gate and each carried a `relation` a person wrote: `volume(s)` was two
+  disjoint directories, `row(s)` four tables, `addendum(s)` one population read twice. Every one of those is a
+  claim about a set, and the census held no sets -- it held summaries -- so a relation that had stopped being true
+  stayed printed, and `--write` preserved it by design. `file(s)` was the sharpest case: four gates walking four
+  corpora, one of which (`check-citations`) still reads its own directory rather than a data module, so `474` and
+  `474` agreed by a shared reader and `37` and `6` agreed with nothing.
+  **Closed by finding 616 and by finding 617**, which are the two halves of "a sentence is not something a run can
+  hold". A noun's gates are now **partitioned into populations** -- a group of two is the claim that those two read
+  one set -- and the census checks it, because such a claim has a consequence in numbers: the two must have a
+  count in common or the run is refused. That is what the entry asked for and priced at four gates: `disjoint` is
+  derived rather than asserted (a noun whose gates fall into more than one group is not one population), and a
+  contradictory relation is refused, but the partition is a list of gate names rather than the sets themselves, so
+  nothing holds 32 000 row breaks. Three of the nine nouns carry a group of two, so **three of the four coinciding
+  counts are checked instead of assumed**; the fourth, `8 row(s)`, is printed as the corpus it is. The first
+  partition written under the rule was refused by it -- `14 and 18 volume(s)` declared one set -- which is the
+  round's own mistake caught by the round's own field. Two of the nine sentences turned out to be false in
+  opposite directions: one claimed a shared reader (`populationsOf`) that `check-open-list` does not import, one
+  denied the forcing it had just described, and both were conclusions the reader had to take on trust because the
+  gate checked only that a sentence existed. What the closure leaves behind is the label of a population that
+  holds one gate: nineteen of the twenty-two, where the partition says nothing the gate's name did not, and the
+  sentence that would say it is the line the census throws away, which is `O-098`.
+

@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 258 core + 4 cli |
-| Test lines | 114,675 core + 3,242 cli |
-| Tests | 6,771 core + 187 cli |
+| Test lines | 114,996 core + 3,242 cli |
+| Tests | 6,784 core + 187 cli |
 | Tracked files | 672 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.126: **38** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.127: **38** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1011,16 +1011,14 @@ is a row about rather than paraphrase one that no `grep` will find.
   nothing, or a ceiling inflated until it cannot fire, which names nothing either -- is a decision no round
   has made; the third answer, a job split small enough that the sum fits, is what the same arithmetic said
   twice before, and the six preparation steps make it a split that shares its setup rather than repeats it]`
-- O-097 · **The relation a shared noun carries is a sentence, and the census cannot contradict it.**
-  Nine nouns are printed by more than one gate and each carries a `relation` a person wrote: `volume(s)` is two
-  disjoint directories, `row(s)` is four tables, `addendum(s)` is one population read twice. Every one of those
-  is a claim about a set, and the census holds no sets -- it holds summaries -- so a relation that has stopped
-  being true stays printed, and `--write` preserves it by design. `file(s)` is the sharpest case: its four gates
-  walk four corpora, one of which (`check-citations`) still reads its own directory rather than a data module,
-  so `474` and `474` agree by a shared reader and `37` and `6` agree with nothing.
-  `[open: holding the sets would let `disjoint` be derived and a contradictory relation refused, and it is a
-  change to four gates rather than to the census -- the measurement that says which four is which noun's
-  relation a reader would act on if it were wrong]
+- O-098 · **A population of one is a label nobody has to write, and the census throws the gate's own line away.**
+  Twenty-two populations are declared over the nine shared nouns and nineteen of them hold a single gate, so the
+  partition says nothing a reader could not read off the gate's name: what `check-l4-status`'s `9 row(s)` counts is
+  in the sentence beside it, not in `populations`. The census reads the line the number came from and keeps only
+  the count and its qualifier, so the one sentence that says what a gate counts is the sentence the census
+  discards.
+  `[open: whether the label belongs in the inventory, where it rots like every sentence, or in the gate's own line,
+  which the census would have to keep -- the two costs are a sentence per gate and a log line per noun]`
 
 ## Pass log
 
@@ -1056,7 +1054,7 @@ and this table.
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
-| [volume-18.md](progress/volume-18.md) | 15 | v3.112 | v3.126 |
+| [volume-18.md](progress/volume-18.md) | 16 | v3.112 | v3.127 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

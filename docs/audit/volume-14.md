@@ -1857,3 +1857,143 @@ The claimant's own JSON report is on disk -- the battery asks for `--reporter=js
 its `failureMessages` -- so a second route to the same evidence exists and is not taken here. The text is what the
 battery already has, and it is now readable.
 
+## Finding 616 — the judgement was a sentence, and a sentence is not something a run can hold
+
+### What the tree said
+
+Nine nouns are printed by more than one gate. Each carries a `relation` a person wrote, and the gate refuses a
+shared noun without one. What the gate never did was ask whether the sentence was still true: `--write` preserves
+every relation by design, the inventory holds no sets, and the census holds summaries. `O-097` named the shape and
+the one measurement that would decide what to do about it.
+
+### The measurement
+
+The nine sentences were read against the gates they describe, and two of them were wrong in opposite directions
+(finding 617). The general form is not "a sentence can be false" -- any prose can -- but that **the part of a
+sentence a run could check was not separated from the part it could not**:
+
+| the sentence | what a run can decide |
+| --- | --- |
+| `addendum(s)`: "both take it from `populationsOf`" | nothing -- the claim is about code |
+| `addendum(s)`: "so the number is shared rather than merely equal" | the two numbers, which are equal |
+| `volume(s)`: "two disjoint directories" | nothing -- it is about which files exist |
+| `row(s)`: "that `8` appears twice is the corpus rather than a count two gates share" | nothing -- it is about what a row is |
+
+Every line in the right column is a claim that two gates read one set, and every one of those has a consequence
+in numbers: if two gates read one set, their counts must agree. That consequence is one field, and it was sitting
+inside prose.
+
+### The repair
+
+A noun's gates are partitioned into **populations**, stored beside the sentence:
+
+```json
+{ "noun": "file(s)",
+  "gates": ["check-citations", "check-comments-language", "check-doc-counts", "check-workflow-language"],
+  "populations": [["check-citations"], ["check-comments-language", "check-doc-counts"], ["check-workflow-language"]],
+  "relation": "four walks over three sets -- ..." }
+```
+
+A group of two is a claim that those two gates read one set, and the gate checks it: their numbers must have
+something in common, or the run is refused. The partition is what makes `disjoint` derivable rather than asserted
+-- a noun whose gates fall into more than one group is not one population -- and it is why the unit is the group
+and not the noun: `file(s)` has two gates on the source walk and two elsewhere, and one flag per noun cannot say
+that.
+
+Three of the nine nouns carry a group of two, so **three of the four coinciding counts are now checked instead of
+assumed**, and the fourth -- `8 row(s)` -- is printed as what it is:
+
+```
+row(s) — ...; 8 in check-fault-cases; 9 in check-l4-status; 318, 2 in check-open-list; 8 in check-repository-table
+  (a count two gates print agrees, and they are not in one population)
+file(s) — 37 in check-citations; 474 in check-comments-language; 474 in check-doc-counts
+  (one population at 474, and the count agrees); 6 in check-workflow-language
+```
+
+The summary says how much is checked rather than how much is written: `3 population(s) are read by more than one
+gate, and 3 of them agree on a count`.
+
+### The check refused the first partition written under it
+
+`volume(s)` was written as one group of two -- the audit volumes and the progress volumes, which are two
+directories. The gate answered:
+
+```
+check-unit-nouns: FAILED — 1 population(s) the record declares one do not agree on a count:
+  14 and 18 volume(s) in check-audit-volumes and check-progress-volumes
+```
+
+Fourteen and eighteen are not two readings of one set, and the arithmetic said so before any person did. That is
+the whole gain: the rule that a partition is a claim now has a reader.
+
+### What the repair also removed
+
+The gate recognised the unwritten-sentence state by comparing the line it had just printed against `UNSTATED` --
+a constant matched against a string the same file produced (`line.endsWith(' — ' + UNSTATED)`). Two readers
+replaced it: `unstatedOf` and `unpartitionedOf` answer the two states from the document, and the refusal quotes
+the numbers through the same formatter the green line uses (`numbersOfNoun`), so a refusal cannot drift from the
+line it refuses to print.
+
+### Falsifications
+
+| the edit | reds |
+| --- | --- |
+| `volume(s)`'s partition written as one group of two | 1 -- the shipped gate refuses `14 and 18` |
+| `agreementOf` comparing whole sets instead of their intersection | 2 -- `round(s)` holds `221` and `221, 50` |
+| the "does not print this noun" rule removed | 1 |
+| the "two populations" rule removed | 1 |
+| `coincidencesOf` ceasing to read the partition | 3 -- the attribution, the summary's count, and a tree line |
+| the groups left in the order the document wrote them | 2 |
+| `--write` ceasing to refuse a population that no longer agrees | 1 |
+| a group of two printing its numbers with no note | 2 |
+
+**Eight edits, thirteen reds.**
+
+## Finding 617 — two of the nine sentences were wrong, in opposite directions
+
+### What the tree said
+
+`addendum(s)` carried:
+
+> one population and one reader -- both take it from `populationsOf` in `progress-volumes.mjs`, so the number is
+> shared rather than merely equal
+
+`round(s)` carried:
+
+> both taken from `populationsOf` in `progress-volumes.mjs`; ... and no arithmetic forces the two numbers to
+> agree, which is why the equality is printed rather than assumed
+
+### The measurement
+
+`check-open-list` imports `node:fs`, `./docs-corpus.mjs`, `node:path`, `node:url` -- and not
+`progress-volumes.mjs`. It counts `## vX.YY` headings with its own `ROUND` and `ADDENDUM` patterns over the files
+`progressCorpus()` names; `check-progress-volumes` labels the same headings through `labelOf` and buckets them with
+`populationsOf`. **Two readers of one set of headings**, not one reader quoted twice.
+
+So the first sentence claimed a shared reader it did not have, and the second claimed that no arithmetic forces an
+equality it had just explained the forcing of. Both conclusions -- one population, so the counts must agree --
+were right. A sentence can be wrong in the direction of claiming more, and in the direction of claiming less, and
+the census could see neither: it checked that a sentence existed.
+
+### The repair
+
+Both sentences were rewritten to say what the files say, and the part that had been wrong -- *how* the two gates
+reach one set -- is no longer where the claim lives. The checkable half moved into `populations`, where a run
+holds it. The sentences kept the part no run can decide:
+
+> one set of headings read twice -- both walk the volumes and count the `## vX.YY, addendum` sections,
+> `check-open-list` with its own pattern and `check-progress-volumes` through `labelOf` and `populationsOf`, so
+> the two numbers are two readers of one population rather than one reader quoted twice
+
+> one set of headings read twice -- `check-open-list` counts the distinct `vX.YY` labels among them and
+> `check-progress-volumes` counts the sections that carry one; that the two agree is a rule rather than a
+> coincidence, because no round may be headed twice, and the second gate prints the `Pass` rounds it also counts
+> beside them
+
+### What is not claimed
+
+The nine sentences were read once, by one person, in one round. Nothing here says the other seven are true: it
+says which of them could be checked and are, and that the two that were wrong are now the two whose checkable
+part is under a rule. A sentence about *why* remains a sentence, and the next one to go wrong will be found by
+reading rather than by running.
+

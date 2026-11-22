@@ -1915,3 +1915,30 @@ from an anecdote again.
 - **What is not promised.** A claimant's own JSON report is on disk -- the battery asks for it for the margin and
   never reads its `failureMessages` -- so a second route to the same evidence exists and is not taken here.
 
+### A judgement is a sentence and a partition, and the partition is what a run holds (v3.127)
+
+- **A sentence is not something a run can hold.** Nine nouns are printed by more than one gate and each carried a
+  `relation` a person wrote; the gate refused one without a sentence and never asked whether the sentence was
+  still true (finding 616). The part of a sentence a run **can** decide is whether a group of gates reads one set,
+  and that has a consequence in numbers.
+- **A noun's gates are partitioned into populations**, stored beside the sentence. A group of two is the claim
+  that those two read one set, and the gate checks it: their counts must have something in common, or the run is
+  refused. `disjoint` is therefore derived rather than asserted -- a noun whose gates fall into more than one group
+  is not one population -- which is what `O-097` asked for, and it costs a list of gate names rather than the sets
+  themselves.
+- **The unit is the group, not the noun**, because `file(s)` has two gates on the source walk and two elsewhere:
+  one flag per noun cannot say that, and one sentence had no way to.
+- **The check refused the first partition written under it.** `volume(s)` was written as one group of two; the gate
+  answered `14 and 18 volume(s)` in one population -- two directories are not two readings of one set.
+- **A population the record declares one that disagrees is refused on both doors.** It is the only refusal that is
+  a fact about the corpus rather than about the record being unfinished, so `--write` refuses it too: a document
+  cannot be brought up to date while the tree it describes holds two counts for one set.
+- **Two of the nine sentences were already false, in opposite directions** (finding 617): `addendum(s)` claimed a
+  shared reader (`populationsOf` in `progress-volumes.mjs`) that `check-open-list` does not import, and `round(s)`
+  denied the forcing it had just described. Both conclusions were right; the census could not tell which half of a
+  sentence was which, and now the half it can check is not in the sentence.
+- **What is still promised only by a person.** The `relation` says *why* two gates read one set and what the sets
+  that are not shared are. That is prose, and the next sentence to go wrong will be found by reading.
+- **What is not claimed.** A partition holds gate names, not members: nothing here holds thirty-odd thousand row breaks, so a
+  relation about *which* files are in a set is still prose.
+
