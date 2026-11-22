@@ -2966,7 +2966,7 @@ corpus rather than about a fixture.
 | new tests | **6798 -> 6804, +6**: the figures a sentence states, a name's digits that are not figures, a sentence whose figures are counts, the figure no gate printed, every unprinted figure reported, a noun no gate printed |
 | the record's shape | a relation may state a figure only when a gate printed it under that noun |
 | falsifications | five mutations, **nine** reds |
-| open entries | **38 -> 37**: `O-098` closed by finding 620; `O-100` carried |
+| open entries | **38 -> 38**: `O-098` closed by finding 620; `O-100` carried; `O-101` opened, because the live list states counts too |
 | LLM calls | **0** |
 
 ### Left open
@@ -2976,3 +2976,9 @@ corpus rather than about a fixture.
   same floor six times. The floor is a rule about a cold package index written per step, so a job that repeats six
   preparation steps pays it six times. `[open: whether the floor should be a property of the job rather than of the
   step -- one allowance for everything before the first real step -- and what would then refuse a cold day]`
+- **The live list states counts too, and this round left its own list unread.** `O-019` says `docs/acceptance.md`
+  "is 96 KB and grows by clause per round", and the file is **165,067** bytes -- 161.2 KB. The entry that argues the
+  file has grown too large is quoting a measurement from the round that wrote it, which is finding 620 in the one
+  document the census does not reach. `[open: whether `check-open-list` can hold the numbers its entries state -- a
+  file size is one a gate can measure, "284 lines" is one it can count, and the rest are as unbacked as 4.7 per cent
+  was; the two costs are a reader per shape of figure and a rule that a limit states none]`

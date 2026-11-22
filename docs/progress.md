@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.130: **37** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.130: **38** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1006,6 +1006,14 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: whether the floor belongs to the job rather than to the step -- one allowance for everything before the
   first real step -- and what would then refuse a cold day that runs long on all six; the two numbers are 42 of 84
   and 24 of 58, and neither has been measured against a day that spent them]`
+- O-101 · **The live list states counts too, and the round that checked the census's sentences left its own list unread.**
+  `O-019` says `docs/acceptance.md` "is 96 KB and grows by clause per round" and the file is **165,067 bytes** --
+  **161.2** KB, not 96 -- so the entry that argues the file is too big to keep growing is quoting a measurement
+  from the round that wrote it. Finding 620 gave the census a reader for exactly this: a figure in a sentence must
+  be a count a gate printed. Nothing here prints the list's figures, and thirty-odd entries state them.
+  `[open: whether `check-open-list` can hold the numbers its own entries state -- a file size is one a gate can
+  measure, "284 lines" is one it can count, and the rest are as unbacked as the census's 4.7 per cent was; the two
+  costs are a reader per shape of figure and a rule that a limit states none]`
 
 ## Pass log
 
