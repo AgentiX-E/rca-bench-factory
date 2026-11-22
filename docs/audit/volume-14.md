@@ -2078,3 +2078,127 @@ rather than the shape:
 The first is the assertion `O-099` is about: the sentence surviving is worth nothing if the run does not also say
 what it could not place. The second is the half a noun-shaped key alone would not buy, and it is the one the round
 would have shipped without if the record had stayed on the derived list.
+
+## Finding 619 — the ceiling was sized from a day, and the bounds inside it are not a day
+
+### What the entry said
+
+`O-095`: `R12` refuses a ceiling under twice a job's slowest recorded day, and what the rule does not say is what
+happens between twice that day and the sum of the bounds inside the job. `batteries` held **83** minutes of step
+bounds in a **34**-minute ceiling, so a slow-but-not-hung day reached the ceiling with every step still inside its
+own bound and the verdict named the job. The entry left the choice open: which of the two failures such a day should
+produce -- the job's death, which names nothing, or a ceiling inflated until it cannot fire, which names nothing
+either -- and noted that the third answer, a job split small enough that the sum fits, was what the same arithmetic
+had said twice before.
+
+### The measurement
+
+Every job of the workflow, from the recording of run `45033355331`:
+
+| job | bounds inside it | ceiling | slowest day | the day the bounds describe |
+| --- | --- | --- | --- | --- |
+| `verify` | **57** min | 25 | 722 s | 28.5 min |
+| `backend` | **48** min | 48 | 910 s | 24.0 min |
+| `sensitivity` | **46** min | 26 | 675 s | 23.0 min |
+| `sensitivity-shard` | **43** min | 26 | 669 s | 21.5 min |
+| `batteries` | **83** min | 34 | 1 012 s | **41.5 min** |
+| `batteries-heavy` | **54** min | 31 | 921 s | 27.0 min |
+
+The last column is the number the entry did not have. Each bound is at least twice the slowest reading of its own
+step, so the bounds are sized from **each step's worst day, taken from whichever day had it** -- a composite, not a
+day. A day on which every step runs at the worst it has ever been is therefore a day the bounds themselves describe,
+and it is **41.5** minutes for `batteries`: 1.22 times the ceiling that was meant to hold it. Nothing about that day
+is exotic. The two heavy batteries are 700 s of deterministic work, so a slow runner slows both, and the four
+half-minute batteries slow with them.
+
+That is the defect, stated without a hypothetical: **the ceiling answered for one day while the bounds were sized
+from a composite of six**, and the composite is larger than twice any single day by construction.
+
+### Why the sum was refused in v3.123 and is the answer now
+
+`ci.yml` carries the refusal in its own words, in the comment above `batteries`: a ceiling sized to hold the bounds
+"would be a ceiling that cannot fire either -- the same defect as a bound that cannot". The symmetry is the thing to
+check, and it does not hold. A **bound** that cannot fire has nothing behind it: the ceiling kills the job and the
+verdict names no step, which is the sentence every bound in `ci-budget.mjs` exists to replace. A **ceiling** that
+cannot fire has every step's bound behind it, and each of those names its step. The ceiling is the only number in a
+job with nothing behind it, so it is the one number whose job is not to name anything: it is the backstop for the
+case where a bound does not fire -- an action that ignores its timeout, a step whose bound was removed in a window
+this gate has not seen yet.
+
+So the two shapes are not symmetric, and the price of the wider ceiling is wall clock rather than a verdict: a hang
+no bound catches now burns up to 84 minutes instead of 34. The `batteries` comment says which of the two was paid.
+
+### The repair
+
+`R13` replaces `R12` and subsumes `R5`. One comparison, with two terms and a stated winner:
+
+```
+need = max(2 x slowest day, the bounds inside the job + 2 x the seconds no step spends)
+```
+
+- **the bounds plus the seconds no step spends**: every step dies at its own bound, so a job whose every step is
+  bounded cannot outlive the sum of them. The overhead is the part no step accounts for -- the runner's own setup,
+  its teardown, and the `Post` half of every action -- and it is measured rather than stated: `measure-ci-baseline.mjs`
+  now writes each job's own wall clock beside its steps (`total`), and a recording that does not hold it is refused
+  rather than defaulted. It is doubled for the same reason every bound is: a runner twice as slow also sets up twice
+  as slowly. Measured this round: **3 to 8 seconds per job**.
+- **twice the slowest day** is `R12`, kept for the jobs whose steps carry no bound at all -- `artefacts` and
+  `cold-tree`, which `R3` excuses because their whole day is under the floor.
+
+`R5` is deleted rather than kept beside it. It asked whether a bound expires before the job does, one bound at a
+time, from the seconds measured in front of it -- and that question is a special case of the sum: `bound + prefix` is
+at most the sum of the bounds, so a ceiling that holds the sum holds every deadline. Keeping both would mean two
+sentences for one defect, and the one `R5` printed (`its bound expires at 33 min -- past the job's 30`) is a weaker
+diagnosis of the same tree.
+
+The ceilings, and the two clauses each one's comment now carries:
+
+| job | was | now | the number |
+| --- | --- | --- | --- |
+| `verify` | 25 | **58** | 3 420 s of bounds + 10 s of overhead |
+| `backend` | 48 | **49** | 2 880 + 10 -- the one ceiling that was already the sum |
+| `sensitivity` | 26 | **47** | 2 760 + 10 |
+| `sensitivity-shard` | 26 | **44** | 2 580 + 16 |
+| `batteries` | 34 | **84** | 4 980 + 16 |
+| `batteries-heavy` | 31 | **55** | 3 240 + 6 |
+
+### What the round measured
+
+| reading | value |
+| --- | --- |
+| bounds inside the workflow | **331** min, against **50** min measured |
+| ceilings whose number is the bounds | **6 of 8**; the other two are twice a day |
+| the least room above a day | `backend` at **3.2x** its slowest day |
+| the largest single ceiling | `batteries` at **84** min, 4 of its 20 bounds being floors |
+| the overhead the recorder measured | **3-8** s per job, across 8 jobs |
+| the refusal a newcomer sees | the sum, the count of bounds, and the two repairs |
+
+The green line prints which of the two terms holds each ceiling, because a reader of `84 min` on a job that takes 12
+has to be able to see that the number is not a preference:
+
+```
+6 of 8 ceiling(s) hold the bounds inside them and 2 hold twice a day; the least room above a day is
+backend at 49 min, 3.2x its slowest day of 910 s (run 44516888528)
+```
+
+### The falsifications
+
+Four mutations, each aimed at one clause, and the count of reds each produced:
+
+| the mutation | reds |
+| --- | --- |
+| the overhead dropped from `ceilingNeedOf` | 4 |
+| the day term alone -- `R12` restored | 11 |
+| a recording with no `total` accepted | 1 |
+| `boundsSecondsOf` counting the steps that inherit the job's budget | 8 |
+
+**Four mutations, 24 reds.** The second is the round in one line: restoring the rule this round replaced turns
+eleven cases red, which is what it cost to have it.
+
+### What the round did not change
+
+The floor. `batteries`' ceiling is 84 minutes and **42** of them are fourteen steps bounded at three minutes that
+measure seconds -- the floor is a rule about a cold package index, and it is now half of every ceiling in the
+workflow. `O-100` is that observation: the number a ceiling has to hold is dominated by the floor rather than by
+work, and the next round that asks whether the floor should be per job rather than per step has this finding's
+arithmetic to answer to.

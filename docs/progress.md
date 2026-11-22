@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 258 core + 4 cli |
-| Test lines | 115,221 core + 3,242 cli |
-| Tests | 6,791 core + 187 cli |
+| Test lines | 115,384 core + 3,242 cli |
+| Tests | 6,798 core + 187 cli |
 | Tracked files | 672 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.128: **38** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.129: **38** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -997,20 +997,15 @@ is a row about rather than paraphrase one that no `grep` will find.
   the round is frozen -- but which of the two homes a closure has when the round that closes it also
   restates it is not decided anywhere, and the answer decides whether 30 records are corrected or the rule
   is scoped; neither can be done by a round that is not allowed to edit a frozen record]`
-- O-095 · **The ceiling is twice the slowest day, and a day slower than that still dies unnamed.**
-  `R12` refuses a ceiling under twice a job's slowest recorded day, and v3.123 raised the three that were
-  under it: `verify` **18 -> 21**, `batteries` **25 -> 34**, `batteries-heavy` **27 -> 31**. What the rule
-  does not say is what happens between twice that day and the sum of the bounds inside the job: `batteries`
-  holds **83** minutes of step bounds in a **34**-minute ceiling, so a day of **2 100** s -- 2.08x its
-  slowest recorded day of **1 012** s -- reaches the ceiling with every step still inside its own bound. The
-  rule that would cover it, `ceiling >= the sum of the bounds`, was measured before it was written and
-  refused: the six preparation steps every job shares carry a three-minute floor each, so **every** job in
-  the workflow holds at least **21** minutes of bounds, the two whose whole day is under a minute included,
-  and a ceiling sized to hold them would be twenty times the day it bounds.
-  `[open: which of the two failures a slow-but-not-hung day should produce -- the job's death, which names
-  nothing, or a ceiling inflated until it cannot fire, which names nothing either -- is a decision no round
-  has made; the third answer, a job split small enough that the sum fits, is what the same arithmetic said
-  twice before, and the six preparation steps make it a split that shares its setup rather than repeats it]`
+- O-100 · **Half of every ceiling is the floor, not the work.**
+  `R13` holds a ceiling to the bounds inside the job, and the bounds are floored at three minutes each: `batteries`
+  needs **84** minutes and **42** of them are fourteen steps bounded at the floor that measure seconds, while
+  `verify` needs **58** and **24** of them are the same floor counted six times over the preparation every job
+  repeats. The floor is an argument about a cold package index, and it is written per step, so a job that repeats six
+  preparation steps pays it six times and the ceiling inherits the sum.
+  `[open: whether the floor belongs to the job rather than to the step -- one allowance for everything before the
+  first real step -- and what would then refuse a cold day that runs long on all six; the two numbers are 42 of 84
+  and 24 of 58, and neither has been measured against a day that spent them]`
 - O-098 · **A population of one is a label nobody has to write, and the census throws the gate's own line away.**
   Twenty-two populations are declared over the nine shared nouns and nineteen of them hold a single gate, so the
   partition says nothing a reader could not read off the gate's name: what `check-l4-status`'s `9 row(s)` counts is
@@ -1054,7 +1049,7 @@ and this table.
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
-| [volume-18.md](progress/volume-18.md) | 17 | v3.112 | v3.128 |
+| [volume-18.md](progress/volume-18.md) | 18 | v3.112 | v3.129 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

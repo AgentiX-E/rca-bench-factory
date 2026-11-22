@@ -1137,7 +1137,7 @@
   "throws": {
     "rule": "every throw statement, partitioned four ways: `fatal` (no enclosing function, no enclosing try) ends the process and is proved like a site; `unguarded` (in a function, no enclosing try) hands control to its caller, which decides; `guarded` (in a try block) is caught here; `rethrow` (in a catch, rethrowing the caught binding) carries a decision made above. A try or a catch stops at a function boundary, because neither is on the stack when the function runs elsewhere. fatal + unguarded + guarded + rethrow is the number of throw statements; see scripts/derive-gate-sites.mjs",
     "counts": {
-      "fatal": 11,
+      "fatal": 12,
       "unguarded": 77,
       "guarded": 1,
       "rethrow": 10
@@ -1442,7 +1442,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 206,
+        "line": 221,
         "disposition": "fatal",
         "message": "the workflow does not parse, so there is nothing to measure:\\n${workflow.errors.join('\\n')}",
         "status": "proved",
@@ -1450,7 +1450,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 240,
+        "line": 255,
         "disposition": "fatal",
         "message": "new Error( `the recording at ${OUT} cannot be parsed (${String(error)}), so a seed cannot be told from it: ` + 'a seed i",
         "status": "proved",
@@ -1458,7 +1458,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 246,
+        "line": 261,
         "disposition": "fatal",
         "message": "new Error( `--seed names run ${RUN}, which is newer than the recording (run ${String(held?.run)}): a day that ` + 'has n",
         "status": "proved",
@@ -1466,7 +1466,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 253,
+        "line": 268,
         "disposition": "fatal",
         "message": "new Error( `--seed names run ${RUN}, which is the recording: it is already in the history, and a second entry ` + 'for o",
         "status": "proved",
@@ -1474,7 +1474,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 265,
+        "line": 280,
         "disposition": "fatal",
         "message": "new Error( `--borrow ${job.id}=${borrowedFrom} names a declared job: a job promise waits for its ` + 'first run, and a b",
         "status": "proved",
@@ -1482,7 +1482,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 276,
+        "line": 291,
         "disposition": "fatal",
         "message": "--borrow names \\`${borrowedFrom}\\`, which is not a job of this workflow",
         "status": "proved",
@@ -1490,7 +1490,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 287,
+        "line": 302,
         "disposition": "fatal",
         "message": "new Error( `--borrow ${job.id}=${borrowedFrom} crosses a budget: \\`${job.id}\\` declares ` + `${job.timeoutMinutes === nu",
         "status": "proved",
@@ -1498,7 +1498,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 309,
+        "line": 324,
         "disposition": "fatal",
         "message": "run ${RUN} holds no job named \"${apiNameOf(job)}\", so \\`${job.id}\\` has no reading",
         "status": "proved",
@@ -1506,7 +1506,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 321,
+        "line": 336,
         "disposition": "fatal",
         "message": "new Error( `\\`${job.id} / ${step.name}\\` is not a step of \"${source.name}\" in run ${RUN}: a bound cannot be ` + 'sized f",
         "status": "proved",
@@ -1514,7 +1514,15 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 364,
+        "line": 352,
+        "disposition": "fatal",
+        "message": "new Error( `run ${RUN} reports no start and end for \"${source.name}\", so the seconds its steps do not ` + 'account for c",
+        "status": "proved",
+        "provedBy": "packages/core/test/ci-budget.test.ts"
+      },
+      {
+        "script": "scripts/measure-ci-baseline.mjs",
+        "line": 387,
         "disposition": "fatal",
         "message": "new Error( `run ${RUN} measured no step this workflow has, so it is not a day any bound of this tree could be ` + 'argue",
         "status": "proved",

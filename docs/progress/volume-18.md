@@ -2722,9 +2722,9 @@ looked for where it no longer lives", and the fourth is the measured `budget(s)`
 | item | value |
 | --- | --- |
 | CI | run `45022458859` on `60069525`: **8 of 8 jobs success** -- the newest run recorded before this round's own, whose workflow this round does not change |
-| `core` test suite | **258 files, 6791 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **262 files, 6978 tests passed** (as of this commit) |
+| `core` test suite | **258 files, 6791 tests passed** (at v3.128) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.128) |
+| repo test suite | **262 files, 6978 tests passed** (at v3.128) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: the round added readers and callers, every branch of them taken |
 | new tests | **6784 -> 6791, +7**: the noun-shaped key, the four cases of a gate joining, the reading of the gates this run found, and the two end-to-end refusals that keep a sentence |
 | the record's shape | `nouns` and `shared` derive from the census; `judgements` is the list a person writes and `--write` copies |
@@ -2748,3 +2748,114 @@ looked for where it no longer lives", and the fourth is the measured `budget(s)`
   would put the label where it cannot rot -- in the gate's own output -- and the cost would be a tail printed
   beside every single-gate number, which is what the round after this one has to measure before choosing it.
   `[open: the two costs are still a sentence per gate and a log line per noun, and neither has been measured]`
+
+## v3.129 — the ceiling was sized from a day, and the bounds inside it are not a day
+
+### What the round began with
+
+`O-095`, in its own words: `R12` refuses a ceiling under twice a job's slowest recorded day, and says nothing about
+what happens between twice that day and the sum of the bounds inside the job -- `batteries` held **83** minutes of
+bounds in a **34**-minute ceiling. The entry left the choice open between the job's unnamed death and a ceiling
+inflated until it cannot fire, and noted that splitting the job was the third answer.
+
+### The measurement the entry was missing
+
+Each bound is at least twice the slowest reading of **its own** step, so the bounds are sized from each step's worst
+day, taken from whichever day had it -- a composite, not a day. The largest day the bounds describe is therefore the
+sum of those worst days, and it is not a hypothetical:
+
+| job | bounds | ceiling | slowest day | the day the bounds describe |
+| --- | --- | --- | --- | --- |
+| `verify` | 57 min | 25 | 722 s | 28.5 min |
+| `backend` | 48 | 48 | 910 s | 24.0 |
+| `sensitivity` | 46 | 26 | 675 s | 23.0 |
+| `sensitivity-shard` | 43 | 26 | 669 s | 21.5 |
+| `batteries` | 83 | 34 | 1 012 s | **41.5** |
+| `batteries-heavy` | 54 | 31 | 921 s | 27.0 |
+
+`batteries`' own bounds describe a day **1.22 times** the ceiling that was supposed to hold them. A runner ten per
+cent slower than the recording slows both heavy batteries and the four half-minute ones together, which is the day
+in the last column -- so the death the entry called hypothetical is the day the rule's own arithmetic names.
+
+### The two failures, and why the symmetry does not hold
+
+v3.123 refused the sum in `ci.yml`'s own words: a ceiling sized to hold the bounds "would be a ceiling that cannot
+fire either -- the same defect as a bound that cannot". It is not the same. A **bound** that cannot fire has nothing
+behind it: the ceiling kills the job and the verdict names no step. A **ceiling** that cannot fire has every step's
+bound behind it, and each names its step. The ceiling is the one number in a job with nothing behind it, so it is the
+one number whose job is not to name anything: it is the backstop for a bound that did not fire. The price of the
+wider number is wall clock, not a verdict, and the `batteries` comment in `ci.yml` says so.
+
+### The repair
+
+One comparison, two terms, a stated winner:
+
+```
+need = max(2 x the slowest day, the bounds inside the job + 2 x the seconds no step spends)
+```
+
+**The first term** is the bounds, because every step dies at its own. **The second** is the overhead no bound covers
+-- the runner's setup, its teardown, the `Post` half of each action -- and it is measured rather than stated:
+`measure-ci-baseline.mjs` writes each job's own wall clock beside its steps, a recording without it is refused, and
+it is doubled like every bound because a runner twice as slow sets up twice as slowly. Measured this round: **3-8**
+seconds per job. **`R5` is deleted, not kept beside it**: `bound + prefix` is at most the sum, so a ceiling that
+holds the sum holds every deadline, and two sentences for one defect is how a reader learns to trust neither.
+
+The six ceilings the bounds now hold: **25 -> 58**, **48 -> 49**, **26 -> 47**, **26 -> 44**, **34 -> 84**,
+**31 -> 55**. `backend` is the one that was already the sum to within the overhead, which is the evidence that the
+sum was always the number: its comment derived 48 by adding the floor sum, the install bound and the reader's bound,
+and v3.129's arithmetic adds only the 5 seconds no step spends.
+
+### The measurements this round rests on
+
+| reading | value |
+| --- | --- |
+| bounds inside the workflow | **331** min against **50** min measured |
+| ceilings held by the bounds / by a day | **6 of 8** / **2** (`artefacts`, `cold-tree`, both `R3`-excused) |
+| the least room above a day | `backend` at **3.2x** its slowest day |
+| the overhead | **5, 5, 5, 8, 8, 3, 6, 3** s across the eight jobs |
+| `batteries` | **84** min of ceiling, **42** of them fourteen steps at the floor |
+| new tests | **+3** directly on the two numbers, and **+4** on the ceiling block's cases |
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the overhead dropped from `ceilingNeedOf` | 4 |
+| the day term alone -- `R12` restored | 11 |
+| a recording with no `total` accepted | 1 |
+| `boundsSecondsOf` counting inherited bounds | 8 |
+
+**Four mutations, 24 reds**, each a case that names the defect: the first is "the ceiling holds the bounds but not
+the seconds behind them", the second is "the round did not happen", the third is "the margin is a guess", and the
+fourth is "a job's ceiling is asked to hold itself".
+
+### Readings
+
+> Ledger for `v3.129`.
+
+| item | value |
+| --- | --- |
+| CI | run `45033355331` on `d3e43f64`: **8 of 8 jobs success** -- the run the recording is taken from, whose workflow this round changes only in its ceilings |
+| `core` test suite | **258 files, 6798 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **262 files, 6985 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** |
+| new tests | **6791 -> 6798, +7**: the two numbers a ceiling is made of, the sum, the exactly-sum boundary, the day term for an unbounded job, GitHub's six hours, the overhead, the missing `total` |
+| the recording's shape | a job entry is `name`, `timeoutMinutes`, `total`, `steps` -- the fourth field is the job's own wall clock |
+| falsifications | four mutations, **twenty-four** reds |
+| open entries | **38 -> 38**: `O-095` closed by finding 619; `O-100` opened, because half of every ceiling is the floor |
+| LLM calls | **0** |
+
+### Left open
+
+- **Half of every ceiling is the floor, not the work.** `batteries` needs 84 minutes and **42** of them are fourteen
+  steps bounded at three minutes that measure seconds; `verify` needs 58 and 24 of them are the same floor six times
+  plus six more. The floor is a rule about a cold package index and it was written per step, so a job that repeats
+  six preparation steps pays it six times. `[open: whether the floor should be a property of the job rather than of
+  the step -- one allowance for everything before the first real step -- and what would then refuse a cold day]`
+- **A population of one is a label nobody has to write, and the census throws the gate's own line away.** Unchanged
+  from v3.128 and still the next round's first question: nineteen of twenty-two populations hold a single gate and
+  what each counts is in the line the census reads and discards.
+  `[open: the label belongs either in the inventory, where it rots like every sentence, or in the gate's own line,
+  which the census would have to keep -- and neither cost has been measured]`

@@ -414,6 +414,23 @@
   measured against. What the closure leaves behind is the day between twice the slowest and the sum, which is
   `O-095`.
 
+- O-095 · ~~**The ceiling is twice the slowest day, and a day slower than that still dies unnamed.**~~
+  `R12` refused a ceiling under twice a job's slowest recorded day, and said nothing about the space between twice
+  that day and the sum of the bounds inside the job: `batteries` held **83** minutes of step bounds in a **34**-minute
+  ceiling. The entry weighed two failures and refused both -- the job's death, which names nothing, and a ceiling
+  inflated until it cannot fire, which names nothing either -- because v3.123 had already measured the sum and
+  refused it on the ground that a ceiling which cannot fire is the same defect as a bound which cannot.
+  **Closed by finding 619.** The symmetry does not hold, and the measurement is what breaks it: each bound is twice
+  the slowest reading of **its own** step, taken from whichever day had it, so the bounds describe a composite day
+  rather than any day -- **41.5** minutes for `batteries`, 1.22 times the ceiling meant to hold it. A bound that
+  cannot fire has nothing behind it; a ceiling that cannot fire has every step's bound behind it, so the ceiling is
+  the one number in a job whose job is not to name anything. `R13` is one comparison with two terms and a stated
+  winner -- `max(2 x the slowest day, the bounds + 2 x the seconds no step spends)` -- the overhead is measured by
+  the recorder rather than stated (`total`, **3-8** s per job, refused when absent), `R5` is deleted because
+  `bound + prefix` is at most the sum, and the six ceilings move to **58 / 49 / 47 / 44 / 84 / 55**. Four mutations,
+  **24** reds. What the closure leaves is the number the ceiling is now made of: **42** of `batteries`' 84 minutes
+  are fourteen three-minute floors on steps that measure seconds, which is `O-100`.
+
 - O-096 · ~~**The census names the populations; it computes almost none of the relations between them.**~~
   `check-unit-nouns` printed **53** unit nouns in **69** gate/noun pairs (the numbers of the round it was written
   in; the tree holds **54** and **70**, because a round was written between the measurement and the reading) and

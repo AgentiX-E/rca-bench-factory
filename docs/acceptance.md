@@ -92,7 +92,7 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   the `sensitivity` job runs `verify-sites-are-sensitive.mjs`, which asks whether that
   file **notices** the exit's absence -- one run per claim with that site's code
   replaced by success, and a baseline run per file so a red claimant cannot be
-  credited with catching anything. Measured at **230 of 230** claim(s) across 67 file(s).
+  credited with catching anything. Measured at **231 of 231** claim(s) across 67 file(s).
   The figure was 105 of 105 in both halves at v3.41, and it drifted for twenty-four rounds
   because nothing read the sentence -- an external reviewer quoted the 105 as the current
   state, which is what a number with no reader costs. `check-doc-counts` reads it now:
@@ -1969,3 +1969,29 @@ from an anecdote again.
   run did not print (1).
 - **What is still promised only by a person.** A sentence already written, and whether its wording still describes
   the partition the noun has grown. A new gate is refused; a stale sentence is not.
+
+### A ceiling holds the bounds inside it, and the seconds no step spends (v3.129)
+
+- **A ceiling sized from a day cannot hold bounds sized from a composite of days.** Each step's bound is twice the
+  slowest reading of *that step*, taken from whichever day had it, so the largest day the bounds allow is their sum.
+  `batteries` held **83** minutes of bounds in a **34**-minute ceiling, and the day its own bounds describe is
+  **41.5** minutes -- 1.22x the number meant to hold it (finding 619).
+- **The two cannot-fire shapes are not symmetric.** A bound that cannot fire leaves nothing behind it and the
+  verdict names the job. A ceiling that cannot fire has every step's bound behind it, and each names its step -- so
+  the ceiling is the one number in a job whose job is not to name anything: a backstop for a bound that did not
+  fire. The price of the wider number is wall clock, not a verdict.
+- **One comparison, two terms, a stated winner**: `max(2 x the slowest day, the bounds inside the job + 2 x the
+  seconds no step spends)`. The day term survives for the jobs whose steps carry no bound at all.
+- **The overhead is measured, not stated.** `measure-ci-baseline.mjs` writes each job's own wall clock (`total`)
+  beside its steps; what no step accounts for is the difference, doubled like every bound because a runner twice as
+  slow sets up twice as slowly. A recording without it is refused rather than defaulted -- a margin nobody measured
+  is a margin nobody checked. Measured: **3-8** s per job.
+- **`R5` is deleted, not kept beside it.** `bound + prefix` is at most the sum of the bounds, so a ceiling that holds
+  the sum holds every deadline; two sentences for one defect is how a reader learns to trust neither. What `R5`
+  printed was a weaker diagnosis of the same tree.
+- **A job with no ceiling is held to GitHub's six hours**, because that is the number it will die at, and a silent
+  rule is how a ceiling that cannot hold its bounds goes unnoticed.
+- **A mutation has to land on an assertion.** The four this round: the overhead dropped (4 reds), the day term alone
+  -- `R12` restored (11), a recording with no `total` accepted (1), the inherited bounds counted (8).
+- **What is not refused**: a ceiling far *above* its need, when the job has no bounds inside it -- narrowing it
+  would refuse a slow day and widening it only costs minutes, so there is no number to prefer.
