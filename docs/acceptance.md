@@ -1993,5 +1993,29 @@ from an anecdote again.
   rule is how a ceiling that cannot hold its bounds goes unnoticed.
 - **A mutation has to land on an assertion.** The four this round: the overhead dropped (4 reds), the day term alone
   -- `R12` restored (11), a recording with no `total` accepted (1), the inherited bounds counted (8).
+
+### A sentence may state a count only if a gate printed it (v3.130)
+
+- **A count in prose is a count in the record.** `scripts/unit-nouns.mjs` keeps the counts out of the inventory
+  because they move every round; a relation that states one had none of that argument's protection, because nothing
+  compared it with anything. `comment(s)`'s sentence said the smaller corpus was **4.7 per cent** of the larger
+  while the two gates printed **1,252** and **25,855**, whose ratio is **4.842** -- for 4.7 to hold, the numerator
+  would have to be 1,215 or the denominator 26,638 (finding 620).
+- **Five of the nine relations state a figure, eight figures in all, and one of them was wrong.** The other four
+  quoted counts the gates print; they are claims the run now checks.
+- **The refusal names the figure and the counts**: `comment(s) states 4.7 and the counts under it are 25,855 and
+  1,252`. A message that said "a relation states a number" would send a person looking for which.
+- **Both doors refuse it.** `--write` copies the sentences forward verbatim, so the one door meant to leave the
+  record truthful would otherwise rewrite a false sentence into it.
+- **A numeral glued to a letter, a hyphen, a dot or an underscore is a name, not a count**: `L4`,
+  `check-l4-status`, `v3.129`. The rule is lexical rather than a list of exemptions, because a list of names is a
+  list to keep equal to the corpus. Removing the glue test reddens the shipped tree on `row(s) states 4`.
+- **A label lifted out of a gate's line is not a label.** Behind the nineteen single-gate populations sit **20**
+  uses; the words after the noun are empty in **8** and are half a parenthesis in **2** (`(21676 line`), against
+  **6,047** characters of the gates' own lines. The label stays in the relation, which already names every
+  population of eight nouns out of nine and in the order the census prints them.
+- **A mutation has to land on an assertion.** The five this round: `figuresOf` blinded (4 reds), the glue test
+  removed (2), the run's refusal dropped (1), `--write`'s refusal dropped (1), only the first unprinted figure
+  reported (1).
 - **What is not refused**: a ceiling far *above* its need, when the job has no bounds inside it -- narrowing it
   would refuse a slow day and widening it only costs minutes, so there is no number to prefer.

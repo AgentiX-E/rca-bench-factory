@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 258 core + 4 cli |
-| Test lines | 115,384 core + 3,242 cli |
-| Tests | 6,798 core + 187 cli |
+| Test lines | 115,499 core + 3,242 cli |
+| Tests | 6,804 core + 187 cli |
 | Tracked files | 672 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.129: **38** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.130: **37** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1006,14 +1006,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: whether the floor belongs to the job rather than to the step -- one allowance for everything before the
   first real step -- and what would then refuse a cold day that runs long on all six; the two numbers are 42 of 84
   and 24 of 58, and neither has been measured against a day that spent them]`
-- O-098 · **A population of one is a label nobody has to write, and the census throws the gate's own line away.**
-  Twenty-two populations are declared over the nine shared nouns and nineteen of them hold a single gate, so the
-  partition says nothing a reader could not read off the gate's name: what `check-l4-status`'s `9 row(s)` counts is
-  in the sentence beside it, not in `populations`. The census reads the line the number came from and keeps only
-  the count and its qualifier, so the one sentence that says what a gate counts is the sentence the census
-  discards.
-  `[open: whether the label belongs in the inventory, where it rots like every sentence, or in the gate's own line,
-  which the census would have to keep -- the two costs are a sentence per gate and a log line per noun]`
 
 ## Pass log
 
@@ -1049,7 +1041,7 @@ and this table.
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
-| [volume-18.md](progress/volume-18.md) | 18 | v3.112 | v3.129 |
+| [volume-18.md](progress/volume-18.md) | 19 | v3.112 | v3.130 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

@@ -476,7 +476,20 @@
   holds one gate: nineteen of the twenty-two, where the partition says nothing the gate's name did not, and the
   sentence that would say it is the line the census throws away, which is `O-098`.
 
-
+- O-098 · ~~**A population of one is a label nobody has to write, and the census throws the gate's own line away.**~~
+  Twenty-two populations are declared over the nine shared nouns and nineteen of them hold a single gate, so the
+  partition says nothing a reader could not read off the gate's name: what `check-l4-status`'s `9 row(s)` counts is
+  in the sentence beside it, not in `populations`. And the census read the line the number came from and kept only
+  the count and its qualifier, so the one sentence that says what a gate counts was the sentence it discarded.
+  **Closed by finding 620**, which measured both homes the entry offered and found a third answer. The gate's line
+  cannot be the label: behind the nineteen populations sit **20** uses, the words after the noun are **empty in 8**
+  of them because the corpus writes `474 file(s), 21676 comment(s)`, and **2** are half a parenthesis (`(21676
+  line`). A sentence per gate would be nineteen sentences restating what one already says, because **eight of the
+  nine** relations name every population their noun is partitioned into and in the order the census prints them. So
+  the label stays in the relation -- and the round's rule is the same rule from the other side: a relation may state
+  a figure only when a gate printed it under that noun. That rule is what the round was actually about, because
+  reading the sentences for numerals is how the entry's own neighbourhood turned out to hold a false one:
+  `comment(s)` said the smaller corpus was **4.7 per cent** of the larger, and the two counts make **4.842**.
 - O-099 · ~~**A gate joining a noun discards a sentence that is still true, and `round(s)` pays it twice a round.**~~
   `check-ci-budget` prints `N round(s)` while the ledger is behind and stops when it catches up, so the noun's gate
   set moves in and out inside one round: **69 -> 70 -> 69** gate/noun pairs across v3.127, and a judgement keyed by

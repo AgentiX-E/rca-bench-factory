@@ -1,6 +1,7 @@
 # Audit · volume 14
 
-Findings 579–599, from the rounds recorded in `progress/volume-17.md` and `progress/volume-18.md` as `v3.115` through `v3.120`.
+Findings 579–620, from the rounds recorded in `progress/volume-17.md` and `progress/volume-18.md` as `v3.115`
+through `v3.130`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -2202,3 +2203,122 @@ measure seconds -- the floor is a rule about a cold package index, and it is now
 workflow. `O-100` is that observation: the number a ceiling has to hold is dominated by the floor rather than by
 work, and the next round that asks whether the floor should be per job rather than per step has this finding's
 arithmetic to answer to.
+
+## Finding 620 — the sentence states a count, and nothing read the sentence
+
+### What the entry said
+
+`O-098`: twenty-two populations are declared over the nine shared nouns and nineteen of them hold a single gate, so
+the partition says nothing a reader could not read off the gate's name -- what `check-l4-status`'s `9 row(s)` counts
+is in the sentence beside it, not in `populations`. And the census reads the line the number came from and keeps
+only the count and its qualifier, so the one sentence that says what a gate counts is the sentence the census
+discards. The entry left the label's home open -- the inventory, "where it rots like every sentence", or the gate's
+own line, which the census would have to keep -- and said the two costs had not been measured.
+
+Neither of those costs is the finding. Reading the sentences for **figures** is.
+
+### The measurement
+
+The nine relations were read for every numeral in them, with the counts each gate prints under that noun beside them:
+
+| noun | the figures its relation states | the counts the gates print | |
+| --- | --- | --- | --- |
+| `comment(s)` | **4.7** | 25,855 and 1,252 | the ratio is **4.842**, so 4.7 is neither count and not their quotient |
+| `file(s)` | 37, 474, 6 | 37, 474, 6 | every one printed |
+| `row(s)` | 8 | 8, 9, 318, 2 | printed |
+| `run(s)` | 0 | 0, 6 | printed |
+| `volume(s)` | 14, 18 | 14, 18 | printed |
+| `addendum(s)`, `reading(s)`, `round(s)`, `row break(s)` | none | -- | -- |
+
+**Five of the nine sentences state a figure -- eight figures in all -- and one of them is wrong.**
+
+### Why the wrong one is the finding
+
+`comment(s)`'s relation said "the smaller is 4.7 per cent of the larger". For 4.7 to hold this run, the numerator
+would have to be **1,215** or the denominator **26,638**; the two gates print 1,252 and 25,855. So the sentence was a
+copy of a pair of counts taken in an earlier round, one of the pair moved, and the copy did not move with it -- and
+nothing said so, because nothing read the sentence.
+
+That is the module's own argument turned on itself. `scripts/unit-nouns.mjs` keeps the counts out of the inventory on
+one ground: **they move every round**, and a record that held them would go red for a reason its subject has nothing
+to do with. A relation stating a count is a count in the record, and it has none of that argument's protection,
+because there is nothing to compare it with. The round moved that count again while it was being worked on -- the
+source walk counted 25,828 comments when the entry was written and 25,855 when this finding was, the difference being
+this round's own comments -- which is the argument rather than an accident.
+
+### The repair: a figure must be a count a gate printed under that noun
+
+`figuresOf` reads the numerals a sentence states; `unprintedFiguresOf` compares each with the counts the census holds
+for that noun, and the census refuses the two that do not match. It is the **fourth refusal**, beside the third, and
+it goes through both doors for the same reason the third does: `--write` copies the sentences forward verbatim, so the
+one door that is supposed to leave the record truthful would otherwise rewrite a false sentence into it. The refusal
+names the figure and the counts, because a person reading `comment(s) states 4.7 and the counts under it are 25,855
+and 1,252` knows in one line that the sentence is a copy of a pair that has moved, and a message that said "a relation
+states a number" would send them looking for which.
+
+What is left in `comment(s)`'s relation states the relation and not the ratio: "with no member in common and the
+smaller a small fraction of the larger, which the two counts above state and this sentence no longer copies". The
+four sentences that quote a count keep it, and their quotes are now claims the run checks -- `file(s)`'s three walks,
+`row(s)`'s two eights, `run(s)`'s zero, `volume(s)`'s two directories.
+
+### A numeral glued to a letter is a name, and that is not a nicety
+
+`row(s)`'s relation names "the L4 registry", and `check-l4-status` is the gate that prints it. A reader that counted
+every digit would read `4` in both and refuse the one sentence that had to name them. So the rule is lexical rather
+than a list of exemptions: a numeral **glued** to a letter, a hyphen, a dot or an underscore belongs to a name --
+`L4`, `check-l4-status`, `v3.129` -- and a numeral that stands alone is a count. A list of names to exempt would be a
+list to keep equal to the corpus, which is the defect this campaign keeps finding; the glue is a property of the
+token.
+
+Measured rather than asserted: with the glue test removed, the shipped tree goes red on `row(s) states 4` -- the `L4`
+in the only sentence that says what that gate reads.
+
+### The label, measured (which is what `O-098` asked for)
+
+The nineteen populations of one are backed by **20** uses: one gate prints `row(s)` twice (`318` table rows, `2` rows
+of the newest record judged) and one prints `run(s)` twice.
+
+| what was counted | value |
+| --- | --- |
+| words after the noun | **empty in 8 of 20** -- the corpus writes `474 file(s), 21676 comment(s)`, so the count ends the clause |
+| words that are half a parenthesis | **2**, and they are the two `comment(s)` uses: `(21676 line` and `(1064 line` |
+| the gates' own lines, whole | **6,047** characters over those 20 uses |
+
+So neither cost the entry named is the right one. A label lifted out of the gate's line is a fragment in two uses of
+twenty and nothing at all in eight, and a fragment is worse than no label because it looks like a claim. And a
+sentence per gate would be nineteen sentences restating what one sentence already says: **eight of the nine**
+relations name every population their noun is partitioned into, and in the order the census prints them.
+
+The label therefore stays where it is -- in the relation, one sentence per noun -- and the rule this finding adds is
+the same rule from the other side: **the sentence says which set, the gates say how many, and neither copies the
+other.** That is why `comment(s)`'s sentence had to lose its ratio rather than have it corrected.
+
+### What the round did not change
+
+- **The nineteen populations of one.** They are not claims, and the census does not check them (a group of one has
+  no equality in it); they are the record of a gate having been placed. Deleting them would make `row(s)`'s four
+  gates indistinguishable from four gates nobody has considered.
+- **`run(s)`'s relation**, which lumps its three language gates into one clause while the partition holds three
+  populations. It claims no equality between them, so nothing is unchecked; the nine-gate sentence is accurate and
+  one clause shorter for it.
+- **`1,252` of `25,855`** is not restated anywhere. The counts these sentences quote are checked, and a ratio of two
+  of them is not one of the things the record states.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| `figuresOf` blind -- no numeral read at all | 4 |
+| the glue test removed, so `L4` and `check-l4-status` count | 2 |
+| the run's fourth refusal dropped | 1 |
+| `--write`'s fourth refusal dropped | 1 |
+| only the first unprinted figure reported | 1 |
+
+**Five mutations, 9 reds.** The second reddens the shipped tree as well as a case, which is the one of the five that
+says the rule is about this corpus rather than about a fixture.
+
+### What this finding is an instance of
+
+Finding 602's form: **a comparison present in the output is not a comparison anyone made.** Here the comparison was
+absent as well -- one number printed by two gates and a third copy in prose, with no reader holding any two of them
+together. The census held the first two from v3.125 and the third from nothing at all.

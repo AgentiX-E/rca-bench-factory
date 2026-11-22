@@ -2837,10 +2837,10 @@ fourth is "a job's ceiling is asked to hold itself".
 | item | value |
 | --- | --- |
 | CI | run `45033355331` on `d3e43f64`: **8 of 8 jobs success** -- the run the recording is taken from, whose workflow this round changes only in its ceilings |
-| `core` test suite | **258 files, 6798 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **262 files, 6985 tests passed** (as of this commit) |
-| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** |
+| `core` test suite | **258 files, 6798 tests passed** (at v3.129) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.129) |
+| repo test suite | **262 files, 6985 tests passed** (at v3.129) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** (at v3.129) |
 | new tests | **6791 -> 6798, +7**: the two numbers a ceiling is made of, the sum, the exactly-sum boundary, the day term for an unbounded job, GitHub's six hours, the overhead, the missing `total` |
 | the recording's shape | a job entry is `name`, `timeoutMinutes`, `total`, `steps` -- the fourth field is the job's own wall clock |
 | falsifications | four mutations, **twenty-four** reds |
@@ -2859,3 +2859,120 @@ fourth is "a job's ceiling is asked to hold itself".
   what each counts is in the line the census reads and discards.
   `[open: the label belongs either in the inventory, where it rots like every sentence, or in the gate's own line,
   which the census would have to keep -- and neither cost has been measured]`
+
+## v3.130 — the sentence states a count, and nothing read the sentence
+
+`O-098` asked where the label for a population of one belongs, and named two costs: a sentence per gate in the
+inventory, "where it rots like every sentence", or the gate's own line, which the census would have to keep. Neither
+cost is the round.
+
+Reading the nine relations for numerals is. `comment(s)`'s sentence said the smaller corpus was **4.7 per cent** of
+the larger; this run's two gates print **1,252** and **25,855**, and their ratio is **4.842**. For 4.7 to hold, the
+numerator would have to be 1,215 or the denominator 26,638. So the sentence was a copy of a pair of counts taken in
+an earlier round, one of the pair moved, and the copy did not move with it -- and nothing noticed, because the census
+reads the gates and never the sentences it carries.
+
+That is the module's own argument used against it. `scripts/unit-nouns.mjs` keeps the counts out of the inventory on
+one ground -- **they move every round** -- and a relation that states a count is a count in the record with none of
+that argument's protection. Five of the nine sentences state a figure, eight figures in all, and one of the eight is
+wrong. The round moved the same count again while it was being written (25,828 comments when the entry was read,
+25,855 when the finding was), which is the argument rather than an accident.
+
+### The repair
+
+Two readers and a fourth refusal. `figuresOf` reads the numerals a sentence states; `unprintedFiguresOf` compares
+each with the counts the census holds for that noun; the census refuses the ones that match nothing. It sits beside
+the third refusal -- the population that has stopped agreeing -- and it goes through **both** doors for the same
+reason: `--write` copies the sentences forward verbatim, so the one door that is supposed to leave the record
+truthful would otherwise rewrite a false sentence into it.
+
+The refusal names the figure and the counts: `comment(s) states 4.7 and the counts under it are 25,855 and 1,252`.
+A message that said "a relation states a number" would send a person looking for which.
+
+What the sentence says now is the relation and not the ratio: "with no member in common and the smaller a small
+fraction of the larger, which the two counts above state and this sentence no longer copies". The four sentences that
+quote a count keep it -- `file(s)`'s three walks, `row(s)`'s two eights, `run(s)`'s zero, `volume(s)`'s two
+directories -- and their quotes are claims the run checks from now on.
+
+A numeral **glued** to a letter, a hyphen, a dot or an underscore is a name rather than a count: `L4`,
+`check-l4-status`, `v3.129`. The rule is lexical rather than a list of exemptions, because a list would be a list to
+keep equal to the corpus. Removing the glue test reddens the shipped tree on `row(s) states 4`, which is the `L4` in
+the only sentence that says what that gate reads.
+
+### The label, measured
+
+| what was counted | value |
+| --- | --- |
+| populations declared over the nine shared nouns | **22** |
+| of those, holding a single gate | **19** |
+| uses behind those nineteen | **20** -- one gate prints `row(s)` twice and one prints `run(s)` twice |
+| words after the noun | **empty in 8 of 20**: the corpus writes `474 file(s), 21676 comment(s)`, so the count ends the clause |
+| words that are half a parenthesis | **2**, both `comment(s)`: `(21676 line`, `(1064 line` |
+| the gates' own lines, whole | **6,047** characters over the twenty uses |
+| relations that name every population their noun declares, in the printed order | **8 of 9** |
+
+Neither cost the entry named holds. A label lifted out of a gate's line is a fragment in two uses of twenty and
+nothing at all in eight, and a fragment is worse than no label because it looks like a claim. A sentence per gate
+would be nineteen sentences restating what one sentence already says. So the label stays in the relation, and the
+rule this round adds is the same rule from the other side: **the sentence says which set, the gates say how many, and
+neither copies the other.** That is why `comment(s)`'s sentence lost its ratio instead of having it corrected.
+
+### What the round did not change
+
+The nineteen populations of one stay: they are not claims (a group of one has no equality in it) but the record of a
+gate having been placed, and deleting them would make `row(s)`'s four gates indistinguishable from four gates nobody
+has considered. `run(s)`'s relation still lumps its three language gates into one clause while the partition holds
+three populations -- it claims no equality between them, so nothing is unchecked. And the volume's own header, which
+had said `579–599` and `v3.120` for nine rounds of appends while findings 600 to 619 were written under it, now says
+`579–620` and `v3.130`: no gate reads a volume's description of itself, and the round found it while opening the
+file to append to.
+
+### The vocabulary moved and the sentence stayed
+
+This round widened no ceiling, so `check-ci-budget` stopped printing `N budget(s) widened since the reading` and the
+census's vocabulary fell from **54** nouns in **70** gate/noun pairs to **53** in **69**. Under the key `v3.128`
+removed, that would have discarded `budget(s)`'s judgement with the noun; it survives, with the round's only
+sentence about it untouched, and the round that widens a ceiling again will find it there.
+
+The recording was retaken at run `45043602227` for a related reason -- a volume may not name a run newer than the
+ledger's -- and it measures **57** minutes of steps against the previous reading's **50**, with no workflow, ceiling
+or bound changed. The difference is the day.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| `figuresOf` blind -- no numeral read at all | 4 |
+| the glue test removed, so `L4` and `check-l4-status` count | 2 |
+| the run's fourth refusal dropped | 1 |
+| `--write`'s fourth refusal dropped | 1 |
+| only the first unprinted figure reported | 1 |
+
+**Five mutations, 9 reds**, and the second reddens the shipped tree as well as a case: the rule is about this
+corpus rather than about a fixture.
+
+### Readings
+
+> Ledger for `v3.130`.
+
+| item | value |
+| --- | --- |
+| CI | run `45043602227` on `1e2af30`: **8 of 8 jobs success** -- the run `v3.129` ended on, and the recording is retaken at it because a volume may not name a run newer than the ledger's |
+| the recording | 8 job(s), 83 step(s), **57** min measured against the previous reading's **50**; no workflow, no ceiling and no bound moved, so the difference is the day rather than the tree |
+| `core` test suite | **258 files, 6804 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **262 files, 6991 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the round adds no line under `packages/core/src` |
+| new tests | **6798 -> 6804, +6**: the figures a sentence states, a name's digits that are not figures, a sentence whose figures are counts, the figure no gate printed, every unprinted figure reported, a noun no gate printed |
+| the record's shape | a relation may state a figure only when a gate printed it under that noun |
+| falsifications | five mutations, **nine** reds |
+| open entries | **38 -> 37**: `O-098` closed by finding 620; `O-100` carried |
+| LLM calls | **0** |
+
+### Left open
+
+- **Half of every ceiling is the floor, not the work.** Unchanged from v3.129: `batteries` needs 84 minutes and **42**
+  of them are fourteen steps bounded at three minutes that measure seconds, and `verify` needs 58 with 24 of them the
+  same floor six times. The floor is a rule about a cold package index written per step, so a job that repeats six
+  preparation steps pays it six times. `[open: whether the floor should be a property of the job rather than of the
+  step -- one allowance for everything before the first real step -- and what would then refuse a cold day]`
