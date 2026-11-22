@@ -5,16 +5,23 @@ import { join, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   UNSTATED,
+  agreementOf,
   censusOf,
   coincidencesOf,
+  disagreementsOf,
   inventoryOf,
   keyOf,
   nounsIn,
   numbersOf,
+  numbersOfNoun,
+  partitionOf,
+  partitionProblems,
   relationsOf,
   sharedNounsOf,
   summaryOf,
   unreadableOf,
+  unpartitionedOf,
+  unstatedOf,
 } from '../../../scripts/unit-nouns.mjs';
 
 /**
@@ -71,12 +78,18 @@ function run(args = []) {
  * ## What is a test here and what cannot be
  *
  * The census is derivable; **what a shared noun means is not**. `1 addendum(s)` in `check-open-list`
- * and `check-progress-volumes` is one population read twice, because both take it from
- * `populationsOf`. `8 row(s)` in the other two is two tables and one noun, which no arithmetic
- * relates. `14 volume(s)` and `18 volume(s)` are two disjoint directories. The output cannot tell
- * those apart, so the inventory records a sentence per shared noun and this file proves that one
- * without a sentence is refused: a gate that answered the question itself would be inventing the
- * judgement it exists to ask for.
+ * and `check-progress-volumes` is one population, because both walk the same headings -- through two
+ * readers, which is what this file said wrongly for two rounds (`check-open-list` does not import
+ * `populationsOf`; finding 616). `8 row(s)` in the other two is two tables and one noun, which no
+ * arithmetic relates. `14 volume(s)` and `18 volume(s)` are two disjoint directories. The output
+ * cannot tell those apart, so the inventory records a sentence per shared noun and this file proves
+ * that one without a sentence is refused: a gate that answered the question itself would be
+ * inventing the judgement it exists to ask for.
+ *
+ * Since v3.127 the sentence has a shape a run can hold: the noun's gates are **partitioned into
+ * populations**, a group of two is a claim that those two read one set, and the census then checks
+ * that their numbers agree. The sentence keeps the part no run can decide -- *why* the two gates read
+ * one set -- and stops being the only place the claim lives.
  */
 
 describe('the unit-noun census reads the summaries it is given', () => {
@@ -168,7 +181,7 @@ describe('a coincidence is a count two gates print, and zero is not one', () => 
       { gate: 'check-repository-table', text: '8 row(s) under ## Repository' },
     ]);
     expect(coincidencesOf(census)).toEqual([
-      { noun: 'row(s)', count: 8, gates: ['check-fault-cases', 'check-repository-table'] },
+      { noun: 'row(s)', count: 8, gates: ['check-fault-cases', 'check-repository-table'], within: false },
     ]);
   });
 
@@ -221,10 +234,14 @@ describe('a shared noun is printed with the numbers, not with the gate count (fi
     // The old summary said `volume(s) by 2`. The two numbers were printed by their own gates, forty
     // lines apart, and the reader that exists to hold two populations of one word together held the
     // names and dropped the numbers.
-    const relations = new Map([
-      [keyOf({ noun: 'volume(s)', gates: ['check-audit-volumes', 'check-progress-volumes'] }), 'two disjoint directories'],
+    const relation = 'two disjoint directories';
+    const judgements = new Map([
+      [
+        keyOf({ noun: 'volume(s)', gates: ['check-audit-volumes', 'check-progress-volumes'] }),
+        { noun: 'volume(s)', gates: ['check-audit-volumes', 'check-progress-volumes'], populations: null, relation },
+      ],
     ]);
-    expect(relationsOf(census, relations)).toEqual([
+    expect(relationsOf(census, judgements)).toEqual([
       'volume(s) — 14 in check-audit-volumes; 18 in check-progress-volumes — two disjoint directories',
     ]);
   });
@@ -272,11 +289,230 @@ describe('a shared noun is printed with the numbers, not with the gate count (fi
   });
 
   it('says how many shared nouns carry a stated relation, so a green run is visible from the summary', () => {
-    const relations = new Map([['volume(s)::check-audit-volumes+check-progress-volumes', 'two disjoint directories']]);
-    expect(summaryOf(census, relations)).toContain('1 of them are printed by more than one gate, and 1 of those say what the other one counts');
+    const gates = ['check-audit-volumes', 'check-progress-volumes'];
+    const judgements = new Map([
+      [keyOf({ noun: 'volume(s)', gates }), { noun: 'volume(s)', gates, populations: null, relation: 'two disjoint directories' }],
+    ]);
+    expect(summaryOf(census, judgements)).toContain('1 of them are printed by more than one gate, and 1 of those say what the other one counts');
     expect(summaryOf(census)).toContain('1 of them are printed by more than one gate, and 0 of those say what the other one counts');
   });
 });
+
+/**
+ * The unit of the judgement is a population, not a noun (finding 616).
+ *
+ * `O-097` recorded the shape: nine nouns are printed by more than one gate, each carries a sentence a
+ * person wrote, and the census holds summaries rather than sets -- so a sentence that has stopped
+ * being true stays printed. This adds the one part of each sentence a run can check: which of a
+ * noun's gates read one population.
+ *
+ * The first sentence read under the new rule was already false in its reason. `addendum(s)` says
+ * "both take it from `populationsOf` in `progress-volumes.mjs`", and `check-open-list` imports
+ * `docs-corpus.mjs` and nothing else -- two readers over one set of headings, not one reader twice.
+ * The conclusion (one population, so the counts must agree) was right and the reason was not, and
+ * nothing in the tree could tell which half of a sentence was which. With the partition the
+ * checkable half is checked, and the sentence keeps the part no run can decide.
+ */
+describe('a population is the unit of the judgement, because a noun is not (finding 616)', () => {
+  const FILE_GATES = ['check-citations', 'check-comments-language', 'check-doc-counts', 'check-workflow-language'];
+  const census = censusOf([
+    { gate: 'check-citations', text: 'number(s) across 37 file(s), each naming a finding that exists' },
+    { gate: 'check-comments-language', text: '474 file(s) the source walk reads' },
+    { gate: 'check-doc-counts', text: '11 of the 474 file(s) the source walk reads' },
+    { gate: 'check-workflow-language', text: '6 file(s) walked' },
+  ]);
+  const FILE = {
+    noun: 'file(s)',
+    gates: FILE_GATES,
+    populations: [['check-comments-language', 'check-doc-counts'], ['check-citations'], ['check-workflow-language']],
+    relation: 'four walks over four corpora',
+  };
+  const judgements = new Map([[keyOf({ noun: 'file(s)', gates: FILE_GATES }), FILE]]);
+
+  it('says which gates read one set, and marks the equality as one a population forces', () => {
+    // Two of the four gates walk the source walk -- `check-doc-counts` takes its denominator from the
+    // same walk -- so `474` and `474` are one population counted twice; `37` and `6` agree with
+    // nothing. Before the partition the line could only say "a count two gates print agrees", which
+    // is true of a shared reader and of a coincidence alike.
+    expect(relationsOf(census, judgements)).toEqual([
+      'file(s) — 37 in check-citations; 474 in check-comments-language; 474 in check-doc-counts ' +
+        '(one population at 474, and the count agrees); 6 in check-workflow-language — four walks over four corpora',
+    ]);
+  });
+
+  it('says nothing about a population when the record does not declare one', () => {
+    // The line is unchanged from the pre-partition shape: four gates, four numbers, and the sentence.
+    // A reader cannot tell whether that is four populations or one, which is exactly why the gate
+    // refuses this document -- but the sentence it prints first must not claim a structure it does
+    // not have (finding 595).
+    const bare = new Map([[keyOf({ noun: 'file(s)', gates: FILE_GATES }), { ...FILE, populations: null }]]);
+    expect(relationsOf(census, bare)[0]).toBe(
+      'file(s) — 37 in check-citations; 474 in check-comments-language; 474 in check-doc-counts; ' +
+        '6 in check-workflow-language (a count two gates print agrees) — four walks over four corpora',
+    );
+  });
+
+  it('formats a noun\'s numbers once, for the line and for the refusal that quotes it', () => {
+    // The gate's refusal for an unwritten sentence quotes the same words the green line prints. The
+    // first version of that refusal reassembled them from `relationsOf` with a `lastIndexOf`; one
+    // formatter means a refusal cannot drift from the line it is refusing to print.
+    expect(numbersOfNoun(census, judgements, 'file(s)')).toBe(
+      '37 in check-citations; 474 in check-comments-language; 474 in check-doc-counts ' +
+        '(one population at 474, and the count agrees); 6 in check-workflow-language',
+    );
+  });
+
+  it('refuses a partition that does not cover every gate exactly once', () => {
+    // Five shapes, five sentences. A partition is a claim that a set of gates partitions the noun's
+    // gates, and each way of failing it is a different repair: a gate nobody placed, a gate placed
+    // twice, a gate that does not print the noun at all, and an empty group, which reads as a
+    // population of nothing.
+    expect(partitionProblems({ ...FILE, populations: [['check-citations'], ['check-comments-language', 'check-doc-counts']] })).toEqual([
+      'check-workflow-language is in no population',
+    ]);
+    expect(
+      partitionProblems({
+        ...FILE,
+        populations: [['check-citations', 'check-comments-language'], ['check-comments-language', 'check-doc-counts'], ['check-workflow-language']],
+      }),
+    ).toEqual(['check-comments-language is in two populations, so its count is claimed twice']);
+    expect(
+      partitionProblems({
+        ...FILE,
+        populations: [['check-citations'], ['check-comments-language', 'check-doc-counts', 'check-nowhere'], ['check-workflow-language']],
+      }),
+    ).toEqual(['check-nowhere is in a population and does not print this noun']);
+    expect(
+      partitionProblems({ ...FILE, populations: [['check-citations'], [], ['check-comments-language', 'check-doc-counts'], ['check-workflow-language']] }),
+    ).toEqual(['a population with no gate in it']);
+    expect(partitionProblems({ ...FILE, populations: null })).toEqual(['nothing says which of its gates read one population']);
+    // The shape this field very nearly took: four names and no groups, which reads as one population
+    // holding all four. Refused once, because the other three problems would be consequences of it.
+    expect(partitionProblems({ ...FILE, populations: FILE_GATES })).toEqual([
+      'a population written as "check-citations" rather than as a list of gates',
+    ]);
+    // And the renderers are given `[]` for such a group rather than the string, so a line printed
+    // from a document the gate refuses is a line about gates and not about a type.
+    expect(partitionOf({ populations: ['check-citations'] })).toEqual([[]]);
+  });
+
+  it('names the counts a set of gates has in common, and the gate whose number it could not read', () => {
+    // `round(s)` is the case that needs the second reading: one gate prints `221 vX.YY` and one
+    // prints `221 vX.YY` beside `50 Pass`, so the populations agree at 221 and one gate holds a
+    // second population of its own. Equality of the whole sets would call that a disagreement.
+    const rounds = censusOf([
+      { gate: 'check-open-list', text: '221 `vX.YY` round(s)' },
+      { gate: 'check-progress-volumes', text: '221 `vX.YY` round(s), 50 `Pass` round(s)' },
+    ]);
+    expect(agreementOf(rounds, 'round(s)', ['check-open-list', 'check-progress-volumes'])).toEqual({
+      common: [221],
+      counts: [
+        { gate: 'check-open-list', numbers: [221] },
+        { gate: 'check-progress-volumes', numbers: [221, 50] },
+      ],
+      unread: [],
+    });
+    // A gate whose use states no number cannot be compared, and saying `no count in common` would
+    // report a divergence where the reader simply could not see (finding 611).
+    const silent = censusOf([
+      { gate: 'check-open-list', text: '221 `vX.YY` round(s)' },
+      { gate: 'check-progress-volumes', text: 'the round(s) are counted elsewhere' },
+    ]);
+    expect(agreementOf(silent, 'round(s)', ['check-open-list', 'check-progress-volumes'])).toEqual({
+      common: [],
+      counts: [
+        { gate: 'check-open-list', numbers: [221] },
+        { gate: 'check-progress-volumes', numbers: [] },
+      ],
+      unread: ['check-progress-volumes'],
+    });
+  });
+
+  it('names a population whose gates have stopped agreeing, and the numbers are the evidence', () => {
+    // The defect this check exists for: one of the two gates changes its reader, the two stop
+    // counting one set, and the sentence that says they do stays printed. `474` against `473` is
+    // the whole of the evidence, and it is the only thing the refusal has to go on.
+    const drifted = censusOf([
+      { gate: 'check-comments-language', text: '474 file(s) the source walk reads' },
+      { gate: 'check-doc-counts', text: '473 file(s) the source walk reads' },
+    ]);
+    const judgement = {
+      noun: 'file(s)',
+      gates: ['check-comments-language', 'check-doc-counts'],
+      populations: [['check-comments-language', 'check-doc-counts']],
+      relation: 'one walk',
+    };
+    expect(disagreementsOf(drifted, new Map([[keyOf(judgement), judgement]]))).toEqual([
+      {
+        noun: 'file(s)',
+        gates: ['check-comments-language', 'check-doc-counts'],
+        counts: [
+          { gate: 'check-comments-language', numbers: [474] },
+          { gate: 'check-doc-counts', numbers: [473] },
+        ],
+        unread: [],
+      },
+    ]);
+    expect(disagreementsOf(census, judgements)).toEqual([]);
+  });
+
+  it('attributes each coincidence to the partition: forced inside one population, the corpus across two', () => {
+    // `1 addendum(s)` is one population read twice, so the equality is the claim; `8 row(s)` is two
+    // tables, so the equality is the corpus. The census printed one marker for both.
+    const addenda = censusOf([
+      { gate: 'check-open-list', text: '1 addendum(s)' },
+      { gate: 'check-progress-volumes', text: '1 addendum(s)' },
+    ]);
+    const one = {
+      noun: 'addendum(s)',
+      gates: ['check-open-list', 'check-progress-volumes'],
+      populations: [['check-open-list', 'check-progress-volumes']],
+      relation: 'one set of headings, two readers',
+    };
+    expect(coincidencesOf(addenda, new Map([[keyOf(one), one]]))).toEqual([
+      { noun: 'addendum(s)', count: 1, gates: ['check-open-list', 'check-progress-volumes'], within: true },
+    ]);
+    expect(coincidencesOf(addenda)).toEqual([
+      { noun: 'addendum(s)', count: 1, gates: ['check-open-list', 'check-progress-volumes'], within: false },
+    ]);
+    // A coincidence is `within` only when one population holds *all* the gates that print it: three
+    // gates over two populations is a coincidence across, whatever two of them share.
+    const three = censusOf([
+      { gate: 'a', text: '8 row(s)' },
+      { gate: 'b', text: '8 row(s)' },
+      { gate: 'c', text: '8 row(s)' },
+    ]);
+    const split = { noun: 'row(s)', gates: ['a', 'b', 'c'], populations: [['a', 'b'], ['c']], relation: 'two tables' };
+    expect(coincidencesOf(three, new Map([[keyOf(split), split]]))).toEqual([
+      { noun: 'row(s)', count: 8, gates: ['a', 'b', 'c'], within: false },
+    ]);
+  });
+
+  it('says how much of the nine sentences a run now checks, rather than only how many were written', () => {
+    // The summary's old clause counted sentences. This one counts the sentences with something behind
+    // them: a population two gates are declared to share, whose equality the run then checks.
+    const line = summaryOf(census, judgements);
+    expect(line).toContain('1 population(s) are read by more than one gate, and 1 of them agree on a count');
+    expect(line).toContain('1 count(s) coincide across gates -- 1 inside a declared population and 0 across two');
+    expect(summaryOf(census)).toContain('no population is read by more than one gate, so no equality between two gates is checked');
+  });
+
+  it('names the shared nouns with no sentence and the ones with no partition, separately', () => {
+    // Two states, two repairs: a sentence nobody wrote, and a partition nobody placed. The gate used
+    // to recognise the first by the text of the line it printed, which is a string compared with
+    // itself (`UNSTATED`) rather than a fact about the document.
+    expect(unstatedOf(census, judgements)).toEqual([]);
+    expect(unstatedOf(census, new Map())).toEqual([{ noun: 'file(s)', gates: FILE_GATES }]);
+    const bare = new Map([[keyOf({ noun: 'file(s)', gates: FILE_GATES }), { ...FILE, populations: null }]]);
+    // The sentence is there; the partition is not. Two states, and this is the second one.
+    expect(unstatedOf(census, bare)).toEqual([]);
+    expect(unpartitionedOf(census, bare)).toEqual([
+      { noun: 'file(s)', gates: FILE_GATES, problems: ['nothing says which of its gates read one population'] },
+    ]);
+    expect(unpartitionedOf(census, judgements)).toEqual([]);
+  });
+});
+
 
 describe('the gate holds the shipped inventory to the shipped gates', () => {
   // The one case that reads the shipped tree, and the only expensive one: the census spawns the
@@ -315,6 +551,18 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
       { gate: 'check-open-list', text: 'check-open-list: 318 row(s) in the tables' },
     ]),
   );
+  // The same three gates with one of them changed by one: the reading a population's disagreement is
+  // measured on. Two readers of one set cannot differ by one unless one of them has stopped reading
+  // that set, and the fixture is the smallest document in which that shows.
+  const DRIFTED = join(scratch, 'drifted.json');
+  writeFileSync(
+    DRIFTED,
+    JSON.stringify([
+      { gate: 'check-fault-cases', text: 'check-fault-cases: 8 row(s) of the window; 602 finding(s)' },
+      { gate: 'check-repository-table', text: 'check-repository-table: OK (7 row(s) under ## Repository)' },
+      { gate: 'check-open-list', text: 'check-open-list: 318 row(s) in the tables' },
+    ]),
+  );
 
   /**
    * The derivation the two refusals below start from: `--write` against the recorded census.
@@ -335,7 +583,11 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     // The relations are filled first, because `--write` will not invent one: the drift this case is
     // about is a vocabulary that has stopped matching the gates, and a document that is also
     // missing a judgement is refused one step earlier for a different reason.
-    const answered = document.shared.map((one: object) => ({ ...one, relation: 'a sentence a person wrote' }));
+    const answered = document.shared.map((one: object) => ({
+      ...one,
+      relation: 'a sentence a person wrote',
+      populations: [['check-fault-cases', 'check-repository-table'], ['check-open-list']],
+    }));
     writeFileSync(
       path,
       JSON.stringify({ ...document, shared: answered, nouns: document.nouns.filter((one: { noun: string }) => one.noun !== 'row(s)') }, null, 2),
@@ -360,9 +612,74 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     expect(result.stderr).toContain('no derivation can make it');
   });
 
+  it('refuses to write the inventory while a population it would keep does not agree', () => {
+    // The same refusal on the writing side. `--write` merges the partitions a person placed, so a
+    // partition that no longer agrees with the corpus has to stop the write: regenerating the
+    // document would otherwise record a partition the next run refuses, and the two doors would be
+    // one rule in name only.
+    const { path, document } = derive('writing.json');
+    const answered = document.shared.map((one: object) => ({
+      ...one,
+      relation: 'a sentence a person wrote',
+      populations: [['check-fault-cases', 'check-repository-table'], ['check-open-list']],
+    }));
+    writeFileSync(path, JSON.stringify({ ...document, shared: answered }, null, 2));
+    const result = run(['--write', '--inventory', path, '--readings', DRIFTED]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('do not agree on a count');
+    expect(result.stderr).toContain('8 and 7 row(s) in check-fault-cases and check-repository-table');
+  });
+
   it('refuses to run with no inventory at all, and names the file it wanted', () => {
     const result = run(['--inventory', join(scratch, 'absent.json'), '--readings', RECORDED]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('is missing, so the vocabulary has no record');
+  });
+
+  it('refuses a shared noun whose gates nobody has partitioned into populations', () => {
+    // `--write` fills in the sentence a person must write and leaves the partition to the same
+    // person, so a document the gate produced itself is refused until both are there. That is the
+    // round: a sentence nobody can check is not a judgement, it is a note.
+    const { path, document } = derive('unpartitioned.json');
+    const answered = document.shared.map((one: object) => ({ ...one, relation: 'a sentence a person wrote' }));
+    writeFileSync(path, JSON.stringify({ ...document, shared: answered }, null, 2));
+    const result = run(['--inventory', path, '--readings', RECORDED]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('no record says which of them read one population');
+    expect(result.stderr).toContain('row(s) (nothing says which of its gates read one population)');
+    expect(result.stderr).toContain('a group of two makes its equality a fact the next run checks');
+  });
+
+  it('refuses a partition that leaves one of the noun\'s gates unplaced', () => {
+    const { path, document } = derive('broken-partition.json');
+    const answered = document.shared.map((one: object) => ({
+      ...one,
+      relation: 'a sentence a person wrote',
+      populations: [['check-fault-cases', 'check-repository-table']],
+    }));
+    writeFileSync(path, JSON.stringify({ ...document, shared: answered }, null, 2));
+    const result = run(['--inventory', path, '--readings', RECORDED]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('row(s) (check-open-list is in no population)');
+  });
+
+  it('refuses a population the record declares one when its gates print different counts', () => {
+    // The check the nine sentences never had. Two gates are written down as reading one set; one of
+    // them changes its reader; the sentence stays and the numbers diverge. The refusal quotes both,
+    // because the numbers are the only evidence and the record is the only thing a person can fix.
+    const { path, document } = derive('disagreeing.json');
+    const answered = document.shared.map((one: object) => ({
+      ...one,
+      relation: 'a sentence a person wrote',
+      populations: [['check-fault-cases', 'check-repository-table'], ['check-open-list']],
+    }));
+    writeFileSync(path, JSON.stringify({ ...document, shared: answered }, null, 2));
+    const result = run(['--inventory', path, '--readings', DRIFTED]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('do not agree on a count');
+    expect(result.stderr).toContain('8 and 7 row(s) in check-fault-cases and check-repository-table');
+    // The same document against the readings it was written from passes, so the refusal is about the
+    // divergence rather than about the partition being unusual.
+    expect(run(['--inventory', path, '--readings', RECORDED]).status).toBe(0);
   });
 });

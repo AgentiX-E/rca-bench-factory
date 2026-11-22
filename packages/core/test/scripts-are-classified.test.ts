@@ -189,9 +189,11 @@ const REGISTER: Record<string, Entry> = {
   'unit-nouns.mjs': {
     class: 'data',
     why:
-      'The vocabulary of unit nouns, the census over it, and the coincidences it finds. It is pure: ' +
-      '`nounsIn` reads a line, `censusOf` folds the gates\' summaries, `coincidencesOf` names a count ' +
-      'two gates print for different populations. The gate that runs it is `check-unit-nouns.mjs`.',
+      'The vocabulary of unit nouns, the census over it, the coincidences it finds, and the partition ' +
+      'that turns part of a judgement into something a run can check. It is pure: `nounsIn` reads a ' +
+      'line, `censusOf` folds the gates\' summaries, `coincidencesOf` names a count two gates print ' +
+      'for different populations and says whether one population holds them, and `agreementOf` reads ' +
+      'the counts a group of gates has in common. The gate that runs it is `check-unit-nouns.mjs`.',
   },
   'staged-mutation.mjs': {    class: 'data',
     why:
@@ -440,10 +442,12 @@ const REGISTER: Record<string, Entry> = {
   'check-unit-nouns.mjs': {
     class: 'gate',
     why:
-      'The reader O-091 asked for. Eight unit nouns are printed by more than one gate, and the count 8 ' +
+      'The reader O-091 asked for. Nine unit nouns are printed by more than one gate, and the count 8 ' +
       'is printed as `row(s)` by two of them for two unrelated tables -- a fault case\'s pre-injection ' +
       'window and the rows under `## Repository`. Both lines are right; read four lines apart in a CI ' +
-      'log they are indistinguishable from one number printed twice, and nothing in the tree asked.',
+      'log they are indistinguishable from one number printed twice, and nothing in the tree asked. ' +
+      'The number of shared nouns is not written down here on purpose: it is in the gate\'s own ' +
+      'summary every run, and a copy in a description is a second number to keep equal.',
   },
   'check-official-registry.mjs': { class: 'gate' },
   'check-official.mjs': { class: 'gate' },

@@ -42,12 +42,28 @@
  * by the gate that derives it.
  *
  * The **relation** is stored, and it is not a count: two gates printing one noun are either
- * counting one population twice (`addendum(s)`, both from `populationsOf`), two disjoint
- * populations of the same kind (`volume(s)`: the audit volumes and the progress volumes), or
- * one word for unrelated objects (`row(s)`: four tables). No derivation can tell those apart,
- * so a person writes a sentence per shared noun and the gate refuses to run without one. The
- * counts of a coincidence are derived, not stored: which counts happen to be equal is this
- * week's, and which two gates share a word is the tree's.
+ * counting one population twice (`addendum(s)`), two disjoint populations of the same kind
+ * (`volume(s)`: the audit volumes and the progress volumes), or one word for unrelated objects
+ * (`row(s)`: four tables). No derivation can tell those apart, so a person writes a sentence per
+ * shared noun and the gate refuses to run without one. The counts of a coincidence are derived, not
+ * stored: which counts happen to be equal is this week's, and which two gates share a word is the
+ * tree's.
+ *
+ * ## Why the sentence is not the whole judgement (finding 616)
+ *
+ * A sentence is not something a run can hold. `addendum(s)` said "both take it from
+ * `populationsOf` in `progress-volumes.mjs`, so the number is shared rather than merely equal", and
+ * `check-open-list` imports `docs-corpus.mjs` and nothing else: two readers over one set of headings.
+ * The conclusion was right, the reason was wrong, and the census could not tell which was which --
+ * so the part that *is* checkable is stored separately now. A noun's gates are partitioned into
+ * **populations**, a group of two is the claim that those two gates read one set, and the census
+ * checks that their numbers agree. What is left in the sentence is what no run can decide: why the
+ * two read one set, and what the sets that are not shared are.
+ *
+ * `file(s)` is why the partition is per noun rather than a property of the noun: two of its four
+ * gates walk the source walk and the other two walk the documentation and the workflows, and one
+ * sentence has no way to say that. Three of the nine shared nouns carry such a group this round, so
+ * three of the equalities the census prints are checked instead of assumed.
  *
  * ## Why zero is not a coincidence
  *
@@ -231,36 +247,11 @@ export function unreadableOf(census) {
 }
 
 /**
- * Every count of at least 1 that two different gates print under one noun.
- *
- * Two different gates, because the same gate printing `8 row(s)` twice is a sentence with
- * two clauses rather than two populations; and at least 1, for the reason in the header.
- */
-export function coincidencesOf(census) {
-  const out = [];
-  for (const [noun, perGate] of census) {
-    const byCount = new Map();
-    for (const [gate, uses] of perGate) {
-      for (const count of numbersOf(uses)) {
-        if (count < 1) continue;
-        if (!byCount.has(count)) byCount.set(count, new Set());
-        byCount.get(count).add(gate);
-      }
-    }
-    for (const [count, gates] of byCount) {
-      if (gates.size < 2) continue;
-      out.push({ noun, count, gates: [...gates].sort() });
-    }
-  }
-  return out.sort((a, b) => a.noun.localeCompare(b.noun) || a.count - b.count);
-}
-
-/**
  * The committed inventory: the vocabulary and which nouns are shared, and no counts.
  *
- * Sorted and plain so that a diff is a sentence a reviewer can read rather than a
- * reordering of keys. The **relation** -- whether two gates printing one noun are counting one
- * population -- is a judgement and lives here too, written by a person and preserved by `--write`.
+ * Sorted and plain so that a diff is a sentence a reviewer can read rather than a reordering of
+ * keys. The **judgement** -- whether two gates printing one noun are counting one population, and
+ * which of them are -- lives here too, written by a person and preserved by `--write`.
  */
 export function inventoryOf(census) {
   return {
@@ -279,13 +270,249 @@ export function inventoryOf(census) {
  * two populations and the disagreement is about what each means. Keying the judgement by the number
  * would make every added source file a red gate whose repair is to retype a sentence that had not
  * stopped being true -- the crying-wolf failure this campaign has recorded more than once.
+ *
+ * A gate joining or leaving a noun therefore loses the judgement for that noun rather than inheriting
+ * it, which is the point: a partition drawn around four gates says nothing about a fifth.
  */
 export function keyOf(shared) {
   return `${shared.noun}::${shared.gates.join('+')}`;
 }
 
 /**
- * One line per shared noun: every gate's numbers, the qualifiers they carried, and the relation
+ * What a shared noun's line ends with when the inventory holds no relation for it.
+ *
+ * A noun in that state is still printed, so a reader sees the numbers beside the word `unclassified`
+ * rather than a line with a judgement-shaped hole in it. The gate no longer recognises the state by
+ * this text (`unstatedOf` answers it), which is why the constant is only a word now.
+ */
+export const UNSTATED = 'unclassified';
+
+/** The gates the census knows a noun is printed by, sorted -- the identity a judgement is keyed by. */
+function gatesOf(census, noun) {
+  return [...(census.get(noun)?.keys() ?? [])].sort();
+}
+
+/**
+ * The populations a judgement declares: a list of gate groups, each sorted -- or `null`.
+ *
+ * The partition is the part of the judgement a run can hold. Nine nouns are printed by more than one
+ * gate, each carries a sentence a person wrote, and a sentence that has stopped being true stays
+ * printed (`O-097`). A group of two gates is the one claim inside such a sentence that a run can
+ * check, because it has a consequence in numbers: those two gates read one set, so their counts must
+ * agree. `file(s)` is why the unit is the group rather than the noun -- two of its four gates walk
+ * the source walk and two do not, and one flag per noun cannot say that (finding 616).
+ *
+ * Sorting is inside the function rather than left to the writer: a partition that means the same
+ * thing written in a different order is not a change, and `--write` round-trips the document.
+ */
+export function partitionOf(judgement) {
+  const populations = judgement?.populations;
+  if (!Array.isArray(populations)) return null;
+  return populations
+    .map((group) => (Array.isArray(group) ? [...group].sort() : []))
+    .sort((a, b) => (a[0] ?? '').localeCompare(b[0] ?? ''));
+}
+
+/**
+ * What is wrong with a judgement's partition, as a list a reader can act on -- empty when nothing is.
+ *
+ * A partition is a claim that the noun's gates are covered exactly once. Each way of failing that is
+ * a different repair: a gate nobody placed (it is a population of its own until somebody says
+ * otherwise), a gate placed twice (its count is claimed by two sets at once), a gate that does not
+ * print the noun at all (the record has drifted from the gates), and an empty group (a population
+ * of nothing, which reads as a decision that was started and not finished).
+ *
+ * The list rather than the first problem, because a record edited in one place usually needs the
+ * same edit in another, and a refusal that names one at a time is a refusal per run.
+ */
+export function partitionProblems(judgement) {
+  const raw = judgement?.populations;
+  if (!Array.isArray(raw)) return ['nothing says which of its gates read one population'];
+  // A flat list of names is the shape this field very nearly took in its first draft, and it reads
+  // as one population of two. It is refused once, by name, rather than coerced or reported per
+  // gate: a person who wrote `["a", "b"]` meant one of two things, and the rest of the problems are
+  // consequences of the first.
+  const flat = raw.find((group) => !Array.isArray(group));
+  if (flat !== undefined) return [`a population written as ${JSON.stringify(flat)} rather than as a list of gates`];
+  const groups = partitionOf(judgement);
+  const gates = judgement?.gates ?? [];
+  const problems = [];
+  const placed = new Set();
+  for (const group of groups) {
+    if (group.length === 0) {
+      problems.push('a population with no gate in it');
+      continue;
+    }
+    for (const gate of group) {
+      if (!gates.includes(gate)) problems.push(`${gate} is in a population and does not print this noun`);
+      if (placed.has(gate)) problems.push(`${gate} is in two populations, so its count is claimed twice`);
+      placed.add(gate);
+    }
+  }
+  for (const gate of gates) if (!placed.has(gate)) problems.push(`${gate} is in no population`);
+  return problems;
+}
+
+/**
+ * The counts a group of gates prints in common, and what each of them printed.
+ *
+ * Intersection rather than equality, because a gate can print more than one population under one
+ * noun: `check-progress-volumes` writes `221 `vX.YY` round(s), 50 `Pass` round(s)`, and a group of
+ * two that agrees at 221 has agreed -- calling that a disagreement would refuse the one line in the
+ * corpus whose extra number is the point of finding 610's repair.
+ *
+ * A gate that states no number it can read makes the intersection empty *and* is named, because an
+ * empty intersection and an unreadable gate are two different facts: the first is a divergence, the
+ * second is a reader that could not see (finding 611).
+ */
+export function agreementOf(census, noun, gates) {
+  const perGate = census.get(noun) ?? new Map();
+  const counts = gates.map((gate) => ({ gate, numbers: numbersOf(perGate.get(gate) ?? []) }));
+  const unread = counts.filter((one) => one.numbers.length === 0).map((one) => one.gate);
+  const common =
+    counts.length === 0 || unread.length > 0
+      ? []
+      : counts[0].numbers.filter((count) => counts.every((one) => one.numbers.includes(count)));
+  return { common, counts, unread };
+}
+
+/**
+ * Every count of at least 1 that two different gates print under one noun, and whether a population
+ * holds them together.
+ *
+ * Two different gates, because the same gate printing `8 row(s)` twice is a sentence with
+ * two clauses rather than two populations; and at least 1, for the reason in the header.
+ *
+ * `within` is the whole of finding 616's gain: the same agreement is a *forced equality* when one
+ * declared population holds both gates and *the corpus* when it does not. The census printed one
+ * marker for the two cases, so `1 addendum(s)` and `8 row(s)` were the same sentence.
+ */
+export function coincidencesOf(census, judgements = new Map()) {
+  const out = [];
+  for (const [noun, perGate] of census) {
+    const byCount = new Map();
+    for (const [gate, uses] of perGate) {
+      for (const count of numbersOf(uses)) {
+        if (count < 1) continue;
+        if (!byCount.has(count)) byCount.set(count, new Set());
+        byCount.get(count).add(gate);
+      }
+    }
+    const groups = partitionOf(judgements.get(keyOf({ noun, gates: gatesOf(census, noun) }))) ?? [];
+    for (const [count, one] of byCount) {
+      if (one.size < 2) continue;
+      const gates = [...one].sort();
+      const within = groups.some((group) => gates.every((gate) => group.includes(gate)));
+      out.push({ noun, count, gates, within });
+    }
+  }
+  return out.sort((a, b) => a.noun.localeCompare(b.noun) || a.count - b.count);
+}
+
+/**
+ * The populations a record declares one whose gates have stopped agreeing, with their counts.
+ *
+ * This is the check the nine sentences never had. One of two gates changes its reader, the two stop
+ * counting one set, and the sentence that says they do stays printed -- the failure `O-097` named as
+ * "a relation that has stopped being true stays printed". The numbers are the whole of the evidence
+ * and the record is the whole of the repair, so both are named.
+ *
+ * A judgement whose partition does not cover its gates is skipped rather than reported twice: that
+ * is `partitionProblems`' refusal and it comes first, because a group drawn around the wrong gates
+ * would make this check ask the wrong question.
+ */
+export function disagreementsOf(census, judgements = new Map()) {
+  const out = [];
+  for (const { noun, gates } of sharedNounsOf(census)) {
+    const judgement = judgements.get(keyOf({ noun, gates }));
+    if (judgement === undefined || partitionProblems(judgement).length > 0) continue;
+    for (const group of partitionOf(judgement)) {
+      if (group.length < 2) continue;
+      const { common, counts, unread } = agreementOf(census, noun, group);
+      if (common.length > 0 && unread.length === 0) continue;
+      out.push({ noun, gates: group, counts, unread });
+    }
+  }
+  return out.sort((a, b) => a.noun.localeCompare(b.noun));
+}
+
+/**
+ * The shared nouns whose record states no relation, and the ones whose record states no partition.
+ *
+ * Two states because they are two repairs: a sentence nobody wrote, and a partition nobody placed.
+ * The gate used to recognise the first by the *text of the line it had just printed* -- comparing a
+ * constant with itself -- which was a string standing in for a fact about the document.
+ */
+export function unstatedOf(census, judgements = new Map()) {
+  return sharedNounsOf(census)
+    .filter(({ noun, gates }) => {
+      const relation = judgements.get(keyOf({ noun, gates }))?.relation;
+      return relation == null || relation === '';
+    })
+    .map(({ noun, gates }) => ({ noun, gates }));
+}
+
+export function unpartitionedOf(census, judgements = new Map()) {
+  const out = [];
+  for (const { noun, gates } of sharedNounsOf(census)) {
+    const judgement = judgements.get(keyOf({ noun, gates }));
+    // A noun with no judgement at all is `unstatedOf`'s: one refusal per missing thing, so the
+    // message a person reads is the one they have to act on first.
+    if (judgement === undefined) continue;
+    const problems = partitionProblems(judgement);
+    if (problems.length > 0) out.push({ noun, gates, problems });
+  }
+  return out;
+}
+
+/**
+ * Every number a noun is printed with, grouped by the populations the record declares.
+ *
+ * A group of two is printed as two numbers and a note saying whether they agree, because that is the
+ * claim the partition is making: `474 in check-comments-language; 474 in check-doc-counts (one
+ * population at 474, and the count agrees)`. The per-gate numbers are kept rather than collapsed to
+ * the common one, because a gate's extra number is a population of its own -- `50 `Pass` round(s)`
+ * beside `221 `vX.YY` round(s)` -- and dropping it would be finding 611 one line over.
+ *
+ * Exported because the gate's refusal for an unwritten sentence quotes the same words: a refusal
+ * assembled from the census and a line assembled from the census should not be two sentences that
+ * can drift, and the first version of this gate did exactly that with a `lastIndexOf`.
+ */
+export function numbersOfNoun(census, judgements, noun) {
+  const perGate = census.get(noun);
+  const gates = gatesOf(census, noun);
+  const judgement = judgements.get(keyOf({ noun, gates }));
+  const declared = judgement !== undefined && partitionProblems(judgement).length === 0;
+  const groups = declared ? partitionOf(judgement) : gates.map((gate) => [gate]);
+  const said = groups.map((group) => {
+    const numbers = group.map((gate) => {
+      const uses = perGate.get(gate) ?? [];
+      const counted = numbersOf(uses);
+      if (counted.length === 0) return `no number in ${gate}`;
+      // The qualifier travels with its number, because the qualifier is what says which population
+      // the number counts: `219 `vX.YY` round(s)` and `50 `Pass` round(s)` are two lines of one
+      // summary, and a reader given `219, 50` has been handed finding 600's pair.
+      const written = counted.map((count) => {
+        const use = uses.find((one) => one.count === count);
+        return use.qualifier === null ? String(count) : `${String(count)} ${use.qualifier}`;
+      });
+      return `${written.join(', ')} in ${gate}`;
+    });
+    if (group.length === 1) return numbers[0];
+    const { common, unread } = agreementOf(census, noun, group);
+    const note =
+      unread.length > 0
+        ? 'one population, and one of them states no number this reader can read'
+        : common.length === 0
+          ? 'one population, and no count is common to them'
+          : `one population at ${common.join(', ')}, and ${common.length === 1 ? 'the count agrees' : 'the counts agree'}`;
+    return `${numbers.join('; ')} (${note})`;
+  });
+  return said.join('; ');
+}
+
+/**
+ * One line per shared noun: every gate's numbers, the populations they are read as, and the relation
  * the inventory records.
  *
  * This is the sentence the census was missing (finding 609). Its old summary said `volume(s) by 2`
@@ -295,62 +522,48 @@ export function keyOf(shared) {
  * which is finding 600 one gate out: the reader that exists to hold two populations of one word
  * together held the names and dropped the numbers.
  *
- * `relations` is the judgement this function cannot derive. Two gates printing one noun may be
- * counting one population twice (`addendum(s)`, both from `populationsOf`), two disjoint
- * populations of the same kind (`volume(s)`: `docs/audit` and `docs/progress`), or one word for
- * unrelated objects (`row(s)`: four tables). The output alone cannot tell those apart, so a person
- * says which and this prints what they said. A count that two gates print is marked, because that
- * is the one case where the numbers agree and the populations still may not.
+ * The marker for an agreement is two different sentences now (finding 616): inside a declared
+ * population the equality is what the declaration claims, and across two it is the corpus. The
+ * paragraph is kept, so a reader can see which of the two they are looking at.
  */
-/**
- * What a shared noun's line ends with when the inventory holds no relation for it.
- *
- * Exported so the gate can recognise the sentence it is refusing without repeating the word: a
- * second copy of a literal is a pair that can drift, and this one decides whether a noun is
- * refused or printed.
- */
-export const UNSTATED = 'unclassified';
-
-export function relationsOf(census, relations = new Map()) {
-  const coincident = new Set(coincidencesOf(census).map((one) => `${one.noun}::${String(one.count)}`));
+export function relationsOf(census, judgements = new Map()) {
+  const coincident = coincidencesOf(census, judgements);
   return sharedNounsOf(census).map(({ noun, gates }) => {
-    const perGate = census.get(noun);
-    const counted = gates.map((gate) => {
-      const uses = perGate.get(gate);
-      const numbers = numbersOf(uses);
-      if (numbers.length === 0) return `no number in ${gate}`;
-      // The qualifier travels with its number, because the qualifier is what says which
-      // population the number counts: `219 `vX.YY` round(s)` and `50 `Pass` round(s)` are two
-      // lines of one summary and a reader given `219, 50` has been handed finding 600's pair.
-      const said = numbers.map((count) => {
-        const use = uses.find((one) => one.count === count);
-        return use.qualifier === null ? String(count) : `${String(count)} ${use.qualifier}`;
-      });
-      return `${said.join(', ')} in ${gate}`;
-    });
-    const agreeing = gates.some((gate) => numbersOf(perGate.get(gate)).some((count) => coincident.has(`${noun}::${String(count)}`)));
-    const relation = relations.get(keyOf({ noun, gates }));
+    const judgement = judgements.get(keyOf({ noun, gates }));
+    const declared = judgement !== undefined && partitionProblems(judgement).length === 0;
+    const across = coincident.filter((one) => one.noun === noun && !one.within);
+    const relation = judgement?.relation;
     return (
-      `${noun} — ${counted.join('; ')}` +
-      (agreeing ? ' (a count two gates print agrees)' : '') +
-      ` — ${relation === undefined ? UNSTATED : relation}`
+      `${noun} — ${numbersOfNoun(census, judgements, noun)}` +
+      (across.length === 0
+        ? ''
+        : declared
+          ? ' (a count two gates print agrees, and they are not in one population)'
+          : ' (a count two gates print agrees)') +
+      ` — ${relation == null || relation === '' ? UNSTATED : relation}`
     );
   });
 }
 
-/** The census as one sentence, with the numbers that need explaining explained by the lines below.
+/**
+ * The census as one sentence, with the numbers that need explaining explained by the lines below.
  *
- * `relations` is the judgement the inventory carries and this function cannot derive, and the
- * summary says how many shared nouns have one rather than reciting them: the sentences are printed
- * by `relationsOf`, one per line, because nine of them inside one sentence is not a sentence.
+ * `judgements` is what the inventory holds and this function cannot derive, and the summary says how
+ * much of it a run checks rather than reciting it: a population two gates are declared to share has
+ * a consequence in numbers, and the clause counts those, because "nine sentences were written" and
+ * "three equalities are checked" are different amounts of assurance and the second is the one this
+ * round bought.
  */
-export function summaryOf(census, relations = new Map()) {
+export function summaryOf(census, judgements = new Map()) {
   const uses = [...census.values()].reduce((all, perGate) => all + perGate.size, 0);
   const shared = sharedNounsOf(census);
-  const coincidences = coincidencesOf(census);
+  const stated = shared.filter(({ noun, gates }) => {
+    const relation = judgements.get(keyOf({ noun, gates }))?.relation;
+    return relation != null && relation !== '';
+  });
+  const coincidences = coincidencesOf(census, judgements);
   const unreadable = unreadableOf(census);
   const parts = [];
-  const stated = shared.filter((one) => relations.has(keyOf(one)));
   parts.push(
     `${String(census.size)} unit noun(s) in ${String(uses)} gate/noun pair(s); ` +
       (shared.length === 0
@@ -358,10 +571,30 @@ export function summaryOf(census, relations = new Map()) {
         : `${String(shared.length)} of them are printed by more than one gate, and ` +
           `${String(stated.length)} of those say what the other one counts`),
   );
+  let populations = 0;
+  let agreeing = 0;
+  for (const { noun, gates } of shared) {
+    const judgement = judgements.get(keyOf({ noun, gates }));
+    if (judgement === undefined || partitionProblems(judgement).length > 0) continue;
+    for (const group of partitionOf(judgement)) {
+      if (group.length < 2) continue;
+      populations += 1;
+      const { common, unread } = agreementOf(census, noun, group);
+      if (common.length > 0 && unread.length === 0) agreeing += 1;
+    }
+  }
+  parts.push(
+    populations === 0
+      ? 'no population is read by more than one gate, so no equality between two gates is checked'
+      : `${String(populations)} population(s) are read by more than one gate, and ` +
+        `${String(agreeing)} of them agree on a count`,
+  );
+  const forced = coincidences.filter((one) => one.within).length;
   parts.push(
     coincidences.length === 0
       ? 'no count of 1 or more is printed by two gates under one noun'
-      : `${String(coincidences.length)} count(s) coincide across gates: ` +
+      : `${String(coincidences.length)} count(s) coincide across gates -- ${String(forced)} inside a declared population ` +
+        `and ${String(coincidences.length - forced)} across two: ` +
         coincidences
           .map((one) => `${String(one.count)} ${one.noun} in ${one.gates.join(' and ')}`)
           .join('; '),
@@ -374,4 +607,3 @@ export function summaryOf(census, relations = new Map()) {
   );
   return parts.join('; ');
 }
-
