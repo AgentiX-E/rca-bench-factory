@@ -41,12 +41,18 @@
  * Four things are refused, in this order, because each one is a different repair:
  *
  *   1. a shared noun with no `relation` -- nobody has said why two gates print one word;
- *   2. a shared noun with no `populations`, or with a partition that does not cover its gates
- *      exactly once -- nobody has said which of them read one set;
+ *   2. a shared noun with no `populations`, or with a partition that does not cover the gates **this
+ *      run found** exactly once -- nobody has said which of them read one set;
  *   3. a population the record declares one whose gates print counts with nothing in common --
  *      two readers of one set that have stopped agreeing, or a partition drawn around the wrong
  *      gates;
  *   4. a vocabulary that has stopped describing the gates.
+ *
+ * The second says "this run" because that is `O-099`'s repair. A gate can join a noun between two
+ * rounds, and the question a run asks is about the run: the new gate is unplaced now. Reading the
+ * gates out of the record instead -- which is what the old key was, and what every reader did with
+ * it -- made the record agree with itself and disagree with the tree, and cost a sentence that had
+ * not stopped being true.
  *
  * The third is the only one that is a fact about the **corpus** rather than about the record
  * being unfinished, which is why `--write` refuses it too: a document cannot be brought up to
@@ -200,24 +206,37 @@ if (census.size === 0) {
 const derived = inventoryOf(census);
 
 /**
- * The judgement the inventory carries and no derivation can produce: what a shared noun means.
+ * The judgements the inventory carries and no derivation can produce: what a noun means.
  *
  * Two halves, and the record holds both. The **relation** is the sentence -- why these gates share a
  * word, and what each of the sets that do not overlap is. The **populations** are the part a run can
  * check: a list of the gate groups that read one set, so that a group of two has a consequence in
- * numbers instead of an assertion in prose. Keyed by the noun and its gates, so a sentence written
- * for `volume(s)` in one round is still the sentence the next round reads, and a gate entering or
- * leaving the list is a diff rather than a silent re-use of somebody else's answer.
+ * numbers instead of an assertion in prose.
+ *
+ * Three decisions, each earned by a sentence lost:
+ *
+ *   1. Keyed by the **noun alone** (`O-099`). The old key was the noun and its gates, and
+ *      `check-ci-budget` prints `N round(s)` only while the ledger is behind -- so `round(s)`'s gate
+ *      set moved in and out inside one round and a sentence that had not stopped being true was
+ *      retyped at each move.
+ *   2. Stored in a list of its own, not on the derived `nouns` or `shared` entries. Both are
+ *      recomputed from the census, so a judgement living on either would be deleted by the first
+ *      `--write` in which the noun was silent -- which for `budget(s)` is every round no ceiling is
+ *      widened.
+ *   3. Never invented, and never deleted. `--write` refreshes the vocabulary and leaves this list
+ *      exactly as it found it; a judgement for a noun no gate printed this run is kept and named,
+ *      because the round it comes back should not ask a person to write again what they wrote once.
  */
 function judgementsIn(document) {
   const out = new Map();
-  for (const one of document?.shared ?? []) {
-    out.set(keyOf(one), {
-      noun: one.noun,
-      gates: one.gates ?? [],
-      populations: Array.isArray(one.populations) ? one.populations : null,
-      relation: typeof one.relation === 'string' && one.relation !== '' ? one.relation : null,
-    });
+  for (const one of document?.judgements ?? []) {
+    const relation = typeof one.relation === 'string' && one.relation !== '' ? one.relation : null;
+    const populations = Array.isArray(one.populations) ? one.populations : null;
+    // No judgement is no entry, rather than an entry with two nulls: `unstatedOf` and
+    // `unpartitionedOf` distinguish "nobody wrote a sentence" from "somebody wrote half of one", and
+    // a placeholder would make every noun look like the second.
+    if (relation === null && populations === null) continue;
+    out.set(keyOf(one), { noun: one.noun, populations, relation });
   }
   return out;
 }
@@ -267,30 +286,44 @@ const DISAGREEMENT_HINT =
   'wrong; the numbers are the evidence and the record is what a person corrects';
 
 if (process.argv.includes('--write')) {
-  // The judgements are merged rather than regenerated: whether two gates printing one noun are
-  // counting one set cannot be derived from the output, so `--write` refreshes the vocabulary and
-  // leaves every existing judgement where a person put it. A noun whose gates have changed loses its
-  // judgement, because a partition drawn around four gates says nothing about a fifth -- and that is
-  // the one case where regenerating the document asks a question rather than answering one.
+  // The vocabulary is regenerated and the judgments are copied. Whether two gates printing one noun
+  // are counting one set cannot be derived from the output, so `--write` must not touch the answer;
+  // and because the answer lives in its own list, regenerating the vocabulary cannot drop it either.
+  // That is the whole of `O-099`: a gate joining the noun changes `gates` in the derived skeleton and
+  // the next ordinary run refuses the partition until the new gate is placed, while the sentence
+  // stays; a noun that no gate printed this round keeps its judgement too, and the round it returns
+  // does not ask a person to write again what they already wrote.
   const committed = readInventory(INVENTORY);
-  const known = judgementsIn(committed);
-  const merged = {
-    ...derived,
-    shared: derived.shared.map((one) => {
-      const judgement = known.get(keyOf(one));
-      return {
-        ...one,
-        populations: judgement?.populations ?? null,
-        relation: judgement?.relation ?? null,
-      };
-    }),
-  };
-  const judgements = judgementsIn(merged);
+  const judgements = judgementsIn(committed);
   const disagreements = disagreementsOf(census, judgements);
   if (disagreements.length > 0) fail(disagreementsText(disagreements), DISAGREEMENT_HINT);
+  // Sorted by noun and rebuilt in a fixed key order, so a diff is a changed sentence rather than a
+  // reordering or a moved key.
+  const judgementsOut = [...judgements.values()]
+    .sort((a, b) => a.noun.localeCompare(b.noun))
+    .map((one) => {
+      const record = { noun: one.noun };
+      if (one.populations !== null) record.populations = one.populations;
+      if (one.relation !== null) record.relation = one.relation;
+      return record;
+    });
+  const merged = { ...derived, judgements: judgementsOut };
   writeFileSync(INVENTORY, `${JSON.stringify(merged, null, 2)}\n`);
   console.log(`check-unit-nouns: wrote ${relative(ROOT, INVENTORY)} — ${summaryOf(census, judgements)}`);
   for (const line of relationsOf(census, judgements)) console.log(`check-unit-nouns: ${line}`);
+  // A record that does not cover the gates this run found is left for a person, and said out loud:
+  // `--write` keeps every sentence, so the one thing it can do about a new gate is name it. Silence
+  // here would make the next run's refusal look like a regression in the writing.
+  for (const one of unpartitionedOf(census, judgements)) {
+    console.error(`check-unit-nouns: ${one.noun} is not partitioned over this run's gates — ${one.problems.join('; ')}`);
+  }
+  // And a judgement whose noun no gate printed is kept rather than dropped -- which is the repair --
+  // and named, because the alternative is a record that grows a noun nobody remembers writing about.
+  for (const one of judgements.values()) {
+    if (!census.has(one.noun)) {
+      console.error(`check-unit-nouns: ${one.noun} carries a judgement and no gate printed it this run — kept`);
+    }
+  }
   process.exit(0);
 }
 
@@ -319,7 +352,7 @@ if (unread.length > 0) {
   fail(
     `${String(unread.length)} noun(s) are printed by more than one gate and no record says whether that is one population or two: ` +
       named.join('; '),
-    'add a `relation` to that entry of golden-master/unit-nouns.json: the sentence is the judgement, and no derivation can make it',
+    'add a `relation` to that noun\'s entry in `nouns` in golden-master/unit-nouns.json: the sentence is the judgement, and no derivation can make it',
   );
 }
 
@@ -332,7 +365,7 @@ if (unplaced.length > 0) {
   fail(
     `${String(unplaced.length)} noun(s) are printed by more than one gate and no record says which of them read one population: ` +
       unplaced.map((one) => `${one.noun} (${one.problems.join('; ')})`).join('; '),
-    'add `populations` to that entry of golden-master/unit-nouns.json: a list of the gate groups that read one set, because a group of two makes its equality a fact the next run checks',
+    'add `populations` to that noun\'s entry in `nouns` in golden-master/unit-nouns.json: a list of the gate groups that read one set, because a group of two makes its equality a fact the next run checks',
   );
 }
 
@@ -340,8 +373,8 @@ const disagreements = disagreementsOf(census, judgements);
 if (disagreements.length > 0) fail(disagreementsText(disagreements), DISAGREEMENT_HINT);
 
 const stored = JSON.stringify({
-  ...committed,
-  shared: (committed.shared ?? []).map(({ relation, populations, ...rest }) => rest),
+  nouns: (committed.nouns ?? []).map(({ populations, relation, ...rest }) => rest),
+  shared: (committed.shared ?? []).map(({ populations, relation, ...rest }) => rest),
 });
 const fresh = JSON.stringify(derived);
 if (stored !== fresh) {
@@ -358,7 +391,18 @@ if (stored !== fresh) {
   for (const noun of was.keys()) if (!now.has(noun)) moved.push(`${noun} is no longer printed`);
   const wasShared = new Set((committed.shared ?? []).map((one) => keyOf(one)));
   const nowShared = new Set(derived.shared.map((one) => keyOf(one)));
-  for (const one of nowShared) if (!wasShared.has(one)) moved.push(`${one} is now shared across gates, and no relation is recorded for it`);
+  // A noun that was not shared last round and is now: the diff is real, and what the author needs to
+  // know is whether the record already answers for it. Since `O-099` a judgement outlives the sharing,
+  // so a noun coming back into `shared` usually arrives with a sentence -- and a message that said
+  // "no relation is recorded" over an entry that carries one would send the author to write a second.
+  for (const one of nowShared) {
+    if (wasShared.has(one)) continue;
+    moved.push(
+      judgements.has(one)
+        ? `${one} is now shared across gates, and the judgement it already carries is kept`
+        : `${one} is now shared across gates, and no relation is recorded for it`,
+    );
+  }
   for (const one of wasShared) if (!nowShared.has(one)) moved.push(`${one} is no longer shared`);
   fail(
     `the unit-noun inventory disagrees with the gates: ${moved.length === 0 ? 'the documents differ where no noun did, so the shape changed' : moved.join('; ')}`,
