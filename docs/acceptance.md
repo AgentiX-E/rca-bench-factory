@@ -1942,3 +1942,30 @@ from an anecdote again.
 - **What is not claimed.** A partition holds gate names, not members: nothing here holds thirty-odd thousand row breaks, so a
   relation about *which* files are in a set is still prose.
 
+
+### A judgement belongs to a noun, and the vocabulary belongs to the tree (v3.128)
+
+- **A rule about the partition was applied to the sentence.** A judgement was keyed by the noun **and its gates**,
+  and the argument for the key -- a partition drawn around four gates says nothing about a fifth -- is about the
+  partition. A sentence says why two gates share a word, and a fifth gate joining does not make that false.
+  `check-ci-budget` prints `N round(s)` only while the ledger is behind, so the noun's gate set moved **69 -> 70 ->
+  69** inside one round and the sentence was retyped at each move (finding 618).
+- **The key is the noun**, and a judgement still refuses to carry over between nouns: `row(s)` and `file(s)` are
+  different populations and their sentences are not interchangeable.
+- **The judgements are a list of their own.** `nouns` and `shared` both derive from the census, so a judgement on
+  either is deleted by the first `--write` in which its noun is silent. `budget(s)` is the case: printed only while
+  a ceiling is widened, absent from most rounds. The list is copied rather than recomputed, and a judgement for a
+  noun this run did not print is kept and named.
+- **The gates come from the census, not from the record.** `partitionProblems(judgement, gates)` takes the set this
+  run found, and `stateOf(census, judgements, noun)` returns the gates, the record and `declared` together. Six
+  readers had each been asking the partition for the gates and being answered out of `judgement.gates`, so every one
+  of them compared the record with itself -- a half that was invisible from finding 616 to here.
+- **The refusal names the gate rather than the key**: `round(s) (check-ci-budget is in no population)`. That is the
+  answer to the risk `O-099` recorded -- a sentence about four gates cannot silently cover a fifth, because the
+  fifth is refused.
+- **A mutation has to land on an assertion.** The four this round: the unplaced-gate rule removed (1 red -- the
+  sentence survives but the run does not say what it could not place, which is not a repair), the record read from
+  the derived vocabulary (8), the record read from `shared` (1), and `--write` dropping a judgement whose noun the
+  run did not print (1).
+- **What is still promised only by a person.** A sentence already written, and whether its wording still describes
+  the partition the noun has grown. A new gate is refused; a stale sentence is not.
