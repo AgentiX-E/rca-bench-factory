@@ -188,6 +188,21 @@ async function get(path) {
  */
 const SYNTHETIC = /^(?:Set up job|Complete job|Post )/;
 
+/**
+ * The job's own wall clock, in whole seconds, rounded up like the steps.
+ *
+ * The difference between this and the sum of the steps is the seconds **no step spends**: the
+ * runner's own setup, its teardown, and the `Post` half of every action, none of which the
+ * workflow declares and none of which a step bound can cover. `R13` holds a ceiling to the
+ * bounds plus this, so it is measured here rather than stated as a margin somewhere -- a
+ * margin nobody measured is a margin nobody checked (finding 619).
+ */
+function totalSecondsOf(job) {
+  if (job.started_at === null || job.completed_at === null) return null;
+  const ms = Date.parse(job.completed_at) - Date.parse(job.started_at);
+  return Number.isNaN(ms) ? null : Math.ceil(ms / 1000);
+}
+
 /** One API job's steps, by name, in seconds. */
 function secondsByName(job) {
   const seconds = new Map();
@@ -332,7 +347,15 @@ for (const job of jobsOf(workflow)) {
     seedGaps.push(`\`${job.id}\` ran no step this workflow still has`);
     continue;
   }
-  recorded[job.id] = { name: job.name, timeoutMinutes: job.timeoutMinutes, steps };
+  const total = totalSecondsOf(source);
+  if (total === null) {
+    throw new Error(
+      `run ${RUN} reports no start and end for "${source.name}", so the seconds its steps do not ` +
+        'account for cannot be measured: a ceiling sized from this reading would have no overhead to ' +
+        'hold, and the number would be a guess about the runner rather than a reading of it',
+    );
+  }
+  recorded[job.id] = { name: job.name, timeoutMinutes: job.timeoutMinutes, total, steps };
   history[job.id] = commands;
   if (borrowedFrom !== undefined) {
     derived[job.id] =

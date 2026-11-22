@@ -74,7 +74,16 @@ jobs:
     # 24 from v3.124: the recording moved to run 44698243645, where this job's slowest day
     # is 696 s, and 21 minutes was 1.81x it. `R12` named the number; the day moved because
     # two test files were added, not because anything in the job changed.
-    timeout-minutes: 25
+    #
+    # 58 from v3.129, and the arithmetic changed shape rather than the job (finding 619).
+    # Twelve bounds add up to 3 420 s, and a step dies at its own bound -- so that sum, not
+    # the day, is the longest this job can legitimately live. A day that spent a third of
+    # each bound reached 25 minutes with every step still inside its own, which is the
+    # silent death the bounds exist to remove. The runner's own seconds, which belong to no
+    # step, are measured by the recorder (5 s) and doubled like every bound: 3 430 s, 58
+    # minutes. `verify` is the job where the day rule is widest of all -- 1 204 s of day
+    # against 3 430 s of bound -- and that gap is the shape of the whole workflow.
+    timeout-minutes: 58
     steps:
       # Full history: see the note above `jobs:` (findings 612 and 614). This is the job the
       # first of those two was found in.
@@ -264,7 +273,12 @@ jobs:
     # plus the reader's (3): the install is sized by the slowest day the mirror has had
     # (888 s on 44516888528) rather than by the 37 s of a warm one, because a bound that
     # fits the fast day is a bound that fires on the slow day (finding 599).
-    timeout-minutes: 48
+    #
+    # 49 from v3.129: this is the ceiling that was already the sum, so `R13` agrees with it
+    # to within the seconds no step spends. The seven bounds add up to 2 880 s, the runner
+    # spends 5 s outside them, and `R13` holds the ceiling to the bounds plus twice that --
+    # 2 890 s, which is 49 minutes rather than 48.
+    timeout-minutes: 49
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -342,7 +356,11 @@ jobs:
     # The bound is deliberately not tightened in the round that splits -- its measurement
     # is of the unsharded command, and `R4` has to size a bound from a run of the command
     # it will enforce. The first sharded run supplies that measurement.
-    timeout-minutes: 26
+    #
+    # 47 from v3.129 (`R13`, finding 619): the eight bounds add up to 2 760 s and the
+    # runner's own seconds are 5, doubled to 10 -- 2 770 s, 47 minutes. The 26 this job had
+    # held its slowest day four times over and its bounds not at all.
+    timeout-minutes: 47
     steps:
       - name: Check out
         timeout-minutes: 3
@@ -449,7 +467,10 @@ jobs:
   sensitivity-shard:
     name: every proved exit can disappear without a word (shard 2 of 2)
     runs-on: ubuntu-latest
-    timeout-minutes: 26
+    # 44 from v3.129 (`R13`, finding 619): seven bounds adding up to 2 580 s plus the 8 s
+    # the runner spends outside them, doubled -- 2 596 s, 44 minutes. The 26 it was declared
+    # with held half the job's bounds, which is the defect the split was supposed to fix.
+    timeout-minutes: 44
     steps:
       - name: Check out
         timeout-minutes: 3
@@ -497,17 +518,26 @@ jobs:
   batteries:
     name: injection batteries, one step each (no survivors, no inert)
     runs-on: ubuntu-latest
-    # 30 until v3.121, 25 in v3.121, and 34 from v3.123.
+    # 30 until v3.121, 25 in v3.121, 34 from v3.123, and 84 from v3.129.
     #
     # v3.121 lowered it to 25 on the argument that a job's budget has to hold the bounds of
     # its own steps. v3.123 measured the argument and refused it: the six preparation steps
     # carry a three-minute floor each, so *every* job in this workflow holds more bounds than
     # any ceiling it could be given (this one: 83 minutes), and a ceiling sized to hold them
     # would be a ceiling that cannot fire either -- the same defect as a bound that cannot.
-    # The comparison that does have a measurement behind it is the ceiling against the day:
-    # this job's slowest is 1012 s (run 44576264388), 25 minutes was 1.48x it, and 34 is
-    # twice it. `R4`'s per-step deadlines are unchanged by the widening and only gain room.
-    timeout-minutes: 34
+    #
+    # v3.129 reversed that, and the reversal is the argument (finding 619). The two cannot-fire
+    # shapes are not symmetric. A **bound** that cannot fire leaves nothing behind it: the job
+    # dies at the ceiling and the verdict names the job. A **ceiling** that cannot fire has
+    # every step's bound behind it, and each of those names its step -- so the ceiling's job is
+    # not to name anything, it is the last-resort number that stops a job from spending six
+    # hours when a bound fails to fire. Twenty bounds add up to 4 980 s; the runner spends 8 s
+    # outside them; doubled, 4 996 s, which is 84 minutes. A day that spends a third of each
+    # bound reaches 34 with all twenty still inside their own, which is exactly the silent
+    # death this file is about -- and the price of 84 is that a hang no bound catches burns
+    # minutes rather than dying at 34. That price is paid in wall clock, and the alternative
+    # was paid in the verdict.
+    timeout-minutes: 84
     steps:
       - name: Check out
         timeout-minutes: 3
@@ -1007,7 +1037,10 @@ jobs:
     #
     # 31 from v3.123, and it is the other question: this job's slowest day is 921 s (run
     # 44576264388), 27 minutes was 1.76x it, and 31 is twice it.
-    timeout-minutes: 31
+    #
+    # 55 from v3.129 (`R13`, finding 619): six bounds adding up to 3 240 s and 3 s of
+    # runner's own time, doubled to 6 -- 3 246 s, 55 minutes. 31 held two thirds of that.
+    timeout-minutes: 55
     steps:
       - name: Check out
         timeout-minutes: 3

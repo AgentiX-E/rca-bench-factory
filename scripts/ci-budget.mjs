@@ -27,9 +27,11 @@
 //
 // A bound that cannot expire before the job's own budget is a number with no effect:
 // the job dies first and the message still names nothing. So the last rule is
-// arithmetic over the recording -- the bound, plus everything measured before it, has
-// to land inside the job's budget. That is what decides whether a `timeout-minutes`
-// here is a bound or a decoration.
+// arithmetic over the recording, and it is a rule about the **sum**: every step dies at
+// its own bound, so a job whose bounds add up to more than its ceiling can reach the
+// ceiling with every step still inside its own, and the verdict names the job. That is
+// what decides whether a `timeout-minutes` here is a bound or a decoration. Until
+// v3.129 the rule asked it one bound at a time, which is finding 619.
 //
 // ## What the fix looked like once it was read as a property (v3.48)
 //
@@ -166,6 +168,18 @@ export const MULTIPLE = 2;
 export const FLOOR_MINUTES = 3;
 
 /**
+ * The ceiling a job has when it declares none.
+ *
+ * GitHub's own limit is six hours, and it is a ceiling like any other: the number a job's
+ * death is charged to when no step bound fires first. `R13` compares against it rather than
+ * falling silent, because a job whose bounds do not fit six hours is a job that can only die
+ * without a name -- the one verdict every rule here exists to replace. Every job of the
+ * shipped workflow declares its own, so this branch is about a workflow that has not been
+ * written yet.
+ */
+export const GITHUB_CEILING = 360;
+
+/**
  * The only keys a promise about a whole job may carry (v3.54, P17).
  *
  * `R8` let a tree declare a *step* the recording had not measured, and the shape was
@@ -241,6 +255,54 @@ export function jobsOf(workflow) {
 function secondsOf(record, name) {
   const value = (record?.steps ?? {})[name];
   return typeof value === 'number' ? value : null;
+}
+
+/**
+ * The seconds the bounds inside one job allow, added up -- the number a ceiling has to hold.
+ *
+ * This is the quantity finding 619 is about, and it went uncomputed for the life of `R12`.
+ * A step cannot spend more than its own bound, because the bound is what ends it, so a job
+ * whose every step is bounded **cannot outlive this sum** plus the seconds that belong to no
+ * step. `R5` asked the same question one step at a time -- "does this bound expire before the
+ * job does" -- and answered it from the seconds measured in front of the bound. That is a
+ * weaker test than it looks: it passes on a job whose bounds add up to twice its ceiling,
+ * because no single bound is late, and the job still dies at the ceiling with every step
+ * inside its own bound. `batteries` was exactly that shape: **83** minutes of bounds under a
+ * **34**-minute ceiling, the last bound expiring at 24.
+ */
+export function boundsSecondsOf(workflow, job) {
+  let seconds = 0;
+  for (const step of stepsOf(workflow, job)) {
+    if (step.inheritedFrom === 'step') seconds += step.minutes * 60;
+  }
+  return seconds;
+}
+
+/**
+ * The least ceiling a job can hold and still die at a step rather than at the job.
+ *
+ * Two terms, and the larger one wins, so the answer says **which term won** -- a reader of a
+ * refusal has to know whether they are being told the job is doing too much for one budget or
+ * that its ceiling refuses a slow runner.
+ *
+ * **Twice the slowest day** is the rule finding 605 wrote: a runner twice as slow must finish
+ * rather than be refused for being slow. **The bounds plus the seconds no step spends** is the
+ * rule finding 619 wrote: every step dies at its own bound, so the sum of them -- plus what the
+ * runner spends outside any step -- is the longest the job can legitimately live. The overhead
+ * is doubled for the same reason the bounds are: a runner twice as slow also sets up twice as
+ * slowly, and each bound already holds its own multiple.
+ *
+ * The second term is not the first one's refinement -- it is the one that closes the gap
+ * between them. Whenever every step is bounded the sum is at least twice the day, because each
+ * bound is at least twice its step's slowest reading; so the day term survives for exactly the
+ * jobs that lean on their ceiling: the one-step jobs `R3` excuses, and the jobs whose steps
+ * carry no bound at all.
+ */
+export function ceilingNeedOf(daySeconds, boundsSeconds, overheadSeconds) {
+  const byBounds = boundsSeconds + MULTIPLE * overheadSeconds;
+  return byBounds >= MULTIPLE * daySeconds
+    ? { seconds: byBounds, term: 'bounds' }
+    : { seconds: MULTIPLE * daySeconds, term: 'day' };
 }
 
 /**
@@ -882,16 +944,15 @@ export function ledgerErrors(baseline, ledger, workflow = null) {
  * Whether `ci.yml` now promises the job *less* time than the run that measured it had.
  *
  * The asymmetry is the whole of `R6`. A ceiling is a container, and the bounds inside it
- * are arithmetic against that container: shrink it and a bound that used to expire before
- * the job now expires after it, so the seconds have to be re-spent under the new ceiling
- * before anybody can say the bounds fit. Widen it and no step bound moves -- every
- * `deadline = bound + before` only gains room -- which is why a reading taken inside the
- * smaller ceiling is still a reading of the same commands.
+ * are arithmetic against that container: shrink it and the sum they add up to may no longer
+ * fit, so the seconds have to be re-spent under the new ceiling before anybody can say the
+ * bounds fit. Widen it and no step bound moves -- the sum `R13` compares is unchanged -- which
+ * is why a reading taken inside the smaller ceiling is still a reading of the same commands.
  *
- * Three shapes, and `null` is not the same as zero. A job with no ceiling has no deadline
- * arithmetic at all (`R5` skips it), so removing one is the widest change there is and
- * adding one is the narrowest: the seconds were never spent against a deadline and now
- * they have to be.
+ * Three shapes, and `null` is not the same as zero. A job with no ceiling holds GitHub's six
+ * hours (`GITHUB_CEILING`), so removing one is the widest change there is and adding one is
+ * the narrowest: the seconds were never spent against a ceiling this repository could see,
+ * and now they have to be.
  */
 function narrowed(record, job) {
   if (job.timeoutMinutes === null) return false;
@@ -978,6 +1039,20 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
   for (const job of jobs) {
     const record = recorded[job.id];
     if (record === undefined) continue;
+
+    // `R13`'s second input. A recording holds the seconds of every step and, since finding
+    // 619, the job's own wall clock beside them; the difference is what no bound can cover.
+    // A recording without it is refused rather than defaulted, for the reason the history is:
+    // a margin nobody measured is a margin nobody checked, and the default would be the one
+    // number in this file that no run produced.
+    if (!Number.isInteger(record.total)) {
+      errors.push(
+        `\`${job.id}\` has seconds for its steps and none for the job, so the seconds no step spends -- ` +
+          "the runner's own setup, its teardown, the `Post` half of every action -- are unknown: record " +
+          'the run again, which writes the job total beside its steps',
+      );
+      continue;
+    }
 
     // R6 -- the job's own budget is the recording's, or the arithmetic below is about a
     // different job than the one that will enforce it. Only a *narrower* budget breaks
@@ -1089,23 +1164,16 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
       );
     }
 
-    // R4 and R5 -- per step: a job that bounds some of its steps bounds all of them,
-    // the bound is at least the multiple and the floor, and it can expire before the
-    // job does.
+    // R4 -- per step: a job that bounds some of its steps bounds all of them, and each
+    // bound is at least the multiple and the floor.
     //
-    // The sum in front of a bound is taken from the slowest recorded day of each step,
-    // not from the day being recorded, for the reason `R10` exists: a deadline argued
-    // from a fast day is a deadline that holds until the prefix has a slow one. The
-    // difference is not hypothetical -- refreshing the recording to a run in which the
-    // shell install took 91 s instead of 9 moved `sensitivity`'s deadline from 1519 to
-    // 1601 seconds and out of a 26-minute ceiling, on a tree where nothing had changed
-    // but the day the prefix was measured on.
-    const slowest = (one, own) => {
-      if (!historyKnown) return own;
-      const worst = worstReadingFor(parsedReadings.rows, commandOf(one));
-      return worst === null ? own : Math.max(own, worst.seconds);
-    };
-    let before = 0;
+    // A bound's **position** used to be a rule of its own, `R5`: does it expire before the
+    // job does, computed from the slowest recorded day of every step in front of it. It is
+    // gone as of v3.129 (finding 619), and not because it was wrong -- it was the weaker
+    // form of `R13`. A bound that expires inside the ceiling is not enough when the bounds
+    // *together* do not fit, and `batteries` was that job: every bound inside the 34-minute
+    // ceiling, the ceiling reached with all twenty still inside their own. `R5` could not
+    // see it, because it asked one bound at a time, and one at a time they were all fine.
 
     for (const step of steps) {
       const seconds = secondsOf(record, step.name);
@@ -1155,17 +1223,6 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
             );
           }
         }
-        if (job.timeoutMinutes !== null) {
-          const deadline = bound + before;
-          if (deadline > job.timeoutMinutes * 60) {
-            errors.push(
-              `\`${step.name}\` is bounded at ${String(step.minutes)} min and the steps before it in ` +
-                `\`${job.id}\` account for ${String(Math.round(before / 60))} min on their slowest recorded days, so its bound expires at ` +
-                `${String(Math.round(deadline / 60))} min -- past the job's ${String(job.timeoutMinutes)}. ` +
-                'The job would die first and name nothing, which is the defect the bound is for',
-            );
-          }
-        }
       } else if (step.inheritedFrom === 'step' && pending.has(step.name)) {
         // R8 -- the half of `R4`/`R5` that survives having no measurement. The deadline is
         // about the bound's position in the job, so everything it needs is the steps in
@@ -1177,17 +1234,6 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
               `${String(FLOOR_MINUTES)}, and a step that has not run yet is the case the floor is for`,
           );
         }
-        if (job.timeoutMinutes !== null) {
-          const deadline = step.minutes * 60 + before;
-          if (deadline > job.timeoutMinutes * 60) {
-            errors.push(
-              `\`${step.name}\` is declared at ${String(step.minutes)} min and the steps before it in ` +
-                `\`${job.id}\` account for ${String(Math.round(before / 60))} min on their slowest recorded days, so its bound would expire ` +
-                `at ${String(Math.round(deadline / 60))} min -- past the job's ${String(job.timeoutMinutes)}. ` +
-                'The job would die first and name nothing, which is the defect the bound is for',
-            );
-          }
-        }
         const after = steps.slice(steps.indexOf(step) + 1);
         const measuredAfter = after.filter((one) => secondsOf(record, one.name) !== null);
         if (measuredAfter.length > 0) {
@@ -1198,33 +1244,53 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
           );
         }
       }
-      if (typeof seconds === 'number') before += slowest(step, seconds);
     }
 
-    // R12 -- the ceiling has a multiple too (finding 605).
+    // R13 -- the ceiling holds the bounds, and the seconds no step spends (finding 619).
     //
-    // `R4` and `R10` ask a step bound for twice the slowest day its command has had, on the
-    // argument that a runner twice as slow must still finish rather than be refused for being
-    // slow. Nothing asked it of the job *ceiling*, and the ceiling is the number that turns a
-    // hang into `the job timed out` -- the verdict every bound in this file exists to replace.
-    // The shipped workflow had three ceilings under twice their job's slowest day: `verify` 18
-    // min over 601 s (1.80x), `batteries` 25 over 1012 s (1.48x), `batteries-heavy` 27 over
-    // 921 s (1.76x). A day ten per cent slower than one this repository has already run reaches
-    // the ceiling with every step still inside its own bound, and the sentence a reader gets
-    // names no step at all.
+    // `R12` asked a ceiling for twice the job's slowest day and stopped there. Twice a day is
+    // a real floor -- a runner twice as slow must finish rather than be refused for being slow
+    // -- and it is not the number that decides whether the ceiling can fire first. The bounds
+    // decide that: every step dies at its own bound, so the longest a job can legitimately live
+    // is the sum of them plus the seconds that belong to no step (the runner's own setup, its
+    // teardown, and the `Post` half of every action, none of which is in a bound).
+    //
+    // `batteries` was the job that showed the difference: **83** minutes of bounds inside a
+    // **34**-minute ceiling, with the last bound expiring at 24. Every bound was inside its own
+    // arithmetic and the job still could not finish a slow day -- the day that spends a third
+    // of each bound reaches the ceiling with nothing to name. Raising the ceiling to the sum is
+    // what makes the sentence impossible, and splitting the job is the other repair, which is
+    // why both are in the message.
     //
     // The day comes from `jobDays`, which is a real run and not a composite of slow days: a
     // ceiling is a claim about a day, and a claim about a day has to be checkable against one.
+    // The overhead is the other measurement: `total` is the job's own wall clock, so what no
+    // step accounts for is `total - the steps`, and a recording that does not hold it is
+    // refused above rather than defaulted -- a margin nobody measured is a margin nobody checked.
+    const total = record.total;
+    const overhead = Math.max(0, total - measured);
+    const bounds = boundsSecondsOf(workflow, job.id);
     const day = days.get(job.id);
-    if (day !== undefined && job.timeoutMinutes !== null && MULTIPLE * day.seconds > job.timeoutMinutes * 60) {
-      const needed = Math.ceil((MULTIPLE * day.seconds) / 60);
+    const need = ceilingNeedOf(day?.seconds ?? 0, bounds, overhead);
+    const ceiling = (job.timeoutMinutes ?? GITHUB_CEILING) * 60;
+    if (ceiling < need.seconds) {
+      const needed = Math.ceil(need.seconds / 60);
+      // Which of the two terms is the binding one decides the sentence, because they are two
+      // different complaints: a ceiling under the sum is a job doing more than one budget can
+      // hold, and a ceiling under twice the day is a budget that refuses a slow runner.
       errors.push(
-        `\`${job.id}\` is bounded at ${String(job.timeoutMinutes)} min and its slowest recorded day is ` +
-          `${String(day.seconds)} s (run ${String(day.run)}), which is ` +
-          `${(day.seconds === 0 ? Infinity : (job.timeoutMinutes * 60) / day.seconds).toFixed(2)}x: the ` +
-          `ceiling is under ${String(MULTIPLE)} times that day, so a day twice as slow reaches it with ` +
-          'every step still inside its own bound and the verdict names the job rather than the step -- ' +
-          `raise the ceiling to ${String(needed)} min, or split the job`,
+        need.term === 'bounds'
+          ? `\`${job.id}\` is bounded at ${String(job.timeoutMinutes ?? GITHUB_CEILING)} min and the bounds ` +
+            `inside it add up to ${String(Math.round(bounds / 60))} min in ${String(bounded)} step(s): a day ` +
+            'that spends them reaches the ceiling with every step still inside its own bound, so the ' +
+            'verdict names the job rather than the step -- raise the ceiling to ' +
+            `${String(needed)} min, or split the job`
+          : `\`${job.id}\` is bounded at ${String(job.timeoutMinutes ?? GITHUB_CEILING)} min and its slowest ` +
+            `recorded day is ${String(day?.seconds ?? 0)} s (run ${String(day?.run)}), which is ` +
+            `${((day?.seconds ?? 0) === 0 ? Infinity : ceiling / (day?.seconds ?? 0)).toFixed(2)}x: the ` +
+            `ceiling is under ${String(MULTIPLE)} times that day, so a day twice as slow reaches it with ` +
+            'every step still inside its own bound and the verdict names the job rather than the step -- ' +
+            `raise the ceiling to ${String(needed)} min, or split the job`,
       );
     }
   }
@@ -1398,8 +1464,13 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   // one *step's* measured seconds -- the two answer different questions and a summary that
   // printed one of them under the other's name would be finding 588 again.
   const days = jobDays(workflow, baseline, historyKnown ? parsedReadings : null);
+  // The ceiling's own reading, and it is a different superlative from `tightest`: the ceiling
+  // with the least room above its day is the job a slow day would kill at the ceiling first,
+  // and the count of jobs whose ceiling is held by their bounds is the invariant `R13`
+  // maintains, printed so that a reader of a green run can see which number each ceiling is
+  // (finding 619).
   let closest = { name: '', ratio: Infinity, minutes: 0, day: null };
-  let under = 0;
+  let heldByBounds = 0;
 
   for (const job of jobsOf(workflow)) {
     const record = recorded[job.id];
@@ -1411,11 +1482,6 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
     // (finding 604).
     if (job.timeoutMinutes !== null) ceilings += 1;
     const day = days.get(job.id);
-    if (day !== undefined && job.timeoutMinutes !== null) {
-      const ratio = day.seconds === 0 ? Infinity : (job.timeoutMinutes * 60) / day.seconds;
-      if (ratio < MULTIPLE) under += 1;
-      if (ratio < closest.ratio) closest = { name: job.id, ratio, minutes: job.timeoutMinutes, day };
-    }
     // `R6` accepts a wider budget than the reading was taken under, and a reader has to
     // see that it did: a summary that said nothing would make the exception look like the
     // recording's own number.
@@ -1424,6 +1490,7 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
     }
     const own = stepsOf(workflow, job.id);
     let jobSeconds = 0;
+    let jobBounds = 0;
     for (const step of own) {
       const seconds = secondsOf(record, step.name) ?? 0;
       jobSeconds += seconds;
@@ -1437,6 +1504,7 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
       if (step.inheritedFrom === 'step') {
         bounded += 1;
         bounds += step.minutes * 60;
+        jobBounds += step.minutes * 60;
         // The denominator is the slowest reading of the command when there is a history
         // to ask, because that is the number `R10` refuses against -- a summary computed
         // from the recording alone would report a ratio the gate does not use.
@@ -1449,6 +1517,14 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
       }
     }
     measured += jobSeconds;
+    if (job.timeoutMinutes !== null) {
+      const overhead = Number.isInteger(record.total) ? Math.max(0, record.total - jobSeconds) : 0;
+      if (ceilingNeedOf(day?.seconds ?? 0, jobBounds, overhead).term === 'bounds') heldByBounds += 1;
+      if (day !== undefined) {
+        const ratio = day.seconds === 0 ? Infinity : (job.timeoutMinutes * 60) / day.seconds;
+        if (ratio < closest.ratio) closest = { name: job.id, ratio, minutes: job.timeoutMinutes, day };
+      }
+    }
     if (own.length === 1 && jobSeconds > FLOOR_MINUTES * 60) {
       excused.push(`${job.id} (${String(Math.round(jobSeconds / 60))} min in one step)`);
     }
@@ -1490,7 +1566,7 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
     widened.length === 0
       ? 'no job was given a wider budget than its reading'
       : `budget(s) widened since the reading: ${widened.join(', ')} -- no step bound moves, ` +
-        "and `R5`'s deadline only gains room";
+        'and the sum `R13` compares only gains room';
   // The tightest bound names the reading it is tight against, because that is the number
   // `R10` would refuse it for and a reader has to be able to go and look at that run.
   //
@@ -1516,13 +1592,11 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   const ceilingText =
     closest.day === null
       ? 'no job has both a ceiling and a measured day to put them together'
-      : `${closest.name} at ${String(closest.minutes)} min over its slowest day of ` +
-        `${String(closest.day.seconds)} s (` +
-        `${Number.isFinite(closest.ratio) ? closest.ratio.toFixed(1) : 'unmeasured'}x, run ` +
-        `${String(closest.day.run)}), and ` +
-        (under === 0
-          ? `no job is under ${String(MULTIPLE)}x`
-          : `${String(under)} job(s) under ${String(MULTIPLE)}x`);
+      : `${String(heldByBounds)} of ${String(ceilings)} ceiling(s) hold the bounds inside them and ` +
+        `${String(ceilings - heldByBounds)} hold twice a day; the least room above a day is ` +
+        `${closest.name} at ${String(closest.minutes)} min, ` +
+        `${Number.isFinite(closest.ratio) ? closest.ratio.toFixed(1) : 'unmeasured'}x its slowest day of ` +
+        `${String(closest.day.seconds)} s (run ${String(closest.day.run)})`;
   const readingsText =
     parsedReadings === null
       ? 'no history of readings to compare against'
@@ -1538,7 +1612,7 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
     `and ${String(reached)} ${reached === 1 ? 'has' : 'have'} none, ` +
     `${String(Math.round(measured / 60))} min measured (as of run ` +
     `${String(baseline.run)}); bounds total ${String(Math.round(bounds / 60))} min in ` +
-    `${String(ceilings)} ceiling(s); the closest ceiling ${ceilingText}; tightest ` +
+    `${String(ceilings)} ceiling(s); ${ceilingText}; tightest ` +
     `${tightestText}; ` +
     `${excusedText}; ${declaredText}; ${jobsText}; ${widenedText}; ${readingsText}; ` +
     `${ledgerText(ledger, baseline)}`
