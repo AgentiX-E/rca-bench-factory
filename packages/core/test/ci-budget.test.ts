@@ -9,8 +9,10 @@ import {
   FLOOR_MINUTES,
   MULTIPLE,
   WHY_LENGTH,
+  boundsSecondsOf,
   budgetErrors,
   budgetSummary,
+  ceilingNeedOf,
   commandOf,
   jobDays,
   jobsOf,
@@ -122,19 +124,25 @@ function inherited(
  * arithmetic inside one job, and a job that was never measured cannot be argued about.
  */
 function recordingOf(
-  jobs: Record<string, { minutes?: number | null; steps: Record<string, number> }>,
+  jobs: Record<string, { minutes?: number | null; total?: number | null; steps: Record<string, number> }>,
   over: Record<string, unknown> = {},
 ) {
   const recorded: Record<string, unknown> = {};
   for (const [id, job] of Object.entries(jobs)) {
+    const measured = Object.values(job.steps).reduce((all, one) => all + one, 0);
     // `'minutes' in job` rather than `?? 30`: a job that declared no ceiling is a shape
     // `R6` distinguishes from one that declared thirty, and `??` would turn the first
     // into the second and let the case pass for the wrong reason.
-    recorded[id] = {
+    const record: Record<string, unknown> = {
       name: id,
       timeoutMinutes: 'minutes' in job ? job.minutes ?? null : 30,
       steps: job.steps,
     };
+    // The job's own wall clock, which the recorder writes beside the steps since v3.129:
+    // four seconds more than its steps unless the case is about the difference (`R13`).
+    const total = 'total' in job ? job.total : measured + 4;
+    if (total !== null) record.total = total;
+    recorded[id] = record;
   }
   return {
     run: 41637098008,
@@ -222,45 +230,43 @@ describe('the arithmetic of one job', () => {
     expect(errors).toContain('cold package index');
   });
 
-  it('refuses a bound that cannot expire before the job does', () => {
-    // The bound is fine on its own -- 20 min for 383 s measured -- and useless where it
-    // sits: 800 s of measured step comes before it, so the job's 30 min expires first
-    // and the verdict names nothing, which is the defect the bound is for.
+  it('refuses a job whose bounds add up to more than its ceiling', () => {
+    // `R5`'s subject, asked of the sum rather than one bound at a time (finding 619). Both
+    // bounds are fine on their own -- 27 min for 800 s, 20 for 383 -- and the job's thirty
+    // minutes cannot hold them together: **47** minutes of bound, and a day that spent a
+    // third of each reached the ceiling with both still inside their own.
     const workflow = oneJob([...step('Earlier battery', 27), ...step('Slow battery', 20)]);
     const errors = budgetErrors(
       workflow,
       recordingOf({ batteries: { steps: { 'Earlier battery': 800, 'Slow battery': 383 } } }),
     ).join('\n');
-    expect(errors).toContain("past the job's 30");
-    expect(errors).toContain('The job would die first and name');
+    expect(errors).toContain('the bounds inside it add up to 47 min in 2 step(s)');
+    expect(errors).toContain('raise the ceiling to 48 min, or split the job');
   });
 
-  it('counts the steps before it when it asks whether a bound can fire', () => {
-    // Same bound, same measurement, three 400 s steps ahead of it: the arithmetic that
-    // makes the bound useless is a property of the position, not of the number -- and
-    // three steps rather than one because a single 400 s step bounded at 2x would itself
-    // need 14 min, which is the same rule refusing a different case first.
-    const workflow = oneJob([
+  it('accepts the same bounds under a ceiling that holds them, whatever their order', () => {
+    // What replaced `R5`: the position of a bound inside its job is not a question of its
+    // own, because the sum is order-free and a bound dies at its own number. Four bounds of
+    // 58 minutes are refused under thirty and accepted under sixty.
+    const steps = [
       ...step('First battery', 15),
       ...step('Second battery', 15),
       ...step('Third battery', 15),
       ...step('Slow battery', 13),
-    ]);
-    const errors = budgetErrors(
-      workflow,
-      recordingOf({
-        batteries: {
-          steps: {
-            'First battery': 400,
-            'Second battery': 400,
-            'Third battery': 400,
-            'Slow battery': 383,
-          },
+    ];
+    const recording = recordingOf({
+      batteries: {
+        steps: {
+          'First battery': 400,
+          'Second battery': 400,
+          'Third battery': 400,
+          'Slow battery': 383,
         },
-      }),
-    ).join('\n');
-    expect(errors).toContain('the steps before it in `batteries` account for 20 min');
-    expect(errors).toContain('expires at 33 min');
+      },
+    });
+    const tight = budgetErrors(oneJob(steps, 30), recording).join('\n');
+    expect(tight).toContain('the bounds inside it add up to 58 min in 4 step(s)');
+    expect(budgetErrors(oneJob(steps, 60), recording)).toEqual([]);
   });
 
   it('refuses a step with no recording, and says how to take one', () => {
@@ -470,18 +476,20 @@ describe('the step the recording has not measured yet', () => {
     expect(inheritedErrors).toContain('the job budget would answer for it instead');
   });
 
-  it('refuses a declared bound that would expire past the job, using the measurements in front of it', () => {
-    // 300 s of a 10-minute job is left, and the declaration asks for 6 minutes of it.
-    // The rule is `R5` with the declaration's number standing where a measurement would.
-    const workflow = oneJob([...step('Slow battery', 10), ...step('Quick battery', 6)], 10);
+  it('counts a declared bound in the job\'s sum, because the run will enforce it', () => {
+    // The step has no measurement and its bound is still real: a job whose other bounds
+    // already fill the ceiling does not gain room from the step never having run. `R8`'s
+    // share of `R5` used to be a deadline computed from the steps in front of it; it is the
+    // sum now, and the declaration's number stands in it like any other.
+    const workflow = oneJob([...step('Slow battery', 10), ...step('Quick battery', 6)], 15);
     const errors = budgetErrors(
       workflow,
-      recordingOf({ batteries: { minutes: 10, steps: { 'Slow battery': 300 } } }),
+      recordingOf({ batteries: { minutes: 15, steps: { 'Slow battery': 300 } } }),
       null,
       { declared: [declarationOf({ minutes: 6 })] },
     ).join('\n');
-    expect(errors).toContain('would expire at 11 min');
-    expect(errors).toContain("past the job's 10");
+    expect(errors).toContain('the bounds inside it add up to 16 min in 2 step(s)');
+    expect(errors).toContain('raise the ceiling to 17 min, or split the job');
   });
 
   it('refuses a step declared twice, and a declarations file that says nothing', () => {
@@ -1117,11 +1125,12 @@ describe('the recording the gate reads', () => {
     // 327 min` beside `51 min measured` invites a division, and the division is over eight
     // different ceilings rather than over one.
     expect(summary).toContain('bounds total 15 min in 1 ceiling(s)');
-    // And the ceiling gets its own reading, with the day it was measured against -- the
-    // comparison that decides whether a bound can fire before the job dies.
+    // And the ceiling gets its own reading: how many hold the bounds inside them (finding
+    // 619), and the one with the least room above a day -- the job a slow day would kill at
+    // the ceiling first, which is the comparison that decides whether a bound can fire.
     expect(summary).toContain(
-      'the closest ceiling batteries at 30 min over its slowest day of 355 s (5.1x, run 41637098008), ' +
-        'and no job is under 2x',
+      '1 of 1 ceiling(s) hold the bounds inside them and 0 hold twice a day; the least room above a ' +
+        'day is batteries at 30 min, 5.1x its slowest day of 355 s (run 41637098008)',
     );
     // The tightest ratio names the battery, because a ratio without a subject invites
     // the reader to supply one (finding 294).
@@ -1228,7 +1237,8 @@ const API_JOBS = {
   jobs: [
     {
       name: 'injection batteries, one step each (no survivors, no inert)',
-      completed_at: '2026-11-02T10:11:12Z',
+      started_at: '2026-11-02T10:00:00Z',
+      completed_at: '2026-11-02T10:00:53Z',
       steps: [
         { name: 'Set up job', started_at: '2026-11-02T10:00:00Z', completed_at: '2026-11-02T10:00:01Z' },
         { name: 'Check out', started_at: '2026-11-02T10:00:01Z', completed_at: '2026-11-02T10:00:03Z' },
@@ -1237,7 +1247,8 @@ const API_JOBS = {
     },
     {
       name: 'injection batteries, the two that rewrite a probe a hundred times',
-      completed_at: '2026-11-02T10:30:00Z',
+      started_at: '2026-11-02T10:20:00Z',
+      completed_at: '2026-11-02T10:28:02Z',
       steps: [
         { name: 'Set up job', started_at: '2026-11-02T10:20:00Z', completed_at: '2026-11-02T10:20:01Z' },
         { name: 'Check out', started_at: '2026-11-02T10:20:01Z', completed_at: '2026-11-02T10:20:02Z' },
@@ -1365,6 +1376,10 @@ describe('the recorder', () => {
     expect(written.jobs.batteries).toEqual({
       name: 'injection batteries, one step each (no survivors, no inert)',
       timeoutMinutes: 25,
+      // The job's own wall clock beside its steps, since v3.129: 53 s of job against 51 s
+      // of steps is the two seconds no bound can cover, and `R13` holds a ceiling to the
+      // bounds plus twice that.
+      total: 53,
       steps: { 'Check out': 2, 'Slow battery': 49 },
     });
     // The runner's own bookkeeping is not in the workflow, so it has no bound to argue
@@ -1374,6 +1389,30 @@ describe('the recorder', () => {
     // Nothing was borrowed, so nothing claims to have been.
     expect(written.derived).toBeUndefined();
     expect(written.note).toBeUndefined();
+  });
+
+  it('refuses a run that reports no span for a job, because the overhead would then be a guess', async () => {
+    // `R13` holds a ceiling to the bounds plus the seconds no step spends, and the job's own
+    // span is the only place those seconds are measured. A run without one is refused at
+    // measurement time rather than written with a default: a margin nobody measured is a
+    // margin nobody checked, and the second is what the first would become.
+    const result = await withApi(
+      (url) => {
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/31') {
+          return { status: 200, body: { head_sha: 'deadbeef', updated_at: '2026-11-02T10:31:00Z' } };
+        }
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/31/jobs?per_page=100') {
+          const jobs = JSON.parse(JSON.stringify(API_JOBS));
+          jobs.jobs[0].started_at = null;
+          return { status: 200, body: jobs };
+        }
+        return null;
+      },
+      (env) => runRecorder(['31'], env),
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('reports no start and end for');
+    expect(result.stderr).toContain('the seconds its steps do not account for cannot be measured');
   });
 
   it('records a job that has not run from the job that ran its steps, and says which', async () => {
@@ -1984,44 +2023,99 @@ describe('the recorder and a declared job', () => {
 });
 
 /**
- * The ceiling's own multiple (finding 605).
+ * The ceiling, and the number it has to hold (findings 605 and 619).
  *
  * `R4` and `R10` size a *step* bound from what that step measured and demand twice the
  * slowest day its command has had. The job *ceiling* -- the number a hang is charged to
- * when no bound fires -- was asked nothing at all beyond `R6`'s "not narrower than the
- * recording's", and three jobs of the shipped workflow sat under twice their own slowest
- * day: `verify` 18 min over 601 s, `batteries` 25 over 1012 s, `batteries-heavy` 27 over
- * 921 s. On a day ten per cent slower than one this repository has already run, each of
- * them dies at the ceiling with every step still inside its own bound, and the sentence a
- * reader gets is the one every bound in this file exists to replace.
+ * when no bound fires -- was asked nothing at all until finding 605, which asked it for
+ * twice the job's day. That was a real floor and not the number that decides the question:
+ * a step dies at its own bound, so the longest a job can legitimately live is the **sum** of
+ * the bounds inside it plus the seconds no step spends. `batteries` held **83** minutes of
+ * bounds under a 34-minute ceiling with the last bound expiring at 24 -- every bound inside
+ * its own arithmetic, and a day that spent a third of each reaching the ceiling with nothing
+ * to name.
  *
- * The day is a real run rather than a composite: `jobDays` sums the job's steps in one
- * reading, and a reading that measured only some of them is skipped rather than summed,
- * because a total with a hole in it is a fast day.
+ * The day term did not go away: it is what a job with no bounds inside it has, which is the
+ * shape `R3` excuses.
  */
-describe('the ceiling, and the day it has to hold', () => {
-  it('refuses a ceiling under twice the job\'s slowest day, and names the run', () => {
-    // 355 s of job in a 6 min ceiling: 360 s of budget against 710 s of expectation.
-    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)], 6);
-    const errors = budgetErrors(
-      workflow,
-      recordingOf({ batteries: { steps: { 'Slow battery': 351, 'Quick battery': 4 } } }),
-    ).join('\n');
-    expect(errors).toContain('`batteries` is bounded at 6 min and its slowest recorded day is 355 s');
-    expect(errors).toContain('run 41637098008');
-    expect(errors).toContain('which is 1.01x');
-    expect(errors).toContain('raise the ceiling to 12 min, or split the job');
+describe('the two numbers a ceiling is made of', () => {
+  it('adds the bounds a job declares, and only the ones it declares', () => {
+    // A step that inherits its job's budget contributes nothing: the job's own ceiling is
+    // already that number, and counting it twice would ask a ceiling to hold itself.
+    const workflow = oneJob([
+      ...step('Slow battery', 12),
+      ...inherited('Quick battery'),
+      ...step('Declared battery', 6),
+    ]);
+    expect(boundsSecondsOf(workflow, 'batteries')).toBe((12 + 6) * 60);
   });
 
-  it('accepts a ceiling at exactly twice the day, because the rule is a multiple and not a margin', () => {
-    // 12 min = 720 s, and twice 355 s is 710: the smallest integer minute that passes. The
-    // recording declares the same ceiling, because `R6` refuses a narrower one than the run
-    // that sized the bounds -- a different rule, and a fixture that broke it would pass this
-    // case for that rule's reason.
+  it('takes the larger of twice the day and the bounds plus twice the overhead, and says which', () => {
+    // The term is returned rather than inferred by the caller, because the refusal's sentence
+    // depends on it and two readers computing one answer is finding 588.
+    expect(ceilingNeedOf(355, 900, 0)).toEqual({ seconds: 900, term: 'bounds' });
+    expect(ceilingNeedOf(1000, 720, 0)).toEqual({ seconds: 2000, term: 'day' });
+    // The seconds no step spends are doubled like every bound: 70 s of the runner's own time
+    // is 140 s of budget, because a runner twice as slow sets up twice as slowly.
+    expect(ceilingNeedOf(355, 720, 70)).toEqual({ seconds: 860, term: 'bounds' });
+  });
+});
+
+describe('the ceiling, and the number it has to hold', () => {
+  it('refuses a ceiling at twice the day when the bounds inside it add up to more', () => {
+    // The defect finding 619 is about, in five lines: two bounds of 12 and 3 minutes under a
+    // 12-minute ceiling. Twice the day is 710 s and the ceiling is 720, so `R12` was happy --
+    // and a day that spent three quarters of each bound reaches 720 s with both still inside
+    // their own, which is the sentence every bound in this file exists to replace.
     const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)], 12);
     const errors = budgetErrors(
       workflow,
-      recordingOf({ batteries: { minutes: 12, steps: { 'Slow battery': 351, 'Quick battery': 4 } } }),
+      // The job's own clock equal to its steps, so this case is about the sum and nothing else;
+      // the overhead has a case of its own below.
+      recordingOf({
+        batteries: { minutes: 12, total: 355, steps: { 'Slow battery': 351, 'Quick battery': 4 } },
+      }),
+    ).join('\n');
+    expect(errors).toContain('`batteries` is bounded at 12 min and the bounds inside it add up to 15 min');
+    expect(errors).toContain('2 step(s)');
+    expect(errors).toContain('reaches the ceiling with every step still inside its own bound');
+    expect(errors).toContain('raise the ceiling to 15 min, or split the job');
+  });
+
+  it('accepts a ceiling at exactly the sum, because the rule is arithmetic and not a margin', () => {
+    // 15 min = 900 s and the two bounds are 900 s: the smallest whole minute that holds them.
+    // The recording declares the same ceiling, because `R6` refuses a narrower one than the run
+    // that sized the bounds -- a different rule, and a fixture that broke it would pass this
+    // case for that rule's reason.
+    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)], 15);
+    const errors = budgetErrors(
+      workflow,
+      recordingOf({
+        batteries: { minutes: 15, total: 355, steps: { 'Slow battery': 351, 'Quick battery': 4 } },
+      }),
+    );
+    expect(errors).toEqual([]);
+  });
+
+  it('refuses a ceiling under twice the day, for a job whose steps carry no bound of their own', () => {
+    // The day term, which is all a job with no bounds inside it has. 355 s of job in a 6 min
+    // ceiling: 360 s of budget against 710 s of expectation.
+    const workflow = oneJob([...inherited('Slow battery')], 6);
+    const errors = budgetErrors(
+      workflow,
+      recordingOf({ batteries: { minutes: 6, steps: { 'Slow battery': 351 } } }),
+    ).join('\n');
+    expect(errors).toContain('`batteries` is bounded at 6 min and its slowest recorded day is 351 s');
+    expect(errors).toContain('run 41637098008');
+    expect(errors).toContain('which is 1.03x');
+    expect(errors).toContain('raise the ceiling to 12 min, or split the job');
+  });
+
+  it('accepts a ceiling at exactly twice that day, because the rule is a multiple and not a margin', () => {
+    const workflow = oneJob([...inherited('Slow battery')], 12);
+    const errors = budgetErrors(
+      workflow,
+      recordingOf({ batteries: { minutes: 12, steps: { 'Slow battery': 351 } } }),
     );
     expect(errors).toEqual([]);
   });
@@ -2029,7 +2123,7 @@ describe('the ceiling, and the day it has to hold', () => {
   it('reads the slowest day of the history, not the day being recorded', () => {
     // The recording is a fast day (100 s). An older run took 1 000 s, which is the day the
     // ceiling has to hold: 30 min = 1 800 s against 2 000 s of expectation.
-    const workflow = oneJob([...step('Slow battery', 12)], 30);
+    const workflow = oneJob([...inherited('Slow battery')], 30);
     const recording = recordingOf({ batteries: { steps: { 'Slow battery': 100 } } });
     const slow = readingsOf(workflow, recording);
     const slower = JSON.parse(JSON.stringify(slow));
@@ -2042,10 +2136,10 @@ describe('the ceiling, and the day it has to hold', () => {
   });
 
   it('skips a reading that measured only some of the job, rather than summing a hole', () => {
-    // A reading missing one step is not a day: 100 s of it would pass a 5 min ceiling, and
+    // A reading missing one step is not a day: 600 s of it would pass a 20 min ceiling, and
     // the day that actually happened (recorded here as 900 s over two steps) is the one the
     // rule refuses.
-    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)], 5);
+    const workflow = oneJob([...inherited('Slow battery'), ...inherited('Quick battery')], 20);
     const recording = recordingOf({ batteries: { steps: { 'Slow battery': 600, 'Quick battery': 300 } } });
     const partial = readingsOf(workflow, recording);
     delete partial.readings[0].jobs['batteries']['Quick battery'];
@@ -2056,23 +2150,63 @@ describe('the ceiling, and the day it has to hold', () => {
     expect(errors).toContain('run 41637098008');
   });
 
-  it('says nothing about a job that declares no ceiling, because there is no number to hold', () => {
-    const workflow = oneJob([...step('Slow battery', 12)], null);
+  it('holds a job with no ceiling to GitHub\'s six hours, because that is the number it will die at', () => {
+    // A job that declares no ceiling is not unbounded: GitHub kills it at 360 minutes, and
+    // that verdict names the job like any other. So the rule compares against 360 rather than
+    // falling silent -- silence is how a ceiling that cannot hold its bounds goes unnoticed.
+    const fits = oneJob([...step('Slow battery', 12)], null);
+    expect(
+      budgetErrors(fits, recordingOf({ batteries: { minutes: null, steps: { 'Slow battery': 351 } } })),
+    ).toEqual([]);
+    const doesNot = oneJob([...step('Slow battery', 130), ...step('Quick battery', 130), ...step('Third battery', 130)], null);
     const errors = budgetErrors(
-      workflow,
-      recordingOf({ batteries: { minutes: null, steps: { 'Slow battery': 351 } } }),
+      doesNot,
+      recordingOf({
+        batteries: {
+          minutes: null,
+          total: 30,
+          steps: { 'Slow battery': 10, 'Quick battery': 10, 'Third battery': 10 },
+        },
+      }),
     ).join('\n');
-    expect(errors).not.toContain('slowest recorded day');
+    expect(errors).toContain('`batteries` is bounded at 360 min and the bounds inside it add up to 390 min');
+    expect(errors).toContain('raise the ceiling to 390 min, or split the job');
   });
 
-  it('counts the jobs under the multiple in the summary, so the rule is visible from a green run', () => {
-    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)], 6);
+  it('holds the seconds no step spends, doubled like every bound', () => {
+    // The job's own wall clock is longer than its steps: the runner's setup, its teardown and
+    // the `Post` half of every action belong to no step, so no bound can cover them. 70 s of
+    // them is 140 s of budget against a 12-minute bound that used 720 of 780.
+    const workflow = oneJob([...step('Slow battery', 12)], 13);
+    const quiet = recordingOf({ batteries: { minutes: 13, steps: { 'Slow battery': 351 } } });
+    expect(budgetErrors(workflow, quiet)).toEqual([]);
+    const slow = recordingOf({ batteries: { minutes: 13, steps: { 'Slow battery': 351 }, total: 421 } });
+    const errors = budgetErrors(workflow, slow).join('\n');
+    expect(errors).toContain('the bounds inside it add up to 12 min in 1 step(s)');
+    expect(errors).toContain('raise the ceiling to 15 min');
+  });
+
+  it('refuses a recording that does not say how long the job took', () => {
+    // The overhead is the one number in the rule a step cannot supply. A recording without it
+    // is refused rather than defaulted: a margin nobody measured is a margin nobody checked.
+    const workflow = oneJob([...step('Slow battery', 12)]);
+    const errors = budgetErrors(
+      workflow,
+      recordingOf({ batteries: { steps: { 'Slow battery': 351 }, total: null } }),
+    ).join('\n');
+    expect(errors).toContain('`batteries` has seconds for its steps and none for the job');
+    expect(errors).toContain('the seconds no step spends');
+    expect(errors).toContain('record the run again');
+  });
+
+  it('counts the ceilings held by their bounds in the summary, so the rule is visible from a green run', () => {
+    const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)], 15);
     const summary = budgetSummary(
       workflow,
-      recordingOf({ batteries: { steps: { 'Slow battery': 351, 'Quick battery': 4 } } }),
+      recordingOf({ batteries: { minutes: 15, steps: { 'Slow battery': 351, 'Quick battery': 4 } } }),
     );
-    expect(summary).toContain('the closest ceiling batteries at 6 min over its slowest day of 355 s (1.0x');
-    expect(summary).toContain('and 1 job(s) under 2x');
+    expect(summary).toContain('1 of 1 ceiling(s) hold the bounds inside them and 0 hold twice a day');
+    expect(summary).toContain('the least room above a day is batteries at 15 min, 2.5x');
   });
 });
 

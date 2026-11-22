@@ -92,9 +92,13 @@ function action(name: string, minutes: number): string[] {
 function recordingOf(jobs: Record<string, { minutes?: number | null; steps: Record<string, number> }>) {
   const recorded: Record<string, unknown> = {};
   for (const [id, job] of Object.entries(jobs)) {
+    const measured = Object.values(job.steps).reduce((all, one) => all + one, 0);
     recorded[id] = {
       name: id,
       timeoutMinutes: 'minutes' in job ? job.minutes ?? null : 30,
+      // The job's own wall clock, which `R13` needs and the recorder writes: four seconds
+      // more than its steps, so a case about a ceiling is not a case about the overhead.
+      total: measured + 4,
       steps: job.steps,
     };
   }
@@ -419,8 +423,11 @@ describe('a bound is divided by the slowest reading of the command it bounds', (
     // and one extraction. Its name is the only handle the workflow gives, and the rule
     // uses it rather than treating every action step as its own series.
     const workflow = workflowOf([
-      { id: 'batteries', minutes: 30, steps: [...action('Set up Node.js', 3)] },
-      { id: 'artefacts', minutes: 30, steps: [...action('Set up Node.js', 30)] },
+      // 31 minutes, because `R13` holds a ceiling to the bounds inside it and a 30-minute
+      // bound needs 31 -- the two jobs are here for `R10`'s keying, and a fixture that also
+      // broke the ceiling rule would make the case pass for the wrong reason.
+      { id: 'batteries', minutes: 31, steps: [...action('Set up Node.js', 3)] },
+      { id: 'artefacts', minutes: 31, steps: [...action('Set up Node.js', 30)] },
     ]);
     const recording = recordingOf({
       batteries: { steps: { 'Set up Node.js': 1 } },
@@ -452,11 +459,12 @@ describe('a bound is divided by the slowest reading of the command it bounds', (
   });
 });
 
-describe('a deadline counts the steps in front of it at their slowest recorded day', () => {
-  // The `sensitivity` shape, from v3.55: a 25-minute bound in a 26-minute job, whose
-  // deadline fitted while the shell install in front of it measured 9 s and stopped
-  // fitting when the same step measured 91 s. `R5` is arithmetic about a position, and a
-  // position is not faster on a day the prefix was.
+describe("a bound's position is not a rule of its own any more", () => {
+  // The `sensitivity` shape, from v3.55: a 20-minute bound in a 26-minute job, whose deadline
+  // fitted while the shell install in front of it measured 9 s and stopped fitting when the
+  // same step measured 91 s. `R5` asked that of every position, one at a time, and v3.129
+  // (finding 619) replaced it with the sum -- forty minutes of bounds do not fit twenty-six
+  // whatever the prefix measured, so the verdict no longer moves with the history.
   const steps = [...step('Install the shells', 20, 'sudo apt-get install -y zsh'), ...step('Long battery', 20)];
   const workflow = workflowOf([{ id: 'batteries', minutes: 26, steps }]);
   const recording = recordingOf({
@@ -475,18 +483,19 @@ describe('a deadline counts the steps in front of it at their slowest recorded d
     ],
   ]);
 
-  it('refuses the bound whose deadline the slowest prefix pushes past the ceiling', () => {
+  it('refuses the tree for the sum, even with a day four times slower in front of the bound', () => {
     const errors = budgetErrors(workflow, recording, null, null, slowPrefix);
-    expect(errors).toEqual([expect.stringContaining('`Long battery` is bounded at 20 min')]);
-    expect(errors[0]).toContain('account for 7 min on their slowest recorded days');
-    expect(errors[0]).toContain('expires at 27 min');
+    expect(errors).toEqual([
+      expect.stringContaining('the bounds inside it add up to 40 min in 2 step(s)'),
+    ]);
   });
 
-  it('accepts the same tree when there is no history, which is the state `R4` alone describes', () => {
-    // The tree is not wrong and this rule is not the only one: with one day to consult,
-    // the deadline is that day's, and 1200 + 9 s fits. The point of the pair is that the
-    // verdict moves because the *evidence* moved, not because the tree did.
-    expect(budgetErrors(workflow, recording)).toEqual([]);
+  it('gives the same verdict from one day, because the prefix no longer enters it', () => {
+    // The pair that made `R5` worth writing is gone with it: the verdict is a fact about the
+    // tree, and the tree is the same tree on a fast day and a slow one.
+    expect(budgetErrors(workflow, recording)).toEqual([
+      expect.stringContaining('the bounds inside it add up to 40 min in 2 step(s)'),
+    ]);
   });
 });
 
@@ -553,7 +562,8 @@ const API_JOBS = {
   jobs: [
     {
       name: 'batteries',
-      completed_at: '2026-11-06T10:30:00Z',
+      started_at: '2026-11-06T10:20:00Z',
+      completed_at: '2026-11-06T10:21:53Z',
       steps: [
         { name: 'Set up job', started_at: '2026-11-06T10:20:00Z', completed_at: '2026-11-06T10:20:01Z' },
         { name: 'Check out', started_at: '2026-11-06T10:20:01Z', completed_at: '2026-11-06T10:20:03Z' },
@@ -726,7 +736,8 @@ describe('a past day is appended without becoming the recording', () => {
     jobs: [
       {
         name: 'batteries',
-        completed_at: '2026-11-01T10:30:00Z',
+        started_at: '2026-11-01T10:20:00Z',
+        completed_at: '2026-11-01T10:21:53Z',
         steps: [
           { name: 'Check out', started_at: '2026-11-01T10:20:01Z', completed_at: '2026-11-01T10:20:03Z' },
           { name: 'Slow battery', started_at: '2026-11-01T10:20:03Z', completed_at: '2026-11-01T10:21:52Z' },

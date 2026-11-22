@@ -310,7 +310,10 @@ describe('the four baskets are a partition of the throws, not a remainder', { ti
     // act on, and each is proved by a test that drives the guard against a five-file repository --
     // so the count rose by four and the site list by one, which is the reason the two numbers are
     // asserted in two files.
-    expect(total).toBe(99);
+    // 100 is v3.129's one: `measure-ci-baseline.mjs` refuses a run that reports no start and
+    // end for a job, because `R13` holds a ceiling to the bounds plus the seconds no step
+    // spends, and this reading is the only place those seconds are measured (finding 619).
+    expect(total).toBe(100);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -335,16 +338,17 @@ describe('the four baskets are a partition of the throws, not a remainder', { ti
     }
     expect(fatal).toEqual([
       'measure-ci-baseline.mjs:166',
-      'measure-ci-baseline.mjs:206',
-      'measure-ci-baseline.mjs:240',
-      'measure-ci-baseline.mjs:246',
-      'measure-ci-baseline.mjs:253',
-      'measure-ci-baseline.mjs:265',
-      'measure-ci-baseline.mjs:276',
-      'measure-ci-baseline.mjs:287',
-      'measure-ci-baseline.mjs:309',
-      'measure-ci-baseline.mjs:321',
-      'measure-ci-baseline.mjs:364',
+      'measure-ci-baseline.mjs:221',
+      'measure-ci-baseline.mjs:255',
+      'measure-ci-baseline.mjs:261',
+      'measure-ci-baseline.mjs:268',
+      'measure-ci-baseline.mjs:280',
+      'measure-ci-baseline.mjs:291',
+      'measure-ci-baseline.mjs:302',
+      'measure-ci-baseline.mjs:324',
+      'measure-ci-baseline.mjs:336',
+      'measure-ci-baseline.mjs:352',
+      'measure-ci-baseline.mjs:387',
     ]);
     // 60 unguarded: the two pack guards are `unguarded`, like every other throw inside a
     // function with no enclosing `try`. 11 fatal is v3.55's addition of five to v3.54's
@@ -369,7 +373,9 @@ describe('the four baskets are a partition of the throws, not a remainder', { ti
     // `unguarded` 73 -> 77 in v3.80: the four throws added by `check-repository-table.mjs` are all
     // unguarded -- they hand control to their callers, which is where the refusal is printed -- and
     // the other three dispositions did not move, which is the claim this row makes.
-    expect(counts).toEqual({ fatal: 11, unguarded: 77, guarded: 1, rethrow: 10 });
+    // 12 fatal is v3.129's one, and it is the shape the rest of this basket is: a refusal at
+    // the top level of a script that has no `main`, taken before anything is written.
+    expect(counts).toEqual({ fatal: 12, unguarded: 77, guarded: 1, rethrow: 10 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {
