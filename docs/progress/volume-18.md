@@ -92,6 +92,16 @@ and the two files' numbers were assigned together rather than argued about after
 | the live list | **28 -> 27**: one closed, none opened |
 | LLM calls | **0** |
 
+### The round's own slip, and what caught it
+
+The first CI run of this round (`45017266112` on `1a8b0834`) finished **6 of 8**, and both failures were one test:
+`check-open-list.test.ts` pins the shipped corpus as `230 record(s): 205 under a round and 25 under none; 221
+\`vX.YY\` round(s)`, and writing this record moved all three. The test says why it is pinned -- "the cost is one edit
+per round, paid where the round is written" -- and the edit was not paid: the full suite had been run before the
+record was written and not after, and `docs:check` does not run tests. The repair is one line (`231`, `206`, `222`),
+and the lesson is not about this test: a document that moves a corpus population moves a test, and the order is
+tests after documents rather than before.
+
 ### Left open
 
 - **The row arm's cross-file population has never run on the shipped tree.** A fixture carries both sections
@@ -2538,7 +2548,7 @@ file(s) — 37 in check-citations; 474 in check-comments-language; 474 in check-
 addendum(s) — 1 in check-open-list; 1 in check-progress-volumes (one population at 1, and the count agrees)
 ```
 
-`23` populations over the `9` shared nouns, `3` of them read by more than one gate, and `3` of the `4` coinciding
+`22` populations over the `9` shared nouns, `3` of them read by more than one gate, and `3` of the `4` coinciding
 counts are now checked instead of assumed, with the fourth printed as what it is. The fourth is printed as what it is: `8 row(s)` is the corpus.
 
 ### The first partition written under the rule was refused by the rule
@@ -2561,9 +2571,9 @@ field is a claim rather than a comment.
 | --- | --- |
 | `check-open-list`'s imports | `node:fs`, `./docs-corpus.mjs`, `node:path`, `node:url` |
 | `check-progress-volumes`'s corpus | `INDEX`, `VOLUMES` from `progress-volumes.mjs`, labelled by `labelOf` |
-| populations over the nine shared nouns | **23**, of which **3** hold more than one gate |
+| populations over the nine shared nouns | **22**, of which **3** hold more than one gate |
 | coinciding counts, by attribution | **3** inside a declared population, **1** across two |
-| `check-unit-nouns`, after the partition | `53 unit noun(s) in 70 gate/noun pair(s); ... 3 population(s) are read by more than one gate, and 3 of them agree on a count` |
+| `check-unit-nouns`, after the partition | `53 unit noun(s) in 69 gate/noun pair(s); ... 3 population(s) are read by more than one gate, and 3 of them agree on a count` |
 
 ### Falsifications
 
@@ -2588,7 +2598,7 @@ while writing the field, caught by the field.
 
 | item | value |
 | --- | --- |
-| CI | run `44756845473` on `2abd1da2`: **8 of 8 jobs success** -- the newest run, and the one the recording is taken from |
+| CI | run `45018766872` on `9ad8702e`: **8 of 8 jobs success** -- the run of the commit this record is in, and the one the recording is taken from (**48** min measured against the **63** of the run it replaced) |
 | `core` test suite | **258 files, 6784 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
 | repo test suite | **262 files, 6971 tests passed** (as of this commit) |
@@ -2598,7 +2608,7 @@ while writing the field, caught by the field.
 | the rules | a shared noun carries a sentence and a partition; a population of two is checked against its own numbers; `--write` refuses a population that no longer agrees |
 | falsifications | nine edits, **fourteen** reds |
 | the population | **47 of 231** record(s) in table form against **318** rows |
-| the census | **53 unit noun(s) in 70 gate/noun pair(s)**, **9** shared, **23** populations, **3** read by more than one gate, **4** coincidences -- `3` forced by a declared population and `1` across two |
+| the census | **53 unit noun(s) in 69 gate/noun pair(s)**, **9** shared, **22** populations, **3** read by more than one gate, **4** coincidences -- `3` forced by a declared population and `1` across two |
 | open entries | **38 -> 39**: `O-097` closed by findings 616 and 617; `O-098` and `O-099` opened, both found by doing the work |
 | LLM calls | **0** |
 
@@ -2611,15 +2621,16 @@ while writing the field, caught by the field.
   `[open: what a slow-but-not-hung day should produce -- the job's death, which names nothing, or a ceiling
   inflated until it cannot fire, which names nothing either]`
 - **A population of one is a label nobody has to write, and the census throws the gate's own line away.**
-  Twenty of the twenty-three populations hold a single gate, so the partition says nothing the gate's name did not;
+  Nineteen of the twenty-two populations hold a single gate, so the partition says nothing the gate's name did not;
   the sentence that would say what `check-l4-status`'s `9 row(s)` counts is the line the census reads and then
   discards, keeping the count and its qualifier.
   `[open: whether the label belongs in the inventory, where it rots like every sentence, or in the gate's line,
   which the census would have to keep -- a sentence per gate against a log line per noun]`
-- **A gate joining a noun discards a sentence that is still true, and it costs two rewrites a round.** `round(s)`
-  gains `check-ci-budget` while the ledger is behind and loses it when the ledger is refreshed, and a judgement keyed
-  by the noun and its gates goes with it -- twice in this round. The rule is right, because a partition drawn around
-  four gates says nothing about a fifth; the price is a sentence that was not wrong being retyped.
+- **A gate joining a noun discards a sentence that is still true, and `round(s)` pays it twice in this round.**
+  `check-ci-budget` prints `N round(s)` while the ledger is behind and stops when it catches up, so the noun's gate
+  set moved twice here -- in, and then out again -- and a judgement keyed by the noun and its gates was dropped and
+  rewritten each time. The rule is right, because a partition drawn around four gates says nothing about a fifth;
+  the price is a sentence that was not wrong being retyped.
   `[open: whether the key should be the noun, with a newcomer refused until it is placed and the sentence left
   standing -- the risk being a sentence about four gates that silently covers five]`
 

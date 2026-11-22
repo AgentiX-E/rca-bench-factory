@@ -255,7 +255,6 @@
     {
       "noun": "round(s)",
       "gates": [
-        "check-ci-budget",
         "check-open-list",
         "check-progress-volumes"
       ]
@@ -408,24 +407,6 @@
       "relation": "three language gates count runs of prose in the wrong script and print `0`, and `check-fault-cases` counts baseline runs; the noun is shared and nothing else is"
     },
     {
-      "noun": "round(s)",
-      "gates": [
-        "check-ci-budget",
-        "check-open-list",
-        "check-progress-volumes"
-      ],
-      "populations": [
-        [
-          "check-ci-budget"
-        ],
-        [
-          "check-open-list",
-          "check-progress-volumes"
-        ]
-      ],
-      "relation": "one set of headings read twice beside one other quantity -- `check-open-list` counts the distinct `vX.YY` labels among the volumes' headings and `check-progress-volumes` counts the sections that carry one, so that the two agree is a rule rather than a coincidence, because no round may be headed twice; `check-ci-budget` prints `round(s)` for something else entirely, the distance between the ledger's newest run and this round, which is why it is a population of its own and why it leaves the census once the ledger is refreshed"
-    },
-    {
       "noun": "row break(s)",
       "gates": [
         "check-comments-language",
@@ -490,6 +471,20 @@
         ]
       ],
       "relation": "two unrelated kinds of reading -- a step's measured seconds in `check-ci-budget` and a checkpoint's declaration in `check-fault-cases`"
+    },
+    {
+      "noun": "round(s)",
+      "gates": [
+        "check-open-list",
+        "check-progress-volumes"
+      ],
+      "populations": [
+        [
+          "check-open-list",
+          "check-progress-volumes"
+        ]
+      ],
+      "relation": "one set of headings read twice -- `check-open-list` counts the distinct `vX.YY` labels among them and `check-progress-volumes` counts the sections that carry one, so that the two agree is a rule rather than a coincidence, because no round may be headed twice; the second gate prints the `Pass` rounds it also counts beside them"
     },
     {
       "noun": "volume(s)",

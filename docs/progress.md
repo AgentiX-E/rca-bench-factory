@@ -1020,10 +1020,10 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: whether the label belongs in the inventory, where it rots like every sentence, or in the gate's own line,
   which the census would have to keep -- the two costs are a sentence per gate and a log line per noun]`
 
-- O-099 · **A gate joining a noun discards a sentence that is still true, and it costs two rewrites a round.**
-  `round(s)` gains `check-ci-budget` whenever the ledger's newest run is behind this round, and loses it again when
-  the ledger is refreshed -- so a judgement keyed by the noun and its gates is dropped and refused twice in one
-  round. The rule is right, because a partition drawn around four gates says nothing about a fifth; the price is a
+- O-099 · **A gate joining a noun discards a sentence that is still true, and `round(s)` pays it twice a round.**
+  `check-ci-budget` prints `N round(s)` while the ledger is behind and stops when it catches up, so the noun's gate
+  set moves in and out within one round, and a judgement keyed by the noun and its gates is dropped and refused each
+  time. The rule is right, because a partition drawn around four gates says nothing about a fifth; the price is a
   sentence that was not wrong being retyped.
   `[open: whether the key should be the noun, with a newcomer refused until it is placed in a group and the sentence
   left standing -- the risk being a sentence about four gates that silently covers five]`
