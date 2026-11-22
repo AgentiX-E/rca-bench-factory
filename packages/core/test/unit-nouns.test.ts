@@ -9,6 +9,7 @@ import {
   censusOf,
   coincidencesOf,
   disagreementsOf,
+  figuresOf,
   inventoryOf,
   keyOf,
   nounsIn,
@@ -20,6 +21,7 @@ import {
   sharedNounsOf,
   stateOf,
   summaryOf,
+  unprintedFiguresOf,
   unreadableOf,
   unpartitionedOf,
   unstatedOf,
@@ -594,6 +596,66 @@ describe('a gate joining a noun is refused as unplaced, and the sentence survive
 });
 
 
+describe('a sentence may state a count only if a gate printed it (finding 620)', () => {
+  // The figures the nine sentences actually carry this round, and the count each one is or is not.
+  // The last is the bug: `4.7` is a ratio of two counts, no gate prints it, and this run's two
+  // counts make it 4.85 -- so the one figure in the record that has moved is the one no reader reads.
+  it('reads the figures a sentence states, and not the digits in a name', () => {
+    expect(figuresOf('`docs/audit` holds 14 and `docs/progress` 18')).toEqual([14, 18]);
+    expect(figuresOf('the smaller is 4.7 per cent of the larger')).toEqual([4.7]);
+    expect(figuresOf('that `8` appears twice is the corpus')).toEqual([8]);
+    expect(figuresOf('the smaller is 1,252 of 25,855')).toEqual([1252, 25855]);
+    // Nothing to read: a version label has no digits, and prose without a figure states none.
+    expect(figuresOf('one set of `## vX.YY, addendum` headings read twice')).toEqual([]);
+    expect(figuresOf('two unrelated kinds of reading')).toEqual([]);
+    // A numeral glued to a letter or a hyphen is part of a name. `check-l4-status` carries a digit and
+    // counts nothing, `L4` is what its registry is called, and `v3.129` is a version -- so the one
+    // sentence that had to name all three could be written, and says nothing about its counts.
+    expect(figuresOf('the 9 row(s) `check-l4-status` reads agree with the L4 registry')).toEqual([9]);
+    expect(figuresOf('the label `v3.129` is not a count of anything')).toEqual([]);
+  });
+
+  const VOLUMES = censusOf([
+    { gate: 'check-audit-volumes', text: 'OK — 14 volume(s), 616 finding(s)' },
+    { gate: 'check-progress-volumes', text: 'OK — 18 volume(s), 277 heading(s)' },
+  ]);
+  const TWO = {
+    noun: 'volume(s)',
+    populations: [['check-audit-volumes'], ['check-progress-volumes']],
+    relation: '`docs/audit` holds 14 and `docs/progress` 18',
+  };
+  const judgedTwo = (patch: object) => new Map([[keyOf(TWO), { ...TWO, ...patch }]]);
+
+  it('accepts a sentence whose every figure is a count a gate printed', () => {
+    expect(unprintedFiguresOf(VOLUMES, judgedTwo({}))).toEqual([]);
+    // The sentence is still a judgement rather than a reading of the run: what it says is why two
+    // gates print one word, and the figures are the two counts the census prints beside it.
+    expect(unstatedOf(VOLUMES, judgedTwo({}))).toEqual([]);
+    expect(disagreementsOf(VOLUMES, judgedTwo({}))).toEqual([]);
+  });
+
+  it('names the figure no gate printed, and the counts the noun does state', () => {
+    expect(unprintedFiguresOf(VOLUMES, judgedTwo({ relation: 'the smaller is 4.7 per cent of the larger' }))).toEqual([
+      { noun: 'volume(s)', stated: [4.7], counts: [14, 18] },
+    ]);
+  });
+
+  it('reports every figure that is not a count, once, with the noun that states it', () => {
+    expect(
+      unprintedFiguresOf(VOLUMES, judgedTwo({ relation: '14 of 18, which is 77.8 per cent, and 20 in all' })),
+    ).toEqual([{ noun: 'volume(s)', stated: [77.8, 20], counts: [14, 18] }]);
+  });
+
+  it('leaves a judgement alone when no gate printed its noun this round', () => {
+    // The same state `budget(s)` is in: the round that brings the noun back is the round that can
+    // ask about its figures, and a refusal now would be a refusal about nothing.
+    const silent = new Map([
+      [keyOf(TWO), { noun: 'budget(s)', populations: [['check-ci-budget']], relation: 'a widened ceiling, 12 in all' }],
+    ]);
+    expect(unprintedFiguresOf(VOLUMES, silent)).toEqual([]);
+  });
+});
+
 describe('the gate holds the shipped inventory to the shipped gates', () => {
   // The one case that reads the shipped tree, and the only expensive one: the census spawns the
   // eighteen gates, which is 2.5 s on an idle machine. Under `verify-site-proofs` every child also
@@ -740,6 +802,59 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('row(s): check-fault-cases,check-open-list -> check-fault-cases,check-open-list,check-repository-table');
     expect(result.stderr).toContain('read the diff');
+  });
+
+  it('refuses a sentence that states a figure no gate printed (finding 620)', () => {
+    // The bug the check is for, driven through both doors: a relation whose figure is a ratio of two
+    // counts. `4.7` is neither gate's number, so no run can hold it, and the pair that made it has
+    // already moved -- the run this fixture records prints 14 and 18, and their ratio is 77.8.
+    const VOLUMES = join(scratch, 'volumes.json');
+    writeFileSync(
+      VOLUMES,
+      JSON.stringify([
+        { gate: 'check-audit-volumes', text: 'check-audit-volumes: OK — 14 volume(s), 616 finding(s)' },
+        { gate: 'check-progress-volumes', text: 'check-progress-volumes: OK — 18 volume(s), 277 heading(s)' },
+      ]),
+    );
+    const path = join(scratch, 'figured.json');
+    expect(run(['--write', '--inventory', path, '--readings', VOLUMES]).status).toBe(0);
+    const document = JSON.parse(readFileSync(path, 'utf8'));
+    expect(document.shared.map((one: { noun: string }) => one.noun)).toEqual(['volume(s)']);
+    writeFileSync(
+      path,
+      JSON.stringify(
+        judged(document, 'volume(s)', {
+          relation: 'the smaller is 4.7 per cent of the larger',
+          populations: [['check-audit-volumes'], ['check-progress-volumes']],
+        }),
+        null,
+        2,
+      ),
+    );
+    const refused = run(['--inventory', path, '--readings', VOLUMES]);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain('state a figure no gate printed');
+    expect(refused.stderr).toContain('volume(s) states 4.7 and the counts under it are 14 and 18');
+    expect(refused.stderr).toContain('state a count the census prints, or state none');
+    // The writing side refuses too: a document cannot be brought up to date while one of the
+    // sentences it would keep says something this run can show is not so.
+    const wrote = run(['--write', '--inventory', path, '--readings', VOLUMES]);
+    expect(wrote.status).toBe(1);
+    expect(wrote.stderr).toContain('volume(s) states 4.7');
+    // And a sentence whose figures are the two counts is accepted, so the refusal is about the
+    // figure rather than about sentences with numbers in them.
+    writeFileSync(
+      path,
+      JSON.stringify(
+        judged(document, 'volume(s)', {
+          relation: '`docs/audit` holds 14 and `docs/progress` 18',
+          populations: [['check-audit-volumes'], ['check-progress-volumes']],
+        }),
+        null,
+        2,
+      ),
+    );
+    expect(run(['--inventory', path, '--readings', VOLUMES]).status).toBe(0);
   });
 
   it('refuses a shared noun nobody has said is either one population or two', () => {
