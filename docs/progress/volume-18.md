@@ -2598,7 +2598,7 @@ while writing the field, caught by the field.
 
 | item | value |
 | --- | --- |
-| CI | run `45018766872` on `9ad8702e`: **8 of 8 jobs success** -- the run of the commit this record is in, and the one the recording is taken from (**48** min measured against the **63** of the run it replaced) |
+| CI | run `45018766872` on `9ad8702e`: **8 of 8 jobs success** -- the run the recording is taken from, one commit before this record's own, whose run is green as well; **48** min measured against the **63** of the run it replaced |
 | `core` test suite | **258 files, 6784 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
 | repo test suite | **262 files, 6971 tests passed** (as of this commit) |
