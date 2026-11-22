@@ -217,6 +217,57 @@ export function numbersOf(uses) {
   return [...new Set(uses.filter((use) => use.count !== null).map((use) => use.count))];
 }
 
+/**
+ * The figures a sentence states, in the order it states them -- and none for a name.
+ *
+ * A relation is prose and prose may carry a number: four of the nine carry one this round (the two
+ * volumes, the four walks' sizes, the two eights, the zero three language gates print). What a
+ * sentence may **not** carry is a figure no gate printed, because a figure no gate printed is a copy
+ * of nothing: `4.7 per cent` in `comment(s)` was a ratio of two counts taken in some earlier round,
+ * and this round's two counts make 4.85 -- a number that moved and took nothing with it
+ * (finding 620).
+ *
+ * A numeral **glued** to a letter or a hyphen is part of a name rather than a count, and the corpus
+ * writes three of those: `check-l4-status` (a gate's name), `L4` (what that gate's registry is
+ * called), and `vX.YY`-style labels. Telling them apart by a list of exemptions would be a list to
+ * keep equal to the corpus; the glue is a property of the token, and it is what makes `14` a count
+ * and `L4` a name without anybody deciding which names exist.
+ */
+export function figuresOf(relation) {
+  if (typeof relation !== 'string') return [];
+  return [...relation.matchAll(/(?<![A-Za-z0-9_.-])\d[\d,]*(?:\.\d+)?/g)].map((one) =>
+    Number(one[0].replace(/,/g, '')),
+  );
+}
+
+/**
+ * The relations stating a figure no gate printed under their noun, with the counts the noun does
+ * state.
+ *
+ * Finding 600's shape one document over. There, two gates printed different numbers for one fact and
+ * a reader had to reconcile them; here a sentence and the gates print different numbers for one fact
+ * and nothing read either. The counts are kept out of the inventory on the argument that they move
+ * every round -- and a sentence that states one is a count in the inventory with none of that
+ * argument's protection, because nothing compares it with anything.
+ *
+ * A judgement whose noun no gate printed this run is skipped rather than refused: `budget(s)` is
+ * silent in most rounds, and the round that brings a noun back is the round that can ask.
+ */
+export function unprintedFiguresOf(census, judgements = new Map()) {
+  const out = [];
+  for (const judgement of judgements.values()) {
+    const perGate = census.get(judgement.noun);
+    if (perGate === undefined) continue;
+    const counts = [
+      ...new Set([...perGate.keys()].sort().flatMap((gate) => numbersOf(perGate.get(gate)))),
+    ];
+    const missing = figuresOf(judgement.relation).filter((figure) => !counts.includes(figure));
+    if (missing.length === 0) continue;
+    out.push({ noun: judgement.noun, stated: missing, counts });
+  }
+  return out.sort((a, b) => a.noun.localeCompare(b.noun));
+}
+
 /** The nouns more than one gate prints, in the order a reader would want: most gates first. */
 export function sharedNounsOf(census) {
   return [...census.entries()]

@@ -38,7 +38,7 @@
  * every judgement where a person put it; running the gate with no flag is what `docs:check`
  * does, and it refuses rather than writes.
  *
- * Four things are refused, in this order, because each one is a different repair:
+ * Five things are refused, in this order, because each one is a different repair:
  *
  *   1. a shared noun with no `relation` -- nobody has said why two gates print one word;
  *   2. a shared noun with no `populations`, or with a partition that does not cover the gates **this
@@ -46,7 +46,9 @@
  *   3. a population the record declares one whose gates print counts with nothing in common --
  *      two readers of one set that have stopped agreeing, or a partition drawn around the wrong
  *      gates;
- *   4. a vocabulary that has stopped describing the gates.
+ *   4. a relation stating a figure no gate printed under that noun -- a count in a sentence, with
+ *      nothing comparing it with the count the gate prints;
+ *   5. a vocabulary that has stopped describing the gates.
  *
  * The second says "this run" because that is `O-099`'s repair. A gate can join a noun between two
  * rounds, and the question a run asks is about the run: the new gate is unplaced now. Reading the
@@ -54,15 +56,21 @@
  * it -- made the record agree with itself and disagree with the tree, and cost a sentence that had
  * not stopped being true.
  *
- * The third is the only one that is a fact about the **corpus** rather than about the record
- * being unfinished, which is why `--write` refuses it too: a document cannot be brought up to
- * date while the tree it describes holds two counts for one set.
+ * The third and the fourth are the two that are facts about the **corpus** rather than about the
+ * record being unfinished, which is why `--write` refuses them too: a document cannot be brought up
+ * to date while the tree it describes holds two counts for one set, or one count the sentence beside
+ * it contradicts.
  *
  * The counts are deliberately **not** in the inventory. They move every round, and an
  * inventory that went red for a reason its subject has nothing to do with is the crying-wolf
  * defect this campaign has recorded more than once. What is committed is the vocabulary, which
  * nouns more than one gate prints, and the judgement about each of those -- the sentence, and
  * the partition that makes part of the sentence checkable (finding 616).
+ *
+ * The fourth refusal is what keeps that paragraph true of the *sentences* as well as of the schema
+ * (finding 620). A sentence may state a figure only when a gate prints it under that noun, so the
+ * one place a count could hide from every reader is closed: `comment(s)`'s relation said the smaller
+ * corpus was 4.7 per cent of the larger, and this run's two counts make 4.85.
  *
  * ## Why the gates are spawned rather than imported
  *
@@ -84,6 +92,7 @@ import {
   relationsOf,
   summaryOf,
   unpartitionedOf,
+  unprintedFiguresOf,
   unstatedOf,
 } from './unit-nouns.mjs';
 
@@ -285,6 +294,24 @@ const DISAGREEMENT_HINT =
   'either a gate changed its reader and the two have stopped counting one set, or the partition is ' +
   'wrong; the numbers are the evidence and the record is what a person corrects';
 
+/**
+ * The refusal a sentence needs when it states a figure no gate printed (finding 620).
+ *
+ * The figure and the counts are both named, because the two are the whole of the evidence: a person
+ * reading `4.7` beside `14 and 18` knows in one line that the sentence is a copy of a pair that has
+ * moved, and a message that said "a relation states a number" would send them looking for which.
+ */
+function figuresText(unprinted) {
+  const said = unprinted.map(
+    (one) => `${one.noun} states ${one.stated.join(' and ')} and the counts under it are ${one.counts.join(' and ')}`,
+  );
+  return `${String(unprinted.length)} relation(s) state a figure no gate printed: ${said.join('; ')}`;
+}
+
+const FIGURES_HINT =
+  'state a count the census prints, or state none: the numbers are printed beside this sentence, and a ' +
+  'figure this document keeps for itself is the one kind that can move without anything going red';
+
 if (process.argv.includes('--write')) {
   // The vocabulary is regenerated and the judgments are copied. Whether two gates printing one noun
   // are counting one set cannot be derived from the output, so `--write` must not touch the answer;
@@ -297,6 +324,11 @@ if (process.argv.includes('--write')) {
   const judgements = judgementsIn(committed);
   const disagreements = disagreementsOf(census, judgements);
   if (disagreements.length > 0) fail(disagreementsText(disagreements), DISAGREEMENT_HINT);
+  // The other fact about the corpus, and the one `--write` could otherwise paper over: it copies the
+  // sentences forward verbatim, so a sentence stating a count this run does not print would be
+  // rewritten into the record by the one door that is supposed to leave the record truthful.
+  const unprinted = unprintedFiguresOf(census, judgements);
+  if (unprinted.length > 0) fail(figuresText(unprinted), FIGURES_HINT);
   // Sorted by noun and rebuilt in a fixed key order, so a diff is a changed sentence rather than a
   // reordering or a moved key.
   const judgementsOut = [...judgements.values()]
@@ -371,6 +403,12 @@ if (unplaced.length > 0) {
 
 const disagreements = disagreementsOf(census, judgements);
 if (disagreements.length > 0) fail(disagreementsText(disagreements), DISAGREEMENT_HINT);
+
+// The fourth refusal, and the same fact about the corpus from the other side: the sentences the census
+// carries were written by a person and are not derived, so a figure in one is the only number in this
+// record no reader recomputes. Reading it is what makes a sentence with a count in it a claim.
+const unprinted = unprintedFiguresOf(census, judgements);
+if (unprinted.length > 0) fail(figuresText(unprinted), FIGURES_HINT);
 
 const stored = JSON.stringify({
   nouns: (committed.nouns ?? []).map(({ populations, relation, ...rest }) => rest),
