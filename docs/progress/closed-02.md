@@ -459,3 +459,21 @@
   holds one gate: nineteen of the twenty-two, where the partition says nothing the gate's name did not, and the
   sentence that would say it is the line the census throws away, which is `O-098`.
 
+
+- O-099 · ~~**A gate joining a noun discards a sentence that is still true, and `round(s)` pays it twice a round.**~~
+  `check-ci-budget` prints `N round(s)` while the ledger is behind and stops when it catches up, so the noun's gate
+  set moves in and out inside one round: **69 -> 70 -> 69** gate/noun pairs across v3.127, and a judgement keyed by
+  the noun **and its gates** was dropped and refused at each move. The rule behind the key was right -- a partition
+  drawn around four gates says nothing about a fifth -- and it was applied to the wrong half of the judgement: a
+  sentence saying why two gates share a word does not stop being true when a third starts printing it. The record
+  was also stored on `shared`, which is derived, so a noun printed by one gate would have taken its sentence with it
+  under any key; the key was only half of the repair.
+  **Closed by finding 618.** The judgement is keyed by the noun alone and stored on the noun's entry in `nouns`, so
+  a noun that leaves `shared` for a round keeps its sentence and the round it comes back is green without anybody
+  retyping it. A gate that joins is refused as unplaced -- `round(s) (check-ci-budget is in no population)` -- while
+  the sentence stands as written. And the six readers that had been asking the partition for the gates, and being
+  answered out of `judgement.gates`, now take the set the census found through `stateOf`; that was the half that had
+  been invisible since finding 616, because every reader was comparing the record with itself.
+  What the closure leaves is the risk the entry named, and it is answered rather than removed: a sentence about four
+  gates cannot silently cover five, because the fifth is refused -- but a sentence whose *wording* has stopped
+  matching a partition that has grown is still found by reading rather than by running.

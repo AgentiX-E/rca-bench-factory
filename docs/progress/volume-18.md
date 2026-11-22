@@ -2599,9 +2599,9 @@ while writing the field, caught by the field.
 | item | value |
 | --- | --- |
 | CI | run `45018766872` on `9ad8702e`: **8 of 8 jobs success** -- the run the recording is taken from, one commit before this record's own, whose run is green as well; **48** min measured against the **63** of the run it replaced |
-| `core` test suite | **258 files, 6784 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **262 files, 6971 tests passed** (as of this commit) |
+| `core` test suite | **258 files, 6784 tests passed** (at v3.127) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.127) |
+| repo test suite | **262 files, 6971 tests passed** (at v3.127) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: the round added readers and callers, every branch of them taken |
 | new tests | **6771 -> 6784, +13**: the partition's five failure shapes, the flat-list shape, the common-count reading, the disagreement, the attribution, the summary's count of checked equalities, the two states, the shared formatter, and three gate refusals |
 | the sentences rewritten | **2**: `addendum(s)` and `round(s)` |
@@ -2634,3 +2634,117 @@ while writing the field, caught by the field.
   `[open: whether the key should be the noun, with a newcomer refused until it is placed and the sentence left
   standing -- the risk being a sentence about four gates that silently covers five]`
 
+
+## v3.128 — the judgement was keyed by the noun and its gates, and the gate set moves
+
+### What the round began with
+
+`O-099`, in its own words: `check-ci-budget` prints `N round(s)` while the ledger is behind and stops when it
+catches up, so the noun's gate set moves in and out within one round, and a judgement keyed by the noun and its
+gates is dropped and refused each time. The rule was right -- a partition drawn around four gates says nothing
+about a fifth -- and the price was a sentence that was not wrong being retyped. The entry's open question named the
+risk of the cheaper answer: a sentence about four gates that silently covers five.
+
+### The measurement
+
+`round(s)` paid it three times in v3.127: **69 -> 70 -> 69** gate/noun pairs, with the judgement dropped at each
+move. What a person read was this gate's sentence about a noun nobody had written about:
+
+```
+check-unit-nouns: FAILED — 1 noun(s) are printed by more than one gate and no record says whether that is one
+population or two: round(s) — 221 `vX.YY` in check-open-list; 221 `vX.YY`, 50 `Pass` in check-progress-volumes
+```
+
+Two more halves turned up while the first was being repaired, and neither is visible from that sentence:
+
+| the half | what it cost |
+| --- | --- |
+| the record lived on `shared`, which is derived | a noun printed by one gate leaves `shared`, and the sentence went with it -- under any key |
+| six readers asked `partitionProblems(judgement)` for the gates | the function answered out of `judgement.gates`, which is the record, so every reader compared the record with itself and a gate joining the noun changed nothing |
+
+### The repair
+
+Three decisions, and the third was found by a test written for the second.
+
+**The key is the noun.** A judgement belongs to the word a person wrote about, and a gate joining the word is a
+change to the partition rather than to the sentence. What the key still refuses is a judgement carrying over
+between nouns: `row(s)` and `file(s)` are different populations, and their sentences are not interchangeable.
+
+**The judgements are a list of their own.** `nouns` and `shared` are derived from the census, so a judgement on
+either is deleted by the first `--write` in which its noun is silent. `budget(s)` is the proof: it is printed only
+while a ceiling is being widened, so it is absent from most rounds. Measured on a fixture before the repair, a
+`--write` in a round with no `budget(s)` removed the entry and its sentence, and the round the noun returned would
+have been refused for a missing sentence. The list is copied rather than recomputed, and a judgement for a noun
+this run did not print is kept and named:
+
+```
+check-unit-nouns: budget(s) carries a judgement and no gate printed it this run — kept
+```
+
+**The gates come from the census.** `partitionProblems(judgement, gates)` takes the set this run found, and
+`stateOf(census, judgements, noun)` returns the gates, the record and `declared` together, so the six readers
+cannot each hold a different idea of what to compare. The refusal a newcomer produces names the gate rather than
+the key:
+
+```
+check-unit-nouns: FAILED — 1 noun(s) are printed by more than one gate and no record says which of them read one
+population: round(s) (check-ci-budget is in no population)
+```
+
+### The measurements this round rests on
+
+| reading | value |
+| --- | --- |
+| unit nouns / gate-noun pairs | **53** / **69** |
+| shared nouns | **9**, each carrying a sentence and a partition |
+| populations | **22**, of which **3** hold more than one gate |
+| coinciding counts | **4** -- **3** inside a declared population, **1** across two |
+| `round(s)`'s gate set across v3.127 | **69 -> 70 -> 69**, three moves in one round |
+| `--write` with a silent `budget(s)` | before the repair: the entry and its sentence gone; after: kept |
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| `partitionProblems` not reporting a gate nobody placed | 1 |
+| `judgementsIn` reading the derived `nouns` instead of the judgement list | 8 |
+| `judgementsIn` reading `shared`, as it did before the round | 1 |
+| `--write` dropping a judgement whose noun this run did not print | 1 |
+
+**Four mutations, eleven reds**, and each red is a case that names the defect rather than the shape: the first is
+"the sentence survives but the run does not say what it could not place", the second and third are "the record is
+looked for where it no longer lives", and the fourth is the measured `budget(s)` deletion.
+
+### Readings
+
+> Ledger for `v3.128`.
+
+| item | value |
+| --- | --- |
+| CI | run `45022458859` on `60069525`: **8 of 8 jobs success** -- the newest run recorded before this round's own, whose workflow this round does not change |
+| `core` test suite | **258 files, 6791 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **262 files, 6978 tests passed** (as of this commit) |
+| coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: the round added readers and callers, every branch of them taken |
+| new tests | **6784 -> 6791, +7**: the noun-shaped key, the four cases of a gate joining, the reading of the gates this run found, and the two end-to-end refusals that keep a sentence |
+| the record's shape | `nouns` and `shared` derive from the census; `judgements` is the list a person writes and `--write` copies |
+| falsifications | four mutations, **eleven** reds |
+| the census | **53 unit noun(s) in 69 gate/noun pair(s)**, **9** shared, **22** populations, **3** read by more than one gate, **4** coincidences -- `3` forced by a declared population and `1` across two |
+| open entries | **39 -> 38**: `O-099` closed by finding 618; no entry opened, because the half that was found while repairing it was repaired here |
+| LLM calls | **0** |
+
+### Left open
+
+- **The ceiling is twice the slowest day, and a day slower than that still dies unnamed.** Nothing in this round
+  touches `ci.yml`: `batteries` still holds **83** minutes of step bounds inside a **34**-minute ceiling, and the
+  day between twice its slowest reading and the sum of those bounds is still the one that would die at the ceiling
+  with every step inside its own bound. The third answer -- a job split small enough that the sum fits, sharing
+  one setup rather than repeating six steps -- is now the only one of the three that has not been measured.
+  `[open: which of the two failures a slow-but-not-hung day should produce is still undecided, and the split is
+  the answer this file's own arithmetic has given twice]`
+- **A population of one is a label nobody has to write, and the census throws the gate's own line away.** The
+  judgement list makes the label affordable in a way it was not last round: nineteen of the twenty-two populations
+  hold a single gate, and what each counts is in the line the census reads and then discards. Keeping the line
+  would put the label where it cannot rot -- in the gate's own output -- and the cost would be a tail printed
+  beside every single-gate number, which is what the round after this one has to measure before choosing it.
+  `[open: the two costs are still a sentence per gate and a log line per noun, and neither has been measured]`

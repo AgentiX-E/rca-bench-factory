@@ -1997,3 +1997,84 @@ says which of them could be checked and are, and that the two that were wrong ar
 part is under a rule. A sentence about *why* remains a sentence, and the next one to go wrong will be found by
 reading rather than by running.
 
+
+## Finding 618 — the judgement was keyed by the noun and its gates, and the gate set moves
+
+### What the tree said
+
+Finding 616 moved the checkable half of each sentence into `populations` and keyed the judgement by
+`` `${noun}::${gates.join('+')}` ``. The argument for the key was stated and it was right: a partition drawn around
+four gates says nothing about a fifth, so a gate joining a noun must not inherit somebody else's answer.
+
+The argument is about the **partition**. The key applied it to the **sentence** as well, and the two do not have the
+same lifetime. A sentence says why two gates share a word; a new gate does not make that false. Under the key, a gate
+joining or leaving the noun discarded both halves, and the refusal a person then read was:
+
+```
+check-unit-nouns: FAILED — 1 noun(s) are printed by more than one gate and no record says whether that is one
+population or two: round(s) — 221 `vX.YY` in check-open-list; 221 `vX.YY`, 50 `Pass` in check-progress-volumes
+```
+
+which is what the gate says about a noun nobody has written about.
+
+### The measurement
+
+`round(s)` is the noun that pays it. `check-ci-budget` prints `N round(s)` while the ledger is behind and stops when
+it catches up, so the noun's gate set moves in and out inside one round: **69 -> 70 -> 69** gate/noun pairs across
+v3.127, with the judgement dropped and rewritten at each move, three times in a round that had two gates for most of
+it.
+
+The second half is worse and the key alone does not fix it. The judgement lived on the entry in `shared`, and
+`shared` is **derived**: a noun printed by one gate is not in it. So a round in which `check-ci-budget` stays silent
+would have removed the entry, and with it the sentence -- under any key. Storing the sentence on the noun's entry in
+`nouns` is the half that makes it survive.
+
+The third half is the one that had been invisible since finding 616. Six readers asked `partitionProblems(judgement)`
+for the gates, and the function read them from `judgement.gates` -- the record. So every reader compared the record
+with itself: a gate joining the noun changed nothing, `declared` stayed true, and the partition silently covered a set
+it had never been drawn around. The tree was never consulted.
+
+### The repair
+
+Three changes, one sentence each.
+
+**The key is the noun.** A judgement belongs to the word a person wrote about, and a gate joining the word is a
+change to the partition rather than to the sentence. What the key still refuses is a judgement carrying over between
+nouns: `row(s)` and `file(s)` are different populations, and their sentences are not interchangeable.
+
+**The record lives on the noun.** `nouns` is derived and every noun is in it; `shared` is derived and only the shared
+ones are. Storing the judgement on the `nouns` entry means a noun that leaves `shared` for a round keeps its
+sentence, and the round it comes back is green without a person retyping anything.
+
+**The readers take the gates from the census.** `partitionProblems(judgement, gates)` takes the set this run found,
+and `stateOf(census, judgements, noun)` returns the gates, the record and `declared` together so that the six readers
+cannot each hold a different idea of what to compare. The refusal a new gate now produces names the gate:
+
+```
+check-unit-nouns: FAILED — 1 noun(s) are printed by more than one gate and no record says which of them read one
+population: round(s) (check-ci-budget is in no population)
+```
+
+### What the round measured
+
+| reading | value |
+| --- | --- |
+| unit nouns / gate-noun pairs | **53** / **69** |
+| shared nouns | **9**, each carrying a sentence and a partition |
+| populations | **22**, of which **3** hold more than one gate |
+| coinciding counts | **4** -- **3** inside a declared population, **1** across two |
+| `round(s)`'s gate set across v3.127 | **69 -> 70 -> 69** |
+
+### The falsifications
+
+Two mutations, each aimed at one of the two halves of the repair, and each killed by a case that names the defect
+rather than the shape:
+
+| the mutation | the case that went red |
+| --- | --- |
+| `partitionProblems` not reporting a gate nobody placed | "keeps the sentence when a third gate arrives, and names the gate nobody placed" |
+| `judgementsIn` reading `shared` instead of `nouns` | "keeps a judgement through a round in which its noun is not shared" |
+
+The first is the assertion `O-099` is about: the sentence surviving is worth nothing if the run does not also say
+what it could not place. The second is the half a noun-shaped key alone would not buy, and it is the one the round
+would have shipped without if the record had stayed on the derived list.
