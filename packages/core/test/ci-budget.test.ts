@@ -8,7 +8,9 @@ import { describe, expect, it } from 'vitest';
 import {
   FLOOR_MINUTES,
   MULTIPLE,
+  PREFIX_MINUTES,
   WHY_LENGTH,
+  allowanceSecondsOf,
   boundsSecondsOf,
   budgetErrors,
   budgetSummary,
@@ -17,6 +19,7 @@ import {
   jobDays,
   jobsOf,
   ledgerErrors,
+  prefixOf,
   readDeclarations,
   readReadings,
   stepsOf,
@@ -221,13 +224,162 @@ describe('the arithmetic of one job', () => {
     expect(errors).toContain('refused for being slow rather than for hanging');
   });
 
-  it('refuses a bound under the floor, because a measurement cannot see a cold cache', () => {
-    // Two minutes is twice the 46 s measured, and still refused: `apt-get update` on a
-    // cold image is not in any measurement taken after the first one.
+  it('bounds a work step by twice its own day, and no longer asks it for the floor', () => {
+    // Two minutes for a 46 s step is accepted as of v3.132 (finding 622). The floor's
+    // argument -- a cold package index, a missed cache, a first build -- was right and its
+    // *unit* was wrong: a runner is cold once, in the prefix, and that is where the floor is
+    // still asked for. What a work step owes instead is the multiple, which is the number
+    // that decides whether it dies at its own bound or at the job's.
     const workflow = oneJob([...step('Quick battery', 2)]);
+    expect(budgetErrors(workflow, recordingOf({ batteries: { steps: { 'Quick battery': 46 } } }))).toEqual([]);
+  });
+
+  it('refuses a work step under twice its own day, whatever the floor would have said', () => {
+    const workflow = oneJob([...step('Quick battery', 1)]);
     const errors = budgetErrors(workflow, recordingOf({ batteries: { steps: { 'Quick battery': 46 } } })).join('\n');
-    expect(errors).toContain(`the floor is ${String(FLOOR_MINUTES)}`);
-    expect(errors).toContain('cold package index');
+    expect(errors).toContain(`the bound is under ${String(MULTIPLE)} times the measurement`);
+  });
+
+  /** A two-job workflow whose first step both jobs share, which is what makes it a prefix. */
+  function sharingPrefix(firstStep: string[]) {
+    return workflowOf([
+      { id: 'batteries', minutes: 30, steps: [...firstStep, ...step('Slow battery', 20)] },
+      { id: 'batteries-heavy', minutes: 30, steps: [...firstStep, ...step('Heavy battery', 24)] },
+    ]);
+  }
+
+  /** The two jobs of the fixture, each with the seconds its steps spent. */
+  function sharingRecord() {
+    return recordingOf({
+      batteries: { minutes: 30, steps: { 'Check out': 2, 'Slow battery': 600 } },
+      'batteries-heavy': { minutes: 30, steps: { 'Check out': 2, 'Heavy battery': 700 } },
+    });
+  }
+
+  it('holds the ceiling to the prefix allowance as well as the bounds', () => {
+    // Eighteen seconds short of the sum is still short: the four setup steps share three
+    // minutes, and a ceiling that holds every step bound and not that allowance is a ceiling
+    // that fires before the number it granted (finding 622). Measured: without the allowance
+    // in `R13`'s term this tree is green, which is the shape a rule with no case leaves.
+    const tight = workflowOf([
+      { id: 'batteries', minutes: 30, steps: [...['      - name: Check out', '        uses: actions/checkout@v4'], ...step('Slow battery', 29)] },
+      { id: 'batteries-heavy', minutes: 30, steps: [...['      - name: Check out', '        uses: actions/checkout@v4'], ...step('Heavy battery', 29, 'node scripts/heavy.mjs')] },
+    ]);
+    const errors = budgetErrors(
+      tight,
+      recordingOf({
+        batteries: { minutes: 30, steps: { 'Check out': 2, 'Slow battery': 600 } },
+        'batteries-heavy': { minutes: 30, steps: { 'Check out': 2, 'Heavy battery': 600 } },
+      }),
+    ).join('\n');
+    expect(errors).toContain('the 3-minute allowance for its 1-step prefix');
+    expect(errors).toContain('raise the ceiling to 33 min');
+  });
+
+  it('refuses a step the whole workflow shares for declaring a bound of its own', () => {
+    // The shape this round removed sixteen times over: four setup steps at the floor look
+    // like four arguments and are one number stated four times.
+    const workflow = sharingPrefix([
+      '      - name: Check out',
+      '        timeout-minutes: 3',
+      '        uses: actions/checkout@v4',
+    ]);
+    const errors = budgetErrors(workflow, sharingRecord()).join('\n');
+    expect(errors).toContain('is a prefix step');
+    expect(errors).toContain(`one allowance of ${String(PREFIX_MINUTES)} min per job`);
+  });
+
+  it('accepts that step with no bound, and gives the job one allowance instead', () => {
+    const workflow = sharingPrefix(['      - name: Check out', '        uses: actions/checkout@v4']);
+    expect(budgetErrors(workflow, sharingRecord())).toEqual([]);
+    expect(prefixOf(workflow, 'batteries')).toEqual(['Check out']);
+    expect(allowanceSecondsOf(workflow, 'batteries')).toBe(PREFIX_MINUTES * 60);
+  });
+
+  it('gives no allowance to a step the second job does not share, so work is never setup', () => {
+    // A name is not a claim: both jobs call it `Check out` and run different commands, so
+    // nothing is shared and the step is the job's own work, which owes its own bound.
+    const workflow = workflowOf([
+      {
+        id: 'batteries',
+        minutes: 30,
+        steps: [...step('Check out', 12, 'node scripts/check-out-one.mjs'), ...step('Slow battery', 12)],
+      },
+      {
+        id: 'batteries-heavy',
+        minutes: 30,
+        steps: [...step('Check out', 16, 'node scripts/check-out-two.mjs'), ...step('Heavy battery', 16)],
+      },
+    ]);
+    expect(prefixOf(workflow, 'batteries')).toEqual([]);
+    expect(allowanceSecondsOf(workflow, 'batteries')).toBe(0);
+  });
+
+  it('gives no allowance to a workflow of one job, because nothing is common with nothing', () => {
+    expect(prefixOf(oneJob([...step('Only one', 12)]), 'batteries')).toEqual([]);
+  });
+
+  it('stops the prefix where the shortest job stops, because shared means shared by all', () => {
+    // `backend` in the shipped workflow is this shape: it runs no `Install the shells` step,
+    // so it shares four setup steps with the other seven and stops where they continue. A
+    // rule that handed it the workflow\'s five would be excusing a step it never shares.
+    const workflow = workflowOf([
+      {
+        id: 'verify',
+        minutes: 40,
+        steps: [...inherited('Check out'), ...inherited('Set up pnpm'), ...step('Lint', 20)],
+      },
+      {
+        id: 'backend',
+        minutes: 40,
+        steps: [...inherited('Check out'), ...step('Install a backend', 30)],
+      },
+      {
+        id: 'artefacts',
+        minutes: 15,
+        steps: [...inherited('Check out'), ...inherited('Set up pnpm'), ...inherited('Guards')],
+      },
+    ]);
+    // One divergent job caps the prefix for every job, which is how `backend` caps the
+    // shipped workflow's at four: what every job runs identically ends where any of them
+    // stops running it.
+    expect(prefixOf(workflow, 'verify')).toEqual(['Check out']);
+    expect(prefixOf(workflow, 'backend')).toEqual(['Check out']);
+    expect(prefixOf(workflow, 'artefacts')).toEqual(['Check out']);
+    expect(allowanceSecondsOf(workflow, 'backend')).toBe(PREFIX_MINUTES * 60);
+
+    // And the same three jobs with the divergence one step later share two, so the cap is a
+    // measurement of the workflow rather than a constant.
+    const deeper = workflowOf([
+      { id: 'verify', minutes: 40, steps: [...inherited('Check out'), ...inherited('Set up pnpm'), ...step('Lint', 20)] },
+      { id: 'backend', minutes: 40, steps: [...inherited('Check out'), ...inherited('Set up pnpm'), ...step('Install a backend', 30)] },
+      { id: 'artefacts', minutes: 15, steps: [...inherited('Check out'), ...inherited('Set up pnpm'), ...inherited('Guards')] },
+    ]);
+    expect(prefixOf(deeper, 'artefacts')).toEqual(['Check out', 'Set up pnpm']);
+  });
+
+  it('refuses a prefix step through the gate, not only inside a function', () => {
+    // The shipped fixture is read and one bound put back on one prefix step: the rule has to
+    // be reachable from a run, because a rule that only a test can reach is the defect this
+    // corpus records as `a gate with no test` (finding 622).
+    const workflow = readWorkflow(
+      readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8'),
+    );
+    const first = workflow.steps.find((one) => one.job === 'verify');
+    expect(first?.name).toBe('Check out');
+    const patched = readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8').replace(
+      '      - name: Check out\n        uses: actions/checkout@v4',
+      '      - name: Check out\n        timeout-minutes: 3\n        uses: actions/checkout@v4',
+    );
+    const dir = mkdtempSync(join(tmpdir(), 'rca-ci-prefix-'));
+    const path = join(dir, 'ci.yml');
+    writeFileSync(path, patched);
+    const result = spawnSync(process.execPath, [GATE], {
+      encoding: 'utf8',
+      env: { ...process.env, RCA_CI_WORKFLOW: path },
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('is a prefix step');
   });
 
   it('refuses a job whose bounds add up to more than its ceiling', () => {
@@ -308,32 +460,29 @@ describe('the arithmetic of one job', () => {
     expect(noDate).toContain('no measurement date');
   });
 
-  it('refuses a recording taken under a wider budget than the one it now has', () => {
-    // The bounds are arithmetic against the job's budget, so a job that *shrank* its
-    // budget has to be measured again rather than re-bounded: a step bound that fit 45
-    // minutes may expire after the job already died at 30. Cannot produce: a run of a
-    // workflow whose ceiling is 30 -- the recording is 45 minutes from a tree that no
-    // longer exists, so no local apparatus can show what the tighter job would do.
-    const workflow = oneJob([...step('One battery', 3)], 30);
+  it('refuses a ceiling that does not hold twice the job\'s slowest day, and names that day', () => {
+    // The rule that refused every narrower ceiling until v3.132 is gone (finding 622), and
+    // what is left is the arithmetic it was standing in for: a ceiling narrower than twice
+    // the slowest day this repository has met refuses a day it has already seen. `R13` says
+    // it once, with the two numbers, instead of asking for a re-measurement.
+    const workflow = oneJob([...inherited('One long step')], 30);
     const errors = budgetErrors(
       workflow,
-      recordingOf({ batteries: { minutes: 45, steps: { 'One battery': 10 } } }),
+      recordingOf({ batteries: { minutes: 45, steps: { 'One long step': 1000 } } }),
     ).join('\n');
-    expect(errors).toContain('had 45 minutes and ci.yml now declares 30');
-    expect(errors).toContain('re-measured together');
+    expect(errors).toContain(`the ceiling is under ${String(MULTIPLE)} times that day`);
+    expect(errors).toContain('1000 s');
   });
 
-  it('refuses a recording with no budget when the workflow now declares one', () => {
-    // Wider in one direction and not the other: a job that had no ceiling had no
-    // arithmetic to fit inside, so its seconds were never spent against a deadline.
-    // Cannot produce: a job that had no `timeout-minutes` and a run that timed it --
-    // GitHub kills such a job only at its own six-hour limit.
-    const workflow = oneJob([...step('One battery', 3)], 30);
-    const errors = budgetErrors(
-      workflow,
-      recordingOf({ batteries: { minutes: null as unknown as number, steps: { 'One battery': 10 } } }),
-    ).join('\n');
-    expect(errors).toContain('had no ceiling and ci.yml now declares 30');
+  it('takes a recording with no ceiling as a narrowing, and prints it beside the widenings', () => {
+    // A job that had no ceiling had six hours of room, so declaring thirty is a narrowing
+    // in the only sense this module has. It is no longer refused -- the recording's own day
+    // answers the question a re-measurement was being asked for -- and it is printed,
+    // because a ceiling that moves is a claim a reader has to be able to see.
+    const workflow = oneJob([...inherited('One short step')], 30);
+    const record = recordingOf({ batteries: { minutes: null as unknown as number, steps: { 'One short step': 60 } } });
+    expect(budgetErrors(workflow, record)).toEqual([]);
+    expect(budgetSummary(workflow, record)).toContain('ceiling(s) narrowed under the recording');
   });
 
   it('accepts a recording taken under a tighter budget, and says the budget was widened', () => {
@@ -598,20 +747,27 @@ describe('the step the recording has not measured yet', () => {
       let own = 0;
       let carried = 0;
       let reached = 0;
+      let allowed = 0;
       for (const job of jobsOf(workflow)) {
         for (const step of stepsOf(workflow, job.id)) {
           if (step.inheritedFrom === 'step') own += 1;
+          else if (step.inheritedFrom === 'prefix') allowed += 1;
           else if (step.inheritedFrom === 'job') carried += 1;
           else reached += 1;
         }
       }
       const summary = budgetSummary(workflow, baseline);
-      expect(own + carried + reached).toBe(workflow.steps.length);
+      expect(own + allowed + carried + reached).toBe(workflow.steps.length);
       expect(summary).toContain(
         `${String(own)} of ${String(workflow.steps.length)} step(s) carry their own \`timeout-minutes\``,
       );
       expect(summary).toContain(`${String(carried)} are bounded by their jobs`);
       expect(summary).toContain(`${String(reached)} have none`);
+      // The fourth population is the round's whole subject, and it is asserted where the other
+      // three are: 32 of this workflow's steps run before the first real step of their job, and
+      // one allowance answers for all of them (finding 622).
+      expect(allowed).toBeGreaterThan(0);
+      expect(summary).toContain(`${String(allowed)} run before the job's first real step`);
     });
   });
 
@@ -1190,7 +1346,7 @@ describe('the recording the gate reads', () => {
     expect(result.stderr).toContain('has no baseline');
   });
 
-  it('states the multiple and the floor in one place, which the shipped bounds satisfy', () => {
+  it('spends the floor once per job, and states that in one place', () => {
     const workflow = readWorkflow(readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8'));
     const baseline = JSON.parse(readFileSync(join(ROOT, 'golden-master', 'ci-baseline.json'), 'utf8'));
     // The declarations are read the way the gate reads them: absent is the normal state,
@@ -1198,11 +1354,19 @@ describe('the recording the gate reads', () => {
     const declarations = existsSync(DECLARATIONS) ? JSON.parse(readFileSync(DECLARATIONS, 'utf8')) : null;
     expect(budgetErrors(workflow, baseline, readLedger(), declarations)).toEqual([]);
     for (const job of jobsOf(workflow)) {
+      const prefix = prefixOf(workflow, job.id);
+      // The floor is a number the *job* holds, and the workflow spends it once: every step of
+      // the prefix is unbounded by its own YAML and answered for by `PREFIX_MINUTES`, and no
+      // step that carries a bound of its own is below the workflow's one-minute granularity.
+      expect(allowanceSecondsOf(workflow, job.id)).toBe(prefix.length === 0 ? 0 : PREFIX_MINUTES * 60);
       for (const step of stepsOf(workflow, job.id)) {
-        if (step.inheritedFrom === null) continue;
-        expect(step.minutes).toBeGreaterThanOrEqual(FLOOR_MINUTES);
+        if (step.inPrefix) expect(step.inheritedFrom).toBe('prefix');
+        if (step.inheritedFrom === 'step') expect(step.minutes).toBeGreaterThanOrEqual(1);
       }
     }
+    // And the summary says which number it was, so that a reader of a green run can see the
+    // allowance rather than inferring it from a step count.
+    expect(budgetSummary(workflow, baseline)).toContain(`one ${String(PREFIX_MINUTES)}-minute allowance`);
   });
 });
 
@@ -1214,7 +1378,6 @@ const TWO_JOBS = workflowText([
     name: 'injection batteries, one step each (no survivors, no inert)',
     steps: [
       '      - name: Check out',
-      '        timeout-minutes: 3',
       '        uses: actions/checkout@v4',
       ...step('Slow battery', 12),
     ],
@@ -1225,9 +1388,11 @@ const TWO_JOBS = workflowText([
     name: 'injection batteries, the two that rewrite a probe a hundred times',
     steps: [
       '      - name: Check out',
-      '        timeout-minutes: 3',
       '        uses: actions/checkout@v4',
-      ...step('Slow battery', 16),
+      // The same name and a different command from the other job's battery, so the two jobs
+      // share the checkout and nothing else: a step the whole workflow runs identically is
+      // setup, and a step the second job runs its own way is that job's work (finding 622).
+      ...step('Slow battery', 16, 'node scripts/inject-slow-battery-heavy.mjs'),
     ],
   },
 ]);
@@ -1641,10 +1806,9 @@ function jobPromiseOf(over: Record<string, unknown> = {}) {
   return {
     job: 'batteries-heavy',
     timeoutMinutes: 25,
-    steps: [
-      { name: 'Check out', minutes: 3 },
-      { name: 'Slow battery', minutes: 16 },
-    ],
+    // The promise names the steps that carry a bound: the checkout is in the job's prefix,
+    // and the prefix's one allowance is not a number any run has measured (finding 622).
+    steps: [{ name: 'Slow battery', minutes: 16 }],
     why: 'the second shard of the sites battery needs its own ceiling, and no run has spent it yet',
     ...over,
   };
@@ -1708,44 +1872,29 @@ describe('a job the recording has never measured', () => {
     const workflow = splitWorkflow();
     const recording = splitRecording();
     const omitted = budgetErrors(workflow, recording, null, {
-      jobs: [jobPromiseOf({ steps: [{ name: 'Check out', minutes: 3 }] })],
+      jobs: [jobPromiseOf({ steps: [] })],
     }).join('\n');
-    expect(omitted).toContain('promises 1 step(s) and ci.yml has 2');
+    expect(omitted).toContain('promises no steps');
 
     const added = budgetErrors(workflow, recording, null, {
       jobs: [
         jobPromiseOf({
           steps: [
-            { name: 'Check out', minutes: 3 },
             { name: 'Slow battery', minutes: 16 },
             { name: 'A step that never was', minutes: 3 },
           ],
         }),
       ],
     }).join('\n');
-    expect(added).toContain('promises 3 step(s) and ci.yml has 2');
+    expect(added).toContain('promises 2 step(s) and ci.yml has 1');
 
     const reordered = budgetErrors(workflow, recording, null, {
-      jobs: [
-        jobPromiseOf({
-          steps: [
-            { name: 'Slow battery', minutes: 16 },
-            { name: 'Check out', minutes: 3 },
-          ],
-        }),
-      ],
+      jobs: [jobPromiseOf({ steps: [{ name: 'A step that never was', minutes: 16 }] })],
     }).join('\n');
-    expect(reordered).toContain('promises `Slow battery` in position 1 and ci.yml has `Check out`');
+    expect(reordered).toContain('promises `A step that never was` in position 1 and ci.yml has `Slow battery`');
 
     const rebound = budgetErrors(workflow, recording, null, {
-      jobs: [
-        jobPromiseOf({
-          steps: [
-            { name: 'Check out', minutes: 3 },
-            { name: 'Slow battery', minutes: 12 },
-          ],
-        }),
-      ],
+      jobs: [jobPromiseOf({ steps: [{ name: 'Slow battery', minutes: 12 }] })],
     }).join('\n');
     expect(rebound).toContain('`batteries-heavy / Slow battery` promises 12 min and ci.yml bounds it at 16');
   });
@@ -1758,12 +1907,12 @@ describe('a job the recording has never measured', () => {
         {
           id: 'batteries',
           minutes: 25,
-          steps: [...inherited('Check out'), ...step('Slow battery', 16)],
+          steps: [...inherited('Check out'), ...inherited('Slow battery')],
         },
         {
           id: 'batteries-heavy',
           minutes: 25,
-          steps: [...inherited('Check out'), ...step('Slow battery', 16)],
+          steps: [...inherited('Check out'), ...inherited('Slow battery', 'node scripts/inject-slow-heavy.mjs')],
         },
       ]),
     );

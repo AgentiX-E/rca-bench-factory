@@ -359,20 +359,43 @@ describe('a bound is divided by the slowest reading of the command it bounds', (
     // The `Install the shells` shape: five jobs bound the command at three minutes from
     // their own 8-15 s days, while the same command took 153 s in the job that has no
     // bound at all. A series keyed by job cannot see that reading; this one can.
+    // Two jobs, and the shells step is *not* their prefix: each begins with a checkout of its
+    // own, so the shared command sits at position two in both and a bound on it is the job's
+    // own argument (finding 622).
     const workflow = workflowOf([
-      { id: 'batteries', minutes: 30, steps: [...step('Install the shells', 3, 'sudo apt-get install -y zsh')] },
-      { id: 'artefacts', minutes: 30, steps: [...step('Install the shells', 20, 'sudo apt-get install -y zsh')] },
+      {
+        id: 'batteries',
+        minutes: 30,
+        steps: [
+          ...step('Check out', 3, 'node scripts/check-out-batteries.mjs'),
+          ...step('Install the shells', 3, 'sudo apt-get install -y zsh'),
+        ],
+      },
+      {
+        id: 'artefacts',
+        minutes: 30,
+        steps: [
+          ...step('Check out', 3, 'node scripts/check-out-artefacts.mjs'),
+          ...step('Install the shells', 20, 'sudo apt-get install -y zsh'),
+        ],
+      },
     ]);
     const recording = recordingOf({
-      batteries: { steps: { 'Install the shells': 9 } },
-      artefacts: { steps: { 'Install the shells': 153 } },
+      batteries: { steps: { 'Check out': 2, 'Install the shells': 9 } },
+      artefacts: { steps: { 'Check out': 2, 'Install the shells': 153 } },
     });
     const history = historyOf([
       [
         900,
         {
-          batteries: { 'Install the shells': [9, 'sudo apt-get install -y zsh'] },
-          artefacts: { 'Install the shells': [153, 'sudo apt-get install -y zsh'] },
+          batteries: {
+            'Check out': [2, 'node scripts/check-out-batteries.mjs'],
+            'Install the shells': [9, 'sudo apt-get install -y zsh'],
+          },
+          artefacts: {
+            'Check out': [2, 'node scripts/check-out-artefacts.mjs'],
+            'Install the shells': [153, 'sudo apt-get install -y zsh'],
+          },
         },
       ],
     ]);
@@ -426,19 +449,21 @@ describe('a bound is divided by the slowest reading of the command it bounds', (
       // 31 minutes, because `R13` holds a ceiling to the bounds inside it and a 30-minute
       // bound needs 31 -- the two jobs are here for `R10`'s keying, and a fixture that also
       // broke the ceiling rule would make the case pass for the wrong reason.
-      { id: 'batteries', minutes: 31, steps: [...action('Set up Node.js', 3)] },
-      { id: 'artefacts', minutes: 31, steps: [...action('Set up Node.js', 30)] },
+      // One leading step each with a command of its own, so the shared action is not the
+      // workflow's prefix: a prefix step may not carry a bound at all (finding 622).
+      { id: 'batteries', minutes: 34, steps: [...step('Check out', 3, 'node scripts/check-out-a.mjs'), ...action('Set up Node.js', 3)] },
+      { id: 'artefacts', minutes: 34, steps: [...step('Check out', 3, 'node scripts/check-out-b.mjs'), ...action('Set up Node.js', 30)] },
     ]);
     const recording = recordingOf({
-      batteries: { steps: { 'Set up Node.js': 1 } },
-      artefacts: { steps: { 'Set up Node.js': 120 } },
+      batteries: { steps: { 'Check out': 2, 'Set up Node.js': 1 } },
+      artefacts: { steps: { 'Check out': 2, 'Set up Node.js': 120 } },
     });
     const history = historyOf([
       [
         900,
         {
-          batteries: { 'Set up Node.js': [1, 'step:Set up Node.js'] },
-          artefacts: { 'Set up Node.js': [120, 'step:Set up Node.js'] },
+          batteries: { 'Check out': [2, 'node scripts/check-out-a.mjs'], 'Set up Node.js': [1, 'step:Set up Node.js'] },
+          artefacts: { 'Check out': [2, 'node scripts/check-out-b.mjs'], 'Set up Node.js': [120, 'step:Set up Node.js'] },
         },
       ],
     ]);

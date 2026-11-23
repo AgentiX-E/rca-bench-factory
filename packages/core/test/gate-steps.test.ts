@@ -32,6 +32,7 @@ import {
   duration,
   envOf,
   failureReport,
+  describePlan,
   localCommands,
   materialiseStep,
   notedFailures,
@@ -1919,23 +1920,36 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     // 48 -> 49 in v3.129: `R13` holds a ceiling to the sum of the bounds inside it plus twice
     // the seconds no step spends, and this ceiling was already the sum -- 48 minutes of bound
     // and 5 s of runner's own time, doubled, is 2 890 s (finding 619).
-    expect(result.stdout).toContain(
-      "backend bounds all 2 of its step(s) on its own (largest 3m of the job's 49m)",
-    );
+    // The other clause -- `backend bounds all 2 of its step(s) on its own` -- is gone from this
+    // workflow as of v3.132, and its absence is the claim (finding 622): every job now runs four
+    // setup steps that carry no bound of their own, so no job bounds *all* of its steps. The
+    // clause is still written for a workflow that has no prefix, and the fixture cases below
+    // exercise it; here the plan says what is true, that the budget is the job's.
+    expect(result.stdout).not.toContain('bounds all');
+    expect(result.stdout).toContain('backend 36m across 2 step(s)');
     expect(result.stdout).toContain('artefacts 15m across 9 step(s)');
     expect(result.stdout).toContain('cold-tree 20m across 4 step(s)');
     expect(result.stdout).not.toContain('verify 15m across');
-    expect(result.stdout).toContain('verify bounds all 8 of its step(s) on its own');
+    expect(result.stdout).toContain('verify 39m across 8 step(s)');
     // 24 -> 25 in v3.126, and the largest step bound with it: the first reading taken after four
     // jobs took the full history put `verify`'s slowest day at 722 s, which is 1.99x of 24 minutes,
     // and `Lint` -- the step that runs the 34 claimants -- at 497 s, which is 1.92x of 16. Both
     // rules fired on the same reading (finding 605 is the rule, finding 614 the round).
     // 25 -> 58 in v3.129: twelve bounds adding up to 3 420 s, and a ceiling under the sum is
-    // reached with every step still inside its own bound (finding 619).
-    expect(result.stdout).toContain("largest 17m of the job's 58m");
+    // reached with every step still inside its own bound (finding 619). 39 in v3.132, and the
+    // sentence that named the largest step bound went with the clause it lived in: the four
+    // setup steps carry no bound now, so `Lint`'s 17 minutes is no longer a job's largest
+    // *whole* bound -- it is one bound among seven, and the line above states the pool.
+    expect(result.stdout).not.toContain('largest 17m of the job');
+    // The pool line is where the number went, and a prefix step reads it as its own: this is
+    // the step the plan now charges to the job rather than to a bound of its own.
+    expect(result.stdout).toContain('verify / Install dependencies — 39m');
     // 3 -> 4 in v3.52: the sensitivity job's one battery became two, because a step can
     // now be declared for one recording instead of being folded into a neighbour's name.
-    expect(result.stdout).toContain('sensitivity bounds all 4 of its step(s) on its own');
+    // The clause it was asserted through is empty in this workflow as of v3.132 (finding
+    // 622), so what is asserted is the pool line the same four steps are counted on.
+    expect(result.stdout).toContain('sensitivity 34m across 4 step(s)');
+    expect(result.stdout).not.toContain('sensitivity bounds all');
     // 18 -> 19 in v3.50: the fresh recording measured the site-proofs step at 542 s,
     // and twice that is 1084 s, which is 4 s past 18 minutes. The bound follows the
     // measurement, so the assertion follows the bound -- it is the plan's own number
@@ -1944,9 +1958,14 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     // bound, and the 19 s of setup in front of the step needs a ceiling above 1219 s.
     // 20 -> 25 and 21 -> 26 in v3.53's close-out: 626 s in run 42131836805 needs 1252 s,
     // and 22 s of setup puts the 1500 s bound's deadline at 1522 s.
-    // 26 -> 47 in v3.129, for the same reason: eight bounds of 2 760 s (finding 619).
-    expect(result.stdout).toContain("largest 22m of the job's 47m");
-    expect(result.stdout).toContain('batteries bounds all 14 of its step(s) on its own');
+    // 26 -> 47 in v3.129, for the same reason: eight bounds of 2 760 s (finding 619). 34 in
+    // v3.132, where the four setup steps' bounds became one allowance (finding 622).
+    expect(result.stdout).toContain('sensitivity 34m across 4 step(s)');
+    expect(result.stdout).not.toContain("largest 22m of the job");
+    // `batteries` had every one of its fourteen steps bounded at the floor until v3.132; the
+    // pool line is where its 54 minutes and its fourteen steps are counted now (finding 622).
+    expect(result.stdout).toContain('batteries 54m across 14 step(s)');
+    expect(result.stdout).not.toContain('batteries bounds all');
     // 9 -> 10 in v3.120: `Every gate can be shown to fail` measured 295 s, and twice that is 590 s,
     // which is 4 s past ten minutes (finding 599). The assertion follows the bound, which follows
     // the measurement -- it is the plan's own number rather than a preference.
@@ -1960,8 +1979,9 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     // answers for the slowest *day* -- 1012 s here -- and 25 minutes was 1.48x it.
     // 34 -> 84 in v3.129: twenty bounds of 4 980 s. The ceiling is now four times the day it
     // answers for, which is the price of never dying at the ceiling with a bound still inside.
-    expect(result.stdout).toContain("largest 13m of the job's 84m");
-    expect(result.stdout).toContain('batteries-heavy bounds all 4 of its step(s) on its own');
+    expect(result.stdout).not.toContain("largest 13m of the job's 84m");
+    expect(result.stdout).toContain('batteries-heavy 44m across 4 step(s)');
+    expect(result.stdout).not.toContain('batteries-heavy bounds all');
     // 25 -> 27 in v3.55's close-out: the 15-minute backend-support bound plus the 632 s
     // its predecessors account for on their slowest recorded days is 1532 s, which does
     // not fit in 1500. The step bound did not move; only the ceiling above it did, which
@@ -1969,14 +1989,20 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     // 27 -> 31 in v3.123: 921 s is this job's slowest day, and 27 minutes was 1.76x it.
     // 31 -> 55 in v3.129: six bounds of 3 240 s plus 3 s of runner's own time, doubled
     // (finding 619). The step bound did not move, which is what the pair above says.
-    expect(result.stdout).toContain("largest 18m of the job's 55m");
-    expect(result.stdout).toContain('a hang there names the step rather than the job');
+    expect(result.stdout).not.toContain("largest 18m of the job's 55m");
+    // The clause that ended here -- `a hang there names the step rather than the job` -- is the
+    // one for a job that bounds every step, and no job of this workflow does any more: four of
+    // its steps are the prefix, and the allowance answers for them (finding 622). What the plan
+    // says instead is the pool's own sentence, which is true of the thirty-eight steps that do
+    // carry a bound and of the thirty-two that are charged to the job.
+    expect(result.stdout).toContain('a run that spends one is killed at whatever step is running');
+    expect(result.stdout).not.toContain('a hang there names the step rather than the job');
     // And the condition, which is the last default this runner had to state: a step
     // runs only after the ones before it have passed, which is GitHub's default and
     // is what makes a failure meaningful.
     expect(result.stdout).toContain('a step runs only after the ones before it have passed');
     expect(result.stdout).toMatch(/none of the \d+ declares a condition/);
-    expect(result.stdout).toContain('verify / Type-check — 3m');
+    expect(result.stdout).toContain('verify / Type-check — 1m');
   });
 
   it('refuses a filter that selects nothing, rather than reporting success', () => {
@@ -2207,7 +2233,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     // One step declares a condition, and the line says which -- a default that is
     // only stated in a header would leave a reader unable to find the exception.
     expect(listed.stdout).toMatch(/1 of \d+ declare a condition that changes it/);
-    expect(listed.stdout).toContain('verify / Type-check — 3m, if (always())');
+    expect(listed.stdout).toContain('verify / Type-check — 1m, if (always())');
 
     const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
       cwd: ROOT,
@@ -2284,7 +2310,35 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     // arithmetic in a test.
     // 25 -> 58 in v3.129, and the pin is still on where the number comes from rather than on
     // the number: `R13` names the sum of the bounds (finding 619).
-    expect(result.stdout).toContain('of 58m');
+    expect(result.stdout).toContain('of 39m');
+  });
+
+  it('says a job bounds every step when one does, which no job of this workflow is any more', () => {
+    // The clause for a job whose every step carries its own bound. No job of the shipped
+    // workflow is that shape since v3.132: each begins with four steps the job's allowance
+    // answers for (finding 622). The sentence is still owed -- a workflow of one job is
+    // exactly this shape, since nothing can be common with nothing -- so the function is
+    // driven directly rather than through a spawn that would need a tree this repository
+    // does not have.
+    const own = (name: string, minutes: number) => ({
+      key: `solo / ${name}`,
+      job: 'solo',
+      why: `a step named ${name}`,
+      command: 'true',
+      timeoutFrom: 'step',
+      timeoutMinutes: minutes,
+      jobBudgetMinutes: 30,
+      conditionSpelled: null,
+      condition: null,
+      shell: undefined,
+      cwd: undefined,
+      env: undefined,
+    });
+    const plan = { local: [own('One', 20), own('Two', 10)], remote: [], tolerated: [], skipped: [] };
+    expect(describePlan(plan).join('\n')).toContain(
+      "solo bounds all 2 of its step(s) on its own (largest 20m of the job's 30m) — a hang " +
+        'there names the step rather than the job',
+    );
   });
 
   it('runs a step in the directory the workflow names, which is the whole claim about that key', () => {
