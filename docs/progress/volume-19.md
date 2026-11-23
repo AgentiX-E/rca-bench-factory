@@ -1360,9 +1360,9 @@ on content that had not been touched since.
 | item | value |
 | --- | --- |
 | CI | the run this round's commit starts, and the last one it inherited: `45054272460` on `b741a09` was **8 of 8 jobs success**, and this round moves no workflow, no ceiling and no bound |
-| `core` test suite | **259 files, 6844 tests passed** (as of this commit) |
+| `core` test suite | **259 files, 6845 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **263 files, 7031 tests passed** (as of this commit) |
+| repo test suite | **263 files, 7032 tests passed** (as of this commit) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the round adds no line under `packages/core/src` |
 | new tests | **6,804 -> 6,835, +31**: the reader's units, names, dates and quotations; the window and the rounding; which document a figure is the size of; the two refusals; and six gate-level cases |
 | the live list's sizes | **5 figure(s): 5 name the round that took them** -- the rule reads nothing undated because nothing in the list is undated |
@@ -1454,6 +1454,34 @@ The floor's number (three minutes, once per job). A declared step's floor. Any b
 day -- `Install a backend` keeps 30 minutes against 19 s, and `R10` still refuses a bound under twice
 the slowest reading of the same command anywhere. And the two cold-tree jobs' ceilings.
 
+### The run that spent the ceilings
+
+The six ceilings this round wrote had never been spent when it wrote them. Run `45104479651` is the first
+run that had to live under them, and it did: **8 of 8 jobs success**, **951 s** wall clock, the slowest job
+`injection batteries, one step each` at **951 s** against **54** minutes -- the ceiling that was **84** when
+the round started, and the job whose 48 minutes of floor this round deleted.
+
+Recorded as the baseline, the same run is the first reading of the tree the bounds describe: **58** minutes
+measured where the recording the bounds were sized from measured 52, and `R13` still holds -- 6 of the 8
+ceilings hold the bounds inside them, 2 hold twice a day, the least room above a day is `backend` at 36
+minutes and **2.4x** its slowest day of 910 s. The round moved a 331-minute sum and a 372-minute total down
+to 240 and 275, and the day that had to fit under them came in **6** minutes heavier than the day it was
+sized from.
+
+### The round's own second error
+
+`measure-doc-counts --write-doc` without `--from` reads the report the last run left in the cache, and that
+run was older than the tree: it recorded **6,843** core tests while the tree holds **6,844**. The missing one
+is this round's ninth case -- the one that kills the mutation which survived the first run of the table
+above -- and it was added after the report that was read. The repository table then derived 6,843 from the
+golden, and the sixth step of the gate refused the tree.
+
+It was caught before the push, by `verify:local`, at step **6 of 35** -- the first time this campaign has
+found one of its own numbers locally rather than in CI. The shape is v3.131's one step earlier in the chain:
+there the write ran before `git add`, so the table described a tree that did not exist yet; here it ran
+before the case existed, so the golden described a suite that had not been run. Both are the write being
+given something that is not the tree, and neither is visible in the file that was written.
+
 ### Falsifications
 
 | the mutation | reds |
@@ -1477,14 +1505,15 @@ is the only one in the suite that puts a ceiling eighteen seconds short of the a
 
 | what | value |
 | --- | --- |
-| CI | run `45054272460` on `b741a09` was **8 of 8 jobs success** -- the recording whose day this round sized the bounds from; and the run this round's own push starts is the first to spend the ceilings it wrote |
+| CI | run `45104479651` on `b7924f5` was **8 of 8 jobs success**, **951 s** wall clock (03:11:24 -> 03:27:15), slowest job `injection batteries, one step each` at **951 s** against the **54**-minute ceiling this round gave it -- the first run to spend the ceilings it wrote; the day it was sized from is `45054272460` on `b741a09`, also 8 of 8 |
 | `pnpm run docs:check` | **22 steps, exit 0** |
 | tests | core **259 files / 6844** (+9); cli 4 / 187; repo **263 / 7031** |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- no line under `packages/core/src` moved |
 | the workflow | **83** steps: **38** own bounds, **32** in a 4-step prefix, **13** job-bounded, **0** none |
 | the bounds | **216** min of step bounds + **24** of allowance, ceilings **275** (was 331 / 372) |
+| the recording | moved to run `45104479651`: **58** min measured (was 52), bounds total **240** min, 6 ceilings hold their bounds and 2 hold twice a day -- `R13` holds under the run the ceilings were spent on |
 | falsifications | **9 mutations / 58 reds** |
-| open items | **37 -> 36**: `O-100` closed by finding 622 |
+| open items | **37 -> 38**: `O-100` closed by finding 622, `O-103` opened by the round's own second error |
 | LLM calls | **0** |
 
 ### Left open
@@ -1496,3 +1525,112 @@ is the only one in the suite that puts a ceiling eighteen seconds short of the a
 - The allowance is three minutes, and no recording says whether that is right: every ceiling holds
   one, and the runs this repository has are warm. `[open: whether an allowance for a cold runner can
   be measured at all, or whether it is the one number in the file that has to be argued]`
+- A count written from a cache describes whatever ran last, and no line says which run that was: the
+  golden recorded 6,843 core tests against the tree's 6,844, because the report it read was written
+  before the ninth case existed. `[open: whether the write should refuse a report older than the newest
+  file that contributes to it, rather than asking every caller for `--from`]`
+
+## v3.133 — a distance of zero is a number, and the census reads numbers
+
+The round that recorded run `45104479651` also caught the ledger up, and the sentence `check-ci-budget`
+prints about the ledger changed shape when it did. Nothing in the tree had changed; one gate stopped
+printing a noun, and the census refused the tree for it inside the same push.
+
+### The measurement
+
+The state before and after, from the same recording and the same log:
+
+    the ledger's newest run is 45054272460 (the recording), 1 round(s) before `v3.132`      v3.132
+    the ledger's newest run is 45104479651 (the recording), in the newest round             v3.133
+
+`round(s)` is a population in `golden-master/unit-nouns.json`, recorded at v3.132 on the strength of
+the left-hand sentence. The right-hand sentence has the same content and no number, so:
+
+```
+check-unit-nouns: FAILED — 1 noun(s) are printed by more than one gate and no record says which of
+them read one population: round(s) (check-ci-budget is in a population and does not print this noun)
+```
+
+The two states are one recording apart, which is the ordinary life of this gate: every round that
+records its own run moves it from the first state to the second, and the recording is what a round
+does at its end.
+
+### The rule
+
+**A count that can be zero prints zero, in every state a green run can reach.**
+
+`0 round(s) before \`v3.132\`` says what `in the newest round` said, and says it in the shape the census
+reads. The three branches that still print nothing -- no sections, no round headings, a row whose home
+is not a round -- are states in which no ledger row exists to place, and `R7` refuses those before this
+sentence is written.
+
+### Why the better sentence lost
+
+It read better. A sentence about a distance reads as prose when the distance is zero, and this one
+survived a round for that reason alone -- the round that added the noun to the census read it, liked
+it, and recorded the gate under a phrase that would be gone by the next recording. Every other count
+in this campaign has taken the other trade without hesitating: a fact a reader can use **and** a gate
+can count beats a fact a reader can use. This is the first time the two came apart, and the cost was
+one red gate on a tree nobody had touched.
+
+### What finding 618 already decided
+
+Finding 618 is this with the whole judgement as its subject: the census keyed a noun by the set of
+gates printing it, the set moved whenever a gate went quiet, and six readers ended up comparing the
+record with itself. Its repair keyed by noun, so the set is stable. Here the set did not move at all --
+`check-ci-budget` was in the population before and after -- and what moved was whether one member
+printed the noun. A population can hold a gate to a number only while the gate prints the number,
+which is the same rule at a finer grain.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the prose branch restored | 3 |
+| the distance always zero | 1 |
+| the noun without its number | 2 |
+| the round named is the one the row sits in, always | 1 |
+
+**Four mutations, 7 reds.** The first reddens the two cases that read the sentence and the census case
+that runs the real gate over the shipped tree -- the chain that made this a rule rather than a
+preference. The fourth keeps both numbers and names the wrong round, which no assertion about counts
+alone would see.
+
+### The round's own errors
+
+Two, both found by the same recording.
+
+**The audit volume's header still said `579–621` and `v3.131`** two rounds after the last append. No
+gate reads it -- the index is what `check-audit-volumes` counts -- and the previous round had already
+corrected the same header once, which is what a number with no reader looks like from the inside:
+`579–623` and `v3.133` now, and it is still the only line in the file a person has to remember.
+
+**The counts were written from a run older than the ninth case.** Covered in v3.132's record, because
+that is the round it happened in: `measure-doc-counts --write-doc` read the cached report, the golden
+said 6,843 core tests where the tree holds 6,844, and the repository table derived the stale number
+from it. `verify:local` refused the tree at step 6 of 35, before the push, which is the first time this
+campaign has found one of its own numbers locally rather than in CI. It is `O-103` now.
+
+### Readings
+
+> Ledger for `v3.133`.
+
+| what | value |
+| --- | --- |
+| CI | run `45104479651` on `b7924f5` was **8 of 8 jobs success**, **951 s** wall clock -- the recording this round inherited, and the first run to spend v3.132's ceilings |
+| `pnpm run docs:check` | **22 steps, exit 0** |
+| tests | core **259 files / 6845** (+1); cli 4 / 187; repo **263 / 7032** |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- no line under `packages/core/src` moved |
+| the sentence | `round(s)` printed in both ledger states, `0` included |
+| `docs/acceptance.md` | **2,114 lines / 172,716 bytes at v3.133**; the per-round clauses are **960 lines at v3.133**, and **35 of 37** of them hold both a rule and the way it was reached |
+| falsifications | **4 mutations / 7 reds** |
+| open items | **38 -> 39**: nothing closed; `O-104` opened on the distance the census reads |
+| LLM calls | **0** |
+
+### Left open
+
+- A count written from a cache describes whatever ran last, and nothing records which run it was: the
+  golden can describe a suite that has not been run. `[open: whether the write should refuse a report
+  older than the newest file that contributes to it, rather than asking every caller for `--from`]`
+- `round(s)` has three readers and only two of them count a population. `[open: whether a distance
+  belongs in the census at all, and which sentence would decide it]`

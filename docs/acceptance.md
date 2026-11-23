@@ -2084,3 +2084,31 @@ from an anecdote again.
   allowance growing with the prefix (3), a prefix step allowed its own bound (2), the ceiling not
   holding the allowance (1), a job promise naming the prefix steps (4), the summary hiding the
   allowance (1), and the narrower-ceiling refusal restored (3) -- **58 reds**.
+
+### A count that can be zero prints zero (v3.133)
+
+- **A sentence a census reads is a number and a noun, in that order.** `check-ci-budget` states how
+  far the ledger's newest row sits from the newest round. That is a distance, and a distance can be
+  zero; `0 round(s) before \`v3.132\`` and `, in the newest round` say the same thing, and only the
+  first is a sentence the census can read (finding 623).
+- **Prose that is better is still not a measurement.** The phrase that was removed read better than
+  the one that replaced it. It survived a round for exactly that reason, and it cost a tree the next
+  time the ledger caught up -- which is the trade every count in this campaign has taken the other
+  way: a fact a reader can use *and* a gate can count beats a fact a reader can use.
+- **A population's member must print the noun in every state a green run reaches.** The census holds
+  a gate to what it prints under `round(s)`; a gate that prints the noun only while the ledger is
+  behind is a member in one round and a stranger in the next, and the census is right to refuse both
+  times. The repair is in the sentence, not in the census.
+- **The states that print nothing are states with no row to place.** No sections, no round headings,
+  and a row whose home is not a round: `R7` refuses a log whose newest round carries no closing
+  reading before this sentence is written, so a green run never reaches them, and `0 round(s)` is not
+  printed about a row that does not exist.
+- **This is finding 618 one level down.** Finding 618 keyed a judgement by the *set* of gates
+  printing a noun, and that set moved; the repair keyed by noun. Here the set is stable and what moved
+  was whether one member printed the noun at all -- the same question at a smaller scale, and the same
+  answer: the number is the thing that has to be there.
+- **A mutation has to land on an assertion.** The four this round: the prose branch restored (3
+  reds), the distance always zero (1), the noun printed without its number (2), the round named as the
+  one the row sits in rather than the newest (1) -- **7 reds**. The first reddens the census case as
+  well as the two that read the sentence, which is the chain that made this a rule rather than a
+  preference.

@@ -1,7 +1,7 @@
 # Audit · volume 14
 
-Findings 579–621, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
-`progress/volume-19.md` as `v3.115` through `v3.131`.
+Findings 579–623, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
+`progress/volume-19.md` as `v3.115` through `v3.133`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -2635,3 +2635,78 @@ Finding 619's rule -- **a ceiling holds the bounds inside it** -- asked of the b
 `R13` made the ceiling answer for the numbers a step can spend, and this round made the numbers
 answer for what a runner actually costs. The floor was a per-step copy of a per-job fact, which is
 finding 604's shape (one number, two populations) with the population being "cold runners".
+
+## Finding 623 — a distance that is zero is a number, and the census reads numbers
+
+v3.132 recorded run `45104479651` as the recording, and in doing so caught the ledger up: the row
+`R7` compares against now sits in the newest round, and `ledgerWhere` printed `, in the newest round`
+where it had printed `, 1 round(s) before \`v3.132\``.
+
+That sentence is a census key. `golden-master/unit-nouns.json` lists which gates print `round(s)` and
+what each one counts under it, and v3.132 added `check-ci-budget` to that noun on the strength of the
+sentence it printed while the ledger was behind. One recording later the sentence changed shape:
+
+```
+$ node scripts/check-unit-nouns.mjs
+check-unit-nouns: FAILED — 1 noun(s) are printed by more than one gate and no record says which of
+them read one population: round(s) (check-ci-budget is in a population and does not print this noun)
+```
+
+Nothing in the tree had changed its mind. `round(s)` was printed in the state where the ledger was
+behind and withheld in the state where it was current, and the two states are one recording apart —
+which is the ordinary life of this gate, since every round that records its own run moves it from the
+first state to the second.
+
+### Why the phrase was wrong rather than the census
+
+`in the newest round` says the same thing as `0 round(s) before \`vX.YY\``, and says it better: a
+sentence about a distance reads as prose when the distance is zero. What it does not say is the
+**number**, and a census reads numbers. The choice is not between two phrasings of one fact; it is
+between a fact a reader can use and a fact a reader can use *and a gate can count*, and this
+campaign has taken the second every time it had to choose (finding 604, finding 620, finding 621) —
+the difference here is only that the prose was the *better* text, which is why it survived a round.
+
+### The same defect as finding 618, one level down
+
+Finding 618 was this with the whole judgement as its subject: the census keyed a noun by the **set**
+of gates printing it, and that set moved whenever a gate stopped printing, so six readers compared
+the record with itself and a sentence that had not stopped being true was retyped three times. The
+repair keyed by noun and moved the judgement into its own table, so the set is stable now.
+
+This is the smaller half of the same shape. The set did not move: `check-ci-budget` was in the
+population before and after. What moved was whether one of its members **printed the noun at all**,
+and a population that holds a gate to a number can only do so while the gate prints the number. The
+census was right both times — it refused a tree in which the record said a gate prints a noun it no
+longer prints — and the repair is not in the census but in the sentence, because a count that can be
+zero has no business being spelled in words.
+
+### The three states that print nothing, and why they are not this defect
+
+`ledgerWhere` returns early in three places: no sections, no round headings among them, and a newest
+row whose home section is not a round. All three are states in which there is no row to place, which
+is `R7`'s subject and not this one's: a log whose newest round carries no closing reading is refused
+before this sentence is written, so a green run never reaches them. They are left as they are rather
+than papered over with `0 round(s)` in a sentence about a row that does not exist.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the prose branch restored | 3 |
+| the distance always zero | 1 |
+| the noun without its number | 2 |
+| the round named is the one the row sits in, always | 1 |
+
+**Four mutations, 7 reds.** The first is the defect itself, and it reddens three cases: the two that
+read the sentence in this test file and the census case, which runs the real gate over the shipped
+tree and refuses it for the reason above. The third is the shape the census actually catches -- a
+noun that is printed and cannot be compared -- and the fourth names the wrong round while keeping
+both numbers, which no assertion about counts alone would see.
+
+### What this does not settle
+
+Whether a *distance* belongs in a census at all. `round(s)` now has three readers and only two of them
+count a population; the third states how far the ledger sits from the newest round, its number is
+compared with nothing, and it moves every round the log does not close. That it must now print `0`
+makes the census quieter, not the noun more coherent, and the sentence that would decide it -- that a
+noun in the census counts members of one population -- has not been written.

@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 259 core + 4 cli |
-| Test lines | 116,053 core + 3,242 cli |
-| Tests | 6,844 core + 187 cli |
+| Test lines | 116,074 core + 3,242 cli |
+| Tests | 6,845 core + 187 cli |
 | Tracked files | 675 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.132: **37** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.133: **39** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -829,11 +829,17 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: which of the three, decided by a corpus that has one -- the shipped thirty-four have none]`
 
 - O-019 · **`docs/acceptance.md` grows by a clause per round, and the clauses are nearly half of it.**
-  The per-round clauses are **932 lines at v3.132** and **80,082 bytes at v3.132**, in a document of
-  **2,086 lines at v3.132**. L3 is **330 lines at v3.131** and L4 is 405; L0, L1, L2 and L5 are 14, 7, 7
+  The per-round clauses are **960 lines at v3.133** and **82,344 bytes at v3.133**, in a document of
+  **2,114 lines at v3.133**. L3 is **330 lines at v3.131** and L4 is 405; L0, L1, L2 and L5 are 14, 7, 7
   and 6, so the obvious split by layer would produce four files of a dozen lines.
-  `[open: the axis is "current rule" against "how it was reached", not the layer -- moving the clauses
-  needs the measurement of how many sections match that shape before the index relation is re-checked]`
+  The measurement the entry asked for exists now, and it refuses the section as the unit: of the **37**
+  per-round clauses, **35** hold both a current rule and the way it was reached, so moving the clauses
+  would carry **431 lines at v3.133** of rule into the history with **414 lines at v3.133** of
+  provenance. Read per bullet -- the
+  unit the shape actually has -- **125** of the **217** state a rule and **92** state that a number
+  moved.
+  `[open: the axis is "current rule" against "how it was reached" and the unit is the bullet, not the
+  section -- the move itself has not been made, and the index relation is re-checked after it]`
 ~~**The newest round's ledger is not required to carry a coverage row.** Of the **54** `### Readings`
   blocks this log holds, **24** carry one and **30** do not, v3.64's and v3.65's among them. The row is
   what a later reader looks for when asking what a round cost, and v3.66 answered it only after
@@ -1007,6 +1013,25 @@ is a row about rather than paraphrase one that no `grep` will find.
   run that has seen one, and it is a different job with a different prefix -- or whether it is the one
   number in this file that has to be argued rather than taken, and which of those two sentences the
   gate should print]`
+- O-103 · **A count written from a cache describes whatever ran last, and nothing records which run it was.**
+  `measure-doc-counts --write-doc` without `--from` reads the vitest report the last run left in
+  `node_modules/.cache`, and v3.132's ninth case -- the one that kills the mutation which survived the
+  first run of its table -- was added after that report was written: the golden recorded **6,843** core
+  tests against the tree's **6,844**, the repository table derived the stale number from the golden, and
+  the sixth step of the gate refused the tree. v3.131's error is the same write handed a tree that did not
+  exist yet (`--write` before `git add`: `Tracked files` **672** against the checkout's **675**). Both are
+  a write given something that is not the tree, and neither is visible in the file that was written.
+  `[open: whether the write should refuse a report older than the newest file that contributes to it -- a
+  staleness check the write can make on its own inputs -- rather than asking every caller for `--from`,
+  which is the same rule written as a discipline instead of as a refusal]`
+- O-104 · **`round(s)` has three readers and only two of them count a population.**
+  `check-ci-budget` states how far the ledger's newest row sits from the newest round: a distance, not a
+  count of members, and the census holds it to the same noun as the two gates that count `vX.YY`
+  headings. v3.133 made it print `0` rather than the phrase it printed when the distance was zero,
+  which quiets the census and does not make the noun coherent -- the number is compared with nothing and
+  it moves every round the log does not close.
+  `[open: whether a distance belongs in the census at all, and which sentence would decide it -- the
+  noun's population is rounds, and the distance between two of them is not a member of it]`
 ## Pass log
 
 The rounds are recorded in the volumes below, in the order they were run. They were one
@@ -1042,7 +1067,7 @@ and this table.
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
-| [volume-19.md](progress/volume-19.md) | 12 | v3.121 | v3.132 |
+| [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
