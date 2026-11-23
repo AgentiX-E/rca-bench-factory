@@ -261,6 +261,7 @@
     {
       "noun": "round(s)",
       "gates": [
+        "check-ci-budget",
         "check-open-list",
         "check-progress-volumes"
       ]
@@ -376,6 +377,14 @@
       ]
     },
     {
+      "noun": "round(s)",
+      "gates": [
+        "check-ci-budget",
+        "check-open-list",
+        "check-progress-volumes"
+      ]
+    },
+    {
       "noun": "row break(s)",
       "gates": [
         "check-comments-language",
@@ -402,13 +411,6 @@
       "gates": [
         "check-ci-budget",
         "check-fault-cases"
-      ]
-    },
-    {
-      "noun": "round(s)",
-      "gates": [
-        "check-open-list",
-        "check-progress-volumes"
       ]
     },
     {
@@ -476,9 +478,12 @@
         [
           "check-open-list",
           "check-progress-volumes"
+        ],
+        [
+          "check-ci-budget"
         ]
       ],
-      "relation": "one set of headings read twice -- `check-open-list` counts the distinct `vX.YY` labels among them and `check-progress-volumes` counts the sections that carry one, so that the two agree is a rule rather than a coincidence, because no round may be headed twice; the second gate prints the `Pass` rounds it also counts beside them"
+      "relation": "one set of headings read twice -- `check-open-list` counts the distinct `vX.YY` labels among them and `check-progress-volumes` counts the sections that carry one, so that the two agree is a rule rather than a coincidence, because no round may be headed twice; the second gate prints the `Pass` rounds it also counts beside them; and `check-ci-budget` prints a third thing with the same word -- how many rounds sit between the ledger's newest row and the newest round -- which is a distance and not a count of anything, so its number is compared with nothing and moves every round the log does not close"
     },
     {
       "noun": "row break(s)",
