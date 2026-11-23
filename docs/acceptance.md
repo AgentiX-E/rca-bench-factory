@@ -51,6 +51,8 @@ before the layer above it is meaningful.
 | A number that is not a count of the noun is declared separate | v3.135 |
 | A coincidence says which of three things it is | v3.136 |
 | A bound's comment names the reading that last moved it | v3.136 |
+| A marker names the count it is about | v3.137 |
+| A snapshot is a claim about one tree, and the reader that can refuse it re-derives it | v3.137 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -2292,3 +2294,41 @@ from an anecdote again.
 - **What is not claimed.** That the readings are a distribution. They are two populations -- 307 and
   334 s against 501, 503, 507 and 521 -- and a bound sized at 2.07x of the slower one is sized
   against the wrong half of a bimodal step whose cheaper half is a build cache (`O-109`).
+
+### A marker names the count it is about (v3.137)
+
+- **One sentence per coincidence, and the sentence opens with its count.** A noun can carry two
+  equalities at once -- `8 row(s)` inside one population and `9 row(s)` from two populations of their
+  own -- and the marker spoke for the noun: `(a count two gates print agrees, and the record places
+  them in different sets)` was true of the `9` and false of the `8` beside it, which the numbers line
+  had already marked as `one population at 8, and the count agrees` (finding 629).
+- **A sentence is built from the coincidence it is printed for, not chosen for the noun.** The old
+  form picked one sentence by precedence, and the argument that two classes could not co-occur -- an
+  undeclared noun has no partition to place its gates, a declared one cannot leave a gate unplaced --
+  was doing the work of a construction. A noun with three coincidences prints three sentences, in the
+  order of the counts they name.
+- **The class that needs no marker still gets none.** A coincidence a declared population holds is
+  marked in the numbers line, and repeating it in the parenthesis would print a proof as a warning;
+  what a reader has to act on is the sentence about a number nobody has placed.
+- **What is not claimed.** That a sentence can be read without the numbers. The parenthesis names a
+  count and does not restate what that count's line says: `at 9` is a pointer, not a summary.
+
+### A snapshot is a claim about one tree, and the reader that can refuse it re-derives it (v3.137)
+
+- **A write cannot know that it is the round's last act.** `measure-doc-counts --write-doc` measures
+  the suite as it stands and writes what it found; whether the tree changes afterwards is a fact about
+  the future. v3.132 took its snapshot with eight of nine new cases written and published **6,843**
+  tests against a tree that ended at **6,844**; v3.131 wrote the row before `git add` and published
+  **672** tracked files against the checkout's **675** (finding 630).
+- **What can be checked is not the writer's timing but the reader's tree.** `measure-doc-counts
+  --check` re-derives the same three scopes -- by spawning the suite, or from the coverage run's
+  reports with `--from` -- and compares them with the golden. That reader is step **6** of
+  `verify:local` and the step after `test:coverage` in the workflow, so the pipeline reads the tree
+  after every edit a round makes.
+- **`docs:check` is not that reader.** It compares the document with the golden and never spawns the
+  suite, so its green says the two files agree and says nothing about the tree. A snapshot taken early
+  is green locally and red at the counts step, and that ordering -- write whenever, read after the
+  last edit -- is the discipline, not the writer's clock.
+- **What is not claimed.** That a violation is refused at the moment of writing. The refusal is at the
+  step that re-derives, and the evidence it needs -- a suite that runs -- is what a writer cannot take
+  twice without measuring the tree it is still changing.
