@@ -2344,7 +2344,7 @@ read beside the file each one names:
 | the `## Open` lead-in | `98,927 bytes` **by** v3.110 | -- | dated with a preposition the reader cannot read |
 | `O-019` | `96 KB` | **165,067 bytes** (161.2 KB) | **1.68x** too small |
 | `O-019` | `284 lines` (L3) | L3 is **330** lines | 46 lines short |
-| `O-019` | `139 lines` and `11,139 bytes` (the per-round clauses) | **897 lines** and **77,169 bytes** | **6.5x** and **6.9x** |
+| `O-019` | `139 lines` and `11,139 bytes` (the per-round clauses) | **897 lines** and **77,180 bytes** | **6.5x** and **6.9x** |
 | `O-021` | `962,086 bytes` (a paper) | not in this tree; pinned by sha256 | unmeasurable here |
 | `O-101` | `165,067 bytes` | 165,067 | true, and quotes `O-019`'s 96 KB |
 
@@ -2356,7 +2356,7 @@ read beside the file each one names:
 `O-019` argues that `docs/acceptance.md` has grown too large to keep growing, and it supported the
 argument with its size. The file is 1.68 times the figure. And the evidence the entry actually leans
 on -- "the per-round clauses are 139 lines and 11,139 bytes of history sitting in a specification" --
-is now 897 lines and 77,169 bytes, because thirty-four rounds have appended a clause each. The entry
+is now 897 lines and 77,180 bytes, because thirty-four rounds have appended a clause each. The entry
 that argues the history has outgrown the specification was quoting the history at a sixth of its
 size.
 
@@ -2364,7 +2364,7 @@ That is the shape finding 620 found one document over, in the census: a number i
 nothing read, drifing while the thing it measured moved. The census answered it with **a figure must
 be a count a gate printed**. That answer cannot be transferred as written, because a live entry's
 numbers are not counts of the vocabulary -- they are measurements of a round, and no gate prints
-`77,169`. So the question `O-101` left open is not "which shapes can a reader read" but **what makes
+`77,180`. So the question `O-101` left open is not "which shapes can a reader read" but **what makes
 a measurement in prose safe**.
 
 ### The rule: say when, or be this tree's
@@ -2437,6 +2437,26 @@ for it) one level in. It is read now, and it is dated `at v3.110` rather than `b
   ledger's `(as of `sha`)` marker passes while naming a tree it was not measured on (finding 309). The
   guard's subject is the accident -- a measurement that aged while the thing it measured moved -- and
   not the lie.
+
+### The round's own text, twice
+
+- **The reader's header stated the length of the file it reads, without a round.** It said
+  `docs/acceptance.md` was `2,021 lines` -- the exact shape this finding refuses, in the module that
+  refuses it. No gate reads a source header, so the round's own look is the only reader there is; the
+  header says `2,051 lines at v3.131` now.
+- **This finding's table said `77,169` bytes where the entry, the closure and the round's record say
+  `77,180`.** Measured again, the tail from `### The open list (v3.62)` to the end of the file is 897
+  lines and **77,180 bytes** -- 77,179 with the final newline dropped, which is not what any of the
+  three statements means. Eleven bytes, in the round whose subject is figures that nothing reads; the
+  repair is in place rather than annotated, because a record that disagrees with the entry it is the
+  authority for is the one disagreement neither side can settle.
+- **The index published a count of a tree that did not exist yet.** Its repository table said **672**
+  tracked files in the commit that carried three new ones, so the commit a reader checks out holds
+  **675**. `--write` was run before `git add`, which is the case this guard's own header records
+  having happened once already -- v3.83 published `Tracked files 638` where its commit held 639 -- and
+  the reprimand is in the same place it was then: a gate green in the round and red on the next
+  checkout of its own commit, on content nothing had touched. The row is re-derived from the commit
+  rather than from the tree that was about to become one.
 
 ### Falsifications
 

@@ -443,7 +443,7 @@ document that described it as downloading the data was describing an intention.
 | Test files | 259 core + 4 cli |
 | Test lines | 115,825 core + 3,242 cli |
 | Tests | 6,835 core + 187 cli |
-| Tracked files | 672 |
+| Tracked files | 675 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is

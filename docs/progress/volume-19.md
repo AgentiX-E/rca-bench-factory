@@ -1315,6 +1315,26 @@ rather than updated, because the argument does not need it. `O-021` lost `962,08
 -- "`openrca-2.0`, sha256 recorded" -- and the byte count was doing no work in a sentence about two other
 targets having no pin at all.
 
+**The rule's first counter-example was in the module.** The header of the reader said `docs/acceptance.md` was
+`2,021 lines`: no round, the exact shape the round exists to refuse, sitting in the code that refuses it.
+Nothing reads a source header -- the guard passes its own text -- so this one was caught only because the round
+looked, and the header now says `2,051 lines at v3.131`.
+
+**And the record and the entry disagreed about the number the rule is about.** Finding 621's table said the
+per-round clauses were **897 lines** and **77,169 bytes**; the entry, the closure and this record say 77,180.
+Measured again, the tail from `### The open list (v3.62)` to the end of the file is 897 lines and **77,180
+bytes** -- 77,179 with the final newline dropped, which is not what any of the three statements means. The
+finding was 11 bytes out, in the round whose subject is figures that nothing reads, and it is corrected in place
+rather than annotated: a record that disagrees with the entry it is the authority for is the one disagreement
+neither side can settle.
+
+**And the index published a count of a tree that did not exist yet.** The repository table said **672** tracked
+files in the commit that carried three new ones, so the commit a reader checks out holds **675**: `--write` ran
+before `git add`, which is the case the guard's own header records having happened once already (v3.83, whose
+`Tracked files` said 638 where the commit held 639). The gate was green in the round and red on the next
+checkout of its own commit -- the one red this campaign treats as a root cause rather than a flake,
+on content that had not been touched since.
+
 ### Falsifications
 
 | the mutation | reds |
