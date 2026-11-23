@@ -1891,8 +1891,8 @@ same lesson the previous round's slowest-prefix mutation taught one file over.
 
 | what | value |
 | --- | --- |
-| CI | baseline run `45136514702` on `32aff88`: **8 of 8 jobs success**, 754 s; this round's own run is recorded in the commit that follows the push |
-| `pnpm run docs:check` | **23 steps, exit 0** |
+| CI | run `45155655608` on `479a565`: **8 of 8 jobs success**, 979 s (10:23:30 -> 10:39:49), slowest job `injection batteries, one step each` at 975 s against its 54-minute ceiling; the recording is this run's, so it reads **65** min measured against **240** min of bounds in 8 ceilings |
+| `pnpm run docs:check` | **23 steps, exit 0** -- including the census, which now prints the placement ledger |
 | `core` test suite | **260 files, 6880 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
 | repo test suite | **264 files, 7067 tests passed** (as of this commit) |

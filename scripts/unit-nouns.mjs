@@ -452,11 +452,14 @@ export function separateOf(judgement) {
 /**
  * What is wrong with a judgement's partition, as a list a reader can act on -- empty when nothing is.
  *
- * A partition is a claim that the noun's gates are covered exactly once. Each way of failing that is
- * a different repair: a gate nobody placed (it is a population of its own until somebody says
- * otherwise), a gate placed twice (its count is claimed by two sets at once), a gate that does not
- * print the noun at all (the record has drifted from the gates), and an empty group (a population
- * of nothing, which reads as a decision that was started and not finished).
+ * A partition is a claim that the noun's gates are covered exactly once, by one of the two placements
+ * that exist. Each way of failing that is a different repair: a gate nobody placed and nobody declared
+ * separate, a gate placed twice (its count is claimed by two sets at once), a gate that does not print
+ * the noun at all (the record has drifted from the gates), an empty group (a population of nothing,
+ * which reads as a decision that was started and not finished), and, for `separate`, a declaration
+ * with no gate, with no sentence, or for a gate that is also in a population. The last four are what
+ * `O-104` added: a number that is not a count of its noun used to have only the population of one to
+ * be written as, which is a sentence the record could not tell from a corpus.
  *
  * `gates` is the set the **census** says print the noun, and it is a parameter rather than a field of
  * the judgement because the two are not the same fact. A gate can join a noun between two rounds
