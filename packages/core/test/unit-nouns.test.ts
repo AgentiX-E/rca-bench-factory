@@ -602,6 +602,34 @@ describe('a population is the unit of the judgement, because a noun is not (find
     expect(summaryOf(census)).toContain('no population is read by more than one gate, so no equality between two gates is checked');
   });
 
+  it('counts the three classes apart, with a number in each', () => {
+    // The three counts are three numbers only if a fixture puts a number in each. The shipped record
+    // has `0` unplaced and `1` apart, so a summary that printed `0` for the first, or that computed
+    // the second as "everything that is not together", printed the shipped line word for word --
+    // two mutations survived the first table for exactly that reason, and the hole was the fixture
+    // rather than the rule (the shape v3.135's tenth mutation had, one file over).
+    const mixed = censusOf([
+      { gate: 'a', text: '8 row(s)' },
+      { gate: 'b', text: '8 row(s)' },
+      { gate: 'c', text: '9 row(s)' },
+      { gate: 'd', text: '9 row(s)' },
+      { gate: 'e', text: '7 cell(s)' },
+      { gate: 'f', text: '7 cell(s)' },
+    ]);
+    const rows = { noun: 'row(s)', gates: ['a', 'b', 'c', 'd'], populations: [['a', 'b'], ['c'], ['d']], relation: 'four tables' };
+    const cells = { noun: 'cell(s)', gates: ['e', 'f'], relation: 'two grids' };
+    const line = summaryOf(mixed, new Map([[keyOf(rows), rows], [keyOf(cells), cells]]));
+    expect(line).toContain(
+      '3 count(s) coincide across gates -- 1 where a declared population holds every gate that prints one, ' +
+        '1 where declared populations keep them apart, 1 where no population places them: ' +
+        '7 cell(s) in e and f; 8 row(s) in a and b; 9 row(s) in c and d',
+    );
+    // And the same three numbers when nothing coincides in one of the classes: the zero is printed
+    // because it is the count of a class, not because there was something to say about it.
+    const alone = summaryOf(census, judgements);
+    expect(alone).toContain('0 where declared populations keep them apart, 0 where no population places them');
+  });
+
   it('names the shared nouns with no sentence and the ones with no partition, separately', () => {
     // Two states, two repairs: a sentence nobody wrote, and a partition nobody placed. The gate used
     // to recognise the first by the text of the line it printed, which is a string compared with

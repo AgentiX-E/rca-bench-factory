@@ -3074,23 +3074,45 @@ for what is left, which is why the sentence does not name a count. Whether it sh
 
 | the mutation | reds |
 | --- | --- |
-| a coincidence is `together` when every gate is in *some* population | 4 |
-| a coincidence no population holds is `together` rather than `apart` | 7 |
-| a coincidence nobody placed is `apart` rather than `unplaced` | 7 |
+| a coincidence is `together` when every gate is in *some* population | 5 |
+| a coincidence no population holds is `together` rather than `apart` | 8 |
+| a coincidence nobody placed is `apart` rather than `unplaced` | 8 |
 | a gate declared separate is not a gate that has been placed | 2 |
-| every coincidence is reported as `together` | 7 |
-| the summary reports the unplaced count as zero | 1 |
-| the summary reports the apart count as the rest | 1 |
-| the summary names two classes where there are three | 2 |
+| every coincidence is reported as `together` | 8 |
+| the summary reports the unplaced count as zero | 2 |
+| the summary reports the apart count as the rest | 2 |
+| the summary names two classes where there are three | 3 |
 | the marker for an `apart` equality says nobody has placed them | 2 |
 | the marker for an `unplaced` equality says the record places them apart | 4 |
 | the marker is printed for every coincidence, forced ones included | 4 |
 | an `unplaced` equality gets no marker | 4 |
 
-**Twelve mutations, 45 reds.** The first is the defect this round reproduced in its own first draft --
+**Twelve mutations, 52 reds.** The first is the defect this round reproduced in its own first draft --
 `groups.some((group) => gates.every(...))` written as `gates.every((gate) => groups.some(...))`, which
 says *every gate is placed* and calls it *one population holds them all*. It survived nothing: the
 `apart` fixtures are the two populations of one the round exists for.
+
+### The table was taken on this round's own round, and two rows were wrong
+
+The first table was measured while the round's documents were still being written, so it also counted
+the two tests that read the tree -- and a red gate makes the tree test red for a reason that has nothing
+to do with the mutation. Two rows came back with `1` red each and the rest with one or two more than
+they should have. Re-run against a green tree, two of the twelve **survived**:
+
+| the mutation | first table | on a green tree |
+| --- | --- | --- |
+| the summary reports the unplaced count as zero | 1 | **0** |
+| the summary reports the apart count as the rest | 1 | **0** |
+
+Both survived for the same reason, and it is v3.135's tenth mutation one file over: the shipped record
+has `0` unplaced and `1` apart, and the fixtures that reached the summary had nothing in either class,
+so a summary that printed `0` for the first and "everything not together" for the second printed the
+shipped line word for word. The hole was the fixture. The repair is one census with a number in each
+class -- `a` and `b` sharing a population at `8`, `c` and `d` in populations of their own at `9`, `e`
+and `f` at `7` under a noun nobody has placed -- and the two rows then cost **2** reds each.
+
+The lesson is the one this campaign keeps relearning: **a table measured on a tree that is not green
+measures the tree.**
 
 ### What this does not settle
 

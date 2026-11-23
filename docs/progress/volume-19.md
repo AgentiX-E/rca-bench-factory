@@ -1976,14 +1976,14 @@ of the table below.
 
 | the mutation | reds |
 | --- | --- |
-| a coincidence is `together` when every gate is in *some* population | 4 |
-| a coincidence no population holds is `together` rather than `apart` | 7 |
-| a coincidence nobody placed is `apart` rather than `unplaced` | 7 |
+| a coincidence is `together` when every gate is in *some* population | 5 |
+| a coincidence no population holds is `together` rather than `apart` | 8 |
+| a coincidence nobody placed is `apart` rather than `unplaced` | 8 |
 | a gate declared separate is not a gate that has been placed | 2 |
-| every coincidence is reported as `together` | 7 |
-| the summary reports the unplaced count as zero | 1 |
-| the summary reports the apart count as the rest | 1 |
-| the summary names two classes where there are three | 2 |
+| every coincidence is reported as `together` | 8 |
+| the summary reports the unplaced count as zero | 2 |
+| the summary reports the apart count as the rest | 2 |
+| the summary names two classes where there are three | 3 |
 | the marker for an `apart` equality says nobody has placed them | 2 |
 | the marker for an `unplaced` equality says the record places them apart | 4 |
 | the marker is printed for every coincidence, forced ones included | 4 |
@@ -1991,8 +1991,17 @@ of the table below.
 | the lint bound goes back under twice its reading | 3 |
 | the verify ceiling no longer holds the bounds it holds | 3 |
 
-**Fourteen mutations, 51 reds** -- twelve on the census and two on the workflow, both against the
-shipped tree rather than a fixture.
+**Fourteen mutations, 58 reds** -- twelve on the census (52 reds) and two on the workflow (6), both
+against the shipped tree rather than a fixture.
+
+The census table was taken twice. The first run happened while the round's documents were still being
+written, so the two tests that read the tree were red for a reason that had nothing to do with any
+mutation, and every row carried one or two reds too many. Re-run against a green tree, **two rows
+survived**: the summary printing `0` for the unplaced count, and the summary computing the apart count
+as "everything not together". Both were invisible because the shipped record has `0` unplaced and `1`
+apart and no fixture had a number in either class -- v3.135's tenth mutation one file over, and the
+repair is one census with a number in each class. **A table measured on a tree that is not green
+measures the tree.**
 
 ### Readings
 
@@ -2002,14 +2011,14 @@ shipped tree rather than a fixture.
 | --- | --- |
 | CI | run `45192493234` on `87b1dcb`: **8 of 8 jobs success**, 945 s (14:16:51 -> 14:32:36); the recording is this run's, so it reads **61** min measured against **241** min of bounds in 8 ceilings |
 | `pnpm run docs:check` | **23 steps, exit 0** |
-| `core` test suite | **260 files, 6882 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 6883 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7069 tests passed** (as of this commit) |
-| new tests | **6,880 -> 6,882, +2**: the three-class case and the marker's two sentences, over fixtures that reach a state no shipped noun is in |
+| repo test suite | **264 files, 7070 tests passed** (as of this commit) |
+| new tests | **6,880 -> 6,883, +3**: the three-class case, the marker's two sentences, and the three counts with a number in each class |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
 | the census | **4** coincidences: **3** `together`, **1** `apart`, **0** `unplaced` |
 | `docs/acceptance.md` | **42** clauses across **32** rounds; index **42** rows |
-| falsifications | **14 mutations / 51 reds** -- 12 on the census, 2 on the workflow |
+| falsifications | **14 mutations / 58 reds** -- 12 on the census, 2 on the workflow |
 | open items | **39 -> 41**: `O-106` closed by finding 627; `O-107`, `O-108` and `O-109` opened |
 | LLM calls | **0** |
 
