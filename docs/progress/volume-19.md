@@ -1757,7 +1757,7 @@ refused, which is the chain that makes a rule a rule.
 
 | what | value |
 | --- | --- |
-| CI | run `45116975788` on `ae555ed`: **8 of 8 jobs success**, 970 s -- the last green run before this round's push, inherited as the recording this round's bounds were read against |
+| CI | run `45134409934` on `ce6b677`: **8 of 8 jobs success**, 793 s (07:53:43 -> 08:06:56), slowest job `injection batteries, one step each` at 788 s against its 54-minute ceiling -- the round's own run, recorded as the baseline: **53** min measured, **240** min of bounds in 8 ceilings, and the shape gate ran in `verify` as its eighth step |
 | `pnpm run docs:check` | **23 steps, exit 0** -- the new shape gate is the 8th |
 | `core` test suite | **260 files, 6874 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
