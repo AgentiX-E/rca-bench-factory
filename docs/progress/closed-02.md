@@ -556,3 +556,19 @@
   now reads `0 in check-ci-budget (declared separate: how far the ledger's newest row sits from the
   newest round ...)`, and its summary accounts for all **27** placements rather than only the 6 that
   sit in a population two gates read (finding 626).
+
+- O-106 · ~~**Twenty of the census's 27 placements are a corpus one gate reads, and nothing asks whether
+  two of them are one set.**~~ The three questions in that sentence had one answer between them, and it
+  was not a refusal and not a fifth placement: `coincidencesOf` classified an equality by whether one
+  declared population held the gates that print it, which is a partition of two, and the corpus has
+  three facts -- held together by a population (a rule, and `disagreementsOf` checks it), held apart by
+  declared ones (a **size**, and nothing is broken when it moves), and unplaced by any (the only
+  equality that is evidence). ~~`[open: whether a coincidence between two populations of one is a fact
+  the census can refuse or a judgement only a person can make, and whether the answer is a sentence in
+  the record or a fifth placement]`~~ **Closed by v3.136**, which classified rather than refused: the
+  shipped record's one `apart` coincidence is `8 row(s)` in two gates the record places in populations
+  of their own, on a line whose own sentence says the two tables are four tables and one word, and the
+  class that has no answer -- `unplaced`, printed as `0` -- is now its own number (finding 627). What
+  the entry also asked, why the `22/22` of v3.134 went out at v3.135 with nothing refusing it, is
+  answered by the same clause: a size is not a claim, so a run owes the reader the class rather than a
+  refusal, and the class prints at zero. The parenthesis naming a count rather than a noun is `O-107`.

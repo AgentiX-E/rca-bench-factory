@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 260 core + 4 cli |
-| Test lines | 116,725 core + 3,242 cli |
-| Tests | 6,880 core + 187 cli |
+| Test lines | 116,832 core + 3,242 cli |
+| Tests | 6,882 core + 187 cli |
 | Tracked files | 678 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.135: **39** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.136: **39** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1018,17 +1018,18 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: whether the acceptance file should be two files -- the rules, and the case law -- with each rule
   naming the case that decided it, and whether a rule whose case is one section away is still checkable by
   the reader who has to apply it]`
-- O-106 · **Twenty of the census's 27 placements are a corpus one gate reads, and nothing asks whether two of them are one set.**
-  v3.135 gave the census a third placement for a number that is not a count of its noun, and the ledger
-  it prints says how many placements are in populations of one gate: **20**. Each is a corpus by
-  declaration -- `row(s)` in four tables, `run(s)` in four senses -- and two of them print the same
-  number at v3.134 (`22 reading(s)` in both), and the recording this round retook moved one of them to
-  `23` -- the coincidence went out with nothing refusing it, because the census prints the agreements
-  it finds rather than the ones it lost. The record calls the pair two kinds of reading on a sentence
-  alone.
-  `[open: whether a coincidence between two populations of one is a fact the census can refuse or a
-  judgement only a person can make, and whether the answer is a sentence in the record or a fifth
-  placement]`
+- O-107 · **The marker names a noun's equality without naming the count, and a noun can carry two of them.**
+  v3.136 gave the coincidence three classes and prints all three counts, so the line no longer confuses
+  a size between two declared sets with an equality nobody has placed. The parenthesis itself is still
+  **one sentence per noun**: `a` and `b` can share a population and print `8` while `c` and `d` sit in
+  populations of their own and print `9`, and the line then reads `(a count two gates print agrees, and
+  the record places them in different sets)` -- true of the `9` and false of the `8`, which the numbers
+  line marks in place as `one population at 8, and the count agrees`. No shipped noun is in that state
+  (`row(s)` carries one `apart` coincidence and nothing else), so the harm is hypothetical today; the
+  fixture that reaches it is in `unit-nouns.test.ts`.
+  `[open: whether the parenthesis should name the count it is about -- eight characters per coincidence,
+  and a list once a noun has three -- or whether a marker that speaks for the noun is the right
+  granularity precisely because the numbers line has already spoken for each count]`
 ## Pass log
 
 The rounds are recorded in the volumes below, in the order they were run. They were one
@@ -1064,7 +1065,7 @@ and this table.
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
-| [volume-19.md](progress/volume-19.md) | 15 | v3.121 | v3.135 |
+| [volume-19.md](progress/volume-19.md) | 16 | v3.121 | v3.136 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

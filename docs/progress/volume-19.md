@@ -1893,9 +1893,9 @@ same lesson the previous round's slowest-prefix mutation taught one file over.
 | --- | --- |
 | CI | run `45155655608` on `479a565`: **8 of 8 jobs success**, 979 s (10:23:30 -> 10:39:49), slowest job `injection batteries, one step each` at 975 s against its 54-minute ceiling; the recording is this run's, so it reads **65** min measured against **240** min of bounds in 8 ceilings |
 | `pnpm run docs:check` | **23 steps, exit 0** -- including the census, which now prints the placement ledger |
-| `core` test suite | **260 files, 6880 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7067 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 6880 tests passed** (at v3.135) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.135) |
+| repo test suite | **264 files, 7067 tests passed** (at v3.135) |
 | new tests | **6,874 -> 6,880, +6**: five in the new declaration block and one that drives the refusal through both doors |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- nothing under `packages/core/src` moved |
 | the census | **27** placements: **6** in populations two or more gates read, **20** in populations of one gate, **1** declared separate |
@@ -1912,3 +1912,109 @@ same lesson the previous round's slowest-prefix mutation taught one file over.
   `[open: whether a coincidence between two populations of one is a fact the census can refuse or a
   judgement only a person can make, and whether the answer is a sentence in the record or a fifth
   state]`
+
+## v3.136 — an equal number is one of three facts, and the marker said two
+
+`O-106` was opened by v3.135: twenty of the census's 27 placements are a corpus one gate reads, and
+nothing asked whether two of them were one set. `reading(s)` was `22` in `check-ci-budget` and `22` in
+`check-fault-cases` at v3.134, and one of them moved to `23` during v3.135's own recording -- so the
+coincidence left the census's line with nothing refusing it. The entry asked whether that is a fact the
+census can refuse or a judgement only a person can make, and whether the answer is a sentence in the
+record or a fifth placement. It is neither: it is a **class the marker did not have**.
+
+### The measurement
+
+`coincidencesOf` classified an equality by whether one declared population held the gates that printed
+it. That is a partition of two, and the corpus has three facts under it:
+
+| what the record says about the gates that print the count | the equality is | refusable? | at v3.136 |
+| --- | --- | --- | --- |
+| one declared population holds every one of them | a rule, and the run checks it | yes, and it does | **3** |
+| every gate placed, no population holds them all | a **size** between sets the record says differ | no -- a size is not a claim | **1** |
+| at least one gate nobody has placed | the only evidence they might be one set | no -- the question is open | **0** |
+
+Before this round the line said `4 count(s) coincide across gates -- 3 inside a declared population and
+1 across two`, and the `1 across two` was `8 row(s)`: two gates the record places in populations of
+their own, under a noun whose own sentence says the two tables are *four tables and one word*. The
+marker was repeating a question the sentence beneath it had answered, in the same words it used for the
+question nobody had asked.
+
+The `0` in the third class is printed rather than omitted. That is the whole of the answer to the
+entry's second half: a size is not a claim, so nothing can be refused when it moves -- but the class can
+be **counted**, and then a coincidence that goes out is a number that moves rather than a clause that
+vanishes.
+
+### Three answers that were possible
+
+**Refuse a coincidence between two populations of one.** It reads as the strict answer and it is
+arithmetic: the populations are a person's claim about sets, the coincidence is a property of two
+integers. A rule that refused it would fire the first time two unrelated tables held the same number of
+rows, and the repair would be to change a table.
+
+**Drop the `apart` ones.** Cheapest, and it is finding 611: a reader that stops counting a number it
+read, so the next reader cannot tell a coincidence that went out from a census that stopped looking.
+
+**Classify, and count all three.** Taken. `together`, `apart`, `unplaced`; a gate declared `separate` is
+placed, and placed as something that is not a population, because its number is not a count of the noun.
+
+### The branch that could not be reached
+
+The first draft of `markerOf` accumulated sentences and joined them, because one noun can carry a forced
+coincidence and an apart one at once -- `a` and `b` share a population and print `8`, `c` and `d` sit in
+populations of their own and print `9`. It went further than the corpus allows: `unplaced` is what an
+**undeclared** noun's coincidences are and `apart` is what a declared one's are, because a partition
+that leaves a gate unplaced is refused outright, so no noun can be both. The joined-list branch was dead
+before it ran once. The function returns one sentence and its comment says why, and the fixture that
+proves it -- `populations: [['a'], ['b']]` over three gates -- is a refusal in `unit-nouns.test.ts`.
+
+The same paragraph is this round's own first defect: `groups.some((group) => gates.every(...))` written
+as `gates.every((gate) => groups.some(...))`, which says *every gate is placed* and calls it *one
+population holds them all*. It was caught by the fixtures the round exists for, and it is the first row
+of the table below.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| a coincidence is `together` when every gate is in *some* population | 4 |
+| a coincidence no population holds is `together` rather than `apart` | 7 |
+| a coincidence nobody placed is `apart` rather than `unplaced` | 7 |
+| a gate declared separate is not a gate that has been placed | 2 |
+| every coincidence is reported as `together` | 7 |
+| the summary reports the unplaced count as zero | 1 |
+| the summary reports the apart count as the rest | 1 |
+| the summary names two classes where there are three | 2 |
+| the marker for an `apart` equality says nobody has placed them | 2 |
+| the marker for an `unplaced` equality says the record places them apart | 4 |
+| the marker is printed for every coincidence, forced ones included | 4 |
+| an `unplaced` equality gets no marker | 4 |
+
+**Twelve mutations, 45 reds.**
+
+### Readings
+
+> Ledger for `v3.136`.
+
+| what | value |
+| --- | --- |
+| CI | baseline run `45158647017` on `21a8374`: **8 of 8 jobs success**, 953 s; this round's own run is recorded in the commit that follows the push |
+| `pnpm run docs:check` | **23 steps, exit 0** |
+| `core` test suite | **260 files, 6882 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **264 files, 7069 tests passed** (as of this commit) |
+| new tests | **6,880 -> 6,882, +2**: the three-class case and the marker's two sentences, over fixtures that reach a state no shipped noun is in |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
+| the census | **4** coincidences: **3** `together`, **1** `apart`, **0** `unplaced` |
+| `docs/acceptance.md` | **41** clauses across **32** rounds; index **41** rows |
+| falsifications | **12 mutations / 45 reds** |
+| open items | **39 -> 39**: `O-106` closed by finding 627, `O-107` opened by the branch that could not be reached |
+| LLM calls | **0** |
+
+### Left open
+
+- **The marker names a noun's equality without naming the count, and a noun can carry two of them.**
+  `row(s)` carries one `apart` coincidence today, so the ambiguity is hypothetical; the fixture above
+  makes it real, and naming the count inside the parenthesis is `O-107`.
+  `[open: whether the parenthesis should name the count it is about -- eight characters per coincidence,
+  and a list once a noun has three -- or whether a marker that speaks for the noun is the right
+  granularity precisely because the numbers line has already spoken for each count]`

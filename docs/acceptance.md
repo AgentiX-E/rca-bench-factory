@@ -49,6 +49,7 @@ before the layer above it is meaningful.
 | The allowance is argued, and what it owes the history is a floor | v3.134 |
 | A clause owes an address, and the file owes an index | v3.134 |
 | A number that is not a count of the noun is declared separate | v3.135 |
+| A coincidence says which of three things it is | v3.136 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -2245,3 +2246,27 @@ from an anecdote again.
 - **What is not claimed.** That a declaration is checked by a number. The sentence is a judgement and
   stays one; what a run holds is that the gate prints the noun, that no other gate's number is filed
   under it, and that the sentence states no figure its gate did not print.
+
+### A coincidence says which of three things it is (v3.136)
+
+- **An equal number under one noun is one of three facts, and the line printed two.** Two gates print
+  `8 row(s)`; the record either holds them in one population (the equality is a rule), places them in
+  populations of their own (the equality is a **size**), or has not placed one of them (the equality
+  is the only evidence that they might be one set). The census's marker said `inside a population` and
+  `across two`, so `8 row(s)` -- two tables the record has already declared apart, on a line whose own
+  sentence says the two tables are four tables and one word -- was printed in the same words as an
+  equality nobody had examined (finding 627).
+- **A gate declared separate is a gate that has been placed.** Its number is not a count of the noun,
+  so an equality it takes part in cannot be a shared set; the third placement counts as an answer, not
+  as silence.
+- **The three counts print whenever any coincidence exists, zeros included.** `1 where declared
+  populations keep them apart, 0 where no population places them` is what keeps a coincidence from
+  leaving the line by deleting a clause: `22 reading(s)` in two gates at v3.134 was `23` and `22` at
+  v3.135, and the sentence that said the two agreed was simply absent rather than counted as lost.
+- **The marker speaks only for what the numbers line has not already said.** A coincidence a declared
+  population holds needs no marker -- the numbers line has printed `one population at 8, and the count
+  agrees` -- and the two markers that remain are distinct sentences, because a warning repeated after
+  its own proof is a warning a reader learns to skip.
+- **What is not claimed.** That the census can refuse a coincidence that goes out. A size is not a
+  claim, so there is nothing to violate; what a run owes the reader is that the class is always named,
+  so the reader comparing two logs sees a number move rather than a sentence vanish.

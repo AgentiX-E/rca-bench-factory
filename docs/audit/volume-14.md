@@ -1,7 +1,7 @@
 # Audit · volume 14
 
-Findings 579–626, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
-`progress/volume-19.md` as `v3.115` through `v3.135`.
+Findings 579–627, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
+`progress/volume-19.md` as `v3.115` through `v3.136`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -3001,3 +3001,99 @@ census's list with nothing refusing it, because a census prints the agreements i
 ones it loses. A coincidence between two populations of one is therefore the one agreement the census
 prints without checking, and whether that is a fifth placement, a refusal, or a judgement only a
 person can make is `O-106`.
+
+## Finding 627 — the marker had two classes and the corpus has three facts
+
+`O-106` was opened by v3.135 with a sentence about the twenty placements that are a corpus one gate
+reads: `reading(s)` was printed by `check-ci-budget` and by `check-fault-cases` at `22` in both, and
+nothing compared the two sets. The entry asked whether a coincidence between two populations of one is
+a fact the census can refuse, or a judgement only a person can make, and whether the answer is a
+sentence in the record or a fifth placement.
+
+The answer is none of the three, and the defect is one line: **`coincidencesOf` classified a
+coincidence by whether one declared population held the gates that print it, which is a partition of
+two, and the corpus has three facts.**
+
+| what the record has said about the gates that print the count | the equality is | could a run refuse it? |
+| --- | --- | --- |
+| one population holds every one of them | a rule, and `disagreementsOf` checks it | yes, and it does |
+| every gate is placed, and no population holds them all | a **size** between sets the record says differ | no: a size is not a claim |
+| at least one gate nobody has placed | the only evidence that they might be one set | no: the question is still open |
+
+The second and the third were printed in the same words -- `across two` -- so the census presented an
+answered question as an open one. The shipped record has exactly one of each kind of evidence and one
+of the second: `8 row(s)` is printed by `check-fault-cases` and by `check-repository-table`, the record
+places each in a population of its own, and `row(s)`'s own sentence says the two tables are *four tables
+and one word*. The marker was therefore printing a question the line beneath it had already answered,
+in the same words it used for the question `reading(s)` had left open -- which is how a marker stops
+being read as a marker.
+
+### The measurement
+
+| class | count at v3.136 | which |
+| --- | --- | --- |
+| `together` -- one declared population holds every gate | **3** | `1 addendum(s)`, `479 file(s)`, `230 round(s)` |
+| `apart` -- every gate placed, no population holds them all | **1** | `8 row(s)` |
+| `unplaced` -- at least one gate nobody has placed | **0** | -- |
+
+The line before this round read `4 count(s) coincide across gates -- 3 inside a declared population and
+1 across two`, and the `1 across two` was the `8 row(s)`. The `0` in the third class is printed rather
+than omitted, because it is the number that says the census examined every equality and none of them is
+a question.
+
+### Three answers that were possible, and the one taken
+
+**Refuse a coincidence between two populations of one.** It reads as the strict answer and it is the
+wrong one: the populations are a person's claim about sets, and the coincidence is arithmetic. A rule
+that refused arithmetic would fire on the first round where two unrelated tables happened to hold the
+same number of rows, and the repair would be to change a table.
+
+**Drop the `apart` ones from the list.** Cheapest, and it is finding 611: a reader that stops counting a
+number it read, so a reader of the next log cannot tell a coincidence that went out from a census that
+stopped looking.
+
+**Classify, and print all three counts.** This is the one taken. The classification costs one string
+per coincidence and the three counts cost one clause; what they buy is that the only equality that is
+evidence is named as evidence, and the two that are answers are named as answers.
+
+### The branch that could not be reached
+
+The first draft of `markerOf` built a list of sentences and joined them, on the theory that one noun
+could carry an `apart` coincidence and an `unplaced` one. It cannot: `unplaced` is what an **undeclared**
+noun's coincidences are, and `apart` is what a declared one's are, because `partitionProblems` refuses a
+document that leaves a gate unplaced. The two are mutually exclusive by construction, so the branch was
+dead before it ran once. The function returns one sentence and says why in its own comment; the fixture
+that proved it -- `populations: [['a'], ['b']]` over three gates -- is a refusal in the test file.
+
+What *can* happen under one noun is a forced coincidence and an apart one at once: `a` and `b` share a
+population and print `8`, `c` and `d` sit in populations of their own and print `9`. The numbers line
+marks the forced one in place (`one population at 8, and the count agrees`) and the parenthesis speaks
+for what is left, which is why the sentence does not name a count. Whether it should is `O-107`.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| a coincidence is `together` when every gate is in *some* population | 4 |
+| a coincidence no population holds is `together` rather than `apart` | 7 |
+| a coincidence nobody placed is `apart` rather than `unplaced` | 7 |
+| a gate declared separate is not a gate that has been placed | 2 |
+| every coincidence is reported as `together` | 7 |
+| the summary reports the unplaced count as zero | 1 |
+| the summary reports the apart count as the rest | 1 |
+| the summary names two classes where there are three | 2 |
+| the marker for an `apart` equality says nobody has placed them | 2 |
+| the marker for an `unplaced` equality says the record places them apart | 4 |
+| the marker is printed for every coincidence, forced ones included | 4 |
+| an `unplaced` equality gets no marker | 4 |
+
+**Twelve mutations, 45 reds.** The first is the defect this round reproduced in its own first draft --
+`groups.some((group) => gates.every(...))` written as `gates.every((gate) => groups.some(...))`, which
+says *every gate is placed* and calls it *one population holds them all*. It survived nothing: the
+`apart` fixtures are the two populations of one the round exists for.
+
+### What this does not settle
+
+The marker names a noun's equality without naming the count, and a noun can carry two. `row(s)` has one
+`apart` coincidence today, so the ambiguity is hypothetical; the fixture above makes it real, and the
+repair -- naming the count inside the parenthesis -- is `O-107`.
