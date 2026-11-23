@@ -763,6 +763,47 @@ export function worstReadingFor(rows, command) {
 }
 
 /**
+ * The slowest a job's **prefix** has ever been, and the run that spent it.
+ *
+ * The allowance is one number for every job, and the thing it buys is a cold runner: a
+ * package index nobody has fetched, a cache nobody has filled, a first compile. No run in
+ * this repository has recorded that state -- every reading it holds is warm -- so the
+ * allowance cannot be *derived* from the history the way a step bound is (finding 624).
+ * What the history can do is refuse a number that is already contradicted by it: a prefix
+ * that took a hundred seconds is a day the allowance must cover twice, and a rule stated
+ * as a multiple is the same rule `R4` states for a work step.
+ *
+ * A row counts only when it measured **every** step of the prefix. A row holding three of
+ * four setup steps sums to less than the prefix cost, and a sum with a hole in it is the
+ * shape `jobDays` refuses one level up: the number would be small, defensible and wrong.
+ * Ties go to the newer run, for the reason `worstReadingFor` does.
+ */
+function worstPrefixReading(rows, workflow, job) {
+  const names = prefixOf(workflow, job);
+  if (names.length === 0) return null;
+  let worst = null;
+  for (const row of rows) {
+    let seconds = 0;
+    let seen = 0;
+    for (const name of names) {
+      const one = row.steps.get(`${job}\u0000${name}`);
+      if (one === undefined) continue;
+      seconds += one.seconds;
+      seen += 1;
+    }
+    if (seen !== names.length) continue;
+    if (
+      worst === null ||
+      seconds > worst.seconds ||
+      (seconds === worst.seconds && row.run > worst.run)
+    ) {
+      worst = { seconds, run: row.run, job };
+    }
+  }
+  return worst;
+}
+
+/**
  * The slowest **day** each job has had, and the run it was.
  *
  * A bound is sized from one step's seconds; a *ceiling* is sized from the whole job's, and
@@ -1417,6 +1458,35 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
             `raise the ceiling to ${String(needed)} min, or split the job`,
       );
     }
+
+    // R15 -- the allowance is argued, and the one thing the argument owes the history is a
+    // floor. `O-102` is the entry that says three minutes is the only number in this file
+    // nobody measured: every ceiling holds exactly one, and the cold runner it exists for has
+    // never been recorded, because every run this repository has is warm. So the rule cannot
+    // be "size the allowance from a reading" -- there is no reading to size it from, and a
+    // rule that demanded one would be red until a cold day happened to be caught, which is
+    // the shape of a rule every reader learns to skip.
+    //
+    // What the history *can* do is refuse a number it already contradicts: a prefix that took
+    // a hundred seconds is a day the allowance has to cover twice, and twice is the same
+    // multiple `R4` asks of a work step. That is a lower bound with a reader, and it rises on
+    // its own the first time a slow prefix is recorded -- which is exactly the day the
+    // argument would otherwise be wrong about.
+    if (historyKnown) {
+      const prefix = prefixOf(workflow, job.id);
+      const slowest = prefix.length === 0 ? null : worstPrefixReading(parsedReadings.rows, workflow, job.id);
+      const allowance = PREFIX_MINUTES * 60;
+      if (slowest !== null && allowance < MULTIPLE * slowest.seconds) {
+        errors.push(
+          `\`${job.id}\` spent ${String(slowest.seconds)} s before its first real step in run ` +
+            `${String(slowest.run)}, and the allowance is ${String(PREFIX_MINUTES)} min: the prefix is ` +
+            `under ${String(MULTIPLE)} times the slowest one recorded, so a setup twice that slow is ` +
+            'refused for being slow rather than for hanging -- raise `PREFIX_MINUTES` to ' +
+            `${String(Math.ceil((MULTIPLE * slowest.seconds) / 60))}, or say in the history why those ` +
+            'seconds are not comparable',
+        );
+      }
+    }
   }
 
   // R9 -- what a promise about a whole job owes, once the workflow and the recording
@@ -1602,6 +1672,11 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   // has met still fits (finding 622). Printing the widening and not the narrowing would leave
   // the one direction that spends evidence unstated.
   const narrowings = [];
+  // The slowest prefix any recording has timed whole, across every job. `R15` refuses an
+  // allowance under twice this number, and the sentence below prints it beside the allowance
+  // so that a reader of a green run sees how much of the three minutes is argument: the cold
+  // runner it is for has never been recorded, and this is the closest the history comes.
+  let prefixWorst = null;
   // The ceiling's own reading: the job whose ceiling is closest to twice its slowest day.
   // It is a separate superlative from `tightest`, which is about one *step's* bound against
   // one *step's* measured seconds -- the two answer different questions and a summary that
@@ -1638,6 +1713,12 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
     }
     const own = stepsOf(workflow, job.id);
     const allowance = allowanceSecondsOf(workflow, job.id);
+    if (allowance > 0 && historyKnown) {
+      const slowest = worstPrefixReading(parsedReadings.rows, workflow, job.id);
+      if (slowest !== null && (prefixWorst === null || slowest.seconds > prefixWorst.seconds)) {
+        prefixWorst = slowest;
+      }
+    }
     let jobSeconds = 0;
     let jobBounds = allowance;
     bounds += allowance;
@@ -1761,6 +1842,18 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
         : `${String(parsedReadings.rows.length)} reading(s) of the workflow, run ` +
           `${String(parsedReadings.rows[0]?.run)} to ` +
           `${String(parsedReadings.rows[parsedReadings.rows.length - 1]?.run)}`;
+  // What the allowance is worth, in the thing it is for. Three sentences rather than one
+  // with three holes: a history that timed a prefix, a history that timed one spending no
+  // second, and no history at all are three different states of the argument, and a number
+  // divided by zero printed as `Infinity` is the shape finding 121 is about.
+  const allowanceText =
+    prefixWorst === null
+      ? 'and no recording has timed a prefix whole yet'
+      : prefixWorst.seconds === 0
+        ? `and the slowest prefix recorded spent no second at all (run ${String(prefixWorst.run)})`
+        : `which is ${((PREFIX_MINUTES * 60) / prefixWorst.seconds).toFixed(1)}x the slowest prefix any ` +
+          `recording holds (${String(prefixWorst.seconds)} s in \`${prefixWorst.job}\` of run ` +
+          `${String(prefixWorst.run)})`;
   return (
     `check-ci-budget: OK — ${String(jobCount)} job(s) recorded, ${String(bounded)} of ${String(steps)} ` +
     `step(s) carry their own \`timeout-minutes\`, ${String(carried)} ` +
@@ -1769,7 +1862,7 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
     (allowed === 0
       ? ''
       : `${String(allowed)} run before the job's first real step and are bounded by one ` +
-        `${String(PREFIX_MINUTES)}-minute allowance for the prefix, `) +
+        `${String(PREFIX_MINUTES)}-minute allowance for the prefix, ${allowanceText}, `) +
     `${String(Math.round(measured / 60))} min measured (as of run ` +
     `${String(baseline.run)}); bounds total ${String(Math.round(bounds / 60))} min in ` +
     `${String(ceilings)} ceiling(s); ${ceilingText}; tightest ` +

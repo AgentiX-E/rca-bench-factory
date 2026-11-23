@@ -1391,6 +1391,164 @@ describe('the recording the gate reads', () => {
   });
 });
 
+/**
+ * The allowance against what a prefix actually cost.
+ *
+ * `O-102` is the entry that says three minutes is the one number in this file nobody
+ * measured: every ceiling holds exactly one, and the cold runner it exists for has never
+ * been recorded -- every run this repository has is warm. The answer is not a measurement
+ * of the cold state, because there is none to take; it is a **bound the recordings can
+ * refuse**. An allowance under twice the slowest prefix any run has spent is a number the
+ * history already contradicts, and that is a claim a gate can hold. The summary prints the
+ * multiple beside the allowance, so a reader of a green run sees how much of it is argument.
+ */
+describe('the allowance against what a prefix actually cost', () => {
+  /** Two jobs sharing one setup step, which is the smallest workflow that has a prefix. */
+  function withSetup() {
+    const setup = ['      - name: Install', '        run: pnpm install --frozen-lockfile'];
+    return workflowOf([
+      { id: 'batteries', minutes: 30, steps: [...setup, ...step('Slow battery', 20)] },
+      { id: 'batteries-heavy', minutes: 30, steps: [...setup, ...step('Heavy battery', 24)] },
+    ]);
+  }
+
+  const SETUP_COMMAND = 'pnpm install --frozen-lockfile';
+  const SLOW_COMMAND = 'node scripts/inject-slow-battery.mjs';
+  const HEAVY_COMMAND = 'node scripts/inject-heavy-battery.mjs';
+
+  /** The recording of both jobs, whose prefix spent two seconds. */
+  const RECORD = recordingOf({
+    batteries: { minutes: 30, steps: { Install: 2, 'Slow battery': 600 } },
+    'batteries-heavy': { minutes: 30, steps: { Install: 2, 'Heavy battery': 700 } },
+  });
+
+  /**
+   * Two runs: an older one in which the shared step took `seconds`, and the recording itself.
+   *
+   * The second row is not decoration. `R10` refuses a history whose newest run is not the
+   * recording, because a day that was measured and not written down is a day no bound can see
+   * -- so a fixture that offered only the slow run would be answered by that rule instead of
+   * by this one.
+   */
+  function historyOf(seconds: number, run = 41234567890, heavySeconds = seconds) {
+    const recording = readingsOf(withSetup(), RECORD).readings[0] as unknown as {
+      run: number;
+      commit: string;
+      measured: string;
+      jobs: Record<string, unknown>;
+    };
+    return {
+      readings: [
+        {
+          run,
+          commit: 'b'.repeat(40),
+          measured: '2026-11-20',
+          jobs: {
+            batteries: {
+              Install: { seconds, command: SETUP_COMMAND },
+              'Slow battery': { seconds: 600, command: SLOW_COMMAND },
+            },
+            'batteries-heavy': {
+              Install: { seconds: heavySeconds, command: SETUP_COMMAND },
+              'Heavy battery': { seconds: 700, command: HEAVY_COMMAND },
+            },
+          },
+        },
+        recording,
+      ],
+    };
+  }
+
+  it('refuses an allowance under twice the slowest prefix any recording holds', () => {
+    // 100 s of prefix against a 180 s allowance: the rule is the same multiple `R4` asks of a
+    // work step, and the repair is the one number the file can carry -- `PREFIX_MINUTES`.
+    const errors = budgetErrors(withSetup(), RECORD, null, null, historyOf(100)).join('\n');
+    expect(errors).toContain('100 s before its first real step');
+    expect(errors).toContain('run 41234567890');
+    expect(errors).toContain(`under ${String(MULTIPLE)} times`);
+    expect(errors).toContain('`PREFIX_MINUTES` to 4');
+  });
+
+  it('accepts an allowance at exactly twice the slowest prefix, because the rule is a multiple', () => {
+    // 90 s and a 180 s allowance: equality is covered, which is what a multiple means and is
+    // the reason this case is not written as "a margin".
+    expect(budgetErrors(withSetup(), RECORD, null, null, historyOf(90))).toEqual([]);
+  });
+
+  it('does not read a prefix from a row that measured only part of it', () => {
+    // Two setup steps, and the history holds one: 200 s of `Install` on its own would refuse
+    // the allowance, and it is not a prefix -- that row never saw `Cache`, so the seconds are
+    // a sum with a hole in it, which is the shape `jobDays` refuses one level up.
+    const setup = ['      - name: Install', '        run: pnpm install --frozen-lockfile'];
+    const cache = ['      - name: Cache', '        run: pnpm store path'];
+    const workflow = workflowOf([
+      { id: 'batteries', minutes: 30, steps: [...setup, ...cache, ...step('Slow battery', 20)] },
+      { id: 'batteries-heavy', minutes: 30, steps: [...setup, ...cache, ...step('Heavy battery', 24)] },
+    ]);
+    const record = recordingOf({
+      batteries: { minutes: 30, steps: { Install: 2, Cache: 1, 'Slow battery': 600 } },
+      'batteries-heavy': { minutes: 30, steps: { Install: 2, Cache: 1, 'Heavy battery': 700 } },
+    });
+    const partial = {
+      readings: [
+        {
+          run: 41234567890,
+          commit: 'a'.repeat(40),
+          measured: '2026-11-20',
+          jobs: {
+            batteries: {
+              Install: { seconds: 200, command: SETUP_COMMAND },
+              'Slow battery': { seconds: 600, command: SLOW_COMMAND },
+            },
+            'batteries-heavy': {
+              Install: { seconds: 200, command: SETUP_COMMAND },
+              'Heavy battery': { seconds: 700, command: HEAVY_COMMAND },
+            },
+          },
+        },
+      ],
+    };
+    const errors = budgetErrors(workflow, record, null, null, partial).join('\n');
+    expect(errors).not.toContain('before its first real step');
+    // The hole is not silently the answer, either: the summary says no prefix has been timed
+    // whole, which is a different sentence from "the prefix is fast".
+    expect(budgetSummary(workflow, record, null, null, partial)).toContain(
+      'no recording has timed a prefix whole yet',
+    );
+  });
+
+  it('names the slowest prefix, not the last one the loop happened to see', () => {
+    // Two jobs, two prefixes: `batteries` spent 20 s in the history and `batteries-heavy` 90 s.
+    // A summary that kept the least, or the last job's, would print the other number -- and the
+    // sentence names the job and the run, so the wrong number would arrive with the wrong
+    // address attached, which is finding 588's shape in a summary line.
+    const summary = budgetSummary(withSetup(), RECORD, null, null, historyOf(20, 41234567890, 90));
+    expect(summary).toContain('90 s in `batteries-heavy`');
+    expect(summary).toContain('2.0x the slowest prefix');
+    expect(summary).not.toContain('20 s in `batteries`');
+  });
+
+  it('says what the allowance is worth against the slowest prefix, so the argument is visible', () => {
+    const summary = budgetSummary(withSetup(), RECORD, null, null, historyOf(14));
+    expect(summary).toContain('12.9x the slowest prefix any recording holds');
+    expect(summary).toContain('14 s in `batteries` of run 41234567890');
+  });
+
+  it('says no recording has timed a prefix when there is no history at all', () => {
+    // The caller that offered no readings has not asked the question, and a sentence about a
+    // comparison nobody made would be the shape finding 121 is about.
+    expect(budgetSummary(withSetup(), RECORD)).toContain('no recording has timed a prefix whole yet');
+  });
+
+  it('gives no prefix reading to a job the workflow does not share, so work is never setup', () => {
+    const summary = budgetSummary(
+      oneJob([...step('Slow battery', 20)]),
+      recordingOf({ batteries: { steps: { 'Slow battery': 600 } } }),
+    );
+    expect(summary).not.toContain('slowest prefix');
+  });
+});
+
 /** A fixture workflow with two jobs, for the recorder cases that need a second one. */
 const TWO_JOBS = workflowText([
   {
