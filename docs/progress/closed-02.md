@@ -531,3 +531,15 @@
   and a record does not age. `439 s` and `84 minutes` pass because no gate can take a run that is over, which is
   the boundary the module states rather than a gap it leaves.
 
+- O-102 · ~~**The allowance is three minutes, and no recording says whether that is right.**~~
+  Every ceiling holds one `PREFIX_MINUTES` for the job's prefix, and the number was the floor spent once:
+  **3** minutes over **32** steps in **8** jobs at v3.132. The argument for it was the one the floor always
+  had -- a cold package index, a missed cache, a first build -- and every recording it could be checked
+  against was warm: run `45054272460` spent **5 s** on the four setup steps of `verify` and **12 s** on
+  `sensitivity`'s. **Closed by finding 624**, which gave the argument the one thing it was missing: a floor
+  the recordings can refuse. `R15` refuses an allowance under twice the slowest **whole** prefix any
+  recording holds -- **14 s** in `backend` of run `45033355331`, so the three minutes are **12.9x** it and
+  the rule binds at 90 seconds -- and a row that measured only part of the prefix is skipped rather than
+  summed, because a sum with a hole in it is small, defensible and wrong. What the entry asked for and did
+  not get is a measurement of the cold state: no run in this repository has recorded one, which is why the
+  rule is a lower bound rather than a derivation and why the summary prints the multiple beside the number.

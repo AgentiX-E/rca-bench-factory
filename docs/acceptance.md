@@ -4,6 +4,52 @@
 acceptance model is a pyramid of six layers; each layer is a gate that must pass
 before the layer above it is meaningful.
 
+## What this file requires, and the round that asked for it
+
+<!-- acceptance-index: begin -->
+| Section | Round |
+| --- | --- |
+| The open list | v3.62 |
+| The base of a created branch | v3.62 |
+| The two sentences in one entry | v3.63 |
+| A record's spelling | v3.63 |
+| The rows of a table-form record | v3.64 |
+| A round is a number | v3.116 |
+| The authority a closure names, and the line that publishes it | v3.117 |
+| A closure's sentence, and the period a version number carries | v3.117 |
+| The unit a heading is judged in | v3.118 |
+| A census prints the numbers, and a claimant gets the history it reads | v3.125 |
+| The nouns the gates count in, and the reader that compares them | v3.124 |
+| A subset is not a second population, and a ceiling is a bound | v3.123 |
+| One line, one partition: an entry of the live list is not an entry of a record | v3.122 |
+| A word that counts a population says which population | v3.121 |
+| A closing reading is a row the newest round carries | v3.120 |
+| A bound has three sources, and a count has one noun | v3.119 |
+| A record may not be the only place a residual lives | v3.65 |
+| A new rule is justified against the rules that exist | v3.65 |
+| The index is smaller than the smallest volume it indexes | v3.65 |
+| A number that speaks in the present is derived, not remembered | v3.66 |
+| A table about a suite is a projection of it | v3.66 |
+| A set declares what it is for, and a prompt does not name its answer | v3.66 |
+| A table is a projection of a field, or it is a claim with one reader | v3.67 |
+| The round that can still be written owes the coverage row | v3.67 |
+| Pollution is a case compared with another case | v3.68 |
+| A default is a claim about a distribution | v3.69 |
+| A bound that cannot move is a constant | v3.77 |
+| A set that grows is how a rule about a set gets tested | v3.78 |
+| A reading that is computed after the loop does not exist on the path the failure takes | v3.79 |
+| Every job fetches the history its claimants read, and a coloured run is still read | v3.126 |
+| A judgement is a sentence and a partition, and the partition is what a run holds | v3.127 |
+| A judgement belongs to a noun, and the vocabulary belongs to the tree | v3.128 |
+| A ceiling holds the bounds inside it, and the seconds no step spends | v3.129 |
+| A sentence may state a count only if a gate printed it | v3.130 |
+| A size in the live list carries the round that took it | v3.131 |
+| The floor belongs to the job, and a prefix is what every job shares | v3.132 |
+| A count that can be zero prints zero | v3.133 |
+| The allowance is argued, and what it owes the history is a floor | v3.134 |
+| A clause owes an address, and the file owes an index | v3.134 |
+<!-- acceptance-index: end -->
+
 ## L0 — Deterministic core correctness
 
 - `pnpm typecheck` clean under strict TypeScript, **from a cold check-out**.
@@ -92,7 +138,7 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   the `sensitivity` job runs `verify-sites-are-sensitive.mjs`, which asks whether that
   file **notices** the exit's absence -- one run per claim with that site's code
   replaced by success, and a baseline run per file so a red claimant cannot be
-  credited with catching anything. Measured at **231 of 231** claim(s) across 67 file(s).
+  credited with catching anything. Measured at **232 of 232** claim(s) across 68 file(s).
   The figure was 105 of 105 in both halves at v3.41, and it drifted for twenty-four rounds
   because nothing read the sentence -- an external reviewer quoted the 105 as the current
   state, which is what a number with no reader costs. `check-doc-counts` reads it now:
@@ -1182,8 +1228,8 @@ from an anecdote again.
   repository.** `the base is <sha>: k of the n remote tip(s) that are not local commits were read`,
   and when the search ended because it could not be improved on, the sentence says that; when no tip
   matched, `none of the n ... carries a tree in this ancestry, and all n were read: this push replays
-  the whole history`. Three cases hold the three shapes: **zero** reads when a local tip already sits
-  at the optimum, **one** when a twin supplies it, **all** when none can.
+  the whole history`. Three cases in `publish.test.ts` hold the three shapes: **zero** reads when a
+  local tip already sits at the optimum, **one** when a twin supplies it, **all** when none can.
 - **What is not claimed.** Requests are still linear in the number of twin tips in the worst case. The
   round removed the wasted reads and reported the rest; it did not remove the worst case, and a
   repository with a hundred renamed branches is still a hundred reads when none of them is the parent.
@@ -1192,9 +1238,9 @@ from an anecdote again.
 
 - **A bullet's headline and its own reason have to agree about whether it is closed.** A closed
   entry may not carry an unstruck `[open: ...]` -- history in the headline, work in the body -- and an
-  open entry's reason may not be struck through. Both directions are refused by `check-open-list.mjs`,
-  and the two use **one** reading of the reason (the last marker), so they cannot drift apart on which
-  sentence is the entry's own.
+  open entry's reason may not be struck through. Both directions are refused by `check-open-list.mjs`
+  and driven by `check-open-list.test.ts`, and the two use **one** reading of the reason (the last
+  marker), so they cannot drift apart on which sentence is the entry's own.
 - **The shape is not new.** Round v2.44 writes it: a struck headline, a struck reason, the closure
   after them. The two entries this round found used half of it, and half is what a rule keyed on one
   sentence cannot read -- the guard counted them as work while the entry's own last sentence named the
@@ -1696,8 +1742,10 @@ from an anecdote again.
 
 - **The newest round's `### Readings` carries a `| coverage |` row, four dimensions for `core` and four
   for `cli`.** `readVolumes` refuses the newest round when the row is absent or reports fewer numbers
-  than that, and quotes the cell it found. The row is what a later reader looks for when asking what a
-  round cost; v3.66 answered it only after measuring its own two new arms at six uncovered branches.
+  than that, and quotes the cell it found; `progress-volumes.test.ts` drives the refusal, the silence
+  for an older round, and the shape of the cell. The row is what a later reader looks for when asking
+  what a round cost; v3.66 answered it only after measuring its own two new arms at six uncovered
+  branches.
 - **The rule is judged on the round being written, and only there.** Thirty of the log's first fifty-four
   ledgers carry no coverage row, spread in runs across volumes 05 to 07; a rule over history would have
   been red from the day it existed, and a rule that is always red is one every reader skips. The
@@ -2112,3 +2160,59 @@ from an anecdote again.
   one the row sits in rather than the newest (1) -- **7 reds**. The first reddens the census case as
   well as the two that read the sentence, which is the chain that made this a rule rather than a
   preference.
+
+### The allowance is argued, and what it owes the history is a floor (v3.134)
+
+- **The allowance is the one number in the budget no reading can derive.** `R4` sizes a step bound
+  from the seconds that step spent; the allowance is a number for a state that has never been
+  recorded -- a runner whose package index, cache and first compile are all cold. v3.132 moved it
+  from each step to each job and left it at three minutes, and **`O-102` has said since then that
+  nobody measured it**: every ceiling holds exactly one, and all 21 readings this repository holds
+  are warm days (finding 624).
+- **What the history owes an argued number is a floor it can refuse.** `R15` refuses an allowance
+  under twice the slowest prefix any recording has timed whole -- the same multiple `R4` asks of a
+  work step, for the same reason: a setup twice as slow as the slowest ever seen is refused for
+  being slow rather than for hanging. Measured at v3.134: the slowest whole prefix is **14 s**
+  (`backend`, run `45033355331`), so the three minutes are **12.9x** that, and the rule binds the
+  day a prefix costs 90 seconds or more.
+- **A row counts only when it measured every step of the prefix.** A history missing one setup step
+  sums to less than the prefix cost, and a sum with a hole in it is the shape `jobDays` refuses one
+  level up -- the number would be small, defensible and wrong (finding 624).
+- **The summary prints the multiple beside the allowance**, because a reader of a green run should
+  see how much of the three minutes is argument: `which is 12.9x the slowest prefix any recording
+  holds (14 s in `backend` of run `45033355331`)`. A summary that printed only the number would
+  make an argued value indistinguishable from a measured one.
+- **What is not claimed.** That a cold prefix has been measured -- it has not, and `R15` is a lower
+  bound rather than a derivation. The rule raises its own requirement the first time a slow prefix
+  is recorded, which is exactly the day the argument would otherwise be wrong about, and until then
+  the number is a claim whose size is visible.
+
+### A clause owes an address, and the file owes an index (v3.134)
+
+- **Every clause names something a reader can open**: a finding in the audit volumes, a table of
+  falsifications, a workflow run, or a test file. The four are not decoration -- each one is the case
+  the judgement was decided on -- and the rule exists because `O-019`'s own measurement said the
+  opposite. v3.133 read the file with a heuristic that called a bullet carrying a finding number
+  "provenance" and reported 125 rules against 92 recollections; the first clause it misread is
+  `The two sentences in one entry (v3.63)`, whose **three bullets are all rules and all cite a
+  finding** (finding 625). A judgement with no case is a preference, which is what finding 121
+  refused in prose.
+- **Every clause's heading names its round.** `(v3.62)` in a heading is what lets a reader ask what
+  changed there and get an answer from the log; three clauses written before the log carried finding
+  numbers were the ones with neither, and each now names the test file that drives it -- `publish.test.ts`
+  for the base of a created branch, `check-open-list.test.ts` for the two sentences in one entry,
+  `progress-volumes.test.ts` for the coverage row (finding 625).
+- **The index is a projection of the headings, compared line by line.** One row per clause, the
+  heading and its round, regenerated by `--write` and refused when a row is missing, extra, out of
+  order, or says a heading the file no longer says. Line by line rather than by set, because an index
+  holding every row in the wrong order is a different defect from one holding a row the file dropped.
+- **The index carries no links.** A GitHub anchor is a slug this script would compute by guessing --
+  punctuation deleted, Chinese kept, a space turned into a hyphen -- and a slug off by one character
+  is a link that fails **silently**: the reader lands nowhere and concludes the file has no such
+  section. That is the shape finding 621 refused when it refused to print a ratio nothing compared;
+  a heading's own text cannot be wrong, because it is a copy checked by the gate that copies it.
+- **The two `2.39`/`2.40` audit checklists are exempt**: they are a list of checks this file asks of
+  an audit, not clauses of the log, and they carry a pass number where the log carries a round.
+- **What is not claimed.** That the file is shorter. `O-019`'s complaint was **navigation**, not
+  length: 2,100 lines is a legitimate size for 37 decisions, and a reader who wants to know what this
+  file requires should not have to read it. The index is the repair, and the length is what it costs.

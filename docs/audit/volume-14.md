@@ -1,7 +1,7 @@
 # Audit · volume 14
 
-Findings 579–623, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
-`progress/volume-19.md` as `v3.115` through `v3.133`.
+Findings 579–625, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
+`progress/volume-19.md` as `v3.115` through `v3.134`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -2710,3 +2710,194 @@ count a population; the third states how far the ledger sits from the newest rou
 compared with nothing, and it moves every round the log does not close. That it must now print `0`
 makes the census quieter, not the noun more coherent, and the sentence that would decide it -- that a
 noun in the census counts members of one population -- has not been written.
+
+## Finding 624 — the allowance is the one number the budget argues, and it owes the history a floor
+
+`O-102` opened at v3.132 with a sentence that has not been answered since: three minutes is the
+only number in the budget that nobody measured. Every ceiling in `ci.yml` holds exactly one
+allowance, and the state the allowance exists for -- a runner whose package index, cache and first
+compile are cold -- has never been recorded, because every run this repository holds is a warm day.
+
+v3.132 moved the floor from each step to each job (finding 622) and left the number alone. That was
+the right unit and an unexamined magnitude, and the difference matters: `R4` sizes a step bound from
+the seconds that step spent, so a step bound that is wrong is wrong about a reading; the allowance is
+wrong about a *state*.
+
+### The measurement
+
+Every reading this history holds, summed over the steps of each job's prefix:
+
+| job | slowest whole prefix | run |
+| --- | --- | --- |
+| `backend` | **14 s** | `45033355331` |
+| `sensitivity` | 14 s | `44576264388` |
+| `artefacts` | 13 s | `44698243645` |
+| `cold-tree` | 13 s | `45104479651` |
+| `batteries-heavy` | 13 s | `45054272460` |
+| `sensitivity-shard` | 13 s | `44656781771` |
+| `verify` | 12 s | `44656781771` |
+| `batteries` | 12 s | `45018766872` |
+
+**21** readings, **8** jobs, and the slowest prefix any of them timed costs **14 seconds**. The
+allowance is **12.9** times that.
+
+### What the rule can be, and what it cannot
+
+It cannot be "size the allowance from a reading", because the reading that would size it is the one
+state the history has never recorded. A rule written that way would be red from the day it existed
+until a cold day happened to be caught -- and a rule that is always red is a rule every reader learns
+to skip, which is the argument the volume budget already makes for judging only the volume that can
+still grow.
+
+What the history can do is refuse a number it already contradicts, and that is `R15`: an allowance
+under twice the slowest *whole* prefix any recording holds is a day the budget has already refused
+for being slow. Twice, because it is the same multiple `R4` asks of a work step, and for the same
+reason -- a runner twice as slow as the slowest ever seen must finish rather than be refused for
+being slow.
+
+The rule binds at 90 seconds: a prefix that cost 90 s makes the three minutes exactly twice it, and
+one that cost 91 s raises the requirement to four minutes. That number is the point. The allowance
+is a claim, and what a claim owes is a visible size and a line past which it becomes false.
+
+### The sum that would be small and wrong
+
+A row counts only when it measured **every** step of the prefix. A history missing one setup step
+sums to less than the prefix cost, and a sum with a hole in it is the shape `jobDays` refuses one
+level up: the number would be small, defensible and wrong. Ties go to the newer run, for the reason
+`worstReadingFor` gives -- the answer has to be a function of the file rather than of the order
+somebody appended in.
+
+### What the green line says
+
+    ... 32 run before the job's first real step and are bounded by one 3-minute allowance for the
+    prefix, which is 12.9x the slowest prefix any recording holds (14 s in `backend` of run
+    45033355331), 53 min measured ...
+
+A summary that printed only `one 3-minute allowance` would make an argued value indistinguishable
+from a measured one, which is finding 588's complaint one line over.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| `R15` does not refuse at all | 1 |
+| `R15` accepts equality only | 1 |
+| a prefix row may be partial | 1 |
+| the summary divides by twice the prefix | 2 |
+| the summary keeps the least slow prefix | 1 |
+
+**Five mutations, 6 reds.** The first three are the rule's three inputs. The fifth survived the first
+run of this table: the summary took the slowest prefix across jobs with `>`, and a fixture with one
+job cannot tell `>` from `<` -- the case that kills it is a second job whose prefix is four times
+slower, and its absence was the fixture's shape rather than an oversight in the rule.
+
+### What this does not settle
+
+Whether three minutes is right. `R15` is a lower bound, and a lower bound can be satisfied by a
+number that is far too large; 180 seconds against 14 is a ratio no reading defends. The honest
+statement is that the number is a claim with a visible size, the size is checked against the only
+evidence that exists, and the first cold day recorded will move the requirement on its own.
+
+## Finding 625 — the axis was a regular expression's opinion, and what the file actually owes
+
+`O-019` has argued since v3.62 that `docs/acceptance.md` grows by a clause per round and that the
+clauses are nearly half of it. v3.133 measured the file to decide the move and produced the number
+the entry had been asking for: **35** of **37** per-round clauses hold both a current rule and the
+way it was reached, so the section is the wrong unit and moving the clauses would carry 431 lines of
+rule into the history with 414 of provenance.
+
+That number was wrong, and the way it was wrong is the finding.
+
+### The census described its own regex
+
+The measurement classified a bullet as "provenance" when it matched one of seven patterns -- a
+finding number, a mutation count, a run id, a version arrow, a narrative verb, a test delta. A bullet
+that matched none of them was a "rule". Read over the shipped file it reported **125** rules against
+**92** recollections.
+
+The first section it misread is the one that settles it:
+
+    ### The two sentences in one entry (v3.63)
+
+    - **A bullet's headline and its own reason have to agree about whether it is closed.** ...
+      Both directions are refused by `check-open-list.mjs`, and the two use **one** reading ...
+    - **The shape is not new.** Round v2.44 writes it: ...
+    - **What is not claimed.** The count and the rule share a source ...
+
+Three bullets, **all three of them rules**, and all three cite something. A real reader of this file
+would call them judgements; the heuristic called all three recollections and left the section empty.
+A section with no rule in it is not a section that has been read -- it is a section that has been
+counted.
+
+### What the file is
+
+Not "rules plus a chronicle". It is **case law**: every clause is a judgement and the case it was
+decided on, and the case is the half that makes the judgement checkable. `v3.63`'s three bullets are
+the shape in miniature -- a rule, the round it was written in, and what it does not claim.
+
+What that shape owes a reader is therefore not a shorter file. It owes **an address** (something that
+can be opened and read: a finding in these volumes, a table of falsifications, a workflow run, or a
+test file) and **a round** in the heading. Three clauses failed both, and they are the three written
+before this log carried finding numbers:
+
+| clause | what it was missing | what it now names |
+| --- | --- | --- |
+| `The base of a created branch (v3.62)` | an address | `publish.test.ts`, the three cases of zero, one and all reads |
+| `The two sentences in one entry (v3.63)` | an address | `check-open-list.test.ts`, which drives both directions |
+| `The round that can still be written owes the coverage row (v3.67)` | an address | `progress-volumes.test.ts`, the refusal and the silence for an older round |
+
+A test file counts as an address because it *is* the case: a reader who opens it sees the two
+directions the clause describes. The rule that admitted it was `R15`'s sibling in spirit -- what a
+gate may demand is bounded by what a reader can actually go and read.
+
+### The index, and why it carries no links
+
+The complaint behind `O-019` is real and it is about **navigation**: 2,200 lines is a legitimate size
+for 39 decisions, and a reader who wants to know what this file requires should not have to read it.
+The repair is an index -- one row per clause, the heading and its round -- regenerated by `--write`
+and compared **line by line**, because an index holding every row in the wrong order is a different
+defect from one holding a row the file dropped, and a set comparison reports both as "stale".
+
+It carries no links, and that is the one decision in this gate worth arguing. A GitHub anchor is a
+slug this script would compute by guessing: punctuation deleted, Chinese kept, a space turned into a
+hyphen. A slug off by one character is a link that fails **silently** -- the reader lands nowhere and
+concludes the file has no such section. That is the shape finding 621 refused when it refused to
+print a ratio nothing compared, and the repair is the same: use the thing that cannot be wrong. A
+heading's own text is a copy, and the gate that copies it is the gate that checks it.
+
+### The gate's own first sentence was false
+
+The first run of `check-acceptance-shape.mjs` printed:
+
+    OK — 37 clause(s) across 29 round(s), v3.116 to v3.79, each with an address and a round
+
+`v3.116 to v3.79` is a span that runs backwards, because the versions were sorted as strings and
+`v3.116` sorts before `v3.79` character by character. A version is two numbers, and a sentence that
+states the span of a set has to state it in the order the set is in or it is describing the sort
+rather than the file. It prints `v3.62 to v3.134` now, and a case asserts the absence of that exact
+sentence: a phrase that has been wrong once is worth a test that says so.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| only a finding is an address | 3 |
+| a test file is not an address | 3 |
+| a heading need not name a round | 1 |
+| every index row is accepted | 4 |
+| the writer appends a fresh table every time | 1 |
+| a moved cell is not reported | 1 |
+| the third difference is not the last | 1 |
+
+**Seven mutations, 14 reds.** The two address mutations redden three cases each because two of the
+shipped clauses name only a test file -- drop that address and the real file is refused, which is
+the chain that makes a rule a rule. `every index row is accepted` reddens four: the missing row, the
+extra row, the moved cell and the truncation.
+
+### What this does not settle
+
+Whether the clause is the right unit at all. The index makes 39 clauses navigable; it does not make
+them fewer, and a reader who wants the file to *be* the rules -- one page, no cases -- is asking for
+a different document, not a reordering of this one. `[open: whether the acceptance file should be
+two files -- the rules, and the case law -- with each rule naming the case that decided it]` is the
+question v3.134 leaves, and it is a question about the reader rather than about the gate.

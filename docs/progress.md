@@ -440,10 +440,10 @@ document that described it as downloading the data was describing an intention.
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 98 |
 | Source lines | 34,609 |
-| Test files | 259 core + 4 cli |
-| Test lines | 116,082 core + 3,242 cli |
-| Tests | 6,845 core + 187 cli |
-| Tracked files | 675 |
+| Test files | 260 core + 4 cli |
+| Test lines | 116,509 core + 3,242 cli |
+| Tests | 6,874 core + 187 cli |
+| Tracked files | 678 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.133: **39** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.134: **39** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1002,17 +1002,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   the round is frozen -- but which of the two homes a closure has when the round that closes it also
   restates it is not decided anywhere, and the answer decides whether 30 records are corrected or the rule
   is scoped; neither can be done by a round that is not allowed to edit a frozen record]`
-- O-102 · **The allowance is three minutes, and no recording says whether that is right.**
-  Every ceiling now holds one `PREFIX_MINUTES` for the job's prefix, and the number is the floor spent
-  once: **3** minutes over **32** steps in **8** jobs at v3.132. The argument for it is the one the floor
-  always had -- a cold package index, a missed cache, a first build -- and the recording it is checked
-  against is warm: run `45054272460` spent **5 s** on the four setup steps of `verify` and **12 s** on
-  `sensitivity`'s. So the number is a decision, and the gate that holds every other number to a
-  measurement holds this one to a constant.
-  `[open: whether an allowance for a cold runner can be measured at all -- the cold tree job is the only
-  run that has seen one, and it is a different job with a different prefix -- or whether it is the one
-  number in this file that has to be argued rather than taken, and which of those two sentences the
-  gate should print]`
 - O-103 · **A snapshot taken mid-round is indistinguishable from one taken at the end.**
   `measure-doc-counts --write-doc` spawns the suite and writes what it finds, so the golden records the
   suite **as it stands** at that moment: v3.132 took the snapshot with eight of its nine new cases written,
@@ -1029,6 +1018,14 @@ is a row about rather than paraphrase one that no `grep` will find.
   it moves every round the log does not close.
   `[open: whether a distance belongs in the census at all, and which sentence would decide it -- the
   noun's population is rounds, and the distance between two of them is not a member of it]`
+- O-105 · **The acceptance file is 39 clauses of case law, and a reader who wants the rules must read all of it.**
+  The index added at v3.134 makes the file navigable and does not make it shorter: **39** clauses across
+  **30** rounds, **2,218 lines at v3.134**, each a judgement with the case that decided it. A reader who
+  wants to know what this tree requires today gets **431 lines at v3.133** of current rule mixed into the
+  same page with **414 lines at v3.133** of how each was reached.
+  `[open: whether the acceptance file should be two files -- the rules, and the case law -- with each rule
+  naming the case that decided it, and whether a rule whose case is one section away is still checkable by
+  the reader who has to apply it]`
 ## Pass log
 
 The rounds are recorded in the volumes below, in the order they were run. They were one
@@ -1064,7 +1061,7 @@ and this table.
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
-| [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
+| [volume-19.md](progress/volume-19.md) | 14 | v3.121 | v3.134 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
