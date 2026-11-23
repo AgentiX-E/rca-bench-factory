@@ -667,8 +667,8 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     const result = run();
     expect(result.status, result.stderr).toBe(0);
     // The sentence a reader gets, for the noun whose two numbers were never on one line: 14 volumes
-    // of audit and 18 of progress, in two directories that share no file.
-    expect(result.stdout).toContain('volume(s) — 14 in check-audit-volumes; 18 in check-progress-volumes —');
+    // of audit and 19 of progress, in two directories that share no file.
+    expect(result.stdout).toContain('volume(s) — 14 in check-audit-volumes; 19 in check-progress-volumes —');
     // And the one the reader could not see past: `round(s)` at 219 in both gates, with the qualifier
     // that finding 600's repair inserted and this round's reader had to learn to reach past.
     // A shape rather than a number: the two gates agree at 219 this round and at 220 the next,

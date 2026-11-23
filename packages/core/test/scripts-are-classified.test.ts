@@ -186,6 +186,17 @@ const REGISTER: Record<string, Entry> = {
       'table", and three copies of "this corpus carries no samples array" -- the last three over the same ' +
       'file, which is why only the first of them could ever have fired.',
   },
+  'live-figures.mjs': {
+    class: 'data',
+    why:
+      'The sizes the live list may state: `sizesIn` reads a figure and the date that may follow it, ' +
+      '`spansIn` and `subjectOf` find the file a figure is the size of, `statesSameSize` compares one ' +
+      'with a measurement at half a unit in the last place the figure states, and `sizeProblems` ' +
+      'writes the two refusals. It is pure -- it reads no file, so every rule in it is testable ' +
+      'against a table -- and the gate that runs it is `check-open-list.mjs`, which supplies the ' +
+      'measurement. The defect it answers is finding 621: `O-019` quoted 96 KB for a file of 165,067 ' +
+      'bytes and nothing read the sentence for nineteen rounds.',
+  },
   'unit-nouns.mjs': {
     class: 'data',
     why:
