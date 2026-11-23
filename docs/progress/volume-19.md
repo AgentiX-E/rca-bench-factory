@@ -1631,7 +1631,7 @@ reading and below the default, and the closest file in the suite sits at 26% of 
 
 | what | value |
 | --- | --- |
-| CI | run `45104479651` on `b7924f5` was **8 of 8 jobs success**, **951 s** wall clock -- the recording this round inherited, and the first run to spend v3.132's ceilings |
+| CI | run `45116975788` on `ae555ed` was **8 of 8 jobs success**, **970 s** wall clock (05:18:48 -> 05:34:58), slowest job `injection batteries, one step each` at **967 s** against its 54-minute ceiling -- the round's own run, recorded as the baseline: **53** min measured, bounds total **240** min, 6 of the 8 ceilings holding the bounds inside them |
 | `pnpm run docs:check` | **22 steps, exit 0** |
 | tests | core **259 files / 6845** (+1); cli 4 / 187; repo **263 / 7032** |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- no line under `packages/core/src` moved |
