@@ -508,6 +508,17 @@
   gates cannot silently cover five, because the fifth is refused -- but a sentence whose *wording* has stopped
   matching a partition that has grown is still found by reading rather than by running.
 
+- O-100 · ~~**Half of every ceiling is the floor, not the work.**~~
+  `R13` held a ceiling to the bounds inside the job, and the bounds were floored at three minutes each: `batteries`
+  needed **84** minutes and **42** of them were fourteen steps bounded at the floor that measured seconds, while
+  `verify` needed **58** and **24** of them the same floor counted six times over the preparation every job
+  repeats. The floor is an argument about a cold package index, and it was written per step, so a job that repeated
+  six preparation steps paid it six times and the ceiling inherited the sum. **Closed by finding 622**, which
+  measured both figures rather than trusting them -- **48** of `batteries`' **84** and **27** of `verify`'s **58**,
+  because two steps had been added since the entry was written -- and found the four steps of the floor to be the
+  same four in every job: the checkout, the two setups and the install. The floor is now a property of the **job**,
+  spent once as `PREFIX_MINUTES` over the prefix those four steps form, a work step is bounded by twice its own day,
+  and a cold day is refused by the allowance, `R12`'s twice-the-day term and `R13`'s sum.
 - O-101 · ~~**The live list states counts too, and the round that checked the census's sentences left its own
   list unread.**~~ `O-019` said `docs/acceptance.md` "is 96 KB and grows by clause per round" and the file was
   **165,067 bytes** -- so the entry arguing a document is too big was quoting a size too small, and thirty-odd
@@ -519,3 +530,4 @@
   and it is not a rule that a limit states none but **say when, or be this tree's** -- a dated figure is a record,
   and a record does not age. `439 s` and `84 minutes` pass because no gate can take a run that is over, which is
   the boundary the module states rather than a gap it leaves.
+

@@ -2482,3 +2482,156 @@ of the eleven that says the rule is about this corpus rather than about a fixtur
 Finding 309's ledger rule -- **one ledger describes one tree, and it says which** -- applied where
 nobody had applied it: prose. A ledger's `(as of `sha`)` and a live entry's `at v3.131` answer the same
 question, and until this round only the ledger was asked.
+
+## Finding 622 — the floor is a property of the job, and a prefix is what every job shares
+
+### What the entry said
+
+`O-100`, open since v3.129: *"Half of every ceiling is the floor, not the work. `batteries` needs
+84 minutes and **42** of them are fourteen steps bounded at three minutes that measure seconds,
+and `verify` needs 58 with **24** of them the same floor six times."* And the question it left:
+
+> `[open: whether the floor should be a property of the job rather than of the step -- one
+> allowance for everything before the first real step -- and what would then refuse a cold day]`
+
+Neither number survived re-measurement, and the shape did.
+
+### The measurement
+
+Every step of the workflow, its bound, and what it spent in run `45054272460`:
+
+| job | steps | bounded at the floor | their bounds | what they spent | ceiling |
+| --- | --- | --- | --- | --- | --- |
+| `verify` | 12 | 9 | 27 min | 25 s | 58 |
+| `backend` | 7 | 6 | 18 min | 18 s | 49 |
+| `sensitivity` | 8 | 6 | 18 min | 32 s | 47 |
+| `sensitivity-shard` | 7 | 5 | 15 min | 8 s | 44 |
+| `batteries` | 20 | 16 | **48** min | **165** s | 84 |
+| `batteries-heavy` | 8 | 5 | 15 min | 17 s | 55 |
+| `artefacts` / `cold-tree` | 21 | 0 | -- | -- | 15 / 20 |
+
+**47 of the workflow's 62 bounds are the number three**, and together they are **141 of the 331
+minutes** the bounds add up to. The workflow's ceilings add up to **372** minutes and the steps
+measured **52**. The floor is not half of every ceiling; on `batteries` it is more than half.
+
+Four of every job's floor steps are the same four: the checkout, the two setups, and the install.
+They are also the four steps every job of the workflow runs **identically**, which is the fact the
+rule is built on rather than a coincidence the rule notices.
+
+### The rule
+
+**The prefix is the leading run of steps every job of the workflow shares, name and command both,
+and its allowance is the floor spent once.**
+
+    Check out | Set up Node.js | Set up pnpm | Install dependencies     the prefix, 4 steps
+    one allowance of 3 minutes, per job                                  what a cold runner costs
+
+- A prefix step declares **no** `timeout-minutes` of its own. One that does is refused: it is the
+  same three minutes stated again, once per step, until the ceiling is paying for cold runners
+  that cannot happen.
+- A **work** step is bounded by twice its own day. The floor is no longer asked of it.
+- `R13`'s `bounds` term is the step bounds **plus** the prefix's allowance, so the ceiling still
+  holds every number a step can spend.
+- A job promise names the steps that carry a bound: the prefix has none to promise.
+
+The workflow after the round: **38** steps bound themselves (was 62), **32** are charged to their
+job's allowance, **13** inherit their job's ceiling, **0** are reached by nothing. The bounds add up
+to **216** minutes plus **24** of allowance, where they added up to 331, and the ceilings to
+**275** where they added up to 372.
+
+### Why the floor was on the wrong object
+
+A bound does not buy slack; it buys **attribution**. A step that hangs dies at its own bound and the
+verdict names it, whatever the number is. The three minutes bought nothing but tolerance -- and
+tolerance is spent where the unpredictable thing happens, which is at the start, once. A mutation
+battery that measures 54 s and is bounded at two minutes dies at two minutes if a cold runner makes
+it slower, and the message names the battery; the same battery bounded at three minutes dies one
+minute later and names the same battery.
+
+The one case the floor was genuinely for -- a step nothing has ever measured -- is unchanged: a
+declared step is still refused below the floor, because a step with no day has no other number to
+argue from.
+
+### The first thing the round's own numbers refused
+
+Lowering the floor's work steps to twice their day, the round wrote `2` minutes for the round-trip
+record battery, whose recording says 54 s. **`R10` refused it**: the same command took **70 s** in
+run `44576264388`, and 120 is under twice 140. The bound went back to 3 -- one of the 47 surviving,
+and the only one left at the floor in the whole workflow. A rule about the day this tree is running
+today would have shipped a bound that refuses a day this tree has already met.
+
+### The rule that asked for evidence the recording already held
+
+`R6` refused every ceiling narrower than the recording's, on the argument that a step bound which
+fits inside the wider ceiling may expire after the job has died at the tighter one. That argument is
+`R13`'s question -- the ceiling holds every bound plus twice the seconds no step spends, or the gate
+names the number -- and what was left of `R6` was a demand for a re-measurement. **The number the
+demand was standing in for is already in the file**: twice the slowest day this repository has met,
+plus twice the overhead. So the refusal is deleted rather than kept beside `R13`, `R12` refuses a
+ceiling under twice the day with its own sentence, and every narrowing is printed beside every
+widening, because a ceiling that moves is a claim a reader has to see.
+
+**Six ceilings were narrowed under the recording this way**: `verify` 58 -> 39, `backend` 49 -> 36,
+`sensitivity` 47 -> 34, `sensitivity-shard` 44 -> 33, `batteries` 84 -> 54, `batteries-heavy`
+55 -> 44. `artefacts` 15 and `cold-tree` 20 were kept, and the exception is stated in the workflow
+rather than derived: their bounds term is the allowance and nothing else, so twice the day decides,
+and the day their recording holds is the **warm** one -- a ceiling sized from a warm day for the job
+whose subject is a cold tree would be the one number in the file measuring the wrong day.
+
+### Three things the rule has to know that the table does not say
+
+**A name is not a claim.** Two jobs can both call a step `Check out` and run different commands.
+The prefix compares the command as well as the name, or a job would be handed an allowance for work
+it does not share.
+
+**One divergent job caps the prefix for every job.** `backend` has no `Install the shells` step, so
+the shared prefix stops at four for all eight jobs, not five for seven of them. What every job runs
+identically ends where any of them stops running it -- and the shipped workflow's four is a
+measurement of these eight jobs rather than a constant.
+
+**A workflow of one job has no prefix.** There is nothing for its steps to be common *with*, and a
+prefix of "every step" would excuse every single-job workflow from bounding anything -- the
+degenerate case that would turn this rule into a hole.
+
+### What the round did not change
+
+- **The floor's number.** Three minutes, once per job. The argument for it -- a cold package index,
+  a missed cache, a first build -- is the argument for one of them, not for fourteen.
+- **A declared step's floor.** A step no run has measured is still refused below three minutes.
+- **A bound above twice the day.** The gate permits any larger number, because a step whose cost
+  really does depend on the network argues it (`Install a backend` at 30 minutes against 19 s), and
+  `R10` still refuses a bound under twice the slowest reading of the same command anywhere.
+- **`artefacts` and `cold-tree`'s ceilings.** Stated above rather than derived.
+
+### What the round changed in the plan a person reads
+
+`verify:local --list` used to print `backend bounds all 2 of its step(s) on its own (largest 3m of
+the job's 49m) ... a hang there names the step rather than the job`. **No job of this workflow is
+that shape any more**, so the clause is empty for all eight and the pool line is what a reader gets:
+`verify 39m across 8 step(s)`. The sentence is still owed to a workflow of one job, which is exactly
+that shape, and it is driven by a case rather than left to the tree it no longer describes.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the prefix is always empty | 4 |
+| a prefix is matched by name and not by command | 7 |
+| a workflow of one job has a prefix too | 33 |
+| the allowance grows with the prefix | 3 |
+| a prefix step may declare its own bound | 2 |
+| the ceiling does not hold the allowance | 1 |
+| a job promise names the prefix steps too | 4 |
+| the summary hides the allowance | 1 |
+| the narrower-ceiling refusal restored | 3 |
+
+**Nine mutations, 58 reds.** The sixth survived the first run of this table, and the case that kills
+it -- a ceiling eighteen seconds short of the allowance -- is the only case in the suite that puts a
+ceiling exactly on the sum.
+
+### What this finding is an instance of
+
+Finding 619's rule -- **a ceiling holds the bounds inside it** -- asked of the bounds themselves:
+`R13` made the ceiling answer for the numbers a step can spend, and this round made the numbers
+answer for what a runner actually costs. The floor was a per-step copy of a per-job fact, which is
+finding 604's shape (one number, two populations) with the population being "cold runners".

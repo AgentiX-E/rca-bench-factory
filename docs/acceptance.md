@@ -2049,3 +2049,38 @@ from an anecdote again.
   dated-never (4), quotations read (1), a sentence end without mark-up (1), exact match only (2), no
   sentence guard (1), the lead-in unread (1), every kind read (1), an empty text one line long (1), a
   wrapped figure kept wrapped (1), a length compared in bytes (1) -- **22 reds**.
+
+### The floor belongs to the job, and a prefix is what every job shares (v3.132)
+
+- **A step's bound is for that step; the cold runner is not.** The floor was asked of every
+  bounded step on the argument that a measurement cannot see a cold package index or a missed
+  cache. A runner is cold once. Four setup steps bounded at three minutes each do not describe
+  four cold runners -- they describe one, and three guesses -- and `batteries` paid for sixteen of
+  them (**48** of its **84** minutes) against **165 s** of work (finding 622).
+- **The prefix is derived, not declared.** It is the leading run of steps every job of the
+  workflow shares, **name and command both**. A step only one job runs is that job's work whatever
+  its name says; a step all eight run identically is what a runner costs. A workflow of one job has
+  no prefix, because there is nothing for its steps to be common with.
+- **One allowance per job.** `PREFIX_MINUTES` is the floor spent once: a prefix step declares no
+  `timeout-minutes` of its own, and one number answers for the whole prefix. A prefix step that
+  declares one is refused, because it is the same three minutes stated again, once per step.
+- **A work step is bounded by twice its own day.** The floor is no longer asked of a work step; the
+  multiple is. A two-minute bound on a 46-second step is accepted, and a one-minute bound on the
+  same step is refused for being under the multiple.
+- **The ceiling holds the allowance.** `R13`'s `bounds` term is the step bounds **plus** the
+  prefix's one allowance: a ceiling that holds every bound and not the allowance fires before the
+  number it granted.
+- **A narrowing is `R13`'s question, not a demand for a re-measurement.** The refusal of every
+  narrower ceiling was deleted, because twice the slowest day this repository has met plus twice the
+  seconds no step spends is the number it was standing in for, and `R12` asks it with its own
+  sentence. Every narrowing is printed beside every widening.
+- **A job promise names the steps that carry a bound.** A never-run job's promise is about the
+  bounds the first run will enforce; the prefix has none to promise.
+- **What refuses a cold day.** The allowance (once per job), `R12`'s twice-the-day term and `R13`'s
+  sum. A work step that is genuinely cache-sensitive argues a larger bound, which the gate permits
+  and `R10` checks against the slowest reading of the same command anywhere.
+- **A mutation has to land on an assertion.** The nine this round: the prefix always empty (4
+  reds), matched by name and not by command (7), a prefix in a workflow of one job (33), the
+  allowance growing with the prefix (3), a prefix step allowed its own bound (2), the ceiling not
+  holding the allowance (1), a job promise naming the prefix steps (4), the summary hiding the
+  allowance (1), and the narrower-ceiling refusal restored (3) -- **58 reds**.

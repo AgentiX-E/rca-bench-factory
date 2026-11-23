@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 259 core + 4 cli |
-| Test lines | 115,825 core + 3,242 cli |
-| Tests | 6,835 core + 187 cli |
+| Test lines | 116,053 core + 3,242 cli |
+| Tests | 6,843 core + 187 cli |
 | Tracked files | 675 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.131: **37** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.132: **37** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -829,8 +829,8 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: which of the three, decided by a corpus that has one -- the shipped thirty-four have none]`
 
 - O-019 · **`docs/acceptance.md` grows by a clause per round, and the clauses are nearly half of it.**
-  The per-round clauses are **897 lines at v3.131** and **77,180 bytes at v3.131**, in a document of
-  **2,051 lines at v3.131**. L3 is **330 lines at v3.131** and L4 is 405; L0, L1, L2 and L5 are 14, 7, 7
+  The per-round clauses are **932 lines at v3.132** and **80,082 bytes at v3.132**, in a document of
+  **2,086 lines at v3.132**. L3 is **330 lines at v3.131** and L4 is 405; L0, L1, L2 and L5 are 14, 7, 7
   and 6, so the obvious split by layer would produce four files of a dozen lines.
   `[open: the axis is "current rule" against "how it was reached", not the layer -- moving the clauses
   needs the measurement of how many sections match that shape before the index relation is re-checked]`
@@ -996,16 +996,17 @@ is a row about rather than paraphrase one that no `grep` will find.
   the round is frozen -- but which of the two homes a closure has when the round that closes it also
   restates it is not decided anywhere, and the answer decides whether 30 records are corrected or the rule
   is scoped; neither can be done by a round that is not allowed to edit a frozen record]`
-- O-100 · **Half of every ceiling is the floor, not the work.**
-  `R13` holds a ceiling to the bounds inside the job, and the bounds are floored at three minutes each: `batteries`
-  needs **84** minutes and **42** of them are fourteen steps bounded at the floor that measure seconds, while
-  `verify` needs **58** and **24** of them are the same floor counted six times over the preparation every job
-  repeats. The floor is an argument about a cold package index, and it is written per step, so a job that repeats six
-  preparation steps pays it six times and the ceiling inherits the sum.
-  `[open: whether the floor belongs to the job rather than to the step -- one allowance for everything before the
-  first real step -- and what would then refuse a cold day that runs long on all six; the two numbers are 42 of 84
-  and 24 of 58, and neither has been measured against a day that spent them]`
-
+- O-102 · **The allowance is three minutes, and no recording says whether that is right.**
+  Every ceiling now holds one `PREFIX_MINUTES` for the job's prefix, and the number is the floor spent
+  once: **3** minutes over **32** steps in **8** jobs at v3.132. The argument for it is the one the floor
+  always had -- a cold package index, a missed cache, a first build -- and the recording it is checked
+  against is warm: run `45054272460` spent **5 s** on the four setup steps of `verify` and **12 s** on
+  `sensitivity`'s. So the number is a decision, and the gate that holds every other number to a
+  measurement holds this one to a constant.
+  `[open: whether an allowance for a cold runner can be measured at all -- the cold tree job is the only
+  run that has seen one, and it is a different job with a different prefix -- or whether it is the one
+  number in this file that has to be argued rather than taken, and which of those two sentences the
+  gate should print]`
 ## Pass log
 
 The rounds are recorded in the volumes below, in the order they were run. They were one
@@ -1041,7 +1042,7 @@ and this table.
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
-| [volume-19.md](progress/volume-19.md) | 11 | v3.121 | v3.131 |
+| [volume-19.md](progress/volume-19.md) | 12 | v3.121 | v3.132 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

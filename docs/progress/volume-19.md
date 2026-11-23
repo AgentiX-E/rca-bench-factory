@@ -1360,9 +1360,9 @@ on content that had not been touched since.
 | item | value |
 | --- | --- |
 | CI | the run this round's commit starts, and the last one it inherited: `45054272460` on `b741a09` was **8 of 8 jobs success**, and this round moves no workflow, no ceiling and no bound |
-| `core` test suite | **259 files, 6835 tests passed** (as of this commit) |
+| `core` test suite | **259 files, 6843 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **263 files, 7022 tests passed** (as of this commit) |
+| repo test suite | **263 files, 7030 tests passed** (as of this commit) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the round adds no line under `packages/core/src` |
 | new tests | **6,804 -> 6,835, +31**: the reader's units, names, dates and quotations; the window and the rounding; which document a figure is the size of; the two refusals; and six gate-level cases |
 | the live list's sizes | **5 figure(s): 5 name the round that took them** -- the rule reads nothing undated because nothing in the list is undated |
@@ -1382,3 +1382,117 @@ on content that had not been touched since.
   14, 7, 7 and 6 -- so the layer is the wrong axis and moving the clauses needs the measurement of how many
   sections match that shape before the index relation is re-checked. `[open: the measurement the move needs,
   which is a count of sections by shape -- the axis is "current rule" against "how it was reached"]`
+
+## v3.132 — the floor is the job's, and a prefix is what every job shares
+
+`O-100` has been open since v3.129 with a question rather than a defect: *"whether the floor should
+be a property of the job rather than of the step -- one allowance for everything before the first
+real step -- and what would then refuse a cold day"*. Both of the numbers it stated had aged, and
+the shape had not.
+
+### The measurement
+
+Every step, its bound, and what it spent in run `45054272460`:
+
+| job | steps | at the floor | their bounds | what they spent | ceiling |
+| --- | --- | --- | --- | --- | --- |
+| `verify` | 12 | 9 | 27 min | 25 s | 58 |
+| `backend` | 7 | 6 | 18 min | 18 s | 49 |
+| `sensitivity` | 8 | 6 | 18 min | 32 s | 47 |
+| `sensitivity-shard` | 7 | 5 | 15 min | 8 s | 44 |
+| `batteries` | 20 | 16 | **48** min | **165** s | 84 |
+| `batteries-heavy` | 8 | 5 | 15 min | 17 s | 55 |
+
+**47 of 62 bounds were the number three** and together they were **141 of the 331 minutes** the
+bounds added up to, against **52 minutes** measured. On `batteries` the floor was more than half the
+ceiling, not half of it.
+
+### The rule
+
+**The prefix is the leading run of steps every job of the workflow shares -- name and command both
+-- and its allowance is the floor spent once.**
+
+    Check out | Set up Node.js | Set up pnpm | Install dependencies     the prefix, four steps
+    one allowance of 3 minutes, per job                                  what a cold runner costs
+
+A prefix step declares no `timeout-minutes` of its own; one that does is refused, because it is the
+same three minutes stated again. A work step is bounded by **twice its own day**. `R13`'s `bounds`
+term is the step bounds **plus** the allowance. A job promise names only the steps that carry one.
+
+After: **38** steps bound themselves (was 62), **32** are charged to their job's allowance, **13**
+inherit their ceiling, **0** are reached by nothing; **216** minutes of bound plus **24** of
+allowance where there were 331; ceilings of **275** where they added up to **372**.
+
+### Why the floor was on the wrong object
+
+A bound buys **attribution**, not slack: a step dies at its own bound and the verdict names it,
+whichever number the bound is. The three minutes bought tolerance, and tolerance is spent where the
+unpredictable thing is, which is at the start, once. A battery that measures 54 s and is bounded at
+two minutes dies at two minutes naming itself; bounded at three it dies a minute later naming
+itself. The one case the floor was for -- a step no run has measured -- still has it.
+
+**What refuses a cold day**: the allowance (once per job), `R12`'s twice-the-day term, and `R13`'s
+sum. A work step that is genuinely cache-sensitive argues a larger bound, which the gate permits and
+`R10` checks against the slowest reading of the same command anywhere.
+
+### Two rules the round's own numbers moved
+
+**`R10` refused the round's first number.** The round-trip record battery was given 2 minutes from
+its 54 s recording; the same command took **70 s** in run `44576264388`, and 120 is under twice 140.
+The bound went back to 3 -- the only one left at the floor in the whole workflow.
+
+**`R6`'s refusal of every narrower ceiling is deleted.** It demanded a re-measurement under the
+tighter ceiling, and the number it was standing in for is already in the file: twice the slowest day
+this repository has met plus twice the overhead, which `R12` asks with its own sentence. Six
+ceilings narrowed that way -- 58->39, 49->36, 47->34, 44->33, 84->54, 55->44 -- each printed beside
+every widening, and `artefacts` 15 with `cold-tree` 20 kept, because the day their recording holds
+is the warm one and the job's subject is a cold tree.
+
+### What the round did not change
+
+The floor's number (three minutes, once per job). A declared step's floor. Any bound above twice its
+day -- `Install a backend` keeps 30 minutes against 19 s, and `R10` still refuses a bound under twice
+the slowest reading of the same command anywhere. And the two cold-tree jobs' ceilings.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the prefix is always empty | 4 |
+| a prefix is matched by name and not by command | 7 |
+| a workflow of one job has a prefix too | 33 |
+| the allowance grows with the prefix | 3 |
+| a prefix step may declare its own bound | 2 |
+| the ceiling does not hold the allowance | 1 |
+| a job promise names the prefix steps too | 4 |
+| the summary hides the allowance | 1 |
+| the narrower-ceiling refusal restored | 3 |
+
+**Nine mutations, 58 reds.** The sixth survived the first run of this table; the case that kills it
+is the only one in the suite that puts a ceiling eighteen seconds short of the allowance.
+
+### Readings
+
+> Ledger for `v3.132`.
+
+| what | value |
+| --- | --- |
+| CI | run `45054272460` on `b741a09` was **8 of 8 jobs success** -- the recording whose day this round sized the bounds from; and the run this round's own push starts is the first to spend the ceilings it wrote |
+| `pnpm run docs:check` | **22 steps, exit 0** |
+| tests | core **259 files / 6844** (+9); cli 4 / 187; repo **263 / 7031** |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- no line under `packages/core/src` moved |
+| the workflow | **83** steps: **38** own bounds, **32** in a 4-step prefix, **13** job-bounded, **0** none |
+| the bounds | **216** min of step bounds + **24** of allowance, ceilings **275** (was 331 / 372) |
+| falsifications | **9 mutations / 58 reds** |
+| open items | **37 -> 36**: `O-100` closed by finding 622 |
+| LLM calls | **0** |
+
+### Left open
+
+- `docs/acceptance.md` grows by a clause per round: the per-round clauses are **932 lines at v3.132**
+  of a **2,086-line** document, and the layer split is still the wrong axis.
+  `[open: the axis is "current rule" against "how it was reached", and the number the round needs is
+  how many sections have that shape]`
+- The allowance is three minutes, and no recording says whether that is right: every ceiling holds
+  one, and the runs this repository has are warm. `[open: whether an allowance for a cold runner can
+  be measured at all, or whether it is the one number in the file that has to be argued]`
