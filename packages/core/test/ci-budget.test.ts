@@ -860,8 +860,11 @@ describe('the step the recording has not measured yet', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('check-ci-budget: OK');
     // The distance is printed on the green line: a row that exists states an id, and nothing
-    // in an id says whether it was written this week or 65 rounds ago.
-    expect(result.stdout).toContain(', in the newest round');
+    // in an id says whether it was written this week or 65 rounds ago. The noun is printed in
+    // this state too, `0` included (finding 623): the first version printed `in the newest
+    // round` here, which reads better and took the noun out of the census's reach in exactly
+    // the round that caught the ledger up.
+    expect(result.stdout).toContain(', 0 round(s) before `v0.1`');
     expect(result.stdout).toContain('1 step(s) declared and awaiting the run that measures them');
     expect(result.stdout).toContain('batteries / Quick battery');
   });
@@ -1175,6 +1178,24 @@ describe('the round the ledger ends on', () => {
     // The tally's `1 of 1` is read against this workflow's own job count, so the case says
     // the two agree rather than assuming a fixture with one job is one job.
     expect(jobsOf(workflow)).toHaveLength(1);
+  });
+
+  it('prints round(s) in both ledger states, so the census finds the noun wherever the row sits', () => {
+    // Finding 623: the sentence said `, in the newest round` when the row sat in it, which
+    // reads better and made this gate's printing of `round(s)` depend on the state of the
+    // ledger. The census recorded the gate as a printer of the noun in the round that caught
+    // the ledger up, and refused the same tree one round later when the phrase changed and the
+    // noun went with it -- finding 618 one level down, where the key moved and the judgement
+    // stopped being about anything. `0` says the same thing with the number the census reads.
+    const workflow = oneJob([...step('One battery', 12)]);
+    const recording = recordingOf({ batteries: { steps: { 'One battery': 351 } } });
+    const atNewest = ledgerFrom([{ head: 'v0.1 — first', rows: [CLOSING] }]);
+    const behind = ledgerFrom([
+      { head: 'v0.1 — first', rows: [CLOSING] },
+      { head: 'v0.2 — second' },
+    ]);
+    expect(budgetSummary(workflow, recording, atNewest)).toContain('0 round(s) before `v0.1`');
+    expect(budgetSummary(workflow, recording, behind)).toContain('1 round(s) before `v0.2`');
   });
 
   it('refuses a row that sits in the newest round and names no run', () => {

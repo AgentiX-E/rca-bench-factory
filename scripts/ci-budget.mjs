@@ -1536,7 +1536,16 @@ function ledgerWhere(ledger) {
   if (index < 0) return '';
   const behind = rounds.length - 1 - index;
   const newest = roundLabel(rounds[rounds.length - 1].head);
-  return behind === 0 ? ', in the newest round' : `, ${String(behind)} round(s) before \`${newest}\``;
+  // The noun is printed in **both** states, `0` included (finding 623). The first version said
+  // `, in the newest round` when the row sat in it and `, N round(s) before \`vX.YY\`` when it
+  // did not, which reads better and makes the population of `round(s)` depend on where the
+  // ledger's newest run happens to sit: the census recorded this gate as a printer of the noun
+  // in the round that caught the ledger up, and refused the same tree one round later when the
+  // phrasing changed and the noun went with it. A sentence whose shape depends on the state it
+  // describes is finding 618 one level down -- the key moved, so a judgement of it is not a
+  // judgement of anything. `0 round(s) before the newest round` says the same thing and says it
+  // with the number the census reads.
+  return `, ${String(behind)} round(s) before \`${newest}\``;
 }
 
 /**
