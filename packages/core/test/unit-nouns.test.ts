@@ -781,6 +781,17 @@ describe('a number that is not a member of the noun\'s population is declared se
     expect(partitionProblems({ ...PLACED, separate: [] }, GATES)).toEqual([
       'check-ci-budget is in no population and not declared separate',
     ]);
+    // Two shapes that say nothing rather than something wrong: an entry with no gate name, and one
+    // written as a bare string. Both are kept with `gate: null` by the reader so the refusal can name
+    // the declaration instead of crashing on it -- a malformed record is a refusal, never a throw.
+    expect(separateOf({ ...PLACED, separate: [{}] })).toEqual([{ gate: null, counts: null }]);
+    expect(separateOf({ ...PLACED, separate: ['check-ci-budget'] })).toEqual([
+      { gate: 'check-ci-budget', counts: null },
+    ]);
+    expect(partitionProblems({ ...PLACED, separate: [{}] }, GATES)).toEqual([
+      'check-ci-budget is in no population and not declared separate',
+      'a declaration with no gate in it',
+    ]);
     // A document with neither field says nothing at all, which is a different refusal from a
     // document that says `populations: []` and declares every gate separate.
     expect(partitionProblems({ noun: NOUN, relation: 'a sentence' }, GATES)).toEqual([
