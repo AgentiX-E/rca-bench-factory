@@ -5,13 +5,14 @@
  * ## The defect this exists for
  *
  * `O-019` argues that `docs/acceptance.md` has grown too large to keep growing, and it
- * carried its evidence in the headline: "**`docs/acceptance.md` is 96 KB** and grows by
- * clause per round". The file is 165,067 bytes. So the figure is a copy of a measurement
- * taken once, the thing it measured has grown by three quarters since, and the entry that
- * argues a document is too big is the entry quoting a size that is too small. Nothing said
- * so for nineteen rounds, because nothing read the sentence -- the same shape finding 620
- * repaired one document over, where a census carried a ratio in a sentence and read only
- * the gates.
+ * carried its evidence in the headline: "**`docs/acceptance.md` is 96 KB** and grows by clause
+ * per round". The file was 165,067 bytes when the entry was read and 167,552 when this module
+ * was written -- which is the argument rather than an accident, because a figure in a sentence
+ * that nothing reads moves while the thing it measures moves. So the figure is a copy of a
+ * measurement taken once, the thing it measured has grown by three quarters, and the entry that
+ * argues a document is too big is the entry quoting a size that is too small. Nothing said so
+ * for nineteen rounds, because nothing read the sentence -- the same shape finding 620 repaired
+ * one document over, where a census carried a ratio in a sentence and read only the gates.
  *
  * ## What the rule is
  *
@@ -79,8 +80,10 @@ export const SIZE_UNITS = new Map([
  * not a count (`check-l4-status`, `v3.129`), which is finding 620's lexical rule and the
  * reason the lookbehind excludes a dot, a hyphen and an underscore as well as a letter.
  *
- * The lookahead after the unit is what stops `2.0x` being read as `2.0` of a unit: without
- * it, `MB` would match the start of `MByte` and `line` the start of `lines-of-code`.
+ * The lookahead after the unit is what stops `line` matching the first four letters of
+ * `lines-of-code`, which is a name for a metric rather than a length. The separator is what
+ * stops `96KB` being read: this corpus has never written a size without one, and a reader
+ * that accepted the glued form would read `L4` as a count of four of something.
  */
 export const SIZE = /(?<![\w.\-])(\d[\d,]*(?:\.\d+)?)(?:\s|-)+(bytes?|[Kk]B|MB|lines?)(?![\w])/g;
 
@@ -107,7 +110,9 @@ const SPAN = /`([^`\n]+)`/g;
  * The mark-up is in the pattern because the corpus writes `round.** L3 is 284 lines` -- a
  * full stop inside a bold mark, followed by the next sentence. Without `[*_)]*` the two
  * sentences read as one, and `L3`'s length was paired with the document's, which is a
- * refusal whose repair would be wrong: `284 lines` is a section, and the file is 2,021.
+ * refusal whose repair would be wrong: `284 lines` measures a section, and the document has
+ * a length of its own -- 2,051 lines at v3.131, a number that grows in most rounds and that
+ * this comment therefore dates.
  */
 const SENTENCE_END = /[.!?][*_)]*\s|\n\n/;
 
@@ -259,10 +264,11 @@ export function sizeProblems(entry, measure) {
     const subject = subjectOf(entry.text, figure.start, measure);
     if (subject === null) {
       problems.push(
-        `${entry.id ?? 'an entry'} states ${written} and names neither a file this tree holds nor the round ` +
-          'that measured it -- a size or a length in the live list is measured again by every round that ' +
-          'writes, so a figure that does not say when is a figure that ages without anybody noticing ' +
-          `(finding 620 one document over); write \`${figure.written} at vX.YY\`, or drop it`,
+        `${entry.id ?? 'an entry'} states ${written} and names neither a file this tree holds ` +
+          'nor the round that measured it -- a size or a length in the live list is measured ' +
+          'again by every round that writes, so a figure that does not say when is a figure ' +
+          'that ages without anybody noticing (finding 620 one document over); write ' +
+          `\`${figure.written} at vX.YY\`, or drop it`,
       );
       continue;
     }
@@ -270,10 +276,11 @@ export function sizeProblems(entry, measure) {
     const actual = lines ? subject.lines : subject.bytes;
     if (statesSameSize(figure, actual)) continue;
     problems.push(
-      `${entry.id ?? 'an entry'} states ${written} for \`${subject.path}\`, and that file is ` +
-        `${grouped(actual)} ${lines ? 'lines' : 'bytes'} at this commit (${inKilobytes(subject.bytes)}) -- ` +
-        'the figure is a measurement that has aged, so state the size this tree has, or the round that ' +
-        `took the one you have: \`${figure.written} at vX.YY\``,
+      `${entry.id ?? 'an entry'} states ${written} for \`${subject.path}\`, and that file ` +
+        `is ${grouped(actual)} ${lines ? 'lines' : 'bytes'} at this commit ` +
+        `(${inKilobytes(subject.bytes)}) -- the figure is a measurement that has aged, so state ` +
+        'the size this tree has, or the round that took the one you have: ' +
+        `\`${figure.written} at vX.YY\``,
     );
   }
   return problems;
