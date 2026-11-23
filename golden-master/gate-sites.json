@@ -498,7 +498,7 @@
     },
     {
       "script": "scripts/check-unit-nouns.mjs",
-      "line": 155,
+      "line": 162,
       "diagnostic": "check-unit-nouns: FAILED — ${message}",
       "status": "proved",
       "provedBy": "packages/core/test/unit-nouns.test.ts"

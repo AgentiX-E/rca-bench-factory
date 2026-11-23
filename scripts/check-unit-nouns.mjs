@@ -41,14 +41,21 @@
  * Five things are refused, in this order, because each one is a different repair:
  *
  *   1. a shared noun with no `relation` -- nobody has said why two gates print one word;
- *   2. a shared noun with no `populations`, or with a partition that does not cover the gates **this
- *      run found** exactly once -- nobody has said which of them read one set;
+ *   2. a shared noun with neither `populations` nor `separate`, or with placements that do not cover
+ *      the gates **this run found** exactly once -- nobody has said which of them read one set, and
+ *      which print the noun without counting its members;
  *   3. a population the record declares one whose gates print counts with nothing in common --
  *      two readers of one set that have stopped agreeing, or a partition drawn around the wrong
  *      gates;
- *   4. a relation stating a figure no gate printed under that noun -- a count in a sentence, with
- *      nothing comparing it with the count the gate prints;
+ *   4. a sentence -- the noun's relation or a gate's separate declaration -- stating a figure no gate
+ *      printed, or, for a declaration, a figure that gate did not print;
  *   5. a vocabulary that has stopped describing the gates.
+ *
+ * The second names two fields because there are two ways to place a gate, and `O-104` is why: the
+ * partition had one word for a group of gates, so `check-ci-budget`'s `0 round(s)` -- a distance
+ * between two rounds, not a count of them -- had to be written as a population of one reader. The
+ * third placement says "this gate prints the noun and measures something else", which is a different
+ * fact from "this gate is the only reader of a set", and the record could not tell them apart.
  *
  * The second says "this run" because that is `O-099`'s repair. A gate can join a noun between two
  * rounds, and the question a run asks is about the run: the new gate is unplaced now. Reading the
@@ -241,11 +248,15 @@ function judgementsIn(document) {
   for (const one of document?.judgements ?? []) {
     const relation = typeof one.relation === 'string' && one.relation !== '' ? one.relation : null;
     const populations = Array.isArray(one.populations) ? one.populations : null;
-    // No judgement is no entry, rather than an entry with two nulls: `unstatedOf` and
+    // The third placement travels with the judgement, and it is copied rather than validated here:
+    // `separateOf` and `partitionProblems` are what say whether an entry is usable, and a reader that
+    // dropped a malformed one would turn a refusal into a missing sentence.
+    const separate = Array.isArray(one.separate) ? one.separate : null;
+    // No judgement is no entry, rather than an entry with three nulls: `unstatedOf` and
     // `unpartitionedOf` distinguish "nobody wrote a sentence" from "somebody wrote half of one", and
     // a placeholder would make every noun look like the second.
-    if (relation === null && populations === null) continue;
-    out.set(keyOf(one), { noun: one.noun, populations, relation });
+    if (relation === null && populations === null && separate === null) continue;
+    out.set(keyOf(one), { noun: one.noun, populations, separate, relation });
   }
   return out;
 }
@@ -302,10 +313,12 @@ const DISAGREEMENT_HINT =
  * moved, and a message that said "a relation states a number" would send them looking for which.
  */
 function figuresText(unprinted) {
-  const said = unprinted.map(
-    (one) => `${one.noun} states ${one.stated.join(' and ')} and the counts under it are ${one.counts.join(' and ')}`,
+  const said = unprinted.map((one) =>
+    one.gate === undefined
+      ? `${one.noun} states ${one.stated.join(' and ')} and the counts under it are ${one.counts.join(' and ')}`
+      : `${one.noun} states ${one.stated.join(' and ')} beside ${one.gate}, whose counts are ${one.counts.join(' and ')}`,
   );
-  return `${String(unprinted.length)} relation(s) state a figure no gate printed: ${said.join('; ')}`;
+  return `${String(unprinted.length)} sentence(s) state a figure no gate printed: ${said.join('; ')}`;
 }
 
 const FIGURES_HINT =
@@ -336,6 +349,7 @@ if (process.argv.includes('--write')) {
     .map((one) => {
       const record = { noun: one.noun };
       if (one.populations !== null) record.populations = one.populations;
+      if (one.separate !== null) record.separate = one.separate;
       if (one.relation !== null) record.relation = one.relation;
       return record;
     });

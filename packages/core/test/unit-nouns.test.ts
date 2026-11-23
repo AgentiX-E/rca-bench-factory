@@ -17,6 +17,7 @@ import {
   numbersOfNoun,
   partitionOf,
   partitionProblems,
+  separateOf,
   relationsOf,
   sharedNounsOf,
   stateOf,
@@ -375,7 +376,7 @@ describe('a population is the unit of the judgement, because a noun is not (find
     // twice, a gate that does not print the noun at all, and an empty group, which reads as a
     // population of nothing.
     expect(partitionProblems({ ...FILE, populations: [['check-citations'], ['check-comments-language', 'check-doc-counts']] }, FILE_GATES)).toEqual([
-      'check-workflow-language is in no population',
+      'check-workflow-language is in no population and not declared separate',
     ]);
     expect(
       partitionProblems({
@@ -565,7 +566,7 @@ describe('a gate joining a noun is refused as unplaced, and the sentence survive
       {
         noun: 'round(s)',
         gates: ['check-ci-budget', 'check-open-list', 'check-progress-volumes'],
-        problems: ['check-ci-budget is in no population'],
+        problems: ['check-ci-budget is in no population and not declared separate'],
       },
     ]);
     // The disagreement check defers rather than reporting a second refusal: a partition that does not
@@ -656,6 +657,161 @@ describe('a sentence may state a count only if a gate printed it (finding 620)',
   });
 });
 
+/**
+ * A number that is not a member of the noun's population is declared separate, not placed (v3.135).
+ *
+ * `O-104` measured the shape: `check-ci-budget` prints `0 round(s)` -- **how far** the ledger's newest
+ * row sits from the newest round -- and the partition had nowhere to put a distance but a population,
+ * so it was written `[["check-ci-budget"]]`: a set of one reader, indistinguishable in the record from
+ * `check-workflow-language`'s six workflows, which is a corpus. The noun's population is rounds; the
+ * distance between two of them is not a member of it, and a schema with one word for both said the
+ * number was a count of something.
+ *
+ * The repair is a third placement. A gate in `separate` prints the noun as a **unit** and states what
+ * it measures instead, in a sentence of its own -- because the noun's relation is about the population
+ * and would have to say two things at once. The number is still printed (dropping it would be finding
+ * 611), it is still the gate's own number, and it is still refused if the sentence beside it states a
+ * figure that gate did not print:
+ *
+ *   `round(s) -- 221 `vX.YY` in check-open-list; 221 `vX.YY`, 50 `Pass` in check-progress-volumes
+ *    (one population at 221, and the count agrees); 0 in check-ci-budget (declared separate: ...)`
+ */
+describe('a number that is not a member of the noun\'s population is declared separate (v3.135)', () => {
+  const NOUN = 'round(s)';
+  const GATES = ['check-ci-budget', 'check-open-list', 'check-progress-volumes'];
+  const MEASURES = "how far the ledger's newest row sits from the newest round";
+  const census = censusOf([
+    { gate: 'check-open-list', text: '221 `vX.YY` round(s)' },
+    { gate: 'check-progress-volumes', text: '221 `vX.YY` round(s), 50 `Pass` round(s)' },
+    { gate: 'check-ci-budget', text: 'OK — 0 round(s) between the ledger and the newest round' },
+  ]);
+  const PLACED = {
+    noun: NOUN,
+    populations: [['check-open-list', 'check-progress-volumes']],
+    separate: [{ gate: 'check-ci-budget', counts: MEASURES }],
+    relation: 'one set of headings read twice, and a distance measured in the same unit',
+  };
+  const judged = (patch: object) => new Map([[keyOf({ noun: NOUN }), { ...PLACED, ...patch }]]);
+  // The record before the repair: the distance written as a population, which is the shape the schema
+  // offered and the only one it offered. Both documents are complete, which is why nothing went red.
+  const AS_POPULATION = {
+    ...PLACED,
+    populations: [...PLACED.populations, ['check-ci-budget']],
+    separate: undefined,
+  };
+
+  it('accepts a placement that says its number is a distance, and refuses a population of one instead', () => {
+    // The declaration is read as data: a gate and the sentence that says what it measures, sorted by
+    // gate, with `null` for a sentence nobody wrote so the refusal can name the one thing missing.
+    expect(separateOf(PLACED)).toEqual([{ gate: 'check-ci-budget', counts: MEASURES }]);
+    expect(separateOf({ ...PLACED, separate: [{ gate: 'check-ci-budget' }] })).toEqual([
+      { gate: 'check-ci-budget', counts: null },
+    ]);
+    expect(separateOf({ ...PLACED, separate: undefined })).toEqual([]);
+    expect(partitionProblems(AS_POPULATION, GATES)).toEqual([]);
+    expect(partitionProblems(PLACED, GATES)).toEqual([]);
+    // Both read as complete, which is why the defect was invisible: nothing in the record asked
+    // whether the number was a count. What changed is that the two states now print differently.
+    expect(numbersOfNoun(census, judged({}), NOUN)).toBe(
+      '221 `vX.YY` in check-open-list; 221 `vX.YY`, 50 `Pass` in check-progress-volumes ' +
+        `(one population at 221, and the count agrees); 0 in check-ci-budget (declared separate: ${MEASURES})`,
+    );
+    // The number keeps its gate and its place in the line: it is not dropped, and it is not filed
+    // among the counts. That is the whole of the repair -- a reader can tell `0 rounds between` from
+    // `221 rounds` without holding the two summaries sixty lines apart.
+    // Written as a population it leads the line, in gate order, looking exactly like a count of
+    // rounds; written as a declaration it follows the counts and says what it is. The two documents
+    // differ in one field and no reader of the log would have seen the difference.
+    expect(numbersOfNoun(census, judged(AS_POPULATION), NOUN)).toBe(
+      '0 in check-ci-budget; 221 `vX.YY` in check-open-list; 221 `vX.YY`, 50 `Pass` in check-progress-volumes ' +
+        '(one population at 221, and the count agrees)',
+    );
+  });
+
+  it('prints the sentence that decides it beside the number it decides, in the noun\'s line', () => {
+    // The sentence travels with the number rather than after the noun's relation: a reader who has
+    // just read `0 in check-ci-budget` needs to know what the zero counts, and the relation is about
+    // the population the other two gates read. One line, so the two cannot be read apart.
+    expect(relationsOf(census, judged({}))).toEqual([
+      `round(s) — 221 \`vX.YY\` in check-open-list; 221 \`vX.YY\`, 50 \`Pass\` in check-progress-volumes ` +
+        `(one population at 221, and the count agrees); 0 in check-ci-budget (declared separate: ${MEASURES}) — ` +
+        'one set of headings read twice, and a distance measured in the same unit',
+    ]);
+  });
+
+  it('counts the placements, so the summary says how much of the record is a set and how much is not', () => {
+    // The summary said "1 population read by more than one gate" and stopped. It could not say that
+    // one of the noun's three numbers is not a count of the noun at all -- which is the fact a reader
+    // of a CI log is most likely to get wrong.
+    const line = summaryOf(census, judged({}));
+    expect(line).toContain('1 population(s) are read by more than one gate, and 1 of them agree on a count');
+    expect(line).toContain('3 placement(s) of those nouns: 2 in populations two or more gates read, 0 in populations of one gate, 1 declared separate');
+    // And without the declaration the same three placements are all called populations, which is
+    // the number the old record could not tell apart.
+    expect(summaryOf(census, judged(AS_POPULATION))).toContain(
+      '3 placement(s) of those nouns: 2 in populations two or more gates read, 1 in populations of one gate, 0 declared separate',
+    );
+  });
+
+  it('refuses a separate entry that names no gate, no sentence, or a gate already placed', () => {
+    // Five shapes, five repairs. The first is a declaration that does not say what it measures --
+    // the sentence is the only part of `separate` no derivation can produce, exactly as the relation
+    // is for the noun.
+    expect(partitionProblems({ ...PLACED, separate: [{ gate: 'check-ci-budget' }] }, GATES)).toEqual([
+      'check-ci-budget is declared separate and no sentence says what it measures',
+    ]);
+    expect(partitionProblems({ ...PLACED, separate: [{ gate: 'check-ci-budget', counts: '' }] }, GATES)).toEqual([
+      'check-ci-budget is declared separate and no sentence says what it measures',
+    ]);
+    expect(partitionProblems({ ...PLACED, separate: [{ gate: 'check-nowhere', counts: MEASURES }] }, GATES)).toEqual([
+      'check-ci-budget is in no population and not declared separate',
+      'check-nowhere is declared separate and does not print this noun',
+    ]);
+    expect(
+      partitionProblems(
+        { ...PLACED, populations: [['check-open-list', 'check-progress-volumes', 'check-ci-budget']] },
+        GATES,
+      ),
+    ).toEqual(['check-ci-budget is in a population and declared separate, so its count is claimed twice']);
+    expect(
+      partitionProblems({ ...PLACED, separate: [{ gate: 'check-ci-budget', counts: MEASURES }, { gate: 'check-ci-budget', counts: MEASURES }] }, GATES),
+    ).toEqual(['check-ci-budget is declared separate twice']);
+    // A gate in neither list is the state the refusal has always named, and the repair it names now
+    // includes the new one: a population, or a declaration.
+    expect(partitionProblems({ ...PLACED, separate: [] }, GATES)).toEqual([
+      'check-ci-budget is in no population and not declared separate',
+    ]);
+    // A document with neither field says nothing at all, which is a different refusal from a
+    // document that says `populations: []` and declares every gate separate.
+    expect(partitionProblems({ noun: NOUN, relation: 'a sentence' }, GATES)).toEqual([
+      'nothing says which of its gates read one population',
+    ]);
+    expect(
+      partitionProblems({ noun: NOUN, populations: [], separate: GATES.map((gate) => ({ gate, counts: 'its own set' })) }, GATES),
+    ).toEqual([]);
+    // A record that carries only declarations is complete too: the noun's gates are all accounted
+    // for, and a reader that demanded `populations` as well would refuse the one shape a noun of
+    // three unrelated corpora has.
+    expect(
+      partitionProblems({ noun: NOUN, separate: GATES.map((gate) => ({ gate, counts: 'its own set' })) }, GATES),
+    ).toEqual([]);
+  });
+
+  it('holds a separate sentence to that gate\'s own figures, because the number beside it is that gate\'s', () => {
+    // The relation's figures are checked against every count the noun is printed with, because a
+    // relation is about the noun. A separate sentence is about one gate's number, so the only count
+    // it may repeat is that gate's. `50` is printed by `check-progress-volumes` and not by
+    // `check-ci-budget`, and a sentence that lent it to the distance would be finding 620 one
+    // sentence over.
+    expect(
+      unprintedFiguresOf(census, judged({ separate: [{ gate: 'check-ci-budget', counts: 'the 0 rows between 50 rounds' }] })),
+    ).toEqual([{ noun: NOUN, gate: 'check-ci-budget', stated: [50], counts: [0] }]);
+    expect(
+      unprintedFiguresOf(census, judged({ separate: [{ gate: 'check-ci-budget', counts: 'the 0 rows between two rounds' }] })),
+    ).toEqual([]);
+  });
+});
+
 describe('the gate holds the shipped inventory to the shipped gates', () => {
   // The one case that reads the shipped tree, and the only expensive one: the census spawns the
   // eighteen gates, which is 2.5 s on an idle machine. Under `verify-site-proofs` every child also
@@ -676,6 +832,16 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     expect(result.stdout).toMatch(
       /round\(s\) — .*\d+ `vX\.YY` in check-open-list; \d+ `vX\.YY`, \d+ `Pass` in check-progress-volumes/,
     );
+    // The third number under that noun is a distance, and the shipped record says so: `0` between the
+    // ledger's newest row and the newest round, declared separate rather than filed among the counts.
+    // A shape rather than a number for the reason above -- the distance is zero in a round that
+    // closed its ledger and non-zero in one that did not.
+    expect(result.stdout).toMatch(
+      /round\(s\) — .*\d+ in check-ci-budget \(declared separate: how far the ledger's newest row sits from the newest round/,
+    );
+    // And the summary accounts for every placement rather than only for the populations, so a reader
+    // can see that the record is 22 of them and that one is not a count of its noun.
+    expect(result.stdout).toMatch(/\d+ placement\(s\) of those nouns: \d+ in populations two or more gates read, \d+ in populations of one gate, 1 declared separate/);
     expect(result.stdout).toContain('unit noun(s)');
     expect(result.stdout).not.toContain(UNSTATED);
   }, 120_000);
@@ -917,7 +1083,46 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     writeFileSync(path, JSON.stringify(answered, null, 2));
     const result = run(['--inventory', path, '--readings', RECORDED]);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('row(s) (check-open-list is in no population)');
+    expect(result.stderr).toContain('row(s) (check-open-list is in no population and not declared separate)');
+  });
+
+  it('refuses a declaration that does not say what it measures, and accepts the same gate with one', () => {
+    // `O-104`'s repair is a sentence per declared gate, so the sentence is the thing the refusal has
+    // to demand -- and it is demanded through both doors, because `--write` copies sentences forward
+    // and would otherwise record a declaration nobody could read.
+    const { path, document } = derive('separate-sentence.json');
+    const declared = (counts: string) => ({
+      relation: 'three tables',
+      populations: [['check-fault-cases', 'check-repository-table']],
+      separate: [{ gate: 'check-open-list', counts }],
+    });
+    writeFileSync(path, JSON.stringify(judged(document, 'row(s)', declared('')), null, 2));
+    const refused = run(['--inventory', path, '--readings', RECORDED]);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain('row(s) (check-open-list is declared separate and no sentence says what it measures)');
+    // `--write` does not refuse this one: it regenerates the vocabulary and names what a person
+    // still has to write, which for an unplaced gate has always been the trade -- the alternative
+    // is a writer that will not write until the document is perfect, which is every round.
+    const wrote = run(['--write', '--inventory', path, '--readings', RECORDED]);
+    expect(wrote.status, wrote.stderr).toBe(0);
+    expect(wrote.stderr).toContain('check-open-list is declared separate and no sentence says what it measures');
+    // With the sentence the same document is green, and `--write` keeps the declaration exactly as
+    // it was written: the field is copied the way the relation is, and for the same reason.
+    writeFileSync(
+      path,
+      JSON.stringify(judged(document, 'row(s)', declared('the rows of the log tables, counted somewhere no reader sees')), null, 2),
+    );
+    expect(run(['--inventory', path, '--readings', RECORDED]).status).toBe(0);
+    const copied = run(['--write', '--inventory', path, '--readings', RECORDED]);
+    expect(copied.status, copied.stderr).toBe(0);
+    expect(JSON.parse(readFileSync(path, 'utf8')).judgements).toEqual([
+      {
+        noun: 'row(s)',
+        populations: [['check-fault-cases', 'check-repository-table']],
+        separate: [{ gate: 'check-open-list', counts: 'the rows of the log tables, counted somewhere no reader sees' }],
+        relation: 'three tables',
+      },
+    ]);
   });
 
   it('refuses a population the record declares one when its gates print different counts', () => {
@@ -952,12 +1157,12 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     const refused = run(['--inventory', path, '--readings', JOINED]);
     expect(refused.status).toBe(1);
     expect(refused.stderr).toContain('no record says which of them read one population');
-    expect(refused.stderr).toContain('row(s) (check-l4-status is in no population)');
+    expect(refused.stderr).toContain('row(s) (check-l4-status is in no population and not declared separate)');
     const wrote = run(['--write', '--inventory', path, '--readings', JOINED]);
     expect(wrote.status, wrote.stderr).toBe(0);
     // Named rather than silent: the next run refuses this document, and the person reading the
     // writing has to know that before they read the refusal.
-    expect(wrote.stderr).toContain("row(s) is not partitioned over this run's gates — check-l4-status is in no population");
+    expect(wrote.stderr).toContain("row(s) is not partitioned over this run's gates — check-l4-status is in no population and not declared separate");
     const after = JSON.parse(readFileSync(path, 'utf8'));
     expect(after.judgements.find((one: { noun: string }) => one.noun === 'row(s)')).toMatchObject({
       noun: 'row(s)',

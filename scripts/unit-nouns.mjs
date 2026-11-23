@@ -261,10 +261,24 @@ export function unprintedFiguresOf(census, judgements = new Map()) {
       ...new Set([...perGate.keys()].sort().flatMap((gate) => numbersOf(perGate.get(gate)))),
     ];
     const missing = figuresOf(judgement.relation).filter((figure) => !counts.includes(figure));
-    if (missing.length === 0) continue;
-    out.push({ noun: judgement.noun, stated: missing, counts });
+    if (missing.length > 0) out.push({ noun: judgement.noun, stated: missing, counts });
+    // The separate sentences are held to a narrower set, because the number beside each of them is
+    // one gate's number: a distance may repeat its own count and must not borrow another gate's. The
+    // union would have let `check-ci-budget`'s sentence state the `50` that
+    // `check-progress-volumes` prints -- finding 620 with one more hop between the figure and the
+    // reader who could have caught it.
+    for (const one of separateOf(judgement)) {
+      if (one.gate === null || one.counts === null) continue;
+      const own = [...new Set(numbersOf(perGate.get(one.gate) ?? []))];
+      const absent = figuresOf(one.counts).filter((figure) => !own.includes(figure));
+      if (absent.length > 0) out.push({ noun: judgement.noun, gate: one.gate, stated: absent, counts: own });
+    }
   }
-  return out.sort((a, b) => a.noun.localeCompare(b.noun));
+  return out.sort(
+    (a, b) =>
+      a.noun.localeCompare(b.noun) ||
+      String(a.gate ?? '').localeCompare(String(b.gate ?? '')),
+  );
 }
 
 /** The nouns more than one gate prints, in the order a reader would want: most gates first. */
@@ -399,6 +413,43 @@ export function partitionOf(judgement) {
 }
 
 /**
+ * The gates a judgement declares print the noun and do not count its members -- or `[]`.
+ *
+ * The third placement, and the one `O-104` measured the need for. A partition has one word for a
+ * group of gates, and the corpus had a number that is not a count of the noun at all:
+ * `check-ci-budget` prints `0 round(s)`, meaning **how far** the ledger's newest row sits from the
+ * newest round. Written as `[["check-ci-budget"]]` it was a population of one -- the same shape as
+ * `check-workflow-language`'s six workflows, which is a corpus -- so the record said a distance was a
+ * count of rounds. The noun's population is rounds; the distance between two of them is not a member
+ * of it, and the schema had no way to say so.
+ *
+ * A declaration is a gate and a sentence, because the two questions are one: *which* number is not a
+ * count, and *what* it measures instead. The sentence is held to the same rule the noun's relation
+ * is -- a figure it states must be one **that gate** printed -- and it is checked against that gate's
+ * counts alone rather than against every count under the noun, because the number beside it is that
+ * gate's number. The relation is about the population and would have to say two things at once.
+ *
+ * Sorted by gate, and `null` for a sentence nobody wrote, so a refusal can name the one thing missing
+ * rather than a shape. An entry whose gate is not a name is kept with `gate: null` for the same
+ * reason: the refusal is about a declaration that says nothing, not about a reader that crashed.
+ */
+export function separateOf(judgement) {
+  const separate = judgement?.separate;
+  if (!Array.isArray(separate)) return [];
+  return separate
+    .map((one) => ({
+      gate:
+        typeof one === 'string' && one !== ''
+          ? one
+          : typeof one?.gate === 'string' && one.gate !== ''
+            ? one.gate
+            : null,
+      counts: typeof one?.counts === 'string' && one.counts.trim() !== '' ? one.counts : null,
+    }))
+    .sort((a, b) => (a.gate ?? '').localeCompare(b.gate ?? ''));
+}
+
+/**
  * What is wrong with a judgement's partition, as a list a reader can act on -- empty when nothing is.
  *
  * A partition is a claim that the noun's gates are covered exactly once. Each way of failing that is
@@ -419,14 +470,23 @@ export function partitionOf(judgement) {
  */
 export function partitionProblems(judgement, gates) {
   const raw = judgement?.populations;
-  if (!Array.isArray(raw)) return ['nothing says which of its gates read one population'];
+  const rawSeparate = judgement?.separate;
+  // Neither field present is the unfilled record. `populations: []` is a filled one that says no two
+  // of these gates read one set, and it is accepted because every gate can then be declared separate
+  // -- the state a noun of unrelated corpora would be in.
+  if (!Array.isArray(raw) && !Array.isArray(rawSeparate)) {
+    return ['nothing says which of its gates read one population'];
+  }
   // A flat list of names is the shape this field very nearly took in its first draft, and it reads
   // as one population of two. It is refused once, by name, rather than coerced or reported per
   // gate: a person who wrote `["a", "b"]` meant one of two things, and the rest of the problems are
   // consequences of the first.
-  const flat = raw.find((group) => !Array.isArray(group));
-  if (flat !== undefined) return [`a population written as ${JSON.stringify(flat)} rather than as a list of gates`];
-  const groups = partitionOf(judgement);
+  if (Array.isArray(raw)) {
+    const flat = raw.find((group) => !Array.isArray(group));
+    if (flat !== undefined) return [`a population written as ${JSON.stringify(flat)} rather than as a list of gates`];
+  }
+  const groups = partitionOf(judgement) ?? [];
+  const separate = separateOf(judgement);
   const problems = [];
   const placed = new Set();
   for (const group of groups) {
@@ -440,7 +500,37 @@ export function partitionProblems(judgement, gates) {
       placed.add(gate);
     }
   }
-  for (const gate of gates) if (!placed.has(gate)) problems.push(`${gate} is in no population`);
+  // The declarations are read before the coverage line, because a gate that is declared separate is
+  // placed: the coverage question is whether every gate the census found is accounted for, and
+  // `separate` is one of the two ways of accounting for one.
+  const declared = new Set(separate.map((one) => one.gate).filter((gate) => gate !== null));
+  for (const gate of gates) {
+    if (!placed.has(gate) && !declared.has(gate)) problems.push(`${gate} is in no population and not declared separate`);
+  }
+  // A gate declared twice is refused once, before the per-entry checks: the second entry's sentence
+  // is not the repair, and printing "no sentence" beside it would send the author to write a
+  // sentence the document already holds.
+  const repeats = new Map();
+  for (const one of separate) {
+    if (one.gate !== null) repeats.set(one.gate, (repeats.get(one.gate) ?? 0) + 1);
+  }
+  for (const [gate, times] of repeats) {
+    if (times > 1) problems.push(`${gate} is declared separate twice`);
+  }
+  for (const one of separate) {
+    if (one.gate === null) {
+      problems.push('a declaration with no gate in it');
+      continue;
+    }
+    if ((repeats.get(one.gate) ?? 0) > 1) continue;
+    if (!gates.includes(one.gate)) problems.push(`${one.gate} is declared separate and does not print this noun`);
+    else if (placed.has(one.gate)) {
+      problems.push(`${one.gate} is in a population and declared separate, so its count is claimed twice`);
+    }
+    if (one.counts === null) {
+      problems.push(`${one.gate} is declared separate and no sentence says what it measures`);
+    }
+  }
   return problems;
 }
 
@@ -490,7 +580,7 @@ export function coincidencesOf(census, judgements = new Map()) {
       }
     }
     const { declared } = stateOf(census, judgements, noun);
-    const groups = declared ? partitionOf(judgementFor(judgements, noun)) : [];
+    const groups = declared ? (partitionOf(judgementFor(judgements, noun)) ?? []) : [];
     for (const [count, one] of byCount) {
       if (one.size < 2) continue;
       const gates = [...one].sort();
@@ -521,7 +611,7 @@ export function disagreementsOf(census, judgements = new Map()) {
     // twice: that is `partitionProblems`' refusal and it comes first, because a group drawn around
     // the wrong gates would make this check ask the wrong question.
     if (!state.declared) continue;
-    for (const group of partitionOf(state.judgement)) {
+    for (const group of partitionOf(state.judgement) ?? []) {
       if (group.length < 2) continue;
       const { common, counts, unread } = agreementOf(census, noun, group);
       if (common.length > 0 && unread.length === 0) continue;
@@ -575,8 +665,20 @@ export function unpartitionedOf(census, judgements = new Map()) {
 export function numbersOfNoun(census, judgements, noun) {
   const perGate = census.get(noun);
   const state = stateOf(census, judgements, noun);
-  const groups = state.declared ? partitionOf(state.judgement) : state.gates.map((gate) => [gate]);
-  const said = groups.map((group) => {
+  const groups = state.declared ? (partitionOf(state.judgement) ?? []) : state.gates.map((gate) => [gate]);
+  // The two kinds are printed in two runs rather than interleaved by gate name: the populations are
+  // the counts of the noun, and the declarations are the numbers that are not counts of it, so a
+  // reader who wants the population can stop at the first declaration. `measures` is `null` for a
+  // population, and the difference is the whole of what this line now says.
+  const entries = [
+    ...groups.map((group) => ({ gates: group, measures: null })),
+    ...(state.declared
+      ? separateOf(state.judgement)
+          .filter((one) => one.gate !== null)
+          .map((one) => ({ gates: [one.gate], measures: one.counts ?? '' }))
+      : []),
+  ];
+  const said = entries.map(({ gates: group, measures }) => {
     const numbers = group.map((gate) => {
       const uses = perGate.get(gate) ?? [];
       const counted = numbersOf(uses);
@@ -590,6 +692,7 @@ export function numbersOfNoun(census, judgements, noun) {
       });
       return `${written.join(', ')} in ${gate}`;
     });
+    if (measures !== null) return `${numbers[0]} (declared separate: ${measures})`;
     if (group.length === 1) return numbers[0];
     const { common, unread } = agreementOf(census, noun, group);
     const note =
@@ -664,15 +767,31 @@ export function summaryOf(census, judgements = new Map()) {
   );
   let populations = 0;
   let agreeing = 0;
+  // The ledger: every gate the record places under a shared noun, with the three ways of placing one.
+  // Printed because the old summary counted populations and stopped, so a reader could not tell a
+  // record of six placements from a record of twenty-two -- and the number that is not a count of its
+  // noun was one of the sixteen the clause did not mention (`O-104`).
+  let placements = 0;
+  let inPopulations = 0;
+  let inPopulationsOfOne = 0;
+  let separated = 0;
   for (const { noun } of shared) {
     const state = stateOf(census, judgements, noun);
     if (!state.declared) continue;
-    for (const group of partitionOf(state.judgement)) {
-      if (group.length < 2) continue;
+    for (const group of partitionOf(state.judgement) ?? []) {
+      placements += group.length;
+      if (group.length < 2) {
+        inPopulationsOfOne += group.length;
+        continue;
+      }
+      inPopulations += group.length;
       populations += 1;
       const { common, unread } = agreementOf(census, noun, group);
       if (common.length > 0 && unread.length === 0) agreeing += 1;
     }
+    const apart = separateOf(state.judgement).filter((one) => one.gate !== null);
+    placements += apart.length;
+    separated += apart.length;
   }
   parts.push(
     populations === 0
@@ -680,6 +799,12 @@ export function summaryOf(census, judgements = new Map()) {
       : `${String(populations)} population(s) are read by more than one gate, and ` +
         `${String(agreeing)} of them agree on a count`,
   );
+  if (placements > 0) {
+    parts.push(
+      `${String(placements)} placement(s) of those nouns: ${String(inPopulations)} in populations two or more gates read, ` +
+        `${String(inPopulationsOfOne)} in populations of one gate, ${String(separated)} declared separate`,
+    );
+  }
   const forced = coincidences.filter((one) => one.within).length;
   parts.push(
     coincidences.length === 0

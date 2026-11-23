@@ -488,13 +488,16 @@
           "check-progress-volumes"
         ],
         [
-          "check-ci-budget"
-        ],
-        [
           "check-acceptance-shape"
         ]
       ],
-      "relation": "one set of headings read twice -- `check-open-list` counts the distinct `vX.YY` labels among them and `check-progress-volumes` counts the sections that carry one, so that the two agree is a rule rather than a coincidence, because no round may be headed twice; the second gate prints the `Pass` rounds it also counts beside them; and `check-ci-budget` prints a third thing with the same word -- how many rounds sit between the ledger's newest row and the newest round -- which is a distance and not a count of anything, so its number is compared with nothing and moves every round the log does not close; and `check-acceptance-shape` prints a fourth thing with the same word -- how many distinct rounds the headings of `docs/acceptance.md` name, which is a set of its own: a clause is filed under the round that decided it and one round may decide several clauses, so the rounds the clauses name are counted once each and the number is compared with nothing outside that page"
+      "separate": [
+        {
+          "gate": "check-ci-budget",
+          "counts": "how far the ledger's newest row sits from the newest round -- a distance, so its number is compared with nothing and moves every round the log does not close"
+        }
+      ],
+      "relation": "one set of headings read twice, and a third set of its own -- `check-open-list` counts the distinct `vX.YY` labels among the headings and `check-progress-volumes` counts the sections that carry one, so that the two agree is a rule rather than a coincidence, because no round may be headed twice, and the second gate prints the `Pass` rounds it also counts beside them; `check-acceptance-shape` counts a set of its own -- the distinct rounds the headings of `docs/acceptance.md` name -- and a clause is filed under the round that decided it while one round may decide several, so those rounds are counted once each and the number is compared with nothing outside that page"
     },
     {
       "noun": "row break(s)",
