@@ -544,6 +544,25 @@
   not get is a measurement of the cold state: no run in this repository has recorded one, which is why the
   rule is a lower bound rather than a derivation and why the summary prints the multiple beside the number.
 
+
+- O-103 · ~~**A snapshot taken mid-round is indistinguishable from one taken at the end.**~~
+  `measure-doc-counts --write-doc` spawns the suite and writes what it finds, so the golden records
+  the suite **as it stands** at that moment: v3.132 took the snapshot with eight of its nine new cases
+  written and published **6,843** against a tree that ended at **6,844**, and v3.131 wrote its row
+  before `git add` and published **672** tracked files against the checkout's **675**.
+  ~~`[open: whether a write can know that it is the round's last act -- the ordering is a discipline
+  today, and the reader that catches a violation is a full local run rather than a refusal at the
+  moment of writing]`~~
+  **Closed by finding 630**, which answers the question by denying its premise: *"the tree will not
+  change after this"* is a claim about the future, so no writer can hold it, and what can be checked is
+  the tree rather than the writer's clock. `measure-doc-counts --check` re-derives the three scopes --
+  by spawning the suite, or from the coverage run's reports with `--from` -- and refuses a snapshot one
+  test off; it is step **6** of `verify:local`, immediately after the step that writes the reports, and
+  the same step in CI. The discipline is therefore *read after the last edit* rather than *write last*.
+  The residual the entry did not name -- `docs:check` compares two files and is green on a stale pair --
+  is `O-110`, and the round found the matching defect in a marker: a previous round's rows written
+  `(as of this commit)` had to be dated, not renumbered.
+
 - O-104 · ~~**`round(s)` has three readers and only two of them count a population.**~~ The third
   states how far the ledger's newest row sits from the newest round, and the partition had no word for
   a number that is not a count of its noun, so it was written `[["check-ci-budget"]]` -- a population of
@@ -572,3 +591,19 @@
   the entry also asked, why the `22/22` of v3.134 went out at v3.135 with nothing refusing it, is
   answered by the same clause: a size is not a claim, so a run owes the reader the class rather than a
   refusal, and the class prints at zero. The parenthesis naming a count rather than a noun is `O-107`.
+
+- O-107 · ~~**The marker names a noun's equality without naming the count, and a noun can carry two of
+  them.**~~ v3.136 gave the coincidence three classes and printed all three counts, and the parenthesis
+  stayed at one sentence per noun: `8` held by one population and `9` kept apart printed
+  `(a count two gates print agrees, and the record places them in different sets)`, which is true of
+  the `9` and false of the `8` beside it. ~~`[open: whether the parenthesis should name the count it is
+  about -- eight characters per coincidence, and a list once a noun has three -- or whether a marker
+  that speaks for the noun is the right granularity precisely because the numbers line has already
+  spoken for each count]`~~
+  **Closed by finding 629**, on the first half: the sentence opens with its count (`at 9, ...`), so it
+  is the property of exactly one number, and a noun with three coincidences prints three sentences in
+  the order of the counts they name. The second half was right about the numbers line and wrong about
+  the parenthesis -- the numbers line marks a forced coincidence in place, and the parenthesis was
+  speaking for a different number in the same words. **Eight mutations, 31 reds**, and the two the
+  round bought -- sentences reversed, and only the first printed -- are caught by the new case and by
+  nothing that existed at v3.136.

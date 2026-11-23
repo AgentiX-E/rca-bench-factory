@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 260 core + 4 cli |
-| Test lines | 116,864 core + 3,242 cli |
-| Tests | 6,883 core + 187 cli |
+| Test lines | 116,885 core + 3,242 cli |
+| Tests | 6,884 core + 187 cli |
 | Tracked files | 678 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.136: **41** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.137: **41** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1002,14 +1002,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   the round is frozen -- but which of the two homes a closure has when the round that closes it also
   restates it is not decided anywhere, and the answer decides whether 30 records are corrected or the rule
   is scoped; neither can be done by a round that is not allowed to edit a frozen record]`
-- O-103 · **A snapshot taken mid-round is indistinguishable from one taken at the end.**
-  `measure-doc-counts --write-doc` spawns the suite and writes what it finds, so the golden records the
-  suite **as it stands** at that moment: v3.132 took the snapshot with eight of its nine new cases written,
-  so the golden said **6,843** core tests against a tree that ended with **6,844**, and the repository table
-  derived the stale number from it. v3.131's error is the same act one step earlier (`--write` before
-  `git add`: `Tracked files` **672** against the checkout's **675**). Neither file says when the round ended.
-  `[open: whether a write can know that it is the round's last act -- the ordering is a discipline today,
-  and the reader that catches a violation is a full local run rather than a refusal at the moment of writing]`
 - O-105 · **The acceptance file is 40 clauses of case law, and a reader who wants the rules must read all of it.**
   The index added at v3.134 makes the file navigable and does not make it shorter: **40** clauses across
   **31** rounds, **2,247 lines at v3.135**, each a judgement with the case that decided it. A reader who
@@ -1018,18 +1010,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: whether the acceptance file should be two files -- the rules, and the case law -- with each rule
   naming the case that decided it, and whether a rule whose case is one section away is still checkable by
   the reader who has to apply it]`
-- O-107 · **The marker names a noun's equality without naming the count, and a noun can carry two of them.**
-  v3.136 gave the coincidence three classes and prints all three counts, so the line no longer confuses
-  a size between two declared sets with an equality nobody has placed. The parenthesis itself is still
-  **one sentence per noun**: `a` and `b` can share a population and print `8` while `c` and `d` sit in
-  populations of their own and print `9`, and the line then reads `(a count two gates print agrees, and
-  the record places them in different sets)` -- true of the `9` and false of the `8`, which the numbers
-  line marks in place as `one population at 8, and the count agrees`. No shipped noun is in that state
-  (`row(s)` carries one `apart` coincidence and nothing else), so the harm is hypothetical today; the
-  fixture that reaches it is in `unit-nouns.test.ts`.
-  `[open: whether the parenthesis should name the count it is about -- eight characters per coincidence,
-  and a list once a noun has three -- or whether a marker that speaks for the noun is the right
-  granularity precisely because the numbers line has already spoken for each count]`
 - O-108 · **`lint` is seven members and two of them spawn the tree, so the step is not a static scan.**
   `pnpm lint` runs six guards that read files and two verifiers that copy the repository and run a
   suite in each (`verify-scorer-stability`, `verify-site-proofs`), which is why the step is twice the
@@ -1053,6 +1033,23 @@ is a row about rather than paraphrase one that no `grep` will find.
   from at all, and whether the fix is to print the dispersion beside the multiple -- the gate prints
   one multiple and no spread -- or to measure the cold and warm paths as two readings with two
   bounds]`
+- O-110 · **`docs:check` cannot see the tree, and its green is read as though it could.**
+  `check-doc-counts` compares the document with the snapshot and never spawns the suite, so a snapshot
+  and the rows that quote it can be wrong *together* -- measured at v3.137, one test off, exit **0**
+  against exit **1** from the reader that re-derives. That reader exists (step 6 of `verify:local`),
+  but a developer who runs the gate and stops has not run it, and nothing in its output says so.
+  `[open: whether `docs:check` should read a `--from` report when one is present -- the reports are
+  written by the coverage step, so a tree that has not run coverage has none, and a gate whose verdict
+  depends on whether another command was run is a gate with two meanings]`
+- O-111 · **A current-state row is dated only when its number moves.**
+  v3.136's three suite rows were written `(as of this commit)` and were still marked current a round
+  later; what caught them was v3.137 adding a test. A round that edits only documents moves no count,
+  so the older rows stay marked current, and a reader comparing two volumes finds two rounds each
+  claiming to be now. The repair at v3.137 was to date them, and the trigger was an event rather than
+  a rule.
+  `[open: whether the guard should refuse a current-state row outside the newest round -- the round is
+  a heading and the newest one is derivable, but the check would then depend on where a row sits rather
+  than on what it says, and the same sentence would be refused in one volume and allowed in another]`
 ## Pass log
 
 The rounds are recorded in the volumes below, in the order they were run. They were one
@@ -1088,7 +1085,7 @@ and this table.
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
-| [volume-19.md](progress/volume-19.md) | 16 | v3.121 | v3.136 |
+| [volume-19.md](progress/volume-19.md) | 17 | v3.121 | v3.137 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

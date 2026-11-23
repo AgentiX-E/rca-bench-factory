@@ -2011,9 +2011,9 @@ measures the tree.**
 | --- | --- |
 | CI | run `45192493234` on `87b1dcb`: **8 of 8 jobs success**, 945 s (14:16:51 -> 14:32:36); the recording is this run's, so it reads **61** min measured against **241** min of bounds in 8 ceilings |
 | `pnpm run docs:check` | **23 steps, exit 0** |
-| `core` test suite | **260 files, 6883 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7070 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 6883 tests passed** (at v3.136) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.136) |
+| repo test suite | **264 files, 7070 tests passed** (at v3.136) |
 | new tests | **6,880 -> 6,883, +3**: the three-class case, the marker's two sentences, and the three counts with a number in each class |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
 | the census | **4** coincidences: **3** `together`, **1** `apart`, **0** `unplaced` |
@@ -2071,3 +2071,150 @@ reds, the ceiling back at 39 is **3**.
   `[open: whether a reading whose dispersion is two cache states is a reading a bound can be sized
   from at all, and whether the fix is to print the dispersion beside the multiple or to measure the
   cold and warm paths as two readings with two bounds]`
+
+## v3.137 — a marker names the count it is about, and a snapshot is a claim about a tree
+
+Two entries this round, both of them a sentence that was true of one thing and read as a statement
+about another. `O-107` was opened by v3.136's own repair: the marker had just been given its three
+classes and still spoke once for a noun that can carry two equalities. `O-103` was opened two rounds
+earlier by a snapshot taken in the middle of a round's edits, and it asks a question no writer can
+answer.
+
+### The marker spoke for the noun
+
+`O-107`'s own text named the cost and the counter-argument: *eight characters per coincidence, and a
+list once a noun has three*, against *a marker that speaks for the noun is the right granularity
+precisely because the numbers line has already spoken for each count*. Both halves are true, and the
+second one is what the line did -- once per noun, first branch that matched.
+
+The state it could not express is one census row away. Four gates, `8` printed by `a` and `b` inside a
+declared population and `9` printed by `c` and `d` from populations of their own:
+
+```
+row(s) — 8 in a; 8 in b (one population at 8, and the count agrees); 9 in c; 9 in d
+(at 9, a count two gates print agrees, and the record places them in different sets) — four tables
+```
+
+The old line printed the second parenthesis without `at 9`, once, for the noun -- true of the `9`,
+false of the `8` four words earlier. A reader who acted on it acted on the number it was not about,
+which is finding 611 one turn further out: a sentence that reaches the right verdict about the wrong
+subject.
+
+The repair is one sentence per coincidence, built from that coincidence:
+
+```js
+const what =
+  one.placement === 'unplaced'
+    ? 'a count two gates print agrees, and no population places them'
+    : one.placement === 'apart'
+      ? 'a count two gates print agrees, and the record places them in different sets'
+      : null;
+if (what !== null) said.push(`at ${String(one.count)}, ${what}`);
+```
+
+The class that needs no marker still contributes none, and the old argument -- `unplaced` holds only
+for an undeclared noun, `apart` only for a declared one, so the two can never co-occur -- is still true
+and no longer load bearing. v3.136 called the joined-list shape *dead before it ran once*; what was dead
+was the branch that joined **classes**, and the shape that survives joins **coincidences**, of which a
+noun may have several of one class. The comment says so, and the fixture that proves it prints `at 3`
+and `at 12` under one noun.
+
+### The reader that can refuse a snapshot
+
+`O-103` read as a question about ordering -- *can a write know that it is the round's last act* -- and
+the answer is no for a reason that is not about machinery: the claim is about the future. What the
+entry did not say is that the tree's state is already checkable, by a reader that re-derives it.
+
+| reader | compares | spawns the suite | a snapshot one test off |
+| --- | --- | --- | --- |
+| `check-doc-counts` (in `docs:check`) | the document against the snapshot | no | **OK** |
+| `measure-doc-counts --check` | the snapshot against the tree | yes, three scopes | stale |
+| `measure-doc-counts --check --from` | the snapshot against the coverage reports | no | stale |
+
+Measured this round, one command apart on one tree:
+
+```
+node scripts/check-doc-counts.mjs                      -> exit 0
+node scripts/measure-doc-counts.mjs --check --from ... -> exit 1  (committed 6882, measured 6883)
+```
+
+So the discipline is not *write last* but **read after the last edit**: `gate-steps.mjs` classifies the
+counts step as local and the plan puts it at position **6** of 48, immediately after `test:coverage`
+whose reports it reads. A snapshot may be taken whenever; what it cannot survive is a suite that runs
+after the tree has moved again.
+
+### The marker that said "now" about a past tree
+
+The same distinction had a live defect in last round's record. Its three suite rows were written
+`(as of this commit)` -- the phrase the guard reads as *the current state* -- where every other round in
+the volume writes `(at v3.121)`. They were true when written and false the moment this round added a
+test, and `docs:check` refused all three:
+
+```
+declares the current state of 'core' as 260 files / 6883 tests, but the suite has 260 / 6884
+```
+
+The repair is not to change the number. `6,880 -> 6,883` is what that round measured, and editing the
+rows to `6,884` would contradict the `new tests` row two lines below them; the rows are dated
+`(at v3.136)` and keep their numbers. `current` is a claim about this tree, `dated` about that one, and
+a round that moves the tree owes the older row a date rather than a new number. The one reader that
+holds this together is a test: `check-doc-counts.test.ts` requires at least three current-state rows in
+the shipped document, so the newest round must publish them, and the rule that they equal the live
+snapshot makes them the round that is now.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the sentence drops the count it is about | 5 |
+| `apart` and `unplaced` share one sentence | 3 |
+| `unplaced` is printed as `apart` | 3 |
+| a coincidence inside a population is marked too | 4 |
+| the sentences are joined with a comma rather than a semicolon | 9 |
+| the sentences are printed newest count first | 1 |
+| the parenthetical loses its brackets | 5 |
+| the marker is printed once, whatever the noun carries | 1 |
+
+**Eight mutations, 31 reds**, on the green tree before the round's documents moved. The last two rows
+are what the round bought: reversing the sentences and truncating to the first are invisible to every
+assertion that existed at v3.136, and one new case -- three counts under one noun, two of them equal --
+catches both.
+
+The other half of the round has no mutation to record, because it adds no code to either reader. It has
+an experiment instead, and the experiment is the falsification: the same one-test-off snapshot is
+**exit 0** under `docs:check` and **exit 1** under `--check --from`, and the past round's three
+current-state rows are **3** refusals until they are dated.
+
+### Readings
+
+> Ledger for `v3.137`.
+
+| what | value |
+| --- | --- |
+| CI | baseline run `45192493234` on `87b1dcb`: **8 of 8 jobs success**, 945 s; this round's own run is recorded in the commit that follows the push |
+| `pnpm run docs:check` | **23 steps, exit 0** |
+| `core` test suite | **260 files, 6884 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **264 files, 7071 tests passed** (as of this commit) |
+| new tests | **6,883 -> 6,884, +1**: the census with three coincidences under one noun, two of them equal |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
+| the census | **4** coincidences: **3** `together`, **1** `apart`, **0** `unplaced`; the `row(s)` marker now opens with its count |
+| `docs/acceptance.md` | **44** clauses across **33** rounds; index **44** rows |
+
+### Left open
+
+- **`docs:check` cannot see the tree, and its green is read as though it could.** `check-doc-counts`
+  compares the document with the snapshot and never spawns the suite, so a snapshot and the rows that
+  quote it can be wrong together -- measured this round, one test off, exit **0**. The re-deriving
+  reader exists and is step 6, but a developer who runs the gate and stops has not run it.
+  `[open: whether `docs:check` should read a `--from` report when one is present -- the reports are
+  written by the coverage step, so a tree that has not run coverage has none, and a gate whose verdict
+  depends on whether another command was run is a gate with two meanings]`
+- **A current-state row is dated only when its number moves.** v3.136's three rows were written
+  `(as of this commit)` and were still marked current a round later; what caught them was this round
+  adding a test. A round that edits only documents moves no count, so the older rows stay marked
+  current and a reader comparing two volumes sees two rounds each claiming to be now.
+  `[open: whether the guard should refuse a current-state row outside the newest round -- the round is
+  a heading and the newest one is derivable, but the check would then depend on where a row sits
+  rather than on what it says, and the same sentence would be refused in one volume and allowed in
+  another]`
