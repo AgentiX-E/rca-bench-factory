@@ -90,7 +90,12 @@ jobs:
     # 2820 s; with 4 s of overhead doubled that is 2288 s, and R13's bounds
     # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
     # per setup step was paying for cold runners that cannot happen.
-    timeout-minutes: 39
+    #
+    # 40 from v3.136 (finding 628), for the same reason one line down: the lint bound moved
+    # 17 -> 18 minutes, so the bounds add up to 2160 s, and 2160 plus the 180 s allowance plus
+    # the 8 s of doubled overhead is 2348 s. The ceiling pays for the bounds it holds, and it
+    # is the only place that arithmetic can be written down.
+    timeout-minutes: 40
     steps:
       # Full history: see the note above `jobs:` (findings 612 and 614). This is the job the
       # first of those two was found in.
@@ -164,7 +169,20 @@ jobs:
         # `R10` refuses: a runner twice as slow would be refused for being slow rather than for
         # hanging. 960 s plus the 27 s measured in front of it is 987, inside the 24-minute
         # ceiling this round raised, so no ceiling had to move for this step's sake.
-        timeout-minutes: 17
+        #
+        # 18 from v3.136 (finding 628). Run 45192493234 measured **521 s**, and 17 minutes is
+        # 1020 s, which is 1.96x it -- `R12` refuses that. The 17 went in at v3.126 against a
+        # reading of 507 s, where twice is 1,014 and the bound was inside the multiple by **six
+        # seconds**, which is exactly the margin finding 422 warns about four lines up; and this
+        # comment stopped at "16 from v3.124" while the number had been 17 for ten rounds, so the
+        # step had a bound whose own narration was one round behind it. 1080 s is 2.07x the
+        # slowest reading: **38 s** of margin, not a doctrine. The step has moved 14 -> 16 -> 17 ->
+        # 18 as the suite grew, and the six readings on record are 307, 334, 501, 503, 507 and 521
+        # -- two populations, not one distribution -- so another minute is the arithmetic answer
+        # and not the structural one. What makes this step twice the size of its siblings is that
+        # two of its seven members spawn their own copies of the tree and run a suite in each
+        # (`verify-scorer-stability`, `verify-site-proofs`), and splitting them out is `O-108`.
+        timeout-minutes: 18
         run: pnpm lint
 
       - name: Test with coverage (core + cli, ≥95% per dimension, 100% functions)
