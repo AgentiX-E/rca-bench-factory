@@ -440,9 +440,9 @@ document that described it as downloading the data was describing an intention.
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 98 |
 | Source lines | 34,609 |
-| Test files | 258 core + 4 cli |
-| Test lines | 115,499 core + 3,242 cli |
-| Tests | 6,804 core + 187 cli |
+| Test files | 259 core + 4 cli |
+| Test lines | 115,825 core + 3,242 cli |
+| Tests | 6,835 core + 187 cli |
 | Tracked files | 672 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -523,7 +523,7 @@ those.
 
 The split is v3.111's, and it is a repair rather than tidying: an entry used to be struck
 where it stood, so this list carried its own history and grew by it -- **65,544 of 98,927
-bytes** by v3.110, two thirds of the file a reader opens to find out what is left. The index
+bytes** at v3.110, two thirds of the file a reader opens to find out what is left. The index
 is bounded by the volume that is still open, so the size of a list of closures was the reason
 the log could not start another volume (finding 568). `check-open-list.mjs` refuses a struck
 entry here and an unstruck one there, which is what keeps the two apart.
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.130: **38** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.131: **37** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -828,13 +828,12 @@ is a row about rather than paraphrase one that no `grep` will find.
   could refuse the case outright.
   `[open: which of the three, decided by a corpus that has one -- the shipped thirty-four have none]`
 
-- O-019 · **`docs/acceptance.md` is 96 KB and grows by clause per round.** L3 is 284 lines and L4 is 405;
-  L0, L1, L2 and L5 are 14, 7, 7 and 6, so the obvious split by layer would produce four files
-  of a dozen lines.
-  `[open: the axis is "current rule" against "how it was reached", not the layer -- the
-  per-round clauses are 139 lines and 11,139 bytes of history sitting in a specification, and
-  moving them needs the measurement of how many sections match that shape before the index
-  relation is re-checked]`
+- O-019 · **`docs/acceptance.md` grows by a clause per round, and the clauses are nearly half of it.**
+  The per-round clauses are **897 lines at v3.131** and **77,180 bytes at v3.131**, in a document of
+  **2,051 lines at v3.131**. L3 is **330 lines at v3.131** and L4 is 405; L0, L1, L2 and L5 are 14, 7, 7
+  and 6, so the obvious split by layer would produce four files of a dozen lines.
+  `[open: the axis is "current rule" against "how it was reached", not the layer -- moving the clauses
+  needs the measurement of how many sections match that shape before the index relation is re-checked]`
 ~~**The newest round's ledger is not required to carry a coverage row.** Of the **54** `### Readings`
   blocks this log holds, **24** carry one and **30** do not, v3.64's and v3.65's among them. The row is
   what a later reader looks for when asking what a round cost, and v3.66 answered it only after
@@ -857,7 +856,7 @@ is a row about rather than paraphrase one that no `grep` will find.
   and until it is the field stays empty -- a near-miss is what the row was doing before]`
 
 - O-021 · **Two prose targets cite a paper no digest pins.** `itbench` and `cloud-opsbench` print an arXiv id
-  beside the one the oracle corpus pins (`openrca-2.0`, 962,086 bytes, sha256 recorded), so the
+  beside the one the oracle corpus pins (`openrca-2.0`, sha256 recorded), so the
   identifier is a claim no transfer measured.
   `[open: each needs a sha256 and a byte count, or a declaration saying the identifier is all this
   repository read -- `official-assets.json` already has both states for data assets and neither for a
@@ -1006,14 +1005,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: whether the floor belongs to the job rather than to the step -- one allowance for everything before the
   first real step -- and what would then refuse a cold day that runs long on all six; the two numbers are 42 of 84
   and 24 of 58, and neither has been measured against a day that spent them]`
-- O-101 · **The live list states counts too, and the round that checked the census's sentences left its own list unread.**
-  `O-019` says `docs/acceptance.md` "is 96 KB and grows by clause per round" and the file is **165,067 bytes** --
-  **161.2** KB, not 96 -- so the entry that argues the file is too big to keep growing is quoting a measurement
-  from the round that wrote it. Finding 620 gave the census a reader for exactly this: a figure in a sentence must
-  be a count a gate printed. Nothing here prints the list's figures, and thirty-odd entries state them.
-  `[open: whether `check-open-list` can hold the numbers its own entries state -- a file size is one a gate can
-  measure, "284 lines" is one it can count, and the rest are as unbacked as the census's 4.7 per cent was; the two
-  costs are a reader per shape of figure and a rule that a limit states none]`
 
 ## Pass log
 
@@ -1049,7 +1040,8 @@ and this table.
 | [volume-15.md](progress/volume-15.md) | 7 | v3.84 | v3.90 |
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
-| [volume-18.md](progress/volume-18.md) | 19 | v3.112 | v3.130 |
+| [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
+| [volume-19.md](progress/volume-19.md) | 11 | v3.121 | v3.131 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

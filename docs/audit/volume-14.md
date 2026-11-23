@@ -1,7 +1,7 @@
 # Audit · volume 14
 
-Findings 579–620, from the rounds recorded in `progress/volume-17.md` and `progress/volume-18.md` as `v3.115`
-through `v3.130`.
+Findings 579–621, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
+`progress/volume-19.md` as `v3.115` through `v3.131`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -2322,3 +2322,143 @@ says the rule is about this corpus rather than about a fixture.
 Finding 602's form: **a comparison present in the output is not a comparison anyone made.** Here the comparison was
 absent as well -- one number printed by two gates and a third copy in prose, with no reader holding any two of them
 together. The census held the first two from v3.125 and the third from nothing at all.
+
+## Finding 621 — the live list states a size, and nothing read it
+
+### What the entry said
+
+`O-101`, opened by v3.130 in the same round its census learned to read a sentence: *"the live list
+states counts too, and the round that checked the census's sentences left its own list unread."* It
+named the evidence -- `O-019` says `docs/acceptance.md` "is 96 KB" -- and it named two costs, "a
+reader per shape of figure and a rule that a limit states none", and it chose neither.
+
+Neither cost is the round. The size is.
+
+### The measurement
+
+Every figure in `## Open` carrying a unit a commit can take again -- `bytes`, `KB`, `MB`, `lines` --
+read beside the file each one names:
+
+| where | the figure | what the tree has | |
+| --- | --- | --- | --- |
+| the `## Open` lead-in | `98,927 bytes` **by** v3.110 | -- | dated with a preposition the reader cannot read |
+| `O-019` | `96 KB` | **165,067 bytes** (161.2 KB) | **1.68x** too small |
+| `O-019` | `284 lines` (L3) | L3 is **330** lines | 46 lines short |
+| `O-019` | `139 lines` and `11,139 bytes` (the per-round clauses) | **897 lines** and **77,169 bytes** | **6.5x** and **6.9x** |
+| `O-021` | `962,086 bytes` (a paper) | not in this tree; pinned by sha256 | unmeasurable here |
+| `O-101` | `165,067 bytes` | 165,067 | true, and quotes `O-019`'s 96 KB |
+
+**Nine figures with a takeable unit, seven of them read** -- the other two sit inside a quotation --
+**and six of the seven are wrong.** The one that is right is the entry that reports the defect.
+
+### Why `O-019` is the finding and not the anecdote
+
+`O-019` argues that `docs/acceptance.md` has grown too large to keep growing, and it supported the
+argument with its size. The file is 1.68 times the figure. And the evidence the entry actually leans
+on -- "the per-round clauses are 139 lines and 11,139 bytes of history sitting in a specification" --
+is now 897 lines and 77,169 bytes, because thirty-four rounds have appended a clause each. The entry
+that argues the history has outgrown the specification was quoting the history at a sixth of its
+size.
+
+That is the shape finding 620 found one document over, in the census: a number in a sentence that
+nothing read, drifing while the thing it measured moved. The census answered it with **a figure must
+be a count a gate printed**. That answer cannot be transferred as written, because a live entry's
+numbers are not counts of the vocabulary -- they are measurements of a round, and no gate prints
+`77,169`. So the question `O-101` left open is not "which shapes can a reader read" but **what makes
+a measurement in prose safe**.
+
+### The rule: say when, or be this tree's
+
+A figure whose unit a commit can take again must carry the round that took it, or be the size the
+tree has at this commit:
+
+    `161.2 KB at v3.131`   a record -- the tree it was measured on is named, and a record does not age
+    `165,067 bytes`        a claim about now, and accepted only while it is true
+    `96 KB`                refused, and the refusal names the size the file has
+
+The units are the four **a commit can take again**: `bytes`, `KB`, `MB`, `lines`. `439 s` and `84
+minutes` measure a run that is over; no gate can take them, and a rule about them could be satisfied
+only by guessing. That boundary is the whole reason `O-011`'s `439 s` and `O-090`'s `2 873 ms` pass
+while `O-019`'s `96 KB` does not, and it is written in the module rather than left to be discovered.
+
+**Why a date and not the current size.** The file grows in most rounds, so a rule demanding this
+commit's size would be red on the round after every round that wrote one -- and a rule that is always
+red is the crying-wolf defect this campaign has recorded more than once, and the argument the volume
+budget already makes for judging only the volume that can still grow. A date is what turns a
+measurement into a **record**, and the live list is where a work item's evidence lives.
+
+**The two refusals are two repairs.** A sentence that names a file of this tree is told the size the
+file has (`that file is 165,067 bytes at this commit (161.2 KB)`); a sentence that names nothing is
+told to name the round (`868 lines at vX.YY`). A single message -- "an entry states a size" -- would
+send a person looking for which, and a message that named only the rule would send them looking for
+how.
+
+### Three things the reader has to know that a pattern does not say
+
+**A quotation is not the list's claim.** `O-101` could not report `O-019`'s 96 KB without quoting it.
+A reader that refused the quotation would refuse the report, which is the one repair a guard may
+never demand -- and the corpus has the precedent: `v2.26` quotes headings that are not headings and
+the volume reader tracks fences for it.
+
+**A sentence ends at a full stop inside a bold mark.** `O-019` writes `round.** L3 is 284 lines`, and
+a boundary pattern of a full stop and a space reads the two sentences as one -- which paired L3's
+length with the whole document's and produced a refusal whose repair would have been wrong: `284
+lines` is a section, and the file is 2,051. Measured rather than assumed: with the mark-up dropped
+from the boundary, the shipped tree is refused with `284 lines ... and that file is 2,051 lines`.
+
+**The lead-in is the list's voice too.** The paragraph above the bullets -- the one that says what the
+split cost -- held `65,544 of 98,927 bytes by v3.110`. A rule scoped to bullets would have left the
+text above them unread, which is finding 162's shape (a document that gains a text must gain a reader
+for it) one level in. It is read now, and it is dated `at v3.110` rather than `by`.
+
+### What the round changed in the entries
+
+- `O-019` was re-measured rather than corrected in one figure: 96 KB became nothing, because the
+  file's size is not what the argument needs; L3's length and the per-round clauses are stated with
+  the round that took them; and the headline says what grows instead of how big it is.
+- `O-021` lost `962,086 bytes`. The digest is the pin -- "`openrca-2.0`, sha256 recorded" -- and the
+  byte count was doing no work in a sentence about two other targets having no pin at all. A figure
+  that comes back must come back dated.
+- The lead-in's `by v3.110` became `at v3.110`: one word, and the figure became a record.
+
+### What the round did not change
+
+- **Every record and every closure.** A `### Left open` row and a struck entry are frozen: their
+  numbers were measured at the round that wrote them, and a rule demanding dates of them would be
+  demanding an edit of the record. The gate reads the live list and no other kind.
+- **`check-doc-counts`'s subject.** The counts in the index's tables have had a reader since finding
+  123, and that reader is stricter than this one: it demands the scope as well as the number.
+- **The census's rule.** `figuresOf` and `unprintedFiguresOf` are unchanged, and the two rules are not
+  in conflict: a census sentence describes the vocabulary **now**, so a figure in it must be a count a
+  gate prints; a live entry describes a defect **at a round**, so its figures are measurements, and
+  the thing a measurement needs is a date. One document, two subjects, two rules -- and the difference
+  is written in both modules rather than left to whichever reader arrives first.
+- **A date cannot make a figure true.** `96 KB at v3.131` would pass while being wrong, exactly as a
+  ledger's `(as of `sha`)` marker passes while naming a tree it was not measured on (finding 309). The
+  guard's subject is the accident -- a measurement that aged while the thing it measured moved -- and
+  not the lie.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| every figure counts as dated | 8 |
+| no figure is ever dated | 4 |
+| quotations are read | 1 |
+| a sentence ends only at a full stop and a space | 1 |
+| exact match, no rounding | 2 |
+| the nearest name pairs regardless of sentence | 1 |
+| the lead-in is not read | 1 |
+| every section kind is read, records and closures included | 1 |
+| an empty text is one line long | 1 |
+| a wrapped figure is quoted wrapped | 1 |
+| a length compared with the file's bytes | 1 |
+
+**Eleven mutations, 22 reds.** The fourth reddens the shipped tree as well as a case, which is the one
+of the eleven that says the rule is about this corpus rather than about a fixture.
+
+### What this finding is an instance of
+
+Finding 309's ledger rule -- **one ledger describes one tree, and it says which** -- applied where
+nobody had applied it: prose. A ledger's `(as of `sha`)` and a live entry's `at v3.131` answer the same
+question, and until this round only the ledger was asked.

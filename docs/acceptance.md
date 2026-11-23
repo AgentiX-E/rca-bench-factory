@@ -2019,3 +2019,33 @@ from an anecdote again.
   reported (1).
 - **What is not refused**: a ceiling far *above* its need, when the job has no bounds inside it -- narrowing it
   would refuse a slow day and widening it only costs minutes, so there is no number to prefer.
+
+### A size in the live list carries the round that took it (v3.131)
+
+- **A figure whose unit a commit can take again -- `bytes`, `KB`, `MB`, `lines` -- says when it was
+  taken, or is this tree's figure at this commit.** `O-019` argued that `docs/acceptance.md` has grown
+  too large to keep growing and quoted **96 KB**; the file was **165,067 bytes at v3.130**, so the
+  entry that argues a document is too big was the entry quoting a size too small (finding 621).
+  Nothing read the sentence for nineteen rounds, because the guard that owns the list reads an
+  entry's state -- open, closed, by which authority -- and never its numbers.
+- **The escape is a date, not the current size.** The file grows in most rounds, so a rule demanding
+  this commit's size would be red on the round after every round that wrote one, and a rule that is
+  always red is one every reader learns to skip. `at v3.131` makes a measurement a record, and a
+  record does not age.
+- **The units are the ones a commit can take again.** `439 s` and `84 minutes` measure a run that is
+  over; no gate can take them, and a rule about them could be satisfied only by guessing. What a
+  guard may demand is bounded by what it can measure.
+- **Two refusals, because there are two repairs.** A sentence that names a file of this tree is told
+  the size the file has; a sentence that names nothing is told to name the round that took it.
+- **A quotation is not the list's claim.** `O-101` could not report `O-019`'s 96 KB without quoting
+  it, and a rule that refused the quotation would refuse the report.
+- **The lead-in is read with the entries.** The paragraph above the bullets held `65,544 of 98,927
+  bytes`, which is the same count-in-prose the entries are refused for.
+- **Only the live list.** A record is frozen and a closure is history: their numbers were measured at
+  the round that wrote them, and demanding dates of them would be demanding edits of the record.
+- **The rounding is what the figure promises.** A stated size matches within half a unit in its last
+  place: `161.2 KB` is 165,067 bytes, and `96 KB` is not.
+- **A mutation has to land on an assertion.** The eleven this round: dated-always (8 reds),
+  dated-never (4), quotations read (1), a sentence end without mark-up (1), exact match only (2), no
+  sentence guard (1), the lead-in unread (1), every kind read (1), an empty text one line long (1), a
+  wrapped figure kept wrapped (1), a length compared in bytes (1) -- **22 reds**.

@@ -507,3 +507,15 @@
   What the closure leaves is the risk the entry named, and it is answered rather than removed: a sentence about four
   gates cannot silently cover five, because the fifth is refused -- but a sentence whose *wording* has stopped
   matching a partition that has grown is still found by reading rather than by running.
+
+- O-101 · ~~**The live list states counts too, and the round that checked the census's sentences left its own
+  list unread.**~~ `O-019` said `docs/acceptance.md` "is 96 KB and grows by clause per round" and the file was
+  **165,067 bytes** -- so the entry arguing a document is too big was quoting a size too small, and thirty-odd
+  entries state figures of their own with no reader. **Closed by finding 621**, which measured all nine figures
+  in `## Open` that carry a unit a commit can take again: **six of the seven** the reader reaches are wrong, the
+  worst being `O-019`'s own evidence -- the per-round clauses it leaned on are **897 lines** and **77,180 bytes**
+  against the **139** and **11,139** it stated. The two costs the entry named were both wrong: the rule is not a
+  reader per shape but **one** reader over the four units a commit can take again (`bytes`, `KB`, `MB`, `lines`),
+  and it is not a rule that a limit states none but **say when, or be this tree's** -- a dated figure is a record,
+  and a record does not age. `439 s` and `84 minutes` pass because no gate can take a run that is over, which is
+  the boundary the module states rather than a gap it leaves.
