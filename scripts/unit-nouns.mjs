@@ -567,9 +567,22 @@ export function agreementOf(census, noun, gates) {
  * Two different gates, because the same gate printing `8 row(s)` twice is a sentence with
  * two clauses rather than two populations; and at least 1, for the reason in the header.
  *
- * `within` is the whole of finding 616's gain: the same agreement is a *forced equality* when one
- * declared population holds both gates and *the corpus* when it does not. The census printed one
- * marker for the two cases, so `1 addendum(s)` and `8 row(s)` were the same sentence.
+ * A coincidence is classified by what the record has already said about the gates that print it,
+ * because the three answers are three different facts and the line used to print two of them as one
+ * (`O-106`):
+ *
+ *   - `together` -- one declared population holds every gate that prints the count, so the equality
+ *     is a rule, and `disagreementsOf` refuses the day it stops holding;
+ *   - `apart` -- every gate is placed and no population holds them all, so the record says these
+ *     gates read different sets; the equal number is a **size**, and nothing is broken when it moves;
+ *   - `unplaced` -- at least one gate nobody has placed, so the equality is the only evidence there
+ *     is that the two might be one set, and it is the only class a person still owes an answer.
+ *
+ * `within` was the whole of finding 616's gain -- the same agreement is *forced* inside a population
+ * and *the corpus* outside one -- and it was one word for two cases: `8 row(s)` was printed as a
+ * coincidence across two gates on the same line whose own sentence says the two tables are four
+ * tables and one word (finding 627). A marker that cannot tell "the record says these differ" from
+ * "nobody has looked" is a marker a reader learns to ignore, which is how the real hint is lost.
  */
 export function coincidencesOf(census, judgements = new Map()) {
   const out = [];
@@ -582,13 +595,23 @@ export function coincidencesOf(census, judgements = new Map()) {
         byCount.get(count).add(gate);
       }
     }
-    const { declared } = stateOf(census, judgements, noun);
-    const groups = declared ? (partitionOf(judgementFor(judgements, noun)) ?? []) : [];
+    const { declared, judgement } = stateOf(census, judgements, noun);
+    const groups = declared ? (partitionOf(judgement) ?? []) : [];
+    const placed = new Set(groups.flat());
+    // A gate declared separate is placed, and placed as something that is not a population: its
+    // number is not a count of the noun, so it cannot be a member of a shared set either.
+    for (const one of declared ? separateOf(judgement) : []) if (one.gate !== null) placed.add(one.gate);
     for (const [count, one] of byCount) {
       if (one.size < 2) continue;
       const gates = [...one].sort();
-      const within = groups.some((group) => gates.every((gate) => group.includes(gate)));
-      out.push({ noun, count, gates, within });
+      // One group holding *every* gate, not every gate held by some group: two gates in two
+      // populations of one are placed and apart, which is the case this classification exists for.
+      const placement = groups.some((group) => gates.every((gate) => group.includes(gate)))
+        ? 'together'
+        : gates.some((gate) => !placed.has(gate))
+          ? 'unplaced'
+          : 'apart';
+      out.push({ noun, count, gates, placement });
     }
   }
   return out.sort((a, b) => a.noun.localeCompare(b.noun) || a.count - b.count);
@@ -727,19 +750,40 @@ export function numbersOfNoun(census, judgements, noun) {
 export function relationsOf(census, judgements = new Map()) {
   const coincident = coincidencesOf(census, judgements);
   return sharedNounsOf(census).map(({ noun }) => {
-    const { judgement, declared } = stateOf(census, judgements, noun);
-    const across = coincident.filter((one) => one.noun === noun && !one.within);
+    const { judgement } = stateOf(census, judgements, noun);
+    const mine = coincident.filter((one) => one.noun === noun);
     const relation = judgement?.relation;
     return (
-      `${noun} — ${numbersOfNoun(census, judgements, noun)}` +
-      (across.length === 0
-        ? ''
-        : declared
-          ? ' (a count two gates print agrees, and they are not in one population)'
-          : ' (a count two gates print agrees)') +
+      `${noun} — ${numbersOfNoun(census, judgements, noun)}${markerOf(mine)}` +
       ` — ${relation == null || relation === '' ? UNSTATED : relation}`
     );
   });
+}
+
+/**
+ * What the equality of two gates' counts is, as a parenthetical, or nothing when it is a rule.
+ *
+ * A coincidence held together by a declared population needs no marker: the line has already said
+ * `one population at 8, and the count agrees`, and repeating it as a warning is how a marker stops
+ * being read as a warning. The other two classes are named -- a size between two sets the record
+ * says differ, and an equality nobody has placed -- because the first is a decision already made and
+ * the second is the one still owed (finding 627).
+ *
+ * At most one sentence, and not by a rule of precedence but by construction: `unplaced` is what an
+ * **undeclared** noun's coincidences are, and `apart` is what a declared one's are when no group
+ * holds every gate, because a partition that leaves a gate unplaced is refused outright
+ * (`partitionProblems`), so a declared noun has no unplaced coincidence to name. A noun can have
+ * both a forced and an apart coincidence -- that is why the numbers line marks the forced ones
+ * in place -- and one word for the rest is all this parenthesis has ever been.
+ */
+function markerOf(mine) {
+  if (mine.some((one) => one.placement === 'unplaced')) {
+    return ' (a count two gates print agrees, and no population places them)';
+  }
+  if (mine.some((one) => one.placement === 'apart')) {
+    return ' (a count two gates print agrees, and the record places them in different sets)';
+  }
+  return '';
 }
 
 /**
@@ -808,12 +852,20 @@ export function summaryOf(census, judgements = new Map()) {
         `${String(inPopulationsOfOne)} in populations of one gate, ${String(separated)} declared separate`,
     );
   }
-  const forced = coincidences.filter((one) => one.within).length;
+  // Three counts rather than two, and all three printed in both states: `inside a population and
+  // across two` was one word for a size between sets the record says differ and an equality nobody
+  // has examined, and the second is the only one that is evidence (finding 627). A class printed at
+  // zero is what keeps a coincidence from leaving the line without a trace -- the discipline
+  // `ledgerWhere` took at v3.133, applied to the marker.
+  const together = coincidences.filter((one) => one.placement === 'together').length;
+  const apart = coincidences.filter((one) => one.placement === 'apart').length;
   parts.push(
     coincidences.length === 0
       ? 'no count of 1 or more is printed by two gates under one noun'
-      : `${String(coincidences.length)} count(s) coincide across gates -- ${String(forced)} inside a declared population ` +
-        `and ${String(coincidences.length - forced)} across two: ` +
+      : `${String(coincidences.length)} count(s) coincide across gates -- ` +
+        `${String(together)} where a declared population holds every gate that prints one, ` +
+        `${String(apart)} where declared populations keep them apart, ` +
+        `${String(coincidences.length - together - apart)} where no population places them: ` +
         coincidences
           .map((one) => `${String(one.count)} ${one.noun} in ${one.gates.join(' and ')}`)
           .join('; '),
