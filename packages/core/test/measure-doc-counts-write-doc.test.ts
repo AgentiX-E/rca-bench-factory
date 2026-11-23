@@ -180,7 +180,15 @@ describe('rewritePublishedRows', () => {
   });
 });
 
-describe('scripts/measure-doc-counts.mjs --write-doc', () => {
+/**
+ * The suite's own budget: **4,000** ms, 3.9 times the **1,035** ms its slowest case took
+ * in the run that measured it, and below vitest's 5,000 ms default so that a hang here is
+ * reported by this file rather than by the runner's silence (finding 578's shape, and the
+ * reason `check-test-budgets` refused this file at 1,035 ms with no budget stated).
+ */
+const SUITE_BUDGET_MS = 4_000;
+
+describe('scripts/measure-doc-counts.mjs --write-doc', { timeout: SUITE_BUDGET_MS }, () => {
   /** One vitest report holding a single passing file under `packageDir`. */
   function report(packageDir: string, name: string, assertions: number): string {
     const path = join(scratch(), `${name}.json`);

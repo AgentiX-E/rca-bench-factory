@@ -1605,19 +1605,25 @@ alone would see.
 
 ### The round's own errors
 
-Two, both found by the same recording.
+Three, and none of them was found by a round looking at its own work.
 
 **The audit volume's header still said `579–621` and `v3.131`** two rounds after the last append. No
 gate reads it -- the index is what `check-audit-volumes` counts -- and the previous round had already
 corrected the same header once, which is what a number with no reader looks like from the inside:
 `579–623` and `v3.133` now, and it is still the only line in the file a person has to remember.
 
-**The counts were written from a run older than the ninth case.** Covered in v3.132's record, because
-that is the round it happened in: `measure-doc-counts --write-doc` read the cached report, the golden
-said 6,843 core tests where the tree holds 6,844, and the repository table derived the stale number
-from it. `verify:local` refused the tree at step 6 of 35, before the push, which is the first time this
-campaign has found one of its own numbers locally rather than in CI. The first draft of that paragraph blamed a cache read the module does not do, and
-the correction is in v3.132's record.
+**A snapshot taken mid-round describes a suite that is not the one being shipped.** Covered in v3.132's
+record, because that is the round it happened in: the golden said 6,843 core tests where the tree holds
+6,844, the repository table derived the stale number from it, and `verify:local` refused the tree at step
+6 of 35 -- before the push, the first time this campaign has found one of its own numbers locally rather
+than in CI. The first draft of that paragraph blamed a cache read the module does not do; `measure()`
+spawns the suites, and the correction is in v3.132's record. It is `O-103`.
+
+**And a suite that had never stated a budget crossed the gate's floor.** `measure-doc-counts-write-doc.test.ts`
+took **1,035** ms for its slowest case on the second local run -- a file this round never touched -- so
+`check-test-budgets` refused it. That is finding 578's shape arriving on its own schedule: a case judged
+by the runner's 5,000 ms default is a verdict nobody chose. The file states **4,000** ms now, 3.9x its
+reading and below the default, and the closest file in the suite sits at 26% of its budget.
 
 ### Readings
 

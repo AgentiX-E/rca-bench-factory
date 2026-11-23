@@ -441,7 +441,7 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 259 core + 4 cli |
-| Test lines | 116,074 core + 3,242 cli |
+| Test lines | 116,082 core + 3,242 cli |
 | Tests | 6,845 core + 187 cli |
 | Tracked files | 675 |
 
