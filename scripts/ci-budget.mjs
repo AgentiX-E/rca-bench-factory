@@ -168,6 +168,21 @@ export const MULTIPLE = 2;
 export const FLOOR_MINUTES = 3;
 
 /**
+ * What one job's prefix is allowed: the floor, spent once per job rather than once per step.
+ *
+ * The floor's own argument is unchanged -- a cold package index, a missed cache, a first
+ * build are what a measurement cannot see -- and what this round changed is **how many of
+ * them a job can have**. A runner is cold once. Four bounded setup steps at three minutes
+ * each do not describe four cold runners; they describe one, and three guesses.
+ *
+ * It is the same number as the floor and a different quantity, which is why it is named
+ * separately: the floor is a property of the cold runner, this is the **unit** a job buys
+ * it in, and a rule that kept one name for both would make the next reader think the
+ * allowance is a per-step number that happens to be shared (finding 622).
+ */
+export const PREFIX_MINUTES = FLOOR_MINUTES;
+
+/**
  * The ceiling a job has when it declares none.
  *
  * GitHub's own limit is six hours, and it is a ceiling like any other: the number a job's
@@ -205,10 +220,17 @@ export const STEP_PROMISE_KEYS = ['name', 'minutes'];
 /**
  * The steps of one job, in order, with the budget each declares.
  *
- * `inheritedFrom` says **where a step's bound comes from**, and it has three values
- * because there are three answers: `'step'` when the step writes its own
- * `timeout-minutes`, `'job'` when the only number above it is the job's, and `null`
- * when nothing bounds it at all.
+ * `inheritedFrom` says **where a step's bound comes from**, and it has four values
+ * because there are four answers: `'step'` when the step writes its own
+ * `timeout-minutes`, `'prefix'` when the step is one of the leading steps every job of
+ * the workflow shares (the checkout, the two setups, the install -- finding 622) and the
+ * job's single allowance answers for it, `'job'` when the only number above it is the
+ * job's, and `null` when nothing bounds it at all.
+ *
+ * It had three, and the two this round separated were `'prefix'` and `'job'`: a step the
+ * job bounds with a per-step number and a step the job bounds with one allowance for the
+ * whole prefix were the same value, so a reader could not tell a job that had argued
+ * twelve separate bounds from one that had argued none (finding 622).
  *
  * It used to have two, and `null` meant both of the last two. A step the job bounds and
  * a step nothing bounds were the same value, so every reader downstream -- the summary's
@@ -218,21 +240,96 @@ export const STEP_PROMISE_KEYS = ['name', 'minutes'];
  * steps run unbounded. Finding 595.
  */
 export function stepsOf(workflow, job) {
+  const prefix = prefixOf(workflow, job);
   return workflow.steps
     .filter((step) => step.job === job)
-    .map((step) => {
+    .map((step, index) => {
       const own = step.values?.['timeout-minutes'] ?? '';
       const resolved = timeoutOf(own, step.jobTimeout ?? '');
       const jobBound = (step.jobTimeout ?? '') !== '';
+      const inPrefix = index < prefix.length && prefix[index] === step.name;
       return {
         name: step.name,
         run: step.run,
         minutes: resolved.minutes,
-        inheritedFrom: own !== '' ? 'step' : jobBound ? 'job' : null,
+        inheritedFrom: own !== '' ? 'step' : inPrefix ? 'prefix' : jobBound ? 'job' : null,
+        inPrefix,
         error: resolved.error,
       };
     });
 }
+
+/**
+ * The leading steps every job of the workflow shares, name and command both.
+ *
+ * This is the **prefix**: everything a run spends before the job's first real step, and
+ * the reason finding 622 exists. It is derived rather than declared, and derived from the
+ * one property that makes a step setup rather than work -- the other jobs do the same
+ * thing in the same position. A step that only this job runs is that job's work, whatever
+ * its name says; a step all eight run identically is what it costs to have a runner at all.
+ *
+ * The command is compared with the name because a name is not a claim: two jobs can both
+ * call a step `Build` and run different commands, and a rule that read the name alone would
+ * hand them both an allowance for work they do not share.
+ *
+ * A workflow of one job has no prefix. There is nothing for its steps to be common *with*,
+ * and a prefix of "every step" would excuse a single-job workflow from bounding anything --
+ * the degenerate case that would make this rule a hole rather than a rule.
+ */
+const SHARED_PREFIX = new WeakMap();
+
+/** Private: `prefixOf` is what the module offers, and a caller that wanted the workflow-wide
+ * answer instead would be asking a question about other jobs than the one it is judging. */
+function sharedPrefixOf(workflow) {
+  const cached = SHARED_PREFIX.get(workflow);
+  if (cached !== undefined) return cached;
+  const jobs = jobsOf(workflow);
+  const shared = [];
+  if (jobs.length >= 2) {
+    const perJob = jobs.map((one) => workflow.steps.filter((step) => step.job === one.id));
+    for (let index = 0; ; index += 1) {
+      const at = perJob.map((steps) => steps[index]);
+      if (at.some((step) => step === undefined)) break;
+      const signatures = at.map((step) => `${step.name}\u0000${step.run ?? ''}`);
+      if (new Set(signatures).size !== 1) break;
+      shared.push(at[0].name);
+    }
+  }
+  SHARED_PREFIX.set(workflow, shared);
+  return shared;
+}
+
+/**
+ * One job's prefix: the leading run of its steps that the whole workflow shares.
+ *
+ * A job can be shorter than the shared prefix, or diverge part-way -- `backend` has no
+ * `Install the shells the suite cross-checks against`, so its prefix stops one step
+ * earlier than the other seven. The function returns names rather than steps because the
+ * caller already has the steps and needs only to know which of them are in it.
+ */
+export function prefixOf(workflow, job) {
+  const shared = sharedPrefixOf(workflow);
+  const own = workflow.steps.filter((step) => step.job === job);
+  const names = [];
+  for (let index = 0; index < shared.length; index += 1) {
+    if (own[index]?.name !== shared[index]) break;
+    names.push(shared[index]);
+  }
+  return names;
+}
+
+/**
+ * The seconds one job's prefix is allowed, which is the floor, spent once.
+ *
+ * A job's prefix may be four steps long or six; the allowance does not grow with it,
+ * because the thing the allowance is for does not either: a runner is cold once. That is
+ * the whole finding -- three minutes per step bought fourteen separate cold runners in a
+ * job that can have one, and the ceiling paid for thirteen of them that cannot happen.
+ */
+export function allowanceSecondsOf(workflow, job) {
+  return prefixOf(workflow, job).length === 0 ? 0 : PREFIX_MINUTES * 60;
+}
+
 
 /**
  * The jobs of the workflow, in the order they are written.
@@ -1066,18 +1163,20 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
     // `R9` exists to open: a ceiling could then only be widened by a run, and a run
     // happens after the push this gate has to pass. `narrowed` is the whole difference,
     // and `budgetSummary` names every widening so a reader sees the exception taken.
-    if (narrowed(record, job)) {
-      const had =
-        record.timeoutMinutes === null
-          ? `${job.id}\` had no ceiling`
-          : `${job.id}\` had ${String(record.timeoutMinutes)} minutes`;
-      errors.push(
-        `the recording was taken when \`${had} and ` +
-          `ci.yml now declares ${job.timeoutMinutes === null ? 'none' : String(job.timeoutMinutes)}: ` +
-          'the bounds are sized against the budget, so both have to be re-measured together',
-      );
-    }
-
+    //
+    // A *narrowing* was refused outright until v3.132 (finding 622), and the refusal was
+    // the weaker form of `R13`. Its argument was a step bound that fits inside the wider
+    // ceiling and might expire after the job has died at the tighter one -- which is the
+    // question `R13` answers by arithmetic: the ceiling holds every bound plus the prefix's
+    // allowance plus twice the seconds no step spends, or the gate refuses it and names the
+    // number. What was left over was a demand for a re-measurement, and the recording already
+    // holds the number that demand was standing in for: if twice the slowest day this
+    // repository has met fits under the tighter ceiling, no day it has ever seen is refused.
+    // That is `R12`'s term, so the narrowing is refused there, once, with its own sentence.
+    //
+    // Deleting it leaves no case uncovered and one rule less: `narrowed` survives for the
+    // summary, which prints every narrowing beside every widening, because a ceiling that
+    // moves is a claim a reader has to see (`budgetSummary`).
     const steps = stepsOf(workflow, job.id);
     if (steps.length === 0) {
       errors.push(`ci.yml has no step in \`${job.id}\`, so the recording describes nothing that runs`);
@@ -1179,6 +1278,22 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
       const seconds = secondsOf(record, step.name);
       if (step.error !== null) {
         errors.push(`\`${job.id} / ${step.name}\`: ${step.error}`);
+      } else if (step.inPrefix && step.inheritedFrom === 'step') {
+        // R14 -- the prefix is the job's, so a number on one of its steps is a second answer
+        // to a question the allowance already answers. The refusal exists because the shape
+        // it replaces was invisible: sixteen steps at three minutes each look like sixteen
+        // arguments and are one number typed sixteen times (finding 622).
+        errors.push(
+          `\`${job.id} / ${step.name}\` is a prefix step -- one of the ${String(prefixOf(workflow, job.id).length)} ` +
+            'this job shares with every other -- and declares a bound of its own: what a cold ' +
+            `runner costs is one allowance of ${String(PREFIX_MINUTES)} min per job, and a bound here is ` +
+            'the same three minutes stated again, once per step, until the ceiling is paying for ' +
+            'cold runners that cannot happen',
+        );
+      } else if (step.inheritedFrom === 'prefix') {
+        // The allowance answers for it. Nothing is owed here, and saying so is not the same as
+        // falling through: the branch below refuses a step bounded by its *job*, which is an
+        // unbounded step wearing the job's ceiling, and this one is bounded by a number.
       } else if (step.inheritedFrom !== 'step' && bounded > 0) {
         errors.push(
           `\`${job.id} / ${step.name}\` declares no \`timeout-minutes\` of its own while ` +
@@ -1194,12 +1309,11 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
               'refused for being slow rather than for hanging',
           );
         }
-        if (step.minutes < FLOOR_MINUTES) {
-          errors.push(
-            `\`${step.name}\` is bounded at ${String(step.minutes)} min: the floor is ` +
-              `${String(FLOOR_MINUTES)}, because a measurement cannot see a cold package index or a missed cache`,
-          );
-        }
+        // The floor is not asked of a work step any more (finding 622). It is asked of the
+        // prefix, once, because that is where the cold state is spent: a step that measures
+        // fifty-four seconds and is bounded at two minutes dies at its own bound if a cold
+        // runner really does make it slower, and the verdict names it -- which is the whole
+        // thing a bound buys. The three minutes were buying slack, not attribution.
         // R10 -- the same arithmetic as `R4`, divided by the slowest reading of **the
         // command** rather than by this step's reading of the recording. The two are
         // disjoint by construction: `R4` speaks for the day being recorded, this speaks
@@ -1269,19 +1383,29 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
     // refused above rather than defaulted -- a margin nobody measured is a margin nobody checked.
     const total = record.total;
     const overhead = Math.max(0, total - measured);
-    const bounds = boundsSecondsOf(workflow, job.id);
+    // The ceiling holds the bounds **and the prefix's one allowance**, because the prefix is
+    // a number a step can spend: the four setup steps share three minutes between them, and a
+    // ceiling that did not hold that number would be a ceiling that fires before the allowance
+    // it granted (finding 622).
+    const bounds = boundsSecondsOf(workflow, job.id) + allowanceSecondsOf(workflow, job.id);
     const day = days.get(job.id);
     const need = ceilingNeedOf(day?.seconds ?? 0, bounds, overhead);
     const ceiling = (job.timeoutMinutes ?? GITHUB_CEILING) * 60;
     if (ceiling < need.seconds) {
       const needed = Math.ceil(need.seconds / 60);
+      const prefix = prefixOf(workflow, job.id);
+      const allowance =
+        prefix.length === 0
+          ? ''
+          : ` plus the ${String(PREFIX_MINUTES)}-minute allowance for its ${String(prefix.length)}-step prefix`;
       // Which of the two terms is the binding one decides the sentence, because they are two
       // different complaints: a ceiling under the sum is a job doing more than one budget can
       // hold, and a ceiling under twice the day is a budget that refuses a slow runner.
       errors.push(
         need.term === 'bounds'
           ? `\`${job.id}\` is bounded at ${String(job.timeoutMinutes ?? GITHUB_CEILING)} min and the bounds ` +
-            `inside it add up to ${String(Math.round(bounds / 60))} min in ${String(bounded)} step(s): a day ` +
+            `inside it add up to ${String(Math.round(boundsSecondsOf(workflow, job.id) / 60))} min in ` +
+            `${String(bounded)} step(s)${allowance}: a day ` +
             'that spends them reaches the ceiling with every step still inside its own bound, so the ' +
             'verdict names the job rather than the step -- raise the ceiling to ' +
             `${String(needed)} min, or split the job`
@@ -1322,12 +1446,16 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
       continue;
     }
 
-    const steps = stepsOf(workflow, id);
+    // The promise names the steps that carry a bound, and not the prefix: the prefix has no
+    // bound of its own to promise, and asking a never-run job to promise the three minutes the
+    // job's allowance already answers for would be a promise about a number nobody measures
+    // (finding 622).
+    const steps = stepsOf(workflow, id).filter((step) => !step.inPrefix);
     if (promise.steps.length !== steps.length) {
       errors.push(
         `\`${id}\` promises ${String(promise.steps.length)} step(s) and ci.yml has ` +
-          `${String(steps.length)}: a job promise has to name every step of the job it waits for, ` +
-          'because the bound it owes is a bound on each one',
+          `${String(steps.length)}: a job promise has to name every step of the job it waits for ` +
+          'that carries a bound, because the bound it owes is a bound on each one',
       );
       continue;
     }
@@ -1453,12 +1581,18 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   let bounded = 0;
   let carried = 0;
   let reached = 0;
+  let allowed = 0;
   let bounds = 0;
   let jobCount = 0;
   let ceilings = 0;
   const excused = [];
   let tightest = { name: '', ratio: Infinity, worst: null };
   const widened = [];
+  // A narrowing is a number a reader has to see, for the reason the widening list exists: it
+  // is a claim about a day, and the claim is `R6`'s -- twice the slowest day this repository
+  // has met still fits (finding 622). Printing the widening and not the narrowing would leave
+  // the one direction that spends evidence unstated.
+  const narrowings = [];
   // The ceiling's own reading: the job whose ceiling is closest to twice its slowest day.
   // It is a separate superlative from `tightest`, which is about one *step's* bound against
   // one *step's* measured seconds -- the two answer different questions and a summary that
@@ -1488,9 +1622,16 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
     if (record.timeoutMinutes !== job.timeoutMinutes && !narrowed(record, job)) {
       widened.push(`${job.id} ${String(record.timeoutMinutes ?? 'none')} -> ${String(job.timeoutMinutes ?? 'none')}`);
     }
+    if (narrowed(record, job)) {
+      narrowings.push(
+        `${job.id} ${String(record.timeoutMinutes ?? 'none')} -> ${String(job.timeoutMinutes ?? 'none')}`,
+      );
+    }
     const own = stepsOf(workflow, job.id);
+    const allowance = allowanceSecondsOf(workflow, job.id);
     let jobSeconds = 0;
-    let jobBounds = 0;
+    let jobBounds = allowance;
+    bounds += allowance;
     for (const step of own) {
       const seconds = secondsOf(record, step.name) ?? 0;
       jobSeconds += seconds;
@@ -1499,7 +1640,8 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
       // `steps` once the other two are known: a total derived by subtraction is a number
       // two readers can derive differently (finding 588), and this line publishes all
       // three so that the reader does not have to.
-      if (step.inheritedFrom === 'job') carried += 1;
+      if (step.inheritedFrom === 'prefix') allowed += 1;
+      else if (step.inheritedFrom === 'job') carried += 1;
       else if (step.inheritedFrom === null) reached += 1;
       if (step.inheritedFrom === 'step') {
         bounded += 1;
@@ -1562,6 +1704,11 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
       ? 'no job is declared unmeasured'
       : `${String(awaitingJobs.length)} job(s) declared and awaiting their first run: ` +
         awaitingJobs.join(', ');
+  const narrowedText =
+    narrowings.length === 0
+      ? 'no ceiling was narrowed under this recording'
+      : `ceiling(s) narrowed under the recording, each still holding twice its slowest day: ` +
+        narrowings.join(', ');
   const widenedText =
     widened.length === 0
       ? 'no job was given a wider budget than its reading'
@@ -1610,11 +1757,15 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
     `step(s) carry their own \`timeout-minutes\`, ${String(carried)} ` +
     `${carried === 1 ? 'is' : 'are'} bounded by ${carried === 1 ? "its job's" : "their jobs'"} budget, ` +
     `and ${String(reached)} ${reached === 1 ? 'has' : 'have'} none, ` +
+    (allowed === 0
+      ? ''
+      : `${String(allowed)} run before the job's first real step and are bounded by one ` +
+        `${String(PREFIX_MINUTES)}-minute allowance for the prefix, `) +
     `${String(Math.round(measured / 60))} min measured (as of run ` +
     `${String(baseline.run)}); bounds total ${String(Math.round(bounds / 60))} min in ` +
     `${String(ceilings)} ceiling(s); ${ceilingText}; tightest ` +
     `${tightestText}; ` +
-    `${excusedText}; ${declaredText}; ${jobsText}; ${widenedText}; ${readingsText}; ` +
+    `${excusedText}; ${declaredText}; ${jobsText}; ${widenedText}; ${narrowedText}; ${readingsText}; ` +
     `${ledgerText(ledger, baseline)}`
   );
 }

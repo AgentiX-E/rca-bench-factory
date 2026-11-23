@@ -83,30 +83,33 @@ jobs:
     # step, are measured by the recorder (5 s) and doubled like every bound: 3 430 s, 58
     # minutes. `verify` is the job where the day rule is widest of all -- 1 204 s of day
     # against 3 430 s of bound -- and that gap is the shape of the whole workflow.
-    timeout-minutes: 58
+    # 39 from v3.132 (finding 622). The floor stopped being a property of a step: the 4
+    # setup steps this job shares with every other carry no bound of their own and the job allows
+    # 3 minutes for the whole prefix, while the 5 work step(s) that sat at the floor are bounded by
+    # twice their own day. The bounds add up to 2100 s plus the 180 s allowance where they added up to
+    # 2820 s; with 4 s of overhead doubled that is 2288 s, and R13's bounds
+    # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
+    # per setup step was paying for cold runners that cannot happen.
+    timeout-minutes: 39
     steps:
       # Full history: see the note above `jobs:` (findings 612 and 614). This is the job the
       # first of those two was found in.
       - name: Check out
-        timeout-minutes: 3
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up Node.js
-        timeout-minutes: 3
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Set up pnpm
-        timeout-minutes: 3
         uses: pnpm/action-setup@v4
         with:
           version: 10
 
       - name: Install dependencies
-        timeout-minutes: 3
         run: pnpm install --frozen-lockfile
 
       - name: Install the shells the suite cross-checks against
@@ -126,11 +129,11 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: pnpm build
 
       - name: Type-check
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: pnpm typecheck
 
       # Six static checks, all of them earned by a failure rather than chosen in
@@ -196,11 +199,11 @@ jobs:
       # comparison happen: `docs:check` runs the same script without it, because that
       # gate does not run the suite and a cold tree has no report to read.
       - name: Published suite counts, read from that run rather than taken again
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: node scripts/measure-doc-counts.mjs --check --from packages/core/node_modules/.cache/vitest-report.json,packages/cli/node_modules/.cache/vitest-report.json && node scripts/check-coverage-readings.mjs --require
 
       - name: Mutation suite (gate + export, 100% interception)
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: pnpm exec vitest run --root packages/core mutation.test.ts
 
       # Every test's cost, against the budget its own file declares.
@@ -218,7 +221,7 @@ jobs:
       # `gates-are-testable-is-enumerated.test.ts`, slowest test 1 015 ms and no
       # budget -- which is this reader finding the thing before a red run had to.
       - name: Every test's cost against the budget it declares
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: node scripts/check-test-budgets.mjs --report packages/core/node_modules/.cache/vitest-report.json,packages/cli/node_modules/.cache/vitest-report.json
 
       # One reader, against a server this repository did not write.
@@ -278,30 +281,33 @@ jobs:
     # to within the seconds no step spends. The seven bounds add up to 2 880 s, the runner
     # spends 5 s outside them, and `R13` holds the ceiling to the bounds plus twice that --
     # 2 890 s, which is 49 minutes rather than 48.
-    timeout-minutes: 49
+    # 36 from v3.132 (finding 622). The floor stopped being a property of a step: the 4
+    # setup steps this job shares with every other carry no bound of their own and the job allows
+    # 3 minutes for the whole prefix, while the 2 work step(s) that sat at the floor are bounded by
+    # twice their own day. The bounds add up to 1920 s plus the 180 s allowance where they added up to
+    # 2640 s; with 3 s of overhead doubled that is 2106 s, and R13's bounds
+    # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
+    # per setup step was paying for cold runners that cannot happen.
+    timeout-minutes: 36
     steps:
       - name: Check out
         uses: actions/checkout@v4
-        timeout-minutes: 3
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
-        timeout-minutes: 3
         with:
           node-version: 22
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
-        timeout-minutes: 3
         with:
           version: 10
 
       - name: Install dependencies
-        timeout-minutes: 3
         run: pnpm install --frozen-lockfile
 
       - name: Build (core then cli; cli resolves core's dist)
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: pnpm build
 
       # The gate starts the server on a port of its own, reads it, reads it again with a label the
@@ -316,7 +322,7 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq prometheus
 
       - name: A reader, against that backend
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: node scripts/verify-reader-against-backend.mjs
 
   # The other half of a proof. `verify-site-proofs.mjs` asks whether a witness reaches
@@ -360,28 +366,31 @@ jobs:
     # 47 from v3.129 (`R13`, finding 619): the eight bounds add up to 2 760 s and the
     # runner's own seconds are 5, doubled to 10 -- 2 770 s, 47 minutes. The 26 this job had
     # held its slowest day four times over and its bounds not at all.
-    timeout-minutes: 47
+    # 34 from v3.132 (finding 622). The floor stopped being a property of a step: the 4
+    # setup steps this job shares with every other carry no bound of their own and the job allows
+    # 3 minutes for the whole prefix, while the 2 work step(s) that sat at the floor are bounded by
+    # twice their own day. The bounds add up to 1800 s plus the 180 s allowance where they added up to
+    # 2520 s; with 5 s of overhead doubled that is 1990 s, and R13's bounds
+    # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
+    # per setup step was paying for cold runners that cannot happen.
+    timeout-minutes: 34
     steps:
       - name: Check out
-        timeout-minutes: 3
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up Node.js
-        timeout-minutes: 3
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Set up pnpm
-        timeout-minutes: 3
         uses: pnpm/action-setup@v4
         with:
           version: 10
 
       - name: Install dependencies
-        timeout-minutes: 3
         run: pnpm install --frozen-lockfile
 
       # The claimants are the same files `verify` runs, so this job needs the same
@@ -394,7 +403,7 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: pnpm build
 
       # Two batteries, two bounds -- and a step that no run has measured yet.
@@ -451,7 +460,7 @@ jobs:
         run: node scripts/verify-sites-are-sensitive.mjs --shard 1/2
 
       - name: Every exemption's claim can be made false
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: node scripts/verify-claims-are-sensitive.mjs
 
   # The second shard of the sites battery, in its own job so the two run at once.
@@ -470,28 +479,31 @@ jobs:
     # 44 from v3.129 (`R13`, finding 619): seven bounds adding up to 2 580 s plus the 8 s
     # the runner spends outside them, doubled -- 2 596 s, 44 minutes. The 26 it was declared
     # with held half the job's bounds, which is the defect the split was supposed to fix.
-    timeout-minutes: 44
+    # 33 from v3.132 (finding 622). The floor stopped being a property of a step: the 4
+    # setup steps this job shares with every other carry no bound of their own and the job allows
+    # 3 minutes for the whole prefix, while the 1 work step(s) that sat at the floor are bounded by
+    # twice their own day. The bounds add up to 1740 s plus the 180 s allowance where they added up to
+    # 2460 s; with 5 s of overhead doubled that is 1930 s, and R13's bounds
+    # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
+    # per setup step was paying for cold runners that cannot happen.
+    timeout-minutes: 33
     steps:
       - name: Check out
-        timeout-minutes: 3
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up Node.js
-        timeout-minutes: 3
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Set up pnpm
-        timeout-minutes: 3
         uses: pnpm/action-setup@v4
         with:
           version: 10
 
       - name: Install dependencies
-        timeout-minutes: 3
         run: pnpm install --frozen-lockfile
 
       - name: Install the shells the suite cross-checks against
@@ -499,7 +511,7 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: pnpm build
 
       # A shard whose files never arrive would be a green job that measured nothing.
@@ -537,28 +549,31 @@ jobs:
     # death this file is about -- and the price of 84 is that a hang no bound catches burns
     # minutes rather than dying at 34. That price is paid in wall clock, and the alternative
     # was paid in the verdict.
-    timeout-minutes: 84
+    # 54 from v3.132 (finding 622). The floor stopped being a property of a step: the 4
+    # setup steps this job shares with every other carry no bound of their own and the job allows
+    # 3 minutes for the whole prefix, while the 11 work step(s) that sat at the floor are bounded by
+    # twice their own day. The bounds add up to 3000 s plus the 180 s allowance where they added up to
+    # 3720 s; with 4 s of overhead doubled that is 3188 s, and R13's bounds
+    # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
+    # per setup step was paying for cold runners that cannot happen.
+    timeout-minutes: 54
     steps:
       - name: Check out
-        timeout-minutes: 3
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up Node.js
-        timeout-minutes: 3
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Set up pnpm
-        timeout-minutes: 3
         uses: pnpm/action-setup@v4
         with:
           version: 10
 
       - name: Install dependencies
-        timeout-minutes: 3
         run: pnpm install --frozen-lockfile
 
       - name: Install the shells the suite cross-checks against
@@ -578,11 +593,11 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: pnpm build
 
       - name: Scorer stability battery (no survivors, no inert mutations)
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: node scripts/inject-stability.mjs
 
       # The `component` rule battery, for the same reason as the one above and
@@ -593,7 +608,7 @@ jobs:
       # Each rewrite was driven by this battery reporting SURVIVED, so it is the
       # reason the assertions are load-bearing rather than decorative.
       - name: Component rule battery (no survivors, no inert mutations)
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: node scripts/inject-component-rule.mjs
 
       # The M1-ceiling probe reports the number the milestone's exit condition is
@@ -604,7 +619,7 @@ jobs:
       # both halves of that, and its partition guard is what makes an injection
       # which lets the two halves disagree fail rather than print a tidy number.
       - name: M1-ceiling probe battery (no survivors, no inert mutations)
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: python3 scripts/injection/m1-ceiling-probe.py
 
       # The second half of the same standard, applied to the assertions about the
@@ -614,7 +629,7 @@ jobs:
       # mutation the runner cannot survive and a mutation nothing detects must not
       # print the same word, so the battery now reads the total test count.
       - name: M1-ceiling probe test battery (no survivors, no inert mutations)
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: node scripts/inject-m1-ceiling-tests.mjs
 
 
@@ -656,11 +671,11 @@ jobs:
       # `battery-summary-survives-ci-output.test.ts`, alongside the two readers
       # finding 147 fixed.
       - name: Fault-extraction scoring battery (no survivors)
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: python3 scripts/injection/fault-extraction-scoring.py
 
       - name: Fault-extraction workflow battery (no survivors, negative control)
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: python3 scripts/injection/fault-extraction-workflow.py
 
       - name: Fetch-official retry battery (no survivors)
@@ -699,7 +714,7 @@ jobs:
       # that claimed to pin the added shape only asserted exit 0, which the bare
       # shape also satisfies, so the file count was read but never used.
       - name: Doc-count shape battery (no survivors, no inert, no misattributed mutations)
-        timeout-minutes: 3
+        timeout-minutes: 2
         run: python3 scripts/injection/doc-counts-shapes.py
 
 
@@ -740,7 +755,7 @@ jobs:
       # success is a report about the case that needs no explanation; every
       # question this answers is about a run that failed.
       - name: Publish the gate-test battery report
-        timeout-minutes: 3
+        timeout-minutes: 1
         if: always()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -750,7 +765,7 @@ jobs:
       # page. Redundant with the branch above on purpose and cheap -- the branch is
       # for this project's development environment, the artifact is for the UI.
       - name: Upload the gate-test battery report
-        timeout-minutes: 3
+        timeout-minutes: 1
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -765,7 +780,7 @@ jobs:
       # looked for -- so this battery mutates the built scorer and requires the gate
       # to name the property that broke. See finding 83.
       - name: Scorer-stability probe battery (the stability gate refuses a broken scorer)
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: python3 scripts/injection/scorer-stability-probe.py
 
 
@@ -778,6 +793,11 @@ jobs:
   artefacts:
     name: golden master / official metric / examples / documents
     runs-on: ubuntu-latest
+    # 15 kept at v3.132 (finding 622), against the rule that named every other ceiling.
+    # The bounds term here is the 180 s of prefix allowance and nothing else, so twice the day decides --
+    # and this job's day is the *warm* one: 179 s on run 42172498744. A ceiling sized from a warm day for the
+    # job whose whole subject is a cold tree would be the one number in this file measuring the
+    # wrong day, so the number stays and the exception is stated rather than derived.
     timeout-minutes: 15
     steps:
       # Full history, because `check-repository-table` resolves the revision its
@@ -900,6 +920,16 @@ jobs:
   cold-tree:
     name: cold tree / no build / every precondition declared
     runs-on: ubuntu-latest
+    # 15 and 20 kept at v3.132 (finding 622), against the rule that names every other ceiling.
+    # The bounds term here is the 180 s of prefix allowance and nothing else, so twice the day decides --
+    # and this job's day is the *warm* one: 127 s on run 42160224254. A ceiling sized from a warm day for the
+    # job whose whole subject is a cold tree would be the one number in this file measuring the
+    # wrong day, so the number stays and the exception is stated rather than derived.
+    # 20 kept at v3.132 (finding 622), against the rule that named every other ceiling.
+    # The bounds term here is the 180 s of prefix allowance and nothing else, so twice the day decides --
+    # and this job's day is the *warm* one: 127 s on run 42160224254. A ceiling sized from a warm day for the
+    # job whose whole subject is a cold tree would be the one number in this file measuring the
+    # wrong day, so the number stays and the exception is stated rather than derived.
     timeout-minutes: 20
     # `contents: read` is the default and it is all this job needs. Stated rather
     # than inherited because the sibling job above grants `contents: write` for
@@ -1040,28 +1070,31 @@ jobs:
     #
     # 55 from v3.129 (`R13`, finding 619): six bounds adding up to 3 240 s and 3 s of
     # runner's own time, doubled to 6 -- 3 246 s, 55 minutes. 31 held two thirds of that.
-    timeout-minutes: 55
+    # 44 from v3.132 (finding 622). The floor stopped being a property of a step: the 4
+    # setup steps this job shares with every other carry no bound of their own and the job allows
+    # 3 minutes for the whole prefix, while the 1 work step(s) that sat at the floor are bounded by
+    # twice their own day. The bounds add up to 2400 s plus the 180 s allowance where they added up to
+    # 3120 s; with 5 s of overhead doubled that is 2590 s, and R13's bounds
+    # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
+    # per setup step was paying for cold runners that cannot happen.
+    timeout-minutes: 44
     steps:
       - name: Check out
-        timeout-minutes: 3
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up Node.js
-        timeout-minutes: 3
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Set up pnpm
-        timeout-minutes: 3
         uses: pnpm/action-setup@v4
         with:
           version: 10
 
       - name: Install dependencies
-        timeout-minutes: 3
         run: pnpm install --frozen-lockfile
 
       # `backend-support.py` runs targeted vitest invocations, and every job that runs
@@ -1073,7 +1106,7 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: pnpm build
 
       # The `type`-miss classifier reports the partition that decides whether the
