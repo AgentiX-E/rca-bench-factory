@@ -743,9 +743,11 @@ export function numbersOfNoun(census, judgements, noun) {
  * which is finding 600 one gate out: the reader that exists to hold two populations of one word
  * together held the names and dropped the numbers.
  *
- * The marker for an agreement is two different sentences now (finding 616): inside a declared
- * population the equality is what the declaration claims, and across two it is the corpus. The
- * paragraph is kept, so a reader can see which of the two they are looking at.
+ * The marker for an agreement is two different sentences now (findings 616 and 627): a coincidence
+ * a declared population holds needs none, because the numbers line has just said `one population at
+ * 8, and the count agrees`; and the two that remain -- a size between sets the record says differ,
+ * and an equality nobody has placed -- are separate sentences, because only the second is a question.
+ * The paragraph is kept, so a reader can see which of the three they are looking at.
  */
 export function relationsOf(census, judgements = new Map()) {
   const coincident = coincidencesOf(census, judgements);
