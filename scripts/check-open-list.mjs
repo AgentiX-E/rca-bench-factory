@@ -75,6 +75,7 @@
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { progressCorpus } from './docs-corpus.mjs';
+import { measurementOf, sizesIn, sizeProblems } from './live-figures.mjs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -142,6 +143,25 @@ const RECORD_DIR = 'docs/progress';
 const CONTINUATION = /^closed-(\d{2})\.md$/;
 /** What a file has to be called to be *named like* the record, whether it is one or not. */
 const RECORD_STEM = 'closed';
+
+/**
+ * A file of this tree, measured, or `null` when the name is not one.
+ *
+ * The read lives here rather than in `live-figures.mjs` so that module touches no disk and
+ * every rule in it is testable against a table. A name that leaves the tree, that is a
+ * directory, or that does not exist is `null` rather than an error: the entry may be naming
+ * a corpus or a paper, and a size about one of those is a size about something a commit
+ * cannot take.
+ */
+function measureTree(rel) {
+  const path = resolve(ROOT, rel);
+  if (!path.startsWith(`${ROOT}/`)) return null;
+  try {
+    return measurementOf(readFileSync(path, 'utf8'));
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The budget for the **last** file of the record.
@@ -1214,6 +1234,13 @@ function check() {
   let idLabel = '';
   let tables = 0;
   let tableRows = 0;
+  // The live list's sizes, split by what they say about themselves: a figure that names the
+  // round that took it is a record, and the rest are this tree's or refused. Both are printed,
+  // because a rule that reads nought figures is indistinguishable from a rule that is not there
+  // -- and this one exists because nineteen rounds of silence looked exactly like that.
+  let sizesSeen = 0;
+  let sizesDated = 0;
+  let sizesRefused = 0;
   // Every record section the walk read, whether it owns a round or not. The difference from
   // `records.length` is the population that has no judge: the twenty-five records of the
   // `## Pass N` era name no round, so the arm below cannot find them -- and until this round
@@ -1488,6 +1515,39 @@ function check() {
             owner,
             items: items.map((item) => item.split('\n')[0].slice(2).trim()),
           });
+        }
+      }
+      // ## The live list says how big things are, and nothing read it (finding 621)
+      //
+      // `O-019` argued that `docs/acceptance.md` is too big to keep growing and quoted 96 KB;
+      // the file is 165,067 bytes. The figure was a copy of a measurement, the thing it
+      // measured grew by three quarters, and nineteen rounds passed without a word -- because
+      // the guard read the entries' **states** (open, closed, by what) and never their numbers.
+      // Finding 620 repaired the same shape one document over: a census carried a ratio in a
+      // sentence, and only the gates were read.
+      //
+      // The lead-in is read with the entries. It is the list's own voice -- the paragraph that
+      // says what the split is and what it cost -- and it held the figure `65,544 of 98,927
+      // bytes`, which is exactly the count-in-prose the entries were being refused for. A rule
+      // scoped to bullets would have left the paragraph above them unread, which is finding
+      // 162's shape (a document that gains a text must gain a reader for it) one level in.
+      //
+      // Only the live list. A record is frozen and a closure is history: their numbers were
+      // measured at the round that wrote them, and demanding a date of every one of them would
+      // be a demand to edit the record, which this corpus forbids.
+      if (kind === 'live') {
+        const first = section.lines.findIndex((line) => /^- /.test(line));
+        const stated = [
+          { id: `the \`${section.heading}\` lead-in`, text: section.lines.slice(0, first).join('\n') },
+          ...items.map((item) => ({ id: idOf(item.split('\n')[0])?.token ?? null, text: item })),
+        ];
+        for (const one of stated) {
+          const figures = sizesIn(one.text);
+          sizesSeen += figures.length;
+          sizesDated += figures.filter((figure) => figure.dated).length;
+          const found = sizeProblems(one, measureTree);
+          sizesRefused += found.length;
+          for (const problem of found) problems.push(`${from.label}: ${problem}`);
         }
       }
       let openHere = 0;
@@ -1999,6 +2059,14 @@ function check() {
         ? 'the newest round wrote none, so no row was judged'
         : `the ${newestRecord.owner.round} record's ${String(quotedRows)} row(s) were judged, and every one ` +
           `of them matches an entry on its first ${String(ROW_QUOTE)} characters`),
+  );
+  // The live list's sizes, with the population rather than a verdict. When this line is green
+  // every figure it did not count as dated is this tree's -- the ones that were neither are
+  // refusals above -- so the two halves of the sentence are the whole reading, not a sample of it.
+  console.log(
+    `check-open-list: the live list states ${String(sizesSeen)} size(s) and length(s): ` +
+      `${String(sizesDated)} name the round that took them, ${String(sizesSeen - sizesDated - sizesRefused)} ` +
+      'are what this tree measures, and the rest are refused below',
   );
 
   if (problems.length > 0) {
