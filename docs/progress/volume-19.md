@@ -1470,17 +1470,24 @@ sized from.
 
 ### The round's own second error
 
-`measure-doc-counts --write-doc` without `--from` reads the report the last run left in the cache, and that
-run was older than the tree: it recorded **6,843** core tests while the tree holds **6,844**. The missing one
-is this round's ninth case -- the one that kills the mutation which survived the first run of the table
-above -- and it was added after the report that was read. The repository table then derived 6,843 from the
-golden, and the sixth step of the gate refused the tree.
+`--write-doc` takes a snapshot, and a snapshot describes the suite as it stands at that moment. This round
+took it after eight of its nine new cases existed: the golden recorded **6,843** core tests while the tree
+ended with **6,844**, the ninth being the case that kills the mutation which survived the first run of the
+table above. The repository table then derived 6,843 from the golden, and the sixth step of the gate refused
+the tree -- a golden that describes a suite one case smaller than the one it is shipped with.
 
 It was caught before the push, by `verify:local`, at step **6 of 35** -- the first time this campaign has
-found one of its own numbers locally rather than in CI. The shape is v3.131's one step earlier in the chain:
-there the write ran before `git add`, so the table described a tree that did not exist yet; here it ran
-before the case existed, so the golden described a suite that had not been run. Both are the write being
-given something that is not the tree, and neither is visible in the file that was written.
+found one of its own numbers locally rather than in CI, and the reason it could: that step re-reads the
+suite from the run it just watched, while the write had read the suite as it was ten minutes earlier. The
+shape is v3.131's one act earlier in the round: there `--write` ran before `git add`, so the table described
+a tree that did not exist yet; here it ran before the last case did. Both are a snapshot taken mid-round,
+and nothing in either file says when the round ended.
+
+**The first draft of this paragraph was wrong, and in the direction of blaming the tool.** It said
+`--write-doc` reads the report the last run left in the cache. It does not: without `--from` it spawns the
+three suites and counts what it finds (`measure()`), which is exactly why the number it wrote was honest. The
+correction is in this section rather than in a finding, because there is no defect in the file -- there is a
+rule about when to take the snapshot, and the gate is what enforces it.
 
 ### Falsifications
 
@@ -1513,7 +1520,7 @@ is the only one in the suite that puts a ceiling eighteen seconds short of the a
 | the bounds | **216** min of step bounds + **24** of allowance, ceilings **275** (was 331 / 372) |
 | the recording | moved to run `45104479651`: **58** min measured (was 52), bounds total **240** min, 6 ceilings hold their bounds and 2 hold twice a day -- `R13` holds under the run the ceilings were spent on |
 | falsifications | **9 mutations / 58 reds** |
-| open items | **37 -> 38**: `O-100` closed by finding 622, `O-103` opened by the round's own second error |
+| open items | **37 -> 38**: `O-100` closed by finding 622; `O-102` and `O-103` opened |
 | LLM calls | **0** |
 
 ### Left open
@@ -1525,10 +1532,10 @@ is the only one in the suite that puts a ceiling eighteen seconds short of the a
 - The allowance is three minutes, and no recording says whether that is right: every ceiling holds
   one, and the runs this repository has are warm. `[open: whether an allowance for a cold runner can
   be measured at all, or whether it is the one number in the file that has to be argued]`
-- A count written from a cache describes whatever ran last, and no line says which run that was: the
-  golden recorded 6,843 core tests against the tree's 6,844, because the report it read was written
-  before the ninth case existed. `[open: whether the write should refuse a report older than the newest
-  file that contributes to it, rather than asking every caller for `--from`]`
+- A snapshot taken mid-round is indistinguishable from one taken at the end: the golden recorded 6,843
+  core tests against a tree that ended with 6,844, because the write ran before the ninth case existed.
+  `[open: whether a write can know that it is the round's last act, rather than relying on a full local
+  run to notice]`
 
 ## v3.133 — a distance of zero is a number, and the census reads numbers
 
@@ -1609,7 +1616,8 @@ corrected the same header once, which is what a number with no reader looks like
 that is the round it happened in: `measure-doc-counts --write-doc` read the cached report, the golden
 said 6,843 core tests where the tree holds 6,844, and the repository table derived the stale number
 from it. `verify:local` refused the tree at step 6 of 35, before the push, which is the first time this
-campaign has found one of its own numbers locally rather than in CI. It is `O-103` now.
+campaign has found one of its own numbers locally rather than in CI. The first draft of that paragraph blamed a cache read the module does not do, and
+the correction is in v3.132's record.
 
 ### Readings
 
@@ -1629,8 +1637,8 @@ campaign has found one of its own numbers locally rather than in CI. It is `O-10
 
 ### Left open
 
-- A count written from a cache describes whatever ran last, and nothing records which run it was: the
-  golden can describe a suite that has not been run. `[open: whether the write should refuse a report
-  older than the newest file that contributes to it, rather than asking every caller for `--from`]`
+- A snapshot taken mid-round is indistinguishable from one taken at the end, and no file says when the
+  round ended. `[open: whether a write can know that it is the round's last act, rather than relying on
+  a full local run to notice]`
 - `round(s)` has three readers and only two of them count a population. `[open: whether a distance
   belongs in the census at all, and which sentence would decide it]`

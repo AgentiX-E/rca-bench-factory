@@ -1013,17 +1013,14 @@ is a row about rather than paraphrase one that no `grep` will find.
   run that has seen one, and it is a different job with a different prefix -- or whether it is the one
   number in this file that has to be argued rather than taken, and which of those two sentences the
   gate should print]`
-- O-103 · **A count written from a cache describes whatever ran last, and nothing records which run it was.**
-  `measure-doc-counts --write-doc` without `--from` reads the vitest report the last run left in
-  `node_modules/.cache`, and v3.132's ninth case -- the one that kills the mutation which survived the
-  first run of its table -- was added after that report was written: the golden recorded **6,843** core
-  tests against the tree's **6,844**, the repository table derived the stale number from the golden, and
-  the sixth step of the gate refused the tree. v3.131's error is the same write handed a tree that did not
-  exist yet (`--write` before `git add`: `Tracked files` **672** against the checkout's **675**). Both are
-  a write given something that is not the tree, and neither is visible in the file that was written.
-  `[open: whether the write should refuse a report older than the newest file that contributes to it -- a
-  staleness check the write can make on its own inputs -- rather than asking every caller for `--from`,
-  which is the same rule written as a discipline instead of as a refusal]`
+- O-103 · **A snapshot taken mid-round is indistinguishable from one taken at the end.**
+  `measure-doc-counts --write-doc` spawns the suite and writes what it finds, so the golden records the
+  suite **as it stands** at that moment: v3.132 took the snapshot with eight of its nine new cases written,
+  so the golden said **6,843** core tests against a tree that ended with **6,844**, and the repository table
+  derived the stale number from it. v3.131's error is the same act one step earlier (`--write` before
+  `git add`: `Tracked files` **672** against the checkout's **675**). Neither file says when the round ended.
+  `[open: whether a write can know that it is the round's last act -- the ordering is a discipline today,
+  and the reader that catches a violation is a full local run rather than a refusal at the moment of writing]`
 - O-104 · **`round(s)` has three readers and only two of them count a population.**
   `check-ci-budget` states how far the ledger's newest row sits from the newest round: a distance, not a
   count of members, and the census holds it to the same noun as the two gates that count `vX.YY`
