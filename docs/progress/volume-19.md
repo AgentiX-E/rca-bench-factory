@@ -1360,9 +1360,9 @@ on content that had not been touched since.
 | item | value |
 | --- | --- |
 | CI | the run this round's commit starts, and the last one it inherited: `45054272460` on `b741a09` was **8 of 8 jobs success**, and this round moves no workflow, no ceiling and no bound |
-| `core` test suite | **259 files, 6843 tests passed** (as of this commit) |
+| `core` test suite | **259 files, 6844 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **263 files, 7030 tests passed** (as of this commit) |
+| repo test suite | **263 files, 7031 tests passed** (as of this commit) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged, because the round adds no line under `packages/core/src` |
 | new tests | **6,804 -> 6,835, +31**: the reader's units, names, dates and quotations; the window and the rounding; which document a figure is the size of; the two refusals; and six gate-level cases |
 | the live list's sizes | **5 figure(s): 5 name the round that took them** -- the rule reads nothing undated because nothing in the list is undated |
