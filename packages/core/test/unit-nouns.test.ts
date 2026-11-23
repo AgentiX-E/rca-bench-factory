@@ -269,7 +269,7 @@ describe('a shared noun is printed with the numbers, not with the gate count (fi
       { gate: 'a', text: '218 `vX.YY` round(s)' },
       { gate: 'b', text: '218 `vX.YY` round(s)' },
     ]);
-    expect(relationsOf(agreeing)[0]).toContain('(a count two gates print agrees, and no population places them)');
+    expect(relationsOf(agreeing)[0]).toContain('(at 218, a count two gates print agrees, and no population places them)');
     expect(relationsOf(census)[0]).not.toContain('agrees');
   });
 
@@ -361,7 +361,7 @@ describe('a population is the unit of the judgement, because a noun is not (find
     const bare = new Map([[keyOf({ noun: 'file(s)', gates: FILE_GATES }), { ...FILE, populations: null }]]);
     expect(relationsOf(census, bare)[0]).toBe(
       'file(s) — 37 in check-citations; 474 in check-comments-language; 474 in check-doc-counts; ' +
-        '6 in check-workflow-language (a count two gates print agrees, and no population places them) — ' +
+        '6 in check-workflow-language (at 474, a count two gates print agrees, and no population places them) — ' +
         'four walks over four corpora',
     );
   });
@@ -546,10 +546,12 @@ describe('a population is the unit of the judgement, because a noun is not (find
     ]);
   });
 
-  it('names the class in the marker, and names the unexamined equality ahead of the decided one', () => {
+  it('names the count each marker is about, so a noun carrying two coincidences gets two sentences', () => {
     // The marker used to read `a count two gates print agrees`, which a reader took as a warning and
-    // stopped reading once twenty of them were the corpus. Two sentences now, and the one that wants
-    // attention is the one that says nobody has looked.
+    // stopped reading once twenty of them were the corpus; v3.136 gave it its class. It still spoke
+    // for the *noun*, and a noun can carry two coincidences: `a` and `b` print `8` inside one
+    // population while `c` and `d` print `9` from populations of their own, so the single sentence
+    // was true of the 9 and false of the 8 (`O-107`). Each sentence now opens with its own count.
     const rows = censusOf([
       { gate: 'a', text: '8 row(s)' },
       { gate: 'b', text: '8 row(s)' },
@@ -562,12 +564,12 @@ describe('a population is the unit of the judgement, because a noun is not (find
       relation: 'three tables',
     };
     expect(relationsOf(rows, new Map([[keyOf(apart), apart]]))[0]).toContain(
-      '(a count two gates print agrees, and the record places them in different sets)',
+      '(at 8, a count two gates print agrees, and the record places them in different sets)',
     );
     // A noun can carry a forced coincidence and an apart one at once: `a` and `b` print `8` and share
     // a population, `c` and `d` print `9` from populations of their own. The forced one is marked in
-    // the numbers (`one population at 8, and the count agrees`), and the parenthesis speaks for the
-    // one that is left -- which is why the marker does not have to name a count.
+    // the numbers (`one population at 8, and the count agrees`), and the parenthesis names the 9 --
+    // one sentence, about one number, so it cannot be read as a claim about the 8 beside it.
     const two = censusOf([
       { gate: 'a', text: '8 row(s)' },
       { gate: 'b', text: '8 row(s)' },
@@ -577,17 +579,36 @@ describe('a population is the unit of the judgement, because a noun is not (find
     const mixed = { noun: 'row(s)', gates: ['a', 'b', 'c', 'd'], populations: [['a', 'b'], ['c'], ['d']], relation: 'four tables' };
     const mixedLine = relationsOf(two, new Map([[keyOf(mixed), mixed]]))[0];
     expect(mixedLine).toContain('(one population at 8, and the count agrees)');
-    expect(mixedLine).toContain('(a count two gates print agrees, and the record places them in different sets)');
-    // The unplaced marker is not a third case of the same noun: a partition that leaves a gate
-    // unplaced is refused outright, so a declared noun's coincidences are never `unplaced` -- the
-    // document is unusable and every coincidence under it is unplaced. One sentence, by construction.
+    expect(mixedLine).toContain('(at 9, a count two gates print agrees, and the record places them in different sets)');
+    expect(mixedLine).not.toContain('(at 8, a count two gates print agrees');
+    // The unplaced marker names its count too: one sentence per coincidence is now the construction,
+    // not a consequence of two classes being unreachable at once (the old comment's argument).
     const open = { ...apart, populations: null, separate: undefined };
     expect(relationsOf(rows, new Map([[keyOf(open), open]]))[0]).toContain(
-      '(a count two gates print agrees, and no population places them)',
+      '(at 8, a count two gates print agrees, and no population places them)',
     );
     expect(partitionProblems({ ...apart, populations: [['a'], ['b']] }, ['a', 'b', 'c'])).toEqual([
       'c is in no population and not declared separate',
     ]);
+  });
+
+  it('prints one sentence per coincidence, in the order of the counts they name', () => {
+    // Three coincidences under one noun, two of them apart and one unplaced -- the shape that shows
+    // the marker is not one sentence with a class chosen by precedence. `unplaced` cannot co-exist
+    // with a *declared* noun in the document, and this fixture is about the formatter: each sentence
+    // is built from the coincidence it is printed for, so a fourth class would need no new branch.
+    const counts = censusOf([
+      { gate: 'a', text: '3 row(s), 12 row(s)' },
+      { gate: 'b', text: '3 row(s), 12 row(s)' },
+      { gate: 'c', text: '12 row(s)' },
+    ]);
+    const apart = { noun: 'row(s)', gates: ['a', 'b', 'c'], populations: [['a'], ['b'], ['c']], relation: 'three tables' };
+    const [line] = relationsOf(counts, new Map([[keyOf(apart), apart]]));
+    expect(line).toContain('(at 3, a count two gates print agrees');
+    expect(line).toContain('; at 12, a count two gates print agrees');
+    const three = line.indexOf('at 3,');
+    expect(three).toBeGreaterThan(-1);
+    expect(three).toBeLessThan(line.indexOf('at 12,'));
   });
 
   it('says how much of the nine sentences a run now checks, rather than only how many were written', () => {
@@ -981,7 +1002,7 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     // The equality the record has already answered: `8 row(s)` in two gates whose populations are
     // their own, which the marker now says instead of presenting it as an agreement nobody placed.
     expect(result.stdout).toContain(
-      '8 in check-repository-table (a count two gates print agrees, and the record places them in different sets)',
+      '8 in check-repository-table (at 8, a count two gates print agrees, and the record places them in different sets)',
     );
     // And the three classes, the empty ones included, so a coincidence cannot leave the line by
     // deleting a clause: the reader of next round's log can see the class and not only the survivors.

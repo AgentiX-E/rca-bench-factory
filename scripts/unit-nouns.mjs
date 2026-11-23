@@ -747,6 +747,8 @@ export function numbersOfNoun(census, judgements, noun) {
  * a declared population holds needs none, because the numbers line has just said `one population at
  * 8, and the count agrees`; and the two that remain -- a size between sets the record says differ,
  * and an equality nobody has placed -- are separate sentences, because only the second is a question.
+ * Each of them opens with the count it is about (`O-107`), so a noun carrying two coincidences
+ * prints two sentences rather than one that is true of half of them.
  * The paragraph is kept, so a reader can see which of the three they are looking at.
  */
 export function relationsOf(census, judgements = new Map()) {
@@ -756,14 +758,21 @@ export function relationsOf(census, judgements = new Map()) {
     const mine = coincident.filter((one) => one.noun === noun);
     const relation = judgement?.relation;
     return (
-      `${noun} — ${numbersOfNoun(census, judgements, noun)}${markerOf(mine)}` +
+      `${noun} — ${numbersOfNoun(census, judgements, noun)}${markersOf(mine)}` +
       ` — ${relation == null || relation === '' ? UNSTATED : relation}`
     );
   });
 }
 
 /**
- * What the equality of two gates' counts is, as a parenthetical, or nothing when it is a rule.
+ * What each equality of two gates' counts is, as a parenthetical that names the count it is about.
+ *
+ * One sentence per coincidence rather than one per noun (`O-107`). The old marker spoke for the
+ * noun, and a noun can carry two coincidences: `a` and `b` print `8` inside one population while
+ * `c` and `d` print `9` from populations of their own, and the line then read `(a count two gates
+ * print agrees, and the record places them in different sets)` -- true of the `9`, false of the
+ * `8`, and printed once, so a reader could not tell which number the sentence was about. Naming
+ * the count costs one word per sentence and makes each of them the property of exactly one number.
  *
  * A coincidence held together by a declared population needs no marker: the line has already said
  * `one population at 8, and the count agrees`, and repeating it as a warning is how a marker stops
@@ -771,21 +780,24 @@ export function relationsOf(census, judgements = new Map()) {
  * says differ, and an equality nobody has placed -- because the first is a decision already made and
  * the second is the one still owed (finding 627).
  *
- * At most one sentence, and not by a rule of precedence but by construction: `unplaced` is what an
- * **undeclared** noun's coincidences are, and `apart` is what a declared one's are when no group
- * holds every gate, because a partition that leaves a gate unplaced is refused outright
- * (`partitionProblems`), so a declared noun has no unplaced coincidence to name. A noun can have
- * both a forced and an apart coincidence -- that is why the numbers line marks the forced ones
- * in place -- and one word for the rest is all this parenthesis has ever been.
+ * The old version was one sentence by construction, and the argument was that `unplaced` holds only
+ * for an undeclared noun while `apart` holds only for a declared one, because `partitionProblems`
+ * refuses a partition that leaves a gate unplaced. That argument is still true and no longer load
+ * bearing: each sentence is now built from the coincidence it is printed for, so a noun with three
+ * of them prints three sentences and no case has to be proved unreachable first.
  */
-function markerOf(mine) {
-  if (mine.some((one) => one.placement === 'unplaced')) {
-    return ' (a count two gates print agrees, and no population places them)';
+function markersOf(mine) {
+  const said = [];
+  for (const one of mine) {
+    const what =
+      one.placement === 'unplaced'
+        ? 'a count two gates print agrees, and no population places them'
+        : one.placement === 'apart'
+          ? 'a count two gates print agrees, and the record places them in different sets'
+          : null;
+    if (what !== null) said.push(`at ${String(one.count)}, ${what}`);
   }
-  if (mine.some((one) => one.placement === 'apart')) {
-    return ' (a count two gates print agrees, and the record places them in different sets)';
-  }
-  return '';
+  return said.length === 0 ? '' : ` (${said.join('; ')})`;
 }
 
 /**
