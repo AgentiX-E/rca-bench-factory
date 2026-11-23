@@ -74,6 +74,12 @@
       ]
     },
     {
+      "noun": "clause(s)",
+      "gates": [
+        "check-acceptance-shape"
+      ]
+    },
+    {
       "noun": "comment opener(s)",
       "gates": [
         "check-comments-language"
@@ -261,6 +267,7 @@
     {
       "noun": "round(s)",
       "gates": [
+        "check-acceptance-shape",
         "check-ci-budget",
         "check-open-list",
         "check-progress-volumes"
@@ -359,6 +366,15 @@
       ]
     },
     {
+      "noun": "round(s)",
+      "gates": [
+        "check-acceptance-shape",
+        "check-ci-budget",
+        "check-open-list",
+        "check-progress-volumes"
+      ]
+    },
+    {
       "noun": "row(s)",
       "gates": [
         "check-fault-cases",
@@ -374,14 +390,6 @@
         "check-docs-language",
         "check-fault-cases",
         "check-workflow-language"
-      ]
-    },
-    {
-      "noun": "round(s)",
-      "gates": [
-        "check-ci-budget",
-        "check-open-list",
-        "check-progress-volumes"
       ]
     },
     {
@@ -458,7 +466,7 @@
           "check-workflow-language"
         ]
       ],
-      "relation": "four walks over four corpora -- the 38 documentation files `check-citations` anchors its findings in, the source walk's 476 (printed by two gates because one takes its denominator from the other), and the 6 workflow files"
+      "relation": "four walks over four corpora -- the 38 documentation files `check-citations` anchors its findings in, the source walk's 479 (printed by two gates because one takes its denominator from the other), and the 6 workflow files"
     },
     {
       "noun": "reading(s)",
@@ -481,9 +489,12 @@
         ],
         [
           "check-ci-budget"
+        ],
+        [
+          "check-acceptance-shape"
         ]
       ],
-      "relation": "one set of headings read twice -- `check-open-list` counts the distinct `vX.YY` labels among them and `check-progress-volumes` counts the sections that carry one, so that the two agree is a rule rather than a coincidence, because no round may be headed twice; the second gate prints the `Pass` rounds it also counts beside them; and `check-ci-budget` prints a third thing with the same word -- how many rounds sit between the ledger's newest row and the newest round -- which is a distance and not a count of anything, so its number is compared with nothing and moves every round the log does not close"
+      "relation": "one set of headings read twice -- `check-open-list` counts the distinct `vX.YY` labels among them and `check-progress-volumes` counts the sections that carry one, so that the two agree is a rule rather than a coincidence, because no round may be headed twice; the second gate prints the `Pass` rounds it also counts beside them; and `check-ci-budget` prints a third thing with the same word -- how many rounds sit between the ledger's newest row and the newest round -- which is a distance and not a count of anything, so its number is compared with nothing and moves every round the log does not close; and `check-acceptance-shape` prints a fourth thing with the same word -- how many distinct rounds the headings of `docs/acceptance.md` name, which is a set of its own: a clause is filed under the round that decided it and one round may decide several clauses, so the rounds the clauses name are counted once each and the number is compared with nothing outside that page"
     },
     {
       "noun": "row break(s)",
