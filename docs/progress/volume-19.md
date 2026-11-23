@@ -1988,8 +1988,11 @@ of the table below.
 | the marker for an `unplaced` equality says the record places them apart | 4 |
 | the marker is printed for every coincidence, forced ones included | 4 |
 | an `unplaced` equality gets no marker | 4 |
+| the lint bound goes back under twice its reading | 3 |
+| the verify ceiling no longer holds the bounds it holds | 3 |
 
-**Twelve mutations, 45 reds.**
+**Fourteen mutations, 51 reds** -- twelve on the census and two on the workflow, both against the
+shipped tree rather than a fixture.
 
 ### Readings
 
@@ -1997,7 +2000,7 @@ of the table below.
 
 | what | value |
 | --- | --- |
-| CI | baseline run `45158647017` on `21a8374`: **8 of 8 jobs success**, 953 s; this round's own run is recorded in the commit that follows the push |
+| CI | run `45192493234` on `87b1dcb`: **8 of 8 jobs success**, 945 s (14:16:51 -> 14:32:36); the recording is this run's, so it reads **61** min measured against **241** min of bounds in 8 ceilings |
 | `pnpm run docs:check` | **23 steps, exit 0** |
 | `core` test suite | **260 files, 6882 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
@@ -2005,10 +2008,39 @@ of the table below.
 | new tests | **6,880 -> 6,882, +2**: the three-class case and the marker's two sentences, over fixtures that reach a state no shipped noun is in |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
 | the census | **4** coincidences: **3** `together`, **1** `apart`, **0** `unplaced` |
-| `docs/acceptance.md` | **41** clauses across **32** rounds; index **41** rows |
-| falsifications | **12 mutations / 45 reds** |
-| open items | **39 -> 39**: `O-106` closed by finding 627, `O-107` opened by the branch that could not be reached |
+| `docs/acceptance.md` | **42** clauses across **32** rounds; index **42** rows |
+| falsifications | **14 mutations / 51 reds** -- 12 on the census, 2 on the workflow |
+| open items | **39 -> 41**: `O-106` closed by finding 627; `O-107`, `O-108` and `O-109` opened |
 | LLM calls | **0** |
+
+### Seven — the recording the round took refused the round's own tree
+
+Recording this round's own run is what `R7` requires, and the gate refused the recording:
+
+```
+check-ci-budget: `Lint (no mock / no secrets / no vendored data / registry / absolute paths /
+scorer stability / site proofs)` is bounded at 17 min and measured 521 s: the bound is under 2
+times the measurement, so a runner twice as slow is refused for being slow rather than for hanging
+```
+
+`R12` is right, and what it caught was not a slow run but a bound that had been wrong for two rounds
+and could not say so. The lint bound went to 17 minutes at v3.126 against a 507 s reading -- twice is
+1,014 s, inside 1,020 s by **six seconds** -- and the workflow's own comment on that step ends at
+`16 from v3.124`, because v3.126 moved the number and recorded the arithmetic in the audit volume
+without extending the comment. The paragraph four lines above the number is finding 422's sentence,
+*a bound at exactly twice a reading is a bound that fires on a 5% slower day*.
+
+So the round's second half is one paragraph and one minute: lint 17 -> **18** (1,080 s, 2.07x the
+slowest reading, 38 s above the multiple), and the verify ceiling 39 -> **40**, because the bounds add
+up to 2,160 s plus the 180 s prefix allowance plus 8 s of doubled overhead. Six readings are on record
+now -- **307**, **334**, **501**, **503**, **507**, **521** -- and they are two populations, not one
+distribution: `prelint` runs `pnpm build`, so the cheap half is a warm cache. A bound sized at 2.07x of
+the slower population is sized against the wrong half of a bimodal step, which is `O-109`; and the
+reason this repair is a minute rather than a structure is that two of the step's seven members spawn
+their own copy of the tree and run a suite in each, which is `O-108`.
+
+Falsified twice, both against the shipped tree rather than a fixture: the bound back at 17 is **3**
+reds, the ceiling back at 39 is **3**.
 
 ### Left open
 
@@ -2018,3 +2050,15 @@ of the table below.
   `[open: whether the parenthesis should name the count it is about -- eight characters per coincidence,
   and a list once a noun has three -- or whether a marker that speaks for the noun is the right
   granularity precisely because the numbers line has already spoken for each count]`
+- **`lint` is seven members and two of them spawn the tree, so the step is not a static scan.**
+  `verify-scorer-stability` and `verify-site-proofs` copy the repository and run a suite in each; they
+  are why this step is twice the size of its siblings and why its bound has moved 14 -> 16 -> 17 -> 18.
+  `[open: whether the two spawners belong in `lint` at all -- they answer "is the tree in a state we
+  are willing to measure" like their neighbours and they are also a quarter of an hour of a suite --
+  and whether a step whose cost is a suite should ever sit inside the aggregate whose name says static
+  scan]`
+- **The lint readings are two populations and the bound is sized against the slower one.** 307 and 334
+  against 501, 503, 507 and 521: a warm build cache and a cold one, measured as one number.
+  `[open: whether a reading whose dispersion is two cache states is a reading a bound can be sized
+  from at all, and whether the fix is to print the dispersion beside the multiple or to measure the
+  cold and warm paths as two readings with two bounds]`

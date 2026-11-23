@@ -441,7 +441,7 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 260 core + 4 cli |
-| Test lines | 116,832 core + 3,242 cli |
+| Test lines | 116,836 core + 3,242 cli |
 | Tests | 6,882 core + 187 cli |
 | Tracked files | 678 |
 
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.136: **39** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.136: **41** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1030,6 +1030,29 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: whether the parenthesis should name the count it is about -- eight characters per coincidence,
   and a list once a noun has three -- or whether a marker that speaks for the noun is the right
   granularity precisely because the numbers line has already spoken for each count]`
+- O-108 · **`lint` is seven members and two of them spawn the tree, so the step is not a static scan.**
+  `pnpm lint` runs six guards that read files and two verifiers that copy the repository and run a
+  suite in each (`verify-scorer-stability`, `verify-site-proofs`), which is why the step is twice the
+  size of its siblings and why its bound has moved 14 -> 16 -> 17 -> 18 as the suite grew. At the
+  +2.6% a round its six readings show, 521 s reaches the 2.0x boundary of an 18-minute bound in about
+  four rounds -- finding 628's own arithmetic, and the reason the last repair was a minute rather than
+  a structure. A separate `verify` step is what v3.124 did for the six guards; the two spawners are
+  the remaining half of that split.
+  `[open: whether the two spawners belong in `lint` at all -- they are "is the tree in a state we are
+  willing to measure" like their neighbours and they are also a quarter of an hour of a suite -- and
+  whether a step whose cost is a suite should ever be inside the aggregate whose name says static
+  scan]`
+- O-109 · **The lint readings are two populations and the bound is sized against the slower one.**
+  Six readings: **307** and **334** s against **501**, **503**, **507** and **521**. The bound (18 min)
+  is 2.07x the slowest, which `R12` demands, and 3.2x the fastest, which it does not look at. The
+  split is almost certainly `prelint`, which runs `pnpm build`: a warm cache finishes the build in
+  seconds and a cold one does not, so the two populations are the same step measured in two cache
+  states rather than a distribution with one centre. Nothing prints the dispersion, so a bound sized
+  at 2.07x of a bimodal reading looks like a bound with 7% of margin and behaves like one with 60%.
+  `[open: whether a reading whose dispersion is two cache states is a reading a bound can be sized
+  from at all, and whether the fix is to print the dispersion beside the multiple -- the gate prints
+  one multiple and no spread -- or to measure the cold and warm paths as two readings with two
+  bounds]`
 ## Pass log
 
 The rounds are recorded in the volumes below, in the order they were run. They were one

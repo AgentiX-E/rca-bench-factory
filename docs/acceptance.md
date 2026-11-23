@@ -50,6 +50,7 @@ before the layer above it is meaningful.
 | A clause owes an address, and the file owes an index | v3.134 |
 | A number that is not a count of the noun is declared separate | v3.135 |
 | A coincidence says which of three things it is | v3.136 |
+| A bound's comment names the reading that last moved it | v3.136 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -2270,3 +2271,24 @@ from an anecdote again.
 - **What is not claimed.** That the census can refuse a coincidence that goes out. A size is not a
   claim, so there is nothing to violate; what a run owes the reader is that the class is always named,
   so the reader comparing two logs sees a number move rather than a sentence vanish.
+
+### A bound's comment names the reading that last moved it (v3.136)
+
+- **A bound is sized from a reading, and the number and its account live in the same place.** The
+  `lint` step carried `timeout-minutes: 17` and a comment whose last paragraph said `16 from v3.124`:
+  the 17 went in at v3.126, the arithmetic was in an audit volume, and the place a maintainer reads
+  before changing the number named a smaller one. A reader checking the comment would have checked a
+  different round (finding 628).
+- **Six seconds of margin is not a margin.** The same 17 was set against a 507 s reading, where twice
+  is 1,014 s and the bound was 1,020 s. Two rounds later a 521 s run put it under the multiple by
+  22 s, and `R12` refused. The paragraph four lines above the number is the finding that says not to
+  do this -- *a bound at exactly twice a reading is a bound that fires on a 5% slower day* -- so the
+  repair states its own arithmetic: 1,080 s, 2.07x the slowest reading, 38 s above the multiple, and
+  names the trend and the trigger at which a minute stops being the answer (`O-108`).
+- **A ceiling pays for the bounds it holds, so a bound that moves takes its ceiling with it.** The
+  verify ceiling moves 39 -> 40 because the bounds add up to 2,160 s, plus the 180 s prefix
+  allowance, plus 8 s of doubled overhead, is 2,348 s. The step's own bound and the job's ceiling are
+  one piece of arithmetic written in two places, and `R13` is what holds them together.
+- **What is not claimed.** That the readings are a distribution. They are two populations -- 307 and
+  334 s against 501, 503, 507 and 521 -- and a bound sized at 2.07x of the slower one is sized
+  against the wrong half of a bimodal step whose cheaper half is a build cache (`O-109`).

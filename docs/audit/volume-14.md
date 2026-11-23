@@ -1,6 +1,6 @@
 # Audit · volume 14
 
-Findings 579–627, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
+Findings 579–628, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
 `progress/volume-19.md` as `v3.115` through `v3.136`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
@@ -3097,3 +3097,77 @@ says *every gate is placed* and calls it *one population holds them all*. It sur
 The marker names a noun's equality without naming the count, and a noun can carry two. `row(s)` has one
 `apart` coincidence today, so the ambiguity is hypothetical; the fixture above makes it real, and the
 repair -- naming the count inside the parenthesis -- is `O-107`.
+
+## Finding 628 — a bound that was inside the multiple by six seconds, and a comment a round behind it
+
+The recording this round took is its own run, `45192493234`, which is what `R7` requires. The gate
+refused it:
+
+```
+check-ci-budget: `Lint (no mock / no secrets / no vendored data / registry / absolute paths /
+scorer stability / site proofs)` is bounded at 17 min and measured 521 s: the bound is under 2
+times the measurement, so a runner twice as slow is refused for being slow rather than for hanging
+```
+
+`R12` is the rule, and it is right. What it caught is not a slow run but a bound that had been wrong
+for two rounds and could not say so.
+
+### The six readings, and the four that are one population
+
+| run | lint | note |
+| --- | --- | --- |
+| `45116975788` | 307 s | a cached install; the fastest on record |
+| `45134409934` | 503 s | |
+| `45136514702` | 501 s | |
+| `45155655608` | 334 s | the second fast one, and the reason the bound survived |
+| `45158647017` | 507 s | v3.135's closing reading: twice is 1,014 s, inside 1,020 s by **6 s** |
+| `45192493234` | 521 s | this round: twice is 1,042 s, and 17 minutes is 1,020 s |
+
+The bound went to 17 minutes at v3.126 against a 507 s reading. Six seconds of margin is not a
+margin, and the comment in the workflow says so four lines above the number: finding 422's sentence,
+*"a bound at exactly twice a reading is a bound that fires on a 5% slower day"*. The step was inside
+the multiple by 0.6% and the paragraph that warns about it was two paragraphs up.
+
+### The comment that stopped a round behind
+
+The workflow's narration of this step ended at `16 from v3.124`, while the number had been **17** since
+v3.126 -- a commit that moved this bound and the job's ceiling and recorded the move in the audit
+volume, without extending the comment. So the step carried a bound whose own account of itself named a
+smaller number, and a reader checking the arithmetic against the comment would have found the
+arithmetic of a different round.
+
+That is the defect this project calls *a number that nobody argued*, one level down: the argument
+existed, in an audit volume, and the place a maintainer reads before changing the number did not carry
+it. The repair is one paragraph, and the paragraph is the finding.
+
+### The repair, and what it is not
+
+`18` minutes is 1,080 s, which is 2.07x the slowest reading on record and 38 s above the multiple.
+The verify ceiling moves 39 -> 40 for the reason its own comment states: the bounds add up to
+2,160 s, plus the 180 s prefix allowance, plus 8 s of doubled overhead, is 2,348 s.
+
+Both are arithmetic, and neither is the structural answer. **This step is twice the size of its
+siblings because two of its seven members spawn their own copy of the tree and run a suite in each**
+-- `verify-scorer-stability` and `verify-site-proofs`, the same two that made `lint` the one aggregate
+whose cost is not a static scan. Splitting them out of `lint` is `O-108`, and the trigger it should be
+opened against is a number: at the +2.6% a round these readings show, 521 s reaches the 2.0x boundary
+of an 18-minute bound in about four rounds.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the lint bound goes back under twice its reading | 3 |
+| the verify ceiling no longer holds the bounds it holds | 3 |
+
+**Two mutations, 6 reds**, both against the shipped tree rather than a fixture: the gate that reads the
+workflow and the recording is the one that refuses, and `ci-readings.test.ts` is the second opinion
+that the recording is the run the ledger names.
+
+### What this does not settle
+
+Whether a bound should be sized by the slowest reading at all, when the readings are two populations
+(307 and 334 against 501, 503, 507 and 521). Twice the *slowest* is the rule; twice the *fastest* would
+be 668 s and would refuse every real run. The rule is right and the spread is the interesting number --
+but nothing prints it, and a bound sized at 2.07x a bimodal distribution is a bound sized against the
+wrong half. `O-109`.
