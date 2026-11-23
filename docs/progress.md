@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.137: **41** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.137: **42** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1050,6 +1050,16 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: whether the guard should refuse a current-state row outside the newest round -- the round is
   a heading and the newest one is derivable, but the check would then depend on where a row sits rather
   than on what it says, and the same sentence would be refused in one volume and allowed in another]`
+- O-112 · **A noun is in the census only on the runs where a gate's branch prints it.**
+  `budget(s)` appears in `check-ci-budget`'s summary only when a bound was widened since the recording
+  -- `budget(s) widened since the reading: verify 39 -> 40`. v3.137 widened nothing, the noun stopped
+  being printed, and `check-unit-nouns --write` deleted its entry from `golden-master/unit-nouns.json`.
+  The inventory is therefore a measurement of the tree rather than a vocabulary: a noun can leave by a
+  branch not being taken, and a judgement recorded against it leaves with it.
+  `[open: whether an inventory that a conditional sentence can shrink is a vocabulary at all -- the
+  alternative is a list of nouns the gates *may* print, which nothing derives and which would then need
+  its own reader -- and whether a deletion should be refused the way a new noun is, so that a branch
+  going untaken is a decision rather than a rewrite]`
 ## Pass log
 
 The rounds are recorded in the volumes below, in the order they were run. They were one

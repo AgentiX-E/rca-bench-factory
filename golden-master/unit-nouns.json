@@ -32,12 +32,6 @@
       ]
     },
     {
-      "noun": "budget(s)",
-      "gates": [
-        "check-ci-budget"
-      ]
-    },
-    {
       "noun": "candidate(s)",
       "gates": [
         "check-fault-cases"
