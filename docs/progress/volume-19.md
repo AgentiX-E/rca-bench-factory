@@ -2191,7 +2191,7 @@ current-state rows are **3** refusals until they are dated.
 
 | what | value |
 | --- | --- |
-| CI | baseline run `45192493234` on `87b1dcb`: **8 of 8 jobs success**, 945 s; this round's own run is recorded in the commit that follows the push |
+| CI | run `45218783516` on `f9144d9`: **8 of 8 jobs success**, 992 s (16:38:27 -> 16:54:59), slowest job `injection batteries, one step each` at 987 s against its 54-minute ceiling; the recording is this run's, so it reads **69** min measured against **241** min of bounds in 8 ceilings |
 | `pnpm run docs:check` | **23 steps, exit 0** |
 | `core` test suite | **260 files, 6884 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
@@ -2218,3 +2218,9 @@ current-state rows are **3** refusals until they are dated.
   a heading and the newest one is derivable, but the check would then depend on where a row sits
   rather than on what it says, and the same sentence would be refused in one volume and allowed in
   another]`
+- **A noun is in the census only on the runs where a gate's branch prints it.** `budget(s)` is
+  printed by `check-ci-budget` only when a bound was widened since the recording; this round widened
+  nothing, the noun vanished, and `--write` deleted its entry. The inventory is a reading of the tree
+  rather than a vocabulary (`O-112`).
+  `[open: whether an inventory a conditional sentence can shrink is a vocabulary at all, and whether a
+  deletion should be refused the way a new noun is]`
