@@ -1,6 +1,6 @@
 {
   "rule": "a process.exit(...) call whose argument is not a known zero -- no argument at all is zero; sites and zero partition every process.exit call, whatever position the call sits in; a reference to the exit family that is not a call is refused rather than counted; see scripts/derive-gate-sites.mjs",
-  "scanned": 100,
+  "scanned": 101,
   "excluded": {
     "zero": 19
   },
@@ -374,7 +374,7 @@
     },
     {
       "script": "scripts/check-open-list.mjs",
-      "line": 2021,
+      "line": 2089,
       "condition": "check() !== 0",
       "diagnostic": "check-open-list: FAILED",
       "status": "proved",

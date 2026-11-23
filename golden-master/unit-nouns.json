@@ -168,6 +168,12 @@
       ]
     },
     {
+      "noun": "length(s)",
+      "gates": [
+        "check-open-list"
+      ]
+    },
+    {
       "noun": "log assertion(s)",
       "gates": [
         "check-fault-cases"
@@ -299,6 +305,12 @@
     },
     {
       "noun": "section(s)",
+      "gates": [
+        "check-open-list"
+      ]
+    },
+    {
+      "noun": "size(s)",
       "gates": [
         "check-open-list"
       ]
@@ -444,7 +456,7 @@
           "check-workflow-language"
         ]
       ],
-      "relation": "four walks over four corpora -- the 37 documentation files `check-citations` anchors its findings in, the source walk's 474 (printed by two gates because one takes its denominator from the other), and the 6 workflow files"
+      "relation": "four walks over four corpora -- the 38 documentation files `check-citations` anchors its findings in, the source walk's 476 (printed by two gates because one takes its denominator from the other), and the 6 workflow files"
     },
     {
       "noun": "reading(s)",
@@ -529,7 +541,7 @@
           "check-progress-volumes"
         ]
       ],
-      "relation": "two disjoint directories of volumes -- `docs/audit` holds 14 and `docs/progress` 18, and no file is in both"
+      "relation": "two disjoint directories of volumes -- `docs/audit` holds 14 and `docs/progress` 19, and no file is in both"
     }
   ]
 }
