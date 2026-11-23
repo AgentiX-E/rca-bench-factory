@@ -256,6 +256,14 @@ const REGISTER: Record<string, Entry> = {
       'refuses a commit; staged-mutation.test.ts spawns it for every exit it owns and drives a real ' +
       '`git commit` through the shipped hook for the two that matter.',
   },
+  'acceptance-shape.mjs': {
+    class: 'data',
+    why:
+      'What a clause of `docs/acceptance.md` owes a reader, as functions: an address a reader can ' +
+      'open, a round in the heading, and an index that is a projection of the headings. No main and ' +
+      'no exit -- check-acceptance-shape.mjs holds the verdict and is spawned, because a gate a test ' +
+      'imports cannot be proved by emptying it.',
+  },
   'apply-pins.mjs': { class: 'gate' },
   'build-example-bundle.mjs': { class: 'gate' },
   'check-backend-support.mjs': { class: 'gate' },
@@ -448,6 +456,14 @@ const REGISTER: Record<string, Entry> = {
       'The verdict for the audit log\'s own cross-references: every `finding N` the documentation writes ' +
       'must name a heading that exists. Measured on the first run: 977 citations of 201 numbers, two of ' +
       'them naming nothing.',
+  },
+  'check-acceptance-shape.mjs': {
+    class: 'gate',
+    why:
+      'The shape of `docs/acceptance.md`, and the index that lets one of its 39 clauses be found. ' +
+      '`O-019` argued for 71 rounds that the file grows by a clause per round; v3.133 measured it and ' +
+      'found the axis wrong -- 35 of 37 clauses hold both a rule and the way it was reached -- so what ' +
+      'the file owes is an address a reader can open and a round in the heading, not a shorter file.',
   },
   'check-open-list.mjs': { class: 'gate' },
   'check-unit-nouns.mjs': {

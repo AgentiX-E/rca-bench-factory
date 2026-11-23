@@ -1,6 +1,6 @@
 {
   "rule": "a process.exit(...) call whose argument is not a known zero -- no argument at all is zero; sites and zero partition every process.exit call, whatever position the call sits in; a reference to the exit family that is not a call is refused rather than counted; see scripts/derive-gate-sites.mjs",
-  "scanned": 101,
+  "scanned": 103,
   "excluded": {
     "zero": 19
   },
@@ -50,6 +50,13 @@
       "diagnostic": "CENSUS UNNAMED ${census.unnameable.reduce((total, one) => total + one.cases, 0)} case(s) in",
       "status": "proved",
       "provedBy": "packages/core/test/census-corpus-script.test.ts"
+    },
+    {
+      "script": "scripts/check-acceptance-shape.mjs",
+      "line": 30,
+      "diagnostic": "check-acceptance-shape: FAILED — ${lines[0]}",
+      "status": "proved",
+      "provedBy": "packages/core/test/check-acceptance-shape.test.ts"
     },
     {
       "script": "scripts/check-aggregate-tables.mjs",

@@ -362,8 +362,14 @@ describe('the two baskets are a partition of the calls, not a remainder', { time
     // of them for two unrelated tables. The pair moves by two calls and one site because the exit is
     // a single `fail()` and the other call is the `--write` that regenerates the inventory -- the
     // shape v3.98 and v3.99 established, one call further out.
-    expect(calls).toBe(164);
-    expect(sites).toBe(145);
+    // 165/146 is v3.134's, and the pair moves together for the fifteenth round. This one is a
+    // gate whose subject is a **document's shape** rather than a number: every clause of
+    // `docs/acceptance.md` owes an address a reader can open and a round in its heading, and the
+    // index beneath the lead is compared line by line with the headings it projects. One exit,
+    // one site: the clause rules and the index comparison return sentences, and `fail()` is the
+    // only place the verdict is spent -- the shape v3.98 and v3.99 established.
+    expect(calls).toBe(165);
+    expect(sites).toBe(146);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

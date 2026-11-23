@@ -184,6 +184,12 @@ const COLD_AGGREGATES: ReadonlyMap<string, readonly string[]> = new Map([
       // It reads one markdown file, which is an argument for why it should be safe
       // and not evidence that it is.
       'check-open-list.mjs',
+      // Measured cold-safe before being added, the way every member here was: with
+      // `packages/core/dist` moved aside, `node scripts/check-acceptance-shape.mjs` printed
+      // `OK — 37 clause(s) across 29 round(s), v3.62 to v3.133` and exited 0. It reads one
+      // markdown file and writes nothing unless asked, which is an argument for why it should
+      // be safe and not evidence that it is.
+      'check-acceptance-shape.mjs',
       'check-data-model-vocabularies.mjs',
       'derive-gate-sites.mjs',
     ],
