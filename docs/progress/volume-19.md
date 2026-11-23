@@ -1759,9 +1759,9 @@ refused, which is the chain that makes a rule a rule.
 | --- | --- |
 | CI | run `45134409934` on `ce6b677`: **8 of 8 jobs success**, 793 s (07:53:43 -> 08:06:56), slowest job `injection batteries, one step each` at 788 s against its 54-minute ceiling -- the round's own run, recorded as the baseline: **53** min measured, **240** min of bounds in 8 ceilings, and the shape gate ran in `verify` as its eighth step |
 | `pnpm run docs:check` | **23 steps, exit 0** -- the new shape gate is the 8th |
-| `core` test suite | **260 files, 6874 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7061 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 6874 tests passed** (at v3.134) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.134) |
+| repo test suite | **264 files, 7061 tests passed** (at v3.134) |
 | new tests | **6,845 -> 6,874, +29**: **7** in `ci-budget.test.ts` (a refused floor, equality, a partial row, the multiple, the slowest job, and two that read the summary) and **22** in the new shape gate's file |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- no line under `packages/core/src` moved |
 | the allowance | **3 min**, **12.9x** the slowest whole prefix (14 s in `backend` of run `45033355331`); `R15` binds at 90 s |
@@ -1779,3 +1779,136 @@ refused, which is the chain that makes a rule a rule.
 - Whether a distance belongs in the census at all: `round(s)` still has three readers and only two of
   them count a population. `[open: whether a distance belongs in the census, and which sentence would
   decide it]`
+
+## v3.135 — a distance is not a count, and the census says which is which
+
+`O-104` opened at v3.133 with the sentence `round(s)` made unavoidable: four gates print the noun and
+only two of them count a population. v3.133 made the third print `0` instead of the phrase it printed
+when the distance was zero, which was finding 621's repair applied one noun over -- a number rather
+than a word, so that a reader could see it. It did not answer the entry's question, and this round
+does: **whether a distance belongs in the census at all**.
+
+### The measurement
+
+Every placement the record holds, by the three states a placement can now be in:
+
+| noun | gates | in a population of two or more | in a population of one | declared separate |
+| --- | --- | --- | --- | --- |
+| `addendum(s)` | 2 | 2 | -- | -- |
+| `file(s)` | 4 | 2 | 2 | -- |
+| `round(s)` | 4 | 2 | 1 | **1** |
+| `row(s)` | 4 | -- | 4 | -- |
+| `run(s)` | 4 | -- | 4 | -- |
+| `row break(s)` | 3 | -- | 3 | -- |
+| `comment(s)` | 2 | -- | 2 | -- |
+| `reading(s)` | 2 | -- | 2 | -- |
+| `volume(s)` | 2 | -- | 2 | -- |
+
+**27** placements, **6** of them in populations two or more gates read, **20** in populations of one
+gate, and **1** -- the distance -- that is not a count of the noun at all. The census prints all four
+numbers, in that order, on the green line.
+
+The estimate this round started from was **22**, counted by eye from the inventory while planning,
+and it was wrong by five: `row break(s)` has three gates rather than two, and `comment(s)` and
+`reading(s)` have two each rather than the one the eye had assigned them. The census is the number
+this round publishes because the eye's number has now been wrong once.
+
+### The third placement
+
+A partition has one word for a group of gates, and the corpus has a number that is not a count of
+any group: `check-ci-budget` prints `0 round(s)`, meaning how far the ledger's newest row sits from
+the newest round. Written as `[["check-ci-budget"]]` it was a **population of one reader** -- the
+same shape as `check-workflow-language`'s six workflows, which is a corpus -- so the record said a
+distance was a count of rounds, and the census's own line repeated it.
+
+`separate` is the third placement: a gate, and the sentence that says what it measures instead. The
+two questions are one -- *which* number is not a count, and *what* it is -- so the field holds both,
+and the sentence is refused when it is missing, when the gate does not print the noun, when the gate
+is also in a population, and when the gate is declared twice.
+
+### What a declaration owes the numbers
+
+The noun's relation is checked against every count the noun is printed with, because a relation is
+about a population. A declaration is about one gate's number, so it is checked against **that gate's**
+counts: `check-ci-budget`'s sentence may state the `0` it prints, and a sentence that borrowed the
+`50` that `check-progress-volumes` prints is refused with the gate named. That is finding 620 with one
+more hop between the figure and the reader who could have caught it.
+
+### The line, and what it says now
+
+    round(s) — 30 in check-acceptance-shape; 229 `vX.YY` in check-open-list; 229 `vX.YY`, 50 `Pass`
+    in check-progress-volumes (one population at 229, and the count agrees); 0 in check-ci-budget
+    (declared separate: how far the ledger's newest row sits from the newest round -- a distance, so
+    its number is compared with nothing and moves every round the log does not close) — one set of
+    headings read twice, and a third set of its own -- ...
+
+The declaration is printed after the populations rather than in gate order: the populations are the
+counts of the noun and the declarations are the numbers that are not counts of it, so a reader who
+wants the population can stop at the first declaration. Written as a population the same zero leads
+the line, in gate order, looking exactly like a count -- the two documents differ in one field and no
+reader of a log would have seen the difference.
+
+### What this round got wrong first
+
+The test for the missing sentence expected `--write` to exit 1. It exits 0 and names the unplaced
+gate, which is the trade `--write` has made since finding 618: a writer that refuses until the
+document is perfect is a writer that never writes. The expectation was corrected to the contract
+rather than the contract to the expectation, and the case now drives both doors -- the run that
+refuses, and the writing that names.
+
+A second correction, smaller: the summary's figures were first asserted as `3 placement(s)` for a
+three-gate fixture, and the fixture's third gate was declared separate rather than plurally read, so
+the same fixture written the old way (three populations of one) prints `2 in populations two or more
+gates read, 1 in populations of one gate, 0 declared separate`. Both are asserted, because the pair
+is the difference the round is about.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the declaration is read as an empty list | 7 |
+| coverage counts a declared gate as unplaced | 6 |
+| a gate may sit in a population and a declaration | 1 |
+| a gate may be declared twice | 1 |
+| a declaration need not say what it measures | 2 |
+| a declaration is held to the noun's figures rather than its gate's | 1 |
+| no declaration is held to its figures at all | 1 |
+| a declaration is printed without saying what it measures | 3 |
+| the ledger files a declaration as a population of one | 2 |
+| a record whose only field is `separate` is refused as unfilled | 2 |
+| the writer drops the declaration | 1 |
+| the reader drops the declaration | 2 |
+
+**Twelve mutations, 29 reds.** The tenth survived the first run of the table: every fixture that
+declared a gate separate also carried `populations: []`, so nothing distinguished "the array is
+missing" from "the array is empty" -- and a record that carries only declarations is exactly the
+shape a noun of three unrelated corpora has. The fixture was the hole, not the rule, which is the
+same lesson the previous round's slowest-prefix mutation taught one file over.
+
+### Readings
+
+> Ledger for `v3.135`.
+
+| what | value |
+| --- | --- |
+| CI | baseline run `45136514702` on `32aff88`: **8 of 8 jobs success**, 754 s; this round's own run is recorded in the commit that follows the push |
+| `pnpm run docs:check` | **23 steps, exit 0** |
+| `core` test suite | **260 files, 6880 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **264 files, 7067 tests passed** (as of this commit) |
+| new tests | **6,874 -> 6,880, +6**: five in the new declaration block and one that drives the refusal through both doors |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- nothing under `packages/core/src` moved |
+| the census | **27** placements: **6** in populations two or more gates read, **20** in populations of one gate, **1** declared separate |
+| `docs/acceptance.md` | **40** clauses across **31** rounds; index **40** rows |
+| falsifications | **12 mutations / 29 reds** |
+| open items | **39 -> 39**: `O-104` closed by finding 626, `O-106` opened by the same finding's last paragraph |
+| LLM calls | **0** |
+
+### Left open
+
+- **Twenty of the census's 27 placements are a corpus one gate reads, and nothing asks whether two of
+  them are one set.** `reading(s)` is printed by `check-ci-budget` and `check-fault-cases` at the same
+  number this round, and the record calls them two kinds of reading on a sentence alone.
+  `[open: whether a coincidence between two populations of one is a fact the census can refuse or a
+  judgement only a person can make, and whether the answer is a sentence in the record or a fifth
+  state]`

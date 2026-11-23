@@ -543,3 +543,16 @@
   summed, because a sum with a hole in it is small, defensible and wrong. What the entry asked for and did
   not get is a measurement of the cold state: no run in this repository has recorded one, which is why the
   rule is a lower bound rather than a derivation and why the summary prints the multiple beside the number.
+
+- O-104 · ~~**`round(s)` has three readers and only two of them count a population.**~~ The third
+  states how far the ledger's newest row sits from the newest round, and the partition had no word for
+  a number that is not a count of its noun, so it was written `[["check-ci-budget"]]` -- a population of
+  one reader, the same shape as a corpus. ~~`[open: whether a distance belongs in the census at all, and
+  which sentence would decide it -- the noun's population is rounds, and the distance between two of
+  them is not a member of it]`~~ **Closed by v3.135**, which answered both halves: a distance belongs in
+  the census (dropping a number the reader read is finding 611), and not in a population. `separate` is
+  the third placement -- a gate and the sentence that says what it measures instead -- and it is
+  refused without the sentence, outside the noun, beside a population, or twice. The census's own line
+  now reads `0 in check-ci-budget (declared separate: how far the ledger's newest row sits from the
+  newest round ...)`, and its summary accounts for all **27** placements rather than only the 6 that
+  sit in a population two gates read (finding 626).

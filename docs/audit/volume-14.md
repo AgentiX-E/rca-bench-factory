@@ -1,7 +1,7 @@
 # Audit · volume 14
 
-Findings 579–625, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
-`progress/volume-19.md` as `v3.115` through `v3.134`.
+Findings 579–626, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
+`progress/volume-19.md` as `v3.115` through `v3.135`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -2901,3 +2901,103 @@ them fewer, and a reader who wants the file to *be* the rules -- one page, no ca
 a different document, not a reordering of this one. `[open: whether the acceptance file should be
 two files -- the rules, and the case law -- with each rule naming the case that decided it]` is the
 question v3.134 leaves, and it is a question about the reader rather than about the gate.
+
+## Finding 626 — the census had one word for a count and one for a measurement, and it used it for both
+
+`O-104` was opened by v3.133 with a sentence about `round(s)`: four gates print the noun and two of them
+count a population. The third, `check-ci-budget`, prints **how far** the ledger's newest row sits from
+the newest round -- a distance in the noun's unit and not a count of its members. The fourth,
+`check-acceptance-shape`, counts a set of its own, which is a corpus and not a defect.
+
+The record had no way to tell the first three apart from the fourth. A partition is a list of gate
+groups, so a number that is not a count of the noun had to be written as a group of one -- and a group
+of one is exactly what `check-workflow-language`'s six workflows are: a corpus one gate reads. Written
+`[["check-ci-budget"]]`, the record said a distance was a count of rounds, and the census's own green
+line said it too, in the same breath as the two `vX.YY` counts it sits beside.
+
+### The measurement
+
+| noun | gates | in a population of two or more | in a population of one | declared separate |
+| --- | --- | --- | --- | --- |
+| `addendum(s)` | 2 | 2 | -- | -- |
+| `file(s)` | 4 | 2 | 2 | -- |
+| `round(s)` | 4 | 2 | 1 | **1** |
+| `row(s)` | 4 | -- | 4 | -- |
+| `run(s)` | 4 | -- | 4 | -- |
+| `row break(s)` | 3 | -- | 3 | -- |
+| `comment(s)` | 2 | -- | 2 | -- |
+| `reading(s)` | 2 | -- | 2 | -- |
+| `volume(s)` | 2 | -- | 2 | -- |
+
+**27** placements, **6** in populations two or more gates read, **20** in populations of one gate,
+**1** that is not a count of its noun. The census now prints all four numbers on the green line; before
+this round it printed `3 population(s)`, which is a count of the populations that hold an equality and
+says nothing about the 21 placements that do not.
+
+### Three answers that were possible, and the one taken
+
+**Drop the distance from the census.** It is the cheapest answer and it is finding 611's defect: a
+reader that silently stops counting a number it read, so the headline becomes a count of what the
+reader happened to see. The census exists to hold every number the gates print.
+
+**Rename what `check-ci-budget` prints** -- `lag(s)`, or a noun of its own -- so the census never sees
+a distance under `round(s)`. That fixes one printer, and it fixes it by making the corpus's vocabulary
+carry a word invented for a reader. The next gate that states a distance would have to invent another.
+
+**Give the record a third placement.** `separate` is a gate and the sentence that says what it measures
+instead, refused without the sentence, outside the noun, beside a population, or twice. It answers the
+entry's second half as well -- *which sentence would decide it* -- because the sentence is a field
+rather than a paragraph in the noun's relation, and a relation about a population would otherwise have
+to say two things at once. This is the one taken.
+
+### What a declaration is held to
+
+The relation is checked against every count the noun is printed with, because a relation is about the
+noun. A declaration is about one gate's number, so it is checked against that gate's counts alone:
+`check-ci-budget`'s sentence may state the `0` it prints and may not state the `50` that
+`check-progress-volumes` prints. That is finding 620's rule with one more hop between the figure and
+the reader: a sentence beside a number is the most likely place for a stale copy of it.
+
+### The line that now says which is which
+
+    round(s) — 30 in check-acceptance-shape; 229 `vX.YY` in check-open-list; 229 `vX.YY`, 50 `Pass`
+    in check-progress-volumes (one population at 229, and the count agrees); 0 in check-ci-budget
+    (declared separate: how far the ledger's newest row sits from the newest round -- a distance, so
+    its number is compared with nothing and moves every round the log does not close) — ...
+
+The declaration is printed after the populations, not in gate order. In gate order the zero leads the
+line, looking like a count; after the populations it is what it is, and a reader who wants the counts
+can stop before it.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the declaration is read as an empty list | 7 |
+| coverage counts a declared gate as unplaced | 6 |
+| a gate may sit in a population and a declaration | 1 |
+| a gate may be declared twice | 1 |
+| a declaration need not say what it measures | 2 |
+| a declaration is held to the noun's figures rather than its gate's | 1 |
+| no declaration is held to its figures at all | 1 |
+| a declaration is printed without saying what it measures | 3 |
+| the ledger files a declaration as a population of one | 2 |
+| a record whose only field is `separate` is refused as unfilled | 2 |
+| the writer drops the declaration | 1 |
+| the reader drops the declaration | 2 |
+
+**Twelve mutations, 29 reds.** The tenth survived the first run: every fixture that declared a gate
+separate also carried `populations: []`, so nothing distinguished a missing array from an empty one --
+and a record carrying only declarations is the shape a noun of three unrelated corpora has. The
+fixture was the hole.
+
+### What this does not settle
+
+Whether a *population of one* is a claim the census can check at all. Twenty of the 27 placements are a
+corpus one gate reads. At v3.134 two of them printed the same number -- `22 reading(s)` in
+`check-ci-budget` and in `check-fault-cases` -- which the record called the corpus on the strength of a
+sentence; the recording this round retook moved one of them to `23`, and the coincidence left the
+census's list with nothing refusing it, because a census prints the agreements it finds and not the
+ones it loses. A coincidence between two populations of one is therefore the one agreement the census
+prints without checking, and whether that is a fifth placement, a refusal, or a judgement only a
+person can make is `O-106`.

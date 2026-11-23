@@ -48,6 +48,7 @@ before the layer above it is meaningful.
 | A count that can be zero prints zero | v3.133 |
 | The allowance is argued, and what it owes the history is a floor | v3.134 |
 | A clause owes an address, and the file owes an index | v3.134 |
+| A number that is not a count of the noun is declared separate | v3.135 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -2216,3 +2217,31 @@ from an anecdote again.
 - **What is not claimed.** That the file is shorter. `O-019`'s complaint was **navigation**, not
   length: 2,100 lines is a legitimate size for 37 decisions, and a reader who wants to know what this
   file requires should not have to read it. The index is the repair, and the length is what it costs.
+
+### A number that is not a count of the noun is declared separate (v3.135)
+
+- **The census's unit is the population, and a distance is not a member of one.** `round(s)` is
+  printed by four gates: two count `vX.YY` headings, `check-acceptance-shape` counts the distinct
+  rounds its clause headings name, and `check-ci-budget` states **how far** the ledger's newest row
+  sits from the newest round. The fourth is a measurement in rounds rather than a count of them, and
+  the record had one word for both -- so the distance was written as `[["check-ci-budget"]]`, a
+  population of one reader, which is the same shape as `check-workflow-language`'s six workflows and
+  is a corpus (finding 626).
+- **A declaration is a gate and the sentence that says what it measures.** `separate` is the third
+  placement, beside a population of one and a population of two. It is refused unless the gate prints
+  the noun, sits in no population, and carries a sentence -- because the two questions, *which number
+  is not a count* and *what it measures instead*, are one question, and a schema that answered only
+  the first would leave a reader holding a zero with no unit.
+- **A declaration's figure must be one that gate printed.** The noun's relation is checked against
+  every count the noun is printed with; a declaration is checked against its own gate's counts alone,
+  because the number beside it is that gate's number. `check-ci-budget`'s sentence may state the `0`
+  it prints and may not borrow the `50` that `check-progress-volumes` prints.
+- **The summary accounts for every placement, not only for the populations.** A run prints
+  `27 placement(s) of those nouns: 6 in populations two or more gates read, 20 in populations of one
+  gate, 1 declared separate`, where the old clause stopped at `3 population(s)` -- a number that could
+  not be told apart from a record of six placements or of twenty-seven (finding 626). The cases that
+  hold it are `unit-nouns.test.ts`'s census case and the four that drive a declaration through the
+  gate.
+- **What is not claimed.** That a declaration is checked by a number. The sentence is a judgement and
+  stays one; what a run holds is that the gate prints the noun, that no other gate's number is filed
+  under it, and that the sentence states no figure its gate did not print.

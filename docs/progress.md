@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 260 core + 4 cli |
-| Test lines | 116,509 core + 3,242 cli |
-| Tests | 6,874 core + 187 cli |
+| Test lines | 116,714 core + 3,242 cli |
+| Tests | 6,880 core + 187 cli |
 | Tracked files | 678 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.134: **39** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.135: **39** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1010,22 +1010,25 @@ is a row about rather than paraphrase one that no `grep` will find.
   `git add`: `Tracked files` **672** against the checkout's **675**). Neither file says when the round ended.
   `[open: whether a write can know that it is the round's last act -- the ordering is a discipline today,
   and the reader that catches a violation is a full local run rather than a refusal at the moment of writing]`
-- O-104 · **`round(s)` has three readers and only two of them count a population.**
-  `check-ci-budget` states how far the ledger's newest row sits from the newest round: a distance, not a
-  count of members, and the census holds it to the same noun as the two gates that count `vX.YY`
-  headings. v3.133 made it print `0` rather than the phrase it printed when the distance was zero,
-  which quiets the census and does not make the noun coherent -- the number is compared with nothing and
-  it moves every round the log does not close.
-  `[open: whether a distance belongs in the census at all, and which sentence would decide it -- the
-  noun's population is rounds, and the distance between two of them is not a member of it]`
-- O-105 · **The acceptance file is 39 clauses of case law, and a reader who wants the rules must read all of it.**
-  The index added at v3.134 makes the file navigable and does not make it shorter: **39** clauses across
-  **30** rounds, **2,218 lines at v3.134**, each a judgement with the case that decided it. A reader who
-  wants to know what this tree requires today gets **431 lines at v3.133** of current rule mixed into the
-  same page with **414 lines at v3.133** of how each was reached.
+- O-105 · **The acceptance file is 40 clauses of case law, and a reader who wants the rules must read all of it.**
+  The index added at v3.134 makes the file navigable and does not make it shorter: **40** clauses across
+  **31** rounds, **2,247 lines at v3.135**, each a judgement with the case that decided it. A reader who
+  wants to know what this tree requires today reads it mixed into the same page with how each clause was
+  reached.
   `[open: whether the acceptance file should be two files -- the rules, and the case law -- with each rule
   naming the case that decided it, and whether a rule whose case is one section away is still checkable by
   the reader who has to apply it]`
+- O-106 · **Twenty of the census's 27 placements are a corpus one gate reads, and nothing asks whether two of them are one set.**
+  v3.135 gave the census a third placement for a number that is not a count of its noun, and the ledger
+  it prints says how many placements are in populations of one gate: **20**. Each is a corpus by
+  declaration -- `row(s)` in four tables, `run(s)` in four senses -- and two of them print the same
+  number at v3.134 (`22 reading(s)` in both), and the recording this round retook moved one of them to
+  `23` -- the coincidence went out with nothing refusing it, because the census prints the agreements
+  it finds rather than the ones it lost. The record calls the pair two kinds of reading on a sentence
+  alone.
+  `[open: whether a coincidence between two populations of one is a fact the census can refuse or a
+  judgement only a person can make, and whether the answer is a sentence in the record or a fifth
+  placement]`
 ## Pass log
 
 The rounds are recorded in the volumes below, in the order they were run. They were one
@@ -1061,7 +1064,7 @@ and this table.
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
-| [volume-19.md](progress/volume-19.md) | 14 | v3.121 | v3.134 |
+| [volume-19.md](progress/volume-19.md) | 15 | v3.121 | v3.135 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
