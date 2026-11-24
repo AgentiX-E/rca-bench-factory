@@ -58,6 +58,8 @@ before the layer above it is meaningful.
 | A bound is printed at both ends of the series it was sized from | v3.139 |
 | A green line names the two sides it joined | v3.139 |
 | A date is not in the future of the round it is quoted in | v3.139 |
+| A bound is printed with the day its command usually has | v3.140 |
+| A noun may leave the vocabulary with a sentence saying when it can be silent | v3.140 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -2440,3 +2442,49 @@ from an anecdote again.
 - **What is not claimed.** That the date is *true*. The corpus holds no independent account of what
   the named round measured -- 227 of the 228 dated rows that carry a count are that round's own
   publication -- so provenance in the snapshot is what would close it (`O-117`).
+
+### A bound is printed with the day its command usually has (v3.140)
+
+- **Two ends of a series do not say what the middle is.** The tightest bound is `2.0x` the slowest
+  reading of its command and `1,784 s` above the fastest, and its 30 readings have a median of
+  **20.5 s**: the bound is `88x` the day that command usually has. A reader given the ends alone can
+  compute neither, so the middle is printed with the multiple it implies (`O-116`, finding 636).
+- **The middle and the ends come from one reader.** `readingsOfCommand` returns the fastest, the
+  slowest and the middle of the same set of readings, so the denominator `R10` refuses against and
+  the number printed beside it cannot disagree about which readings belong to the command. A probe
+  recomputes the median from the same rows and finds **0** of 44 commands inconsistent.
+- **An even series prints the interval, and the multiple divides by its midpoint.** `between 20 s and
+  21 s` rather than `20.5 s`, because 20.5 is a number no run spent; equal middle readings print as
+  one number, because a range from a number to itself is the shape the every-reading-is-the-same
+  branch refuses. The shipped tree reached this branch in the round the clause was written: the
+  series grew from 29 readings to 30 when the recording moved, so the clause changed shape on the
+  tree rather than in a fixture.
+- **A middle of 0 s prints no multiple, and says so.** Six of the 44 commands are read at 0 s, and
+  `bound / 0` is the `Infinity` the record refuses elsewhere. A clause that stopped at the middle
+  would read as a division that came back blank.
+- **What is not claimed.** That the middle describes a typical *state* rather than a typical day.
+  The series mixes the tree's growth with the runner's variance, and which of the two a median
+  measures is `O-114`'s question. Nor that every bound has one: only the tightest bound's command is
+  printed, which is `O-118`.
+
+### A noun may leave the vocabulary with a sentence saying when it can be silent (v3.140)
+
+- **A noun a conditional sentence prints enters and leaves with the tree.** `check-ci-budget` prints
+  `budget(s)` only in a round that widened a bound, so a round where nothing moved derives a smaller
+  vocabulary -- and a writer that deleted the line left the next round to put it back, with nothing
+  said in between (`O-112`, finding 637).
+- **The repair is a sentence, not a list of permitted nouns.** Nothing derives a list of nouns a gate
+  *may* print, and a hand-kept one would need its own reader to stay true. The judgement list carries
+  a `silence` sentence per noun instead, saying why a round can print none.
+- **Both doors refuse the same state.** A green run refuses a noun that vanished with no sentence;
+  `--write` refuses it before writing anything; and a noun coming back with a sentence is reported as
+  `printed again` rather than `new`, so the round that answers a question is not asked to answer it
+  again.
+- **The green line counts what the record keeps.** A noun with a sentence and no line this run is
+  named on the summary, because a reader would otherwise see a vocabulary smaller than the document
+  with no account of the difference.
+- **A silence sentence is held to the figures a relation is held to.** A figure in one must be a
+  count a gate printed under that noun, and the refusal names the field, because a noun can carry two
+  sentences (finding 638).
+- **What is not claimed.** That the sentence is still true. Nothing asks whether the branch has been
+  deleted or the gate still exists, which is `O-119`.

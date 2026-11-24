@@ -1,7 +1,7 @@
 # Audit · volume 14
 
-Findings 579–635, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
-`progress/volume-19.md` as `v3.115` through `v3.139`.
+Findings 579–638, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
+`progress/volume-19.md` as `v3.115` through `v3.140`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -3705,3 +3705,177 @@ corpus holds no independent account of what that round measured -- 227 of the 22
 carry a count are their own round's publication, so the round and the quote are the same line. What
 would close it is provenance in the snapshot: a run id beside each count, so a date could cite a run
 instead of a round. That is `O-117`.
+
+## Finding 636 — a bound's axis was printed at its two ends, and the day it usually has was on neither
+
+`R10` sizes a bound from the worst day a command has had, and v3.138 and v3.139 gave that day a
+series: the multiple is printed against the slowest reading, and the headroom against the fastest.
+Both are extremes. Neither is the day the command is usually having, and no arithmetic on the ends
+recovers it -- a series of 27 readings under 100 s and three at 888 s has the same ends as one
+climbing steadily from 16 s to 888 s, and the two ask for different bounds.
+
+The population was measured before the sentence was written, because a middle is only worth printing
+if the corpus has middles that differ from its ends:
+
+```
+$ node /tmp/probe140a.mjs
+{ "commands": 44, "readings": 30, "zeroMiddle": 6, "inconsistent": 0 }
+
+43.3x  n= 30    16.. 888 median  20.5  sudo apt-get update -qq && sudo apt-get install -y -qq prometheus
+20.8x  n=208     7.. 198 median   9.5  sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+ 8.0x  n=238     0..   8 median     1  step:Set up Node.js
+ 3.5x  n=238     1..   7 median     2  step:Check out
+ 3.0x  n=238     1..   3 median     1  pnpm install --frozen-lockfile
+ 2.0x  n=238     0..   2 median     1  step:Set up pnpm
+```
+
+`inconsistent: 0` is the reader checking itself: every middle lies between its fastest and its
+slowest reading, and its midpoint equals the median of the same array, computed twice from
+`readingsOfCommand`'s rows. The run at the end of the round is what made the install series 30
+readings rather than 29, and it is why the integer column is **20.5** here and the clause in the
+summary prints an interval.
+
+**The multiple is printed beside the middle, not left to the reader.** `2.0x of the slowest` reads as
+a bound with no room; the same bound is `88x` the day the command usually has. The two numbers are
+one fact about one step, and a summary that printed one made the step look like it was sized to fire
+on any bad day rather than to never fire at all.
+
+**An even series has no middle reading.** `between 20 s and 21 s` rather than `20.5 s`, because 20.5
+is a number no run spent; the multiple divides by the midpoint -- the median by definition -- and the
+sentence names the two readings it came from, so a reader can check the division against the history.
+Equal middle readings print as one number, because `between 20 s and 20 s` is a range from a number to
+itself, which is the shape the every-reading-is-the-same branch refuses one level up. The branch was
+written against a fixture and reached by the shipped tree in the same round: the series was 29
+readings when the clause was written and became 30 when the recording was taken, which turned `at
+21 s` into `between 20 s and 21 s` and `86x` into `88x`.
+
+**A middle of 0 s prints no multiple, and says so.** Six of the forty-four commands are read at 0 s,
+and `bound / 0` is the `Infinity` finding 121 refuses. The headroom clause subtracts and therefore
+exists for every pair; a quotient does not, and a sentence that stopped at the middle would read as a
+division that came back blank.
+
+Only the tightest bound's command is printed, and that is a decision rather than a limit of the
+reader: the multiple a reader is asked to interpret belongs to the bound the sentence is about, and
+thirty-eight middles would make the line a table. Which is `O-118`.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the middle is taken from an odd series as if it were even | 4 |
+| an even series reports one middle reading twice | 3 |
+| the middle clause is printed only when there is no middle | 4 |
+| equal middle readings are printed as an interval | 4 |
+| the multiple is printed over a middle of 0 s | 4 |
+| the multiple is rounded down rather than to the nearest | 2 |
+| the clause counts the middle reading instead of the readings | 4 |
+| every reading is collected as zero | 4 |
+
+**Eight mutations, 29 reds, no survivors.** The rounding one is the narrowest: `toFixed(0)` against
+`Math.floor` differs by a single digit on the shipped tree (`86x` against `85x`), and one fixture
+pins it.
+
+## Finding 637 — a noun left the vocabulary because a branch was not taken, and the writer deleted the line
+
+`check-ci-budget` prints `budget(s)` only in a round that widened a bound since the reading it
+compares with. v3.137 widened nothing: the noun vanished from the census and
+`check-unit-nouns --write` deleted its entry, because the vocabulary is derived from the run. v3.139
+widened five ceilings and the entry came back, and the gate refused the tree until `--write` put it
+back. Both runs were right. The record was rewritten twice, and neither rewrite was a decision
+anybody made.
+
+**The alternative that looks simpler is worse.** An inventory of the nouns a gate *may* print would
+have to be kept by hand: nothing derives it, and a list with no reader drifts from the gates it
+describes -- the second vocabulary this census exists to avoid. What the record can hold is the
+sentence a person writes about **when** the noun can be absent, in the same list the relations live
+in, and then a divergence is one line a reviewer reads.
+
+```
+$ node scripts/check-unit-nouns.mjs --write
+check-unit-nouns: FAILED — 1 noun(s) the record lists were printed by no gate this run and no
+judgement says when they can be silent: budget(s) (check-ci-budget)
+  add a `silence` sentence to that noun's judgement in golden-master/unit-nouns.json: the vocabulary
+  is derived, and a branch going untaken is a decision this writer will not make for you
+```
+
+**Both directions are refusals now, and the two doors agree.** Before it writes anything, `--write`
+refuses a noun that vanished with no sentence; a green run refuses the same state with
+`row(s) is no longer printed`; and a noun that comes back with a sentence is reported as
+`printed again, and the record already says when it can be silent` rather than `new`, because the
+round that answers a question should not be asked to answer it again.
+
+**The green line counts what the record keeps.** A run that printed nothing for a noun the document
+holds would otherwise show a vocabulary smaller than the record with no account of the difference:
+
+```
+1 noun(s) the record keeps and no gate printed this run, each with a sentence about when it can be: budget(s)
+```
+
+The count is of nouns whose sentence is a reason, not of nouns that are missing: the difference
+matters because the first is a decision and the second is the defect.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| a blank silence sentence counts as a sentence | 1 |
+| a noun this run printed is reported as unexplained | 6 |
+| a noun with a silence sentence is reported as unexplained | 3 |
+| the summary names the nouns this run did print as the silent ones | 1 |
+| the summary never names the noun the record keeps | 1 |
+| the writer deletes a noun no gate printed | 1 |
+| a noun that is still printed is filtered out of the comparison | 1 |
+| a noun coming back is reported as new | 1 |
+| the writer drops the silence sentence | 2 |
+| the reader does not read a silence sentence | 4 |
+
+**Ten mutations, 21 reds, no survivors** across the data module and the gate. The blank-sentence case
+is one red because it is one fixture: a sentence of three spaces would otherwise make the refusal
+`--write` consults unreachable by a typo.
+
+### What this does not settle
+
+Whether the sentence is still true. Nothing asks whether the branch that stopped being taken has
+been deleted, or whether the sentence still describes a gate that exists -- a record can keep a noun
+and a reason forever. `budget(s)` is the only such entry today, which is why the question has no
+population to be asked of, and that is `O-119`.
+
+## Finding 638 — the sentence about when a noun can be silent was the one field a figure could hide in
+
+Finding 620's rule is that a sentence beside a noun may state a figure only when a gate printed it
+under that noun, because a sentence is prose nobody recomputes and a figure in one is the only number
+in the record that can move without anything going red. The silence sentence is the same kind of
+document -- a person's words beside a noun, stored in the same list -- and it arrived after the rule
+did, which is exactly how a field gets to be the exception nobody notices.
+
+The check is one line, and it is the rule's own line rather than a second rule:
+
+```js
+const silentMissing = figuresOf(judgement.silence).filter((figure) => !counts.includes(figure));
+```
+
+It is asked on the rounds where the noun **is** printed, because that is the only round with counts to
+compare against -- the rounds the sentence describes have none, and `unprintedFiguresOf` already skips
+a noun no gate printed. The refusal names the field, because a noun can carry two sentences and a
+message that said "a sentence states 9" would send the author to read both:
+
+```
+$ node scripts/check-unit-nouns.mjs --write --inventory /tmp/silent-figure.json
+check-unit-nouns: FAILED — 1 sentence(s) state a figure no gate printed: row(s)'s silence sentence
+  states 9 and the counts under it are 8 and 318
+```
+
+**Found while writing the field, not after shipping it** -- which is the only reason it is a finding
+rather than a defect report: the rule existed, the new field was one word away from it, and the
+mutation that removes the check survived nothing, because the fixture was written with the field.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| a silence sentence may state any figure | 2 |
+| the refusal does not say which sentence stated the figure | 1 |
+
+**Two mutations, 3 reds.** The second is the one that makes the refusal usable: without the field
+name, a noun carrying a relation and a silence sentence gets a message about "a sentence", and the
+author has to read both to find the figure.

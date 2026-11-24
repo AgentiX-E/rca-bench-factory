@@ -2580,9 +2580,9 @@ green tree before the round's documents moved. No survivors: the two that would 
 | --- | --- |
 | CI | run `45319505174` on `df91a0a`: **8 of 8 jobs success**, 909 s (03:26:17 -> 03:41:26); the slowest job is `batteries-heavy` at 908 s of its 45-minute ceiling. It is the run the recording was taken from, and its own reading of the shells command -- **197 s** -- is what raised five bounds and five ceilings after the documents were written (see *The round's own defects*) |
 | `pnpm run docs:check` | **23 steps, exit 0** |
-| `core` test suite | **260 files, 6909 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7096 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 6909 tests passed** (at v3.139) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.139) |
+| repo test suite | **264 files, 7096 tests passed** (at v3.139) |
 | new tests | **6,897 -> 6,909, +12**: five for the loose end of the bound axis (the widest headroom being another step, one bound holding both ends, the better of two instruments, no history, and the zero-second case) and two for the green line's two read paths, and five for a date against the round it sits under (past the heading, a legal date, the pair as numbers, past every round, and a headingless record) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
 | the budget gate's two ends | `2.0x of the slowest reading ... across the history that command runs from 16 s to 888 s ... the widest headroom over a day a command has spent is the same bound, 1784 s of its 1800 s above the 16 s` |
@@ -2607,3 +2607,226 @@ green tree before the round's documents moved. No survivors: the two that would 
   run rather than a round -- the recorder already knows the run it measured, and the question is
   whether a file that is rewritten by every round is the right place for a history -- and whether a
   snapshot that carries provenance is still one file a reader can compare with three scopes]`
+
+## v3.140 — the axis gained its middle, and a noun that goes quiet needs a sentence
+
+Two entries, and both are a line answering a question by halves. `O-116` is `O-109`'s series one step
+further: v3.138 gave the tightest bound its spread, and a spread of two ends still says nothing about
+the day the command usually has. `O-112` is a noun that left the vocabulary because a branch was not
+taken and came back a round later -- the census was right twice, and the record was rewritten twice
+to say so.
+
+### The middle of the axis
+
+`R10` sizes a bound from the worst day a command has had, and v3.139 printed that day beside the best
+one. The two ends bound the axis; neither is the day the command is usually having, and no arithmetic
+on the ends recovers it -- a series with 27 readings under 100 s and three at 888 s has the same ends
+as one climbing steadily from 16 s to 888 s. The population first, because a rule about a middle is
+only worth writing if a middle exists:
+
+```
+$ node /tmp/probe140a.mjs
+{ "commands": 44, "readings": 30, "zeroMiddle": 6, "inconsistent": 0 }
+
+the widest gap between the middle and the worst day:
+43.3x  n= 30    16.. 888 median  20.5  sudo apt-get update -qq && sudo apt-get install -y -qq prometheus
+20.8x  n=208     7.. 198 median   9.5  sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+ 8.0x  n=238     0..   8 median     1  step:Set up Node.js
+ 3.5x  n=238     1..   7 median     2  step:Check out
+```
+
+`inconsistent: 0` is the check that the middle and the two ends are one set: every middle lies
+between its fastest and its slowest reading, and its midpoint is the median of the same array --
+computed twice, once by `middleOf` and once by the probe, over `readingsOfCommand`'s own rows. The
+thirty readings are the twenty-nine the round started with plus the run its own tip produced; the
+table is the gate's `readingsOfCommand`, not a second walk over the file.
+
+The sentence, on the shipped tree:
+
+```
+$ node scripts/check-ci-budget.mjs | tr ';' '\n' | grep -E 'tightest|middle'
+ tightest backend / Install a backend this repository did not write at 2.0x of the slowest reading
+  of its command (888 s in `backend / Install a backend this repository did not write`, run 44516888528)
+ across the history that command runs from 16 s to 888 s, with the middle of its 30 readings
+  between 20 s and 21 s -- against which the bound is 88x
+```
+
+**`2.0x` and `88x` are two halves of one fact, and the summary printed only the first.** `2.0x of
+the slowest` reads as a bound with no room; the same bound is `88x` the day that command usually has,
+and a reader who has both can tell a step sized to fire from a step sized to never fire. The multiple
+is printed rather than left as an exercise: the division is the whole point of the clause, and a
+reader doing it themselves would be reconstructing a number the gate has in hand.
+
+**An even series has no middle reading, so the sentence prints the interval.** `between 20 s and
+21 s` rather than `20.5 s`, because 20.5 is a number no run spent; the multiple divides by the
+midpoint, which is the median by definition, and the sentence names the two readings it came from so
+the division can be checked against the history. Equal middle readings print as one number -- `at
+20 s` -- because `between 20 s and 20 s` is a range from a number to itself, the shape the
+every-reading-is-the-same branch refuses one level up.
+
+**The shipped tree reached that branch in this round rather than in a fixture.** The series was 29
+readings when the clause was written -- an odd length, so the shipped output printed `at 21 s` -- and
+the recording this round pushed added the thirtieth, which turned the middle into the interval
+**20..21 s** and the multiple into `88x`. The fixture was written before the tree could prove it, and
+the round is the proof: a branch that only a synthetic series reaches is a branch nobody knows the
+shape of.
+
+**A middle of 0 s gets no multiple, and the sentence says why.** Six of the forty-four commands are
+read at 0 s, and `bound / 0` is the `Infinity` finding 121 refuses. Seconds subtract, so the headroom
+clause exists for every pair; a quotient does not, and the clause is written out rather than silently
+omitted, because a sentence that stopped at the middle would read as a division that came back blank.
+
+### A noun that left because a branch was not taken
+
+`check-ci-budget` prints `budget(s)` only in a round that widened a bound, so the noun enters the
+vocabulary with a widening and leaves it with the next round. v3.137 widened nothing and
+`check-unit-nouns --write` deleted the entry; v3.139 widened five ceilings and the entry came back.
+Both runs were right, and the record has no way to say so:
+
+```
+$ node scripts/check-unit-nouns.mjs --write
+check-unit-nouns: FAILED — 1 noun(s) the record lists were printed by no gate this run and no
+judgement says when they can be silent: budget(s) (check-ci-budget)
+```
+
+**The repair is not a list of nouns a gate may print.** Nothing derives that list, and a hand-kept one
+would need a reader of its own to stay true to the gates -- the second vocabulary this census exists
+to avoid. It is a sentence attached to the noun, in the same list the relations live in, saying why a
+round can print none:
+
+```json
+{
+  "noun": "budget(s)",
+  "silence": "printed only by a round that widened a bound since the reading it compares with, so a
+               tree that widened none has no such number to print -- the word counts the budgets a
+               reading has outgrown, which a round where nothing moved cannot have"
+}
+```
+
+With it, the writer proceeds, the derived line goes, and the judgement stays. The round that brings
+the noun back finds the decision already written, and the run that follows says which noun it is
+holding without a line for:
+
+```
+1 noun(s) the record keeps and no gate printed this run, each with a sentence about when it can be: budget(s)
+```
+
+**Both directions are now refusals, and the two doors agree.** A green run refuses a noun that
+vanished with no sentence (`row(s) is no longer printed`) and `--write` refuses the same state before
+writing anything -- a writer that deleted and a run that refused would leave the tree in a shape no
+command accepts. A noun that comes back with a sentence is `printed again, and the record already says
+when it can be silent`, rather than `new`: the question was answered when it went quiet, and a message
+that asked it again would send the author to write what they already wrote.
+
+### The field a figure could hide in
+
+The silence sentence is a new field beside a noun, written by a person, that no reader recomputes --
+which is finding 620's description of a relation, one field over. So it is held to the same rule: a
+figure in it must be a count a gate printed under that noun, checked on the rounds where the noun
+**is** printed, since the rounds it describes are the ones with none.
+
+```
+$ node scripts/check-unit-nouns.mjs --write --inventory /tmp/silent-figure.json
+check-unit-nouns: FAILED — 1 sentence(s) state a figure no gate printed: row(s)'s silence sentence
+  states 9 and the counts under it are 8 and 318
+```
+
+The refusal names the field, because a noun can carry two sentences and a message that said "a
+sentence states 9" would send the author to read both.
+
+### The round's own defects
+
+- **A fixture added a noun the next reading removed.** `NARROWED` printed `318 record(s)` so the
+  third gate would have something to say, and v3.140's refusal then read that as a noun vanishing
+  between two rounds -- which it was. The fixture now prints no unit noun at all, and the comment says
+  why: an arrival and a departure are two conversations, and a case about the second should not stage
+  the first.
+- **The repository table was rewritten three times.** Twelve new test lines moved it, then five more,
+  then the two cases this round added. `check-repository-table` is inside the suite it measures, so
+  the order -- rewrite the table, measure, rewrite again -- is `O-103`'s discipline and not a defect;
+  it is recorded because a reader of the diff will see three rewrites of one table.
+- **The recording moved at the end of the round, and the vocabulary moved with it.** Run
+  `45326716640` is this round's starting tree and the new recording: it widened no ceiling, so
+  `budget(s)` is printed by no gate, `check-unit-nouns --write` removed the derived line and kept the
+  judgement, and the green line names the one noun the record holds without a line
+  (`1 noun(s) the record keeps and no gate printed this run ... budget(s)`). The sentence written for
+  exactly this round is what made the deletion a diff rather than a refusal -- `O-112` demonstrated
+  end to end on the shipped tree, in the round that closed it.
+- **The middle of the axis was rewritten from the gate's output twice.** The recording above changed
+  the install command's series from 29 readings to 30, so the middle became an interval and the
+  multiple `86x` became `88x`. Every number in the clauses below was taken from
+  `check-ci-budget`'s output after the recording was written, rather than carried forward from the
+  arithmetic of the sentence before it.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the middle is taken from an odd series as if it were even | 4 |
+| an even series reports one middle reading twice | 3 |
+| the middle clause is printed only when there is no middle | 4 |
+| equal middle readings are printed as an interval | 4 |
+| the multiple is printed over a middle of 0 s | 4 |
+| the multiple is rounded down rather than to the nearest | 2 |
+| the clause counts the middle reading instead of the readings | 4 |
+| every reading is collected as zero | 4 |
+
+| the mutation | reds |
+| --- | --- |
+| a blank silence sentence counts as a sentence | 1 |
+| a noun this run printed is reported as unexplained | 6 |
+| a noun with a silence sentence is reported as unexplained | 3 |
+| the summary names the nouns this run did print as the silent ones | 1 |
+| the summary never names the noun the record keeps | 1 |
+| a silence sentence may state any figure | 2 |
+
+| the mutation | reds |
+| --- | --- |
+| the writer deletes a noun no gate printed | 1 |
+| a noun that is still printed is filtered out of the comparison | 1 |
+| a noun coming back is reported as new | 1 |
+| the refusal does not say which sentence stated the figure | 1 |
+| the writer drops the silence sentence | 2 |
+| the reader does not read a silence sentence | 4 |
+
+**Twenty mutations, 53 reds** (8/29 for the budget gate, 6/14 for the data module and 6/10 for the
+gate), measured on the green tree. No survivors. The one that first survived was `the summary never
+names the noun the record keeps`, whose anchor was in the data module rather than in the gate -- a
+battery that edits the wrong file reports a hole that is not there, which is why every anchor is
+declared with its file.
+
+### Readings
+
+> Ledger for `v3.140`.
+
+| what | value |
+| --- | --- |
+| CI | run `45326716640` on `549cf33`: **8 of 8 jobs success**, 896 s (12:29:11 -> 12:44:07); the slowest job is `batteries` at 891 s of its 55-minute ceiling. This is the run the recording was taken from, and the round's own tip is measured in the record that follows it |
+| `pnpm run docs:check` | **23 steps, exit 0** |
+| `core` test suite | **260 files, 6921 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **264 files, 7108 tests passed** (as of this commit) |
+| new tests | **6,909 -> 6,921, +12**: five for the middle of the bound axis (the shipped shape, an even series, equal middle readings, a middle of 0 s, and the series itself) and seven for the silence sentence (the writer's refusal, the green line that names it, the run's refusal, a noun coming back, the blank sentence, the figure it may not state, and the refusal that names the field) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
+| the budget gate's axis | `2.0x of the slowest reading ... across the history that command runs from 16 s to 888 s, with the middle of its 30 readings between 20 s and 21 s -- against which the bound is 88x` |
+| the noun inventory | **56** nouns and 10 judgements; `budget(s)` is the one noun the record keeps without a line, and its silence sentence is the reason |
+| `docs/acceptance.md` | **51** clauses across **36** rounds; index **51** rows |
+| the census | **4** coincidences, unchanged: the round a date names is not a count any gate prints |
+
+### Left open
+
+- **Thirty-seven bounds still print no typical day.** v3.140 gave the middle to the tightest bound's
+  command, because that is the multiple a reader is asked to interpret; every other bound's series is
+  still two ends. The question is whether a summary can carry thirty-eight middles, and if not, which
+  bound earns one.
+  `[open: whether the middle belongs to the tightest bound alone -- the one whose multiple a reader is
+  asked to read -- or to every bound, which would make the line a table rather than a sentence -- and
+  whether a middle printed for one bound is a rule or an accident of which bound is tightest this
+  round]`
+- **A silence sentence never has to stop being true.** The record can keep a noun and a reason
+  forever: nothing asks whether the branch that stopped being taken has been deleted, or whether the
+  sentence still describes a gate that exists. `budget(s)` is the only such entry today, which is why
+  the question could not be asked of a population.
+  `[open: whether a noun that has been silent for many rounds should be asked about -- a stale
+  sentence is a record drifting the other way, and no round has yet had two of them -- and whether the
+  question is a count of rounds or a comparison with the gate's source]`

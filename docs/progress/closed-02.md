@@ -663,6 +663,26 @@
   headingless current row beside a round was added. The residue is `O-115` (a dated row's date is
   never compared with its round), and the question this does *not* answer is `O-110`.
 
+- O-112 · ~~**A noun is in the census only on the runs where a gate's branch prints it.**~~
+  `budget(s)` appears in `check-ci-budget`'s summary only when a bound was widened since the reading,
+  so v3.137 widened nothing, the noun stopped being printed, and `check-unit-nouns --write` deleted
+  its entry from `golden-master/unit-nouns.json` -- while v3.139 widened five ceilings and the entry
+  came back. Both runs were right, and the record was rewritten twice without a decision either way:
+  the inventory is a measurement of the tree rather than a vocabulary, and a noun can leave by a
+  branch not being taken. ~~`[open: whether an inventory that a conditional sentence can shrink is a
+  vocabulary at all -- the alternative is a list of nouns the gates *may* print, which nothing derives
+  and which would then need its own reader -- and whether a deletion should be refused the way a new
+  noun is, so that a branch going untaken is a decision rather than a rewrite]`~~
+  **Closed by finding 637**, on the second of the two questions: a deletion is refused the way a new
+  noun is, and the instrument is a `silence` sentence in the judgement list rather than a second
+  vocabulary. The first question is answered by what the record now says -- it holds the nouns this
+  run printed, plus the ones a person wrote a reason about -- and neither half is derived from the
+  gates' source, which was the objection to the alternative. Both doors refuse the same state: a
+  green run says `row(s) is no longer printed`, `--write` says the noun has no sentence about when it
+  can be silent, and a noun coming back with one is `printed again` rather than `new`. **Twelve
+  mutations, 24 reds** across the data module and the gate, no survivors. Findings 637 and 638. The
+  residue is `O-119`: nothing asks whether the sentence is still true.
+
 - O-113 · ~~**Only the tightest bound prints the series under it.**~~ The budget gate's summary named
   one bound out of thirty-eight, and the clause added at v3.138 gave that one its spread; every other
   bound printed nothing, so the dispersion of `pnpm lint` -- **221 s** to **521 s** -- was a number a
@@ -695,3 +715,25 @@
   every round" branch survived the first battery, since the three headingless dated rows in the
   corpus are all legal, and the case that closes it is one heading, one round and one date after it.
   The residue is `O-117`: the date is compared with the round, and with nothing the round measured.
+
+- O-116 · ~~**The axis a bound is measured against is printed at its two ends, and a normal day is
+  nowhere on it.**~~ v3.139 gave both superlatives a sentence -- the tightest bound at `2.0x` of the
+  slowest reading of its command, and the one with the most headroom above the fastest -- and both are
+  extremes. The install step is the extreme in both directions: `1,800 s` of bound against readings
+  that run from **16 s** to **888 s**, whose median was **21 s** while the series had 29 readings, so
+  the bound was **86x** the day the command usually has and no line printed a number near the
+  middle. ~~`[open: whether a middle belongs
+  in a line that already prints two ends -- a median is a third superlative, and the one a capacity
+  question is actually about -- and whether a median over a series that mixes a tree's growth with a
+  runner's variance is a typical day or a typical state, which is `O-114`'s question one level up]`~~
+  **Closed by finding 636**, on the first question and with the second handed to `O-114`: the middle
+  belongs because the multiple a reader is asked to interpret belongs to a series, and `2.0x of the
+  slowest` without a middle reads as a bound with no room at all. The sentence prints the interval an
+  even series has rather than a number no run spent, divides by its midpoint -- the median by
+  definition -- and prints no multiple over a middle of **0 s**, because six of the 44 commands are
+  read at 0 s and `bound / 0` is the `Infinity` this record refuses elsewhere. A probe recomputes the
+  median from `readingsOfCommand`'s own rows and finds **0** of 44 commands where the middle and the
+  ends disagree. **Eight mutations, 29 reds**, no survivors. The recording the round took added the
+  thirtieth reading, which turned `at 21 s` into `between 20 s and 21 s` and `86x` into `88x` -- the
+  even-series branch reached by the shipped tree rather than by a fixture, in the round that wrote it.
+  The residue is `O-118`: thirty-seven bounds still print no typical day.
