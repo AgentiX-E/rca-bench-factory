@@ -64,6 +64,8 @@ before the layer above it is meaningful.
 | The history's range carries the floor a second reading of one tree measures | v3.141 |
 | A round's span ends where that round's own count ends | v3.142 |
 | A mark has one reader, whichever way it is spelled | v3.142 |
+| A bound's headroom is measured in the movement one tree has already shown | v3.143 |
+| A reading is named by its run and its attempt | v3.143 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -2587,3 +2589,50 @@ from an anecdote again.
 - **The measurement says the widening worked.** Spans with no count to compare against fell from
   **6** to **1**, and the one that remains sits under no round at all; the five that arrived end where
   their rounds say.
+
+### A bound's headroom is measured in the movement one tree has already shown (v3.143)
+
+- **A multiple of two is a claim about the tree, and the machine is a second term.** `R10` demands
+  twice the slowest day. Two readings of one tree differ by up to **151 s** and by **42%** on `lint`,
+  so the multiple is partly a statement about the runner -- and the quantity that separates the two is
+  the headroom expressed in the movement the step itself has shown, not in seconds.
+- **The refusal is impossible, and the code says so.** Both readings of the pair are readings of one
+  command, so `movement = |a - b| <= max(a, b) <= slowest`; `bound >= 2 x slowest` therefore makes
+  `headroom >= slowest >= movement`. A rule refusing a headroom narrower than the movement could
+  never fire on a tree whose bounds `R10` holds, so none was added -- a rule that refuses nothing is
+  the shape every reader learns to skip (finding 645).
+- **The population is measured, and so is what it cannot divide.** **38** bounds carry their own
+  timeout, **38** have a second reading of their own tree, **8** did not move at all, **0** have no
+  movement to measure. The narrowest margin is `sensitivity / Install the shells the suite
+  cross-checks against`, **222 s** above its slowest day against **99 s** of movement -- `2.2x`; the
+  widest is the same command in `backend`, **912 s** against **4 s**.
+- **The sentence no longer calls the difference variance.** The two steps that move most are the two
+  installs, **9.9x** (109 s then 10 s) and **1.6x** (23 s then 9 s), which is a package store hit
+  against a miss -- the tree's state and not the runner's speed -- and six steps came back identical.
+  It says "the runner's variance and the cache's state together", which is what the pair measures.
+- **One pair is a floor, not an estimate.** The second half of `O-121` is answered no: the figure is
+  printed as the widest difference one pair has shown, with the pair named, and it rises the first
+  time a second tree is read twice.
+- **Not claimed.** That a bound sized in one mode of a bimodal step covers the other, which is
+  `O-126`; and that any of the 38 bounds is near its own noise -- the narrowest has two movements to
+  spare.
+
+### A reading is named by its run and its attempt (v3.143)
+
+- **A run id stopped naming one measurement at `v3.141`.** A re-run keeps the run id and increments
+  `run_attempt`, so `run 100` is two measurements and a reader who opens it sees the latest. Six
+  sentences printed the run: `R10`'s refusal, the tightest multiple, the widest headroom, the
+  ceiling's slowest day, and the prefix allowance in both directions (finding 646).
+- **The defect has four shapes.** A run printed where a reading belongs; a reader that builds the
+  coordinate and drops the field (`readingsOfCommand`); a caller that rebuilds the object from two of
+  its fields (the headroom's `fast`); and a tie rule that orders by half the coordinate (`jobDays`,
+  `worstPrefixReading`), which leaves two equal days of one run with no order at all.
+- **One function prints it.** `run N` for attempt 1, because that is what every reading written
+  before the field existed was, and `run N attempt M` otherwise; the readers carry `attempt` in what
+  they return, and every tie is decided by the whole pair.
+- **The guard against noise is a case of its own.** 31 of the 35 rows in the history have no attempt
+  at all, so a coordinate that always printed `attempt 1` would make the reader learn a word that
+  means nothing; the case asserts `run 100:` and no `attempt 1`.
+- **Not claimed.** That the defect is visible in today's output: the slowest reading of the only
+  pair is attempt 2 of run `45351350110` (507 s) under a bound of 1080 s, so no sentence prints it.
+  A latent defect is repaired where it is latent, not where a reading happens to fall.

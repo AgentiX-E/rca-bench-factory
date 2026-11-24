@@ -1,7 +1,7 @@
 # Audit · volume 14
 
-Findings 579–644, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
-`progress/volume-19.md` as `v3.115` through `v3.142`.
+Findings 579–646, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
+`progress/volume-19.md` as `v3.115` through `v3.143`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -4225,3 +4225,119 @@ this round's first defect -- a shape nobody had thought of as a count -- came ab
 The two spellings are also why rule 3c was tested with a plain date only: a fixture written the way
 the rule's author writes would have passed either way. The case that closes it now writes the mark as
 code and asserts the refusal.
+
+## Finding 645 — the noise floor cannot refuse a bound at twice the day, and no bound's margin had been measured
+
+`O-121` asked two questions: whether a bound should be argued against the noise floor as well as
+against the slowest day, and whether one pair is enough to say what the machine does. The first has
+an arithmetic answer, and it is *no*:
+
+| step | the arithmetic |
+| --- | --- |
+| two readings of one step | both are readings of the same command, so `movement = |a - b| <= max(a, b) <= slowest` |
+| `R10` | `bound >= 2 x slowest`, so `headroom = bound - slowest >= slowest` |
+| therefore | `headroom >= movement`, always |
+
+So a rule of the form "the headroom must clear the movement" can never fire on a tree whose bounds
+`R10` holds, and a rule that refuses nothing is the shape every reader learns to skip. The round did
+not add it. What it added is the measurement the question was really about: the headroom expressed
+in the only unit the machine has offered.
+
+### The population
+
+| the bounds | count |
+| --- | --- |
+| carry their own `timeout-minutes` | 38 |
+| have a second reading of their own tree | 38 |
+| did not move at all between the two readings | 8 |
+| no second reading has timed | 0 |
+
+The narrowest margin is `sensitivity / Install the shells the suite cross-checks against`: **222 s**
+of headroom above its slowest day (**198 s**) against a movement of **99 s**, which is `2.2x`. The
+widest is the same install command in `backend`, **912 s** against **4 s** -- `228x` -- which is not a
+margin but a bound nobody has come near.
+
+### What the number is not
+
+`pnpm lint` moves **141 s** between two readings of one tree (**42%**), and the sentence about the
+history used to call that "the runner's variance". The same file contradicts it: ranking the 38
+bounds by *relative* movement puts the two install steps at the top --
+
+| step | two readings | relative movement |
+| --- | --- | --- |
+| `sensitivity / Install the shells ...` | 109 s then 10 s | **9.9x** |
+| `batteries / Install the shells ...` | 23 s then 9 s | **1.6x** |
+| `verify / Lint` | 337 s then 478 s | 0.42x |
+| six steps | identical | 0 |
+
+-- and a package store that was hit in one attempt and missed in the other is the tree's *state*, not
+the runner's speed. So the sentence now says "the runner's variance and the cache's state together",
+which is a claim the same file supports, and the residual is `O-126`: a bound sized in one mode of a
+bimodal step is not sized for the other.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| a movement is kept only when it is the first of its step | 1 |
+| two readings that share no step still count as a pair | 1 |
+| a step only one reading timed contributes the whole reading as a movement | 1 |
+| the floor takes the narrowest movement rather than the widest | 2 |
+| a bound whose step did not move is counted as having a margin | 1 |
+| a bound whose step was never read twice is counted as checked | 1 |
+| the margin divides the movement by the headroom | 1 |
+| the margin is measured from the recording instead of the slowest day | 1 |
+| a negative headroom is printed as a number | 1 |
+| the bounds that did not move are not counted | 1 |
+| the classes are joined without the last `and` | 2 |
+| a bound no reading measured twice is treated as a margin of zero | 1 |
+| the multiple is printed to two places at every size | 6 |
+| the floor is called the runner's variance alone | 2 |
+| the margin stanza runs on a history with no pair | 1 |
+
+All fifteen are in the round's battery, which is 23 mutations and 51 reds. Two survived the first
+pass, and both were holes in fixtures rather than in the code: a selection test whose narrowest
+candidate came **last** gives the same answer whichever way the comparison runs, and a tie test on a
+sorted history cannot tell "first wins" from "the later attempt wins". The first was fixed by making
+the narrowest bound the first the loop meets; the second by handing the rows over in the order that
+separates the two rules.
+
+## Finding 646 — seven sentences name a run, and a re-run made one run two measurements
+
+`v3.141` made `(run, attempt)` the identity of a reading. `readReadings` keys by it, `mergeReading`
+replaces one attempt and keeps the other, and `R10`'s two directions compare the pair. The sentences
+that *name* a reading did not learn it:
+
+| the sentence | what it printed |
+| --- | --- |
+| `R10`'s refusal | `took 900 s in \`job / step\` in run 100:` |
+| the tightest multiple | `(900 s in \`job / step\`, run 100)` |
+| the widest headroom | `at its fastest (run 100)` |
+| the ceiling's slowest day | `its slowest recorded day is 900 s (run 100)` |
+| the prefix allowance | `(16 s in \`backend\` of run 45192493234)` |
+| the allowance's refusal | `spent 120 s before its first real step in run 100` |
+| `historyErrors`' own coordinate | `run 100 attempt 2` -- the one that had learned it |
+
+Six of the seven are wrong in the same way and for the same reason: a re-run keeps the run id, so
+`run 100` is two measurements, and a reader who opens it sees the **latest** attempt -- the one that
+is not the number the sentence is about. The defect has four shapes, which is why one round of
+reading the sites did not finish it:
+
+1. a run printed where a reading belongs;
+2. a reader that builds the coordinate and drops the field: `readingsOfCommand` returned
+   `{seconds, run, job, step}`;
+3. a caller that rebuilds the object: the headroom's `fast` was `{seconds: found.fastest.seconds,
+   run: found.fastest.run}`, which loses what it does not name;
+4. a tie rule that orders by half the coordinate: `jobDays` and `worstPrefixReading` broke ties by
+   run alone, so two equal days of one run had no order -- and an order that does not exist is a
+   sentence that changes with the file's append order.
+
+The repair is one function, `coordinateOf`, which prints `run N` for attempt 1 -- the attempt every
+recording written before the field existed was -- and `run N attempt M` otherwise; the three readers
+carry `attempt` in what they return; and every tie is decided by the whole pair.
+
+The defect is latent in the shipped tree, which is what makes it a defect and not a rendering
+choice: the slowest reading of the only pair in the history is attempt 2 of run `45351350110`
+(`batteries-heavy / Type-miss probe battery`, 507 s), and its bound is 1080 s, so no sentence prints
+it today. The next bound that is sized under that step will be refused with a coordinate that sends
+its reader to the wrong attempt.

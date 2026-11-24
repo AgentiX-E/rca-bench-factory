@@ -805,3 +805,24 @@
   the question worried about. **Twelve mutations, 20 reds**, no survivors; the one that survived the
   first pass printed a *different* sentence from the one the fixture refused, which is why the fixture
   now names both. The residue is `O-120`: the individual middles are still printed by nothing.
+- O-121 · ~~**The noise floor is one pair on one tree, and every bound is sized without it.**~~
+  Attempts 1 and 2 of run `45351350110` differ by up to **151 s** on one step and **141 s** on
+  `lint` itself, and `R10` asks for twice the slowest day with nothing in the arithmetic about the
+  machine. The entry asked two questions, and the first is arithmetic: both readings of the pair are
+  readings of one command, so `movement <= max(a, b) <= slowest`, and `R10`'s `bound >= 2 x slowest`
+  makes `headroom >= slowest >= movement`. **A rule that refused a headroom narrower than the
+  movement can never fire on any tree whose bounds `R10` holds**, so none was added -- the round says
+  so in the code and in the audit rather than shipping a rule every reader learns to skip.
+  What it added is what the question was reaching for: the headroom in the movement the step has
+  itself shown. **38** bounds carry their own timeout, **38** have a second reading of their own tree,
+  **8** did not move at all, **0** have no movement to measure -- and the narrowest margin is
+  `sensitivity / Install the shells the suite cross-checks against`, **222 s** above its slowest day
+  against **99 s** of movement, which is `2.2x`. The second question is answered no: one pair is a
+  floor on the movement and not an estimate of it, so the figure is printed as "the widest difference
+  one pair has shown" with the pair named. The measurement also refuted a word: the widest difference
+  is not the runner's variance, because the two steps that move most are the two installs (9.9x and
+  1.6x) -- a package store hit against a miss. The sentence now says so, and the bound sized in one
+  mode of a bimodal step is `O-126`. **Fifteen mutations, 20 reds** in this subject, no survivors
+  after two fixture holes became cases.
+  **Closed by finding 645**, on both halves of the question: the refusal is impossible at twice the
+  day, and the margin is now measured and printed.

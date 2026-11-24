@@ -1533,9 +1533,9 @@ reds with five survivors, and the five are the first section of *The round's own
 | --- | --- |
 | CI | run `45376896602` on `b821d265`: **8 of 8 jobs success**, 795 s (10:39:44 -> 10:52:59), the run that published v3.141 and the thirty-fourth reading. No second attempt: the pair in the history is still run `45351350110`'s |
 | `pnpm run docs:check` | **23 steps, exit 0** |
-| `core` test suite | **260 files, 6956 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7143 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 6956 tests passed** (at v3.142) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.142) |
+| repo test suite | **264 files, 7143 tests passed** (at v3.142) |
 | new tests | **6,946 -> 6,956, +10**: eight for the span (the agreeing end, the refusal naming every count, the arithmetic, one file's span, a delta-only row, an unreadable arrow, a span under no round, a file named after the span), one for the row that names no round, and one for the date written as code. Counted from the suite, not from this sentence |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
 | the budget gate's axis | `2.0x of the slowest reading ... with the middle of its 34 readings between 20 s and 21 s -- against which the bound is 88x; ... the 36 bound(s) that have one sit between 2.4x and 88x ... and 2 of the 38 divide by a middle of 0 s` -- the recording of run `45376896602` moved the axis by one reading |
@@ -1574,3 +1574,155 @@ reds with five survivors, and the five are the first section of *The round's own
   whether the right place is a history rather than a snapshot; and whether the refusal could name the
   round whose count the offending number belongs to, since the corpus's other rounds publish spans
   and the number is usually one of them]`
+
+## v3.143 — a bound's margin in the machine's own movement, and a reading named by two fields
+
+`O-121` asked whether a bound should be argued against the noise floor as well as against the
+slowest day, and whether one pair is enough to say what the machine does. The first answer is
+arithmetic and it is negative; the second is no. The round measured what the question was really
+about, and found on the way that seven sentences name a run where a reading belongs.
+
+### The arithmetic, which closes the first half of the question
+
+For one step, both readings of the pair are readings of the same command, so
+`movement = |a - b| <= max(a, b) <= slowest`. `R10` demands `bound >= 2 x slowest`, so
+`headroom = bound - slowest >= slowest >= movement`. **A rule that refused a headroom narrower than
+the movement could never fire on a tree whose bounds `R10` holds**, and a rule that refuses nothing
+is the shape every reader learns to skip. So no rule was added.
+
+What was added is the number the question was reaching for: the headroom expressed in the movement
+the step has itself shown.
+
+| the bounds | count |
+| --- | --- |
+| carry their own `timeout-minutes` | 38 |
+| have a second reading of their own tree | 38 |
+| did not move at all between the two readings | 8 |
+| no second reading has timed | 0 |
+
+The narrowest is `sensitivity / Install the shells the suite cross-checks against`: **222 s** of
+headroom above its slowest day of **198 s**, against a movement of **99 s** -- `2.2x`. The widest is
+the same install command in `backend`, **912 s** against **4 s**, which is not a margin but a bound
+nobody has come near. The clause prints the narrowest with both numbers and counts the two classes
+it cannot divide: a step that came back identical has no multiple to take, and a step no second
+reading timed was never asked.
+
+### The word "variance" was doing work the measurement does not support
+
+The sentence about the history called the widest difference "the runner's variance". The same file
+contradicts it: ranked by *relative* movement, the two install steps come first --
+
+| step | two readings | relative movement |
+| --- | --- | --- |
+| `sensitivity / Install the shells ...` | 109 s then 10 s | **9.9x** |
+| `batteries / Install the shells ...` | 23 s then 9 s | **1.6x** |
+| `verify / Lint` | 337 s then 478 s | 0.42x |
+| six steps | identical | 0 |
+
+-- and a package store that was hit in one attempt and missed in the other is the tree's state, not
+the runner's speed. The sentence now says "the runner's variance and the cache's state together",
+which is what the pair measures. The residual is `O-126`, the bound sized in one mode of a bimodal
+step, which is not sized for the other.
+
+### Seven sentences named a run where a reading belongs
+
+`v3.141` made `(run, attempt)` the identity of a reading, and the reader, the merge and `R10`'s
+ordering learned it. The sentences that name one did not, and the defect had four shapes:
+
+1. a run printed where a reading belongs -- `R10`'s refusal, the tightest multiple, the widest
+   headroom, the ceiling's slowest day, the prefix allowance in both directions;
+2. a reader that builds the coordinate and drops the field -- `readingsOfCommand` returned
+   `{seconds, run, job, step}`;
+3. a caller that rebuilds the object -- the headroom's `fast` was assembled field by field;
+4. a tie rule that orders by half the coordinate -- `jobDays` and `worstPrefixReading` broke ties by
+   run alone, so two equal days of one run had no order, and an order that does not exist is a
+   sentence that changes with the file's append order.
+
+One function now prints it -- `run N` for attempt 1, because that is what every recording written
+before the field existed was, and `run N attempt M` otherwise -- the three readers carry `attempt` in
+what they return, and every tie is decided by the whole pair.
+
+The defect is latent in the shipped history, which is what makes it a defect: the slowest reading of
+the only pair is attempt 2 of run `45351350110` (`batteries-heavy / Type-miss probe battery`, 507 s),
+and its bound is 1080 s, so no sentence prints it today. The next bound sized under that step would
+have been refused with a coordinate that sends its reader to the wrong attempt.
+
+### The round's own defects
+
+- **Two mutations survived the first pass, and both were fixture holes.** A selection test whose
+  narrowest candidate came *last* answers the same number whichever way the comparison runs -- the
+  fixture could not tell the two implementations apart. And a tie test on a **sorted** history cannot
+  distinguish "first wins" from "the later attempt wins", because on a sorted history they are the
+  same reading; the case that decides it hands the rows over in the order that separates them, and
+  the reverse is true for the *fastest* tie, which needs a reversed history precisely because its
+  rule takes the older reading.
+- **`coordinateOf` was exported and unnecessary.** `scripts-are-classified` refuses an export no
+  other file takes, and the function is used only inside its own module: the export came off rather
+  than the rule being widened.
+- **The suite's own pins moved four times**: `readingsOfCommand`'s two ends and `jobDays`' day now
+  carry `attempt`, so four `toEqual` expectations gained the field; `worstReadingFor`'s case in
+  `ci-readings.test.ts` gained it too.
+- **The ledger's previous round was still marked current.** v3.142's three suite rows said
+  `(as of this commit)` and this round's suite is 23 tests larger, which `check-doc-counts` refused
+  -- the same mechanism finding 643 described, applied in the right direction: the rows are dated
+  `(at v3.142)` with the numbers v3.142 measured, not with today's.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the coordinate names the run and drops the attempt | 7 |
+| the coordinate always prints the attempt | 7 |
+| the slowest reading of a command loses its attempt | 5 |
+| the slowest tie ignores the attempt | 1 |
+| the fastest tie ignores the attempt | 1 |
+| a day loses the attempt it was measured in | 1 |
+| the prefix loses the attempt it was summed from | 1 |
+| the headroom is measured from the recording rather than from the fastest reading | 3 |
+| the margin is taken against the recording instead of the slowest day | 1 |
+| the margin divides the movement by the headroom | 1 |
+| a movement is kept only when it is the first of its step | 1 |
+| two readings that share no step still count as a pair | 1 |
+| a step only one reading timed contributes the whole reading as a movement | 1 |
+| the floor takes the narrowest movement rather than the widest | 2 |
+| a bound whose step did not move is counted as having a margin | 1 |
+| a bound whose step was never read twice is counted as checked | 1 |
+| a bound no reading measured twice is treated as a margin of zero | 1 |
+| a negative headroom is printed as a number | 1 |
+| the bounds that did not move are not counted | 1 |
+| the classes are joined without the last `and` | 2 |
+| the multiple is printed to two places at every size | 6 |
+| the floor is called the runner's variance alone | 2 |
+| the margin stanza runs on a history with no pair | 1 |
+
+**23 mutations, 51 reds**, measured on the green tree, no survivors.
+
+### Readings
+
+> Ledger for `v3.143`.
+
+| item | value |
+| --- | --- |
+| CI | run `45393534319` on `9c260c1f7`: **8 of 8 jobs success**, 1,003 s, the run that published v3.142 and the thirty-fifth reading. No second attempt, so the history's only pair is still run `45351350110`'s |
+| `pnpm run docs:check` | **23 steps, exit 0** |
+| `core` test suite | **260 files, 6979 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **264 files, 7166 tests passed** (as of this commit) |
+| new tests | **6,956 -> 6,979, +23**: six for the coordinate (five sites and the guard against printing `attempt 1`), nine for the margin and the classes it counts, five for the selection and the ties, one for a step only one reading timed, one for a headroom that is negative, and one for the fastest tie. Counted from the suite, not from this sentence |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
+| the margins | **38** bounds carry their own timeout and **38** have a second reading of their own tree; the narrowest margin is **2.2x** (`sensitivity / Install`, 222 s over 99 s) and **8** did not move at all |
+| the movements | widest **151 s** on `batteries-heavy / Type-miss probe battery` (356 s then 507 s, attempts 1 and 2 of run `45351350110`); by relative movement the two installs lead, at **9.9x** (109 s then 10 s) and **1.6x** (23 s then 9 s) |
+| the readings | **35** readings, **34** runs, **33** trees |
+| the noun inventory | **58** nouns in 77 gate/noun pairs and 11 judgements, unchanged: the clause prints `bound(s)`, `difference` and `headroom`, all of them words the gate already used |
+| `docs/acceptance.md` | **57** clauses across **39** rounds; index **57** rows |
+| the census | **4** coincidences, unchanged |
+
+### Left open
+
+- A bound sized in one mode of a bimodal step: the two installs did, by 9.9x and 1.6x, so a bound
+  sized from a store hit is a bound sized for half the step's behaviour.
+  `[open: whether a step whose cost is dominated by a cache state should declare it, so that `R10`'s
+  denominator is read per mode rather than across them -- a declaration would be a promise about a
+  state no recording holds, which is what `R15` already does for the cold prefix -- and whether the
+  margin clause should say which of its 38 bounds rest on a step that moved by more than half its own
+  reading, since two of them do]`

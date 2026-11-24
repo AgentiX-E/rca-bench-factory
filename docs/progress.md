@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 260 core + 4 cli |
-| Test lines | 118,327 core + 3,242 cli |
-| Tests | 6,956 core + 187 cli |
+| Test lines | 118,797 core + 3,242 cli |
+| Tests | 6,979 core + 187 cli |
 | Tracked files | 679 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.142: **45** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.143: **45** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1042,14 +1042,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: whether a figure that is derivable from a committed file needs to be printed at all -- the
   range answers the population question and the file answers the individual one -- and whether the
   answer changes for a reader who has the summary and not the tree]`
-- O-121 · **The noise floor is one pair on one tree, and every bound is sized without it.**
-  Attempts 1 and 2 of run `45351350110` differ by up to **151 s** on one step and **141 s** on `lint`
-  itself -- 42% of that step -- and 28 of the 83 steps came back identical. The number says what the
-  machine did once, in one afternoon. `R10` asks for twice the slowest day, which is a statement about
-  the tree; nothing in the workflow's arithmetic mentions the machine's own spread.
-  `[open: whether a bound should be argued against the noise floor as well as the slowest day -- if two
-  readings of one tree can differ by 42%, the multiple is partly a statement about the machine -- and
-  whether one pair is enough to say what the machine does]`
 - O-122 · **The recorder will write an attempt older than the recording, which makes the history refuse
   the tree the recorder just wrote.**
   `--attempt 1` after `--attempt 2` is allowed: it writes the earlier measurement as the recording, the
@@ -1090,6 +1082,18 @@ is a row about rather than paraphrase one that no `grep` will find.
   whether the place for it is a history rather than a snapshot; and whether the refusal could name the
   round whose count the offending number belongs to, since the number is usually one of the spans the
   corpus already publishes]`
+- O-126 · **A bound sized in one mode of a bimodal step.**
+  Two readings of one tree put `sensitivity / Install the shells the suite cross-checks against` at
+  **109 s** and **10 s**, and `batteries / Install ...` at **23 s** and **9 s** -- a package store
+  hit and a store miss, which is the tree's state rather than the runner's speed. Both jobs bound it
+  at 420 s, which covers every reading either mode has produced, but by the margin and not by an
+  argument: nothing in the workflow says the step has two modes, so a bound sized from a hit would be
+  a bound sized for half the step's behaviour.
+  `[open: whether a step whose cost is dominated by a cache state should declare it, so that `R10`'s
+  denominator is read per mode rather than across them -- a declaration would be a promise about a
+  state no recording holds, which is what `R15` already does for the cold prefix; and whether the
+  margin clause should say which of its 38 bounds rest on a step that moved by more than half its own
+  reading, since two of them do]`
 
 ## Pass log
 
@@ -1127,7 +1131,7 @@ and this table.
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
-| [volume-20.md](progress/volume-20.md) | 9 | v3.134 | v3.142 |
+| [volume-20.md](progress/volume-20.md) | 10 | v3.134 | v3.143 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
