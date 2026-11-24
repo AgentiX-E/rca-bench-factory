@@ -1966,7 +1966,7 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     expect(result.stdout).not.toContain("largest 22m of the job");
     // `batteries` had every one of its fourteen steps bounded at the floor until v3.132; the
     // pool line is where its 54 minutes and its fourteen steps are counted now (finding 622).
-    expect(result.stdout).toContain('batteries 55m across 14 step(s)');
+    expect(result.stdout).toContain('batteries 56m across 14 step(s)');
     expect(result.stdout).not.toContain('batteries bounds all');
     // 9 -> 10 in v3.120: `Every gate can be shown to fail` measured 295 s, and twice that is 590 s,
     // which is 4 s past ten minutes (finding 599). The assertion follows the bound, which follows

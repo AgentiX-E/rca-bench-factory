@@ -586,7 +586,12 @@ jobs:
     # 3720 s; with 4 s of overhead doubled that is 3188 s, and R13's bounds
     # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
     # per setup step was paying for cold runners that cannot happen.
-    timeout-minutes: 55
+    #
+    # 55 -> 56 at v3.140, and by exactly the minute the doc-count shape battery took: its bound rose
+    # 2 -> 3 when run 45345210544 read it at 70 s, so the 3,000 s of bounds became 3,060 and `R13`
+    # refused the ceiling by 60 seconds. Every other ceiling that moved this campaign moved for the
+    # same arithmetic, which is why the rule is written as a sum rather than as a margin.
+    timeout-minutes: 56
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -748,7 +753,11 @@ jobs:
       # that claimed to pin the added shape only asserted exit 0, which the bare
       # shape also satisfies, so the file count was read but never used.
       - name: Doc-count shape battery (no survivors, no inert, no misattributed mutations)
-        timeout-minutes: 2
+        # 2 -> 3 on the round the recording moved to run 45345210544: the battery was read at
+        # **70 s** there, and twice that is 140, which is 20 seconds past the 2-minute bound.
+        # `R10` refused it, and the growth is the round's own: v3.140 added two shapes to
+        # `check-doc-counts`'s fixtures. Three minutes is 180 s, 2.57x the reading.
+        timeout-minutes: 3
         run: python3 scripts/injection/doc-counts-shapes.py
 
 
