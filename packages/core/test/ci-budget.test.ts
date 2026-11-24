@@ -19,7 +19,9 @@ import {
   jobDays,
   jobsOf,
   ledgerErrors,
+  mergeReading,
   middleOf,
+  noiseFloorOf,
   prefixOf,
   readDeclarations,
   readReadings,
@@ -1743,6 +1745,104 @@ describe('the recorder', () => {
     expect(written.note).toBeUndefined();
   });
 
+  it('records the attempt it is asked for, and asks the API for the attempts it would hide', async () => {
+    // A re-run keeps the run id and increments `run_attempt` (`O-114`). The unfiltered jobs endpoint
+    // answers with the latest attempt only, so the first attempt's seconds are unreachable without
+    // `filter=all` -- which is why that flag is asked for exactly when an attempt is named.
+    const asked: string[] = [];
+    const result = await withApi(
+      (url) => {
+        asked.push(url);
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
+          return { status: 200, body: { head_sha: 'deadbeef', run_attempt: 2, updated_at: '2026-11-02T10:31:00Z' } };
+        }
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100&filter=all') {
+          const jobs = JSON.parse(JSON.stringify(API_JOBS)) as { jobs: Record<string, unknown>[] };
+          for (const [at, one] of jobs.jobs.entries()) {
+            one.run_attempt = 1;
+            // The first attempt was slower on the battery, which is the difference the pair is for.
+            if (at === 0) {
+              one.steps = [
+                { name: 'Check out', started_at: '2026-11-02T10:00:01Z', completed_at: '2026-11-02T10:00:03Z' },
+                { name: 'Slow battery', started_at: '2026-11-02T10:00:03Z', completed_at: '2026-11-02T10:00:44Z' },
+              ];
+            }
+          }
+          const later = JSON.parse(JSON.stringify(API_JOBS)) as { jobs: Record<string, unknown>[] };
+          for (const one of later.jobs) one.run_attempt = 2;
+          return { status: 200, body: { jobs: [...jobs.jobs, ...later.jobs] } };
+        }
+        return null;
+      },
+      async (env) => {
+        const out = await runRecorder(['7', '--attempt', '1'], env);
+        const written = JSON.parse(readFileSync(env['RCA_CI_OUT'] as string, 'utf8'));
+        const history = JSON.parse(readFileSync(env['RCA_CI_READINGS'] as string, 'utf8'));
+        return { out, written, history };
+      },
+    );
+    expect(result.out.status).toBe(0);
+    expect(asked).toContain('/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100&filter=all');
+    expect(result.written).toMatchObject({ run: 7, attempt: 1 });
+    // 44 s of battery in the first attempt against 49 s in the second: the pair is the measurement
+    // this flag exists to reach, and a reader of the two files can subtract them.
+    expect(result.written.jobs.batteries.steps['Slow battery']).toEqual(41);
+    expect(result.history.readings).toHaveLength(1);
+    expect(result.history.readings[0]).toMatchObject({ run: 7, attempt: 1 });
+  });
+
+  it('refuses an attempt the run has never reached, because no machine spent it', async () => {
+    const result = await withApi(
+      (url) => {
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
+          return { status: 200, body: { head_sha: 'deadbeef', run_attempt: 2, updated_at: '2026-11-02T10:31:00Z' } };
+        }
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100&filter=all') {
+          return { status: 200, body: API_JOBS };
+        }
+        return null;
+      },
+      (env) => runRecorder(['7', '--attempt', '3'], env).then((out) => ({ out, env })),
+    );
+    expect(result.out.status).not.toBe(0);
+    expect(result.out.stderr).toContain('run 7 has been executed 2 time(s) and --attempt names 3');
+    expect(existsSync(result.env['RCA_CI_OUT'] as string)).toBe(false);
+  });
+
+  it('refuses an attempt the API returns no job for, rather than recording an empty measurement', async () => {
+    // `filter=all` is asked for and answered with the attempts the endpoint happens to hold. An
+    // attempt with no job in it is a measurement of nothing, and a recording written from it would
+    // put a job-free day in the file every bound is argued from.
+    const result = await withApi(
+      (url) => {
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
+          return { status: 200, body: { head_sha: 'deadbeef', run_attempt: 2, updated_at: '2026-11-02T10:31:00Z' } };
+        }
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100&filter=all') {
+          const only = JSON.parse(JSON.stringify(API_JOBS)) as { jobs: Record<string, unknown>[] };
+          for (const one of only.jobs) one.run_attempt = 2;
+          return { status: 200, body: only };
+        }
+        return null;
+      },
+      (env) => runRecorder(['7', '--attempt', '1'], env).then((out) => ({ out, env })),
+    );
+    expect(result.out.status).not.toBe(0);
+    expect(result.out.stderr).toContain('run 7 reports no job for attempt 1');
+    expect(existsSync(result.env['RCA_CI_OUT'] as string)).toBe(false);
+  });
+
+  it('refuses an attempt that is not a number, in the usage line that names the flag', () => {
+    // The usage line is the only place a flag is discoverable, so a flag it does not name is a flag
+    // nobody finds -- the reason `--seed` and `--borrow` are in it.
+    const bare = spawnSync(process.execPath, [MEASURE, '7', '--attempt', '0'], {
+      encoding: 'utf8',
+      env: { ...process.env, GITHUB_TOKEN: 'x' },
+    });
+    expect(bare.status).toBe(2);
+    expect(bare.stderr).toContain('--attempt <n>');
+  });
+
   it('refuses a run that reports no span for a job, because the overhead would then be a guess', async () => {
     // `R13` holds a ceiling to the bounds plus the seconds no step spends, and the job's own
     // span is the only place those seconds are measured. A run without one is refused at
@@ -2702,7 +2802,9 @@ describe('the spread of one command, and the multiple that does not say it', () 
     expect(summary).not.toContain('across the history');
     // And no middle either: one reading has no middle to be the middle of, and a sentence naming
     // it would be the spread this branch exists to say is unavailable.
-    expect(summary).not.toContain('the middle of its');
+    // The spread clause is the one being refused here (`with the middle of its ...`); the range
+    // over every bound's middle further along the line is a different clause and still prints.
+    expect(summary).not.toContain('with the middle of its');
   });
 
   it('says every reading is the same, rather than a range from a number to itself', () => {
@@ -2722,7 +2824,9 @@ describe('the spread of one command, and the multiple that does not say it', () 
     expect(summary).not.toContain('888 s to 888 s');
     // The middle is the same number as both ends here, so there is nothing for it to add: a line
     // that printed it beside `the same` would be one fact written twice.
-    expect(summary).not.toContain('the middle of its');
+    // The spread clause is the one being refused here (`with the middle of its ...`); the range
+    // over every bound's middle further along the line is a different clause and still prints.
+    expect(summary).not.toContain('with the middle of its');
   });
 
   it('prints no spread at all when there is no history to take one from', () => {
@@ -2850,6 +2954,472 @@ describe('the spread of one command, and the multiple that does not say it', () 
     expect(summary).toContain('with the middle of its 3 readings at 0 s');
     expect(summary).toContain('a bound over a middle of 0 s has no multiple');
     expect(summary).not.toContain('against which the bound is');
+  });
+
+  /**
+   * The middle of every bound's own command (`O-118`).
+   *
+   * v3.140 printed the middle for the *tightest* bound, because that is the multiple the sentence
+   * asks a reader to interpret. Thirty-seven bounds were still described by two ends, and which
+   * bound got a middle was decided by which one happened to be tightest -- so the figures this
+   * line publishes move when an unrelated bound moves. The middle belongs to every bound. The
+   * summary cannot hold thirty-eight middles without becoming a table, so it prints the two
+   * numbers that describe all of them: the least multiple any bound makes over its own command's
+   * middle, with the bound that makes it, and the greatest, which is the bound that is nearly all
+   * margin. Both are minima and maxima rather than a choice, so neither is an accident of the
+   * round that printed it.
+   */
+  it('prints the middle over every bound, as the least and the greatest multiple they make', () => {
+    // Two bounds with histories of different shapes. `Wide` is the tightest bound in the
+    // workflow (1800 s over its 888 s day is 2.0x) and its command's middle is 21 s, so it is
+    // 86x a usual day. `Narrow` is the bound nearest its middle (900 s over 382 s is 2.4x) and
+    // is not the tightest. One sentence has to say both, because they are different bounds.
+    const workflow = oneJob([...step('Wide', 30, 'a-cmd'), ...step('Narrow', 15, 'b-cmd')], 45);
+    const recording = recordingOf({ batteries: { steps: { Wide: 888, Narrow: 415 } } });
+    const summary = budgetSummary(
+      workflow,
+      recording,
+      null,
+      null,
+      historyOf(
+        day(1, {
+          batteries: { Wide: { seconds: 16, command: 'a-cmd' }, Narrow: { seconds: 380, command: 'b-cmd' } },
+        }),
+        day(2, {
+          batteries: { Wide: { seconds: 21, command: 'a-cmd' }, Narrow: { seconds: 382, command: 'b-cmd' } },
+        }),
+        day(3, {
+          batteries: { Wide: { seconds: 888, command: 'a-cmd' }, Narrow: { seconds: 415, command: 'b-cmd' } },
+        }),
+      ),
+    );
+    expect(summary).toContain('tightest batteries / Wide at 2.0x');
+    expect(summary).toContain(
+      'over the middle of its own command the 2 bound(s) that have one sit between 2.4x and 86x',
+    );
+    // The witness is the *least*, because that is the bound a usual day comes nearest to filling,
+    // and it is not the bound the sentence has just called tight -- which is the whole point.
+    expect(summary).toContain('the nearest being `batteries / Narrow`');
+    expect(summary).toContain('(900 s over the middle of its 3 readings at 382 s)');
+    expect(summary).not.toContain('the nearest being `batteries / Wide`');
+  });
+
+  it('says which bounds divide by a middle of 0 s, rather than dropping them from the range', () => {
+    // A command read at 0 s has no multiple (`bound / 0` is the `Infinity` finding 121 refuses),
+    // and a range that silently left it out would describe a population of two bounds while the
+    // line above it counted three.
+    const workflow = oneJob(
+      [...step('Counts', 5, 'counts-cmd'), ...step('Wide', 30, 'a-cmd'), ...step('Narrow', 15, 'b-cmd')],
+      45,
+    );
+    const recording = recordingOf({ batteries: { steps: { Counts: 100, Wide: 888, Narrow: 415 } } });
+    const summary = budgetSummary(
+      workflow,
+      recording,
+      null,
+      null,
+      historyOf(
+        day(1, {
+          batteries: {
+            Counts: { seconds: 0, command: 'counts-cmd' },
+            Wide: { seconds: 16, command: 'a-cmd' },
+            Narrow: { seconds: 380, command: 'b-cmd' },
+          },
+        }),
+        day(2, {
+          batteries: {
+            Counts: { seconds: 0, command: 'counts-cmd' },
+            Wide: { seconds: 21, command: 'a-cmd' },
+            Narrow: { seconds: 382, command: 'b-cmd' },
+          },
+        }),
+        day(3, {
+          batteries: {
+            Counts: { seconds: 100, command: 'counts-cmd' },
+            Wide: { seconds: 888, command: 'a-cmd' },
+            Narrow: { seconds: 415, command: 'b-cmd' },
+          },
+        }),
+      ),
+    );
+    expect(summary).toContain('the 2 bound(s) that have one sit between 2.4x and 86x');
+    expect(summary).toContain('and 1 of the 3 divide by a middle of 0 s, which is no multiple');
+  });
+
+  it('prints one number rather than a range from a multiple to itself', () => {
+    // One bound with a middle is a range of one end, and `from 2.4x to 2.4x` is the shape the
+    // `every reading of that command is the same` branch refuses one level down.
+    const workflow = oneJob([...step('Narrow', 15, 'b-cmd')], 45);
+    const recording = recordingOf({ batteries: { steps: { Narrow: 415 } } });
+    const summary = budgetSummary(
+      workflow,
+      recording,
+      null,
+      null,
+      historyOf(
+        day(1, { batteries: { Narrow: { seconds: 380, command: 'b-cmd' } } }),
+        day(2, { batteries: { Narrow: { seconds: 382, command: 'b-cmd' } } }),
+        day(3, { batteries: { Narrow: { seconds: 415, command: 'b-cmd' } } }),
+      ),
+    );
+    expect(summary).toContain('the 1 bound(s) that have one sit at 2.4x');
+    expect(summary).not.toContain('between 2.4x and 2.4x');
+  });
+
+  it('says so when every bounded command spends no second in the middle', () => {
+    // The branch that would otherwise print `from 0x to 0x`: every multiple over a middle of 0 s
+    // is absent rather than infinite, and a range over absent numbers has no ends to print.
+    const workflow = oneJob([...step('Counts', 5, 'counts-cmd'), ...step('Tally', 4, 'tally-cmd')], 45);
+    const recording = recordingOf({ batteries: { steps: { Counts: 0, Tally: 0 } } });
+    const summary = budgetSummary(
+      workflow,
+      recording,
+      null,
+      null,
+      historyOf(
+        day(1, {
+          batteries: { Counts: { seconds: 0, command: 'counts-cmd' }, Tally: { seconds: 0, command: 'tally-cmd' } },
+        }),
+        day(2, {
+          batteries: { Counts: { seconds: 0, command: 'counts-cmd' }, Tally: { seconds: 1, command: 'tally-cmd' } },
+        }),
+        day(3, {
+          batteries: { Counts: { seconds: 1, command: 'counts-cmd' }, Tally: { seconds: 0, command: 'tally-cmd' } },
+        }),
+      ),
+    );
+    expect(summary).toContain('every bound divides by a middle of 0 s, so no multiple over one is printed');
+    expect(summary).not.toContain('from 0x');
+  });
+
+  it('says nothing about the middles of bounds when there is no history to take one from', () => {
+    // `no history of readings to compare against` already stands further down this line; a clause
+    // about the middles of a series nobody recorded would be that absence told twice, once with a
+    // number attached.
+    const workflow = oneJob([...step('Slow battery', 12)]);
+    const summary = budgetSummary(workflow, recordingOf({ batteries: { steps: { 'Slow battery': 351 } } }));
+    expect(summary).toContain('no history of readings to compare against');
+    expect(summary).not.toContain('over the middle of its own command');
+    // And not the other branch either: `every bound divides by a middle of 0 s` is a claim about
+    // the commands, and with no history their middles are unknown rather than zero. The two states
+    // are told apart by the guard alone, so the case has to name both sentences to reach it.
+    expect(summary).not.toContain('every bound divides by a middle of 0 s');
+  });
+});
+
+/**
+ * The part of a range that is the machine rather than the tree (`O-114`).
+ *
+ * `pnpm lint` runs a build, so a reading from 2026-11-06 measured a smaller suite than today's and
+ * the **221 s** at the bottom of its range is partly a tree that no longer exists. Separating the
+ * tree's growth from the runner's variance needs one tree measured twice, and the history held no
+ * such pair: every reading was of a different commit, which is why the noise floor had never been
+ * measured. Every row carries its commit, so the pair was always derivable from the file -- nothing
+ * was asking the question, and `R10`'s reader only ever compared a command's readings with each
+ * other, never a reading with another reading of the same tree.
+ *
+ * A duplicated reading is **a second number and not a second day**: it stays in the series `R10`
+ * divides by, because a bound has to survive every measurement of it, and it is printed as the
+ * noise floor rather than counted as another tree.
+ */
+describe('two readings of one tree, and the noise floor they give', () => {
+  function day(
+    run: number,
+    commit: string,
+    jobs: Record<string, Record<string, { seconds: number; command: string }>>,
+  ) {
+    return { run, commit, measured: '2026-11-23', jobs };
+  }
+
+  const TREE = 'c'.repeat(40);
+  const OTHER = 'd'.repeat(40);
+
+  function rowsOf(...days: ReturnType<typeof day>[]) {
+    const read = readReadings({ readings: days });
+    expect(read.errors).toEqual([]);
+    return read.rows;
+  }
+
+  it('reads the widest difference between two readings of one commit', () => {
+    // One tree, measured twice, three hours apart. The step differs by 8 s and the other by 2 s;
+    // the floor is the widest of them, because a floor is what a range has to be able to ignore.
+    const floor = noiseFloorOf(
+      rowsOf(
+        day(11, TREE, {
+          batteries: {
+            Narrow: { seconds: 380, command: 'b-cmd' },
+            Tally: { seconds: 40, command: 'tally-cmd' },
+          },
+        }),
+        day(12, TREE, {
+          batteries: {
+            Narrow: { seconds: 388, command: 'b-cmd' },
+            Tally: { seconds: 42, command: 'tally-cmd' },
+          },
+        }),
+      ),
+    );
+    expect(floor).toEqual({
+      pairs: 1,
+      worst: {
+        seconds: 8,
+        job: 'batteries',
+        step: 'Narrow',
+        before: 380,
+        after: 388,
+        earlier: { run: 11, attempt: 1 },
+        later: { run: 12, attempt: 1 },
+        commit: TREE,
+      },
+    });
+  });
+
+  it('answers nothing when no two readings share a tree', () => {
+    // The state the history was in for the whole of its thirty-one readings: a floor that has not
+    // been measured is not a floor of zero, and `null` is what keeps the two apart.
+    const floor = noiseFloorOf(
+      rowsOf(
+        day(11, TREE, { batteries: { Narrow: { seconds: 380, command: 'b-cmd' } } }),
+        day(12, OTHER, { batteries: { Narrow: { seconds: 388, command: 'b-cmd' } } }),
+      ),
+    );
+    expect(floor).toBeNull();
+    expect(noiseFloorOf([])).toBeNull();
+    expect(noiseFloorOf(rowsOf(day(11, TREE, { batteries: { Narrow: { seconds: 380, command: 'b-cmd' } } })))).toBeNull();
+  });
+
+  it('counts every pair when one tree was measured three times', () => {
+    // Three readings of one tree are three pairs, not one: the floor is the widest difference any
+    // two of them show, and a rule that compared only neighbours would answer a question about
+    // order rather than about the machine.
+    const floor = noiseFloorOf(
+      rowsOf(
+        day(11, TREE, { batteries: { Narrow: { seconds: 380, command: 'b-cmd' } } }),
+        day(12, TREE, { batteries: { Narrow: { seconds: 390, command: 'b-cmd' } } }),
+        day(13, TREE, { batteries: { Narrow: { seconds: 400, command: 'b-cmd' } } }),
+      ),
+    );
+    expect(floor?.pairs).toEqual(3);
+    expect(floor?.worst).toMatchObject({
+      seconds: 20,
+      before: 380,
+      after: 400,
+      earlier: { run: 11, attempt: 1 },
+      later: { run: 13, attempt: 1 },
+    });
+  });
+
+  it('skips a step the other reading did not time, because half a pair is not a difference', () => {
+    // A step added between the two runs exists in one of them, and subtracting a reading from
+    // nothing is the hole `jobDays` refuses one level up.
+    const floor = noiseFloorOf(
+      rowsOf(
+        day(11, TREE, { batteries: { Narrow: { seconds: 380, command: 'b-cmd' } } }),
+        day(12, TREE, {
+          batteries: { Narrow: { seconds: 381, command: 'b-cmd' }, Added: { seconds: 900, command: 'new-cmd' } },
+        }),
+      ),
+    );
+    expect(floor?.worst).toMatchObject({ seconds: 1, step: 'Narrow' });
+  });
+
+  it('prints the floor in the sentence about the history, with the runs a reader can open', () => {
+    // The floor is a fact about the history, so it is printed where the history is counted rather
+    // than in a clause of its own: the summary already says how many readings there are, and this
+    // says how much of their range is the runner.
+    const workflow = oneJob([...step('Narrow', 15, 'b-cmd')], 45);
+    const recording = recordingOf({ batteries: { steps: { Narrow: 388 } } });
+    const summary = budgetSummary(
+      workflow,
+      recording,
+      null,
+      null,
+      { readings: [
+        day(11, TREE, { batteries: { Narrow: { seconds: 380, command: 'b-cmd' } } }),
+        day(12, TREE, { batteries: { Narrow: { seconds: 388, command: 'b-cmd' } } }),
+      ] },
+    );
+    expect(summary).toContain('2 reading(s) of the workflow, run 11 to 12');
+    expect(summary).toContain('1 pair(s) of them measured one tree');
+    expect(summary).toContain(
+      'the widest difference is 8 s on `batteries / Narrow` (380 s then 388 s, runs 11 and 12)',
+    );
+    expect(summary).toContain("the runner's variance, which a range over the history cannot separate");
+    expect(summary).not.toContain('none of them a second reading');
+  });
+
+  it('says that no tree has been read twice, rather than leaving the floor unstated', () => {
+    // An unstated floor reads as a floor of zero, and that is the one reading of the silence that
+    // is wrong: nothing has been measured, which the sentence says in words.
+    const workflow = oneJob([...step('Narrow', 15, 'b-cmd')], 45);
+    const recording = recordingOf({ batteries: { steps: { Narrow: 388 } } });
+    const summary = budgetSummary(
+      workflow,
+      recording,
+      null,
+      null,
+      { readings: [
+        day(11, TREE, { batteries: { Narrow: { seconds: 380, command: 'b-cmd' } } }),
+        day(12, OTHER, { batteries: { Narrow: { seconds: 388, command: 'b-cmd' } } }),
+      ] },
+    );
+    expect(summary).toContain('none of them a second reading of a tree another one measured');
+    expect(summary).not.toContain('pair(s) of them measured one tree');
+  });
+});
+
+/**
+ * A re-run is a second **attempt** of one run, not a second run (`O-114`).
+ *
+ * GitHub's re-run keeps the run id and increments `run_attempt`, and the second attempt's steps are
+ * different numbers about the same tree. The history keyed a reading by the run id alone, so the
+ * pair could not be written down at all: `readReadings` refused it as "a run that was measured
+ * twice", and `mergeReading` replaced the first attempt's seconds with the second's -- one
+ * measurement silently overwriting another in the file whose whole job is to hold both. The
+ * identity of a reading is the measurement, and the measurement is the attempt.
+ */
+describe('one run measured twice, which is a re-run and not a second run', () => {
+  const TREE = 'e'.repeat(40);
+  const COMMAND = 'node scripts/inject-one-battery.mjs';
+
+  function reading(run: number, attempt: number, seconds: number) {
+    return {
+      run,
+      attempt,
+      commit: TREE,
+      measured: '2026-11-24',
+      jobs: { batteries: { 'One battery': { seconds, command: COMMAND } } },
+    };
+  }
+
+  it('holds two attempts of one run, because they are two measurements of one tree', () => {
+    const read = readReadings({ readings: [reading(7, 1, 300), reading(7, 2, 351)] });
+    expect(read.errors).toEqual([]);
+    expect(read.rows.map((one) => [one.run, one.attempt, one.commit])).toEqual([
+      [7, 1, TREE],
+      [7, 2, TREE],
+    ]);
+  });
+
+  it('refuses one attempt of one run twice, which is the reading held twice', () => {
+    // The refusal the old one made for a repeated *run* was right about the arithmetic and wrong
+    // about the identity: two attempts are two measurements, and the same attempt twice is one
+    // measurement counted twice.
+    const read = readReadings({ readings: [reading(7, 2, 351), reading(7, 2, 351)] });
+    expect(read.errors.join('\n')).toContain('is run 7 attempt 2 a second time');
+    expect(read.errors.join('\n')).toContain('one attempt is one measurement');
+    expect(read.rows).toHaveLength(1);
+  });
+
+  it('refuses an attempt that is not an attempt of anything', () => {
+    // `attempt: 0` and `attempt: '2'` are the two shapes a hand-edited file takes, and a reading
+    // that cannot say which measurement it is describes two days at once.
+    const zero = readReadings({ readings: [reading(7, 0, 300)] });
+    expect(zero.errors.join('\n')).toContain('names attempt 0 of run 7');
+    const text = readReadings({ readings: [{ ...reading(7, 1, 300), attempt: '2' }] });
+    expect(text.errors.join('\n')).toContain('names attempt 2 of run 7');
+  });
+
+  it('replaces the attempt it is given and keeps the other one', () => {
+    // Re-recording is a legitimate repair of one attempt -- after a failed read, or to re-seed --
+    // and it must not take the other attempt with it.
+    const first = mergeReading(null, reading(7, 1, 300));
+    const both = mergeReading(first, reading(7, 2, 351));
+    expect(both.readings.map((one) => [one.run, one.attempt])).toEqual([
+      [7, 1],
+      [7, 2],
+    ]);
+    const repaired = mergeReading(both, { ...reading(7, 1, 311) });
+    expect(repaired.readings.map((one) => [one.run, one.attempt, one.jobs.batteries['One battery'].seconds])).toEqual([
+      [7, 1, 311],
+      [7, 2, 351],
+    ]);
+  });
+
+  it('refuses a history whose newest reading is a later attempt than the recording', () => {
+    // Attempt 2 is a measurement the recording does not describe, and the bounds would be argued
+    // from days the recording has moved past -- `R7`'s complaint, one attempt finer.
+    const workflow = oneJob([...step('One battery', 12)]);
+    const recording = recordingOf(
+      { batteries: { steps: { 'One battery': 351 } } },
+      { run: 7, attempt: 1, commit: TREE },
+    );
+    const errors = budgetErrors(
+      workflow,
+      recording,
+      null,
+      null,
+      { readings: [reading(7, 1, 351), reading(7, 2, 400)] },
+    ).join('\n');
+    expect(errors).toContain('the history holds a reading of run 7 attempt 2');
+    expect(errors).toContain('which is newer than the recording (run 7)');
+  });
+
+  it('refuses a history that stops one attempt short of the recording', () => {
+    // The other direction: a measurement that was taken and not written down. The two attempts are
+    // one measurement written twice, so a history that stops at attempt 1 says the second attempt
+    // was never recorded.
+    const workflow = oneJob([...step('One battery', 12)]);
+    const recording = recordingOf(
+      { batteries: { steps: { 'One battery': 351 } } },
+      { run: 7, attempt: 2, commit: TREE },
+    );
+    const errors = budgetErrors(workflow, recording, null, null, {
+      readings: [reading(7, 1, 351)],
+    }).join('\n');
+    expect(errors).toContain('the newest reading in the history is run 7 and the recording is run 7 attempt 2');
+    expect(errors).toContain('a reading that was taken and not written down');
+  });
+
+  it('accepts the recording and the history naming the same second attempt', () => {
+    const workflow = oneJob([...step('One battery', 12)]);
+    const recording = recordingOf(
+      { batteries: { steps: { 'One battery': 351 } } },
+      { run: 7, attempt: 2, commit: TREE },
+    );
+    expect(
+      budgetErrors(workflow, recording, null, null, {
+        readings: [reading(7, 1, 300), reading(7, 2, 351)],
+      }),
+    ).toEqual([]);
+  });
+
+  it('refuses a recording that names an attempt no run has', () => {
+    const workflow = oneJob([...step('One battery', 12)]);
+    const recording = recordingOf(
+      { batteries: { steps: { 'One battery': 351 } } },
+      { run: 7, attempt: 0, commit: TREE },
+    );
+    expect(budgetErrors(workflow, recording).join('\n')).toContain('the baseline names attempt 0');
+  });
+
+  it('names the two attempts rather than one run id twice, when the pair is a re-run', () => {
+    // `runs 45351350110 and 45351350110` is what a sentence that read the ids would print, and a
+    // reader would take it for a typo rather than for the measurement it is.
+    const workflow = oneJob([...step('One battery', 12)]);
+    const recording = recordingOf({
+      batteries: { steps: { 'One battery': 351 } },
+    });
+    const summary = budgetSummary(workflow, recording, null, null, {
+      readings: [reading(7, 1, 300), reading(7, 2, 351)],
+    });
+    expect(summary).toContain('1 pair(s) of them measured one tree');
+    expect(summary).toContain('(300 s then 351 s, attempts 1 and 2 of run 7)');
+    expect(summary).not.toContain('runs 7 and 7');
+  });
+
+  it('says which attempt the measured numbers were taken from', () => {
+    // The recording is one measurement, and since a run can have several the summary has to say
+    // which: `as of run 45351350110` names two different sets of seconds otherwise.
+    const workflow = oneJob([...step('One battery', 12)]);
+    const recording = recordingOf(
+      { batteries: { steps: { 'One battery': 351 } } },
+      { run: 7, attempt: 2, commit: TREE },
+    );
+    expect(budgetSummary(workflow, recording)).toContain('as of run 7 attempt 2');
+    expect(
+      budgetSummary(workflow, recordingOf({ batteries: { steps: { 'One battery': 351 } } }, { run: 7 })),
+    ).toContain('as of run 7');
   });
 });
 

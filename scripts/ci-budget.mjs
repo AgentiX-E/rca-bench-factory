@@ -651,14 +651,29 @@ export function readReadings(file) {
       );
       continue;
     }
-    if (seen.has(run)) {
+    // A run id is not a measurement (`O-114`). GitHub's re-run gives one run a second attempt, and
+    // the second attempt's steps are different numbers about the same tree: keying the history by
+    // run alone meant the pair could not be held, and `mergeReading` silently replaced the first
+    // attempt's seconds with the second's -- a measurement overwritten by a measurement, with
+    // nothing in either file saying which one it was. An absent `attempt` is 1, because every
+    // reading taken before this field existed was of the only attempt there was.
+    const attempt = entry.attempt === undefined ? 1 : entry.attempt;
+    if (!Number.isInteger(attempt) || attempt < 1) {
       errors.push(
-        `${where} is run ${String(run)} a second time: a run that was measured twice would be counted ` +
-          'twice when the slowest day is looked up, and a bound would be argued from one day twice',
+        `${where} names attempt ${String(attempt)} of run ${String(run)}: a run has attempts numbered ` +
+          'from 1, and a reading that cannot say which attempt it measured describes two days at once',
       );
       continue;
     }
-    seen.add(run);
+    if (seen.has(`${String(run)}#${String(attempt)}`)) {
+      errors.push(
+        `${where} is run ${String(run)}${attempt === 1 ? '' : ` attempt ${String(attempt)}`} a second ` +
+          'time: one attempt is one measurement, and a reading held twice would be counted twice when ' +
+          'the slowest day is looked up, so a bound would be argued from one day twice',
+      );
+      continue;
+    }
+    seen.add(`${String(run)}#${String(attempt)}`);
     if (!/^[0-9a-f]{40}$/.test(String(entry.commit ?? ''))) {
       errors.push(
         `run ${String(run)} names no commit, so a reader cannot tell which tree its seconds describe`,
@@ -719,23 +734,36 @@ export function readReadings(file) {
       }
     }
     if (bad) continue;
-    rows.push({ run, commit: entry.commit, measured: entry.measured, steps });
+    rows.push({ run, attempt, commit: entry.commit, measured: entry.measured, steps });
   }
-  rows.sort((a, b) => a.run - b.run);
+  // Run, then attempt: one run's second attempt is a later measurement of the same tree, so it sorts
+  // after the first rather than beside it, and the tail `R10` reads is the newest measurement.
+  rows.sort((a, b) => a.run - b.run || a.attempt - b.attempt);
   return { rows, errors };
 }
 
 /**
- * One reading written into a history, newest last, one entry per run.
+ * One reading written into a history, newest last, one entry per attempt.
  *
- * Rewriting the same run replaces its entry rather than adding a second one: the
- * recorder may legitimately be run twice against one run -- after a failure, or to
- * re-seed -- and a history with two rows for one day would weight that day twice.
+ * Rewriting the same attempt replaces its entry rather than adding a second one: the recorder may
+ * legitimately be run twice against one attempt -- after a failure, or to re-seed -- and a history
+ * with two rows for one measurement would weight that measurement twice.
+ *
+ * The attempt is part of the identity (`O-114`). A re-run of a run is a **second attempt** of the
+ * same run id, not a second run: keying by the id alone made the pair unwritable and let the second
+ * attempt's seconds silently replace the first's, which is a measurement overwritten by a
+ * measurement in the one file that is supposed to hold both.
  */
 export function mergeReading(file, entry) {
   const existing = Array.isArray(file?.readings) ? file.readings : [];
-  const kept = existing.filter((one) => one?.run !== entry.run);
-  return { readings: [...kept, entry].sort((a, b) => Number(a.run) - Number(b.run)) };
+  const kept = existing.filter(
+    (one) => one?.run !== entry.run || (one?.attempt ?? 1) !== (entry.attempt ?? 1),
+  );
+  return {
+    readings: [...kept, entry].sort(
+      (a, b) => Number(a.run) - Number(b.run) || Number(a.attempt ?? 1) - Number(b.attempt ?? 1),
+    ),
+  };
 }
 
 /**
@@ -818,6 +846,66 @@ export function readingsOfCommand(rows, command) {
     }
   }
   return count === 0 ? null : { fastest, slowest, count, middle: middleOf(spent) };
+}
+
+/**
+ * How far two readings of **one** tree disagree -- the noise floor a range over the history needs
+ * and cannot give (`O-114`).
+ *
+ * A range over the history mixes two causes: the tree grew, and the runner varies. `pnpm lint`
+ * runs a build, so the **221 s** at the bottom of its range was measured on a smaller suite than
+ * today's, and no arithmetic on the series separates that from a slow machine. One tree measured
+ * twice does: the tree cannot have changed between two runs of the same commit, so whatever
+ * differs is the runner. The history held no such pair for thirty-one readings, because every
+ * reading was of a different commit -- and every row had carried its commit all along, so the pair
+ * was always derivable and nothing was asking.
+ *
+ * Every **pair** of readings of one commit is compared rather than neighbouring ones: with one
+ * tree read three times, the widest difference is between the first and the third, and a rule that
+ * compared neighbours would answer a question about append order. The answer is the widest
+ * difference over the steps both readings timed -- a step only one of them timed has no difference
+ * to take, and subtracting a reading from nothing is the hole `jobDays` refuses one level up.
+ *
+ * `null` when no two readings share a commit, because a floor nobody measured is not a floor of
+ * zero and the two must not read alike.
+ */
+export function noiseFloorOf(rows) {
+  if (!Array.isArray(rows) || rows.length < 2) return null;
+  const byCommit = new Map();
+  for (const row of rows) {
+    const held = byCommit.get(row.commit) ?? [];
+    held.push(row);
+    byCommit.set(row.commit, held);
+  }
+  let worst = null;
+  let pairs = 0;
+  for (const held of byCommit.values()) {
+    if (held.length < 2) continue;
+    for (let later = 1; later < held.length; later += 1) {
+      for (let earlier = 0; earlier < later; earlier += 1) {
+        pairs += 1;
+        const [first, second] = [held[earlier], held[later]];
+        for (const [key, one] of first.steps) {
+          const other = second.steps.get(key);
+          if (other === undefined) continue;
+          const seconds = Math.abs(one.seconds - other.seconds);
+          if (worst === null || seconds > worst.seconds) {
+            worst = {
+              seconds,
+              job: one.job,
+              step: one.step,
+              before: one.seconds,
+              after: other.seconds,
+              earlier: { run: first.run, attempt: first.attempt },
+              later: { run: second.run, attempt: second.attempt },
+              commit: first.commit,
+            };
+          }
+        }
+      }
+    }
+  }
+  return worst === null ? null : { pairs, worst };
 }
 
 /**
@@ -940,20 +1028,29 @@ function historyErrors(baseline, parsed) {
   if (parsed.errors.length > 0) return errors;
   const rows = parsed.rows;
   const tail = rows[rows.length - 1];
-  if (tail.run < baseline.run) {
+  // One run can be measured more than once (`O-114`): a re-run is attempt 2 of the same run id, and
+  // the two attempts are two measurements of one tree. So the ordering is a pair and not a number,
+  // and a recording taken from attempt 2 has to be newer than a tail that is attempt 1 of the same
+  // run. `where` names the attempt only when there is more than one, because every reading written
+  // before the field existed was of the only attempt there was and `run 41637098008` still reads
+  // right for them.
+  const where = (one) => `run ${String(one.run)}${(one.attempt ?? 1) === 1 ? '' : ` attempt ${String(one.attempt)}`}`;
+  const baselineAttempt = baseline.attempt === undefined ? 1 : baseline.attempt;
+  const order = (tail.run - baseline.run) || (tail.attempt - baselineAttempt);
+  if (order < 0) {
     errors.push(
-      `the newest reading in the history is run ${String(tail.run)} and the recording is run ` +
-        `${String(baseline.run)}: a reading that was taken and not written down is a day no bound can ` +
-        'see, and the recorder writes both files from one measurement -- record the run again, or say ' +
-        'in the history why that day was dropped',
+      `the newest reading in the history is ${where(tail)} and the recording is ` +
+        `${where({ run: baseline.run, attempt: baselineAttempt })}: a reading that was taken and not ` +
+        'written down is a day no bound can see, and the recorder writes both files from one ' +
+        'measurement -- record the run again, or say in the history why that day was dropped',
     );
     return errors;
   }
-  if (tail.run > baseline.run) {
+  if (order > 0) {
     errors.push(
-      `the history holds a reading of run ${String(tail.run)}, which is newer than the recording (run ` +
-        `${String(baseline.run)}): the bounds would be argued from days the recording does not describe ` +
-        '-- record that run as the recording rather than beside it',
+      `the history holds a reading of ${where(tail)}, which is newer than the recording (` +
+        `${where({ run: baseline.run, attempt: baselineAttempt })}): the bounds would be argued from ` +
+        'days the recording does not describe -- record that run as the recording rather than beside it',
     );
     return errors;
   }
@@ -1203,6 +1300,16 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(baseline.measured ?? ''))) {
     errors.push('the baseline has no measurement date: a recording that cannot be dated cannot be refreshed');
+  }
+  // A recording is one measurement, and since `O-114` a run can be measured more than once: the
+  // attempt is the half of that identity the run id cannot carry. Absent means 1, which is what
+  // every recording written before the field existed was.
+  if (baseline.attempt !== undefined && (!Number.isInteger(baseline.attempt) || baseline.attempt < 1)) {
+    errors.push(
+      `the baseline names attempt ${String(baseline.attempt)}, which is not an attempt of a run: a run ` +
+        'has attempts numbered from 1, and a recording that cannot say which one it is describes two ' +
+        'days at once',
+    );
   }
 
   const jobs = jobsOf(workflow);
@@ -1742,6 +1849,22 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   // summary that printed `Infinity` is finding 121 in a new place. Seconds subtract, so the
   // number exists for every pair.
   let loosest = { name: '', headroom: -1, bound: 0, best: null, run: null };
+  // The middle of the *same* command, for every bound rather than for the tightest one (`O-118`).
+  //
+  // v3.140 printed one middle -- the tightest bound's -- because that is the multiple the sentence
+  // asks a reader to interpret. The other thirty-seven bounds were still two ends, and which bound
+  // got a middle was decided by which one happened to be tightest, so the figures moved when an
+  // unrelated bound moved. The middle belongs to every bound; a summary that printed thirty-eight
+  // of them would be a table, so it prints the two numbers that describe the population: the least
+  // multiple any bound makes over its own command's middle, with the bound that makes it, and the
+  // greatest, which is the bound that is almost all margin. Both are an extreme of one set rather
+  // than a choice, so neither is an accident of the round that printed it.
+  let nearestMiddle = { name: '', ratio: Infinity, bound: 0, middle: null, count: 0 };
+  let farthestMiddle = { name: '', ratio: -1 };
+  // A bound whose command's middle is 0 s has no multiple over one (`bound / 0` is the `Infinity`
+  // finding 121 refuses), so it is outside the range and has to be counted beside it: a range over
+  // two of three bounds and a silence about the third is the shape this module exists to replace.
+  let middleless = 0;
   const widened = [];
   // A narrowing is a number a reader has to see, for the reason the widening list exists: it
   // is a claim about a day, and the claim is `R6`'s -- twice the slowest day this repository
@@ -1845,6 +1968,33 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
           const headroom = step.minutes * 60 - fast.seconds;
           if (headroom > loosest.headroom) {
             loosest = { name: `${job.id} / ${step.name}`, headroom, bound: step.minutes * 60, best: fast.seconds, run: fast.run };
+          }
+        }
+        // The same series, read at its middle and for every bound (`O-118`). The midpoint is the
+        // median, which is why it is what a multiple divides: an even series has no reading in the
+        // middle and the interval travels with the figure, the way it does in the clause above.
+        //
+        // The history already holds the recording's day -- `R10` refuses a history whose newest
+        // reading is not the recording's run -- so nothing here adds the recording in by hand, and
+        // two accounts of the series cannot come to disagree.
+        if (found !== null && found.middle !== null) {
+          const midpoint = (found.middle.low + found.middle.high) / 2;
+          if (midpoint === 0) {
+            middleless += 1;
+          } else {
+            const over = (step.minutes * 60) / midpoint;
+            if (over < nearestMiddle.ratio) {
+              nearestMiddle = {
+                name: `${job.id} / ${step.name}`,
+                ratio: over,
+                bound: step.minutes * 60,
+                middle: found.middle,
+                count: found.count,
+              };
+            }
+            if (over > farthestMiddle.ratio) {
+              farthestMiddle = { name: `${job.id} / ${step.name}`, ratio: over };
+            }
           }
         }
       }
@@ -2002,6 +2152,69 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
         `${closest.name} at ${String(closest.minutes)} min, ` +
         `${Number.isFinite(closest.ratio) ? closest.ratio.toFixed(1) : 'unmeasured'}x its slowest day of ` +
         `${String(closest.day.seconds)} s (run ${String(closest.day.run)})`;
+  // The middle of every bound's own command, compressed to the numbers that describe the
+  // population (`O-118`).
+  //
+  // The two ends are the argument. A capacity question is "does a usual day come near this bound",
+  // and the least multiple in the workflow answers it for all thirty-eight at once: 2.4x says no
+  // bound is within a factor of two of the day its command usually has, and 86x says one bound is
+  // almost entirely margin. A reader who wanted lint's own middle -- 375 s under a 1080 s bound --
+  // is the reader this clause is for, and printing thirty-seven more middles would be the table
+  // the open question worried about.
+  //
+  // At 86x a decimal place is noise; at 2.4x it is the difference between two bounds, which is why
+  // the two ends are printed to different precisions rather than to one.
+  const middleRangeText = () => {
+    if (!historyKnown || bounded === 0) return '';
+    if (nearestMiddle.name === '') {
+      return '; every bound divides by a middle of 0 s, so no multiple over one is printed';
+    }
+    const at = (ratio) => (ratio >= 10 ? ratio.toFixed(0) : ratio.toFixed(1));
+    // `sit` rather than `run`: this file uses `run` for a workflow run in twenty clauses, and a
+    // sentence that said `the 36 bounds that have one run from 2.4x` reads as one of those.
+    const ends =
+      nearestMiddle.ratio === farthestMiddle.ratio
+        ? `sit at ${at(nearestMiddle.ratio)}x`
+        : `sit between ${at(nearestMiddle.ratio)}x and ${at(farthestMiddle.ratio)}x`;
+    const middleAt =
+      nearestMiddle.middle.low === nearestMiddle.middle.high
+        ? `at ${String(nearestMiddle.middle.low)} s`
+        : `between ${String(nearestMiddle.middle.low)} s and ${String(nearestMiddle.middle.high)} s`;
+    return (
+      `; over the middle of its own command the ${String(bounded - middleless)} bound(s) that have ` +
+      `one ${ends}, the nearest being \`${nearestMiddle.name}\` (${String(nearestMiddle.bound)} s over ` +
+      `the middle of its ${String(nearestMiddle.count)} readings ${middleAt})` +
+      (middleless === 0
+        ? ''
+        : `, and ${String(middleless)} of the ${String(bounded)} divide by a middle of 0 s, which is ` +
+          'no multiple')
+    );
+  };
+  // How much of the history's spread is the machine (`O-114`). The sentence below already counts
+  // the readings, which makes it the home for this: a range over thirty-one readings of thirty-one
+  // trees says how far the command has moved and nothing about how far the runner has, and a
+  // reader who took the range for the tree's growth would be reading a slow machine as a change in
+  // the suite. Two readings of one commit are the only pair that can separate them.
+  // One run measured twice is a re-run, which is a second **attempt** of one run id rather than a
+  // second run (`O-114`): the two numbers the clause divides are two attempts of one id, and a
+  // sentence that printed `runs 45351350110 and 45351350110` would look like a typo rather than a
+  // measurement.
+  const attemptsText = (found) =>
+    found.earlier.run === found.later.run
+      ? `attempts ${String(found.earlier.attempt)} and ${String(found.later.attempt)} of run ${String(found.earlier.run)}`
+      : `runs ${String(found.earlier.run)} and ${String(found.later.run)}`;
+  const noiseText = () => {
+    if (!historyKnown) return '';
+    const floor = noiseFloorOf(parsedReadings.rows);
+    if (floor === null) return ', none of them a second reading of a tree another one measured';
+    const found = floor.worst;
+    return (
+      `; ${String(floor.pairs)} pair(s) of them measured one tree, and the widest difference is ` +
+      `${String(found.seconds)} s on \`${found.job} / ${found.step}\` (${String(found.before)} s then ` +
+      `${String(found.after)} s, ${attemptsText(found)}) -- the ` +
+      "runner's variance, which a range over the history cannot separate from the tree's growth"
+    );
+  };
   const readingsText =
     parsedReadings === null
       ? 'no history of readings to compare against'
@@ -2009,7 +2222,8 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
         ? `the history of readings cannot be read: ${String(parsedReadings.errors.length)} problem(s)`
         : `${String(parsedReadings.rows.length)} reading(s) of the workflow, run ` +
           `${String(parsedReadings.rows[0]?.run)} to ` +
-          `${String(parsedReadings.rows[parsedReadings.rows.length - 1]?.run)}`;
+          `${String(parsedReadings.rows[parsedReadings.rows.length - 1]?.run)}` +
+          noiseText();
   // What the allowance is worth, in the thing it is for. Three sentences rather than one
   // with three holes: a history that timed a prefix, a history that timed one spending no
   // second, and no history at all are three different states of the argument, and a number
@@ -2031,10 +2245,10 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
       ? ''
       : `${String(allowed)} run before the job's first real step and are bounded by one ` +
         `${String(PREFIX_MINUTES)}-minute allowance for the prefix, ${allowanceText}, `) +
-    `${String(Math.round(measured / 60))} min measured (as of run ` +
-    `${String(baseline.run)}); bounds total ${String(Math.round(bounds / 60))} min in ` +
+    `${String(Math.round(measured / 60))} min measured (as of ` +
+    `run ${String(baseline.run)}${(baseline.attempt ?? 1) === 1 ? '' : ` attempt ${String(baseline.attempt)}`}); bounds total ${String(Math.round(bounds / 60))} min in ` +
     `${String(ceilings)} ceiling(s); ${ceilingText}; tightest ` +
-    `${tightestText}${headroomClause}; ` +
+    `${tightestText}${headroomClause}${middleRangeText()}; ` +
     `${excusedText}; ${declaredText}; ${jobsText}; ${widenedText}; ${narrowedText}; ${readingsText}; ` +
     `${ledgerText(ledger, baseline)}`
   );
