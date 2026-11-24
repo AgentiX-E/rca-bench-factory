@@ -144,6 +144,12 @@ these bounds exist to replace. That is `O-093`, opened here because raising them
 | the population | **268 heading(s): 215 / 1 / 50 / 2**, printed on every run |
 | LLM calls | **0** |
 
+The tip the round pushed is `4bb2aed`, two commits after that run: the recording moved five bounds, so
+the tree that carries them is not the tree that was measured. Its own run, `45324649538`, is **8 of 8
+jobs success** in 919 s (04:11:32 -> 04:26:51) with the same slowest job. A ledger row naming it would
+be a run the recording is older than, which `R7` refuses -- so it is stated here, in prose, which is
+what the round before this one did with its own final tip.
+
 ### Left open
 
 - The summaries of the other gates name their nouns and nothing compares them. `[open: the census here is two
@@ -2572,7 +2578,7 @@ green tree before the round's documents moved. No survivors: the two that would 
 
 | what | value |
 | --- | --- |
-| CI | run `45319505174` on `df91a0a`: **8 of 8 jobs success**, 909 s (03:26:17 -> 03:41:26); the slowest job is `batteries-heavy` at 908 s of its 45-minute ceiling. The run is also the recording, and its own reading of the shells command -- **197 s** -- is what raised five bounds and five ceilings after the documents were written (see *The round's own defects*) |
+| CI | run `45319505174` on `df91a0a`: **8 of 8 jobs success**, 909 s (03:26:17 -> 03:41:26); the slowest job is `batteries-heavy` at 908 s of its 45-minute ceiling. It is the run the recording was taken from, and its own reading of the shells command -- **197 s** -- is what raised five bounds and five ceilings after the documents were written (see *The round's own defects*) |
 | `pnpm run docs:check` | **23 steps, exit 0** |
 | `core` test suite | **260 files, 6909 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
