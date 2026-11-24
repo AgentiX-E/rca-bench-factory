@@ -1,7 +1,7 @@
 # Audit · volume 14
 
-Findings 579–630, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
-`progress/volume-19.md` as `v3.115` through `v3.137`.
+Findings 579–632, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
+`progress/volume-19.md` as `v3.115` through `v3.138`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -3360,3 +3360,154 @@ and neither sentence says *"the snapshot is not held to the tree here"*; a reade
 as a statement about the suite is making the inference v3.132 made. The clause in `docs/acceptance.md`
 is where that inference is now written down, and putting it in the gate's output would mean printing a
 negative on every run -- a sentence about what a check does not do, in the log of one that did.
+
+## Finding 631 — the multiple was printed without the series it was taken from
+
+`R12` sizes a bound as twice the slowest reading of the command a step runs, and the summary
+printed the multiple and the reading it divided by:
+
+```
+tightest backend / Install a backend this repository did not write at 2.0x of the slowest reading
+of its command (888 s in `backend / Install a backend this repository did not write`, run 44516888528)
+```
+
+`2.0x` is the smallest multiple the rule accepts, so this line reads as the tightest bound in the
+workflow with no room at all. It is the widest. The same command's readings, from the file the line
+was computed from:
+
+```
+888, 556, 273, 91, 40, 38, 31, 28, 27, 26, 23, 21, 21, 20, 20, 19, 19, 19, 18, 18, 18, 17, 16 ...
+```
+
+Twenty-five of twenty-seven days at or under 91 s, and three in the hundreds. The bound is
+**1,800 s** -- thirty minutes -- against a step whose typical cost is twenty seconds. `2.0x` and
+`89x` are the same number described from two ends, and the summary printed only the first, so the
+`backend` job's thirty-six-minute ceiling looked like a ceiling with 2.4x of room over its day
+(run 44516888528, 910 s) when fifteen of those minutes exist for one install that went wrong once.
+
+`O-109` asked whether a bound can be sized from a reading whose dispersion is two cache states, and
+whether the repair is a printed dispersion or two measurements with two bounds. The second option
+is not available: a step carries **one** `timeout-minutes`, and a bound that fits only the warm
+state refuses the cold day for being slow -- which is the failure the multiple exists to prevent.
+So the question is not how to bound two states but how to say which state a bound was sized from,
+and that is the first option.
+
+### The repair, and the window it is taken over
+
+`readingsOfCommand` is the single reader of "which readings belong to this command": the slowest
+one is `R10`'s denominator and the fastest is printed beside it, from one walk rather than two. A
+second account of that set is how a multiple and its explanation come to be about different
+readings -- the defect `measure-doc-counts` had with three readers of one predicate.
+
+```
+tightest backend / Install a backend this repository did not write at 2.0x of the slowest reading
+of its command (888 s in `...`, run 44516888528); across the history that command runs from 16 s to 888 s
+```
+
+Two more states, and both are printed rather than left to the reader's imagination: a command with
+one reading says `that command has been read once` (a bound argued from a single measurement is a
+different claim from one argued from a series), and a series that never moved says `every reading of
+that command is the same` (a range from a number to itself looks like evidence and carries none).
+
+The tie rules are decided by run rather than by file order, in both directions: the slowest goes to
+the newer run, because that is the run a refusal names, and the fastest to the older one. Without
+that, the printed range would depend on the order somebody appended the days in.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the spread clause is never printed | 5 |
+| one reading is printed as a range from itself to itself | 1 |
+| equal readings are printed as a range | 1 |
+| the fastest reading is the slowest one | 4 |
+| a tie on the fastest reading goes to the newer run | 1 |
+| a tie on the slowest reading goes to the file order | 1 |
+| the count is never incremented, so every command looks unread | 7 |
+| the range is printed slowest first | 2 |
+| the range names the fastest reading twice | 2 |
+| a command's readings are read from one job only | 5 |
+| the spread is looked up in a history that was never read | 18 |
+
+**Eleven mutations, 47 reds**, measured on the green tree at the round's tip. The last row is the
+guard the `historyKnown` check is: without it the summary throws on a tree with no readings, and
+eighteen cases say so.
+
+### What this does not settle
+
+Whether a range makes a multiple interpretable. It says the multiple is against one end of a series
+that wide; whether the next reading lands inside it is what the next recording answers, and `R12`'s
+rule is unchanged by anything printed here. `O-089` -- "the step is an external install, and no
+arithmetic can bound a network" -- is the same fact from the other side, and the range printed here
+is the evidence it was opened on.
+
+## Finding 632 — two rounds each said "now", and nothing read both of them
+
+v3.137 dated v3.136's three suite rows and wrote down why: `(as of this commit)` is the phrase the
+guard reads as *the current state*, the rows were true when written and false a round later, and the
+event that caught them was the next round adding a test. `O-111` is the residue of that sentence --
+a round that moves no count moves no event, so the older rows stay marked current and two rounds
+each claim to be now.
+
+The corpus at v3.137 held exactly three current-state rows, all under the newest round:
+
+```
+$ grep -c '(as of this commit)' docs/progress/volume-19.md | the three suite rows
+```
+
+That is a fact about discipline, not a rule, and the repair v3.137 made was mechanical: date the
+rows. The rule this round adds is that the discipline is checkable, because the contradiction is
+inside the documents and needs no measurement:
+
+```
+$ node scripts/check-doc-counts.mjs --doc /tmp/two-rounds.md
+check-doc-counts: FAILED
+  ../../tmp/two-rounds.md:7: a row marked as the current state sits under v3.10, and the newest
+  round that publishes a count is v3.11. "Now" is one round: date this row ("(at v3.10)") so a
+  reader can tell a record from the state of the tree, or move it under v3.11 if it is this
+  round's measurement.
+```
+
+### Three decisions the rule has to make, and why each one is not a preference
+
+**The row's round is a property of where it sits.** `readCounts` now carries the `## ` heading a row
+under, in the same pass that reads the row: a round is opened by a heading carrying a `vX.YY` token,
+and a heading that names none (`## Repository`, `## Headline`) opens a place where a row is under no
+round at all. The alternative -- finding the round from the line number -- is the same answer
+computed twice.
+
+**Rounds are compared as numbers.** `v3.9` is older than `v3.10` and a string comparison says the
+opposite, and the corpus spans two major series (`v2.12` to `v3.137`), so the comparison is a pair
+of integers.
+
+**A row under no round is not this rule's business.** `docs/progress.md`'s tables describe the tree
+rather than a round, rule 3 already holds every one of them to the snapshot, and the claim this rule
+is about is two *rounds* each saying "now". Refusing the headingless row would be a false refusal on
+the index file the moment one appeared -- and the mutation battery found exactly that hole in the
+first draft of the fixtures rather than in the rule: two mutations survived (a headingless row
+refused, and any heading opening a round) because no case had a headingless current row *beside* a
+round. One case -- `## v3.10` then `## Repository` -- kills both, at one red each.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the rule is never applied | 2 |
+| a row's round is never tracked, so every row sits under none | 2 |
+| rounds are compared as strings, so `v3.9` is newer than `v3.10` | 3 |
+| the newest round is the first one seen rather than the last | 5 |
+| a row under no round heading is refused as though it were under an older one | 1 |
+| any heading opens a round, so `## Repository` is one | 1 |
+| a dated row is refused too, so every row must be the newest | 3 |
+| the rule only fires when the numbers are wrong as well | 2 |
+| the oldest round is taken as the newest, by keeping the last match | 5 |
+
+**Nine mutations, 24 reds**, after the fixture the battery asked for. The two rows at one red each
+are the ones that were **zero** on the first run: a surviving mutation is a hole in the fixtures,
+and the case that closes it is the pair of headings rather than a new rule.
+
+### What this does not settle
+
+Whether the snapshot is current. This rule refuses a contradiction between two rounds; whether the
+snapshot the newest round quotes was taken from the tree that exists is `O-110`, and it is the
+counts step's question, not `docs:check`'s.

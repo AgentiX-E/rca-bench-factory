@@ -53,6 +53,8 @@ before the layer above it is meaningful.
 | A bound's comment names the reading that last moved it | v3.136 |
 | A marker names the count it is about | v3.137 |
 | A snapshot is a claim about one tree, and the reader that can refuse it re-derives it | v3.137 |
+| A multiple is printed with the spread of the series it was sized from | v3.138 |
+| A claim about now sits under one round | v3.138 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -2332,3 +2334,47 @@ from an anecdote again.
 - **What is not claimed.** That a violation is refused at the moment of writing. The refusal is at the
   step that re-derives, and the evidence it needs -- a suite that runs -- is what a writer cannot take
   twice without measuring the tree it is still changing.
+
+### A multiple is printed with the spread of the series it was sized from (v3.138)
+
+- **A bound is twice the slowest reading of its command, so the multiple is a claim about one
+  day.** `2.0x` on its own reads as a bound with 7% of room; the same `2.0x` against a command
+  whose readings run from **16 s** to **888 s** is a bound sized from a tail, and the tail is what
+  the `backend` job's ceiling pays for. The gate prints the slowest reading it divided by, and now
+  prints the range beside it (`O-109`, finding 631).
+- **The window of the spread is the command, not the job and not the workflow.** `R10` keys its
+  series by the command, and the sentence's range is read from the same function that produces
+  the denominator: a second account of "which readings belong to this command" is how the multiple
+  and its explanation would come to be about different sets.
+- **Two bounds for two cache states is not an available repair.** A step carries one
+  `timeout-minutes`, and a bound that fit only the warm state would refuse the cold day for being
+  slow -- the failure the multiple exists to prevent. The dispersion is therefore evidence printed
+  rather than structure added, and the second half of `O-109`'s question is answered by the
+  workflow's own shape rather than by a preference.
+- **One reading is printed as `read once`, and equal readings as `every reading ... is the same`.**
+  A range from a number to itself is a sentence that looks like evidence and carries none, and a
+  bound argued from a single measurement is a different claim from one argued from a series.
+- **What is not claimed.** That a range makes a multiple interpretable. It says the multiple is
+  against an extreme of a series that wide; whether the next reading lands inside it is what the
+  next recording answers, and `R12`'s rule is unchanged.
+
+### A claim about now sits under one round (v3.138)
+
+- **`current` is a claim about *this* tree, and a corpus has one newest round.** So there is one
+  place in the documents where the claim can be true: the guard refuses a row marked
+  `(as of this commit)` that sits under an older round, names both rounds, and prints the repair
+  -- date the row, never renumber it (`O-111`, finding 632).
+- **A round is compared as a number.** `v3.9` is older than `v3.10`, and the corpus spans two
+  major series (`v2.12` and `v3.137`); a string comparison would make the older of two rounds the
+  newer and refuse the row that is actually current.
+- **A row under no round heading is left to the rule that holds it to the measurement.** The index
+  file's tables describe the tree rather than a round, rule 3 already holds them to the snapshot,
+  and the claim this rule is about is two **rounds** each saying "now". A heading that names no
+  round (`## Repository`, `## Open`) therefore leaves its rows unattributed rather than giving
+  them a round called `Repository`.
+- **The repair is available in every state, and it is never a new number.** Dating the row is what
+  stops rule 3 applying to it, because a dated record is supposed to differ from today; renumbering
+  it to the live count would contradict the round's own `new tests` row.
+- **What is not claimed.** That this makes the snapshot current. It refuses a contradiction inside
+  the documents -- two rounds both saying "now" -- and says nothing about whether the snapshot
+  matches the tree, which is `O-110` and is the counts step's question.
