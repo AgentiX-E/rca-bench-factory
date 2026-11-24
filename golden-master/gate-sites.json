@@ -184,7 +184,7 @@
     },
     {
       "script": "scripts/check-doc-counts.mjs",
-      "line": 366,
+      "line": 403,
       "diagnostic": "check-doc-counts: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/check-doc-counts.test.ts"
