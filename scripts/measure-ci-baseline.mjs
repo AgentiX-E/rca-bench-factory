@@ -56,6 +56,13 @@
  * would silently reset the evidence to nothing. The recording keeps the strict rule,
  * because bounds are sized from it and a gap there would be a bound with no reading.
  *
+ * "Older" is a pair, not a number: a re-run is a second *attempt* of one run id, so
+ * `--seed --attempt 1` against a recording of attempt 2 is a day older than the
+ * recording and the same tree -- one tree read twice, which is the pair a bound's margin
+ * is measured against. The recording itself may only move forward, because `R10` holds it
+ * to the history's newest reading, and a recorder that moved it backwards would write the
+ * tree the gate refuses with advice to do what the recorder had just been asked to do.
+ *
  * Usage: `node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>] [--seed]`
  * with `GITHUB_TOKEN` set.
  *
@@ -66,7 +73,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { commandOf, jobsOf, mergeReading, readReadings, stepsOf } from './ci-budget.mjs';
+import { commandOf, coordinateOf, jobsOf, mergeReading, orderOf, readReadings, stepsOf } from './ci-budget.mjs';
 import { readWorkflow, workflowPath } from './gate-steps.mjs';
 
 const TOKEN = process.env.GITHUB_TOKEN ?? '';
@@ -167,6 +174,11 @@ const SEED = process.argv.slice(3).includes('--seed');
  *
  * The default is the run's own `run_attempt`, which is what the API's unfiltered endpoint returns
  * and what every recording taken before this flag existed measured.
+ *
+ * The flag names an older measurement as often as a newer one, and the two uses are different
+ * acts: a recording may only move forward (`R10` holds it to the history's newest reading), while
+ * `--seed --attempt 1` against a recording of attempt 2 appends a second reading of one tree. The
+ * argument is parsed here; which of the two it is, is decided where the recording is read.
  */
 const ATTEMPT = (() => {
   const at = process.argv.slice(3).indexOf('--attempt');
@@ -254,6 +266,84 @@ if (runAttempt > Number(run.run_attempt ?? 1)) {
       'put a day in the history that no machine spent',
   );
 }
+
+/**
+ * Where this measurement sits among the ones already written, and the three acts it forbids.
+ *
+ * ## A recording is the newest measurement
+ *
+ * `R10` holds the recording to the history's last reading, so the recorder writing an *older* one
+ * leaves the gate red on the tree the recorder has just written -- and the refusal it prints says
+ * "record that run as the recording rather than beside it", which is what the recorder was asked to
+ * do and has just done (`O-122`). The state is reachable the moment a run has been re-run: attempt 2
+ * is recorded, and `--attempt 1` then moves the recording back in time.
+ *
+ * So the two files are written only for a measurement that is newer than the recording it replaces.
+ * The comparison is the pair (`orderOf`), because attempt 1 of a recorded run 7 and attempt 2 of it
+ * share a run id and are a day apart: subtracting the ids answered "the same day" and told a person
+ * that the older attempt *is* the recording.
+ *
+ * ## A seed is the other relation
+ *
+ * A seed appends a day and leaves the recording alone, so an older *attempt* of the recorded run is
+ * exactly what it is for -- the two are one tree read twice, which is the pair a bound's margin is
+ * measured against (finding 645), and it is the pair that used to be unwritable. A seed is refused
+ * for being newer than the recording (a day that has not been recorded is the recording) and for
+ * being the same measurement (a day entered twice is a day overweighted).
+ *
+ * ## Why a file that cannot be read is refused rather than replaced
+ *
+ * The recording is the only file that says which day is the newest, so a measurement cannot be
+ * placed against a file that will not parse. Overwriting it would answer the question by deleting
+ * it: the history would still hold the newer day, and the tree would fail with `R10`'s advice about
+ * a recording the recorder had just written. It is one JSON object in git, and restoring it is the
+ * act that makes the question answerable again.
+ */
+if (existsSync(OUT)) {
+  const why = (what) =>
+    SEED
+      ? `the recording at ${OUT} ${what}, so a seed cannot be told from it: a seed is a day older than ` +
+        'the recording, and the only file that says which day that is is unreadable'
+      : `the recording at ${OUT} ${what}, so this measurement cannot be told from the one it would ` +
+        'replace: a recording older than the newest measurement is a tree `R10` refuses, and the file ' +
+        'that would have said which day is the newest is unreadable. Restore it from git and record ' +
+        'again -- the run is still there';
+  let held;
+  try {
+    held = JSON.parse(readFileSync(OUT, 'utf8'));
+  } catch (error) {
+    throw new Error(why(`cannot be parsed (${String(error)})`));
+  }
+  if (!Number.isInteger(Number(held?.run)) || Number(held?.run) <= 0) {
+    throw new Error(why('names no run'));
+  }
+  const at = { run: Number(RUN), attempt: runAttempt };
+  const order = orderOf(at, held);
+  if (SEED && order > 0) {
+    throw new Error(
+      `--seed names ${coordinateOf(at)}, which is newer than the recording ` +
+        `(${coordinateOf(held)}): a day that has not been recorded is the recording, not a seed, and ` +
+        'appending it here would leave the bounds argued from a day the recording says is not the newest',
+    );
+  }
+  if (SEED && order === 0) {
+    throw new Error(
+      `--seed names ${coordinateOf(at)}, which is the recording: it is already in the history, and a ` +
+        'second entry for one measurement would weight that measurement twice when the slowest reading ' +
+        'is looked up',
+    );
+  }
+  if (!SEED && order < 0) {
+    throw new Error(
+      `${coordinateOf(at)} is older than the recording (${coordinateOf(held)}), and \`R10\` holds the ` +
+        'recording to the newest reading in the history: writing this one would leave the gate red on ' +
+        'the file this script had just written, telling the reader to record that run as the recording ' +
+        '-- which is what was asked for. The measurement is still evidence: `--seed` appends it to the ' +
+        'history and leaves the recording where it is, and two attempts of one tree are the pair a ' +
+        "bound's margin is measured against",
+    );
+  }
+}
 // `filter=all` only when an older attempt is asked for: the unfiltered endpoint answers with the
 // latest attempt's jobs, which is the whole of what every recording before this flag needed, and
 // asking for all of them costs a request and a discrimination that nothing else here uses.
@@ -281,38 +371,6 @@ const history = {};
 // still the worst day a bound has to survive.
 const seedGaps = [];
 
-/**
- * A seed describes a past tree, and a past tree is not the recording.
- *
- * The recording is what CI's bounds are sized against, so it has to be a run of the
- * workflow as it stands. An older run answers a different question -- how slow has this
- * command been -- and answering it does not make the run the newest day. Refusing here
- * rather than replacing the recording is the whole difference between the two files.
- */
-if (SEED && existsSync(OUT)) {
-  let held;
-  try {
-    held = JSON.parse(readFileSync(OUT, 'utf8'));
-  } catch (error) {
-    throw new Error(
-      `the recording at ${OUT} cannot be parsed (${String(error)}), so a seed cannot be told from it: ` +
-        'a seed is a day older than the recording, and the only file that says which day that is is unreadable',
-    );
-  }
-  if (Number(RUN) > Number(held?.run ?? 0)) {
-    throw new Error(
-      `--seed names run ${RUN}, which is newer than the recording (run ${String(held?.run)}): a day that ` +
-        'has not been recorded is the recording, not a seed, and appending it here would leave the bounds ' +
-        'argued from a day the recording says is not the newest',
-    );
-  }
-  if (Number(RUN) === Number(held?.run)) {
-    throw new Error(
-      `--seed names run ${RUN}, which is the recording: it is already in the history, and a second entry ` +
-        'for one day would weight that day twice when the slowest reading is looked up',
-    );
-  }
-}
 // GitHub reports a job under its `name:` when it has one and under its id when it does
 // not, so the key the API answers to is the label the reader kept, or the id.
 const apiNameOf = (job) => (job.name === '' ? job.id : job.name);
@@ -492,7 +550,8 @@ if (SEED) {
   // A seed answers no declaration: a promise is answered by a run of the job it promises,
   // and a day from before the job existed is not that run.
   process.stdout.write(
-    `ci-baseline: seeded run ${RUN} with ${String(Object.keys(recorded).length)} of ` +
+    `ci-baseline: seeded ${coordinateOf({ run: Number(RUN), attempt: runAttempt })} with ` +
+      `${String(Object.keys(recorded).length)} of ` +
       `${String(jobsOf(workflow).length)} job(s) and ${String(stepCount)} step(s)` +
       `${seedGaps.length === 0 ? '' : `; ${String(seedGaps.length)} item(s) did not exist then: ${seedGaps.join(', ')}`}` +
       `${appended === null ? '' : `; the history holds ${String(appended.readings.length)} reading(s)`}` +
@@ -532,7 +591,8 @@ const waitingJobs = [...DECLARED_JOBS].filter((id) => recorded[id] === undefined
 
 process.stdout.write(
   `ci-baseline: ${String(Object.keys(recorded).length)} job(s) and ${String(stepCount)} step(s) from ` +
-    `run ${RUN}${Object.keys(derived).length > 0 ? `, ${String(Object.keys(derived).length)} borrowed` : ''}` +
+    `${coordinateOf({ run: Number(RUN), attempt: runAttempt })}` +
+    `${Object.keys(derived).length > 0 ? `, ${String(Object.keys(derived).length)} borrowed` : ''}` +
     `${answered === 0 ? '' : `; ${String(answered)} declaration(s) are now measured and can be deleted`}` +
     `${answeredJobs === 0 ? '' : `; ${String(answeredJobs)} job declaration(s) are now measured and can be deleted`}` +
     `${waitingJobs === 0 ? '' : `; ${String(waitingJobs)} job declaration(s) still awaiting their first run`}` +

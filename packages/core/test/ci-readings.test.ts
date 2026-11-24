@@ -608,6 +608,14 @@ interface ApiOver {
   workflow?: string;
   /** What the API reports, if not the one job of that fixture. */
   jobs?: unknown;
+  /**
+   * How many times the run has been executed, if more than once.
+   *
+   * A re-run keeps the run id and increments `run_attempt`, so this is the field that makes one run
+   * two measurements. The run's own count is what the recorder reads when no `--attempt` is named,
+   * and an attempt the run has never reached is refused before the jobs are asked for.
+   */
+  attempts?: number;
 }
 
 async function withApi<T>(
@@ -626,16 +634,57 @@ async function withApi<T>(
   if (over.history !== undefined) writeFileSync(join(dir, 'ci-readings.json'), over.history);
   if (over.recording !== undefined) writeFileSync(join(dir, 'ci-baseline.json'), over.recording);
   const reported = over.jobs ?? API_JOBS;
+  /** One fixture timestamp, moved by a number of seconds: the whole of what a re-run changes. */
+  const shift = (at: string, seconds: number): string => new Date(Date.parse(at) + seconds * 1000).toISOString();
+  /**
+   * The same jobs, measured a second time.
+   *
+   * The second attempt starts a minute after the first and the battery spends a minute longer, so
+   * the job's overhead is the same two seconds and the one step that matters is a different number.
+   * A fixture whose re-run was identical to the first would make "which attempt was read" a
+   * question two readings of equal seconds could not answer.
+   */
+  const rerun = (one: Record<string, unknown>): Record<string, unknown> => ({
+    ...one,
+    run_attempt: 2,
+    started_at: shift(String(one['started_at']), 60),
+    completed_at: shift(String(one['completed_at']), 120),
+    steps: (one['steps'] as Record<string, string>[]).map((each) => ({
+      ...each,
+      started_at: shift(each['started_at'] as string, 60),
+      completed_at: shift(each['completed_at'] as string, each.name === 'Slow battery' ? 120 : 60),
+    })),
+  });
   const server = createServer((req, res) => {
     const url = req.url ?? '';
     if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ head_sha: 'e'.repeat(40), updated_at: '2026-11-06T10:31:00Z' }));
+      res.end(
+        JSON.stringify({
+          head_sha: 'e'.repeat(40),
+          run_attempt: over.attempts ?? 1,
+          updated_at: '2026-11-06T10:31:00Z',
+        }),
+      );
       return;
     }
-    if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100') {
+    if (
+      url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100' ||
+      url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100&filter=all'
+    ) {
+      // `filter=all` is asked for exactly when an attempt is named, and the endpoint answers with
+      // every attempt of the run -- which is the only way the older measurement is reachable once
+      // the newer one exists.
+      const every =
+        url.endsWith('&filter=all')
+          ? {
+              jobs: (JSON.parse(JSON.stringify(reported)) as { jobs: Record<string, unknown>[] }).jobs.flatMap(
+                (one) => [{ ...one, run_attempt: 1 }, rerun(one)],
+              ),
+            }
+          : reported;
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify(reported));
+      res.end(JSON.stringify(every));
       return;
     }
     res.writeHead(404).end();
@@ -827,7 +876,7 @@ describe('a past day is appended without becoming the recording', () => {
     expect(refused.stderr).toContain('the recording, not a seed');
   });
 
-  it('refuses a seed that is the recording, because one day entered twice is one day overweighted', async () => {
+  it('refuses a seed that is the recording, because one measurement entered twice is one overweighted', async () => {
     const result = await withApi(
       async (env) => runRecorder(env, ['--seed']),
       undefined,
@@ -837,7 +886,62 @@ describe('a past day is appended without becoming the recording', () => {
     );
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('which is the recording');
-    expect(result.stderr).toContain('weight that day twice');
+    expect(result.stderr).toContain('weight that measurement twice');
+  });
+
+  it('appends an older attempt of the recorded run, which is one tree read twice', async () => {
+    // `O-122`. The run was re-run twice, attempt 3 is the recording, and attempt 2 is a second
+    // reading of the same tree -- which is the pair a bound's margin over the machine's own movement
+    // is measured against (finding 645). The ordering that refused it compared the run ids and found
+    // them equal, so it said the older measurement *was* the recording and the pair stayed
+    // unwritable; and recording it as the recording instead is the tree `R10` refuses.
+    const recording = JSON.stringify({
+      ...recordingOf({ batteries: { steps: { 'Slow battery': 100 } } }),
+      run: 7,
+      attempt: 3,
+    });
+    const result = await withApi(
+      async (env) => {
+        const out = await runRecorder(env, ['--seed', '--attempt', '2']);
+        return {
+          out,
+          history: JSON.parse(readFileSync(env['RCA_CI_READINGS'] as string, 'utf8')),
+          held: readFileSync(env['RCA_CI_OUT'] as string, 'utf8'),
+        };
+      },
+      undefined,
+      { recording, attempts: 3 },
+    );
+    expect(result.out.stderr).toBe('');
+    expect(result.out.status).toBe(0);
+    // The report names the measurement, not just the run: a seed of attempt 2 and a seed of
+    // attempt 1 are two different days, and `run 7` would leave the reader to work out which.
+    expect(result.out.stdout).toContain('seeded run 7 attempt 2 with');
+    expect(result.history.readings).toHaveLength(1);
+    expect(result.history.readings[0]).toMatchObject({ run: 7, attempt: 2 });
+    // 169 s on the battery in attempt 2 against 109 s in attempt 1: the row that was appended is
+    // the measurement the flag named, and the run id alone could not have said which it was.
+    expect(result.history.readings[0].jobs.batteries['Slow battery'].seconds).toBe(169);
+    // And the recording is the newer attempt, byte for byte, because a seed is not a recording.
+    expect(result.held).toBe(recording);
+  });
+
+  it('refuses a seed that is a newer attempt of the recorded run, because that measurement is the recording', async () => {
+    // The other direction of the same pair: attempt 2 of the run being recorded is the newest
+    // measurement of that tree, so it is the recording waiting to happen rather than a day beside
+    // it. Both coordinates are printed, because `run 7` on both sides of the comparison would be
+    // the half-a-reading defect one file over (finding 646).
+    const result = await withApi(async (env) => runRecorder(env, ['--seed', '--attempt', '2']), undefined, {
+      recording: JSON.stringify({
+        ...recordingOf({ batteries: { steps: { 'Slow battery': 100 } } }),
+        run: 7,
+        attempt: 1,
+      }),
+      attempts: 2,
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('--seed names run 7 attempt 2, which is newer than the recording (run 7)');
+    expect(result.stderr).toContain('the recording, not a seed');
   });
 
   it('refuses a run that shares no command with this workflow', async () => {

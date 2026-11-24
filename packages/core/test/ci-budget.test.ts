@@ -16,6 +16,7 @@ import {
   budgetSummary,
   ceilingNeedOf,
   commandOf,
+  coordinateOf,
   jobDays,
   jobsOf,
   ledgerErrors,
@@ -23,6 +24,7 @@ import {
   middleOf,
   noiseFloorOf,
   noiseOfSteps,
+  orderOf,
   prefixOf,
   readDeclarations,
   readReadings,
@@ -1792,6 +1794,132 @@ describe('the recorder', () => {
     expect(result.history.readings[0]).toMatchObject({ run: 7, attempt: 1 });
   });
 
+  it('refuses an attempt older than the recording, whose tree `R10` would then refuse', async () => {
+    // `O-122`. `R10` holds the recording to the history's newest reading, so writing attempt 1 over
+    // a recording of attempt 2 leaves the gate red on the file this script has just written -- and
+    // the sentence it prints says "record that run as the recording rather than beside it", which is
+    // exactly what the recorder had been asked to do. The measurement is still evidence, so the
+    // refusal names the act that keeps it instead of the act that cannot be taken.
+    const held = JSON.stringify({
+      run: 7,
+      attempt: 2,
+      commit: 'd'.repeat(40),
+      measured: '2026-11-02',
+      jobs: { batteries: { name: 'b', timeoutMinutes: 25, total: 53, steps: { 'Slow battery': 49 } } },
+    });
+    const result = await withApi(
+      (url) => {
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
+          return { status: 200, body: { head_sha: 'deadbeef', run_attempt: 2, updated_at: '2026-11-02T10:31:00Z' } };
+        }
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100&filter=all') {
+          return { status: 200, body: API_JOBS };
+        }
+        return null;
+      },
+      async (env) => {
+        writeFileSync(env['RCA_CI_OUT'] as string, held);
+        const out = await runRecorder(['7', '--attempt', '1'], env);
+        return {
+          out,
+          after: readFileSync(env['RCA_CI_OUT'] as string, 'utf8'),
+          history: existsSync(env['RCA_CI_READINGS'] as string),
+        };
+      },
+    );
+    expect(result.out.status).toBe(1);
+    // Both coordinates, because the two sides of this comparison share a run id.
+    expect(result.out.stderr).toContain('run 7 is older than the recording (run 7 attempt 2)');
+    expect(result.out.stderr).toContain('`--seed` appends it to the history');
+    // Nothing was written: not the recording, and not the history beside it.
+    expect(result.after).toBe(held);
+    expect(result.history).toBe(false);
+  });
+
+  it('records the newer attempt over an older recording, and names it in the report', async () => {
+    // The refusal is about the ordering and not about the flag: attempt 2 is a day later than the
+    // recording's attempt 1 and is what the bounds are sized from afterwards. The report names the
+    // attempt, so a reader of two consecutive recordings can tell which one moved -- the sixth
+    // sentence to name half a reading until `v3.144` (finding 646).
+    const held = JSON.stringify({
+      run: 7,
+      attempt: 1,
+      commit: 'd'.repeat(40),
+      measured: '2026-11-01',
+      jobs: { batteries: { name: 'b', timeoutMinutes: 25, total: 53, steps: { 'Slow battery': 41 } } },
+    });
+    const result = await withApi(
+      (url) => {
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
+          return { status: 200, body: { head_sha: 'deadbeef', run_attempt: 2, updated_at: '2026-11-02T10:31:00Z' } };
+        }
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100&filter=all') {
+          const jobs = JSON.parse(JSON.stringify(API_JOBS)) as { jobs: Record<string, unknown>[] };
+          for (const one of jobs.jobs) one.run_attempt = 2;
+          return { status: 200, body: jobs };
+        }
+        return null;
+      },
+      async (env) => {
+        writeFileSync(env['RCA_CI_OUT'] as string, held);
+        const out = await runRecorder(['7', '--attempt', '2'], env);
+        return {
+          out,
+          written: JSON.parse(readFileSync(env['RCA_CI_OUT'] as string, 'utf8')),
+          history: JSON.parse(readFileSync(env['RCA_CI_READINGS'] as string, 'utf8')),
+        };
+      },
+    );
+    expect(result.out.status).toBe(0);
+    expect(result.out.stdout).toContain('step(s) from run 7 attempt 2');
+    expect(result.written).toMatchObject({ run: 7, attempt: 2 });
+    expect(result.written.jobs.batteries.steps['Slow battery']).toEqual(49);
+    expect(result.history.readings).toHaveLength(1);
+    expect(result.history.readings[0]).toMatchObject({ run: 7, attempt: 2 });
+  });
+
+  it('refuses to record when the file it would replace cannot say which day is the newest', async () => {
+    // The recording is the only file that says which measurement is the newest, so a measurement
+    // cannot be placed against one that will not parse. Overwriting it would answer the question by
+    // deleting it: the history would still hold the newer day, and the tree would fail on a
+    // recording the recorder had just written. Two shapes, because a file can fail to parse and a
+    // file can parse into something that names no run at all.
+    const unparseable = await withApi(
+      (url) => {
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
+          return { status: 200, body: { head_sha: 'deadbeef', updated_at: '2026-11-02T10:31:00Z' } };
+        }
+        return null;
+      },
+      async (env) => {
+        writeFileSync(env['RCA_CI_OUT'] as string, '{ not json');
+        const out = await runRecorder(['7'], env);
+        return { out, after: readFileSync(env['RCA_CI_OUT'] as string, 'utf8') };
+      },
+    );
+    expect(unparseable.out.status).toBe(1);
+    expect(unparseable.out.stderr).toContain('cannot be parsed');
+    expect(unparseable.out.stderr).toContain('Restore it from git and record again');
+    expect(unparseable.after).toBe('{ not json');
+
+    const nameless = await withApi(
+      (url) => {
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
+          return { status: 200, body: { head_sha: 'deadbeef', updated_at: '2026-11-02T10:31:00Z' } };
+        }
+        return null;
+      },
+      async (env) => {
+        writeFileSync(env['RCA_CI_OUT'] as string, JSON.stringify({ attempt: 1 }));
+        const out = await runRecorder(['7'], env);
+        return { out, after: readFileSync(env['RCA_CI_OUT'] as string, 'utf8') };
+      },
+    );
+    expect(nameless.out.status).toBe(1);
+    expect(nameless.out.stderr).toContain('names no run');
+    expect(nameless.after).toBe(JSON.stringify({ attempt: 1 }));
+  });
+
   it('refuses an attempt the run has never reached, because no machine spent it', async () => {
     const result = await withApi(
       (url) => {
@@ -3553,6 +3681,52 @@ describe('the bound furthest above a day its command has spent', () => {
     );
     expect(summary).toContain('60 s of its 60 s above the 0 s');
     expect(summary).not.toContain('Infinity');
+  });
+});
+
+/**
+ * Which of two readings is older, and how a sentence names one.
+ *
+ * Both are functions of the pair `(run, attempt)`, and both had callers that used half of it: the
+ * sorts and `R10` ordered by run first and attempt second by hand, the recorder compared run ids
+ * alone and called two attempts of one run "the same day" (`O-122`), and every sentence printed
+ * `run N` (`O-121`). A rule about which day is newer can only answer one way, so the ordering is one
+ * function; a name is what lets a reader go and look at the measurement, so the name is one function
+ * too -- and both are checked here rather than only through the sentences built out of them.
+ */
+describe('the order of two readings, and the words one is named by', () => {
+  it('puts the second attempt of one run after the first, where the run id alone says they are equal', () => {
+    // The whole of `O-122`: `100 - 100` is zero and `attempt 2 - attempt 1` is one, so the ordering
+    // is lexicographic and the run is the high half.
+    expect(orderOf({ run: 100, attempt: 2 }, { run: 100, attempt: 1 })).toBeGreaterThan(0);
+    expect(orderOf({ run: 100, attempt: 1 }, { run: 100, attempt: 2 })).toBeLessThan(0);
+    expect(orderOf({ run: 100, attempt: 2 }, { run: 100, attempt: 2 })).toBe(0);
+  });
+
+  it('puts any attempt of a later run after every attempt of an earlier one', () => {
+    // Attempts count re-runs of one id, so they cannot outrank a run: attempt 9 of run 100 was taken
+    // before attempt 1 of run 101, and a comparator that added the two fields would say otherwise.
+    expect(orderOf({ run: 101, attempt: 1 }, { run: 100, attempt: 9 })).toBeGreaterThan(0);
+  });
+
+  it('reads a reading with no attempt as the first one, and one with no run as the oldest', () => {
+    // Every row written before the field existed was the only attempt there was, so `attempt` absent
+    // and `attempt: 1` are one measurement rather than two -- which is what makes the shipped history
+    // of 36 rows sortable without rewriting 31 of them.
+    expect(orderOf({ run: 7 }, { run: 7, attempt: 1 })).toBe(0);
+    // And a reading that names no run is older than every reading that names one, rather than a
+    // comparison that answers `NaN` and leaves `sort` to order two rows by nothing.
+    expect(orderOf({ attempt: 1 }, { run: 1, attempt: 1 })).toBeLessThan(0);
+    expect(Number.isNaN(orderOf({}, { run: 1 }))).toBe(false);
+  });
+
+  it('names the attempt only when the run has more than one measurement', () => {
+    // Attempt 1 prints nothing, because 31 of the 36 rows in the shipped history have no attempt
+    // field and `run 45393534319` still reads right for them; a re-run prints the field, because
+    // `run 100` would send the reader to the attempt that spent the other number.
+    expect(coordinateOf({ run: 45393534319 })).toBe('run 45393534319');
+    expect(coordinateOf({ run: 45393534319, attempt: 1 })).toBe('run 45393534319');
+    expect(coordinateOf({ run: 45393534319, attempt: 2 })).toBe('run 45393534319 attempt 2');
   });
 });
 

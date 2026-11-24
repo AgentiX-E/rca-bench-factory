@@ -738,8 +738,32 @@ export function readReadings(file) {
   }
   // Run, then attempt: one run's second attempt is a later measurement of the same tree, so it sorts
   // after the first rather than beside it, and the tail `R10` reads is the newest measurement.
-  rows.sort((a, b) => a.run - b.run || a.attempt - b.attempt);
+  rows.sort(orderOf);
   return { rows, errors };
+}
+
+/**
+ * Which of two readings is the older measurement: negative when `a` is older, zero when they are one
+ * measurement, positive when `a` is newer.
+ *
+ * One run is not one measurement (`O-114`). A re-run keeps the run id and increments `run_attempt`,
+ * so `run 100` names two days the machine spent, and subtracting the ids says they are the same day
+ * -- which is what the recorder did when it decided whether a `--seed` was older than the recording
+ * (`O-122`). It told a person that attempt 1 of the recorded run *is* the recording, so the one
+ * measurement that is a same-tree pair could not be appended at all, and the pair is the whole of
+ * what a bound's margin is measured against (finding 645).
+ *
+ * The two fields are not symmetric: a run id counts runs and an attempt counts re-runs of one, so
+ * the comparison is lexicographic and the run is the high half. Every caller that orders readings
+ * goes through here -- the sorts in `readReadings` and `mergeReading`, `R10`'s two directions, and
+ * the recorder's two refusals -- so a rule about which day is newer can only answer one way. A
+ * reading with no attempt is attempt 1, because that is what every row written before the field
+ * existed measured, and a reading with no run at all is older than every reading that has one: a
+ * comparator that answered `NaN` there would make `sort` order two rows by nothing, and the row
+ * would then be named by whichever refusal happened to be reading it.
+ */
+export function orderOf(a, b) {
+  return Number(a?.run ?? 0) - Number(b?.run ?? 0) || Number(a?.attempt ?? 1) - Number(b?.attempt ?? 1);
 }
 
 /**
@@ -754,8 +778,12 @@ export function readReadings(file) {
  *
  * Attempt 1 prints nothing, because that is what every reading written before the field existed
  * was, and `run 45393534319` still reads right for the 31 rows that have no attempt at all.
+ *
+ * Exported since `v3.144`: the recorder writes the recording's coordinate into its report and
+ * prints both sides of its refusals, and a tool that named the day in its own words would be the
+ * eighth sentence to name half a reading -- which is what finding 646 was.
  */
-function coordinateOf(one) {
+export function coordinateOf(one) {
   const attempt = one?.attempt ?? 1;
   return `run ${String(one?.run)}${attempt === 1 ? '' : ` attempt ${String(attempt)}`}`;
 }
@@ -778,9 +806,7 @@ export function mergeReading(file, entry) {
     (one) => one?.run !== entry.run || (one?.attempt ?? 1) !== (entry.attempt ?? 1),
   );
   return {
-    readings: [...kept, entry].sort(
-      (a, b) => Number(a.run) - Number(b.run) || Number(a.attempt ?? 1) - Number(b.attempt ?? 1),
-    ),
+    readings: [...kept, entry].sort(orderOf),
   };
 }
 
@@ -1091,7 +1117,7 @@ function historyErrors(baseline, parsed) {
   // right for them.
   const where = (one) => coordinateOf(one);
   const baselineAttempt = baseline.attempt === undefined ? 1 : baseline.attempt;
-  const order = (tail.run - baseline.run) || (tail.attempt - baselineAttempt);
+  const order = orderOf(tail, { run: baseline.run, attempt: baselineAttempt });
   if (order < 0) {
     errors.push(
       `the newest reading in the history is ${where(tail)} and the recording is ` +
