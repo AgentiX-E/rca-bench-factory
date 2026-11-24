@@ -95,7 +95,7 @@ jobs:
     # 17 -> 18 minutes, so the bounds add up to 2160 s, and 2160 plus the 180 s allowance plus
     # the 8 s of doubled overhead is 2348 s. The ceiling pays for the bounds it holds, and it
     # is the only place that arithmetic can be written down.
-    timeout-minutes: 40
+    timeout-minutes: 41
     steps:
       # Full history: see the note above `jobs:` (findings 612 and 614). This is the job the
       # first of those two was found in.
@@ -118,7 +118,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install the shells the suite cross-checks against
-        timeout-minutes: 6
+        timeout-minutes: 7
         # `check-no-unsafe-shell.test.ts` compares the gate's rule against what
         # `zsh` and `bash` actually do with the same string, which is the
         # strongest acceptance criterion in the tree: the thing being modelled is
@@ -131,6 +131,12 @@ jobs:
         # and `null !== 0` read that as "zsh rejected it". The fixture now reports
         # the missing binary honestly, which is why this step exists rather than
         # an exemption for the runner.
+        #
+        # Seven minutes because run `45319505174` read this command at **197 s** --
+        # the slowest of its 29 readings -- and twice that is 394 s, which the 360 s
+        # this replaced no longer covers (`R10`). The five ceilings above the same
+        # command rose with it, because a step bound that the ceiling cannot hold is
+        # a bound that never fires (`R13`).
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
@@ -391,7 +397,7 @@ jobs:
     # 2520 s; with 5 s of overhead doubled that is 1990 s, and R13's bounds
     # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
     # per setup step was paying for cold runners that cannot happen.
-    timeout-minutes: 34
+    timeout-minutes: 35
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -417,7 +423,10 @@ jobs:
       # shells the suite cross-checks against is a job whose verdicts depend on which
       # runner it landed on (finding 130).
       - name: Install the shells the suite cross-checks against
-        timeout-minutes: 6
+        timeout-minutes: 7
+        # Seven minutes for the reason written on this step in `verify`: the command's
+        # slowest reading is 197 s (run `45319505174`), and the five jobs that install
+        # it rose together.
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
@@ -504,7 +513,7 @@ jobs:
     # 2460 s; with 5 s of overhead doubled that is 1930 s, and R13's bounds
     # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
     # per setup step was paying for cold runners that cannot happen.
-    timeout-minutes: 33
+    timeout-minutes: 34
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -525,7 +534,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install the shells the suite cross-checks against
-        timeout-minutes: 6
+        timeout-minutes: 7
+        # Seven minutes for the reason written on this step in `verify`: the command's
+        # slowest reading is 197 s (run `45319505174`), and the five jobs that install
+        # it rose together.
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
@@ -574,7 +586,7 @@ jobs:
     # 3720 s; with 4 s of overhead doubled that is 3188 s, and R13's bounds
     # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
     # per setup step was paying for cold runners that cannot happen.
-    timeout-minutes: 54
+    timeout-minutes: 55
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -595,7 +607,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install the shells the suite cross-checks against
-        timeout-minutes: 6
+        timeout-minutes: 7
         # `check-no-unsafe-shell.test.ts` compares the gate's rule against what
         # `zsh` and `bash` actually do with the same string, which is the
         # strongest acceptance criterion in the tree: the thing being modelled is
@@ -608,6 +620,10 @@ jobs:
         # and `null !== 0` read that as "zsh rejected it". The fixture now reports
         # the missing binary honestly, which is why this step exists rather than
         # an exemption for the runner.
+        #
+        # Seven minutes for the reason written on this step in `verify`: the command's
+        # slowest reading is 197 s (run `45319505174`), and the five jobs that install
+        # it rose together.
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
@@ -1095,7 +1111,7 @@ jobs:
     # 3120 s; with 5 s of overhead doubled that is 2590 s, and R13's bounds
     # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
     # per setup step was paying for cold runners that cannot happen.
-    timeout-minutes: 44
+    timeout-minutes: 45
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -1120,7 +1136,10 @@ jobs:
       # `cold-tree-job.test.ts` asks for that of a job rather than of the job the rule was
       # written about, which is how this step was found missing here.
       - name: Install the shells the suite cross-checks against
-        timeout-minutes: 6
+        timeout-minutes: 7
+        # Seven minutes for the reason written on this step in `verify`: the command's
+        # slowest reading is 197 s (run `45319505174`), and the five jobs that install
+        # it rose together.
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)

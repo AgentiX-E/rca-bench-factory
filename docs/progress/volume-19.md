@@ -2408,7 +2408,7 @@ opened at v3.137 by a measurement: `docs:check` green on a tree whose counts wer
 ### The other end of the axis
 
 `R10` sizes a bound from the **worst** day a command has had, so on the best day the same bound is
-pure headroom, and the sum of those headrooms is what the `241 min` of bounds is made of. The gate
+pure headroom, and the sum of those headrooms is what the `246 min` of bounds is made of. The gate
 named the tight end and printed nothing about the loose one:
 
 ```
@@ -2516,6 +2516,21 @@ two inline comparisons, because the rule asks it twice.
   record of a round that never published 6,909 -- and it was caught by reading the diff, not by a
   gate. Both numbers are restored here. Nothing in the tree would have refused the false record,
   which is `O-117`'s subject one level up: the corpus has no account of what a round published.
+- **The round's own run moved a bound, and the documents were already written.** Run
+  `45319505174` read `Install the shells the suite cross-checks against` at **197 s** -- the slowest of
+  the 29 readings that command now has -- and `R10` refused the 6-minute bound that had covered 162 s
+  on the day it was set. Five jobs install that shell, so five bounds rose to 7 minutes, `R13` then
+  refused all five ceilings by exactly the minute the bound had taken, and the totals in this record
+  moved with them: **241 -> 246 min** of bounds and **52 -> 57 min** measured. The reasoning in every
+  document above is unchanged -- one bound still holds both ends, the headroom is still 1,784 s -- and
+  the numbers that moved are the ones the round had already published, which is why the recording is
+  taken from the run rather than typed beside it.
+- **A noun came back to the census by a branch being taken.** The widening above is the only path that
+  prints `budget(s)`, and v3.137 deleted that noun from `golden-master/unit-nouns.json` in the round
+  its branch went untaken. This round's run widened five ceilings, the sentence was printed, and
+  `check-unit-nouns` refused the tree until `--write` put the entry back. That is `O-112` demonstrated
+  rather than described: the inventory is a measurement of the tree's output, and a noun leaves and
+  returns with a conditional.
 - **A count in a comment was typed rather than measured.** The first draft of the headroom case said
   "two steps in this workflow are read at 0 s"; the probe says four. The comment is now the probe's
   number, and the sentence it replaced was the defect this round is about, one level down.
@@ -2557,7 +2572,7 @@ green tree before the round's documents moved. No survivors: the two that would 
 
 | what | value |
 | --- | --- |
-| CI | run `45296269712` on `63c99cc`: **8 of 8 jobs success**, 909 s; this is the run the recording was taken from, and the round's own tip is measured in the record that follows it |
+| CI | run `45319505174` on `df91a0a`: **8 of 8 jobs success**, 909 s (03:26:17 -> 03:41:26); the slowest job is `batteries-heavy` at 908 s of its 45-minute ceiling. The run is also the recording, and its own reading of the shells command -- **197 s** -- is what raised five bounds and five ceilings after the documents were written (see *The round's own defects*) |
 | `pnpm run docs:check` | **23 steps, exit 0** |
 | `core` test suite | **260 files, 6909 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |

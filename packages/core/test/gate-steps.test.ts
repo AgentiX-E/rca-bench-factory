@@ -1930,7 +1930,7 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     expect(result.stdout).toContain('artefacts 15m across 9 step(s)');
     expect(result.stdout).toContain('cold-tree 20m across 4 step(s)');
     expect(result.stdout).not.toContain('verify 15m across');
-    expect(result.stdout).toContain('verify 40m across 8 step(s)');
+    expect(result.stdout).toContain('verify 41m across 8 step(s)');
     // 24 -> 25 in v3.126, and the largest step bound with it: the first reading taken after four
     // jobs took the full history put `verify`'s slowest day at 722 s, which is 1.99x of 24 minutes,
     // and `Lint` -- the step that runs the 34 claimants -- at 497 s, which is 1.92x of 16. Both
@@ -1945,12 +1945,12 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     expect(result.stdout).not.toContain('largest 18m of the job');
     // The pool line is where the number went, and a prefix step reads it as its own: this is
     // the step the plan now charges to the job rather than to a bound of its own.
-    expect(result.stdout).toContain('verify / Install dependencies — 40m');
+    expect(result.stdout).toContain('verify / Install dependencies — 41m');
     // 3 -> 4 in v3.52: the sensitivity job's one battery became two, because a step can
     // now be declared for one recording instead of being folded into a neighbour's name.
     // The clause it was asserted through is empty in this workflow as of v3.132 (finding
     // 622), so what is asserted is the pool line the same four steps are counted on.
-    expect(result.stdout).toContain('sensitivity 34m across 4 step(s)');
+    expect(result.stdout).toContain('sensitivity 35m across 4 step(s)');
     expect(result.stdout).not.toContain('sensitivity bounds all');
     // 18 -> 19 in v3.50: the fresh recording measured the site-proofs step at 542 s,
     // and twice that is 1084 s, which is 4 s past 18 minutes. The bound follows the
@@ -1962,11 +1962,11 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     // and 22 s of setup puts the 1500 s bound's deadline at 1522 s.
     // 26 -> 47 in v3.129, for the same reason: eight bounds of 2 760 s (finding 619). 34 in
     // v3.132, where the four setup steps' bounds became one allowance (finding 622).
-    expect(result.stdout).toContain('sensitivity 34m across 4 step(s)');
+    expect(result.stdout).toContain('sensitivity 35m across 4 step(s)');
     expect(result.stdout).not.toContain("largest 22m of the job");
     // `batteries` had every one of its fourteen steps bounded at the floor until v3.132; the
     // pool line is where its 54 minutes and its fourteen steps are counted now (finding 622).
-    expect(result.stdout).toContain('batteries 54m across 14 step(s)');
+    expect(result.stdout).toContain('batteries 55m across 14 step(s)');
     expect(result.stdout).not.toContain('batteries bounds all');
     // 9 -> 10 in v3.120: `Every gate can be shown to fail` measured 295 s, and twice that is 590 s,
     // which is 4 s past ten minutes (finding 599). The assertion follows the bound, which follows
@@ -1982,7 +1982,7 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     // 34 -> 84 in v3.129: twenty bounds of 4 980 s. The ceiling is now four times the day it
     // answers for, which is the price of never dying at the ceiling with a bound still inside.
     expect(result.stdout).not.toContain("largest 13m of the job's 84m");
-    expect(result.stdout).toContain('batteries-heavy 44m across 4 step(s)');
+    expect(result.stdout).toContain('batteries-heavy 45m across 4 step(s)');
     expect(result.stdout).not.toContain('batteries-heavy bounds all');
     // 25 -> 27 in v3.55's close-out: the 15-minute backend-support bound plus the 632 s
     // its predecessors account for on their slowest recorded days is 1532 s, which does
@@ -2313,8 +2313,10 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     // 25 -> 58 in v3.129, and the pin is still on where the number comes from rather than on
     // the number: `R13` names the sum of the bounds (finding 619). 39 -> 40 in v3.136 because
     // the lint bound it holds moved; the number is a copy of the workflow's, and the copy is
-    // what makes a ceiling change a round's decision rather than a silent edit.
-    expect(result.stdout).toContain('of 40m');
+    // what makes a ceiling change a round's decision rather than a silent edit. 40 -> 41 in v3.139,
+    // by the same mechanism one level down: the shells command's own reading grew to 197 s, its
+    // bound took the minute, and `R13` refused the ceiling by exactly that minute.
+    expect(result.stdout).toContain('of 41m');
   });
 
   it('says a job bounds every step when one does, which no job of this workflow is any more', () => {

@@ -2387,7 +2387,7 @@ from an anecdote again.
 - **A bound is sized from the worst day a command has had, so on the best day it is pure
   headroom.** The gate prints both ends: the tightest bound against the slowest reading it divides
   by, and the bound that stands furthest above the fastest reading of its own command. One end tells
-  a reader whether the bound can fire; the other tells them where the `241 min` of bounds went
+  a reader whether the bound can fire; the other tells them where the `246 min` of bounds went
   (`O-113`, finding 633).
 - **The headroom is seconds, not a multiple.** `bound / fastest` does not exist for the four bounds
   whose command has been read at **0 s**, and a summary that divided would print `Infinity` there.

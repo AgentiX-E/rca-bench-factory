@@ -3522,7 +3522,7 @@ its denominator's distribution: the tightest bound now prints the spread it was 
 
 One end of one axis, out of thirty-eight bounds. The number a reader of a green run actually wants
 next is the *other* end -- a bound is sized from the worst day, so on the best day it is pure
-headroom, and the sum of those headrooms is where the 241 minutes of bounds go. Nothing printed it.
+headroom, and the sum of those headrooms is where the 246 minutes of bounds go. Nothing printed it.
 
 The shipped tree makes the omission concrete, because one bound holds both ends:
 
@@ -3540,7 +3540,7 @@ exist for four of the thirty-eight bounds: `verify / Published suite counts`, `b
 M1-ceiling probe battery`, `batteries / Upload the gate-test battery report` and `batteries /
 Scorer-stability probe battery` bound a command whose fastest reading is **0 s**. A summary that
 divided would print `Infinity` there, which is finding 121 in a new place. Seconds subtract, so the
-number exists for every pair, and it is in the same unit as the `241 min` the line already prints.
+number exists for every pair, and it is in the same unit as the `246 min` the line already prints.
 
 **The two instruments are combined in the direction the question asks.** `R10`'s denominator is
 `max(recording, slowest reading)` -- the worse of the two states this repository knows. The headroom
