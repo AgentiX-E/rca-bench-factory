@@ -2193,9 +2193,9 @@ current-state rows are **3** refusals until they are dated.
 | --- | --- |
 | CI | run `45218783516` on `f9144d9`: **8 of 8 jobs success**, 992 s (16:38:27 -> 16:54:59), slowest job `injection batteries, one step each` at 987 s against its 54-minute ceiling; the recording is this run's, so it reads **69** min measured against **241** min of bounds in 8 ceilings |
 | `pnpm run docs:check` | **23 steps, exit 0** |
-| `core` test suite | **260 files, 6884 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7071 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 6884 tests passed** (at v3.137) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.137) |
+| repo test suite | **264 files, 7071 tests passed** (at v3.137) |
 | new tests | **6,883 -> 6,884, +1**: the census with three coincidences under one noun, two of them equal |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
 | the census | **4** coincidences: **3** `together`, **1** `apart`, **0** `unplaced`; the `row(s)` marker now opens with its count |
@@ -2224,3 +2224,175 @@ current-state rows are **3** refusals until they are dated.
   rather than a vocabulary (`O-112`).
   `[open: whether an inventory a conditional sentence can shrink is a vocabulary at all, and whether a
   deletion should be refused the way a new noun is]`
+
+## v3.138 — a multiple named the series it was taken from, and two rounds named the same "now"
+
+Two entries, and both were about a number whose sentence did not say what it was a number *of*.
+`O-109` was opened by a green run of the budget gate: the tightest bound in the workflow is printed
+as `2.0x`, which is the least the rule accepts, and the same sentence describes a bound with
+eighty-nine times the room a normal day needs. `O-111` was opened by v3.137's own repair: dating a
+round's rows was a discipline, and a round that moves no count moves no event to trigger it.
+
+### The multiple, and the series under it
+
+`R12` sizes a bound at twice the slowest reading of the command a step runs. The summary printed
+the multiple and the reading it divided by, and stopped:
+
+```
+tightest backend / Install a backend this repository did not write at 2.0x of the slowest reading
+of its command (888 s in `backend / Install a backend this repository did not write`, run 44516888528)
+```
+
+The same command's readings, from the file that sentence was computed from: **888**, 556, 273, 91,
+40, 38, 31, 28, 27, 26, 23, 21, 21, 20, 20, 19, 19, 19, 18, 18, 18, 17, 16 -- twenty-five days out of
+twenty-seven at or under 91 s, and three in the hundreds. The bound is thirty minutes against a step
+that usually spends twenty seconds. `2.0x` is true, and it is the number a reader uses to decide
+whether a bound has room.
+
+The repair is one clause, read from the same walk that produces the denominator:
+
+```js
+export function readingsOfCommand(rows, command) { /* fastest, slowest, count */ }
+export function worstReadingFor(rows, command) {
+  const found = readingsOfCommand(rows, command);
+  return found === null ? null : found.slowest;
+}
+```
+
+so the sentence becomes `... ; across the history that command runs from 16 s to 888 s`, and the two
+degenerate series get their own words: `that command has been read once`, and `every reading of that
+command is the same`. A range from a number to itself is a sentence that looks like evidence and
+carries none.
+
+`O-109`'s second option -- measure the cold and warm paths as two readings with two bounds -- is not
+available, and the reason is the workflow rather than a preference: a step carries one
+`timeout-minutes`, and a bound that fits only the warm state refuses the cold day for being slow,
+which is the failure the multiple exists to prevent. So the dispersion is evidence printed, not
+structure added.
+
+### The tie rules, and the one that was wrong on the first run
+
+The order of the printed range has to be a function of the file. The slowest reading goes to the
+newer run, because that is the run a refusal names; the fastest to the older one. The first version
+of `readingsOfCommand` compared only seconds for the fastest, so the answer depended on the order
+somebody appended the days in -- the defect `worstReadingFor` had already been written to avoid one
+line above. A case with two readings of 16 s, appended newest first, is what pins it.
+
+### Two rounds, one "now"
+
+v3.137 dated v3.136's three suite rows and wrote down why: `(as of this commit)` is the phrase the
+guard reads as *the current state*, and the event that caught the rows was the next round adding a
+test. `O-111` is the residue: a round that only edits documents moves no count, so the older rows
+stay marked current and two rounds each claim to be now.
+
+That contradiction is inside the documents, and it needs no measurement:
+
+```
+$ node scripts/check-doc-counts.mjs --doc /tmp/two-rounds.md
+check-doc-counts: FAILED
+  ../../tmp/two-rounds.md:7: a row marked as the current state sits under v3.10, and the newest
+  round that publishes a count is v3.11. "Now" is one round: date this row ("(at v3.10)") so a
+  reader can tell a record from the state of the tree, or move it under v3.11 if it is this
+  round's measurement.
+```
+
+Three decisions carry it. The round a row sits under travels with the row, from the same pass that
+reads it (`## vX.YY` opens a round; `## Repository` opens a place where a row is under none). Rounds
+are compared as numbers, because `v3.9` is older than `v3.10` and a string comparison says the
+opposite. And a row under **no** round is left to rule 3, which already holds it to the snapshot:
+the claim this rule is about is two *rounds* each saying now, and `docs/progress.md`'s tables
+describe the tree rather than a round.
+
+The repair is never a new number. Dating the row is what stops rule 3 applying to it, and renumbering
+it to the live count would contradict the round's own `new tests` row -- which is the repair v3.137
+chose by hand and this rule now makes mechanical.
+
+### The round's own defects
+
+- **The fixture that the mutation battery asked for was missing.** Two of the nine mutations
+  survived the first battery: a headingless current row refused as though it were under an older
+  round, and any heading read as a round (so `## Repository` would become a round called
+  `Repository`, neither the newest nor a null, and the tree's own index would be refused). Both
+  survived because no case had a headingless current row *beside* a round. One fixture -- `## v3.10`
+  then `## Repository` -- kills both, at one red each. The battery found the hole in the fixtures,
+  which is the division of labour it exists for.
+- **The gate-sites inventory records line numbers.** Adding eighty lines to `check-doc-counts.mjs`
+  moved two of them, and `derive-gate-sites --check` said so before any test could.
+- **This round's first coverage run had to fail, twice.** The new snapshot (6,897) disagrees with
+  v3.137's rows until they are dated, and the repository table is derived from the snapshot. The
+  order -- date the rows, re-derive the table, then measure -- is the same discipline `O-103`
+  produced at v3.137, and it is why the counts step is the *last* thing a round runs.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the spread clause is never printed | 5 |
+| one reading is printed as a range from itself to itself | 1 |
+| equal readings are printed as a range | 1 |
+| the fastest reading is the slowest one | 4 |
+| a tie on the fastest reading goes to the newer run | 1 |
+| a tie on the slowest reading goes to the file order | 1 |
+| the count is never incremented, so every command looks unread | 7 |
+| the range is printed slowest first | 2 |
+| the range names the fastest reading twice | 2 |
+| a command's readings are read from one job only | 5 |
+| the spread is looked up in a history that was never read | 18 |
+
+| the mutation | reds |
+| --- | --- |
+| the rule is never applied | 2 |
+| a row's round is never tracked, so every row sits under none | 2 |
+| rounds are compared as strings, so `v3.9` is newer than `v3.10` | 3 |
+| the newest round is the first one seen rather than the last | 5 |
+| a row under no round heading is refused as though it were under an older one | 1 |
+| any heading opens a round, so `## Repository` is one | 1 |
+| a dated row is refused too, so every row must be the newest | 3 |
+| the rule only fires when the numbers are wrong as well | 2 |
+| the oldest round is taken as the newest, by keeping the last match | 5 |
+
+**Twenty mutations, 71 reds**, measured on the green tree before the round's documents moved. The
+last two rows of the second table are the ones that were **zero** on the first run.
+
+### Readings
+
+> Ledger for `v3.138`.
+
+| what | value |
+| --- | --- |
+| CI | the recording is `45218783516` on `f9144d9`: **8 of 8 jobs success**, 992 s; this round's own run is recorded in the commit that follows the push |
+| `pnpm run docs:check` | **23 steps, exit 0** |
+| `core` test suite | **260 files, 6897 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **264 files, 7084 tests passed** (as of this commit) |
+| new tests | **6,884 -> 6,897, +13**: eight for the spread of a command (the set, the absent command, both ties, the range, the once-only and the equal-series states, the absent history, and the bound the clause belongs to) and five for the round a current row sits under (the older round, the same rows dated, `v3.9` against `v3.10`, the headingless row, and `## Repository` beside a round) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
+| the budget gate's tightest line | `backend / Install a backend this repository did not write at 2.0x ... ; across the history that command runs from 16 s to 888 s` |
+| `docs/acceptance.md` | **46** clauses across **34** rounds; index **46** rows |
+| the census | **4** coincidences, unchanged: the round this rule reads is not a count any gate prints |
+
+### Left open
+
+- **Only the tightest bound prints the series under it.** The sentence names one bound out of
+  thirty-eight, so a reader who wants to know how far apart `pnpm lint`'s readings are -- 221 s to
+  521 s across the history -- has to compute it. The superlative exists because a line per bound is
+  a line nobody reads, and the same argument now hides the dispersion of every bound but one.
+  `[open: whether the summary should print the widest series rather than the widest multiple -- the
+  two are different superlatives, and the one that costs ceiling room is the second -- and whether a
+  gate whose output grows a clause per question should print a second line at all]`
+- **A range over the history mixes the tree's growth with the runner's variance.** `pnpm lint`
+  includes a build, so its readings from 2026-11-06 measured a smaller suite than today's, and only
+  a re-run of one commit would separate the two causes. The history holds no such pair -- every
+  reading is of a different commit -- so the range is honest about the series and silent about which
+  of the two things moved it.
+  `[open: whether a reading of one tree should be recorded as such -- the recorder could re-read a
+  commit it has already measured, and the pair would then be the noise floor the range cannot
+  give -- and whether a duplicated reading is a second day or a second number]`
+- **A dated row's date is not checked against the round it sits under.** `(at v3.200)` under
+  `## v3.138` is impossible -- a round cannot record a measurement from a round that has not
+  happened -- and nothing reads the pair. A probe over the corpus finds **0** such rows today, which
+  is why this is an entry rather than a defect: the rule would be written against a state the tree
+  has never been in.
+  `[open: whether the date and the round are a pair the guard should compare -- the same numbers
+  comparison rule 3b uses, one field over -- or whether a dated row is by definition a claim about
+  another round and only the *marker* is the guard's business]`

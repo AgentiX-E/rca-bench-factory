@@ -607,3 +607,40 @@
   speaking for a different number in the same words. **Eight mutations, 31 reds**, and the two the
   round bought -- sentences reversed, and only the first printed -- are caught by the new case and by
   nothing that existed at v3.136.
+
+- O-109 · ~~**The lint readings are two populations and the bound is sized against the slower one.**~~
+  Six readings -- **307** and **334** s against **501**, **503**, **507** and **521** -- and the
+  18-minute bound is 2.07x the slowest and 3.2x the fastest. Nothing printed the dispersion, so a
+  bound sized at 2.07x of a bimodal reading looked like a bound with 7% of margin and behaved like
+  one with 60%. ~~`[open: whether a reading whose dispersion is two cache states is a reading a bound
+  can be sized from at all, and whether the fix is to print the dispersion beside the multiple -- the
+  gate prints one multiple and no spread -- or to measure the cold and warm paths as two readings
+  with two bounds]`~~
+  **Closed by finding 631**, and the second option is not available: a step carries one
+  `timeout-minutes`, so a bound that fitted only the warm state would refuse the cold day for being
+  slow, which is the failure the multiple exists to prevent. The gate now prints the range beside the
+  multiple, read from the same function that produces the denominator, with the two degenerate series
+  named (`read once`, `every reading is the same`). The entry's premise was also weaker than the
+  tree: the history holds **27** readings of `pnpm lint`, **221 s** to **521 s**, and the widest
+  series behind a bound is the install step's, **16 s** to **888 s** -- which is what `2.0x` was
+  really being printed against. **Eleven mutations, 47 reds.** The residues are `O-113` (only the
+  tightest bound prints its series) and `O-114` (a range over the history mixes the tree with the
+  runner).
+
+- O-111 · ~~**A current-state row is dated only when its number moves.**~~ v3.136's three suite rows
+  were written `(as of this commit)` and were still marked current a round later; what caught them
+  was v3.137 adding a test. A round that edits only documents moves no count, so the older rows stay
+  marked current and a reader comparing two volumes finds two rounds each claiming to be now.
+  ~~`[open: whether the guard should refuse a current-state row outside the newest round -- the round
+  is a heading and the newest one is derivable, but the check would then depend on where a row sits
+  rather than on what it says, and the same sentence would be refused in one volume and allowed in
+  another]`~~
+  **Closed by finding 632**, on the first half, and the second half was the objection rather than a
+  reason not to: *where a row sits* is exactly what a claim about "now" is made of, because a corpus
+  has one newest round and therefore one place where the claim can be true. The guard carries the
+  round with each row from the same pass that reads it, compares rounds as numbers (`v3.9` is older
+  than `v3.10`), refuses a current row under an older round with the repair in its sentence ("(at
+  v3.10)"), and leaves a row under no round to rule 3 -- the tree's own tables describe the tree.
+  **Nine mutations, 24 reds**, two of which survived the first battery until a fixture with a
+  headingless current row beside a round was added. The residue is `O-115` (a dated row's date is
+  never compared with its round), and the question this does *not* answer is `O-110`.
