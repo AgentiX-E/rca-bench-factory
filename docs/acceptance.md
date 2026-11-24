@@ -2338,7 +2338,7 @@ from an anecdote again.
 ### A multiple is printed with the spread of the series it was sized from (v3.138)
 
 - **A bound is twice the slowest reading of its command, so the multiple is a claim about one
-  day.** `2.0x` on its own reads as a bound with 7% of room; the same `2.0x` against a command
+  day.** `2.0x` on its own reads as the tightest bound the rule allows; the same `2.0x` against a command
   whose readings run from **16 s** to **888 s** is a bound sized from a tail, and the tail is what
   the `backend` job's ceiling pays for. The gate prints the slowest reading it divided by, and now
   prints the range beside it (`O-109`, finding 631).
