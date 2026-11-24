@@ -62,6 +62,8 @@ before the layer above it is meaningful.
 | A noun may leave the vocabulary with a sentence saying when it can be silent | v3.140 |
 | A population of middles is printed as its ends, and the class that has none is counted | v3.141 |
 | The history's range carries the floor a second reading of one tree measures | v3.141 |
+| A round's span ends where that round's own count ends | v3.142 |
+| A mark has one reader, whichever way it is spelled | v3.142 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -2545,3 +2547,43 @@ from an anecdote again.
 - **What is not claimed.** That one pair says what the machine does. `151 s` is one afternoon, and
   every bound in the workflow is still sized without it, which is `O-121`. Nor that the recorder
   prevents an attempt older than the recording from being written, which is `O-122`.
+
+### A round's span ends where that round's own count ends (v3.142)
+
+- **A round states its own size twice, and both statements are read.** The three suite rows say what
+  the suite holds; the `new tests` row's span (`6,921 -> 6,946, +25`) says what it held before and
+  after. The second was outside every rule, because it matches none of the count shapes and its label
+  names no scope. It is the only place a round's own count appears twice, which is what makes a date
+  checkable (finding 642).
+- **The population is measured, and so is the disagreement.** **105** `new tests` rows, **74** spans,
+  **67** of them stating a delta -- and all 67 hold, which is the expected result and still worth a
+  reader, since a delta typed by hand is a subtraction somebody did in their head. **71** spans end
+  where the round's own count ends (**70** in `core`, **1** in `repo`), **2** count one file, **31**
+  publish no before-count, and **1** sits under no round.
+- **The word "own" is the rule.** A round's section quotes other rounds' rows as records, so only two
+  spellings count as this round's: `(as of this commit)` under it, and `(at vN)` where N is the round
+  it sits under. A row that says neither is a number quoted from somewhere, and taking it as the
+  round's own would let a copied record decide whether the round's span is true.
+- **A span with a test file named before it is that file's, and it is counted not read.** `(18 -> 30)`
+  beside `site-proofs.test.ts` counts that file; the position is what separates it, because a row
+  describing its delta names test files all the time and those come after the span.
+- **A shape the reader does not know is refused, not passed.** An arrow it cannot read as a span is
+  rule 4's defect one unit over: a row written in an unknown shape is indistinguishable from a row
+  with no count, and the arrow is the evidence that a span was meant.
+- **What is not claimed.** That a span says which suite it is about: 70 of 72 are `core` and one is
+  `repo`, and the corpus states it nowhere, which is `O-123`. Nor that a delta with no before-count
+  can be checked, which is `O-124`; nor that the rule can say which of two contradicting numbers is
+  the record, which is `O-125`.
+
+### A mark has one reader, whichever way it is spelled (v3.142)
+
+- **A date written as code is the same statement rendered.** volume-17 writes ``(at `v3.102`)``
+  fifteen times across five rounds, and a pattern demanding the plain spelling read those rows as
+  undated: rule 3c could not refuse a future date among them, and the round's own count could not be
+  recognised, so five spans had nothing to compare with (finding 644).
+- **One pattern with optional backticks, not a second pattern.** A second pattern is a second reader
+  of one mark, and two readers of one mark is how this round's first defect -- a shape nobody had
+  thought of as a count -- came about.
+- **The measurement says the widening worked.** Spans with no count to compare against fell from
+  **6** to **1**, and the one that remains sits under no round at all; the five that arrived end where
+  their rounds say.

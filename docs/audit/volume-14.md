@@ -1,7 +1,7 @@
 # Audit · volume 14
 
-Findings 579–641, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
-`progress/volume-19.md` as `v3.115` through `v3.141`.
+Findings 579–644, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
+`progress/volume-19.md` as `v3.115` through `v3.142`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -4088,3 +4088,140 @@ as another tree.
 | the summary says which run the numbers came from and not which attempt | 1 |
 
 **Seven mutations, 14 reds**, measured on the green tree with the recording of the pair already in it.
+
+## Finding 642 — a round states its own size twice, and only one of the two statements had a reader
+
+`docs/progress.md` publishes the suite's size in rows shaped `N files, M tests`, and four rules hold
+those rows to a scope, to each other, to the live measurement and to a dated token. A round also
+states its size in the one row that says how much it grew:
+
+```
+| new tests | **6,921 -> 6,946, +25**: fourteen for the two subjects, ... |
+```
+
+That row is a count in a table, in a document whose subject is that a count must be comparable with
+something -- and no rule read it. It matches none of the five `PAIR_SHAPES`, so the row was invisible
+to rules 1 to 3, and rule 4 did not reach it either: rule 4 asks a row that *names a scope* to have its
+count read, and the label `new tests` names none. It was not an exemption anybody wrote; it was a
+shape nobody had thought of as a count.
+
+### The measurement
+
+| the row | rows | read before v3.142 |
+| --- | --- | --- |
+| publishes an absolute span, and a delta | 67 | no |
+| publishes an absolute span, no delta | 7 | no |
+| publishes a delta only (`**9**: four for the rule, five for the reader`) | 31 | no |
+
+So the corpus holds **105** of these rows and **74** spans, and a span is the only place where a
+round's *own* count appears twice: the suite rows say what the round ended at, and the span says what
+it started from and ended at. Two statements about one quantity, in one section, with nothing
+comparing them.
+
+The rule was written over that population rather than over a state the tree had never been in. It
+reads the span in the two shapes the corpus uses, in order, so the delta is captured when it is
+there; it checks the three numbers of a delta against each other (all **67** hold, which is the
+expected result and still worth a reader, because a delta typed by hand is a subtraction somebody did
+in their head); it refuses an arrow it cannot read as a span, because a shape the reader does not know
+is indistinguishable from a row with no span -- rule 4's defect, one unit over; and it compares the
+span's end with the count the round published of itself.
+
+### What "of itself" cost
+
+`docs/progress.md`'s volumes quote rows from other rounds on purpose: v3.141's ledger carries three
+rows dated `(at v3.140)`, which are records of what v3.140 measured. Those are exactly the numbers a
+round's span must **not** be compared with, so the reader takes only the two spellings that claim the
+round: `(as of this commit)` under it, and `(at vN)` where N is the round it sits under. A row that
+says neither is a number quoted from somewhere, and a rule that took the last row under a heading
+would let a copied record decide whether the round's own span is true.
+
+### One file's span, and the word that separates it
+
+Two rows in the corpus read `**12**, all in \`site-proofs.test.ts\` (18 -> 30)`, and `18 -> 30` is that
+file's count. Comparing it with the suite's **6,000** would be a verdict about two populations, so a
+span is taken as one file's when a test file is named **before** it -- positionally, because the rows
+that describe their delta name test files all the time (`two in ci-budget.test.ts`) and those files
+come after the span. The class is counted and printed rather than passed.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the span is compared with the count it started from | 5 |
+| the delta is not checked against the ends | 1 |
+| the delta is only checked when it is the larger number | 1 |
+| a file named after the span counts as its subject | 1 |
+| a span with no before-count is refused rather than counted | 3 |
+| a span under no round is counted as agreeing | 1 |
+| any row under the round counts as the round's own | 1 |
+| the delta is captured and then ignored | 1 |
+| the plain date spelling stops reading | 7 |
+| an arrow that cannot be read is counted as a row with no span | 1 |
+| the split prints a total and no scope | 1 |
+| the span refusal names only the first count the round published | 1 |
+
+**Twelve mutations, 24 reds**, measured on the repaired tree. Five survived the first pass and each
+one was a hole in the fixture rather than in the rule: no case named a test file *after* the span, no
+case put a row with no date and no marker into a round's own section, no case refused a delta it had
+already captured, and the refusal's own message was only ever asserted for the first count it names.
+
+## Finding 643 — five counts name a measurement their round never took, and the date is what stopped rule 3 from asking
+
+The rule above was run against the corpus and refused five spans: v3.54, v3.69, v3.89, v3.117 and
+v3.131. Each of them is a round whose own ledger says the suite grew, and whose own span ends
+somewhere else:
+
+| round | the span | the count beside it | the difference |
+| --- | --- | --- | --- |
+| v3.54 | 6,036 -> **6,061** (+25) | core 5,849, repo 6,036 | the ledger was not retaken |
+| v3.69 | 6,104 -> **6,160** (+56) | core 6,191 | +31 |
+| v3.89 | 6,329 -> **6,338** (+9) | core 6,349 | +11 |
+| v3.117 | 6,684 -> **6,691** (+7) | core 6,700 | +9 |
+| v3.131 | 6,804 -> **6,835** (+31) | core 6,845 | +10 |
+
+Four of the five are one mistake: a number that belongs to a **later** round. `git log -S` on the
+three the reachable history covers says when it arrived -- `docs(v3.95)` wrote 6,349 into v3.89's row,
+`fix(v3.118)` wrote 6,700 into v3.117's, `docs(v3.133)` wrote 6,845 into v3.131's -- and in each case
+the commit is a *later* round's, while the span was written by the round it belongs to. So the
+mechanism is not a typo. It is a repair: a round reads its own ledger, finds a row marked as the
+current state under an old heading, and rule 3b refuses it -- correctly, since "now" is one round. The
+repair rule 3b suggests is to date the row `(at vN)`. Applying it takes a fresh measurement, and the
+number written beside the date is the one just taken. **The date makes rule 3 stop asking, and the
+number that arrives with the date is today's.** That is how a record comes to name a measurement its
+round never took.
+
+v3.54 is the fifth kind, and it is the one that shows why the reader must be able to say which count a
+span is about. Its span ends at 6,061, which is its `repo` count after the round's 25 tests and not
+its `core` count: the ledger's two rows were measured before the round's own tests landed, so core
+reads 5,849 where the round ended at 5,874. All five were repaired to their round's own span -- four
+by reverting the later number to the span's end, and v3.54 by applying its own delta to both rows --
+and the gate now reports the split it found: **70** spans end at the round's `core` count and **1** at
+its `repo` count. Nothing in the corpus says which of the two a span is about, which is the residual
+this rule cannot close.
+
+This is what closes `O-117`: a dated row's date is checked against **what that round measured**, not
+only against the round's existence. It does not close it for every dated row -- a row dated to a round
+that publishes no span, and the 31 rounds whose `new tests` row carries only a delta, are beyond this
+reader's reach -- and both classes are counted rather than assumed.
+
+## Finding 644 — a date written as code was read as no date at all
+
+`docs/progress.md` writes a date as `(at v3.41)`. volume-17 writes it fifteen times as `(at
+\`v3.102\`)` -- the same statement, rendered. The pattern was `/\(at (v\d+\.\d+)(?!\d)\)/`, so those
+fifteen rows, across five rounds, carried **no date as far as any reader was concerned**:
+
+- rule 3c, which refuses a date past the round it sits under, could not see them: `(at \`v3.200\`)`
+  under `## v3.138` would have passed.
+- the round's own count could not be recognised, because a row is the round's own exactly when it is
+  marked current or dated to that round -- so five spans had no count to be compared with, and were
+  counted as unverifiable.
+
+One widening fixes both, and the measurement says so: the count of spans with nothing to compare
+against fell from **6** to **1** (the one that remains sits under no round at all), and the five that
+arrived end where their rounds say. The backticks are optional inside one pattern rather than a second
+pattern, because a second pattern is a second reader of one mark, and two readers of one mark is how
+this round's first defect -- a shape nobody had thought of as a count -- came about.
+
+The two spellings are also why rule 3c was tested with a plain date only: a fixture written the way
+the rule's author writes would have passed either way. The case that closes it now writes the mark as
+code and asserts the refusal.

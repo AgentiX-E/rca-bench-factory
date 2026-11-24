@@ -441,9 +441,9 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 260 core + 4 cli |
-| Test lines | 118,197 core + 3,242 cli |
-| Tests | 6,946 core + 187 cli |
-| Tracked files | 678 |
+| Test lines | 118,327 core + 3,242 cli |
+| Tests | 6,956 core + 187 cli |
+| Tracked files | 679 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.141: **43** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.142: **45** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1022,18 +1022,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   willing to measure" like their neighbours and they are also a quarter of an hour of a suite -- and
   whether a step whose cost is a suite should ever be inside the aggregate whose name says static
   scan]`
-- O-117 · **A dated row's date is checked against its round, and not against what that round
-  measured.**
-  Rule 3c refuses `(at v3.200)` under `## v3.138`, so the two tokens can no longer contradict each
-  other. A date is also a claim that the named round *took these numbers*, and the corpus holds no
-  independent account of what that round measured: **227** of the **228** dated rows that carry a
-  count are that round's own publication, so the round and the quote are one line and the date is
-  unverifiable by construction. What would close it is provenance in the snapshot -- a run id beside
-  each count -- because the recorder already knows the run it measured.
-  `[open: whether the snapshot should record the run behind each count, so a dated row could cite a
-  run rather than a round -- the file is rewritten by every round, so the question is whether it is
-  the right place for a history -- and whether `--check`, which compares three scopes and the
-  additivity relation, could compare provenance without spawning a second suite]`
 - O-119 · **A silence sentence never has to stop being true.**
   `budget(s)` carries the first one: a reason why a round can print none. Nothing asks whether the
   branch that stopped being taken still exists, whether the gate that printed the noun is still in
@@ -1071,6 +1059,37 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: whether the recorder should refuse to write an attempt older than the recording's -- it is a
   legitimate repair when the latest attempt was red -- and whether the recording should hold the newest
   attempt by measurement time or by attempt number]`
+- O-123 · **A span says how large the suite is and not which suite.**
+  A round's `new tests` row states the size before and after, and **70** of the **72** spans about the
+  suite end at its `core` count while one ends at its `repo` count -- v3.54's, whose ledger was
+  measured before its own tests landed. The label says `new tests`, which is true of all three scopes,
+  and the span says nothing at all, so the reader offers every scope and prints which one each span
+  landed in. That is a reader that cannot tell a typo from a different population: a round that meant
+  `repo` and wrote the `core` number is refused, and a round that meant `repo` and wrote the `repo`
+  number is accepted without anyone saying so.
+  `[open: whether a span should name its scope in words, the way a suite row must -- a span that named
+  one would be checkable in one place instead of two, and rule 1 already demands it of every other
+  count in the corpus; and whether that is worth 74 edits to ledgers whose numbers are records]`
+- O-124 · **Thirty-one rounds publish a delta and no before-count, and two spans count one file.**
+  A `new tests` row that says only `**9**: four for the rule` is a number comparable with nothing,
+  which is the defect v3.142 was about -- left in place for a third of the rows, because the older
+  rounds wrote it that way when the suite's size was four rows further up. The two `(18 -> 30)` spans
+  are one test file's counts, and the reader counts them rather than reading them: the file is named
+  before the span, which is what separates them from the rows that name test files after it.
+  `[open: whether a delta should require its before-count -- demanding one would mean reconstructing
+  thirty-one numbers nobody measured, and the round that wrote them had the number in the table above
+  -- and whether a file's own count could be read at all, since it would take counting the cases in
+  that file rather than reading a ledger]`
+- O-125 · **The rule can refuse a contradiction but not say which side is the record.**
+  Five rounds were repaired and the direction came from `git log -S`: for three of them the commit
+  that wrote the number was a later round's. The gate sees two numbers and no history, so a sixth
+  round meeting the same state would have to do the archaeology again -- and a reader who "repairs"
+  the span instead of the count turns the gate green while making the record worse.
+  `[open: whether the corpus should record which commit wrote a ledger row, so a repair has a side to
+  take without git -- the snapshot that holds the counts is rewritten every round, so the question is
+  whether the place for it is a history rather than a snapshot; and whether the refusal could name the
+  round whose count the offending number belongs to, since the number is usually one of the spans the
+  corpus already publishes]`
 
 ## Pass log
 
@@ -1107,7 +1126,8 @@ and this table.
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
-| [volume-19.md](progress/volume-19.md) | 21 | v3.121 | v3.141 |
+| [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
+| [volume-20.md](progress/volume-20.md) | 9 | v3.134 | v3.142 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

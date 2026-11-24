@@ -763,6 +763,27 @@
   `between 20 s and 21 s` and `88x`, 31 printed `at 21 s` and `86x` again -- so all three shapes of
   the clause were printed by the shipped tree, not only by the fixture. The residue is `O-118`:
   thirty-seven bounds still print no typical day.
+- O-117 · ~~**A dated row's date is checked against its round, and not against what that round
+  measured.**~~ Rule 3c refused `(at v3.200)` under `## v3.138`, so the two tokens could not
+  contradict each other -- and beyond that the number beside a date was unverifiable by construction,
+  because 227 of the 228 dated rows that carry a count were that round's own publication. The second
+  witness was in the corpus all along: a round states its own size twice, in its three suite rows and
+  in the span of its `new tests` row (`6,921 -> 6,946, +25`), and no rule read the second. Read, over
+  **74** spans in **105** rows, five of them end nowhere near the count their round published beside
+  them: v3.54, v3.69, v3.89, v3.117 and v3.131. Four are one mistake -- a number that belongs to a
+  **later** round -- and the reachable history says when it arrived (`docs(v3.95)`, `fix(v3.118)`,
+  `docs(v3.133)`, each a later round's commit while the span was written by the round it belongs to).
+  The mechanism is the repair rule 3b asks for: a round finds a current-state row under an old
+  heading, dates it `(at vN)` to stop rule 3 asking, and takes a fresh measurement in the same
+  breath -- so the date makes the rule stop asking and the number that arrives with the date is
+  today's. All five were repaired to the round's own span, and the gate now prints the split it
+  found: **70** spans end at the round's `core` count and **1** at its `repo` count, which is the
+  residual `O-123` carries. **Twelve mutations, 24 reds**, no survivors after five fixture holes
+  became cases; the widening that made five of the spans comparable at all is finding 644's.
+  **Closed by finding 642 and finding 643**, on the question the entry asked and on the mechanism it
+  guessed at: provenance in the snapshot is *not* what closes it, because the recorder that knows the
+  run it measured is not the one that takes the counts -- the counts come from a local `pnpm test`,
+  and the corpus's independent account of what a round measured is its own span.
 - O-118 · ~~**Thirty-seven bounds still print no typical day.**~~ v3.140 gave the middle of the series
   to the tightest bound's command, because that is the multiple a reader is asked to interpret: `2.0x
   of the slowest` beside `86x` the middle. Every other bound was still described by two ends, and
