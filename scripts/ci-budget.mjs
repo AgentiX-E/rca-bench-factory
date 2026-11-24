@@ -1700,6 +1700,13 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   let ceilings = 0;
   const excused = [];
   let tightest = { name: '', ratio: Infinity, worst: null, command: null };
+  // The other end of the same axis (`O-113`). `tightest` is the bound closest to the worst day its
+  // command has had; this is the bound furthest above the best day, which is where the room `R13`
+  // adds up actually goes. The measure is **seconds of headroom** and not a multiple, because a
+  // command read at 0 s -- four of this workflow's are -- makes `bound / fastest` infinite, and a
+  // summary that printed `Infinity` is finding 121 in a new place. Seconds subtract, so the
+  // number exists for every pair.
+  let loosest = { name: '', headroom: -1, bound: 0, best: null, run: null };
   const widened = [];
   // A narrowing is a number a reader has to see, for the reason the widening list exists: it
   // is a claim about a day, and the claim is `R6`'s -- twice the slowest day this repository
@@ -1775,11 +1782,29 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
         // to ask, because that is the number `R10` refuses against -- a summary computed
         // from the recording alone would report a ratio the gate does not use.
         const command = commandOf(step);
-        const slowest = historyKnown ? worstReadingFor(parsedReadings.rows, command) : null;
+        // One reader for both ends: `readingsOfCommand` answers the fastest and the slowest of
+        // the same set, so the denominator below and the headroom beside it cannot disagree about
+        // which readings belong to this command.
+        const found = historyKnown ? readingsOfCommand(parsedReadings.rows, command) : null;
+        const slowest = found === null ? null : found.slowest;
         const denominator = slowest === null ? seconds : Math.max(seconds, slowest.seconds);
         const ratio = denominator === 0 ? Infinity : (step.minutes * 60) / denominator;
         if (ratio < tightest.ratio) {
           tightest = { name: `${job.id} / ${step.name}`, ratio, worst: slowest, command };
+        }
+        // The best day this command has had, out of the two instruments `R10` already trusts: the
+        // recording is one day and the history is the rest, so the *best* is the smaller of the
+        // two -- the same combination, in the direction this question asks. The history wins a tie
+        // because it names a job and a step a reader can go and look at.
+        if (found !== null) {
+          const fast =
+            found.fastest.seconds <= seconds
+              ? { seconds: found.fastest.seconds, run: found.fastest.run }
+              : { seconds, run: baseline.run };
+          const headroom = step.minutes * 60 - fast.seconds;
+          if (headroom > loosest.headroom) {
+            loosest = { name: `${job.id} / ${step.name}`, headroom, bound: step.minutes * 60, best: fast.seconds, run: fast.run };
+          }
         }
       }
     }
@@ -1876,6 +1901,24 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
           : ` of the slowest reading of its command (${String(tightest.worst.seconds)} s in ` +
             `\`${tightest.worst.job} / ${tightest.worst.step}\`, run ${String(tightest.worst.run)})`) +
         spreadText();
+  // The other end of the axis, and the reason it is a clause rather than a second summary
+  // (`O-113`). The spread above says how far the command the tightest bound divides by has moved;
+  // it does not say where the ceiling's room went. A bound is sized from the *worst* day, so on
+  // the best day it is pure headroom -- and one bound out of thirty-eight printed its distribution
+  // while the other end, the number `R13` adds up, appeared nowhere.
+  //
+  // When one bound holds both ends the sentence says so rather than printing one name twice. That
+  // is the shipped tree's own shape: the install step has been read at 16 s and at 888 s, so its
+  // 30-minute bound is tight against the slow day and generous against the fast one, and a reader
+  // who saw the same step named twice would think two steps were being compared.
+  const headroomClause =
+    loosest.best === null
+      ? ''
+      : `; the widest headroom over a day a command has spent is ` +
+        (loosest.name === tightest.name ? 'the same bound, ' : `${loosest.name}, `) +
+        `${String(loosest.headroom)} s of its ${String(loosest.bound)} s above the ` +
+        `${String(loosest.best)} s ${loosest.name === tightest.name ? 'that' : 'its'} command spent at ` +
+        `its fastest (run ${String(loosest.run)})`;
   // The ceiling's reading, printed beside the tightest *step* bound and never folded into it
   // (finding 604). Before this clause the summary published a workflow-wide `bounds total` next
   // to a workflow-wide `measured`, and the one comparison that decides whether a bound can fire
@@ -1922,7 +1965,7 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
     `${String(Math.round(measured / 60))} min measured (as of run ` +
     `${String(baseline.run)}); bounds total ${String(Math.round(bounds / 60))} min in ` +
     `${String(ceilings)} ceiling(s); ${ceilingText}; tightest ` +
-    `${tightestText}; ` +
+    `${tightestText}${headroomClause}; ` +
     `${excusedText}; ${declaredText}; ${jobsText}; ${widenedText}; ${narrowedText}; ${readingsText}; ` +
     `${ledgerText(ledger, baseline)}`
   );

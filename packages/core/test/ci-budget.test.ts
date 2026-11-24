@@ -2736,3 +2736,134 @@ describe('the spread of one command, and the multiple that does not say it', () 
     expect(summary).not.toContain('runs from 10 s to 900 s');
   });
 });
+
+/**
+ * The other end of the axis a bound is measured against (`O-113`).
+ *
+ * v3.138 gave the *tightest* bound its series: `2.0x` against a command read between 16 s and
+ * 888 s is a bound sized from the slow state, and the same `2.0x` against a command read between
+ * 880 s and 888 s is a bound with 7% of room. That closed one end. The other end is the bound
+ * that stands furthest above the best day its command has ever had, which is where the ceiling's
+ * room actually goes -- and the gate printed one end out of thirty-eight and called it the axis.
+ *
+ * The measure is **seconds of headroom** rather than a multiple, and the choice is the point: a
+ * command read at 0 s makes `bound / fastest` infinite, and a summary that printed `Infinity` is
+ * finding 121 wearing a new number. Seconds subtract, so the number exists for every pair.
+ */
+describe('the bound furthest above a day its command has spent', () => {
+  function day(run: number, jobs: Record<string, Record<string, { seconds: number; command: string }>>) {
+    return { run, commit: String(run).padStart(40, '0'), measured: '2026-11-23', jobs };
+  }
+
+  function historyOf(...days: ReturnType<typeof day>[]) {
+    return { readings: days };
+  }
+
+  it('names the bound with the most headroom, which is not the tightest one', () => {
+    // Two bounds, and they hold opposite ends: `Tight` is the tightest against its worst day
+    // (240 s over 119 s) and `Loose` stands 500 s above the best day its own command has had.
+    // A summary that printed only the first would leave a reader to compute the second, which is
+    // the whole of `O-113`.
+    const workflow = oneJob([...step('Tight', 4, 'tight-command'), ...step('Loose', 10, 'loose-command')]);
+    const recording = recordingOf({ batteries: { steps: { Tight: 119, Loose: 290 } } });
+    const summary = budgetSummary(
+      workflow,
+      recording,
+      null,
+      null,
+      historyOf(
+        day(1, {
+          batteries: {
+            Tight: { seconds: 115, command: 'tight-command' },
+            Loose: { seconds: 100, command: 'loose-command' },
+          },
+        }),
+        day(2, {
+          batteries: {
+            Tight: { seconds: 119, command: 'tight-command' },
+            Loose: { seconds: 290, command: 'loose-command' },
+          },
+        }),
+      ),
+    );
+    expect(summary).toContain('tightest batteries / Tight at 2.0x');
+    expect(summary).toContain(
+      'the widest headroom over a day a command has spent is batteries / Loose, ' +
+        '500 s of its 600 s above the 100 s its command spent at its fastest (run 1)',
+    );
+  });
+
+  it('says so when one bound holds both ends, rather than printing the same name twice', () => {
+    // The shipped tree's own shape: the install step's command has been read at 16 s and at
+    // 888 s, so its 30-minute bound is the tightest against the slow day *and* the one with the
+    // most headroom over the fast one. Two clauses naming one step read as two steps.
+    const workflow = oneJob([...step('Install', 30, 'pip install x')]);
+    const recording = recordingOf({ batteries: { steps: { Install: 888 } } });
+    const summary = budgetSummary(
+      workflow,
+      recording,
+      null,
+      null,
+      historyOf(
+        day(1, { batteries: { Install: { seconds: 16, command: 'pip install x' } } }),
+        day(2, { batteries: { Install: { seconds: 888, command: 'pip install x' } } }),
+      ),
+    );
+    expect(summary).toContain('tightest batteries / Install at 2.0x');
+    expect(summary).toContain(
+      'the widest headroom over a day a command has spent is the same bound, 1784 s of its 1800 s ' +
+        'above the 16 s that command spent at its fastest (run 1)',
+    );
+  });
+
+  it('takes the better of the recording and the history, because both are days the command had', () => {
+    // The recording is one day and the history is the rest, so the *best* day is the smaller of
+    // the two -- the same combination `R10` makes in the other direction, where the denominator is
+    // the larger. A clause that read only the history would report headroom against a day the
+    // recording had already beaten.
+    const workflow = oneJob([...step('Battery', 2, 'node battery.mjs')]);
+    const recording = recordingOf({ batteries: { steps: { Battery: 5 } } });
+    const summary = budgetSummary(
+      workflow,
+      recording,
+      null,
+      null,
+      historyOf(
+        day(1, { batteries: { Battery: { seconds: 40, command: 'node battery.mjs' } } }),
+        day(2, { batteries: { Battery: { seconds: 50, command: 'node battery.mjs' } } }),
+      ),
+    );
+    expect(summary).toContain('115 s of its 120 s above the 5 s');
+    expect(summary).toContain('run 41637098008');
+  });
+
+  it('prints no headroom at all when there is no history to take a fast day from', () => {
+    // One number is not a spread. The recording alone says what the command cost once, and a
+    // headroom clause derived from it would be a bound compared with itself.
+    const workflow = oneJob([...step('Slow battery', 12)]);
+    const summary = budgetSummary(workflow, recordingOf({ batteries: { steps: { 'Slow battery': 351 } } }));
+    expect(summary).toContain('tightest batteries / Slow battery at 2.1x');
+    expect(summary).not.toContain('headroom');
+  });
+
+  it('subtracts rather than divides, so a command read at zero seconds has a headroom', () => {
+    // `bound / 0` is not a number a summary can print, and the shape it prints instead --
+    // `Infinity` -- is the one finding 121 is about. Four of the shipped tree's 38 bounds bound a
+    // command whose fastest reading is 0 s, so the measure has to be a difference rather than a
+    // ratio.
+    const workflow = oneJob([...step('Counts', 1, 'node counts.mjs')]);
+    const recording = recordingOf({ batteries: { steps: { Counts: 0 } } });
+    const summary = budgetSummary(
+      workflow,
+      recording,
+      null,
+      null,
+      historyOf(
+        day(1, { batteries: { Counts: { seconds: 0, command: 'node counts.mjs' } } }),
+        day(2, { batteries: { Counts: { seconds: 3, command: 'node counts.mjs' } } }),
+      ),
+    );
+    expect(summary).toContain('60 s of its 60 s above the 0 s');
+    expect(summary).not.toContain('Infinity');
+  });
+});
