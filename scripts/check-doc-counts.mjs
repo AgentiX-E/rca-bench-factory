@@ -129,6 +129,43 @@ function corpusFiles() {
 // this is where they have to be spelled out rather than implied.
 const namedScopes = SCOPES.map((scope) => `${scope} = ${SCOPE_NOTES[scope]}`).join(', ');
 
+/**
+ * The heading that opens a round, and the token it names.
+ *
+ * `docs/progress/volume-NN.md` opens one `## ` section per round, and `docs/progress.md`
+ * opens sections that name no round at all (`## Repository`, `## Open`). So the pattern is
+ * the whole rule for "is this row under a round": a heading that carries a `vX.YY` token
+ * opens a round, and any other heading opens a place where a row is under none.
+ */
+const ROUND_HEADING = /^## (v\d+\.\d+)(?!\d)/;
+
+/** The numbers in a round token, or null when the token is not one. */
+function roundNumbers(token) {
+  const m = /^v(\d+)\.(\d+)$/.exec(token ?? '');
+  return m === null ? null : [Number(m[1]), Number(m[2])];
+}
+
+/**
+ * The newest round that publishes a count, or null when the corpus names none.
+ *
+ * Null is the state a single-file fixture is in and the state `--doc` is driven in: a document
+ * with no round heading has no newest one, and rule 3b then has nothing to say rather than a
+ * verdict to give. The numbers are compared as numbers because `v3.9` is older than `v3.10`
+ * and the corpus spans two major series (`v2.12` and `v3.137`).
+ */
+function newestRound(rows) {
+  let best = null;
+  for (const row of rows) {
+    const mine = roundNumbers(row.round);
+    if (mine === null) continue;
+    const theirs = roundNumbers(best);
+    if (theirs === null || mine[0] > theirs[0] || (mine[0] === theirs[0] && mine[1] > theirs[1])) {
+      best = row.round;
+    }
+  }
+  return best;
+}
+
 // A row is taken as claiming the state at *this commit* only when it says so in
 // as many words. Everything else is a dated record of the pass that took it, and
 // those are supposed to differ from today -- a record that tracked the live count
@@ -417,10 +454,23 @@ function phraseShape(row, start, end) {
  * is returned whether or not a shape matched, as long as a shape matched *or* it
  * names a scope and carries a count-bearing phrase -- the second case is what
  * rule 4 refuses, and a reader that returned only its matches could not see it.
+ *
+ * The round a row sits under travels with it (`O-111`). It is a second index into the same
+ * line rather than a second reading of it: a `## ` heading opens a round, every row after it
+ * belongs to that round until the next heading, and a heading that names no round
+ * (`## Headline`, `## Open`) opens a section in which a row is under no round at all. The
+ * distinction is what rule 3b needs and what a line number cannot say: a claim about *now*
+ * is a claim about one round, and which one is a property of where the claim sits.
  */
 function readCounts(text, where = 'docs/progress.md') {
   const out = [];
+  let round = null;
   text.split('\n').forEach((line, i) => {
+    if (line.startsWith('## ')) {
+      ROUND_HEADING.lastIndex = 0;
+      round = ROUND_HEADING.exec(line)?.[1] ?? null;
+      return;
+    }
     if (!isTableRow(line)) return;
     const label = line.split('|')[1] ?? '';
     const scope = scopeOf(label);
@@ -454,6 +504,7 @@ function readCounts(text, where = 'docs/progress.md') {
     out.push({
       where,
       line: i + 1,
+      round,
       text: line,
       label,
       scope,
@@ -636,8 +687,36 @@ function main() {
     }
   }
 
-  // 4. A row that names a scope must have its count read, or the phrase must be
-  //    excused in writing. Without this, the three rules above apply to exactly
+  // 3b. A row marked as the current state sits under the newest round (`O-111`).
+  //
+  //     `current` is a claim about *this* tree, and a corpus has exactly one round that is the
+  //     newest -- so there is one place in it where the claim can be true. v3.136's three suite
+  //     rows were written `(as of this commit)` and were still marked current a round later; what
+  //     caught them was v3.137 adding a test, which is an event rather than a rule, and a round
+  //     that only edits documents moves no count, so the older rows would have stayed marked
+  //     current for as long as nothing was measured. Two rounds each claiming to be now is a
+  //     contradiction inside the documents, and this is the reader that can see it.
+  //
+  //     The repair is always available and it is never a new number: date the row `(at v3.136)`,
+  //     which is what rule 3 then stops applying to, because a dated record is supposed to
+  //     differ from today. A row under *no* round heading is left alone: `docs/progress.md`'s
+  //     tables describe the tree rather than a round, rule 3 already holds them to the
+  //     measurement, and the claim this rule is about is two **rounds** each saying "now".
+  const newest = newestRound(rows);
+  if (newest !== null) {
+    for (const row of read) {
+      if (!isCurrent(row)) continue;
+      if (row.round === null || row.round === newest) continue;
+      problems.push(
+        `${at(row)}: a row marked as the current state sits under ${row.round}, and the newest ` +
+          `round that publishes a count is ${newest}. "Now" is one round: date this row ` +
+          `("(at ${row.round})") so a reader can tell a record from the state of the tree, or ` +
+          `move it under ${newest} if it is this round's measurement.`,
+      );
+    }
+  }
+
+
   //    the rows the reader happened to match, and the row that publishes the
   //    workspace's count under the label `core` is checked by nothing.
   let excused = 0;

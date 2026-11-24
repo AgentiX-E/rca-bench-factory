@@ -674,3 +674,78 @@ describe('check-doc-counts -- the gate-site counts it holds to the inventory', (
     expect(r.out).toContain('0 gate-site claim(s) agreeing with');
   });
 });
+
+describe('check-doc-counts -- which round a claim about now sits under', () => {
+  /**
+   * One round's suite row, in the shape the guard reads, with the marker the case is about.
+   *
+   * The numbers come from the committed measurement rather than from a literal, because rule 3
+   * holds a current-state row to *that* number: a fixture with its own count would be refused
+   * for the count and the case would pass for the wrong reason.
+   */
+  const counted = JSON.parse(MEASURED) as { core: { files: number; tests: number } };
+  const coreRow = (marker: string) =>
+    `| \`core\` test suite | **${String(counted.core.files)} files, ${String(counted.core.tests)} tests passed** ${marker} |\n`;
+
+  it('refuses a current-state row under an older round, because "now" is one round', () => {
+    // v3.136's three rows were written `(as of this commit)` and were still marked current a
+    // round later; what caught them was the next round adding a test, which is an event rather
+    // than a rule (`O-111`). Two rounds each saying "now" is a contradiction inside the
+    // documents, and no measurement is needed to see it.
+    const r = run(
+      `${HEADER}## v3.10 — the older round\n\n${coreRow('(as of this commit)')}` +
+        `\n## v3.11 — the newer round\n\n${coreRow('(as of this commit)')}`,
+    );
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('a row marked as the current state sits under v3.10');
+    expect(r.out).toContain('the newest round that publishes a count is v3.11');
+    // The repair is a date, and the refusal names it: a round that moves the tree owes the older
+    // row a date rather than a new number.
+    expect(r.out).toContain('"(at v3.10)"');
+  });
+
+  it('accepts the same two rows when the older one is dated', () => {
+    // The other half of the same tree: the numbers are identical, and the only difference is
+    // that one of them says which round measured it. A rule that refused this would be refusing
+    // the record, which is what the corpus is.
+    const r = run(
+      `${HEADER}## v3.10 — the older round\n\n${coreRow('(at v3.10)')}` +
+        `\n## v3.11 — the newer round\n\n${coreRow('(as of this commit)')}`,
+    );
+    expect(r.code, r.out).toBe(0);
+  });
+
+  it('compares rounds as numbers, so v3.9 is older than v3.10', () => {
+    // A string comparison would make `v3.9` the newer of the two and refuse the row that is
+    // actually current. The corpus spans two major series, so the comparison is a pair.
+    const r = run(
+      `${HEADER}## v3.9 — nine\n\n${coreRow('(as of this commit)')}` +
+        `\n## v3.10 — ten\n\n${coreRow('(at v3.10)')}`,
+    );
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('sits under v3.9');
+    expect(r.out).toContain('is v3.10');
+  });
+
+  it('leaves a row under no round heading to the rule that holds it to the measurement', () => {
+    // `docs/progress.md`'s tables describe the tree rather than a round, and rule 3 already holds
+    // them to the measurement. The claim this rule is about is two *rounds* each saying "now", so
+    // a document whose only current row sits outside every round has nothing here to be refused
+    // for -- and the case would be a false refusal on the index file the moment it appeared.
+    const r = run(`${HEADER}${coreRow('(as of this commit)')}`);
+    expect(r.code, r.out).toBe(0);
+  });
+
+  it('does not read `## Repository` as a round, in a document that has rounds as well', () => {
+    // The shape that separates "a row under no round" from "a row under a round whose name is
+    // not one": the index file's own sections sit beside the volumes' rounds in the corpus, and a
+    // heading that names no round must leave its rows unattributed rather than give them a round
+    // called `Repository` -- which would then be neither the newest round nor a null, and rule 3b
+    // would refuse the tree's own current table.
+    const r = run(
+      `${HEADER}## v3.10 — a round\n\n${coreRow('(at v3.10)')}` +
+        `\n## Repository\n\n${coreRow('(as of this commit)')}`,
+    );
+    expect(r.code, r.out).toBe(0);
+  });
+});
