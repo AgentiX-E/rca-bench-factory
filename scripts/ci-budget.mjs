@@ -739,14 +739,47 @@ export function mergeReading(file, entry) {
 }
 
 /**
- * Every reading of one command, with the two that bound them: the fastest and the slowest.
+ * The middle of a series, as the two readings it lies between -- and the same reading twice when the
+ * series has an odd length.
+ *
+ * `O-116` is why this exists: the axis a bound is measured against was printed at its two ends only,
+ * so the number a capacity question is actually about -- what the command costs on the day it is
+ * usually having -- was nowhere in the summary. For the step that carries this workflow's tightest
+ * bound the ends are **16 s** and **888 s** and the middle is **21 s**, so the bound is `2.0x` the
+ * worst day and `86x` the middle one; a reader given only the ends can compute neither.
+ *
+ * Two readings rather than a mean, because an even-length series has no reading in the middle and
+ * averaging is a number no run ever spent. The caller prints the interval, and the multiple beside it
+ * divides by the midpoint -- which is the median, stated as the interval it was read from rather than
+ * as a figure the recorder invented. `null` for nothing, so a caller cannot print `NaN` for an empty
+ * series: the four commands this workflow reads at 0 s are the same shape one level down, and
+ * finding 121 is about printing a number that is not one.
+ */
+export function middleOf(values) {
+  if (!Array.isArray(values) || values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const half = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? { low: sorted[half], high: sorted[half] }
+    : { low: sorted[half - 1], high: sorted[half] };
+}
+
+/**
+ * Every reading of one command, with the two that bound them and the one in the middle.
  *
  * `R10` needs the slowest -- a bound is at least twice it -- and a reader of a green run needs
- * both, because a multiple is only interpretable against the distribution it was taken from
+ * both ends, because a multiple is only interpretable against the distribution it was taken from
  * (`O-109`). A command whose readings run from **16 s** to **888 s** has been read in two
  * states, and `2.0x of 888 s` is then a statement about the slow state rather than about the
  * command's cost: without the fastest beside it, the same sentence reads as "7% of margin" on a
  * step that spends 20 s on a normal day. The history is the only place that spread exists.
+ *
+ * The middle is the third reading and not a third superlative (`O-116`). The two ends answer "how
+ * far can this go"; the middle answers "what does it usually cost", and no arithmetic on the ends
+ * recovers it -- a series of 28 readings at 21 s and one at 888 s has the same ends as one that
+ * climbs steadily from 16 s to 888 s. It travels with the ends rather than in a second walk because a
+ * second account of which readings belong to a command is how two numbers about one set come to
+ * disagree, which is the defect this function exists to prevent.
  *
  * One function rather than two loops, because a second account of "which readings belong to
  * this command" is how `R10` and its summary would come to disagree about the denominator --
@@ -761,10 +794,12 @@ export function readingsOfCommand(rows, command) {
   let fastest = null;
   let slowest = null;
   let count = 0;
+  const spent = [];
   for (const row of rows) {
     for (const one of row.steps.values()) {
       if (one.command !== command) continue;
       count += 1;
+      spent.push(one.seconds);
       const reading = { seconds: one.seconds, run: row.run, job: one.job, step: one.step };
       if (
         fastest === null ||
@@ -782,7 +817,7 @@ export function readingsOfCommand(rows, command) {
       }
     }
   }
-  return count === 0 ? null : { fastest, slowest, count };
+  return count === 0 ? null : { fastest, slowest, count, middle: middleOf(spent) };
 }
 
 /**
@@ -1699,7 +1734,7 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   let jobCount = 0;
   let ceilings = 0;
   const excused = [];
-  let tightest = { name: '', ratio: Infinity, worst: null, command: null };
+  let tightest = { name: '', ratio: Infinity, worst: null, command: null, boundSeconds: 0 };
   // The other end of the same axis (`O-113`). `tightest` is the bound closest to the worst day its
   // command has had; this is the bound furthest above the best day, which is where the room `R13`
   // adds up actually goes. The measure is **seconds of headroom** and not a multiple, because a
@@ -1790,7 +1825,13 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
         const denominator = slowest === null ? seconds : Math.max(seconds, slowest.seconds);
         const ratio = denominator === 0 ? Infinity : (step.minutes * 60) / denominator;
         if (ratio < tightest.ratio) {
-          tightest = { name: `${job.id} / ${step.name}`, ratio, worst: slowest, command };
+          tightest = {
+            name: `${job.id} / ${step.name}`,
+            ratio,
+            worst: slowest,
+            command,
+            boundSeconds: step.minutes * 60,
+          };
         }
         // The best day this command has had, out of the two instruments `R10` already trusts: the
         // recording is one day and the history is the rest, so the *best* is the smaller of the
@@ -1878,6 +1919,34 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   // slow state; the same `2.0x` against a command read between 880 s and 888 s is a bound with
   // 7% of room. The two sentences are identical without the clause, which is the defect: the
   // history holds the spread and no line printed it.
+  // The middle of the same series (`O-116`). The two ends bound the axis; a reader asking what the
+  // step costs on the day it usually has was given neither end's neighbour, and no arithmetic on the
+  // ends recovers it -- 28 readings at 21 s and one at 888 s has the same ends as a series that climbs
+  // steadily from 16 s. So the middle is printed beside them, with the multiple it implies, because
+  // `2.0x of the slowest` and `86x the middle` are two halves of one fact and the summary printed
+  // only the first.
+  //
+  // `between` rather than a mean: an even-length series has no reading in the middle, and printing
+  // `20.5 s` would be a number no run spent. The multiple divides by the midpoint -- which is the
+  // median by definition -- and the sentence names the two readings it came from, so a reader can
+  // check the division against the history.
+  const middleClause = (found) => {
+    const middle = found.middle;
+    if (middle === null) return '';
+    const at =
+      middle.low === middle.high
+        ? `at ${String(middle.low)} s`
+        : `between ${String(middle.low)} s and ${String(middle.high)} s`;
+    const midpoint = (middle.low + middle.high) / 2;
+    // A middle of 0 s is a command that spends no second, and four of this workflow's are read at
+    // 0 s: `bound / 0` is the `Infinity` finding 121 refuses, so the sentence says there is no
+    // multiple rather than printing one.
+    const against =
+      midpoint === 0
+        ? ' -- a bound over a middle of 0 s has no multiple'
+        : ` -- against which the bound is ${(tightest.boundSeconds / midpoint).toFixed(0)}x`;
+    return `, with the middle of its ${String(found.count)} readings ${at}${against}`;
+  };
   const spreadText = () => {
     if (!historyKnown || tightest.command === null) return '';
     const found = readingsOfCommand(parsedReadings.rows, tightest.command);
@@ -1889,7 +1958,7 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
     if (found.fastest.seconds === found.slowest.seconds) return '; every reading of that command is the same';
     return (
       `; across the history that command runs from ${String(found.fastest.seconds)} s to ` +
-      `${String(found.slowest.seconds)} s`
+      `${String(found.slowest.seconds)} s${middleClause(found)}`
     );
   };
   const tightestText =

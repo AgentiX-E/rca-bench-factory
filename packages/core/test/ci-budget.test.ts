@@ -19,6 +19,7 @@ import {
   jobDays,
   jobsOf,
   ledgerErrors,
+  middleOf,
   prefixOf,
   readDeclarations,
   readReadings,
@@ -2621,7 +2622,21 @@ describe('the spread of one command, and the multiple that does not say it', () 
       fastest: { seconds: 16, run: 1, job: 'backend', step: 'Install' },
       slowest: { seconds: 888, run: 3, job: 'backend', step: 'Install' },
       count: 4,
+      // Four readings have no middle one: the axis is the two numbers the interval is between,
+      // and averaging them would be a number no run spent (`O-116`).
+      middle: { low: 40, high: 556 },
     });
+  });
+
+  it('answers with the middle of the series, as the reading it lies on or the two it lies between', () => {
+    // The three shapes a caller has to print differently. An odd series has a reading in the
+    // middle; an even one has two, and both are printed because neither is the answer; nothing
+    // at all is `null` rather than a zero, so a caller cannot print a multiple of a series it
+    // never read.
+    expect(middleOf([])).toBeNull();
+    expect(middleOf(undefined as unknown as number[])).toBeNull();
+    expect(middleOf([888, 16, 21])).toEqual({ low: 21, high: 21 });
+    expect(middleOf([888, 16, 22, 20])).toEqual({ low: 20, high: 22 });
   });
 
   it('says nothing about a command no reading ran, rather than answering with a zero', () => {
@@ -2685,6 +2700,9 @@ describe('the spread of one command, and the multiple that does not say it', () 
     );
     expect(summary).toContain('; that command has been read once');
     expect(summary).not.toContain('across the history');
+    // And no middle either: one reading has no middle to be the middle of, and a sentence naming
+    // it would be the spread this branch exists to say is unavailable.
+    expect(summary).not.toContain('the middle of its');
   });
 
   it('says every reading is the same, rather than a range from a number to itself', () => {
@@ -2702,6 +2720,9 @@ describe('the spread of one command, and the multiple that does not say it', () 
     );
     expect(summary).toContain('; every reading of that command is the same');
     expect(summary).not.toContain('888 s to 888 s');
+    // The middle is the same number as both ends here, so there is nothing for it to add: a line
+    // that printed it beside `the same` would be one fact written twice.
+    expect(summary).not.toContain('the middle of its');
   });
 
   it('prints no spread at all when there is no history to take one from', () => {
@@ -2734,6 +2755,101 @@ describe('the spread of one command, and the multiple that does not say it', () 
     expect(summary).toContain('tightest batteries / Quick at 2.4x');
     expect(summary).toContain('across the history that command runs from 40 s to 50 s');
     expect(summary).not.toContain('runs from 10 s to 900 s');
+  });
+
+  /**
+   * The third reading on the axis (`O-116`).
+   *
+   * Two ends say how far a command can go and nothing about the day it usually has, and no
+   * arithmetic on the ends recovers that: 28 readings at 21 s and one at 888 s has the same ends as
+   * a series climbing steadily from 16 s. The step this workflow's tightest bound belongs to is read
+   * between **16 s** and **888 s** with a middle of **21 s**, so the bound is `2.0x` the worst day
+   * and `86x` the middle one -- and a summary that printed only the first read as a bound with no
+   * room at all.
+   */
+  it('prints the middle of the axis, so the multiple has a typical day to be a multiple of', () => {
+    // The install step's real shape: fourteen readings at 16 s, fourteen at 21 s, one at 888 s.
+    // The middle of the 29 is 21 s, and 1800 s over it is 86x -- the number the finding named and
+    // no line printed.
+    const spent = [
+      ...Array.from({ length: 14 }, () => 16),
+      ...Array.from({ length: 14 }, () => 21),
+      888,
+    ];
+    const days = spent.map((seconds, at) =>
+      day(100 + at, { batteries: { Install: { seconds, command: 'pip install x' } } }),
+    );
+    const workflow = oneJob([...step('Install', 30, 'pip install x')]);
+    const recording = recordingOf({ batteries: { steps: { Install: 888 } } });
+    const summary = budgetSummary(workflow, recording, null, null, historyOf(...days));
+    expect(summary).toContain('across the history that command runs from 16 s to 888 s');
+    expect(summary).toContain('with the middle of its 29 readings at 21 s');
+    expect(summary).toContain('against which the bound is 86x');
+  });
+
+  it('prints the middle of an even series as the interval, and divides by its midpoint', () => {
+    // Four readings have no middle one, and printing `21 s` would be a number no run spent. The
+    // interval is what the file holds; the multiple divides by its midpoint, which is the median.
+    const workflow = oneJob([...step('Install', 30, 'pip install x')]);
+    const recording = recordingOf({ batteries: { steps: { Install: 888 } } });
+    const summary = budgetSummary(
+      workflow,
+      recording,
+      null,
+      null,
+      historyOf(
+        day(1, { batteries: { Install: { seconds: 16, command: 'pip install x' } } }),
+        day(2, { batteries: { Install: { seconds: 20, command: 'pip install x' } } }),
+        day(3, { batteries: { Install: { seconds: 22, command: 'pip install x' } } }),
+        day(4, { batteries: { Install: { seconds: 888, command: 'pip install x' } } }),
+      ),
+    );
+    expect(summary).toContain('with the middle of its 4 readings between 20 s and 22 s');
+    expect(summary).toContain('against which the bound is 86x');
+  });
+
+  it('says the middle is a reading when the two middle ones are the same number', () => {
+    // `between 20 s and 20 s` is a range from a number to itself, which is the shape the
+    // every-reading-is-the-same branch refuses one level up. An even series can have equal middle
+    // readings and still have ends that differ, so the branch is reachable and is written out.
+    const workflow = oneJob([...step('Install', 10, 'pip install x')]);
+    const recording = recordingOf({ batteries: { steps: { Install: 30 } } });
+    const summary = budgetSummary(
+      workflow,
+      recording,
+      null,
+      null,
+      historyOf(
+        day(1, { batteries: { Install: { seconds: 10, command: 'pip install x' } } }),
+        day(2, { batteries: { Install: { seconds: 20, command: 'pip install x' } } }),
+        day(3, { batteries: { Install: { seconds: 20, command: 'pip install x' } } }),
+        day(4, { batteries: { Install: { seconds: 30, command: 'pip install x' } } }),
+      ),
+    );
+    expect(summary).toContain('with the middle of its 4 readings at 20 s');
+    expect(summary).toContain('against which the bound is 30x');
+  });
+
+  it('prints no multiple over a middle of 0 s, because dividing by it is not a number', () => {
+    // Four of this workflow's commands are read at 0 s, and `bound / 0` is the `Infinity` finding
+    // 121 refuses. The middle is still printed -- the reader is owed the typical reading -- and the
+    // sentence says why no multiple follows it.
+    const workflow = oneJob([...step('Counts', 5, 'read counts')]);
+    const recording = recordingOf({ batteries: { steps: { Counts: 100 } } });
+    const summary = budgetSummary(
+      workflow,
+      recording,
+      null,
+      null,
+      historyOf(
+        day(1, { batteries: { Counts: { seconds: 0, command: 'read counts' } } }),
+        day(2, { batteries: { Counts: { seconds: 0, command: 'read counts' } } }),
+        day(3, { batteries: { Counts: { seconds: 100, command: 'read counts' } } }),
+      ),
+    );
+    expect(summary).toContain('with the middle of its 3 readings at 0 s');
+    expect(summary).toContain('a bound over a middle of 0 s has no multiple');
+    expect(summary).not.toContain('against which the bound is');
   });
 });
 
