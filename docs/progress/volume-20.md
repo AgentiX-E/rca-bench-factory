@@ -1705,9 +1705,9 @@ have been refused with a coordinate that sends its reader to the wrong attempt.
 | --- | --- |
 | CI | run `45393534319` on `9c260c1f7`: **8 of 8 jobs success**, 1,003 s, the run that published v3.142 and the thirty-fifth reading. No second attempt, so the history's only pair is still run `45351350110`'s |
 | `pnpm run docs:check` | **23 steps, exit 0** |
-| `core` test suite | **260 files, 6979 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7166 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 6979 tests passed** (at v3.143) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.143) |
+| repo test suite | **264 files, 7166 tests passed** (at v3.143) |
 | new tests | **6,956 -> 6,979, +23**: six for the coordinate (five sites and the guard against printing `attempt 1`), nine for the margin and the classes it counts, five for the selection and the ties, one for a step only one reading timed, one for a headroom that is negative, and one for the fastest tie. Counted from the suite, not from this sentence |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
 | the margins | **38** bounds carry their own timeout and **38** have a second reading of their own tree; the narrowest margin is **2.2x** (`sensitivity / Install`, 222 s over 99 s) and **8** did not move at all |
@@ -1726,3 +1726,147 @@ have been refused with a coordinate that sends its reader to the wrong attempt.
   state no recording holds, which is what `R15` already does for the cold prefix -- and whether the
   margin clause should say which of its 38 bounds rest on a step that moved by more than half its own
   reading, since two of them do]`
+
+## v3.144 — the recorder decided older and newer on the run id, and wrote the tree its gate refuses
+
+`O-122` recorded a state rather than a mistake: `--attempt 1` after `--attempt 2` of one run was
+accepted, the recording moved backwards, and `R10` refused the tree the recorder had just written. The
+round answered both of the entry's questions, found that the same comparison had two more shapes
+behind it, and left one new entry where the answers stop.
+
+### What the write did to the two files
+
+| step | `ci-baseline.json` | `ci-readings.json` |
+| --- | --- | --- |
+| before | `(7, 2)` | `… (7, 2)` |
+| `--attempt 1` | `(7, 1)` -- rewritten | `… (7, 1), (7, 2)` -- appended and **sorted**, so the tail is still `(7, 2)` |
+| `R10` next | older than the history's tail | "the history holds a reading of run 7 attempt 2, which is newer than the recording (run 7)" |
+
+The refusal is right and its advice is not: "record that run as the recording rather than beside it"
+names the act the recorder had just been asked to take.
+
+### The two questions, and why the second dissolves
+
+Whether the recorder should refuse an older attempt is not policy. `R10` compares the recording with
+the history's **tail**, and the tail is a maximum over the file, so no write of `ci-baseline.json`
+alone can move it; an older attempt could only be the recording if the newer row left the history, and
+the only way to remove a row is the hand edit both files refuse in the same words. So the repair the
+entry was reaching for -- "the latest attempt was red" -- is not reachable by moving the recording. It
+is reachable by the other relation: the older attempt's seconds go into the **history**, where `R10`'s
+denominator reads them, while the recording stays on the newest measurement.
+
+Whether the recording holds the newest attempt by measurement time or by attempt number is not a
+question the file has to answer: a re-run of one tree increments `run_attempt`, so attempt `N + 1` was
+measured after attempt `N`, and the two orders are one order. The pair *is* the order.
+
+### The same comparison had a second shape, and it was hiding the noise floor
+
+The seed's relation to the recording was decided by subtracting run ids, so `--seed --attempt 1` of
+the recorded run was refused as "the recording", in a sentence about one day entered twice. It is not
+one day. It is a second measurement of one tree -- the pair `v3.143` had just measured every bound's
+margin against -- and the history already holds one:
+
+| run | attempt | commit | `batteries-heavy / Type-miss probe battery` |
+| --- | --- | --- | --- |
+| `45351350110` | 1 | `45eaacff` | 356 s |
+| `45351350110` | 2 | `45eaacff` | 507 s |
+
+What the recorder could not do is append a second one for the run that *is* the recording.
+
+### The third shape: the file that says which day is the newest, overwritten
+
+`if (!SEED) writeFileSync(OUT, …)` ran whatever was already at `OUT`. For a recording that could not
+be parsed, that is an unanswerable question answered by deleting it: the history keeps the newer day,
+and the tree fails with `R10`'s advice about a recording the recorder had just written. It is refused
+now in two shapes -- a file that does not parse, and a file that parses into something naming no run
+-- each with the act that fixes it. The two files were asymmetric before this round: a history that
+cannot be read was left alone and reported, and the recording was overwritten in silence.
+
+### One ordering, one name
+
+`orderOf` is the comparison, and every caller that orders readings goes through it: the sorts in
+`readReadings` and `mergeReading`, which were the same expression written twice; `R10`'s two
+directions; and the recorder's three refusals. `coordinateOf` was private until this round, because
+nothing outside its module printed a reading, and the recorder's two report lines use it now -- a
+recording of attempt 2 says `from run 45421625317 attempt 2`. That is the eighth sentence to name half
+a reading, and it is finding 646's defect in the tool that writes the file the gate reads.
+
+The defect is latent: no run in the shipped history is the recording twice, so nobody who is not
+trying can perform the backwards write today. It becomes reachable the first time the recording's run
+is re-run, which is the ordinary way a red tree is retried.
+
+### The round's own defects
+
+- **A backtick inside a template literal ended the string.** `R10` is written as code in this tree, and
+  copying that into a `` `…` `` message produced `SyntaxError: missing ) after argument list` at the
+  first run of the recorder cases -- 27 red cases across two files, all from one character. The name
+  stays and is escaped; the alternative, a message that says "the rule about the newest reading", is a
+  sentence a reader cannot look up.
+- **Three seed refusals lost their proof annotations.** `derive-gate-sites.mjs` carries an
+  annotation across a rewrite **by fingerprint** of the message, and this round changed all three
+  messages (they now print two coordinates). The deriver said so -- `throw annotations: 99 of 102
+  carried, 3 dropped` -- and the five new throws beside them had none, so the row was `status:
+  undefined` until each named its test. `104 statement(s) partitioned` in four baskets, of which
+  **16** are now `fatal`, two more than v3.141.
+- **A fixture reported one attempt and was asked for two.** The seed cases needed `run_attempt` in the
+  run body *and* `filter=all` on the jobs request; without both, the recorder asked for an attempt the
+  fixture never reported. The second attempt is now the first, a minute later, with a minute more on
+  the battery -- one tree, two different numbers -- because a re-run that measured identical seconds
+  cannot answer "which attempt was read".
+- **A refusal changed its noun and one case had to follow.** "a second entry for one day would weight
+  that day twice" became "for one measurement ... that measurement", because the identity is the pair
+  and the old wording was the defect stated in the message.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the ordering compares run ids and calls two attempts of one run one day | 7 |
+| the ordering adds the two fields instead of comparing them | 1 |
+| the ordering reads an absent attempt as the zeroth | 2 |
+| a reading that names no run is compared as NaN | 1 |
+| the attempt is the high half of the pair | 3 |
+| the coordinate names the run and drops the attempt | 12 |
+| the history is ordered by the run id alone, so two attempts are one day | 2 |
+| a measurement older than the recording is written anyway | 1 |
+| a measurement newer than the recording is refused as well | 1 |
+| the recording is placed by the run id alone, so an older attempt looks current | 3 |
+| an older attempt of the recorded run is not a seed either | 1 |
+| the seed that is the recording is appended | 1 |
+| a recording that cannot be parsed is replaced rather than refused | 2 |
+| a recording that names no run is placed | 1 |
+| the report names the run and drops the attempt | 1 |
+| the seed report names the run and drops the attempt | 1 |
+
+**16 mutations, 40 reds**, measured on the green tree, no survivors.
+
+### Readings
+
+> Ledger for `v3.144`.
+
+| item | value |
+| --- | --- |
+| CI | run `45421625317` on `9a96f0be`: **8 of 8 jobs success**, 924 s, the run that published v3.143 and the thirty-sixth reading. No second attempt, so the history's only pair is still run `45351350110`'s |
+| `pnpm run docs:check` | **23 steps, exit 0** |
+| `core` test suite | **260 files, 6988 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **264 files, 7175 tests passed** (as of this commit) |
+| new tests | **6,979 -> 6,988, +9**: three for the recorder's ordering (an older attempt refused, a newer one recorded and named, a recording that cannot be read refused in two shapes), two for seeds at an older and a newer attempt, and four for the ordering and the name themselves. Counted from the suite, not from this sentence |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged, because every line this round added is in `scripts/` and the instrument reads `src/` |
+| the ordering's callers | **4**: the two sorts, `R10`'s two directions, and the recorder's block; `coordinateOf` gained **5** more sentences -- two report lines and three refusals that print both sides |
+| the recorder's refusals | **5** in the block that decides whether a measurement may be written: older than the recording, newer than a seed's, equal to a seed's, a recording that does not parse, and one that names no run |
+| the population | **36** readings, **35** runs, **34** trees; **1** run holds two measurements (`45351350110`, attempts 1 and 2, 356 s then 507 s) |
+| the gate's inventory | **146** failure site(s) across 69 script(s); throws **16 fatal, 77 unguarded, 1 guarded, 10 rethrow** -- 104 partitioned, **236** proved claims |
+| `docs/acceptance.md` | **58** clauses across **40** rounds; index **58** rows |
+| the census | **4** coincidences, unchanged |
+
+### Left open
+
+- The recorder records a run that failed, and a step that expired spends exactly its bound: `R4` then
+  compares the bound with the reading it just produced and demands twice it, so recording a timed-out
+  run asks for the bound to be doubled by the run that failed inside it, while a step that failed in
+  four seconds records four seconds. `O-127`.
+  `[open: whether the recorder should refuse a conclusion other than success, or record it and say so
+  in the file -- the seconds are the machine's either way, and `R10`'s denominator is the worst day
+  rather than the greenest one -- and whether a step whose seconds equal its bound exactly is a
+  reading or the bound read back as one]`

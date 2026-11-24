@@ -826,3 +826,29 @@
   after two fixture holes became cases.
   **Closed by finding 645**, on both halves of the question: the refusal is impossible at twice the
   day, and the margin is now measured and printed.
+- O-122 · ~~**The recorder will write an attempt older than the recording, which makes the history
+  refuse the tree the recorder just wrote.**~~ `--attempt 1` after `--attempt 2` was allowed: it
+  rewrote the recording with the earlier measurement, the history's tail stayed on the newer one
+  because the file is sorted, and `R10` refused -- correctly, with "record that run as the recording
+  rather than beside it", which is what the recorder had just been asked to do. ~~`[open: whether the
+  recorder should refuse to write an attempt older than the recording's -- it is a legitimate repair
+  when the latest attempt was red -- and whether the recording should hold the newest attempt by
+  measurement time or by attempt number]`~~
+  **Closed by finding 647**, on both questions and with the second dissolved. The order a recording
+  may move in is fixed by what `R10` compares: the history's **tail**, which is a maximum over the
+  file, so no write of one file can move it. Moving the recording back therefore cannot be a repair
+  -- the newer row would have to leave the history, and the only way to remove a row is the hand edit
+  both files refuse in the same words -- and the repair the entry was reaching for is the other
+  relation: the older attempt's seconds belong in the **history**, where `R10`'s denominator reads
+  them, while the recording stays on the newest measurement. By measurement time and by attempt
+  number are the same order, because a re-run of one tree increments `run_attempt`. The same
+  comparison had a second shape: `--seed --attempt 1` of the recorded run was refused as "the
+  recording", so the one measurement that is a same-tree pair -- the pair every bound's margin is now
+  measured against (finding 645) -- could not be appended at all, while the history already held one
+  (`45351350110`, attempts 1 and 2, 356 s then 507 s). A third shape was in the same block: a
+  recording that would not parse was overwritten in silence, and it is now refused in two shapes with
+  the act that fixes it, which is what the history beside it had always done. One `orderOf` answers
+  the two sorts, `R10` and the recorder's three refusals, and `coordinateOf` prints the recorder's
+  two report lines as well, so a recording of attempt 2 says `from run … attempt 2`. **Sixteen
+  mutations, 40 reds**, no survivors, measured on the green tree. The residue is `O-127`: the
+  recorder still records a run that failed, and a step that expired spends exactly its bound.

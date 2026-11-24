@@ -66,6 +66,7 @@ before the layer above it is meaningful.
 | A mark has one reader, whichever way it is spelled | v3.142 |
 | A bound's headroom is measured in the movement one tree has already shown | v3.143 |
 | A reading is named by its run and its attempt | v3.143 |
+| A measurement is written where it is the newest one | v3.144 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -156,9 +157,11 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   the `sensitivity` job runs `verify-sites-are-sensitive.mjs`, which asks whether that
   file **notices** the exit's absence -- one run per claim with that site's code
   replaced by success, and a baseline run per file so a red claimant cannot be
-  credited with catching anything. Measured at **234 of 234** claim(s) across 68 file(s) -- two more
+  credited with catching anything. Measured at **236 of 236** claim(s) across 68 file(s) -- two more
   than v3.140's 232, because an attempt that does not exist and an attempt with no job in it are two
-  refusals `measure-ci-baseline.mjs` did not have before, and each carries a proof.
+  refusals `measure-ci-baseline.mjs` did not have before, and each carries a proof; and two more again
+  at v3.144, because a recording that cannot say which measurement is the newest and a measurement
+  older than the one it would replace are two refusals the recorder did not have either.
   The figure was 105 of 105 in both halves at v3.41, and it drifted for twenty-four rounds
   because nothing read the sentence -- an external reviewer quoted the 105 as the current
   state, which is what a number with no reader costs. `check-doc-counts` reads it now:
@@ -2636,3 +2639,30 @@ from an anecdote again.
 - **Not claimed.** That the defect is visible in today's output: the slowest reading of the only
   pair is attempt 2 of run `45351350110` (507 s) under a bound of 1080 s, so no sentence prints it.
   A latent defect is repaired where it is latent, not where a reading happens to fall.
+
+### A measurement is written where it is the newest one (v3.144)
+
+- **"Older" is a pair, because a re-run keeps the run id.** `--attempt 1` after `--attempt 2` was
+  accepted, and it wrote a recording the history's tail is newer than: `R10` then refused the tree
+  the recorder had just written, in a sentence naming the act the recorder had just been asked to take
+  (finding 647).
+- **A recording may only move forward, and that is arithmetic rather than policy.** `R10` compares the
+  recording with the history's **tail**, which is a maximum over the file, so no write of
+  `ci-baseline.json` alone can move it; the only way to remove a row is the hand edit both files
+  refuse in the same words. An older attempt therefore cannot be the recording while the newer one is
+  in the history.
+- **The seconds are kept as a seed instead.** `--seed --attempt 1` of the recorded run appends the
+  measurement to the history, where `R10`'s denominator reads it, and leaves the recording on the
+  newest measurement of the tree. That pair is the one every bound's margin is measured against, and
+  the history already held one: run `45351350110`, attempts 1 and 2, **356 s** then **507 s** on
+  `batteries-heavy / Type-miss probe battery`.
+- **A file that cannot say which day is the newest is not replaced.** Two shapes are refused -- a
+  recording that does not parse, and one that parses into something naming no run -- each with the act
+  that fixes it. The history beside it was already left alone and reported; the two files now behave
+  alike.
+- **One ordering, one name.** `orderOf` answers the two sorts, `R10` and the recorder's three
+  refusals; `coordinateOf` prints the recorder's two report lines as well, so a recording of attempt 2
+  says `from run … attempt 2` rather than `from run …`.
+- **Not claimed.** That the recorder can withdraw a measurement: a red attempt recorded by mistake is
+  replaced only by a newer one, and a step that expired spends exactly its bound, which makes `R4`
+  demand the bound be doubled by the run that failed inside it -- `O-127`.

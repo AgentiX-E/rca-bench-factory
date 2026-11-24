@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 260 core + 4 cli |
-| Test lines | 118,797 core + 3,242 cli |
-| Tests | 6,979 core + 187 cli |
+| Test lines | 119,084 core + 3,242 cli |
+| Tests | 6,988 core + 187 cli |
 | Tracked files | 679 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.143: **45** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.144: **45** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1042,15 +1042,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: whether a figure that is derivable from a committed file needs to be printed at all -- the
   range answers the population question and the file answers the individual one -- and whether the
   answer changes for a reader who has the summary and not the tree]`
-- O-122 · **The recorder will write an attempt older than the recording, which makes the history refuse
-  the tree the recorder just wrote.**
-  `--attempt 1` after `--attempt 2` is allowed: it writes the earlier measurement as the recording, the
-  tail stops being the newest measurement, and `R10` refuses -- correctly, since the bounds would be
-  argued from a day the record says was superseded, but the refusal names a state the recorder created
-  rather than a mistake anybody made.
-  `[open: whether the recorder should refuse to write an attempt older than the recording's -- it is a
-  legitimate repair when the latest attempt was red -- and whether the recording should hold the newest
-  attempt by measurement time or by attempt number]`
 - O-123 · **A span says how large the suite is and not which suite.**
   A round's `new tests` row states the size before and after, and **70** of the **72** spans about the
   suite end at its `core` count while one ends at its `repo` count -- v3.54's, whose ledger was
@@ -1094,6 +1085,18 @@ is a row about rather than paraphrase one that no `grep` will find.
   state no recording holds, which is what `R15` already does for the cold prefix; and whether the
   margin clause should say which of its 38 bounds rest on a step that moved by more than half its own
   reading, since two of them do]`
+- O-127 · **The recorder records a run that failed, and a step that expired spends exactly its bound.**
+  Nothing in `measure-ci-baseline.mjs` asks whether the run it is measuring succeeded: `--attempt 2`
+  after a red re-run writes that attempt as the recording, and its steps' seconds are the seconds the
+  attempt spent -- which for the step that expired is its own `timeout-minutes` and not a
+  measurement of the command. `R4` then compares the bound with the reading it just produced and
+  demands twice it, so recording a timed-out run asks for the bound to be doubled by the run that
+  failed inside it. The other direction is quieter and worse for the bounds: a step that failed in
+  four seconds records four seconds.
+  `[open: whether the recorder should refuse a conclusion other than success, or record it and say
+  so in the file -- the seconds are the machine's either way, and `R10`'s denominator is the worst day
+  rather than the greenest one -- and whether a step whose seconds equal its bound exactly is a
+  reading or the bound read back as one]`
 
 ## Pass log
 
@@ -1131,7 +1134,7 @@ and this table.
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
-| [volume-20.md](progress/volume-20.md) | 10 | v3.134 | v3.143 |
+| [volume-20.md](progress/volume-20.md) | 11 | v3.134 | v3.144 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

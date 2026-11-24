@@ -1,7 +1,7 @@
 # Audit · volume 14
 
-Findings 579–646, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
-`progress/volume-19.md` as `v3.115` through `v3.143`.
+Findings 579–647, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
+`progress/volume-19.md` as `v3.115` through `v3.144`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -4341,3 +4341,103 @@ choice: the slowest reading of the only pair in the history is attempt 2 of run 
 (`batteries-heavy / Type-miss probe battery`, 507 s), and its bound is 1080 s, so no sentence prints
 it today. The next bound that is sized under that step will be refused with a coordinate that sends
 its reader to the wrong attempt.
+
+## Finding 647 — the recorder decided older, newer and the same on the run id alone, and then wrote the tree its own gate refuses
+
+`O-122` recorded a state rather than a mistake: `--attempt 1` after `--attempt 2` of the same run is
+accepted, and the recording moves backwards. What each file holds on either side of that write is the
+whole finding:
+
+| step | `ci-baseline.json` | `ci-readings.json` |
+| --- | --- | --- |
+| before | `(7, 2)` | `… (7, 2)` |
+| `--attempt 1` | `(7, 1)` -- rewritten | `… (7, 1), (7, 2)` -- appended **and sorted**, so the tail is still `(7, 2)` |
+| `R10` next | the recording is older than the history's tail | "the history holds a reading of run 7 attempt 2, which is newer than the recording (run 7)" |
+
+The refusal is correct and its advice is not: "record that run as the recording rather than beside it"
+names the act the recorder had just been asked to perform. A tool that can write a tree its own gate
+refuses, with a sentence that has already been followed, is the shape `O-122` was opened for.
+
+### Two questions, and the arithmetic that answers the first
+
+The entry asked whether the recorder should refuse an older attempt, and whether the recording should
+hold the newest attempt by measurement time or by attempt number.
+
+It should refuse, and the reason is not policy. The order a recording may move in is fixed by the
+history: `R10` compares the recording with the history's **tail**, and the tail is a maximum over the
+file, so no write of `ci-baseline.json` alone can move it. An older attempt could only be the
+recording if the newer one left the history, and the only way to remove a row is the hand edit both
+files refuse in the same words ("one measurement cannot have two answers"). So "a legitimate repair
+when the latest attempt was red" is not reachable by moving the recording; it is reachable by the
+*other* relation, which is what the second half of this finding is about: the older attempt's seconds
+belong in the **history**, where `R10`'s denominator reads them, while the recording stays on the
+newest measurement of the tree.
+
+The second question dissolves: by measurement time and by attempt number are the same order, because
+GitHub increments `run_attempt` by re-running the same tree, so attempt `N + 1` was measured after
+attempt `N`. The pair is therefore the order, which is what the file can express.
+
+### The same comparison had a second shape, and it was hiding the noise floor
+
+The seed's relation to the recording was decided the same way -- `Number(RUN) > Number(held.run)`,
+`Number(RUN) === Number(held.run)` -- so `--seed --attempt 1` of the recorded run was refused as "the
+recording", in a sentence about one day entered twice. It is not one day: it is a second measurement
+of one tree, and that pair is exactly what `v3.143` had just measured the margin of every bound
+against. The history already holds one such pair --
+
+| run | attempt | commit | `batteries-heavy / Type-miss probe battery` |
+| --- | --- | --- | --- |
+| `45351350110` | 1 | `45eaacff` | 356 s |
+| `45351350110` | 2 | `45eaacff` | 507 s |
+
+-- and the recorder could not append a second one for the run that *is* the recording.
+
+### The third shape: the file that says which day is the newest, overwritten
+
+`if (!SEED) writeFileSync(OUT, …)` ran whatever was already at `OUT`. For a recording that could not
+be parsed that is an unanswerable question answered by deleting it: the history would still hold the
+newer day, and the tree would fail with `R10`'s advice about a recording the recorder had just
+written. It is now refused in two shapes -- a file that does not parse, and a file that parses into
+something naming no run -- and the message says the act that fixes it (`Restore it from git and record
+again`). The two files were asymmetric before this: a history that cannot be read was left alone and
+reported, while the recording was overwritten in silence.
+
+### One ordering, one name
+
+`orderOf` is the comparison, and every caller that orders readings goes through it: the sorts in
+`readReadings` and `mergeReading` (which were the same expression, written twice), `R10`'s two
+directions, and the recorder's three refusals. `coordinateOf` -- private until this round, because
+nothing outside its module printed a reading -- is what the recorder's two report lines now use, so a
+recording of attempt 2 says `from run 45421625317 attempt 2` rather than `from run 45421625317`. That
+is the eighth sentence to name half a reading, and it is the same defect finding 646 repaired in the
+gate.
+
+The defect is latent: no run in the shipped history is the recording twice, so the backwards write
+cannot be performed today by anybody who is not trying. It becomes reachable the first time the
+recording's run is re-run -- which is the ordinary way a red tree is retried, and the reason the entry
+was worth opening before it happened.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the ordering compares run ids and calls two attempts of one run one day | 7 |
+| the ordering adds the two fields instead of comparing them | 1 |
+| the ordering reads an absent attempt as the zeroth | 2 |
+| a reading that names no run is compared as NaN | 1 |
+| the attempt is the high half of the pair | 3 |
+| the coordinate names the run and drops the attempt | 12 |
+| the history is ordered by the run id alone, so two attempts are one day | 2 |
+| a measurement older than the recording is written anyway | 1 |
+| a measurement newer than the recording is refused as well | 1 |
+| the recording is placed by the run id alone, so an older attempt looks current | 3 |
+| an older attempt of the recorded run is not a seed either | 1 |
+| the seed that is the recording is appended | 1 |
+| a recording that cannot be parsed is replaced rather than refused | 2 |
+| a recording that names no run is placed | 1 |
+| the report names the run and drops the attempt | 1 |
+| the seed report names the run and drops the attempt | 1 |
+
+**16 mutations, 40 reds**, measured on the green tree, no survivors. The first mutation is the one the
+finding is about, and its seven reds are the seven places that now ask one function instead of
+comparing a field.
