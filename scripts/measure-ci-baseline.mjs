@@ -156,9 +156,29 @@ const BORROW = borrowPairs(process.argv.slice(3));
  */
 const SEED = process.argv.slice(3).includes('--seed');
 
-if (TOKEN === '' || !/^\d+$/.test(RUN)) {
+/**
+ * `--attempt <n>`: which measurement of a run to record, when the run was measured more than once.
+ *
+ * A re-run of a workflow run is a second **attempt** of the same run id (`O-114`), and GitHub
+ * reports only the latest one unless it is asked for all of them: `filter=all` is what makes the
+ * first attempt's seconds reachable after the second has run. Without that flag the two attempts
+ * are one id with two answers, and the history -- which keys a reading by the measurement, not by
+ * the id -- could hold neither of them.
+ *
+ * The default is the run's own `run_attempt`, which is what the API's unfiltered endpoint returns
+ * and what every recording taken before this flag existed measured.
+ */
+const ATTEMPT = (() => {
+  const at = process.argv.slice(3).indexOf('--attempt');
+  if (at < 0) return null;
+  const value = Number(process.argv.slice(3)[at + 1]);
+  return Number.isInteger(value) && value >= 1 ? value : NaN;
+})();
+
+if (TOKEN === '' || !/^\d+$/.test(RUN) || Number.isNaN(ATTEMPT)) {
   process.stderr.write(
-    'usage: GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>] [--seed]\n',
+    'usage: GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs <run-id> [--attempt <n>] ' +
+      '[--borrow <job>=<ran>] [--seed]\n',
   );
   process.exit(2);
 }
@@ -224,8 +244,30 @@ if (workflow.errors.length > 0) {
 }
 
 const run = await get(`/actions/runs/${RUN}`);
-const jobs = await get(`/actions/runs/${RUN}/jobs?per_page=100`);
-const byName = new Map(jobs.jobs.map((one) => [one.name, one]));
+// The attempt this measurement is. `run_attempt` is the API's own count of how many times the run
+// has been executed, and it is 1 for every run that was never re-run.
+const runAttempt = ATTEMPT === null ? Number(run.run_attempt ?? 1) : ATTEMPT;
+if (runAttempt > Number(run.run_attempt ?? 1)) {
+  throw new Error(
+    `run ${RUN} has been executed ${String(run.run_attempt ?? 1)} time(s) and --attempt names ` +
+      `${String(runAttempt)}: an attempt that does not exist has no seconds, and recording it would ` +
+      'put a day in the history that no machine spent',
+  );
+}
+// `filter=all` only when an older attempt is asked for: the unfiltered endpoint answers with the
+// latest attempt's jobs, which is the whole of what every recording before this flag needed, and
+// asking for all of them costs a request and a discrimination that nothing else here uses.
+const jobs = await get(
+  `/actions/runs/${RUN}/jobs?per_page=100${ATTEMPT === null ? '' : '&filter=all'}`,
+);
+const atAttempt = jobs.jobs.filter((one) => Number(one.run_attempt ?? 1) === runAttempt);
+if (atAttempt.length === 0) {
+  throw new Error(
+    `run ${RUN} reports no job for attempt ${String(runAttempt)}: a measurement of an attempt with no ` +
+      'job in it is a measurement of nothing',
+  );
+}
+const byName = new Map(atAttempt.map((one) => [one.name, one]));
 const byId = new Map(jobsOf(workflow).map((one) => [one.id, one]));
 
 const recorded = {};
@@ -368,8 +410,13 @@ const reading = {
   // The reading, and where it came from. A baseline with no run is a number somebody
   // remembered.
   run: Number(RUN),
+  // Which measurement of that run this is (`O-114`). A re-run has the same id and different
+  // seconds, so the id alone cannot say which of the two a file holds -- and the two files are
+  // compared with each other, so they have to name the same measurement or the comparison is
+  // between an attempt and itself.
+  attempt: runAttempt,
   commit: run.head_sha,
-  measured: String((jobs.jobs[0]?.completed_at ?? run.updated_at ?? '').slice(0, 10)),
+  measured: String((atAttempt[0]?.completed_at ?? run.updated_at ?? '').slice(0, 10)),
   jobs: recorded,
 };
 if (Object.keys(derived).length > 0) {
@@ -406,6 +453,7 @@ if (!SEED) writeFileSync(OUT, `${JSON.stringify(reading, null, 2)}\n`);
  */
 const entry = {
   run: Number(RUN),
+  attempt: runAttempt,
   commit: run.head_sha,
   measured: reading.measured,
   jobs: {},
