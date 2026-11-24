@@ -2229,8 +2229,8 @@ current-state rows are **3** refusals until they are dated.
 
 Two entries, and both were about a number whose sentence did not say what it was a number *of*.
 `O-109` was opened by a green run of the budget gate: the tightest bound in the workflow is printed
-as `2.0x`, which is the least the rule accepts, and the same sentence describes a bound with
-eighty-nine times the room a normal day needs. `O-111` was opened by v3.137's own repair: dating a
+as `2.0x`, which is the least the rule accepts, and the same sentence describes a bound with ninety
+times the room a normal day needs. `O-111` was opened by v3.137's own repair: dating a
 round's rows was a discipline, and a round that moves no count moves no event to trigger it.
 
 ### The multiple, and the series under it
@@ -2244,8 +2244,8 @@ of its command (888 s in `backend / Install a backend this repository did not wr
 ```
 
 The same command's readings, from the file that sentence was computed from: **888**, 556, 273, 91,
-40, 38, 31, 28, 27, 26, 23, 21, 21, 20, 20, 19, 19, 19, 18, 18, 18, 17, 16 -- twenty-five days out of
-twenty-seven at or under 91 s, and three in the hundreds. The bound is thirty minutes against a step
+40, 38, 31, 28, 27, 26, 23, 23, 21, 21, 21, 20, 20, 19, 19, 19, 19, 18, 18, 18, 18, 17, 16 --
+twenty-four of twenty-seven days at or under 91 s, and three in the hundreds. The bound is thirty minutes against a step
 that usually spends twenty seconds. `2.0x` is true, and it is the number a reader uses to decide
 whether a bound has room.
 

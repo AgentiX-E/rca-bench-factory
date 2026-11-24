@@ -3376,12 +3376,13 @@ workflow with no room at all. It is the widest. The same command's readings, fro
 was computed from:
 
 ```
-888, 556, 273, 91, 40, 38, 31, 28, 27, 26, 23, 21, 21, 20, 20, 19, 19, 19, 18, 18, 18, 17, 16 ...
+888, 556, 273, 91, 40, 38, 31, 28, 27, 26, 23, 23, 21, 21, 21, 20, 20, 19, 19, 19, 19, 18, 18,
+18, 18, 17, 16
 ```
 
-Twenty-five of twenty-seven days at or under 91 s, and three in the hundreds. The bound is
+Twenty-four of twenty-seven days at or under 91 s, and three in the hundreds. The bound is
 **1,800 s** -- thirty minutes -- against a step whose typical cost is twenty seconds. `2.0x` and
-`89x` are the same number described from two ends, and the summary printed only the first, so the
+`90x` are the same number described from two ends, and the summary printed only the first, so the
 `backend` job's thirty-six-minute ceiling looked like a ceiling with 2.4x of room over its day
 (run 44516888528, 910 s) when fifteen of those minutes exist for one install that went wrong once.
 
