@@ -739,27 +739,61 @@ export function mergeReading(file, entry) {
 }
 
 /**
- * The slowest reading of one command, across every run and every job that ran it.
+ * Every reading of one command, with the two that bound them: the fastest and the slowest.
  *
- * Ties go to the newer run, so the answer is a function of the file rather than of the
- * order somebody happened to append in -- the sentence `R10` prints names a run, and two
- * answers for one file would make the sentence unwritable.
+ * `R10` needs the slowest -- a bound is at least twice it -- and a reader of a green run needs
+ * both, because a multiple is only interpretable against the distribution it was taken from
+ * (`O-109`). A command whose readings run from **16 s** to **888 s** has been read in two
+ * states, and `2.0x of 888 s` is then a statement about the slow state rather than about the
+ * command's cost: without the fastest beside it, the same sentence reads as "7% of margin" on a
+ * step that spends 20 s on a normal day. The history is the only place that spread exists.
+ *
+ * One function rather than two loops, because a second account of "which readings belong to
+ * this command" is how `R10` and its summary would come to disagree about the denominator --
+ * the defect `measure-doc-counts` once had three readers of.
+ *
+ * Ties go to the newer run, so the answer is a function of the file rather than of the order
+ * somebody happened to append in -- the sentence `R10` prints names a run, and two answers for
+ * one file would make the sentence unwritable. The fastest keeps the *oldest* run for the same
+ * reason: it is printed only as a number, and one rule for one file is what a reader can check.
  */
-export function worstReadingFor(rows, command) {
-  let worst = null;
+export function readingsOfCommand(rows, command) {
+  let fastest = null;
+  let slowest = null;
+  let count = 0;
   for (const row of rows) {
     for (const one of row.steps.values()) {
       if (one.command !== command) continue;
+      count += 1;
+      const reading = { seconds: one.seconds, run: row.run, job: one.job, step: one.step };
       if (
-        worst === null ||
-        one.seconds > worst.seconds ||
-        (one.seconds === worst.seconds && row.run > worst.run)
+        fastest === null ||
+        reading.seconds < fastest.seconds ||
+        (reading.seconds === fastest.seconds && reading.run < fastest.run)
       ) {
-        worst = { seconds: one.seconds, run: row.run, job: one.job, step: one.step };
+        fastest = reading;
+      }
+      if (
+        slowest === null ||
+        reading.seconds > slowest.seconds ||
+        (reading.seconds === slowest.seconds && reading.run > slowest.run)
+      ) {
+        slowest = reading;
       }
     }
   }
-  return worst;
+  return count === 0 ? null : { fastest, slowest, count };
+}
+
+/**
+ * The slowest reading of one command, across every run and every job that ran it.
+ *
+ * A view of `readingsOfCommand` rather than a second walk: the denominator `R10` refuses
+ * against and the spread printed beside the multiple have to be the same set of readings.
+ */
+export function worstReadingFor(rows, command) {
+  const found = readingsOfCommand(rows, command);
+  return found === null ? null : found.slowest;
 }
 
 /**
@@ -1665,7 +1699,7 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   let jobCount = 0;
   let ceilings = 0;
   const excused = [];
-  let tightest = { name: '', ratio: Infinity, worst: null };
+  let tightest = { name: '', ratio: Infinity, worst: null, command: null };
   const widened = [];
   // A narrowing is a number a reader has to see, for the reason the widening list exists: it
   // is a claim about a day, and the claim is `R6`'s -- twice the slowest day this repository
@@ -1740,11 +1774,12 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
         // The denominator is the slowest reading of the command when there is a history
         // to ask, because that is the number `R10` refuses against -- a summary computed
         // from the recording alone would report a ratio the gate does not use.
-        const slowest = historyKnown ? worstReadingFor(parsedReadings.rows, commandOf(step)) : null;
+        const command = commandOf(step);
+        const slowest = historyKnown ? worstReadingFor(parsedReadings.rows, command) : null;
         const denominator = slowest === null ? seconds : Math.max(seconds, slowest.seconds);
         const ratio = denominator === 0 ? Infinity : (step.minutes * 60) / denominator;
         if (ratio < tightest.ratio) {
-          tightest = { name: `${job.id} / ${step.name}`, ratio, worst: slowest };
+          tightest = { name: `${job.id} / ${step.name}`, ratio, worst: slowest, command };
         }
       }
     }
@@ -1812,6 +1847,26 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   // with an empty subject and a unit with no number. The branch that says so is written
   // out because a reader who skipped the clause would read the `;` before it as a
   // measurement that came back blank.
+  //
+  // And the multiple does not say what it is a multiple *of* until the spread is beside it
+  // (`O-109`). `2.0x` against a command read between 16 s and 888 s is a bound sized from the
+  // slow state; the same `2.0x` against a command read between 880 s and 888 s is a bound with
+  // 7% of room. The two sentences are identical without the clause, which is the defect: the
+  // history holds the spread and no line printed it.
+  const spreadText = () => {
+    if (!historyKnown || tightest.command === null) return '';
+    const found = readingsOfCommand(parsedReadings.rows, tightest.command);
+    if (found === null) return '';
+    // One reading has no spread, and saying nothing would let a reader supply one: a bound
+    // argued from a single measurement is a different claim from a bound argued from a series,
+    // and only the history can tell them apart.
+    if (found.count === 1) return '; that command has been read once';
+    if (found.fastest.seconds === found.slowest.seconds) return '; every reading of that command is the same';
+    return (
+      `; across the history that command runs from ${String(found.fastest.seconds)} s to ` +
+      `${String(found.slowest.seconds)} s`
+    );
+  };
   const tightestText =
     bounded === 0
       ? 'no step carries a bound of its own, so nothing here is tight'
@@ -1819,7 +1874,8 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
         (tightest.worst === null
           ? ''
           : ` of the slowest reading of its command (${String(tightest.worst.seconds)} s in ` +
-            `\`${tightest.worst.job} / ${tightest.worst.step}\`, run ${String(tightest.worst.run)})`);
+            `\`${tightest.worst.job} / ${tightest.worst.step}\`, run ${String(tightest.worst.run)})`) +
+        spreadText();
   // The ceiling's reading, printed beside the tightest *step* bound and never folded into it
   // (finding 604). Before this clause the summary published a workflow-wide `bounds total` next
   // to a workflow-wide `measured`, and the one comparison that decides whether a bound can fire

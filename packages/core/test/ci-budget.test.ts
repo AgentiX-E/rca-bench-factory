@@ -22,6 +22,7 @@ import {
   prefixOf,
   readDeclarations,
   readReadings,
+  readingsOfCommand,
   stepsOf,
 } from '../../../scripts/ci-budget.mjs';
 import { readWorkflow } from '../../../scripts/gate-steps.mjs';
@@ -1321,6 +1322,12 @@ describe('the recording the gate reads', () => {
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('check-ci-budget: OK');
+    // And the spread of the tightest bound's command reaches the reader of a green run: the
+    // shape is asserted rather than the numbers, because the numbers move every time a run is
+    // recorded and the clause is what this round added (`O-109`).
+    expect(result.stdout).toMatch(
+      /that command (runs from \d+ s to \d+ s|has been read once)|every reading of that command is the same/,
+    );
   });
 
   it('exits non-zero on a workflow it cannot read, rather than checking nothing', () => {
@@ -2571,5 +2578,161 @@ describe('one reading, summed into one day', () => {
     const newer = { ...one, run: 42000000000, jobs: { batteries: { 'Slow battery': { ...one.jobs['batteries']['Slow battery'], seconds: 900 } } } };
     const days = jobDays(workflow, recording, readReadings({ readings: [older, newer, one] }));
     expect(days.get('batteries')).toEqual({ seconds: 900, run: 42000000000 });
+  });
+});
+
+describe('the spread of one command, and the multiple that does not say it', () => {
+  /**
+   * One day of the history, in the shape the recorder writes: run, job, step, seconds, command.
+   *
+   * Written out rather than derived from a workflow because the cases below are about a
+   * *series* -- the same command read on days the workflow did not change -- and a fixture
+   * built from one recording would hold one day of it.
+   */
+  function day(run: number, jobs: Record<string, Record<string, { seconds: number; command: string }>>) {
+    // A forty-character hex commit, because that is what the reader accepts: a reading that
+    // cannot name its tree is a number somebody typed, and the rule is not relaxed for fixtures.
+    return { run, commit: String(run).padStart(40, '0'), measured: '2026-11-23', jobs };
+  }
+
+  function historyOf(...days: ReturnType<typeof day>[]) {
+    return { readings: days };
+  }
+
+  function rowsOf(...days: ReturnType<typeof day>[]) {
+    const read = readReadings(historyOf(...days));
+    expect(read.errors).toEqual([]);
+    return read.rows;
+  }
+
+  it('reads one command\'s readings across every run and every job, with the two that bound them', () => {
+    // The install step's own history, in miniature: 25 days near twenty seconds and two in the
+    // hundreds. `R10` needs the slow one; the multiple needs both, because `2.0x of 888 s` and
+    // `2.0x` against a command that never varied are different claims about the same number.
+    const rows = rowsOf(
+      day(1, { backend: { Install: { seconds: 16, command: 'pip install x' } } }),
+      day(2, { backend: { Install: { seconds: 556, command: 'pip install x' } } }),
+      day(3, {
+        backend: { Install: { seconds: 888, command: 'pip install x' } },
+        mirror: { Install: { seconds: 40, command: 'pip install x' } },
+      }),
+    );
+    expect(readingsOfCommand(rows, 'pip install x')).toEqual({
+      fastest: { seconds: 16, run: 1, job: 'backend', step: 'Install' },
+      slowest: { seconds: 888, run: 3, job: 'backend', step: 'Install' },
+      count: 4,
+    });
+  });
+
+  it('says nothing about a command no reading ran, rather than answering with a zero', () => {
+    // A command the history does not hold is not a command with no readings: null is the state
+    // of not having asked, and a caller that printed `0 s` would print the fastest reading of a
+    // step nobody measured.
+    const rows = rowsOf(day(1, { backend: { Install: { seconds: 16, command: 'pip install x' } } }));
+    expect(readingsOfCommand(rows, 'pip install y')).toBeNull();
+  });
+
+  it('resolves a tie by run, so the answer is a function of the file rather than of its order', () => {
+    // Both numbers are printed, so both ties have to be decided by something a reader can see
+    // in the file. The slowest goes to the newer run (the run a refusal names), the fastest to
+    // the older one -- and the older one first, because that is the tie rule, not the order the
+    // days happen to appear in.
+    const rows = rowsOf(
+      day(7, { backend: { Install: { seconds: 900, command: 'c' } } }),
+      day(6, { backend: { Install: { seconds: 900, command: 'c' } } }),
+      day(9, { backend: { Install: { seconds: 16, command: 'c' } } }),
+      day(5, { backend: { Install: { seconds: 16, command: 'c' } } }),
+    );
+    const found = readingsOfCommand(rows, 'c');
+    expect(found?.slowest.run).toBe(7);
+    expect(found?.fastest.run).toBe(5);
+  });
+
+  it('prints the spread beside the multiple, because the multiple alone reads as margin', () => {
+    // 30 min against 888 s is 2.0x -- finding 628's arithmetic, and it looks like a bound with no
+    // room. The same step spent 16 s on another day, and without that number in the sentence a
+    // reader cannot tell `2.0x of a series that spans 16 s to 888 s` from `2.0x of a series that
+    // never moved`. The history holds the spread and no line printed it (`O-109`).
+    const workflow = oneJob([...step('Install', 30, 'pip install x')]);
+    const recording = recordingOf({ batteries: { steps: { Install: 888 } } });
+    const history = rowsOf(
+      day(1, { batteries: { Install: { seconds: 16, command: 'pip install x' } } }),
+      day(2, { batteries: { Install: { seconds: 888, command: 'pip install x' } } }),
+    );
+    const summary = budgetSummary(
+      workflow,
+      recording,
+      null,
+      null,
+      historyOf(
+        day(1, { batteries: { Install: { seconds: 16, command: 'pip install x' } } }),
+        day(2, { batteries: { Install: { seconds: 888, command: 'pip install x' } } }),
+      ),
+    );
+    expect(summary).toContain('tightest batteries / Install at 2.0x');
+    expect(summary).toContain('across the history that command runs from 16 s to 888 s');
+  });
+
+  it('says a command has been read once, rather than leaving a reader to supply a spread', () => {
+    const workflow = oneJob([...step('Install', 30, 'pip install x')]);
+    const recording = recordingOf({ batteries: { steps: { Install: 888 } } });
+    const summary = budgetSummary(
+      workflow,
+      recording,
+      null,
+      null,
+      historyOf(day(2, { batteries: { Install: { seconds: 888, command: 'pip install x' } } })),
+    );
+    expect(summary).toContain('; that command has been read once');
+    expect(summary).not.toContain('across the history');
+  });
+
+  it('says every reading is the same, rather than a range from a number to itself', () => {
+    const workflow = oneJob([...step('Install', 30, 'pip install x')]);
+    const recording = recordingOf({ batteries: { steps: { Install: 888 } } });
+    const summary = budgetSummary(
+      workflow,
+      recording,
+      null,
+      null,
+      historyOf(
+        day(1, { batteries: { Install: { seconds: 888, command: 'pip install x' } } }),
+        day(2, { batteries: { Install: { seconds: 888, command: 'pip install x' } } }),
+      ),
+    );
+    expect(summary).toContain('; every reading of that command is the same');
+    expect(summary).not.toContain('888 s to 888 s');
+  });
+
+  it('prints no spread at all when there is no history to take one from', () => {
+    // A tree with no readings has no series, and a sentence about the spread of a series nobody
+    // recorded would be the silence `R10` exists to replace, wearing a number.
+    const workflow = oneJob([...step('Slow battery', 12)]);
+    const summary = budgetSummary(workflow, recordingOf({ batteries: { steps: { 'Slow battery': 351 } } }));
+    expect(summary).toContain('tightest batteries / Slow battery at 2.1x');
+    expect(summary).not.toContain('across the history');
+    expect(summary).not.toContain('has been read once');
+  });
+
+  it('prints the spread of the tightest bound\'s command, not of another step\'s', () => {
+    // Two commands, two series: `Slow` spans 10 s to 900 s and is not tight (30 min against
+    // 900 s is 2.0x... ), `Quick` spans 40 s to 50 s and is. The clause belongs to the bound the
+    // sentence is about; attaching the wide series to the tight bound would print a spread that
+    // explains nothing and hides the one that does.
+    const workflow = oneJob([...step('Slow', 200, 'slow-command'), ...step('Quick', 2, 'quick-command')]);
+    const recording = recordingOf({ batteries: { steps: { Slow: 900, Quick: 50 } } });
+    const summary = budgetSummary(
+      workflow,
+      recording,
+      null,
+      null,
+      historyOf(
+        day(1, { batteries: { Slow: { seconds: 10, command: 'slow-command' }, Quick: { seconds: 40, command: 'quick-command' } } }),
+        day(2, { batteries: { Slow: { seconds: 900, command: 'slow-command' }, Quick: { seconds: 50, command: 'quick-command' } } }),
+      ),
+    );
+    expect(summary).toContain('tightest batteries / Quick at 2.4x');
+    expect(summary).toContain('across the history that command runs from 40 s to 50 s');
+    expect(summary).not.toContain('runs from 10 s to 900 s');
   });
 });
