@@ -2360,7 +2360,7 @@ last two rows of the second table are the ones that were **zero** on the first r
 
 | what | value |
 | --- | --- |
-| CI | the recording is `45218783516` on `f9144d9`: **8 of 8 jobs success**, 992 s; this round's own run is recorded in the commit that follows the push |
+| CI | run `45296269712` on `63c99cc`: **8 of 8 jobs success**, 909 s (00:19:51 -> 00:35:00); the slowest job is `injection batteries, the two that rewrite a probe a hundred times` at 906 s of its 44-minute ceiling, and `lint` read **404 s** against its 18-minute bound -- the third sample of the series the spread clause is about, and 192 s faster than this round's own first run of the same tree |
 | `pnpm run docs:check` | **23 steps, exit 0** |
 | `core` test suite | **260 files, 6897 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
