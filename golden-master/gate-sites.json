@@ -54,7 +54,7 @@
     {
       "script": "scripts/check-acceptance-shape.mjs",
       "line": 30,
-      "diagnostic": "check-acceptance-shape: FAILED — ${lines[0]}",
+      "diagnostic": "check-acceptance-shape: FAILED \u2014 ${lines[0]}",
       "status": "proved",
       "provedBy": "packages/core/test/check-acceptance-shape.test.ts"
     },
@@ -241,7 +241,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1663,
       "condition": "invalid.length > 0",
-      "diagnostic": "check-fault-cases: FAILED — ${String(invalid.length)} case(s) could not be read as a FaultCase",
+      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(invalid.length)} case(s) could not be read as a FaultCase",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -249,7 +249,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 2123,
       "condition": "problems.length > 0",
-      "diagnostic": "check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
+      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -257,7 +257,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 2132,
       "condition": "unnamed.length > 0",
-      "diagnostic": "check-fault-cases: FAILED — ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
+      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -265,7 +265,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 2140,
       "condition": "index.cases.length < floor",
-      "diagnostic": "check-fault-cases: FAILED — ${String(index.cases.length)} four-layer case(s), below the floor of",
+      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(index.cases.length)} four-layer case(s), below the floor of",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -438,7 +438,7 @@
       "script": "scripts/check-rulegen-agreement.mjs",
       "line": 77,
       "condition": "catch",
-      "diagnostic": "check-rulegen-agreement: FAILED — ${String(error.message)}",
+      "diagnostic": "check-rulegen-agreement: FAILED \u2014 ${String(error.message)}",
       "status": "proved",
       "provedBy": "packages/core/test/rulegen-agreement.test.ts"
     },
@@ -446,7 +446,7 @@
       "script": "scripts/check-rulegen-agreement.mjs",
       "line": 94,
       "condition": "reading.verdicts.disagreements.length > 0",
-      "diagnostic": "check-rulegen-agreement: FAILED — ${String(reading.verdicts.disagreements.length)} of",
+      "diagnostic": "check-rulegen-agreement: FAILED \u2014 ${String(reading.verdicts.disagreements.length)} of",
       "status": "proved",
       "provedBy": "packages/core/test/rulegen-agreement.test.ts"
     },
@@ -454,7 +454,7 @@
       "script": "scripts/check-rulegen-agreement.mjs",
       "line": 107,
       "condition": "reading.reasons.agreements !== reading.reasons.checked",
-      "diagnostic": "check-rulegen-agreement: FAILED — '${row.id}' was refused for a reason the answer set does",
+      "diagnostic": "check-rulegen-agreement: FAILED \u2014 '${row.id}' was refused for a reason the answer set does",
       "status": "proved",
       "provedBy": "packages/core/test/rulegen-agreement.test.ts"
     },
@@ -499,7 +499,7 @@
     {
       "script": "scripts/check-unit-nouns.mjs",
       "line": 164,
-      "diagnostic": "check-unit-nouns: FAILED — ${message}",
+      "diagnostic": "check-unit-nouns: FAILED \u2014 ${message}",
       "status": "proved",
       "provedBy": "packages/core/test/unit-nouns.test.ts"
     },
@@ -667,15 +667,15 @@
       "script": "scripts/install-git-hooks.mjs",
       "line": 41,
       "condition": "result.state === 'missing-hook' || result.state === 'unset'",
-      "diagnostic": "install-git-hooks: FAILED (${result.state}) — ${result.message}\\n",
+      "diagnostic": "install-git-hooks: FAILED (${result.state}) \u2014 ${result.message}\\n",
       "status": "proved",
       "provedBy": "packages/core/test/git-hooks.test.ts"
     },
     {
       "script": "scripts/measure-ci-baseline.mjs",
-      "line": 163,
-      "condition": "TOKEN === '' || !/^\\d+$/.test(RUN)",
-      "diagnostic": "usage: GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>] [--seed]\\n",
+      "line": 183,
+      "condition": "TOKEN === '' || !/^\\d+$/.test(RUN) || Number.isNaN(ATTEMPT)",
+      "diagnostic": "usage: GITHUB_TOKEN=\u2026 node scripts/measure-ci-baseline.mjs <run-id> [--attempt <n>]",
       "status": "proved",
       "provedBy": "packages/core/test/ci-budget.test.ts"
     },
@@ -1144,7 +1144,7 @@
   "throws": {
     "rule": "every throw statement, partitioned four ways: `fatal` (no enclosing function, no enclosing try) ends the process and is proved like a site; `unguarded` (in a function, no enclosing try) hands control to its caller, which decides; `guarded` (in a try block) is caught here; `rethrow` (in a catch, rethrowing the caught binding) carries a decision made above. A try or a catch stops at a function boundary, because neither is on the stack when the function runs elsewhere. fatal + unguarded + guarded + rethrow is the number of throw statements; see scripts/derive-gate-sites.mjs",
     "counts": {
-      "fatal": 12,
+      "fatal": 14,
       "unguarded": 77,
       "guarded": 1,
       "rethrow": 10
@@ -1433,7 +1433,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 166,
+        "line": 186,
         "disposition": "fatal",
         "message": "new Error( '--seed and --borrow say different things: a seed is a day this run really measured, and a borrow is ' + 'sec",
         "status": "proved",
@@ -1441,7 +1441,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 177,
+        "line": 197,
         "disposition": "unguarded",
         "message": "${path}: HTTP ${String(response.status)}",
         "status": "proved",
@@ -1449,7 +1449,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 221,
+        "line": 241,
         "disposition": "fatal",
         "message": "the workflow does not parse, so there is nothing to measure:\\n${workflow.errors.join('\\n')}",
         "status": "proved",
@@ -1457,7 +1457,23 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 255,
+        "line": 251,
+        "disposition": "fatal",
+        "message": "new Error( `run ${RUN} has been executed ${String(run.run_attempt ?? 1)} time(s) and --attempt names ` + `${String(runAt",
+        "status": "proved",
+        "provedBy": "packages/core/test/ci-budget.test.ts"
+      },
+      {
+        "script": "scripts/measure-ci-baseline.mjs",
+        "line": 265,
+        "disposition": "fatal",
+        "message": "new Error( `run ${RUN} reports no job for attempt ${String(runAttempt)}: a measurement of an attempt with no ` + 'job in",
+        "status": "proved",
+        "provedBy": "packages/core/test/ci-budget.test.ts"
+      },
+      {
+        "script": "scripts/measure-ci-baseline.mjs",
+        "line": 297,
         "disposition": "fatal",
         "message": "new Error( `the recording at ${OUT} cannot be parsed (${String(error)}), so a seed cannot be told from it: ` + 'a seed i",
         "status": "proved",
@@ -1465,7 +1481,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 261,
+        "line": 303,
         "disposition": "fatal",
         "message": "new Error( `--seed names run ${RUN}, which is newer than the recording (run ${String(held?.run)}): a day that ` + 'has n",
         "status": "proved",
@@ -1473,7 +1489,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 268,
+        "line": 310,
         "disposition": "fatal",
         "message": "new Error( `--seed names run ${RUN}, which is the recording: it is already in the history, and a second entry ` + 'for o",
         "status": "proved",
@@ -1481,7 +1497,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 280,
+        "line": 322,
         "disposition": "fatal",
         "message": "new Error( `--borrow ${job.id}=${borrowedFrom} names a declared job: a job promise waits for its ` + 'first run, and a b",
         "status": "proved",
@@ -1489,7 +1505,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 291,
+        "line": 333,
         "disposition": "fatal",
         "message": "--borrow names \\`${borrowedFrom}\\`, which is not a job of this workflow",
         "status": "proved",
@@ -1497,7 +1513,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 302,
+        "line": 344,
         "disposition": "fatal",
         "message": "new Error( `--borrow ${job.id}=${borrowedFrom} crosses a budget: \\`${job.id}\\` declares ` + `${job.timeoutMinutes === nu",
         "status": "proved",
@@ -1505,7 +1521,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 324,
+        "line": 366,
         "disposition": "fatal",
         "message": "run ${RUN} holds no job named \"${apiNameOf(job)}\", so \\`${job.id}\\` has no reading",
         "status": "proved",
@@ -1513,7 +1529,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 336,
+        "line": 378,
         "disposition": "fatal",
         "message": "new Error( `\\`${job.id} / ${step.name}\\` is not a step of \"${source.name}\" in run ${RUN}: a bound cannot be ` + 'sized f",
         "status": "proved",
@@ -1521,7 +1537,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 352,
+        "line": 394,
         "disposition": "fatal",
         "message": "new Error( `run ${RUN} reports no start and end for \"${source.name}\", so the seconds its steps do not ` + 'account for c",
         "status": "proved",
@@ -1529,7 +1545,7 @@
       },
       {
         "script": "scripts/measure-ci-baseline.mjs",
-        "line": 387,
+        "line": 434,
         "disposition": "fatal",
         "message": "new Error( `run ${RUN} measured no step this workflow has, so it is not a day any bound of this tree could be ` + 'argue",
         "status": "proved",

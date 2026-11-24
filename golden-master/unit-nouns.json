@@ -32,7 +32,7 @@
       ]
     },
     {
-      "noun": "budget(s)",
+      "noun": "bound(s)",
       "gates": [
         "check-ci-budget"
       ]
@@ -236,6 +236,7 @@
     {
       "noun": "pair(s)",
       "gates": [
+        "check-ci-budget",
         "check-fault-cases"
       ]
     },
@@ -421,6 +422,13 @@
       ]
     },
     {
+      "noun": "pair(s)",
+      "gates": [
+        "check-ci-budget",
+        "check-fault-cases"
+      ]
+    },
+    {
       "noun": "reading(s)",
       "gates": [
         "check-ci-budget",
@@ -477,6 +485,18 @@
         ]
       ],
       "relation": "four walks over four corpora -- the 38 documentation files `check-citations` anchors its findings in, the source walk's 479 (printed by two gates because one takes its denominator from the other), and the 6 workflow files"
+    },
+    {
+      "noun": "pair(s)",
+      "populations": [
+        [
+          "check-ci-budget"
+        ],
+        [
+          "check-fault-cases"
+        ]
+      ],
+      "relation": "two unrelated kinds of pair -- two readings of one tree, which is the noise floor `O-114` measures and of which this history holds the only one, and every pair of the fault cases `check-fault-cases` compares for overlap; the two numbers are the corpora rather than one count two gates share"
     },
     {
       "noun": "reading(s)",
