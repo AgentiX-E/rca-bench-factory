@@ -743,6 +743,24 @@ export function readReadings(file) {
 }
 
 /**
+ * How a sentence names one reading: its run, and its attempt when the run has more than one.
+ *
+ * `(run, attempt)` has been the identity of a reading since `O-114`, and the sentences that *name*
+ * one kept naming the run (`O-121`, finding 646). A re-run keeps the run id and increments
+ * `run_attempt`, so `run 100` is two measurements and a reader who opens it sees the latest: a
+ * refusal that says `900 s in run 100` about attempt 2 sends them to a page where the step spent
+ * 500 s. Every number in this file is one a reader can go and look at, and since a re-run the
+ * coordinate that lets them look has two fields.
+ *
+ * Attempt 1 prints nothing, because that is what every reading written before the field existed
+ * was, and `run 45393534319` still reads right for the 31 rows that have no attempt at all.
+ */
+function coordinateOf(one) {
+  const attempt = one?.attempt ?? 1;
+  return `run ${String(one?.run)}${attempt === 1 ? '' : ` attempt ${String(attempt)}`}`;
+}
+
+/**
  * One reading written into a history, newest last, one entry per attempt.
  *
  * Rewriting the same attempt replaces its entry rather than adding a second one: the recorder may
@@ -828,18 +846,22 @@ export function readingsOfCommand(rows, command) {
       if (one.command !== command) continue;
       count += 1;
       spent.push(one.seconds);
-      const reading = { seconds: one.seconds, run: row.run, job: one.job, step: one.step };
+      const reading = { seconds: one.seconds, run: row.run, attempt: row.attempt, job: one.job, step: one.step };
       if (
         fastest === null ||
         reading.seconds < fastest.seconds ||
-        (reading.seconds === fastest.seconds && reading.run < fastest.run)
+        (reading.seconds === fastest.seconds &&
+          (reading.run < fastest.run ||
+            (reading.run === fastest.run && reading.attempt < fastest.attempt)))
       ) {
         fastest = reading;
       }
       if (
         slowest === null ||
         reading.seconds > slowest.seconds ||
-        (reading.seconds === slowest.seconds && reading.run > slowest.run)
+        (reading.seconds === slowest.seconds &&
+          (reading.run > slowest.run ||
+            (reading.run === slowest.run && reading.attempt > slowest.attempt)))
       ) {
         slowest = reading;
       }
@@ -869,7 +891,7 @@ export function readingsOfCommand(rows, command) {
  * `null` when no two readings share a commit, because a floor nobody measured is not a floor of
  * zero and the two must not read alike.
  */
-export function noiseFloorOf(rows) {
+export function noiseOfSteps(rows) {
   if (!Array.isArray(rows) || rows.length < 2) return null;
   const byCommit = new Map();
   for (const row of rows) {
@@ -877,7 +899,7 @@ export function noiseFloorOf(rows) {
     held.push(row);
     byCommit.set(row.commit, held);
   }
-  let worst = null;
+  const steps = new Map();
   let pairs = 0;
   for (const held of byCommit.values()) {
     if (held.length < 2) continue;
@@ -889,8 +911,9 @@ export function noiseFloorOf(rows) {
           const other = second.steps.get(key);
           if (other === undefined) continue;
           const seconds = Math.abs(one.seconds - other.seconds);
-          if (worst === null || seconds > worst.seconds) {
-            worst = {
+          const heldStep = steps.get(key);
+          if (heldStep === undefined || seconds > heldStep.seconds) {
+            steps.set(key, {
               seconds,
               job: one.job,
               step: one.step,
@@ -899,13 +922,38 @@ export function noiseFloorOf(rows) {
               earlier: { run: first.run, attempt: first.attempt },
               later: { run: second.run, attempt: second.attempt },
               commit: first.commit,
-            };
+            });
           }
         }
       }
     }
   }
-  return worst === null ? null : { pairs, worst };
+  // No pair at all is the state of the question not having been asked, and it is `null` rather
+  // than an empty map: a map with nothing in it reads as a history in which nothing moved, and
+  // the two states must not read alike (`noiseFloorOf` refuses the same equivalence one line up).
+  return pairs === 0 ? null : { pairs, steps };
+}
+
+/**
+ * The floor under a range: the widest difference two readings of one tree have shown (`O-114`).
+ *
+ * A view over `noiseOfSteps` rather than a second walk of the same pairs. The question "what is
+ * the floor under this history" and the question "what has *this step* moved by" (`O-121`) are one
+ * population read at two ends, and a second walk would be a second reader of one mark -- the shape
+ * finding 588 is about, one unit over. The pair coordinates travel with the number because a
+ * reader has to be able to open it.
+ *
+ * `null` when no two readings share a commit, because a floor nobody measured is not a floor of
+ * zero and the two must not read alike.
+ */
+export function noiseFloorOf(rows) {
+  const found = noiseOfSteps(rows);
+  if (found === null) return null;
+  let worst = null;
+  for (const one of found.steps.values()) {
+    if (worst === null || one.seconds > worst.seconds) worst = one;
+  }
+  return worst === null ? null : { pairs: found.pairs, worst };
 }
 
 /**
@@ -952,9 +1000,10 @@ function worstPrefixReading(rows, workflow, job) {
     if (
       worst === null ||
       seconds > worst.seconds ||
-      (seconds === worst.seconds && row.run > worst.run)
+      (seconds === worst.seconds &&
+        (row.run > worst.run || (row.run === worst.run && row.attempt > worst.attempt)))
     ) {
-      worst = { seconds, run: row.run, job };
+      worst = { seconds, run: row.run, attempt: row.attempt, job };
     }
   }
   return worst;
@@ -987,9 +1036,13 @@ export function jobDays(workflow, baseline, readings = null) {
     const names = stepsOf(workflow, job.id).map((one) => one.name);
     if (names.length === 0) continue;
     let best = null;
-    const day = (seconds, run) => {
-      if (best === null || seconds > best.seconds || (seconds === best.seconds && run > best.run)) {
-        best = { seconds, run };
+    const day = (seconds, run, attempt) => {
+      if (
+        best === null ||
+        seconds > best.seconds ||
+        (seconds === best.seconds && (run > best.run || (run === best.run && attempt > best.attempt)))
+      ) {
+        best = { seconds, run, attempt };
       }
     };
     const record = recorded[job.id];
@@ -997,6 +1050,7 @@ export function jobDays(workflow, baseline, readings = null) {
       day(
         names.reduce((all, name) => all + record.steps[name], 0),
         baseline.run,
+        baseline.attempt ?? 1,
       );
     }
     for (const row of readings?.rows ?? []) {
@@ -1005,6 +1059,7 @@ export function jobDays(workflow, baseline, readings = null) {
       day(
         measured.reduce((all, one) => all + one.seconds, 0),
         row.run,
+        row.attempt,
       );
     }
     if (best !== null) days.set(job.id, best);
@@ -1034,7 +1089,7 @@ function historyErrors(baseline, parsed) {
   // run. `where` names the attempt only when there is more than one, because every reading written
   // before the field existed was of the only attempt there was and `run 41637098008` still reads
   // right for them.
-  const where = (one) => `run ${String(one.run)}${(one.attempt ?? 1) === 1 ? '' : ` attempt ${String(one.attempt)}`}`;
+  const where = (one) => coordinateOf(one);
   const baselineAttempt = baseline.attempt === undefined ? 1 : baseline.attempt;
   const order = (tail.run - baseline.run) || (tail.attempt - baselineAttempt);
   if (order < 0) {
@@ -1546,8 +1601,8 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
           if (worst !== null && !ownDay && bound < MULTIPLE * worst.seconds) {
             errors.push(
               `\`${job.id} / ${step.name}\` is bounded at ${String(step.minutes)} min and the same command ` +
-                `took ${String(worst.seconds)} s in \`${worst.job} / ${worst.step}\` in run ` +
-                `${String(worst.run)}: the bound is under twice the slowest day already recorded, so a ` +
+                `took ${String(worst.seconds)} s in \`${worst.job} / ${worst.step}\` in ` +
+                `${coordinateOf(worst)}: the bound is under twice the slowest day already recorded, so a ` +
                 'run that meets the day this repository has met before is refused for being slow rather ' +
                 'than for hanging -- size the bound from that reading, or say in the history why it is not ' +
                 'comparable',
@@ -1627,7 +1682,8 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
             'verdict names the job rather than the step -- raise the ceiling to ' +
             `${String(needed)} min, or split the job`
           : `\`${job.id}\` is bounded at ${String(job.timeoutMinutes ?? GITHUB_CEILING)} min and its slowest ` +
-            `recorded day is ${String(day?.seconds ?? 0)} s (run ${String(day?.run)}), which is ` +
+            `recorded day is ${String(day?.seconds ?? 0)} s ` +
+            `(${day === undefined ? 'no recorded run' : coordinateOf(day)}), which is ` +
             `${((day?.seconds ?? 0) === 0 ? Infinity : ceiling / (day?.seconds ?? 0)).toFixed(2)}x: the ` +
             `ceiling is under ${String(MULTIPLE)} times that day, so a day twice as slow reaches it with ` +
             'every step still inside its own bound and the verdict names the job rather than the step -- ' +
@@ -1654,8 +1710,8 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
       const allowance = PREFIX_MINUTES * 60;
       if (slowest !== null && allowance < MULTIPLE * slowest.seconds) {
         errors.push(
-          `\`${job.id}\` spent ${String(slowest.seconds)} s before its first real step in run ` +
-            `${String(slowest.run)}, and the allowance is ${String(PREFIX_MINUTES)} min: the prefix is ` +
+          `\`${job.id}\` spent ${String(slowest.seconds)} s before its first real step in ` +
+            `${coordinateOf(slowest)}, and the allowance is ${String(PREFIX_MINUTES)} min: the prefix is ` +
             `under ${String(MULTIPLE)} times the slowest one recorded, so a setup twice that slow is ` +
             'refused for being slow rather than for hanging -- raise `PREFIX_MINUTES` to ' +
             `${String(Math.ceil((MULTIPLE * slowest.seconds) / 60))}, or say in the history why those ` +
@@ -1888,6 +1944,21 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   // (finding 619).
   let closest = { name: '', ratio: Infinity, minutes: 0, day: null };
   let heldByBounds = 0;
+  // What a bound's headroom is worth, in the only unit the machine has offered (`O-121`).
+  //
+  // The floor under the history is one number for every step, and a *margin* needs the number for
+  // this step: a step that did not move at all must not inherit another step's 151 s. `noiseOfSteps`
+  // is the same walk `noiseFloorOf` reads, so the sentence about the history and the sentence about
+  // a bound's margin cannot disagree about which readings are one tree.
+  //
+  // Three populations, counted where the bound is seen: a bound whose step has a movement, one
+  // whose step was read twice and did not move (there is no multiple to take), and one whose step
+  // no second reading has timed (the question was not asked of it, which is not a margin of zero).
+  const movement = historyKnown ? noiseOfSteps(parsedReadings.rows) : null;
+  let boundChecked = 0;
+  let boundStill = 0;
+  let boundUnchecked = 0;
+  let narrowestMargin = { name: '', ratio: Infinity, headroom: 0, difference: 0 };
 
   for (const job of jobsOf(workflow)) {
     const record = recorded[job.id];
@@ -1961,13 +2032,22 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
         // two -- the same combination, in the direction this question asks. The history wins a tie
         // because it names a job and a step a reader can go and look at.
         if (found !== null) {
+          // The coordinate comes whole: `run` alone named two measurements since a re-run, and an
+          // object rebuilt field by field is how a sentence loses the second one (finding 646).
           const fast =
             found.fastest.seconds <= seconds
-              ? { seconds: found.fastest.seconds, run: found.fastest.run }
-              : { seconds, run: baseline.run };
+              ? found.fastest
+              : { seconds, run: baseline.run, attempt: baseline.attempt ?? 1 };
           const headroom = step.minutes * 60 - fast.seconds;
           if (headroom > loosest.headroom) {
-            loosest = { name: `${job.id} / ${step.name}`, headroom, bound: step.minutes * 60, best: fast.seconds, run: fast.run };
+            loosest = {
+              name: `${job.id} / ${step.name}`,
+              headroom,
+              bound: step.minutes * 60,
+              best: fast.seconds,
+              run: fast.run,
+              attempt: fast.attempt,
+            };
           }
         }
         // The same series, read at its middle and for every bound (`O-118`). The midpoint is the
@@ -1995,6 +2075,33 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
             if (over > farthestMiddle.ratio) {
               farthestMiddle = { name: `${job.id} / ${step.name}`, ratio: over };
             }
+          }
+        }
+        // How much of the headroom is the machine (`O-121`). `R10` asks for twice the slowest day
+        // and stops, which is a claim about the tree; two readings of one tree differ by up to 42%
+        // on `lint`, so the multiple is a claim about the machine as well -- and the quantity that
+        // separates them is the headroom measured in movements rather than in seconds.
+        //
+        // It is a **reading and not a rule**, and the round proved the negative: a movement between
+        // two readings of one tree cannot exceed the slowest of those readings, so
+        // `2 x slowest >= slowest + movement` always, and no bound `R10` holds can be breached by
+        // the floor. What the floor can do is say what the headroom is worth, which needs the
+        // number for *this* step rather than the widest one in the history.
+        const moved = movement === null ? undefined : movement.steps.get(`${job.id}\u0000${step.name}`);
+        if (moved === undefined) {
+          boundUnchecked += 1;
+        } else if (moved.seconds === 0) {
+          boundStill += 1;
+        } else {
+          boundChecked += 1;
+          const headroom = step.minutes * 60 - denominator;
+          if (headroom / moved.seconds < narrowestMargin.ratio) {
+            narrowestMargin = {
+              name: `${job.id} / ${step.name}`,
+              ratio: headroom / moved.seconds,
+              headroom,
+              difference: moved.seconds,
+            };
           }
         }
       }
@@ -2118,7 +2225,7 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
         (tightest.worst === null
           ? ''
           : ` of the slowest reading of its command (${String(tightest.worst.seconds)} s in ` +
-            `\`${tightest.worst.job} / ${tightest.worst.step}\`, run ${String(tightest.worst.run)})`) +
+            `\`${tightest.worst.job} / ${tightest.worst.step}\`, ${coordinateOf(tightest.worst)})`) +
         spreadText();
   // The other end of the axis, and the reason it is a clause rather than a second summary
   // (`O-113`). The spread above says how far the command the tightest bound divides by has moved;
@@ -2137,7 +2244,7 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
         (loosest.name === tightest.name ? 'the same bound, ' : `${loosest.name}, `) +
         `${String(loosest.headroom)} s of its ${String(loosest.bound)} s above the ` +
         `${String(loosest.best)} s ${loosest.name === tightest.name ? 'that' : 'its'} command spent at ` +
-        `its fastest (run ${String(loosest.run)})`;
+        `its fastest (${coordinateOf(loosest)})`;
   // The ceiling's reading, printed beside the tightest *step* bound and never folded into it
   // (finding 604). Before this clause the summary published a workflow-wide `bounds total` next
   // to a workflow-wide `measured`, and the one comparison that decides whether a bound can fire
@@ -2151,7 +2258,7 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
         `${String(ceilings - heldByBounds)} hold twice a day; the least room above a day is ` +
         `${closest.name} at ${String(closest.minutes)} min, ` +
         `${Number.isFinite(closest.ratio) ? closest.ratio.toFixed(1) : 'unmeasured'}x its slowest day of ` +
-        `${String(closest.day.seconds)} s (run ${String(closest.day.run)})`;
+        `${String(closest.day.seconds)} s (${coordinateOf(closest.day)})`;
   // The middle of every bound's own command, compressed to the numbers that describe the
   // population (`O-118`).
   //
@@ -2164,12 +2271,15 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   //
   // At 86x a decimal place is noise; at 2.4x it is the difference between two bounds, which is why
   // the two ends are printed to different precisions rather than to one.
+  // One precision rule for every multiple this file prints: at 10x a decimal place is noise, and
+  // at 2.4x it is the difference between two bounds. Two clauses reading one population must not
+  // round it differently.
+  const at = (ratio) => (ratio >= 10 ? ratio.toFixed(0) : ratio.toFixed(1));
   const middleRangeText = () => {
     if (!historyKnown || bounded === 0) return '';
     if (nearestMiddle.name === '') {
       return '; every bound divides by a middle of 0 s, so no multiple over one is printed';
     }
-    const at = (ratio) => (ratio >= 10 ? ratio.toFixed(0) : ratio.toFixed(1));
     // `sit` rather than `run`: this file uses `run` for a workflow run in twenty clauses, and a
     // sentence that said `the 36 bounds that have one run from 2.4x` reads as one of those.
     const ends =
@@ -2203,6 +2313,46 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
     found.earlier.run === found.later.run
       ? `attempts ${String(found.earlier.attempt)} and ${String(found.later.attempt)} of run ${String(found.earlier.run)}`
       : `runs ${String(found.earlier.run)} and ${String(found.later.run)}`;
+  // A headroom can be negative in a tree the gate refuses (`R10`), and `clears -50 s` is a sentence
+  // no reader can parse as a measurement. The two directions are written out rather than left to a
+  // sign, because a summary is also what a failing tree is read through.
+  const marginClause = () =>
+    narrowestMargin.headroom < 0
+      ? `is ${String(-narrowestMargin.headroom)} s short of its slowest day, against a ` +
+        `${String(narrowestMargin.difference)} s difference`
+      : `clears ${String(narrowestMargin.headroom)} s against ${String(narrowestMargin.difference)} s`;
+  const marginText = () => {
+    if (bounded === 0) return '';
+    if (boundChecked + boundStill === 0) {
+      return (
+        ", and no bound's own step has been read twice on one tree, so no headroom is argued " +
+        'against a difference'
+      );
+    }
+    const parts = [];
+    if (narrowestMargin.name === '') {
+      parts.push(
+        `the ${String(boundChecked + boundStill)} bound(s) whose own step has been read twice on one ` +
+          'tree all rest on a step that did not move between the two readings',
+      );
+    } else {
+      parts.push(
+        `${String(boundChecked + boundStill)} of the ${String(bounded)} bound(s) that carry their own ` +
+          "timeout have been read twice on one tree and each clears its own step's slowest day by at " +
+          `least ${at(narrowestMargin.ratio)}x the widest difference that step has shown (the ` +
+          `narrowest \`${narrowestMargin.name}\` ${marginClause()})`,
+      );
+      if (boundStill > 0) parts.push(`${String(boundStill)} did not move at all`);
+    }
+    if (boundUnchecked > 0) {
+      parts.push(`${String(boundUnchecked)} have no second reading to measure a difference from`);
+    }
+    const body =
+      parts.length === 1
+        ? parts[0]
+        : `${parts.slice(0, -1).join(', ')}, and ${String(parts[parts.length - 1])}`;
+    return `, and the difference is what a bound has to clear as well as the day: ${body}`;
+  };
   const noiseText = () => {
     if (!historyKnown) return '';
     const floor = noiseFloorOf(parsedReadings.rows);
@@ -2212,7 +2362,9 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
       `; ${String(floor.pairs)} pair(s) of them measured one tree, and the widest difference is ` +
       `${String(found.seconds)} s on \`${found.job} / ${found.step}\` (${String(found.before)} s then ` +
       `${String(found.after)} s, ${attemptsText(found)}) -- the ` +
-      "runner's variance, which a range over the history cannot separate from the tree's growth"
+      "runner's variance and the cache's state together, which a range over the history cannot " +
+      "separate from the tree's growth" +
+      marginText()
     );
   };
   const readingsText =
@@ -2234,8 +2386,8 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
       : prefixWorst.seconds === 0
         ? `and the slowest prefix recorded spent no second at all (run ${String(prefixWorst.run)})`
         : `which is ${((PREFIX_MINUTES * 60) / prefixWorst.seconds).toFixed(1)}x the slowest prefix any ` +
-          `recording holds (${String(prefixWorst.seconds)} s in \`${prefixWorst.job}\` of run ` +
-          `${String(prefixWorst.run)})`;
+          `recording holds (${String(prefixWorst.seconds)} s in \`${prefixWorst.job}\` of ` +
+          `${coordinateOf(prefixWorst)})`;
   return (
     `check-ci-budget: OK — ${String(jobCount)} job(s) recorded, ${String(bounded)} of ${String(steps)} ` +
     `step(s) carry their own \`timeout-minutes\`, ${String(carried)} ` +

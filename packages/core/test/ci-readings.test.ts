@@ -262,7 +262,7 @@ describe('the history of readings, read', () => {
         [11, { batteries: { A: [90, 'same'] } }],
       ]),
     ).rows;
-    expect(worstReadingFor(rows, 'same')).toEqual({ seconds: 90, run: 11, job: 'batteries', step: 'A' });
+    expect(worstReadingFor(rows, 'same')).toEqual({ seconds: 90, run: 11, attempt: 1, job: 'batteries', step: 'A' });
     expect(worstReadingFor(rows, 'nothing ran this')).toBe(null);
   });
 
