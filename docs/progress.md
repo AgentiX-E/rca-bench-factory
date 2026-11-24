@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 260 core + 4 cli |
-| Test lines | 117,618 core + 3,242 cli |
-| Tests | 6,921 core + 187 cli |
+| Test lines | 118,197 core + 3,242 cli |
+| Tests | 6,946 core + 187 cli |
 | Tracked files | 678 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.140: **42** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.141: **43** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1022,14 +1022,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   willing to measure" like their neighbours and they are also a quarter of an hour of a suite -- and
   whether a step whose cost is a suite should ever be inside the aggregate whose name says static
   scan]`
-- O-114 · **A range over the history mixes the tree's growth with the runner's variance.**
-  `pnpm lint` runs a build, so a reading from 2026-11-06 measured a smaller suite than today's, and
-  the 221 s in the range is partly a tree that no longer exists. Only a re-run of one commit would
-  separate the two causes, and the history holds no such pair: every reading is of a different
-  commit, which is why the noise floor has never been measured.
-  `[open: whether a reading of one tree should be recorded as such -- the recorder could re-read a
-  commit it has already measured, and the pair would be the noise floor the range cannot give -- and
-  whether a duplicated reading is a second day or a second number]`
 - O-117 · **A dated row's date is checked against its round, and not against what that round
   measured.**
   Rule 3c refuses `(at v3.200)` under `## v3.138`, so the two tokens can no longer contradict each
@@ -1042,18 +1034,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   run rather than a round -- the file is rewritten by every round, so the question is whether it is
   the right place for a history -- and whether `--check`, which compares three scopes and the
   additivity relation, could compare provenance without spawning a second suite]`
-- O-118 · **Thirty-seven bounds still print no typical day.**
-  v3.140 gave the middle of the series to the tightest bound's command, because that is the multiple a
-  reader is asked to interpret: `2.0x of the slowest` beside `86x` the middle. Every other bound is
-  still described by two ends, and several of them are the ones a capacity question is actually about
-  -- `pnpm lint` runs from **221 s** to **521 s** with a median of **373 s**, and its 14-minute bound
-  is `1.6x` the worst day and `2.3x` the middle one. The reader knows how to print a middle; what it
-  does not know is where in a summary that is already eight clauses long thirty-eight of them would
-  go.
-  `[open: whether the middle belongs to the tightest bound alone -- the one whose multiple a reader is
-  asked to read -- or to every bound, which would make the line a table rather than a sentence -- and
-  whether a middle printed for one bound is a rule or an accident of which bound happens to be tightest
-  this round]`
 - O-119 · **A silence sentence never has to stop being true.**
   `budget(s)` carries the first one: a reason why a round can print none. Nothing asks whether the
   branch that stopped being taken still exists, whether the gate that printed the noun is still in
@@ -1064,6 +1044,33 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: whether a noun silent for many rounds should be asked about -- a sentence is a bet that the
   branch will be taken again, and no round has yet seen one lose -- and whether the question is a count
   of rounds the noun has been absent or a comparison with the gate's own source]`
+
+- O-120 · **A range over the middles prints two numbers, and thirty-six bounds' middles are printed by
+  nothing.**
+  v3.141 compressed the population of middles to its ends -- `2.4x` to `86x` -- so a reader asking
+  whether a usual day comes near any bound is answered at once. The individual answer is not printed
+  and not unprintable: `pnpm lint`'s middle is **375 s** under a 1080 s bound, which is `2.9x`, and the
+  number is derivable from `golden-master/ci-readings.json` by anyone holding the file.
+  `[open: whether a figure that is derivable from a committed file needs to be printed at all -- the
+  range answers the population question and the file answers the individual one -- and whether the
+  answer changes for a reader who has the summary and not the tree]`
+- O-121 · **The noise floor is one pair on one tree, and every bound is sized without it.**
+  Attempts 1 and 2 of run `45351350110` differ by up to **151 s** on one step and **141 s** on `lint`
+  itself -- 42% of that step -- and 28 of the 83 steps came back identical. The number says what the
+  machine did once, in one afternoon. `R10` asks for twice the slowest day, which is a statement about
+  the tree; nothing in the workflow's arithmetic mentions the machine's own spread.
+  `[open: whether a bound should be argued against the noise floor as well as the slowest day -- if two
+  readings of one tree can differ by 42%, the multiple is partly a statement about the machine -- and
+  whether one pair is enough to say what the machine does]`
+- O-122 · **The recorder will write an attempt older than the recording, which makes the history refuse
+  the tree the recorder just wrote.**
+  `--attempt 1` after `--attempt 2` is allowed: it writes the earlier measurement as the recording, the
+  tail stops being the newest measurement, and `R10` refuses -- correctly, since the bounds would be
+  argued from a day the record says was superseded, but the refusal names a state the recorder created
+  rather than a mistake anybody made.
+  `[open: whether the recorder should refuse to write an attempt older than the recording's -- it is a
+  legitimate repair when the latest attempt was red -- and whether the recording should hold the newest
+  attempt by measurement time or by attempt number]`
 
 ## Pass log
 
@@ -1100,7 +1107,7 @@ and this table.
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
-| [volume-19.md](progress/volume-19.md) | 20 | v3.121 | v3.140 |
+| [volume-19.md](progress/volume-19.md) | 21 | v3.121 | v3.141 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

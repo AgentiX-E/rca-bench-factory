@@ -700,6 +700,31 @@
   install command's 28 readings -- **21 s**, so the bound is 86x a typical day -- is printed by
   nothing.
 
+- O-114 · ~~**A range over the history mixes the tree's growth with the runner's variance.**~~
+  `pnpm lint` runs a build, so a reading from 2026-11-06 measured a smaller suite than today's, and
+  the 221 s in the range is partly a tree that no longer exists. Only a re-run of one commit would
+  separate the two causes, and the history holds no such pair: every reading is of a different
+  commit, which is why the noise floor has never been measured.
+  ~~`[open: whether a reading of one tree should be recorded as such -- the recorder could re-read a
+  commit it has already measured, and the pair would be the noise floor the range cannot give -- and
+  whether a duplicated reading is a second day or a second number]`~~
+  **Closed by finding 640 and finding 641**, and the pair had to be taken rather than argued: run
+  `45351350110` was re-run, both attempts were recorded, and one tree measured twice differs by up to
+  **151 s** on one step (`batteries-heavy / Type-miss probe battery`, 356 s -> 507 s) and by **141 s**
+  on `lint` itself -- **42%** of that step, against the 300 s between its fastest and slowest reading
+  over thirty-one days. **28 of the 83 steps came back identical, the median difference is 1 s, and
+  the sum of the absolute differences is 1,136 s.** The gate prints the widest difference and names
+  both attempts, because the answer to "a second day or a second number" is neither: it is a second
+  **measurement of one tree**, which stays in the series `R10` divides by and is printed as the floor.
+  Taking the pair turned up the reason it could not have been written down before -- a re-run is
+  attempt 2 of one run id, and the history keyed a reading by the id, so `readReadings` refused the
+  pair, `mergeReading` replaced the first attempt with the second, and the recorder could only see the
+  latest attempt. The identity is `(run, attempt)` now, and an absent `attempt` is 1, so the thirty-one
+  readings already in the file are unchanged. **Eight mutations and 34 reds** for the floor, **seven
+  and 14** for the attempt, no survivors. The residue is `O-121`: one pair on one tree is one
+  afternoon, and the bounds are still sized without it. `O-122` is the ordering the recorder still
+  allows.
+
 - O-115 · ~~**A dated row's date is not checked against the round it sits under.**~~ `(at v3.200)`
   under `## v3.138` is impossible -- a round cannot record a measurement from a round that has not
   happened -- and nothing read the pair. A probe over the corpus found **0** such rows, which is why
@@ -738,3 +763,24 @@
   `between 20 s and 21 s` and `88x`, 31 printed `at 21 s` and `86x` again -- so all three shapes of
   the clause were printed by the shipped tree, not only by the fixture. The residue is `O-118`:
   thirty-seven bounds still print no typical day.
+- O-118 · ~~**Thirty-seven bounds still print no typical day.**~~ v3.140 gave the middle of the series
+  to the tightest bound's command, because that is the multiple a reader is asked to interpret: `2.0x
+  of the slowest` beside `86x` the middle. Every other bound was still described by two ends, and
+  several of them are the ones a capacity question is actually about -- `pnpm lint` runs from **221 s**
+  to **521 s** with a median of **373 s**, and its 14-minute bound is `1.6x` the worst day and `2.3x`
+  the middle one. ~~`[open: whether the middle belongs to the tightest bound alone -- the one whose
+  multiple a reader is asked to read -- or to every bound, which would make the line a table rather
+  than a sentence -- and whether a middle printed for one bound is a rule or an accident of which
+  bound happens to be tightest this round]`~~
+  **Closed by finding 639**, on both questions and with an answer the shipped tree gave: the middle
+  belongs to every bound, because it is the same question asked of each of them, and which bound got
+  one was an accident -- the bound nearest a **bad** day is `backend / Install a backend this
+  repository did not write` at `2.0x` (1800 s over 888 s), and the bound nearest a **usual** day is
+  `batteries-heavy / Backend-support battery` at `2.4x` (900 s over 382 s). Two different bounds, so a
+  figure that followed the superlative moved when an unrelated bound moved. Thirty-six of the
+  thirty-eight bounds have a command whose middle is above 0 s and two divide by a middle of 0 s,
+  where no multiple exists; the population is printed as its two extremes with the bound that makes
+  the least one, because thirty-six middles in a line that already carries twenty clauses is the table
+  the question worried about. **Twelve mutations, 20 reds**, no survivors; the one that survived the
+  first pass printed a *different* sentence from the one the fixture refused, which is why the fixture
+  now names both. The residue is `O-120`: the individual middles are still printed by nothing.

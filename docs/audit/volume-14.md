@@ -1,7 +1,7 @@
 # Audit · volume 14
 
-Findings 579–638, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
-`progress/volume-19.md` as `v3.115` through `v3.140`.
+Findings 579–641, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
+`progress/volume-19.md` as `v3.115` through `v3.141`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -3889,3 +3889,202 @@ mutation that removes the check survived nothing, because the fixture was writte
 **Two mutations, 3 reds.** The second is the one that makes the refusal usable: without the field
 name, a noun carrying a relation and a silence sentence gets a message about "a sentence", and the
 author has to read both to find the figure.
+
+## Finding 639 — the middle was printed for whichever bound happened to be tightest, and the bound nearest a usual day was not it
+
+`O-116` gave the middle of a command's readings to one bound -- the tightest one -- because that is the
+multiple the sentence asks a reader to divide. The question it left open was whether that choice is a
+rule or an accident of which bound happened to be tight. The shipped tree answers it: the bound nearest
+a **bad** day and the bound nearest a **usual** day are two different bounds.
+
+| | the shipped tree |
+| --- | --- |
+| the bound nearest a bad day | `backend / Install a backend this repository did not write` at **2.0x** (1800 s over 888 s) |
+| the bound nearest a usual day | `batteries-heavy / Backend-support battery ...` at **2.4x** (900 s over 382 s) |
+| steps carrying their own `timeout-minutes` | **38** |
+| whose command has a middle above 0 s | **36** |
+| whose command spends no second in the middle, so no multiple exists | **2** (`verify`'s Published suite counts, `batteries`' Scorer-stability probe) |
+| the range over the middles | **2.4x** to **86x** |
+
+So the figure the summary printed moved when an unrelated bound moved: on a round where the
+`Backend-support` battery is the tight one, the middle would be `2.4x` and the install step's `86x`
+would be nowhere. A number that follows the superlative rather than the question is the shape
+finding 294 refused for a ratio without a subject, one level up.
+
+### The population, compressed rather than printed
+
+The middle belongs to every bound. What the summary cannot do is print thirty-eight of them: the line
+already carries twenty clauses, and a list of middles is a table, not a sentence. So the two numbers
+that describe the population are printed instead -- the least multiple any bound makes over its own
+command's middle, with the bound that makes it, and the greatest -- because both are an extreme of one
+set rather than a choice:
+
+```js
+const ends =
+  nearestMiddle.ratio === farthestMiddle.ratio
+    ? `sit at ${at(nearestMiddle.ratio)}x`
+    : `sit between ${at(nearestMiddle.ratio)}x and ${at(farthestMiddle.ratio)}x`;
+```
+
+and the class outside the range is counted rather than dropped:
+
+```
+; over the middle of its own command the 36 bound(s) that have one sit between 2.4x and 86x, the
+nearest being `batteries-heavy / Backend-support battery (no survivors, no inert, no misattributed
+mutations)` (900 s over the middle of its 31 readings at 382 s), and 2 of the 38 divide by a middle of
+0 s, which is no multiple
+```
+
+A range over the bounds' middles is the same compression the file already applies to a series: the
+axis of one command is printed as its ends and its middle, and the axis of the thirty-eight bounds is
+printed as its ends. The two ends are also printed to different precisions -- `2.4x` and `86x` --
+because at 86 a decimal is noise and at 2.4 it is the difference between two bounds.
+
+`run` was the first verb here and it was wrong: this file spends `run` on a workflow run in twenty
+clauses, so `the 36 bounds that have one run from 2.4x` read as a sentence about one CI run. `sit` is
+the second version and it is not a synonym.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the nearest multiple is seeded so that no bound is nearest | 3 |
+| the farthest multiple is taken over the nearest bound | 3 |
+| a bound over a middle of 0 s is carried into the range | 1 |
+| a bound over a middle of 0 s is counted as one more with a middle | 1 |
+| the range counts every bound rather than the ones with a middle | 1 |
+| the ends are printed to two decimals at every magnitude | 2 |
+| the ends are printed to no decimals at every magnitude | 3 |
+| one reading's middle is printed as an interval from itself | 1 |
+| the witness named is the farthest bound rather than the nearest | 1 |
+| every bound is said to divide by a middle of 0 s | 2 |
+| the range is printed with no history to take a middle from | 1 |
+| the witness states the middle of another command's readings | 1 |
+
+**Twelve mutations, 20 reds.** The eleventh is the one that survived the first pass, and the hole was
+in the fixture: the case about a tree with no history asserted only that one sentence was absent, and
+the mutation printed a *different* sentence -- `every bound divides by a middle of 0 s`, which is a
+falsehood about the commands rather than a silence. The case names both sentences now.
+
+## Finding 640 — every reading carried its commit and no reader grouped by it, so a range over the history could not tell the tree's growth from the runner's variance
+
+`O-114` said the shape of the problem: `pnpm lint` runs a build, so a reading from 2026-11-06 measured
+a smaller suite than today's, and the 221 s at the bottom of its range is partly a tree that no longer
+exists. Separating the two causes needs one tree measured twice, and the history held no such pair --
+every reading was of a different commit -- so the noise floor had never been measured. Every row had
+carried its commit from the round the file was written.
+
+### The measurement, which took a re-run rather than an argument
+
+Run `45351350110` was re-run, which GitHub records as **attempt 2 of the same run id**, and both
+attempts were recorded. One tree, two measurements, 83 steps each:
+
+| | attempt 1 | attempt 2 |
+| --- | --- | --- |
+| step seconds, summed | 3,431 s | 3,355 s |
+| `verify` | 492 s | 689 s |
+| `batteries` | 988 s | 752 s |
+| `batteries-heavy` | 761 s | 942 s |
+| `artefacts` | 156 s | 58 s |
+
+| the widest differences | | |
+| --- | --- | --- |
+| `batteries-heavy / Type-miss probe battery ...` | 356 s -> 507 s | **151 s** |
+| `sensitivity-shard / Every proved exit can disappear ...` | 516 s -> 371 s | 145 s |
+| `verify / Lint (...)` | 337 s -> 478 s | 141 s |
+| `sensitivity / Every proved exit can disappear ...` | 304 s -> 413 s | 109 s |
+| `artefacts / Install the shells ...` | 117 s -> 8 s | 109 s |
+| `sensitivity / Install the shells ...` | 109 s -> 10 s | 99 s |
+
+**28 of the 83 steps came back identical, the median difference is 1 s, and the sum of the absolute
+differences is 1,136 s.** The `lint` step itself moved **141 s -- 42%** -- between two runs of one
+tree, which is the answer to the question the range was being read for: the 300 s between the fastest
+and slowest reading of that command over thirty-one days is the same order as what the machine does
+in an afternoon.
+
+### The reader
+
+```js
+export function noiseFloorOf(rows) {
+  if (!Array.isArray(rows) || rows.length < 2) return null;
+  ...
+}
+```
+
+Every **pair** of readings of one commit is compared, not the neighbouring ones: with one tree read
+three times the widest difference is between the first and the third, and a rule that compared
+neighbours would answer a question about append order. A step only one of the two readings timed has
+no difference to take, which is the hole `jobDays` refuses one level up. `null` when no two readings
+share a tree, because a floor nobody measured is not a floor of zero -- and the sentence says so in
+words rather than leaving the silence to be read as one:
+
+```
+; 33 reading(s) of the workflow, run 42131836805 to 45351350110; 1 pair(s) of them measured one tree,
+and the widest difference is 151 s on `batteries-heavy / Type-miss probe battery (no survivors, no
+inert, no blind mutations)` (356 s then 507 s, attempts 1 and 2 of run 45351350110) -- the runner's
+variance, which a range over the history cannot separate from the tree's growth
+```
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| every reading is its own tree | 5 |
+| only neighbouring readings of one tree are compared | 1 |
+| the difference between two readings is signed | 4 |
+| the first difference found is reported as the widest | 1 |
+| one tree read three times is counted as one pair | 1 |
+| no pair is reported as a floor of zero | 19 |
+| a history with no second reading of a tree states nothing about the floor | 1 |
+| the floor names the later reading first | 2 |
+
+**Eight mutations, 34 reds.** The sixth is 19 because `null` stops being returned: the seventeen cases
+that budget the summary without a history then read a summary built from `{ pairs: 0, worst: null }`.
+
+## Finding 641 — a run id was the identity of a reading, and a re-run has one id with two measurements
+
+The measurement above could not be written down. GitHub's re-run keeps the run id and increments
+`run_attempt`, and the history keyed a reading by the run id alone, in three places that each did the
+wrong thing with the truth:
+
+```js
+if (seen.has(run)) {              // readReadings: the second attempt is refused as a duplicate
+if (one?.run !== entry.run) ...   // mergeReading: the first attempt is silently replaced
+const jobs = await get(`/actions/runs/${RUN}/jobs?per_page=100`);  // the recorder: latest only
+```
+
+So the second attempt's seconds would have **overwritten** the first's in the one file whose purpose is
+to hold both, and the API's default answer makes that overwrite look like a re-read of the same day.
+The identity of a reading is the measurement, and the measurement is the attempt:
+
+- `readReadings` keys by `run#attempt`, refuses one attempt twice, and refuses an attempt that is not a
+  positive integer. An absent `attempt` is **1**, which is what every recording written before the
+  field existed was -- the thirty-one readings already in the file are unchanged and valid.
+- `mergeReading` replaces one attempt and keeps the other.
+- `R10`'s two directions compare the **pair** `(run, attempt)`, so a history that stops at attempt 1
+  while the recording is attempt 2 is refused as "a reading that was taken and not written down".
+- The recorder reads `run_attempt`, writes it into both files, and takes `--attempt <n>` to record an
+  older one -- which is the only call that asks the API for `filter=all`, because without it the first
+  attempt's jobs are unreachable.
+- The summary names the attempt when it is not the first: `56 min measured (as of run 45351350110
+  attempt 2)`, and the noise clause names the pair as `attempts 1 and 2 of run 45351350110` rather than
+  `runs 45351350110 and 45351350110`.
+
+A duplicated reading is therefore **neither a second day nor a second number on its own**: it is a
+second measurement of one tree. It stays in the series `R10` divides by and in the middle, because a
+bound has to survive every measurement of it, and it is printed as the floor instead of being counted
+as another tree.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| an attempt is ignored, so every reading is the first one | 7 |
+| the duplicate check goes back to the run id | 1 |
+| a re-recorded attempt replaces every attempt of its run | 1 |
+| the tail is ordered by run and not by attempt | 2 |
+| the noise floor prints one run id twice | 1 |
+| a baseline may name an attempt no run has | 1 |
+| the summary says which run the numbers came from and not which attempt | 1 |
+
+**Seven mutations, 14 reds**, measured on the green tree with the recording of the pair already in it.

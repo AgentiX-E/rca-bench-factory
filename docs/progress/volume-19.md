@@ -2813,9 +2813,9 @@ declared with its file.
 | --- | --- |
 | CI | run `45345210544` on `66b01dd`: **8 of 8 jobs success**, 978 s (15:04:47 -> 15:21:05); the slowest job is `batteries` at 973 s of its 55-minute ceiling, and its own reading of `Doc-count shape battery` -- **70 s** -- is what raised that step's bound and then the ceiling above it (see *The round's own defects*). This is the run the recording was taken from, and it is the first run of the round's tip |
 | `pnpm run docs:check` | **23 steps, exit 0** |
-| `core` test suite | **260 files, 6921 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7108 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 6921 tests passed** (at v3.140) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.140) |
+| repo test suite | **264 files, 7108 tests passed** (at v3.140) |
 | new tests | **6,909 -> 6,921, +12**: five for the middle of the bound axis (the shipped shape, an even series, equal middle readings, a middle of 0 s, and the series itself) and seven for the silence sentence (the writer's refusal, the green line that names it, the run's refusal, a noun coming back, the blank sentence, the figure it may not state, and the refusal that names the field) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
 | the budget gate's axis | `2.0x of the slowest reading ... across the history that command runs from 16 s to 888 s, with the middle of its 31 readings at 21 s -- against which the bound is 86x` |
@@ -2840,3 +2840,216 @@ declared with its file.
   `[open: whether a noun that has been silent for many rounds should be asked about -- a stale
   sentence is a record drifting the other way, and no round has yet had two of them -- and whether the
   question is a count of rounds or a comparison with the gate's source]`
+
+## v3.141 — the middle of every bound, and the floor under a range
+
+Two questions the previous rounds left open turned out to have the same shape: a figure was printed
+for one member of a set and the set itself was described by its extremes. One middle was printed, for
+whichever bound happened to be tightest; one range was printed, over readings of thirty-one different
+trees. Both are answered by reading the whole population and printing the two numbers that describe it
+-- the least and the greatest multiple over the middles, and the widest difference between two
+readings of one tree.
+
+The second answer needed a measurement nobody had taken, and taking it turned up a defect in the
+record's own identity: a re-run is attempt 2 of one run id, and the history could not hold it.
+
+### The middle of every bound
+
+`O-116` printed the middle for the tightest bound because that is the multiple the sentence asks a
+reader to divide, and the open question was whether that is a rule or an accident. It is an accident,
+and the shipped tree says so: the bound nearest a **bad** day is `backend / Install a backend this
+repository did not write` at `2.0x` (1800 s over 888 s), and the bound nearest a **usual** day is
+`batteries-heavy / Backend-support battery` at `2.4x` (900 s over 382 s). Two bounds, two capacity
+questions, and only the first had a middle printed.
+
+The population is **38** bounds, **36** of which have a command whose middle is above 0 s; the other
+**2** divide by a middle of 0 s, where no multiple exists. Printing thirty-six middles would be a table
+in a line that already carries twenty clauses, so the two extremes of the population are printed, with
+the bound that makes the least one, and the class outside the range is counted:
+
+```
+; over the middle of its own command the 36 bound(s) that have one sit between 2.4x and 86x, the
+nearest being `batteries-heavy / Backend-support battery (no survivors, no inert, no misattributed
+mutations)` (900 s over the middle of its 31 readings at 382 s), and 2 of the 38 divide by a middle of
+0 s, which is no multiple
+```
+
+Both ends are an extreme of one set rather than a choice, which is what makes this a rule: the figure
+moves when the bounds move, not when a different bound becomes the tight one.
+
+The first verb was `run`, and this file spends `run` on a workflow run in twenty clauses, so `the 36
+bounds that have one run from 2.4x` read as a sentence about one CI run. `sit` is the second version.
+
+### The floor under the range
+
+`O-114` said the range over the history mixes the tree's growth with the runner's variance, and that
+only a re-run of one commit separates them -- a pair the history did not hold, because every reading
+was of a different commit. So this round made one: run `45351350110` was re-run, which GitHub records
+as **attempt 2 of the same run id**, and both attempts were recorded.
+
+| the same tree, twice | attempt 1 | attempt 2 |
+| --- | --- | --- |
+| wall clock | 1,026 s | 955 s |
+| step seconds, summed | 3,431 s | 3,355 s |
+| `verify` | 492 s | 689 s |
+| `batteries` | 988 s | 752 s |
+| `batteries-heavy` | 761 s | 942 s |
+| `artefacts` | 156 s | 58 s |
+
+The widest single-step differences are **151 s** (`batteries-heavy / Type-miss probe battery`, 356 s ->
+507 s), **145 s** (`sensitivity-shard / Every proved exit can disappear`), **141 s** (`verify / Lint`,
+337 s -> 478 s), **109 s** twice (`sensitivity`'s proved-exit step and `artefacts`' shell install,
+117 s -> 8 s), and **99 s** (`sensitivity`'s shell install). **28 of the 83 steps came back identical,
+the median difference is 1 s, and the sum of the absolute differences is 1,136 s.**
+
+That is the answer the range was being read for. `lint` moves **141 s, or 42%**, between two runs of
+one tree, and the 300 s between its fastest and slowest reading over thirty-one days is the same order
+as what the machine does in an afternoon. The gate prints it where the history is counted:
+
+```
+; 33 reading(s) of the workflow, run 42131836805 to 45351350110; 1 pair(s) of them measured one tree,
+and the widest difference is 151 s on `batteries-heavy / Type-miss probe battery (no survivors, no
+inert, no blind mutations)` (356 s then 507 s, attempts 1 and 2 of run 45351350110) -- the runner's
+variance, which a range over the history cannot separate from the tree's growth
+```
+
+`noiseFloorOf` compares every **pair** of readings of one commit rather than the neighbouring ones,
+because with one tree read three times the widest difference is between the first and the third; a step
+only one of the two readings timed has no difference to take; and `null` is returned when no two
+readings share a tree, so the sentence says in words that the floor has not been measured rather than
+leaving a silence to be read as a floor of zero.
+
+### A run id was the identity of a reading
+
+The measurement could not be written down, and the three reasons were one reason:
+
+```js
+if (seen.has(run)) {              // readReadings: attempt 2 refused as a duplicate
+if (one?.run !== entry.run) ...   // mergeReading: attempt 1 silently replaced
+const jobs = await get(`/actions/runs/${RUN}/jobs?per_page=100`);  // the recorder: latest only
+```
+
+A re-run keeps the run id and increments `run_attempt`, so the identity of a reading is the
+measurement, not the id. `readReadings` keys by `run#attempt` and refuses an attempt that is not a
+positive integer; `mergeReading` replaces one attempt and keeps the other; `R10`'s two directions
+compare the pair `(run, attempt)`, so a history that stops at attempt 1 while the recording is attempt
+2 is refused as a reading that was taken and not written down; the recorder reads `run_attempt`, writes
+it into both files, and takes `--attempt <n>` to record an older one, which is the only call that asks
+the API for `filter=all`.
+
+An absent `attempt` is **1**, which is what every recording written before the field existed was: the
+thirty-one readings already in the file are unchanged and still valid, and the recording became the
+pair's second attempt with no migration.
+
+A duplicated reading is therefore neither a second day nor a second number on its own. It is a second
+measurement of one tree: it stays in the series `R10` divides by and in the middle, because a bound has
+to survive every measurement of it, and it is printed as the floor rather than counted as another tree.
+
+### The round's own defects
+
+- **One mutation survived the first pass, and the hole was in the fixture.** `the range is printed with
+  no history to take a middle from` left every test green, because the case about a tree with no
+  history asserted only that one sentence was absent -- and the mutation printed a different sentence,
+  `every bound divides by a middle of 0 s`, which is a falsehood about the commands rather than a
+  silence. The case names both sentences now, and the mutation is 1 red.
+- **The verb `run` collided with the noun `run`.** `the 36 bound(s) that have one run from 2.4x to
+  86x` was written, read, and replaced with `sit` in the same hour; the file uses `run` for a workflow
+  run twenty times, and the sentence was one clause away from `run 45351350110`.
+- **A range from a number to itself.** The first version printed `from 2.4x to 2.4x` for a workflow with
+  one bound, found by writing the case rather than by reading the clause, and the branch that prints a
+  single end is now the one the case pins.
+- **Two cases from v3.140 were too broad.** They refused `not.toContain('the middle of its')`, which the
+  new clause also contains -- for the population rather than for the spread. The assertion names the
+  spread clause's own phrase now, which is what those cases were about.
+- **The counts were measured three times** -- 6,921 at v3.140, 6,932 after the first eleven cases,
+  6,946 after the attempt cases -- and the v3.140 ledger's three rows had to be dated to `(at v3.140)`
+  rather than edited, because a round's own numbers are a record of that round.
+- **`gate-sites.json` lost one proof and gained two sites unproved.** The usage line's guard text
+  changed (it names `--attempt` now), so the deriver dropped its `provedBy`, and two new `throw`s
+  arrived without one. Three annotations were re-attached by hand, and the throw basket's pins moved
+  with them: **100 -> 102** throws and **12 -> 14** fatal, both asserted in two files because the count
+  and the coordinates are two different claims.
+- **The claim count in `docs/acceptance.md` moved** from 232 to 234, because two refusals the recorder
+  did not have before each carry a proof -- a number nothing derives, which is why the gate refused it.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the nearest multiple is seeded so that no bound is nearest | 3 |
+| the farthest multiple is taken over the nearest bound | 3 |
+| a bound over a middle of 0 s is carried into the range | 1 |
+| a bound over a middle of 0 s is counted as one more with a middle | 1 |
+| the range counts every bound rather than the ones with a middle | 1 |
+| the ends are printed to two decimals at every magnitude | 2 |
+| the ends are printed to no decimals at every magnitude | 3 |
+| one reading's middle is printed as an interval from itself | 1 |
+| the witness named is the farthest bound rather than the nearest | 1 |
+| every bound is said to divide by a middle of 0 s | 2 |
+| the range is printed with no history to take a middle from | 1 |
+| the witness states the middle of another command's readings | 1 |
+| every reading is its own tree | 5 |
+| only neighbouring readings of one tree are compared | 1 |
+| the difference between two readings is signed | 4 |
+| the first difference found is reported as the widest | 1 |
+| one tree read three times is counted as one pair | 1 |
+| no pair is reported as a floor of zero | 19 |
+| a history with no second reading of a tree states nothing about the floor | 1 |
+| the floor names the later reading first | 2 |
+
+| the mutation | reds |
+| --- | --- |
+| an attempt is ignored, so every reading is the first one | 7 |
+| the duplicate check goes back to the run id | 1 |
+| a re-recorded attempt replaces every attempt of its run | 1 |
+| the tail is ordered by run and not by attempt | 2 |
+| the noise floor prints one run id twice | 1 |
+| a baseline may name an attempt no run has | 1 |
+| the summary says which run the numbers came from and not which attempt | 1 |
+
+**Twenty-seven mutations, 68 reds** (20/52 for the middle and the range, 7/16 for the attempt), measured
+on the green tree with the pair already recorded. No survivors: the one that survived the first pass is
+the eleventh, and the repair was a fixture that now names both sentences of the state it is about.
+
+### Readings
+
+> Ledger for `v3.141`.
+
+| what | value |
+| --- | --- |
+| CI | run `45351350110` on `45eaacff`: **8 of 8 jobs success**, 955 s (09:18:49 -> 09:34:44) at attempt 2 against 1,026 s at attempt 1 -- the same tree, re-run to measure the noise floor. This is the run the recording was taken from, and its two attempts are the history's only pair |
+| `pnpm run docs:check` | **23 steps, exit 0** |
+| `core` test suite | **260 files, 6946 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **264 files, 7133 tests passed** (as of this commit) |
+| new tests | **6,921 -> 6,946, +25**: fourteen for the two subjects (five for the range over the middles, six for the floor and the pair, three for the recorder's `--attempt`) and eleven for the attempt's identity (the reader holding two attempts, the duplicate, the bad attempt, the merge, the two orderings, the acceptance, the baseline, the two sentences). Counted from the suite, not from this sentence |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
+| the budget gate's axis | `2.0x of the slowest reading ... with the middle of its 33 readings at 21 s -- against which the bound is 86x; ... over the middle of its own command the 36 bound(s) that have one sit between 2.4x and 86x ... and 2 of the 38 divide by a middle of 0 s` |
+| the noise floor | **151 s** on `batteries-heavy / Type-miss probe battery` (356 s -> 507 s), attempts 1 and 2 of run `45351350110`; 28 of 83 steps identical, 1,136 s of absolute difference |
+| the readings | **33** readings, 32 runs, 31 trees: one tree measured twice, which is the pair |
+| the noun inventory | **57** nouns in 76 gate/noun pairs and 11 judgements; `pair(s)` became shared and needed a relation, `bound(s)` is new, and `budget(s)` is silent this run with a sentence saying when it can be |
+| `docs/acceptance.md` | **53** clauses across **37** rounds; index **53** rows |
+| the census | **4** coincidences, unchanged |
+
+### Left open
+
+- **A range over the middles still prints only its ends.** The population has two numbers now, and
+  thirty-six bounds have a middle that no line prints -- `lint`'s own is 375 s under a 1080 s bound,
+  which is `2.9x`. The question is whether a reader who wants one bound's typical day should be served
+  by a second line of the gate's output, and what would read it.
+  `[open: whether a figure that is derivable from a committed file by anyone with the file needs to be
+  printed at all -- the range answers the population question and the file answers the individual one
+  -- and whether the answer changes for a reader who has the summary and not the tree]`
+- **The noise floor is one pair on one tree.** 151 s is what attempt 2 of one run did to a step, and
+  the samples behind the aggregate are one afternoon. Nothing says whether that is the machine's
+  typical spread, its worst, or one bad pairing -- and every bound in the workflow is sized without it.
+  `[open: whether a bound should be argued against the noise floor as well as the slowest day -- `R10`
+  asks for twice the worst reading, and if two readings of one tree can differ by 42% the multiple is
+  a statement about the machine as much as about the tree -- and whether one pair is enough to say so]`
+- **The recorder will write an attempt older than the recording, which makes the history refuse the
+  tree the recorder just wrote.** `--attempt 1` after `--attempt 2` is allowed: it writes the earlier
+  measurement as the recording, the tail stops being the newest measurement, and `R10` refuses --
+  correctly, but the refusal names a state the recorder created rather than a mistake anybody made.
+  `[open: whether the recorder should refuse to write an attempt older than the recording's -- it is a
+  legitimate repair when the latest attempt was red -- and whether the recording should hold the newest
+  attempt by measurement time or by attempt number]`

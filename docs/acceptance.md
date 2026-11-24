@@ -60,6 +60,8 @@ before the layer above it is meaningful.
 | A date is not in the future of the round it is quoted in | v3.139 |
 | A bound is printed with the day its command usually has | v3.140 |
 | A noun may leave the vocabulary with a sentence saying when it can be silent | v3.140 |
+| A population of middles is printed as its ends, and the class that has none is counted | v3.141 |
+| The history's range carries the floor a second reading of one tree measures | v3.141 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -150,7 +152,9 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   the `sensitivity` job runs `verify-sites-are-sensitive.mjs`, which asks whether that
   file **notices** the exit's absence -- one run per claim with that site's code
   replaced by success, and a baseline run per file so a red claimant cannot be
-  credited with catching anything. Measured at **232 of 232** claim(s) across 68 file(s).
+  credited with catching anything. Measured at **234 of 234** claim(s) across 68 file(s) -- two more
+  than v3.140's 232, because an attempt that does not exist and an attempt with no job in it are two
+  refusals `measure-ci-baseline.mjs` did not have before, and each carries a proof.
   The figure was 105 of 105 in both halves at v3.41, and it drifted for twenty-four rounds
   because nothing read the sentence -- an external reviewer quoted the 105 as the current
   state, which is what a number with no reader costs. `check-doc-counts` reads it now:
@@ -2489,3 +2493,55 @@ from an anecdote again.
   sentences (finding 638).
 - **What is not claimed.** That the sentence is still true. Nothing asks whether the branch has been
   deleted or the gate still exists, which is `O-119`.
+
+### A population of middles is printed as its ends, and the class that has none is counted (v3.141)
+
+- **A figure that follows a superlative moves when an unrelated member moves.** v3.140 printed the
+  middle of the tightest bound's command, so which bound had a typical day was decided by which bound
+  happened to be tight. The shipped tree separates the two questions: the bound nearest a bad day is
+  `backend / Install a backend this repository did not write` at `2.0x` (1800 s over 888 s) and the
+  bound nearest a usual day is `batteries-heavy / Backend-support battery` at `2.4x` (900 s over
+  382 s) (`O-118`, finding 639).
+- **Thirty-six middles in a line of twenty clauses is a table, so the population is printed as its two
+  extremes.** The least multiple any bound makes over its own command's middle is printed with the
+  bound that makes it, the greatest is printed beside it, and both are an extreme of one set rather
+  than a choice. The ends carry different precisions because at `86x` a decimal is noise and at `2.4x`
+  it is the difference between two bounds.
+- **A bound with no multiple is counted rather than dropped.** Two of the thirty-eight bounds divide by
+  a middle of `0 s`, where `bound / 0` is the `Infinity` this record refuses; a range over thirty-six
+  bounds that said nothing about the other two would describe a population the line above had already
+  counted.
+- **A range of one end prints one number.** `from 2.4x to 2.4x` is a range from a number to itself,
+  which is the shape the every-reading-is-the-same branch refuses one level down, so the single-end
+  branch is written out and the case pins it.
+- **What is not claimed.** That a reader who wants one bound's middle is served. The individual
+  figures are derivable from `golden-master/ci-readings.json` and printed by nothing, which is `O-120`.
+
+### The history's range carries the floor a second reading of one tree measures (v3.141)
+
+- **A range over thirty-one trees answers two questions at once and separates neither.** `pnpm lint`
+  runs a build, so its `221 s` reading measured a smaller suite than today's; the same step also moved
+  `141 s` between two runs of one tree (`O-114`, finding 640).
+- **The floor is taken, not argued.** Run `45351350110` was re-run and both attempts were recorded: the
+  widest difference on any step is **151 s** (`batteries-heavy / Type-miss probe battery`, 356 s ->
+  507 s), **28 of the 83 steps came back identical**, the median difference is **1 s**, and the sum of
+  the absolute differences is **1,136 s**. The gate prints the widest one, names both attempts, and
+  says what it is for.
+- **Every pair of one tree is compared, not the neighbouring ones.** With one tree read three times the
+  widest difference is between the first and the third, so a rule that compared neighbours would
+  answer a question about append order. A step only one of the two readings timed has no difference to
+  take.
+- **An unmeasured floor is not a floor of zero.** `noiseFloorOf` returns `null` when no two readings
+  share a tree, and the sentence then says in words that no tree has been read twice.
+- **A duplicated reading is a second measurement of one tree.** It stays in the series `R10` divides by
+  and in the middle, because a bound has to survive every measurement of it, and it is printed as the
+  floor rather than counted as another tree.
+- **A run id is not a measurement.** A re-run is attempt 2 of one run id, so a reading's identity is
+  `(run, attempt)`: the reader refuses one attempt twice and refuses an attempt that is not a positive
+  integer, the merge replaces one attempt and keeps the other, `R10`'s two directions compare the pair,
+  and the recorder takes `--attempt <n>` and asks the API for `filter=all` only for that call. An
+  absent `attempt` is `1`, which is what every recording written before the field was, so the thirty-one
+  readings already in the file are unchanged (finding 641).
+- **What is not claimed.** That one pair says what the machine does. `151 s` is one afternoon, and
+  every bound in the workflow is still sized without it, which is `O-121`. Nor that the recorder
+  prevents an attempt older than the recording from being written, which is `O-122`.
