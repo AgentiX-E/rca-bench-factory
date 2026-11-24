@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 260 core + 4 cli |
-| Test lines | 117,123 core + 3,242 cli |
-| Tests | 6,897 core + 187 cli |
+| Test lines | 117,362 core + 3,242 cli |
+| Tests | 6,909 core + 187 cli |
 | Tracked files | 678 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.138: **43** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.139: **42** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1022,14 +1022,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   willing to measure" like their neighbours and they are also a quarter of an hour of a suite -- and
   whether a step whose cost is a suite should ever be inside the aggregate whose name says static
   scan]`
-- O-110 · **`docs:check` cannot see the tree, and its green is read as though it could.**
-  `check-doc-counts` compares the document with the snapshot and never spawns the suite, so a snapshot
-  and the rows that quote it can be wrong *together* -- measured at v3.137, one test off, exit **0**
-  against exit **1** from the reader that re-derives. That reader exists (step 6 of `verify:local`),
-  but a developer who runs the gate and stops has not run it, and nothing in its output says so.
-  `[open: whether `docs:check` should read a `--from` report when one is present -- the reports are
-  written by the coverage step, so a tree that has not run coverage has none, and a gate whose verdict
-  depends on whether another command was run is a gate with two meanings]`
 - O-112 · **A noun is in the census only on the runs where a gate's branch prints it.**
   `budget(s)` appears in `check-ci-budget`'s summary only when a bound was widened since the recording
   -- `budget(s) widened since the reading: verify 39 -> 40`. v3.137 widened nothing, the noun stopped
@@ -1040,15 +1032,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   alternative is a list of nouns the gates *may* print, which nothing derives and which would then need
   its own reader -- and whether a deletion should be refused the way a new noun is, so that a branch
   going untaken is a decision rather than a rewrite]`
-- O-113 · **Only the tightest bound prints the series under it.**
-  The budget gate's summary names one bound out of thirty-eight, and the clause added at v3.138 gives
-  that one bound its spread: `2.0x ... ; across the history that command runs from 16 s to 888 s`.
-  Every other bound prints nothing, so the dispersion of `pnpm lint` -- **221 s** to **521 s** across
-  the history -- is still a number a reader has to compute, and the argument for one line per
-  question is the same argument that hid it.
-  `[open: whether the summary should print the widest series rather than the widest multiple -- the
-  two are different superlatives and the one that costs ceiling room is the second -- and whether a
-  gate whose output grows a clause per question should print a second line at all]`
 - O-114 · **A range over the history mixes the tree's growth with the runner's variance.**
   `pnpm lint` runs a build, so a reading from 2026-11-06 measured a smaller suite than today's, and
   the 221 s in the range is partly a tree that no longer exists. Only a re-run of one commit would
@@ -1057,14 +1040,31 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: whether a reading of one tree should be recorded as such -- the recorder could re-read a
   commit it has already measured, and the pair would be the noise floor the range cannot give -- and
   whether a duplicated reading is a second day or a second number]`
-- O-115 · **A dated row's date is not checked against the round it sits under.**
-  `(at v3.200)` under `## v3.138` is impossible -- a round cannot record a measurement from a round
-  that has not happened -- and nothing reads the pair. A probe over the corpus finds **0** such rows
-  today, which is why the entry is open rather than a defect repaired: the rule would be written
-  against a state the tree has never been in.
-  `[open: whether the date and the round are a pair the guard should compare -- the numbers
-  comparison rule 3b uses, one field over -- or whether a dated row is by definition a claim about
-  another round and only the marker is the guard's business]`
+- O-116 · **The axis a bound is measured against is printed at its two ends, and a normal day is
+  nowhere on it.**
+  v3.139 gives both superlatives a sentence: the tightest bound at `2.0x` of the slowest reading of
+  its command, and the one with the most headroom above the fastest. Both are extremes, and the
+  install step is the extreme in both directions -- `1,800 s` of bound against readings that run
+  from **16 s** to **888 s**. Its 28 readings have a **median of 21 s**, so the bound is **86x** the
+  day the command usually has, and no line prints a number near the middle: a reader asking what the
+  step costs on a normal day has to open the history. `readingsOfCommand` already returns the count
+  a median would need, so the reading exists and the sentence is what is missing.
+  `[open: whether a middle belongs in a line that already prints two ends -- a median is a third
+  superlative, and the one a capacity question is actually about -- and whether a median over a
+  series that mixes a tree's growth with a runner's variance is a typical day or a typical state,
+  which is `O-114`'s question one level up]`
+- O-117 · **A dated row's date is checked against its round, and not against what that round
+  measured.**
+  Rule 3c refuses `(at v3.200)` under `## v3.138`, so the two tokens can no longer contradict each
+  other. A date is also a claim that the named round *took these numbers*, and the corpus holds no
+  independent account of what that round measured: **227** of the **228** dated rows that carry a
+  count are that round's own publication, so the round and the quote are one line and the date is
+  unverifiable by construction. What would close it is provenance in the snapshot -- a run id beside
+  each count -- because the recorder already knows the run it measured.
+  `[open: whether the snapshot should record the run behind each count, so a dated row could cite a
+  run rather than a round -- the file is rewritten by every round, so the question is whether it is
+  the right place for a history -- and whether `--check`, which compares three scopes and the
+  additivity relation, could compare provenance without spawning a second suite]`
 ## Pass log
 
 The rounds are recorded in the volumes below, in the order they were run. They were one
@@ -1100,7 +1100,7 @@ and this table.
 | [volume-16.md](progress/volume-16.md) | 8 | v3.91 | v3.98 |
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
-| [volume-19.md](progress/volume-19.md) | 18 | v3.121 | v3.138 |
+| [volume-19.md](progress/volume-19.md) | 19 | v3.121 | v3.139 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

@@ -1,7 +1,7 @@
 # Audit · volume 14
 
-Findings 579–632, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
-`progress/volume-19.md` as `v3.115` through `v3.138`.
+Findings 579–635, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
+`progress/volume-19.md` as `v3.115` through `v3.139`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -3512,3 +3512,196 @@ and the case that closes it is the pair of headings rather than a new rule.
 Whether the snapshot is current. This rule refuses a contradiction between two rounds; whether the
 snapshot the newest round quotes was taken from the tree that exists is `O-110`, and it is the
 counts step's question, not `docs:check`'s.
+
+## Finding 633 — the summary printed one end of the axis it measures every bound against
+
+`R10` refuses a bound under twice the slowest reading of its command, so every bound in `ci.yml` is
+an answer to the same question asked of the *worst* day a command has had. v3.138 gave that answer
+its denominator's distribution: the tightest bound now prints the spread it was sized from, and
+`2.0x` against a command read between 16 s and 888 s stopped reading like a bound with 7% of room.
+
+One end of one axis, out of thirty-eight bounds. The number a reader of a green run actually wants
+next is the *other* end -- a bound is sized from the worst day, so on the best day it is pure
+headroom, and the sum of those headrooms is where the 241 minutes of bounds go. Nothing printed it.
+
+The shipped tree makes the omission concrete, because one bound holds both ends:
+
+```
+$ node scripts/check-ci-budget.mjs | tr ';' '\n' | grep -E 'tightest|headroom'
+tightest backend / Install a backend this repository did not write at 2.0x of the slowest reading
+  of its command (888 s in `backend / Install a backend this repository did not write`, run 44516888528)
+ across the history that command runs from 16 s to 888 s
+ the widest headroom over a day a command has spent is the same bound, 1784 s of its 1800 s above
+  the 16 s that command spent at its fastest (run 44752384940)
+```
+
+**The measure is seconds, not a multiple.** `bound / fastest` is the natural ratio and it does not
+exist for four of the thirty-eight bounds: `verify / Published suite counts`, `batteries /
+M1-ceiling probe battery`, `batteries / Upload the gate-test battery report` and `batteries /
+Scorer-stability probe battery` bound a command whose fastest reading is **0 s**. A summary that
+divided would print `Infinity` there, which is finding 121 in a new place. Seconds subtract, so the
+number exists for every pair, and it is in the same unit as the `241 min` the line already prints.
+
+**The two instruments are combined in the direction the question asks.** `R10`'s denominator is
+`max(recording, slowest reading)` -- the worse of the two states this repository knows. The headroom
+is `min(recording, fastest reading)`, the better of the same two, and the history wins a tie because
+it names a job and a step a reader can go and look at. A clause that read only the history would
+report headroom against a day the recording had already beaten.
+
+**One bound can hold both ends, and the sentence says so.** Printing the same step's name twice
+would read as two steps being compared. The shipped tree is exactly that case: the install step's
+command has been read at 16 s and at 888 s, so its 30-minute bound is tight against the slow day and
+1,784 s generous against the fast one. The series spans **55x**, which is why one number is both.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the headroom clause is never printed | 4 |
+| the tightest bound is reported as the one with the most headroom | 1 |
+| the recording is never taken as the fast day | 1 |
+| the history is never taken as the fast day | 2 |
+| one bound holding both ends is printed as two steps | 1 |
+| headroom is added rather than subtracted | 3 |
+| the headroom names no run | 2 |
+| a step with no history still reports a headroom | 20 |
+
+**Eight mutations, 34 reds, no survivors.** The last one is the largest because a `null` fast day
+throws before any assertion runs: a crash is a red, and the case that produces it -- a workflow with
+no history at all -- is the one that says the clause is absent rather than empty.
+
+### What this does not settle
+
+What a normal day costs. Both clauses print an extreme -- 2.0x the worst day, 1,784 s above the best
+-- and the middle is missing. The install command's 28 readings have a **median of 21 s**, so its
+30-minute bound is **86x** the day it usually has, a number neither end implies and which no line
+prints. That is `O-116`.
+
+## Finding 634 — a gate's green named neither side of the comparison it had made
+
+`check-doc-counts` is the last step of `docs:check` and the guard a developer runs before pushing. It
+compares the counts published in `docs/progress.md` and its volumes with a **snapshot** --
+`golden-master/doc-counts.json`, a file somebody wrote by measuring -- and not with the tree. Its
+green line said:
+
+```
+check-doc-counts: OK (520 published count(s), each naming its scope; scope(s) covered: core, cli,
+  repo; 1 unread phrase(s) excused in writing; 2 gate-site claim(s) agreeing with 232 claim(s)
+  across 68 of the 479 file(s) the source walk reads)
+```
+
+Every number there is about the documents. Nothing said what they had been compared *with*, so the
+green could be read as "the counts are the tree's" when it only ever meant "the counts are the
+snapshot's". The gap was measured at v3.137: one test off, this guard **exit 0** while
+`measure-doc-counts --check` returned **1** on the same tree. A snapshot and the rows that quote it
+can be wrong *together*, which is the one failure mode a comparison between two documents cannot see.
+
+Two repairs were possible and they are not equally good.
+
+**Reading a report when one is present** looks like the stronger one and is the worse one. The
+reports are written by the coverage step, so a tree that has not run coverage has none, and a verdict
+whose meaning depends on whether another command was run is a gate with two meanings -- green
+because the counts agree, or green because nobody measured. The gate would also start to be wrong in
+a way that depends on the order of the steps in `verify:local`.
+
+**Naming the two sides** costs one clause and cannot be misread:
+
+```
+$ node scripts/check-doc-counts.mjs | tr ';' '\n' | tail -2
+ the counts it compared with were read from `golden-master/doc-counts.json`, which is a snapshot
+  rather than a run: this gate does not spawn the suite, and `node scripts/measure-doc-counts.mjs
+  --check` is the reader that re-derives it)
+```
+
+The sentence names the file, says what kind of number it is, says what the gate does **not** do, and
+names the command that would re-take the measurement -- which is the one thing a developer who runs
+`docs:check` and stops has not done. `--measured` is how the suite drives the same guard, and it gets
+a different sentence, because it is a different read path: the numbers came from the caller and no
+file was opened. Two constants rather than one string with a hole in it, so the wrong sentence cannot
+be printed for the right reason.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the green line prints no comparison at all | 2 |
+| the green line calls a handed-in count a snapshot | 1 |
+| the green line calls the snapshot a handed-in count | 1 |
+
+**Three mutations, 4 reds, no survivors.** The fixture that reaches the second and third is a `null`
+`--measured`: before this round the test harness always passed the counts in, so the file path was
+only ever taken by the shipped tree and no case read its sentence.
+
+### What this does not settle
+
+Whether the snapshot is current. This clause stops a green being *misread*; it does not make the
+snapshot a measurement of the tree. The step that compares them is `measure-doc-counts --check`, and
+where the report it can reuse does not exist it spawns the suite three times -- which is why it is
+step 6 of `verify:local` and not part of `docs:check` at all.
+
+## Finding 635 — a date was quoted inside a round, and no rule compared the two tokens
+
+`O-115` was opened at v3.138 with a sentence and no evidence: `(at v3.200)` under `## v3.138` is
+impossible -- a round cannot record a measurement from a round that has not been written -- and
+nothing read the pair. The corpus was measured before the rule was written, because a rule against a
+state the tree has never been in is a rule nobody can check:
+
+Every table row in the corpus was read for the marker: **230** carry one, **227** of those sit
+under a round, **3** sit outside every heading, and **0** name a round past the one they sit under. So the rule is written over a population
+rather than for an incident, and its cost is the two comparisons a dated row can need:
+
+```
+$ node scripts/check-doc-counts.mjs --doc /tmp/dated-future.md
+check-doc-counts: FAILED
+  ../../tmp/dated-future.md:8: the row is dated (at v3.200) and sits under v3.138, and a round
+  cannot record a measurement from a round that has not happened. Either the date is wrong, or the
+  row belongs under v3.200.
+```
+
+**Two comparisons, because a dated row sits in one of two places.** Under a round, the two tokens are
+in view together and the date may not be past the heading. Outside every round -- `docs/progress.md`'s
+own tables, three dated rows today -- there is no heading to compare with, and the corpus's newest
+round is the only thing the date can be measured against:
+
+```
+$ node scripts/check-doc-counts.mjs --doc /tmp/dated-newest.md
+check-doc-counts: FAILED
+  ../../tmp/dated-newest.md:11: the row is dated (at v3.20), and the newest round this corpus
+  publishes is v3.10. A date past every round names a measurement from a round that has not been
+  written: either the date is a typo, or the round it belongs to is missing.
+```
+
+**The comparison is rule 3b's, one field over.** A round token is read as a pair of integers, because
+`v3.9` is older than `v3.10` and a string comparison says the opposite -- and the corpus spans two
+major series. `sameOrOlder` is a named predicate rather than two inline comparisons, because rule 3c
+asks it twice and two copies of a comparison that has to agree is how a pair of rules comes to
+disagree about `v3.9`.
+
+**A `AT_ROUND` the row does not match is a row this rule does not see**, and the date marker is the
+only shape it reads. That is rule 4's bargain at a new field: a date written another way is not
+refused, and the rows that say `at v3.54 it was 248 s` inside a claim are prose about a comparison
+rather than a marker on a record. The 27 table rows that mention a round in that prose shape were
+measured before this paragraph claimed it.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the date is never read out of a row | 3 |
+| a date is never refused for being past the round it sits under | 2 |
+| a date is never refused for being past every round | 1 |
+| a date is refused for naming its own round | 6 |
+| the pair is compared in the wrong direction | 7 |
+
+**Five mutations, 19 reds, no survivors.** The first draft of the rule had one comparison and two
+fixtures, and the "past every round" mutation survived: a dated row with no heading had no case of
+its own, because the three such rows in the corpus are all legal. The case that closes it is one
+heading, one round under it, and one dated row after it.
+
+### What this does not settle
+
+Whether the date is *true*. A dated row claims that a named round measured these numbers, and the
+corpus holds no independent account of what that round measured -- 227 of the 228 dated rows that
+carry a count are their own round's publication, so the round and the quote are the same line. What
+would close it is provenance in the snapshot: a run id beside each count, so a date could cite a run
+instead of a round. That is `O-117`.

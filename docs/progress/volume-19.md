@@ -2362,9 +2362,9 @@ last two rows of the second table are the ones that were **zero** on the first r
 | --- | --- |
 | CI | run `45296269712` on `63c99cc`: **8 of 8 jobs success**, 909 s (00:19:51 -> 00:35:00); the slowest job is `injection batteries, the two that rewrite a probe a hundred times` at 906 s of its 44-minute ceiling, and `lint` read **404 s** against its 18-minute bound -- the third sample of the series the spread clause is about, and 192 s faster than this round's own first run of the same tree |
 | `pnpm run docs:check` | **23 steps, exit 0** |
-| `core` test suite | **260 files, 6897 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7084 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 6897 tests passed** (at v3.138) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.138) |
+| repo test suite | **264 files, 7084 tests passed** (at v3.138) |
 | new tests | **6,884 -> 6,897, +13**: eight for the spread of a command (the set, the absent command, both ties, the range, the once-only and the equal-series states, the absent history, and the bound the clause belongs to) and five for the round a current row sits under (the older round, the same rows dated, `v3.9` against `v3.10`, the headingless row, and `## Repository` beside a round) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
 | the budget gate's tightest line | `backend / Install a backend this repository did not write at 2.0x ... ; across the history that command runs from 16 s to 888 s` |
@@ -2396,3 +2396,193 @@ last two rows of the second table are the ones that were **zero** on the first r
   `[open: whether the date and the round are a pair the guard should compare -- the same numbers
   comparison rule 3b uses, one field over -- or whether a dated row is by definition a claim about
   another round and only the *marker* is the guard's business]`
+
+## v3.139 — a gate printed one end of its axis, and a green line named neither side
+
+Three entries, and two of them are the same sentence in different places: a line that reports a
+number without saying what the number is a number *of*. `O-113` was opened by v3.138's own repair --
+the tightest bound got its series, and the other thirty-seven bounds kept their silence. `O-110` was
+opened at v3.137 by a measurement: `docs:check` green on a tree whose counts were one test off.
+`O-115` was opened with a sentence and no evidence, which is why it took a round to make it a rule.
+
+### The other end of the axis
+
+`R10` sizes a bound from the **worst** day a command has had, so on the best day the same bound is
+pure headroom, and the sum of those headrooms is what the `241 min` of bounds is made of. The gate
+named the tight end and printed nothing about the loose one:
+
+```
+$ node scripts/check-ci-budget.mjs | tr ';' '\n' | grep -E 'tightest|headroom'
+tightest backend / Install a backend this repository did not write at 2.0x of the slowest reading
+  of its command (888 s in `backend / Install a backend this repository did not write`, run 44516888528)
+ across the history that command runs from 16 s to 888 s
+ the widest headroom over a day a command has spent is the same bound, 1784 s of its 1800 s above
+  the 16 s that command spent at its fastest (run 44752384940)
+```
+
+One bound holds both ends, and the clause says so rather than printing one name twice: the install
+command's series spans **55x**, which is exactly why one number is both the tightest multiple and the
+widest headroom.
+
+The measure is a difference rather than a quotient, and the reason is measured rather than argued:
+
+```
+$ node /tmp/probe139b.mjs
+{ bounded: 38, zero: 4 }
+verify / Published suite counts, read from that run rather than taken again 0..1 n=21
+batteries / M1-ceiling probe battery (no survivors, no inert mutations) 0..1 n=28
+batteries / Upload the gate-test battery report 0..2 n=28
+batteries / Scorer-stability probe battery (the stability gate refuses a broken scorer) 0..1 n=28
+```
+
+Four of the thirty-eight bounds bound a command whose fastest reading is **0 s**. `bound / 0` is not
+a number a summary can print, and the shape it prints instead is `Infinity` -- finding 121 in a new
+place. Seconds subtract, so the clause exists for every pair, in the unit of the total it explains.
+
+The two instruments are combined in the direction the question asks. `R10`'s denominator is the
+*worse* of the recording and the slowest reading; the headroom is the *better* of the recording and
+the fastest reading, and the history wins a tie because it names a run a reader can open:
+
+```js
+const fast = found.fastest.seconds <= seconds
+  ? { seconds: found.fastest.seconds, run: found.fastest.run }
+  : { seconds, run: baseline.run };
+```
+
+### The green line's two sides
+
+`check-doc-counts` compares the published counts with a snapshot, and its green named neither side.
+At v3.137 the gap was measured: one test off, exit **0** here and exit **1** from the reader that
+re-derives. Two repairs were available and the weaker-looking one is the right one.
+
+Reading a `--from` report when one happens to be present would make the verdict depend on whether
+another command had been run -- green because the counts agree, or green because nobody measured --
+and the reports are written by the coverage step, so a tree that has not run coverage has none.
+Naming the two sides costs one clause:
+
+```
+$ node scripts/check-doc-counts.mjs | tr ';' '\n' | tail -1
+ the counts it compared with were read from `golden-master/doc-counts.json`, which is a snapshot
+  rather than a run: this gate does not spawn the suite, and `node scripts/measure-doc-counts.mjs
+  --check` is the reader that re-derives it)
+```
+
+`--measured` is a different read path -- the counts came from the caller and no file was opened --
+and it gets a different sentence. Two constants rather than one string with a hole in it.
+
+### A date against its round
+
+`O-115` was a sentence with no evidence: `(at v3.200)` under `## v3.138` is impossible and nothing
+read the pair. The population was measured before the rule was written, because a rule against a
+state the tree has never been in is a rule nobody can check: **230** table rows carry a date,
+**227** of them sit under a round, **3** sit outside every heading, and **0** name a round past the
+one they sit under. Two comparisons, because a dated row sits in one of two places:
+
+```
+$ node scripts/check-doc-counts.mjs --doc /tmp/dated-future.md
+check-doc-counts: FAILED
+  ../../tmp/dated-future.md:8: the row is dated (at v3.200) and sits under v3.138, and a round
+  cannot record a measurement from a round that has not happened. Either the date is wrong, or the
+  row belongs under v3.200.
+$ node scripts/check-doc-counts.mjs --doc /tmp/dated-newest.md
+check-doc-counts: FAILED
+  ../../tmp/dated-newest.md:11: the row is dated (at v3.20), and the newest round this corpus
+  publishes is v3.10. A date past every round names a measurement from a round that has not been
+  written: either the date is a typo, or the round it belongs to is missing.
+```
+
+The comparison is rule 3b's, one field over: a round token read as two integers, because `v3.9` is
+older than `v3.10` and a string comparison says the opposite. It is a named predicate rather than
+two inline comparisons, because the rule asks it twice.
+
+### The round's own defects
+
+- **The test harness could not reach the file read path.** Every fixture in `check-doc-counts.test.ts`
+  passed `--measured`, so the branch that reads `golden-master/doc-counts.json` was only ever taken
+  by the shipped tree, and no case read its sentence. The mutation battery found it as two
+  survivors -- "the green line calls a handed-in count a snapshot" and its mirror -- and the repair
+  is a `null` in the helper rather than a new test: the read path had to become reachable first.
+- **The suite could not be measured while the table it publishes was stale.** Adding twelve tests
+  moved `Test lines` from 117,123 to 117,361, and `check-repository-table` is inside the suite, so
+  `measure-doc-counts` refused with *the core suite is red, so its counts cannot be measured*. The
+  order -- rewrite the table, then measure, then rewrite the table again from the new snapshot -- is
+  the discipline `O-103` produced, and it is why the counts step is the last thing a round runs.
+- **The gate-sites inventory records line numbers.** Adding 107 lines to `check-doc-counts.mjs` moved
+  its `FAILED` site from 403 to 424, and `derive-gate-sites --check` said so before any test could.
+- **This round measured before dating the previous round's rows, and rewrote a record.** The order
+  `measure-doc-counts --write-doc` requires is date the old rows, then measure: the writer updates
+  every row that still says `(as of this commit)` and leaves dated rows alone. This round measured
+  first, so v3.138's three suite rows took this round's numbers -- **6,897** became **6,909** in a
+  record of a round that never published 6,909 -- and it was caught by reading the diff, not by a
+  gate. Both numbers are restored here. Nothing in the tree would have refused the false record,
+  which is `O-117`'s subject one level up: the corpus has no account of what a round published.
+- **A count in a comment was typed rather than measured.** The first draft of the headroom case said
+  "two steps in this workflow are read at 0 s"; the probe says four. The comment is now the probe's
+  number, and the sentence it replaced was the defect this round is about, one level down.
+- **The acceptance-shape gate refused the third clause.** Its address was written `finding\n  635`,
+  split across a line break, and the gate reads an address on one line. The clause was a preference
+  until the address was one token.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the headroom clause is never printed | 4 |
+| the tightest bound is reported as the one with the most headroom | 1 |
+| the recording is never taken as the fast day | 1 |
+| the history is never taken as the fast day | 2 |
+| one bound holding both ends is printed as two steps | 1 |
+| headroom is added rather than subtracted | 3 |
+| the headroom names no run | 2 |
+| a step with no history still reports a headroom | 20 |
+
+| the mutation | reds |
+| --- | --- |
+| the green line prints no comparison at all | 2 |
+| the green line calls a handed-in count a snapshot | 1 |
+| the green line calls the snapshot a handed-in count | 1 |
+| the date is never read out of a row | 3 |
+| a date is never refused for being past the round it sits under | 2 |
+| a date is never refused for being past every round | 1 |
+| a date is refused for naming its own round | 6 |
+| the pair is compared in the wrong direction | 7 |
+
+**Sixteen mutations, 57 reds** (8/34 for the budget gate, 8/23 for the counts gate), measured on the
+green tree before the round's documents moved. No survivors: the two that would have survived are the
+`--measured` pair, and the fixture that reaches them is the `null`.
+
+### Readings
+
+> Ledger for `v3.139`.
+
+| what | value |
+| --- | --- |
+| CI | run `45296269712` on `63c99cc`: **8 of 8 jobs success**, 909 s; this is the run the recording was taken from, and the round's own tip is measured in the record that follows it |
+| `pnpm run docs:check` | **23 steps, exit 0** |
+| `core` test suite | **260 files, 6909 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **264 files, 7096 tests passed** (as of this commit) |
+| new tests | **6,897 -> 6,909, +12**: five for the loose end of the bound axis (the widest headroom being another step, one bound holding both ends, the better of two instruments, no history, and the zero-second case) and two for the green line's two read paths, and five for a date against the round it sits under (past the heading, a legal date, the pair as numbers, past every round, and a headingless record) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
+| the budget gate's two ends | `2.0x of the slowest reading ... across the history that command runs from 16 s to 888 s ... the widest headroom over a day a command has spent is the same bound, 1784 s of its 1800 s above the 16 s` |
+| `docs/acceptance.md` | **49** clauses across **35** rounds; index **49** rows |
+| the census | **4** coincidences, unchanged: the round a date names is not a count any gate prints |
+
+### Left open
+
+- **The axis a bound is measured against is printed at its two ends, and a normal day is nowhere on
+  it.** The bound on the install step is `2.0x` its slowest reading and `1,784 s` above its fastest, and its 28 readings
+  have a **median of 21 s**: the bound is **86x** the day that command usually has. Neither clause
+  implies the middle, and `readingsOfCommand` already carries the count a median needs.
+  `[open: whether a middle belongs in a line that already prints two ends -- a median is a third
+  superlative and the one a capacity question is actually about -- and whether a median over a series
+  that mixes a tree's growth with a runner's variance is a typical day or a typical state]`
+- **A dated row's date is checked against its round, and not against what that round measured.** The
+  date claims that a named round took these numbers, and the corpus holds no independent account of
+  what the round measured: **227** of the **228** dated rows that carry a count are that round's own
+  publication, so the round and the quote are one line. Provenance in the snapshot -- a run id beside
+  each count -- is what would make the claim checkable.
+  `[open: whether the snapshot should record the run behind each count, so a dated row could cite a
+  run rather than a round -- the recorder already knows the run it measured, and the question is
+  whether a file that is rewritten by every round is the right place for a history -- and whether a
+  snapshot that carries provenance is still one file a reader can compare with three scopes]`

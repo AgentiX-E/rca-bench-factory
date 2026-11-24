@@ -55,6 +55,9 @@ before the layer above it is meaningful.
 | A snapshot is a claim about one tree, and the reader that can refuse it re-derives it | v3.137 |
 | A multiple is printed with the spread of the series it was sized from | v3.138 |
 | A claim about now sits under one round | v3.138 |
+| A bound is printed at both ends of the series it was sized from | v3.139 |
+| A green line names the two sides it joined | v3.139 |
+| A date is not in the future of the round it is quoted in | v3.139 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -2378,3 +2381,62 @@ from an anecdote again.
 - **What is not claimed.** That this makes the snapshot current. It refuses a contradiction inside
   the documents -- two rounds both saying "now" -- and says nothing about whether the snapshot
   matches the tree, which is `O-110` and is the counts step's question.
+
+### A bound is printed at both ends of the series it was sized from (v3.139)
+
+- **A bound is sized from the worst day a command has had, so on the best day it is pure
+  headroom.** The gate prints both ends: the tightest bound against the slowest reading it divides
+  by, and the bound that stands furthest above the fastest reading of its own command. One end tells
+  a reader whether the bound can fire; the other tells them where the `241 min` of bounds went
+  (`O-113`, finding 633).
+- **The headroom is seconds, not a multiple.** `bound / fastest` does not exist for the four bounds
+  whose command has been read at **0 s**, and a summary that divided would print `Infinity` there.
+  Seconds subtract, so the number exists for every pair and it is in the same unit as the total it
+  explains.
+- **The two instruments are combined in the direction the question asks.** `R10`'s denominator is
+  the worse of the recording and the slowest reading; the headroom is the better of the recording
+  and the fastest reading, and the history wins a tie because it names a run a reader can open.
+- **One bound may hold both ends, and the sentence says so.** Printing one step's name twice would
+  read as two steps being compared; the shipped tree is that case, because the install command's
+  28 readings span **16 s** to **888 s** and its 30-minute bound is tight at one end and `1,784 s`
+  generous at the other.
+- **What is not claimed.** That either clause describes a normal day. Both are extremes, and the
+  install command's median of **21 s** -- `86x` under its bound -- is printed by nothing (`O-116`).
+
+### A green line names the two sides it joined (v3.139)
+
+- **A comparison between two files cannot see that both are wrong.** `check-doc-counts` joins the
+  published counts to a snapshot and never spawns the suite, so a snapshot and the rows that quote it
+  can be stale together: measured at v3.137, one test off, its exit **0** against exit **1** from the
+  reader that re-derives (`O-110`, finding 634).
+- **The repair is the sentence, not a second verdict.** Reading a report when one happens to be
+  present would make the gate's meaning depend on whether another command was run -- green because
+  the counts agree, or green because nobody measured -- so the green line instead names the file it
+  read, says it is a snapshot rather than a run, says what the gate does not do, and names the
+  command that re-derives it.
+- **Handed-in counts are a different comparison and get a different sentence.** `--measured` is how
+  the suite drives the guard; no file is opened, and a clause that called it a snapshot would
+  describe a read that did not happen. Two constants rather than one string with a hole in it.
+- **What is not claimed.** That the snapshot is current. This clause stops a green being misread;
+  the step that can refuse a stale snapshot is `measure-doc-counts --check`, which spawns the suite
+  and is therefore step 6 of `verify:local` rather than part of `docs:check`.
+
+### A date is not in the future of the round it is quoted in (v3.139)
+
+- **A round cannot record a measurement from a round that has not been written.** `(at v3.200)`
+  under `## v3.138` is impossible, and the guard refuses it, naming both tokens (finding 635,
+  `O-115`). The corpus's **230** dated rows are the population the rule is written over: **227**
+  sit under a round and **3** outside every heading.
+- **A dated row outside every heading is compared with the newest round in the corpus.** The index
+  file's tables describe the tree rather than a round, and there is no heading to be out of order
+  with -- so the newest round that publishes a count is the only token the date can be measured
+  against.
+- **The pair is compared as two numbers.** `v3.9` is older than `v3.10`, and a string comparison
+  would pass the impossible row and refuse the correct record; the predicate that decides it is
+  named once, because rule 3c asks it twice.
+- **A date is read in one shape, and a row that dates itself any other way is not read.** The marker
+  is `(at vX.YY)`; `at v3.54 it was 248 s` inside a claim is prose about a comparison rather than a
+  marker on a record, and 27 table rows say it that way.
+- **What is not claimed.** That the date is *true*. The corpus holds no independent account of what
+  the named round measured -- 227 of the 228 dated rows that carry a count are that round's own
+  publication -- so provenance in the snapshot is what would close it (`O-117`).

@@ -627,6 +627,24 @@
   tightest bound prints its series) and `O-114` (a range over the history mixes the tree with the
   runner).
 
+- O-110 · ~~**`docs:check` cannot see the tree, and its green is read as though it could.**~~
+  `check-doc-counts` compares the document with the snapshot and never spawns the suite, so a
+  snapshot and the rows that quote it can be wrong *together* -- measured at v3.137, one test off,
+  exit **0** against exit **1** from the reader that re-derives. That reader exists (step 6 of
+  `verify:local`), but a developer who runs the gate and stops has not run it, and nothing in its
+  output said so. ~~`[open: whether `docs:check` should read a `--from` report when one is present --
+  the reports are written by the coverage step, so a tree that has not run coverage has none, and a
+  gate whose verdict depends on whether another command was run is a gate with two meanings]`~~
+  **Closed by finding 634**, and the option the entry weighed is the one that was rejected: a
+  verdict whose meaning depends on whether another command was run has two meanings, and the second
+  one is "green because nobody measured". What the round changed is the *sentence*, not the verdict:
+  the green line now names the file it read, says it is a snapshot rather than a run, says the gate
+  does not spawn the suite, and names `node scripts/measure-doc-counts.mjs --check` as the reader
+  that re-derives it. `--measured` is a different read path and gets a different sentence, so the
+  wrong one cannot be printed for the right reason. **Three mutations, four reds**, and two of them
+  survived the first battery because every fixture passed `--measured` -- the file path had no case
+  of its own until the helper could express "do not hand the counts in". The residue is the truth of
+  the snapshot, which stays with `measure-doc-counts --check`.
 - O-111 · ~~**A current-state row is dated only when its number moves.**~~ v3.136's three suite rows
   were written `(as of this commit)` and were still marked current a round later; what caught them
   was v3.137 adding a test. A round that edits only documents moves no count, so the older rows stay
@@ -644,3 +662,36 @@
   **Nine mutations, 24 reds**, two of which survived the first battery until a fixture with a
   headingless current row beside a round was added. The residue is `O-115` (a dated row's date is
   never compared with its round), and the question this does *not* answer is `O-110`.
+
+- O-113 · ~~**Only the tightest bound prints the series under it.**~~ The budget gate's summary named
+  one bound out of thirty-eight, and the clause added at v3.138 gave that one its spread; every other
+  bound printed nothing, so the dispersion of `pnpm lint` -- **221 s** to **521 s** -- was a number a
+  reader had to compute. ~~`[open: whether the summary should print the widest series rather than the
+  widest multiple -- the two are different superlatives and the one that costs ceiling room is the
+  second -- and whether a gate whose output grows a clause per question should print a second line at
+  all]`~~
+  **Closed by finding 633**, on the second of the two superlatives and for the reason the entry
+  gives: a bound is sized from the worst day, so the *headroom* over the best day is where the
+  `241 min` of bounds goes, and that is the number the gate now prints. It is printed in seconds
+  rather than as a multiple because four of the thirty-eight bounds bound a command read at **0 s**,
+  and `bound / 0` printed as `Infinity` is finding 121 in a new place. One bound may hold both ends,
+  and the clause says "the same bound" rather than printing one name twice. **Eight mutations, 34
+  reds**, no survivors. The residue is `O-116`: both clauses are extremes, and the median of the
+  install command's 28 readings -- **21 s**, so the bound is 86x a typical day -- is printed by
+  nothing.
+
+- O-115 · ~~**A dated row's date is not checked against the round it sits under.**~~ `(at v3.200)`
+  under `## v3.138` is impossible -- a round cannot record a measurement from a round that has not
+  happened -- and nothing read the pair. A probe over the corpus found **0** such rows, which is why
+  the entry was opened rather than fixed: the rule would be written against a state the tree has
+  never been in. ~~`[open: whether the date and the round are a pair the guard should compare -- the
+  numbers comparison rule 3b uses, one field over -- or whether a dated row is by definition a claim
+  about another round and only the marker is the guard's business]`~~
+  **Closed by finding 635**, and the population is what made it closable: **230** table rows carry a
+  date, **227** sit under a round, **3** sit outside every heading, **0** name a round past the one
+  they sit under. Two comparisons, because a dated row sits in one of two places -- against its
+  heading, and against the corpus's newest round when there is no heading -- and both use rule 3b's
+  pair of integers, because `v3.9` is older than `v3.10`. **Five mutations, 19 reds**; the "past
+  every round" branch survived the first battery, since the three headingless dated rows in the
+  corpus are all legal, and the case that closes it is one heading, one round and one date after it.
+  The residue is `O-117`: the date is compared with the round, and with nothing the round measured.
