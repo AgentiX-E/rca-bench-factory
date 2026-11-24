@@ -1448,9 +1448,9 @@ sentence for the round rather than erasing the only account of why the job exist
 
 | item | value |
 | --- | --- |
-| `core` test suite | **237 files, 5849 tests passed** (at v3.54) |
+| `core` test suite | **237 files, 5874 tests passed** (at v3.54) |
 | `cli` test suite | **4 files, 187 tests passed** (at v3.54) |
-| repo test suite | **241 files, 6036 tests passed** (at v3.54) |
+| repo test suite | **241 files, 6061 tests passed** (at v3.54) |
 | new tests | **25** in `core` (6,036 -> 6,061): eight for the two gate arms, four for rule 5 and its dated exemption, five through `check-fault-cases`, four for the matrix's two columns, and four more across the enumeration and the witness table |
 | throw partition | **74 statements**: 6 `fatal`, 60 `unguarded`, 1 `guarded`, 7 `rethrow` |
 | failure sites | **123** across 58 of **83** scripts; two re-annotated after their guard text changed |

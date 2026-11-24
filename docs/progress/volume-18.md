@@ -1157,9 +1157,9 @@ Both files were restored byte for byte (`diff -q` against the backup), and the a
 
 | item | value |
 | --- | --- |
-| `core` test suite | **257 files, 6700 tests passed** (at v3.117) |
+| `core` test suite | **257 files, 6691 tests passed** (at v3.117) |
 | `cli` test suite | **4 files, 187 tests passed** (at v3.117) |
-| repo test suite | **261 files, 6887 tests passed** (at v3.117) |
+| repo test suite | **261 files, 6878 tests passed** (at v3.117) |
 | coverage | `core` **99.98 / 99.95 / 100 / 99.98**, `cli` **100 / 100 / 100 / 100** -- unchanged: nothing under `src/` moved |
 | new tests | **6684 -> 6691, +7**: the three authorities in one document, a finding named beside a round, a denial named beside a round, a closure that names nothing, the shipped split against the record's bullets, a citation behind a version, and a citation in the sentence after the closure |
 | the lists | `## Open` **28 -> 29** (one opened, none closed), `## Closed` **56 -> 56**, one space of **85** ids with none missing |

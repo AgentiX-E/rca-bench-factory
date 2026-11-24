@@ -146,8 +146,15 @@ const ROUND_HEADING = /^## (v\d+\.\d+)(?!\d)/;
  * it. Until `O-115` nothing read the token, so a row could name a round that had not been written --
  * `(at v3.200)` under `## v3.138` -- and the corpus's 230 dated rows were quoted without their dates
  * ever being compared with anything.
+ *
+ * The token may be written as code: `(at `v3.102`)` is the same statement in a rendered form, and
+ * volume-17 spells it that way in **15** rows across five rounds. Those rows read as *undated*
+ * until v3.142, which made them invisible twice over -- rule 3c could not refuse a future date among
+ * them, and a span beside them was compared with no count because the row it belonged to could not
+ * be recognised as that round's own. The backticks are optional rather than a second pattern
+ * because a second pattern is a second reader, and two readers of one mark drift.
  */
-const AT_ROUND = /\(at (v\d+\.\d+)(?!\d)\)/;
+const AT_ROUND = /\(at `?(v\d+\.\d+)`?(?!\d)\)/;
 
 /** The numbers in a round token, or null when the token is not one. */
 function roundNumbers(token) {
@@ -252,6 +259,40 @@ const BARE_TESTS = /(\d+)\s*(?:tests?\s*)?passed/;
  * or `N tests` and still be read by nothing -- which is the shipped defect.
  */
 const COUNT_PHRASE = /\b\d[\d,]*\s+(?:files?|tests?)\b/g;
+
+/**
+ * The span a `new tests` row publishes: what the suite held before the round and after it.
+ *
+ * The row is the round's other statement of its own size, and nothing read it. Rules 1 to 4
+ * read `N files, M tests` shapes, and `6,921 -> 6,946, +25` is none of them -- so the one row
+ * that says how much a round grew was outside every rule, in a document whose whole subject is
+ * that a count must be comparable with something.
+ *
+ * Two shapes, ordered, because `6,036 -> 6,061` matches both: the first knows the delta and the
+ * second does not, and only the first can be checked for arithmetic.
+ */
+const SPAN_SHAPES = [
+  {
+    name: 'N -> M, +K',
+    re: /(\d[\d,]*)\s*->\s*(\d[\d,]*)\s*,\s*(?:\+|net\s*\+)\s*(\d[\d,]*)/,
+    hasDelta: true,
+  },
+  { name: 'N -> M', re: /(\d[\d,]*)\s*->\s*(\d[\d,]*)/, hasDelta: false },
+];
+
+/**
+ * A test file named in a `new tests` row.
+ *
+ * It is what tells one file's span from the suite's: `(18 -> 30)` beside `site-proofs.test.ts`
+ * counts that file, and comparing it with the round's own `core` count would be a verdict about
+ * two different populations. The row's own words are the only evidence available, so the file has
+ * to be named *before* the span to be taken as its subject -- a row that names test files while
+ * describing the delta (`one for the rewrite, two in ci-budget.test.ts`) names them after it.
+ */
+const TEST_FILE = /`[^`\s]*\.tsx?`/g;
+
+/** The label of the row a span lives on. */
+const NEW_TESTS_LABEL = /^\s*\**\s*new tests\s*\**\s*$/;
 
 /**
  * Phrases a scope-named row may publish without this guard measuring them.
@@ -548,6 +589,94 @@ function isCurrent(row) {
 }
 
 /**
+ * The spans a round publishes about its own size: one entry per `new tests` row.
+ *
+ * Read separately from `readCounts` because the subject is a different row: those rows carry no
+ * file count and name no scope, so every field that rule 1 to 4 use is absent. Keeping one reader
+ * over both subjects would have meant a row shape where every field is `null` -- the shape rule 4
+ * exists to refuse.
+ *
+ * `file` is the test file the row names *before* the span, or null: see `TEST_FILE` for why the
+ * position rather than the presence is what separates one file's count from the suite's.
+ */
+function readSpans(text, where) {
+  const out = [];
+  let round = null;
+  text.split('\n').forEach((line, i) => {
+    if (line.startsWith('## ')) {
+      ROUND_HEADING.lastIndex = 0;
+      round = ROUND_HEADING.exec(line)?.[1] ?? null;
+      return;
+    }
+    if (!isTableRow(line)) return;
+    if (!NEW_TESTS_LABEL.test(line.split('|')[1] ?? '')) return;
+
+    let shape = null;
+    let start = null;
+    let end = null;
+    let delta = null;
+    let opened = -1;
+    for (const candidate of SPAN_SHAPES) {
+      candidate.re.lastIndex = 0;
+      const m = candidate.re.exec(line);
+      if (!m) continue;
+      start = Number(m[1].replace(/,/g, ''));
+      end = Number(m[2].replace(/,/g, ''));
+      delta = candidate.hasDelta ? Number(m[3].replace(/,/g, '')) : null;
+      shape = candidate.name;
+      opened = m.index;
+      break;
+    }
+
+    TEST_FILE.lastIndex = 0;
+    const named = [...line.matchAll(TEST_FILE)].filter((f) => opened >= 0 && f.index < opened);
+
+    out.push({
+      where,
+      line: i + 1,
+      round,
+      text: line,
+      shape,
+      start,
+      end,
+      delta,
+      file: named.length === 0 ? null : named[0][0],
+      arrow: line.includes('->'),
+    });
+  });
+  return out;
+}
+
+/**
+ * The count each round published about itself, per scope.
+ *
+ * "Itself" is the whole question: a round's section quotes rows from other rounds as records
+ * (`(at v3.140)` inside v3.141), and those are exactly the numbers a span must not be compared
+ * with. A row counts as the round's own when it says `(as of this commit)` under that round or is
+ * dated to that round -- the two ways the corpus writes "this is what I measured". A round that
+ * publishes neither has no count as far as this reader is concerned, and its span is counted as
+ * unverifiable rather than passed.
+ *
+ * Every scope is offered rather than one, because the corpus states a span's scope nowhere: at
+ * v3.141, 67 of the 72 spans ended at the round's `core` count and one ended at its `repo` count,
+ * and a reader that had insisted on either would have been wrong about the other. What the rule
+ * asserts is that the span ends where *some* count the round published of itself ends, and the
+ * green line says which scope each one landed in.
+ */
+function ownCounts(rows) {
+  const out = new Map();
+  for (const row of rows) {
+    if (row.scope === null) continue;
+    if (row.round === null) continue;
+    if (!isCurrent(row) && row.dated !== row.round) continue;
+    const held = out.get(row.round) ?? new Map();
+    held.set(row.scope, row);
+    out.set(row.round, held);
+  }
+  return out;
+}
+
+/**
  * The file the measurement is committed to, and the sentence the green line prints about it.
  *
  * A guard that compares two things has to say which two (`O-110`). This one joins the published
@@ -648,7 +777,8 @@ function exemptions() {
 }
 
 function main() {
-  const rows = corpusFiles().flatMap((file) => readCounts(file.text, file.label));
+  const files = corpusFiles();
+  const rows = files.flatMap((file) => readCounts(file.text, file.label));
   /** Where a row was read from: a line number is not actionable in a five-file corpus. */
   const at = (row) => `${row.where}:${String(row.line)}`;
   if (rows.length === 0) {
@@ -883,17 +1013,96 @@ function main() {
     );
   }
 
+  // 7. The span a round publishes ends where that round's own count ends (`O-117`).
+  //
+  //    A date says which round took a count, and until now that claim was checked against nothing
+  //    but the round's existence: rule 3b refused `(at v3.200)` under `## v3.138`, and beyond that
+  //    the number beside the date was unverifiable by construction, because **227 of the 228**
+  //    dated rows that carry a count are that round's own publication -- the round and the quote
+  //    being one line. This rule is the second witness the corpus already held and nobody read: a
+  //    round states its own size twice, in its three suite rows and in the span of its `new tests`
+  //    row, and the span's end is what that round measured.
+  //
+  //    What it found, measured at v3.141: of **72** spans about the suite, **67** ended exactly
+  //    where the round's own `core` count ended and **5** ended nowhere near it -- four of them
+  //    carrying a count that belongs to a later round, which is what a later round writing
+  //    "(at vN)" over a fresh measurement produces. A row dated `(at vN)` whose number is vN+5's
+  //    is a record of a round that never measured it, and the date is what made rule 3 stop asking.
+  const spans = files.flatMap((file) => readSpans(file.text, file.label));
+  const own = ownCounts(read);
+  const spansByScope = new Map();
+  let spansAgree = 0;
+  let spansOfOneFile = 0;
+  let spansWithoutBefore = 0;
+  let spansUnverifiable = 0;
+  for (const span of spans) {
+    if (span.shape === null) {
+      if (span.arrow) {
+        problems.push(
+          `${at(span)}: the new-tests row draws an arrow this guard cannot read as a span, so ` +
+            `nothing compares its ends. Write it in one of the shapes it reads ` +
+            `(${SPAN_SHAPES.map((s) => s.name).join('; ')}).`,
+        );
+        continue;
+      }
+      spansWithoutBefore += 1;
+      continue;
+    }
+    if (span.file !== null) {
+      spansOfOneFile += 1;
+      continue;
+    }
+    if (span.delta !== null && span.end - span.start !== span.delta) {
+      problems.push(
+        `${at(span)}: the span says ${String(span.start)} -> ${String(span.end)} is ` +
+          `+${String(span.delta)}, and the difference is ${String(span.end - span.start)}. One of ` +
+          `the three numbers is not the measurement.`,
+      );
+      continue;
+    }
+    const counts = span.round === null ? undefined : own.get(span.round);
+    const landed = counts === undefined
+      ? undefined
+      : [...counts.entries()].find(([, row]) => row.tests === span.end);
+    if (landed !== undefined) {
+      spansByScope.set(landed[0], (spansByScope.get(landed[0]) ?? 0) + 1);
+      spansAgree += 1;
+      continue;
+    }
+    if (counts === undefined) {
+      spansUnverifiable += 1;
+      continue;
+    }
+    const stated = [...counts.entries()]
+      .map(([scope, row]) => `${scope} ${String(row.tests)} (${at(row)})`)
+      .join(', ');
+    problems.push(
+      `${at(span)}: the span of ${span.round ?? 'no round'} ends at ${String(span.end)}, and the ` +
+        `counts that round published of itself are ${stated}. A span records what a round ` +
+        `measured, so either the span is another round's, or the count beside it is: a number ` +
+        `retaken in a later round and dated to this one is a record of a round that never ` +
+        `measured it, and the date is what stopped rule 3 from asking.`,
+    );
+  }
+
   if (problems.length) fail(problems);
 
   const scopes = [...lastByScope.keys()].join(', ');
   const sites = gateSiteReading();
+  const spanSplit = [...spansByScope.entries()]
+    .map(([scope, count]) => `${String(count)} in ${scope}`)
+    .join(' and ');
   verdict(
     1,
     `check-doc-counts: OK (${read.length} published count(s), each naming its scope; ` +
       `scope(s) covered: ${scopes}; ${excused} unread phrase(s) excused in writing; ` +
       `${siteClaims} gate-site claim(s) agreeing with ${String(sites.claims)} claim(s) across ` +
       `${String(sites.files)} of the ${String(sites.sourceFiles)} file(s) the source walk reads; ` +
-      `${measurement.comparedWith})`,
+      `${String(spansAgree)} span(s) ending where the round's own count ends ` +
+      `(${spanSplit === '' ? 'none' : spanSplit}), ` +
+      `${String(spansOfOneFile)} span(s) about one file and ${String(spansWithoutBefore)} about no ` +
+      `before-count, neither read, and ${String(spansUnverifiable)} span(s) under a round with no ` +
+      `count to compare with; ${measurement.comparedWith})`,
   );
 }
 

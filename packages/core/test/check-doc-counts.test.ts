@@ -857,3 +857,133 @@ describe('check-doc-counts -- a dated row against the round it sits under', () =
     expect(r.code, r.out).toBe(0);
   });
 });
+
+/**
+ * The span a round publishes about its own size, and the date spelled as code.
+ *
+ * A round states how large the suite is twice: in its three suite rows, and in the span of its
+ * `new tests` row (`6,921 -> 6,946, +25`). Rules 1 to 4 read the first and none of them read the
+ * second, so the span was a count comparable with nothing -- and the spans are where the corpus had
+ * gone wrong: five of them, at v3.141, ended nowhere near the count the round had published beside
+ * them.
+ *
+ * The date arrives in two spellings, and one of them (`(at `v3.102`)`, fifteen rows in volume-17)
+ * read as no date at all until this round: rule 3c could not refuse a future date among them, and a
+ * span beside them had no count to be compared with.
+ */
+describe('check-doc-counts -- the span a round publishes about itself', () => {
+  const round = (tests: number, marker = '(at v3.10)') =>
+    `| core test suite | **108 files, ${tests} tests passed** ${marker} |\n`;
+  const span = (rest: string) => `| new tests | ${rest} |\n`;
+  const doc = (body: string) =>
+    `${HEADER}## v3.10 — a round\n\n| item | value |\n| --- | --- |\n${round(3059)}${body}`;
+
+  it('accepts a span that ends where the round its own count ends', () => {
+    // The row's two statements agree, which is the state the rule exists to hold: the span ends at
+    // the number the round published about itself, so the round and the quote are one measurement.
+    const r = run(doc(span('**3000 -> 3059, +59**')));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 span(s) ending where the round');
+    expect(r.out).toContain('(1 in core)');
+  });
+
+  it('refuses a span that ends somewhere the round published no count', () => {
+    // The shipped defect, in a fixture: at v3.117 the span ended at 6,691 and the count beside it
+    // said 6,700 -- a number a later round took and dated to this one.
+    //
+    // The refusal names every count the round published, not the first of them: a reader who is told
+    // only about `core` cannot see that the span might be the `repo` count, which is what v3.54's
+    // span turned out to be.
+    const body =
+      '| core test suite | **108 files, 3059 tests passed** (at v3.10) |\n' +
+      '| repo test suite | **112 files, 3246 tests passed** (at v3.10) |\n' +
+      span('**3000 -> 3100, +100**');
+    const r = run(`${HEADER}## v3.10 — a round\n\n| item | value |\n| --- | --- |\n${body}`);
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('ends at 3100');
+    expect(r.out).toContain('core 3059');
+    expect(r.out).toContain('repo 3246');
+    expect(r.out).toContain('the date is what stopped rule 3 from asking');
+  });
+
+  it('refuses a span whose three numbers are not one measurement', () => {
+    // Two statements can each be wrong on their own; the arithmetic needs no second witness. This
+    // one is a delta that does not match its ends, which no rule read before: `new tests` was
+    // outside every shape the guard knows.
+    const r = run(doc(span('**3000 -> 3059, +50**')));
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('is +50, and the difference is 59');
+  });
+
+  it('takes a span with a test file named before it as that file', () => {
+    // `(18 -> 30)` beside `site-proofs.test.ts` counts that file, and comparing it with the suite
+    // would be a verdict about two populations. The file has to be named *before* the span: a row
+    // that names test files while describing the delta names them after it.
+    const r = run(doc(span('**12**, all in `site-proofs.test.ts` (18 -> 30)')));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 span(s) about one file');
+  });
+
+  it('still reads a span as the suite\'s when a test file is named after it', () => {
+    // The mirror of the case above, and the reason the file has to come *before* the span: a row
+    // describing its delta names test files all the time (`one for the rewrite, two in
+    // ci-budget.test.ts`), and taking any file as the span's subject would excuse the span instead
+    // of checking it -- a rule that stops applying to the rows that mention code.
+    const r = run(doc(span('**3000 -> 3059, +59**: two in `ci-budget.test.ts`')));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 span(s) ending where the round');
+    expect(r.out).toContain('0 span(s) about one file');
+  });
+
+  it('does not take a row that names no round as the round\'s own count', () => {
+    // Two spellings claim "I measured this round": `(as of this commit)` and `(at vN)`. A row that
+    // says neither is a number quoted from somewhere, and taking it as the round's own would let a
+    // copied record decide whether the round's span is true. The dated row here is the round's own;
+    // the plain one after it is not, and the span must still match the first.
+    const body =
+      '| core test suite | **108 files, 3059 tests passed** (at v3.10) |\n' +
+      '| core test suite | **108 files, 3100 tests passed** |\n' +
+      span('**3000 -> 3059, +59**');
+    const r = run(`${HEADER}## v3.10 — a round\n\n| item | value |\n| --- | --- |\n${body}`);
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 span(s) ending where the round');
+  });
+
+  it('counts a row that publishes no before-count instead of refusing it', () => {
+    // Thirty-one rows say only how many tests a round added, so there is no span to compare. A
+    // reader that treated the gap as agreement would be claiming a comparison it never made.
+    const r = run(doc(span('**9**: four for the rule, five for the reader')));
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 about no before-count');
+  });
+
+  it('refuses an arrow it cannot read as a span', () => {
+    // A shape the reader does not know is indistinguishable from a row with no span, which is
+    // exactly the silent gap rule 4 was written for. The arrow is the evidence that a span was
+    // meant.
+    const r = run(doc(span('**9**, counted -> up')));
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('cannot read as a span');
+  });
+
+  it('counts a span under no round as one with nothing to compare against', () => {
+    // `docs/progress.md`'s own tables are under no round, so there is no round's count to compare
+    // with. Passing it would be a verdict; the class is counted instead.
+    const r = run(
+      `${HEADER}## Repository\n\n| item | value |\n| --- | --- |\n${round(3059)}${span('**3000 -> 3059**')}`,
+    );
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('1 span(s) under a round with no count to compare with');
+  });
+
+  it('reads a date written as code, and refuses a future one in that spelling', () => {
+    // `(at `v3.102`)` is the same statement rendered, and volume-17 writes it fifteen times. Reading
+    // only the plain spelling made those rows undated: rule 3c had nothing to compare, and the span
+    // beside them had no count. One pattern with an optional pair of backticks, not two patterns.
+    const r = run(`${HEADER}## v3.138 — a round\n\n${round(3059, '(at `v3.200`)')}`);
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('dated (at v3.200)');
+    const ok = run(`${HEADER}## v3.138 — a round\n\n${round(3059, '(at `v3.138`)')}`);
+    expect(ok.code, ok.out).toBe(0);
+  });
+});

@@ -898,9 +898,9 @@ path in the error message exists.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **243 files, 6191 tests passed** (at v3.69) |
+| `core` test suite | **243 files, 6160 tests passed** (at v3.69) |
 | `cli` test suite | **4 files, 187 tests passed** (at v3.69) |
-| repo test suite | **247 files, 6378 tests passed** (at v3.69) |
+| repo test suite | **247 files, 6347 tests passed** (at v3.69) |
 | coverage | `core` **99.97 / 99.80 / 100 / 99.97**, `cli` **100 / 100 / 100 / 100**; `gates/gates.ts` and `llm/rulegen-agreement.ts` are **100 / 100 / 100 / 100** |
 | new tests | **56** (6,104 -> 6,160): **20** in the new `gate-threshold-grid.test.ts`, **27** in the new `rulegen-agreement.test.ts`, **2** in `check-fault-cases.test.ts` (the corpus reading and its refusal), **3** in `rulegen.test.ts` (the one-writer table), **1** in `scripts-are-classified.test.ts` (the depth guard over every script specifier), and **3** produced by the `it.each` tables that read the registers this round extended -- `export-surface-enumerated.test.ts` alone accounts for two, measured by running its previous revision beside it |
 | new mutations | **7** injections in `gate-tests-battery.py` (GRID 1-3, LAYOUT 1-4); **35 -> 42** injections, **41 -> 51** witnesses. Two of the ten new witnesses are second tests on one injection: withdrawing the grid's inclusive boundary is seen by the sixteen-cell agreement test as well as by the boundary case, and withdrawing the wrong-column comparison is seen by the shipped reading as well as by the planted one. All 41 reachable rows CAUGHT, 1 redundant as declared, 0 survived, 0 inert, 0 unattributed |

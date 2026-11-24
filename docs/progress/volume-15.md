@@ -674,9 +674,9 @@ declares.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **249 files, 6349 tests passed** (at v3.89) |
+| `core` test suite | **249 files, 6338 tests passed** (at v3.89) |
 | `cli` test suite | **4 files, 187 tests passed** (at v3.89) |
-| repo test suite | **253 files, 6536 tests passed** (at v3.89) |
+| repo test suite | **253 files, 6525 tests passed** (at v3.89) |
 | coverage | `core` **99.97 / 99.95 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100**; per-file thresholds, no exemption, unchanged -- this round changed no file under `src/` |
 | new tests | **6329 -> 6338, net +9**: three for the cgroup v1 parser (a quota, `-1`, a reading it cannot use), four for the fallback chain (v2 wins, v1 when v2 says `max`, v1 when there is no v2 file, neither layout speaking), one for the ceiling premise (`workerCount(8, null)` is 7) and one that reads this machine -- all nine in `worker-count-follows-the-cpu-quota.test.ts`. The four budget declarations are data the existing rule reads, so they add no test |
 | the cap | **12 full-suite runs** at 2 / 4 / 6 / 8 workers (10 counted): wall 174 / 109 / 108-111 / 111-115 s, peak 6.5 / 6.9 / 7.1 / 7.6 GiB, worst stall 14.4 / 14.8 / 24.1 / 39.9 s -- **32 / 33 / 54 / 89%** of the 45 000 ms budget. The count the formula produces here is 3 |
