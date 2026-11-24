@@ -2446,8 +2446,8 @@ from an anecdote again.
 ### A bound is printed with the day its command usually has (v3.140)
 
 - **Two ends of a series do not say what the middle is.** The tightest bound is `2.0x` the slowest
-  reading of its command and `1,784 s` above the fastest, and its 30 readings have a median of
-  **20.5 s**: the bound is `88x` the day that command usually has. A reader given the ends alone can
+  reading of its command and `1,784 s` above the fastest, and its 31 readings have a median of
+  **21 s**: the bound is `86x` the day that command usually has. A reader given the ends alone can
   compute neither, so the middle is printed with the multiple it implies (`O-116`, finding 636).
 - **The middle and the ends come from one reader.** `readingsOfCommand` returns the fastest, the
   slowest and the middle of the same set of readings, so the denominator `R10` refuses against and
@@ -2456,9 +2456,10 @@ from an anecdote again.
 - **An even series prints the interval, and the multiple divides by its midpoint.** `between 20 s and
   21 s` rather than `20.5 s`, because 20.5 is a number no run spent; equal middle readings print as
   one number, because a range from a number to itself is the shape the every-reading-is-the-same
-  branch refuses. The shipped tree reached this branch in the round the clause was written: the
-  series grew from 29 readings to 30 when the recording moved, so the clause changed shape on the
-  tree rather than in a fixture.
+  branch refuses. The clause has three shapes and the shipped tree printed all three inside one
+  round: 29 readings (`at 21 s`, `86x`), 30 (`between 20 s and 21 s`, `88x`) and 31 (`at 21 s`,
+  `86x`). A branch whose condition is the length of a series is only known to be reachable by taking
+  a recording on each side of the boundary, which is what the round did.
 - **A middle of 0 s prints no multiple, and says so.** Six of the 44 commands are read at 0 s, and
   `bound / 0` is the `Infinity` the record refuses elsewhere. A clause that stopped at the middle
   would read as a division that came back blank.

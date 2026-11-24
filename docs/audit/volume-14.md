@@ -3711,7 +3711,7 @@ instead of a round. That is `O-117`.
 `R10` sizes a bound from the worst day a command has had, and v3.138 and v3.139 gave that day a
 series: the multiple is printed against the slowest reading, and the headroom against the fastest.
 Both are extremes. Neither is the day the command is usually having, and no arithmetic on the ends
-recovers it -- a series of 27 readings under 100 s and three at 888 s has the same ends as one
+recovers it -- a series of 27 readings under 100 s and four at 888 s has the same ends as one
 climbing steadily from 16 s to 888 s, and the two ask for different bounds.
 
 The population was measured before the sentence was written, because a middle is only worth printing
@@ -3719,24 +3719,24 @@ if the corpus has middles that differ from its ends:
 
 ```
 $ node /tmp/probe140a.mjs
-{ "commands": 44, "readings": 30, "zeroMiddle": 6, "inconsistent": 0 }
+{ "commands": 44, "readings": 31, "zeroMiddle": 6, "inconsistent": 0 }
 
-43.3x  n= 30    16.. 888 median  20.5  sudo apt-get update -qq && sudo apt-get install -y -qq prometheus
-20.8x  n=208     7.. 198 median   9.5  sudo apt-get update -qq && sudo apt-get install -y -qq zsh
- 8.0x  n=238     0..   8 median     1  step:Set up Node.js
- 3.5x  n=238     1..   7 median     2  step:Check out
- 3.0x  n=238     1..   3 median     1  pnpm install --frozen-lockfile
- 2.0x  n=238     0..   2 median     1  step:Set up pnpm
+42.3x  n= 31    16.. 888 median    21  sudo apt-get update -qq && sudo apt-get install -y -qq prometheus
+19.8x  n=215     7.. 198 median    10  sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+ 8.0x  n=246     0..   8 median     1  step:Set up Node.js
+ 3.5x  n=246     1..   7 median     2  step:Check out
+ 3.0x  n=246     1..   3 median     1  pnpm install --frozen-lockfile
+ 2.0x  n=246     0..   2 median     1  step:Set up pnpm
 ```
 
 `inconsistent: 0` is the reader checking itself: every middle lies between its fastest and its
 slowest reading, and its midpoint equals the median of the same array, computed twice from
-`readingsOfCommand`'s rows. The run at the end of the round is what made the install series 30
-readings rather than 29, and it is why the integer column is **20.5** here and the clause in the
-summary prints an interval.
+`readingsOfCommand`'s rows. The series was 29 readings when the clause was written, 30 after the
+first recording and 31 after the run the round's tip pushed; the median column reads 20.5 in the
+middle state and 21 in the other two, which is why the clause's shape moved with it.
 
 **The multiple is printed beside the middle, not left to the reader.** `2.0x of the slowest` reads as
-a bound with no room; the same bound is `88x` the day the command usually has. The two numbers are
+a bound with no room; the same bound is `86x` the day the command usually has. The two numbers are
 one fact about one step, and a summary that printed one made the step look like it was sized to fire
 on any bad day rather than to never fire at all.
 
@@ -3744,10 +3744,13 @@ on any bad day rather than to never fire at all.
 is a number no run spent; the multiple divides by the midpoint -- the median by definition -- and the
 sentence names the two readings it came from, so a reader can check the division against the history.
 Equal middle readings print as one number, because `between 20 s and 20 s` is a range from a number to
-itself, which is the shape the every-reading-is-the-same branch refuses one level up. The branch was
-written against a fixture and reached by the shipped tree in the same round: the series was 29
-readings when the clause was written and became 30 when the recording was taken, which turned `at
-21 s` into `between 20 s and 21 s` and `86x` into `88x`.
+itself, which is the shape the every-reading-is-the-same branch refuses one level up.
+
+The clause has three shapes, and the shipped tree printed all three inside one round: 29 readings
+(`at 21 s`, `86x`), 30 readings (`between 20 s and 21 s`, `88x`) and 31 readings (`at 21 s`, `86x`
+again). The fixture reached two of them; the round reached the third by taking a recording on each
+side of the boundary, which is the only way a branch whose condition is the *length* of a series is
+known to be reachable.
 
 **A middle of 0 s prints no multiple, and says so.** Six of the forty-four commands are read at 0 s,
 and `bound / 0` is the `Infinity` finding 121 refuses. The headroom clause subtracts and therefore
@@ -3813,6 +3816,13 @@ holds would otherwise show a vocabulary smaller than the record with no account 
 
 The count is of nouns whose sentence is a reason, not of nouns that are missing: the difference
 matters because the first is a decision and the second is the defect.
+
+**The same round took the other recording, and the noun came back.** The run v3.140's tip pushed
+(`45345210544`) widened the `batteries` ceiling, which is the branch that prints `budget(s)`: the noun
+returned to the derived vocabulary with the sentence still in place, and nothing was retyped. A record
+that survives a departure and a return inside one round, without an edit either time, is what the
+sentence was bought for -- and the second direction is the one a list of permitted nouns could not
+have handled without a second list.
 
 ### Falsifications
 

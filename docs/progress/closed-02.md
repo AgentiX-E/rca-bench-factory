@@ -733,7 +733,8 @@
   definition -- and prints no multiple over a middle of **0 s**, because six of the 44 commands are
   read at 0 s and `bound / 0` is the `Infinity` this record refuses elsewhere. A probe recomputes the
   median from `readingsOfCommand`'s own rows and finds **0** of 44 commands where the middle and the
-  ends disagree. **Eight mutations, 29 reds**, no survivors. The recording the round took added the
-  thirtieth reading, which turned `at 21 s` into `between 20 s and 21 s` and `86x` into `88x` -- the
-  even-series branch reached by the shipped tree rather than by a fixture, in the round that wrote it.
-  The residue is `O-118`: thirty-seven bounds still print no typical day.
+  ends disagree. **Eight mutations, 29 reds**, no survivors. The two recordings the round took moved
+  the series across the boundary twice -- 29 readings printed `at 21 s` and `86x`, 30 printed
+  `between 20 s and 21 s` and `88x`, 31 printed `at 21 s` and `86x` again -- so all three shapes of
+  the clause were printed by the shipped tree, not only by the fixture. The residue is `O-118`:
+  thirty-seven bounds still print no typical day.

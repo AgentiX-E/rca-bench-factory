@@ -2620,26 +2620,26 @@ to say so.
 
 `R10` sizes a bound from the worst day a command has had, and v3.139 printed that day beside the best
 one. The two ends bound the axis; neither is the day the command is usually having, and no arithmetic
-on the ends recovers it -- a series with 27 readings under 100 s and three at 888 s has the same ends
+on the ends recovers it -- a series with 27 readings under 100 s and four at 888 s has the same ends
 as one climbing steadily from 16 s to 888 s. The population first, because a rule about a middle is
 only worth writing if a middle exists:
 
 ```
 $ node /tmp/probe140a.mjs
-{ "commands": 44, "readings": 30, "zeroMiddle": 6, "inconsistent": 0 }
+{ "commands": 44, "readings": 31, "zeroMiddle": 6, "inconsistent": 0 }
 
 the widest gap between the middle and the worst day:
-43.3x  n= 30    16.. 888 median  20.5  sudo apt-get update -qq && sudo apt-get install -y -qq prometheus
-20.8x  n=208     7.. 198 median   9.5  sudo apt-get update -qq && sudo apt-get install -y -qq zsh
- 8.0x  n=238     0..   8 median     1  step:Set up Node.js
- 3.5x  n=238     1..   7 median     2  step:Check out
+42.3x  n= 31    16.. 888 median    21  sudo apt-get update -qq && sudo apt-get install -y -qq prometheus
+19.8x  n=215     7.. 198 median    10  sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+ 8.0x  n=246     0..   8 median     1  step:Set up Node.js
+ 3.5x  n=246     1..   7 median     2  step:Check out
 ```
 
 `inconsistent: 0` is the check that the middle and the two ends are one set: every middle lies
 between its fastest and its slowest reading, and its midpoint is the median of the same array --
 computed twice, once by `middleOf` and once by the probe, over `readingsOfCommand`'s own rows. The
-thirty readings are the twenty-nine the round started with plus the run its own tip produced; the
-table is the gate's `readingsOfCommand`, not a second walk over the file.
+thirty-one readings are the twenty-nine the round started with plus the two runs it pushed, and the
+table is the gate's `readingsOfCommand` rather than a second walk over the file.
 
 The sentence, on the shipped tree:
 
@@ -2647,12 +2647,12 @@ The sentence, on the shipped tree:
 $ node scripts/check-ci-budget.mjs | tr ';' '\n' | grep -E 'tightest|middle'
  tightest backend / Install a backend this repository did not write at 2.0x of the slowest reading
   of its command (888 s in `backend / Install a backend this repository did not write`, run 44516888528)
- across the history that command runs from 16 s to 888 s, with the middle of its 30 readings
-  between 20 s and 21 s -- against which the bound is 88x
+ across the history that command runs from 16 s to 888 s, with the middle of its 31 readings at 21 s
+  -- against which the bound is 86x
 ```
 
-**`2.0x` and `88x` are two halves of one fact, and the summary printed only the first.** `2.0x of
-the slowest` reads as a bound with no room; the same bound is `88x` the day that command usually has,
+**`2.0x` and `86x` are two halves of one fact, and the summary printed only the first.** `2.0x of
+the slowest` reads as a bound with no room; the same bound is `86x` the day that command usually has,
 and a reader who has both can tell a step sized to fire from a step sized to never fire. The multiple
 is printed rather than left as an exercise: the division is the whole point of the clause, and a
 reader doing it themselves would be reconstructing a number the gate has in hand.
@@ -2664,12 +2664,13 @@ the division can be checked against the history. Equal middle readings print as 
 20 s` -- because `between 20 s and 20 s` is a range from a number to itself, the shape the
 every-reading-is-the-same branch refuses one level up.
 
-**The shipped tree reached that branch in this round rather than in a fixture.** The series was 29
-readings when the clause was written -- an odd length, so the shipped output printed `at 21 s` -- and
-the recording this round pushed added the thirtieth, which turned the middle into the interval
-**20..21 s** and the multiple into `88x`. The fixture was written before the tree could prove it, and
-the round is the proof: a branch that only a synthetic series reaches is a branch nobody knows the
-shape of.
+**The shipped tree walked through all three shapes in this round.** The series was 29 readings when
+the clause was written (odd, so the output printed `at 21 s`); the recording this round took last
+made it 30, and the clause printed `between 20 s and 21 s -- against which the bound is 88x`; the
+run its own tip pushed made it 31, and the clause is back to `at 21 s` and `86x`. Each shape was
+written from the gate's output rather than carried forward, which is the only way a clause with
+three branches is known to have three working ones: the fixture reached two of them, and the tree
+reached all three inside one round.
 
 **A middle of 0 s gets no multiple, and the sentence says why.** Six of the forty-four commands are
 read at 0 s, and `bound / 0` is the `Infinity` finding 121 refuses. Seconds subtract, so the headroom
@@ -2745,18 +2746,27 @@ sentence states 9" would send the author to read both.
   then the two cases this round added. `check-repository-table` is inside the suite it measures, so
   the order -- rewrite the table, measure, rewrite again -- is `O-103`'s discipline and not a defect;
   it is recorded because a reader of the diff will see three rewrites of one table.
-- **The recording moved at the end of the round, and the vocabulary moved with it.** Run
-  `45326716640` is this round's starting tree and the new recording: it widened no ceiling, so
-  `budget(s)` is printed by no gate, `check-unit-nouns --write` removed the derived line and kept the
-  judgement, and the green line names the one noun the record holds without a line
-  (`1 noun(s) the record keeps and no gate printed this run ... budget(s)`). The sentence written for
-  exactly this round is what made the deletion a diff rather than a refusal -- `O-112` demonstrated
-  end to end on the shipped tree, in the round that closed it.
-- **The middle of the axis was rewritten from the gate's output twice.** The recording above changed
-  the install command's series from 29 readings to 30, so the middle became an interval and the
-  multiple `86x` became `88x`. Every number in the clauses below was taken from
-  `check-ci-budget`'s output after the recording was written, rather than carried forward from the
-  arithmetic of the sentence before it.
+- **A noun left the vocabulary and came back inside one round.** The recording taken after v3.139's
+  tip (`45326716640`) widened no ceiling, so `budget(s)` was printed by no gate: `--write` removed the
+  derived line and kept the judgement, and the green line named it (`1 noun(s) the record keeps and no
+  gate printed this run ... budget(s)`). The run this round's tip pushed (`45345210544`) widened one --
+  the `batteries` ceiling below the doc-count shape battery -- and the noun came back with the
+  sentence still there and nobody retyping it. `O-112` demonstrated twice, in the round that closed
+  it; the second demonstration is the one that matters, because a record that survives both
+  directions without an edit is what a sentence was bought for.
+- **The round's own run refused a bound, and the documents were already written.** Run `45345210544`
+  read `Doc-count shape battery` at **70 s**, and `R10` refused the 2-minute bound that had covered
+  it: twice 70 is 140, twenty seconds past 120. The bound rose to 3 minutes, `R13` then refused the
+  `batteries` ceiling by exactly the minute the bound took (**55 -> 56**), and the totals moved with
+  them: **246 -> 247 min** of bounds and **58 -> 72 min** measured. The growth is the round's own --
+  the battery rewrites the fixture file this round added shapes to -- which is why the step is named
+  rather than the job.
+- **The middle of the axis was rewritten three times, and every shape is in the diff's history.**
+  Twenty-nine readings printed `at 21 s` and `86x`; thirty printed `between 20 s and 21 s` and `88x`;
+  thirty-one printed `at 21 s` and `86x` again. Each number in the clauses above was taken from
+  `check-ci-budget`'s output after the recording it belongs to, never carried forward from the
+  sentence before it -- and the first and the third agreeing is a fact about the readings rather than
+  about the arithmetic.
 
 ### Falsifications
 
@@ -2801,15 +2811,15 @@ declared with its file.
 
 | what | value |
 | --- | --- |
-| CI | run `45326716640` on `549cf33`: **8 of 8 jobs success**, 896 s (12:29:11 -> 12:44:07); the slowest job is `batteries` at 891 s of its 55-minute ceiling. This is the run the recording was taken from, and the round's own tip is measured in the record that follows it |
+| CI | run `45345210544` on `66b01dd`: **8 of 8 jobs success**, 978 s (15:04:47 -> 15:21:05); the slowest job is `batteries` at 973 s of its 55-minute ceiling, and its own reading of `Doc-count shape battery` -- **70 s** -- is what raised that step's bound and then the ceiling above it (see *The round's own defects*). This is the run the recording was taken from, and it is the first run of the round's tip |
 | `pnpm run docs:check` | **23 steps, exit 0** |
 | `core` test suite | **260 files, 6921 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
 | repo test suite | **264 files, 7108 tests passed** (as of this commit) |
 | new tests | **6,909 -> 6,921, +12**: five for the middle of the bound axis (the shipped shape, an even series, equal middle readings, a middle of 0 s, and the series itself) and seven for the silence sentence (the writer's refusal, the green line that names it, the run's refusal, a noun coming back, the blank sentence, the figure it may not state, and the refusal that names the field) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
-| the budget gate's axis | `2.0x of the slowest reading ... across the history that command runs from 16 s to 888 s, with the middle of its 30 readings between 20 s and 21 s -- against which the bound is 88x` |
-| the noun inventory | **56** nouns and 10 judgements; `budget(s)` is the one noun the record keeps without a line, and its silence sentence is the reason |
+| the budget gate's axis | `2.0x of the slowest reading ... across the history that command runs from 16 s to 888 s, with the middle of its 31 readings at 21 s -- against which the bound is 86x` |
+| the noun inventory | **57** nouns in 75 gate/noun pairs and 10 judgements; `budget(s)` left the vocabulary and came back inside the round, and its silence sentence is why neither move needed an edit |
 | `docs/acceptance.md` | **51** clauses across **36** rounds; index **51** rows |
 | the census | **4** coincidences, unchanged: the round a date names is not a count any gate prints |
 
