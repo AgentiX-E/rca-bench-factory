@@ -32,12 +32,6 @@
       ]
     },
     {
-      "noun": "budget(s)",
-      "gates": [
-        "check-ci-budget"
-      ]
-    },
-    {
       "noun": "candidate(s)",
       "gates": [
         "check-fault-cases"
@@ -445,6 +439,10 @@
         ]
       ],
       "relation": "one set of headings read twice -- both walk the volumes and count the `## vX.YY, addendum` sections, `check-open-list` with its own pattern and `check-progress-volumes` through `labelOf` and `populationsOf`, so the two numbers are two readers of one population rather than one reader quoted twice"
+    },
+    {
+      "noun": "budget(s)",
+      "silence": "printed only by a round that widened a bound since the reading it compares with, so a tree that widened none has no such number to print -- the word counts the budgets a reading has outgrown, which a round where nothing moved cannot have"
     },
     {
       "noun": "comment(s)",

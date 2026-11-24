@@ -97,7 +97,9 @@ import {
   numbersOfNoun,
   partitionOf,
   relationsOf,
+  silencesOf,
   summaryOf,
+  unexplainedSilences,
   unpartitionedOf,
   unprintedFiguresOf,
   unstatedOf,
@@ -252,11 +254,15 @@ function judgementsIn(document) {
     // `separateOf` and `partitionProblems` are what say whether an entry is usable, and a reader that
     // dropped a malformed one would turn a refusal into a missing sentence.
     const separate = Array.isArray(one.separate) ? one.separate : null;
+    // The sentence about when the noun can be silent (`O-112`). Read here because it is a judgement
+    // about the noun rather than a field of the derived vocabulary: `silencesOf` decides what counts
+    // as one, and this reader only has to keep it from being lost on the way to the writer.
+    const silence = typeof one.silence === 'string' && one.silence.trim() !== '' ? one.silence : null;
     // No judgement is no entry, rather than an entry with three nulls: `unstatedOf` and
     // `unpartitionedOf` distinguish "nobody wrote a sentence" from "somebody wrote half of one", and
     // a placeholder would make every noun look like the second.
-    if (relation === null && populations === null && separate === null) continue;
-    out.set(keyOf(one), { noun: one.noun, populations, separate, relation });
+    if (relation === null && populations === null && separate === null && silence === null) continue;
+    out.set(keyOf(one), { noun: one.noun, populations, separate, silence, relation });
   }
   return out;
 }
@@ -313,10 +319,16 @@ const DISAGREEMENT_HINT =
  * moved, and a message that said "a relation states a number" would send them looking for which.
  */
 function figuresText(unprinted) {
+  // Three shapes rather than two, because the sentence's subject is what the author has to go and
+  // edit: a relation under a noun, a declaration beside one gate, and the sentence about when a noun
+  // can be silent (`O-112`). A message that said "a sentence" over all three would name the wrong
+  // field for two of them.
   const said = unprinted.map((one) =>
-    one.gate === undefined
-      ? `${one.noun} states ${one.stated.join(' and ')} and the counts under it are ${one.counts.join(' and ')}`
-      : `${one.noun} states ${one.stated.join(' and ')} beside ${one.gate}, whose counts are ${one.counts.join(' and ')}`,
+    one.field === 'silence'
+      ? `${one.noun}'s silence sentence states ${one.stated.join(' and ')} and the counts under it are ${one.counts.join(' and ')}`
+      : one.gate === undefined
+        ? `${one.noun} states ${one.stated.join(' and ')} and the counts under it are ${one.counts.join(' and ')}`
+        : `${one.noun} states ${one.stated.join(' and ')} beside ${one.gate}, whose counts are ${one.counts.join(' and ')}`,
   );
   return `${String(unprinted.length)} sentence(s) state a figure no gate printed: ${said.join('; ')}`;
 }
@@ -342,6 +354,19 @@ if (process.argv.includes('--write')) {
   // rewritten into the record by the one door that is supposed to leave the record truthful.
   const unprinted = unprintedFiguresOf(census, judgements);
   if (unprinted.length > 0) fail(figuresText(unprinted), FIGURES_HINT);
+  // The deletion `--write` used to perform without asking (`O-112`). A noun the record lists and this
+  // run did not print is either a branch that was not taken or a gate that stopped printing it, and
+  // this run cannot tell the two apart -- so the writer must not choose. A silence sentence is that
+  // decision made in advance, and writing one is the whole repair: the refusal asks for it rather
+  // than producing a diff a reviewer has to reverse-engineer.
+  const unexplained = unexplainedSilences(committed?.nouns, census, judgements);
+  if (unexplained.length > 0) {
+    fail(
+      `${String(unexplained.length)} noun(s) the record lists were printed by no gate this run and no judgement says when they can be silent: ` +
+        unexplained.map((one) => `${one.noun} (${one.gates.join(', ')})`).join('; '),
+      'add a `silence` sentence to that noun\'s judgement in golden-master/unit-nouns.json: the vocabulary is derived, and a branch going untaken is a decision this writer will not make for you',
+    );
+  }
   // Sorted by noun and rebuilt in a fixed key order, so a diff is a changed sentence rather than a
   // reordering or a moved key.
   const judgementsOut = [...judgements.values()]
@@ -350,6 +375,7 @@ if (process.argv.includes('--write')) {
       const record = { noun: one.noun };
       if (one.populations !== null) record.populations = one.populations;
       if (one.separate !== null) record.separate = one.separate;
+      if (one.silence !== null) record.silence = one.silence;
       if (one.relation !== null) record.relation = one.relation;
       return record;
     });
@@ -365,9 +391,14 @@ if (process.argv.includes('--write')) {
   }
   // And a judgement whose noun no gate printed is kept rather than dropped -- which is the repair --
   // and named, because the alternative is a record that grows a noun nobody remembers writing about.
+  // The sentence that says why it can be silent is named as the reason, since that is now the only
+  // account a reader gets for a line the vocabulary does not have (`O-112`).
   for (const one of judgements.values()) {
     if (!census.has(one.noun)) {
-      console.error(`check-unit-nouns: ${one.noun} carries a judgement and no gate printed it this run — kept`);
+      console.error(
+        `check-unit-nouns: ${one.noun} carries a judgement and no gate printed it this run — kept` +
+          (one.silence === null ? '' : ', and the sentence about when it can be silent is why'),
+      );
     }
   }
   process.exit(0);
@@ -424,23 +455,41 @@ if (disagreements.length > 0) fail(disagreementsText(disagreements), DISAGREEMEN
 const unprinted = unprintedFiguresOf(census, judgements);
 if (unprinted.length > 0) fail(figuresText(unprinted), FIGURES_HINT);
 
-const stored = JSON.stringify({
-  nouns: (committed.nouns ?? []).map(({ populations, relation, ...rest }) => rest),
-  shared: (committed.shared ?? []).map(({ populations, relation, ...rest }) => rest),
-});
+const stored = (() => {
+  // A noun the record lists and this run did not print is **not** a difference when the record says
+  // when it can be silent (`O-112`): the derived line has gone, which is the sentence coming true.
+  // Both sides of the comparison are filtered rather than the difference being excused afterwards, so
+  // the `moved` list below never has to explain a change the document already explains.
+  const silences = silencesOf(judgements);
+  const keptSilent = (noun) => silences.has(noun) && !census.has(noun);
+  const shape = (list) =>
+    list.filter((one) => !keptSilent(one.noun)).map(({ populations, relation, silence, ...rest }) => rest);
+  return JSON.stringify({ nouns: shape(committed.nouns ?? []), shared: shape(committed.shared ?? []) });
+})();
 const fresh = JSON.stringify(derived);
 if (stored !== fresh) {
   // Said as a difference rather than as a comparison of two documents: the author needs to
   // know which noun moved and in which direction, and `not equal` over two hundred lines of
   // JSON says neither.
+  const silences = silencesOf(judgements);
   const was = new Map((committed.nouns ?? []).map((one) => [one.noun, one.gates.join(',')]));
   const now = new Map(derived.nouns.map((one) => [one.noun, one.gates.join(',')]));
   const moved = [];
   for (const [noun, gatesAt] of now) {
-    if (!was.has(noun)) moved.push(`${noun} is new, printed by ${gatesAt}`);
-    else if (was.get(noun) !== gatesAt) moved.push(`${noun}: ${was.get(noun)} -> ${gatesAt}`);
+    if (!was.has(noun)) {
+      // A noun the record keeps a silence sentence for can come back, and that is a refresh rather
+      // than a new population: the sentence was written for exactly this round. Saying "new" over it
+      // would send the author to ask a question they have already answered.
+      moved.push(
+        silences.has(noun)
+          ? `${noun} is printed again, and the record already says when it can be silent`
+          : `${noun} is new, printed by ${gatesAt}`,
+      );
+    } else if (was.get(noun) !== gatesAt) moved.push(`${noun}: ${was.get(noun)} -> ${gatesAt}`);
   }
-  for (const noun of was.keys()) if (!now.has(noun)) moved.push(`${noun} is no longer printed`);
+  for (const noun of was.keys()) {
+    if (!now.has(noun) && !(silences.has(noun) && !census.has(noun))) moved.push(`${noun} is no longer printed`);
+  }
   const wasShared = new Set((committed.shared ?? []).map((one) => keyOf(one)));
   const nowShared = new Set(derived.shared.map((one) => keyOf(one)));
   // A noun that was not shared last round and is now: the diff is real, and what the author needs to
@@ -458,7 +507,7 @@ if (stored !== fresh) {
   for (const one of wasShared) if (!nowShared.has(one)) moved.push(`${one} is no longer shared`);
   fail(
     `the unit-noun inventory disagrees with the gates: ${moved.length === 0 ? 'the documents differ where no noun did, so the shape changed' : moved.join('; ')}`,
-    'run `node scripts/check-unit-nouns.mjs --write` and read the diff: a new shared noun is a population nobody has asked about yet',
+    'run `node scripts/check-unit-nouns.mjs --write` and read the diff: a new shared noun is a population nobody has asked about yet, and a noun that stopped being printed needs a sentence saying when it can be',
   );
 }
 

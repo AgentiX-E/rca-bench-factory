@@ -20,8 +20,10 @@ import {
   separateOf,
   relationsOf,
   sharedNounsOf,
+  silencesOf,
   stateOf,
   summaryOf,
+  unexplainedSilences,
   unprintedFiguresOf,
   unreadableOf,
   unpartitionedOf,
@@ -801,6 +803,18 @@ describe('a sentence may state a count only if a gate printed it (finding 620)',
     ]);
     expect(unprintedFiguresOf(VOLUMES, silent)).toEqual([]);
   });
+
+  it('holds the sentence about when a noun can be silent to the same figures (O-112)', () => {
+    // The new field is the same kind of document as a relation -- a person's words beside a noun --
+    // so a figure in it is the same hole in the record. `9` is not a count either gate printed, and
+    // the sentence would otherwise be the one place a number could hide from every reader.
+    const withSilence = new Map([
+      [keyOf(TWO), { noun: 'volume(s)', silence: 'printed in the 9 rounds that close a window' }],
+    ]);
+    expect(unprintedFiguresOf(VOLUMES, withSilence)).toEqual([
+      { noun: 'volume(s)', field: 'silence', stated: [9], counts: [14, 18] },
+    ]);
+  });
 });
 
 /**
@@ -1093,8 +1107,9 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
    *
    * The three gates are still there and the two other nouns are still printed: a census of one gate
    * would shrink the whole vocabulary, and the drift this case is about is a noun leaving `shared`,
-   * not a tree losing its gates. `check-open-list` prints `record(s)` here, which is what the log's
-   * tables are counted in -- the reading is a plausible tree rather than a truncated one.
+   * not a tree losing its gates. The third gate prints no unit noun at all here -- naming a noun of
+   * its own would add one for the round to remove again, and `O-112` has made an arrival and a
+   * departure two different conversations.
    */
   const NARROWED = join(scratch, 'narrowed-readings.json');
   writeFileSync(
@@ -1102,7 +1117,7 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     JSON.stringify([
       { gate: 'check-fault-cases', text: 'check-fault-cases: 602 finding(s)' },
       { gate: 'check-repository-table', text: 'check-repository-table: OK (8 row(s) under ## Repository)' },
-      { gate: 'check-open-list', text: 'check-open-list: 318 record(s) in the tables' },
+      { gate: 'check-open-list', text: 'check-open-list: the record tables are consistent' },
     ]),
   );
 
@@ -1135,6 +1150,129 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('row(s): check-fault-cases,check-open-list -> check-fault-cases,check-open-list,check-repository-table');
     expect(result.stderr).toContain('read the diff');
+  });
+
+  /**
+   * A reading in which `row(s)` is printed by nobody, and nothing else moved (`O-112`).
+   *
+   * The shape of the round after a widening in `check-ci-budget`: the noun a conditional sentence
+   * printed is simply not there. The vocabulary derived from this reading is `finding(s)` alone,
+   * which is the recorded census with one noun removed and no gate removed -- so a difference
+   * between the two documents is attributable to the one noun rather than to a truncation.
+   */
+  const SILENT = join(scratch, 'silent-readings.json');
+  writeFileSync(
+    SILENT,
+    JSON.stringify([
+      { gate: 'check-fault-cases', text: 'check-fault-cases: 602 finding(s)' },
+      { gate: 'check-repository-table', text: 'check-repository-table: the table agrees with the tree' },
+      { gate: 'check-open-list', text: 'check-open-list: the record tables are consistent' },
+    ]),
+  );
+
+  it('refuses to delete a noun no gate printed, unless a sentence says when it can be silent', () => {
+    // The defect `O-112` is: `--write` derived a smaller vocabulary from a round where a branch was
+    // not taken, deleted the line, and the round after put it back. Two facts make that wrong --
+    // the noun was printed by this tree until the branch stopped, and this run cannot say whether it
+    // will be taken again -- so the writer asks rather than decides.
+    const { path, document } = derive('silent-write.json');
+    expect(document.nouns.some((one: { noun: string }) => one.noun === 'row(s)')).toBe(true);
+    const refused = run(['--write', '--inventory', path, '--readings', SILENT]);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain('no judgement says when they can be silent');
+    expect(refused.stderr).toContain('row(s) (check-fault-cases, check-open-list, check-repository-table)');
+    // Nothing was written: a refusal that leaves a half-derived document behind would be the same
+    // deletion with a red line after it.
+    expect(JSON.parse(readFileSync(path, 'utf8')).nouns.some((one: { noun: string }) => one.noun === 'row(s)')).toBe(true);
+    // With the sentence, the writer proceeds, the derived line goes, and the judgement stays -- which
+    // is the whole point: the round that brings the noun back finds the decision already written.
+    const answered = judged(document, 'row(s)', { silence: 'printed only in the rounds that close a window' });
+    writeFileSync(path, JSON.stringify({ ...answered, judgements: answered.judgements }, null, 2));
+    const wrote = run(['--write', '--inventory', path, '--readings', SILENT]);
+    expect(wrote.status, wrote.stderr).toBe(0);
+    const after = JSON.parse(readFileSync(path, 'utf8'));
+    expect(after.nouns.some((one: { noun: string }) => one.noun === 'row(s)')).toBe(false);
+    expect(after.judgements.find((one: { noun: string }) => one.noun === 'row(s)')).toEqual({
+      noun: 'row(s)',
+      silence: 'printed only in the rounds that close a window',
+    });
+  });
+
+  it('accepts the silent noun on a green run and says on the line which noun the record keeps', () => {
+    // The other half of the same repair: a reader of the summary would otherwise see a vocabulary
+    // smaller than the document with no account of the difference. The sentence is the account, so
+    // the line has to name it and the noun.
+    const { path, document } = derive('silent-green.json');
+    writeFileSync(path, JSON.stringify(judged(document, 'row(s)', { silence: 'printed only in the rounds that close a window' }), null, 2));
+    const result = run(['--inventory', path, '--readings', SILENT]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('1 noun(s) the record keeps and no gate printed this run');
+    expect(result.stdout).toContain('row(s)');
+  });
+
+  it('still refuses a noun that vanished with no sentence, which is the drift it already caught', () => {
+    // The refusal `--write` now asks for is the same one a green run makes, and the two doors have to
+    // agree: a `--write` that refused and a run that passed would leave the tree in a state no
+    // command accepts.
+    const { path, document } = derive('silent-refused.json');
+    writeFileSync(path, JSON.stringify(document, null, 2));
+    const result = run(['--inventory', path, '--readings', SILENT]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('row(s) is no longer printed');
+    expect(result.stderr).toContain('needs a sentence saying when it can be');
+  });
+
+  it('says a noun with a silence sentence is printed again, rather than presenting it as new', () => {
+    // The round the branch is taken again. The noun is not a population nobody has asked about -- the
+    // question was answered when it went quiet -- so the message says what happened instead of sending
+    // the author to write a sentence that is already there.
+    const { path, document } = derive('silent-return.json');
+    const quiet = judged(document, 'row(s)', { silence: 'printed only in the rounds that close a window' });
+    writeFileSync(path, JSON.stringify(quiet, null, 2));
+    const wrote = run(['--write', '--inventory', path, '--readings', SILENT]);
+    expect(wrote.status, wrote.stderr).toBe(0);
+    // The partition is written for the three gates the noun has when it is printed, one apiece: three
+    // tables with one word, so nothing about them is an equality the census could check.
+    const after = JSON.parse(readFileSync(path, 'utf8'));
+    const withSentence = judged(after, 'row(s)', {
+      relation: 'one word over three tables',
+      populations: [['check-fault-cases'], ['check-open-list'], ['check-repository-table']],
+    });
+    writeFileSync(path, JSON.stringify(withSentence, null, 2));
+    const result = run(['--inventory', path, '--readings', RECORDED]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('row(s) is printed again, and the record already says when it can be silent');
+  });
+
+  it('reads a silence sentence only when it is words, because an empty key is the state it refuses', () => {
+    // A whitespace-only sentence would make the refusal `--write` consults unreachable by a typo: the
+    // record would look like it had answered while saying nothing.
+    const judgements = new Map<string, unknown>([
+      ['a', { noun: 'a', silence: 'printed only when the window closes' }],
+      ['b', { noun: 'b', silence: '   ' }],
+      ['c', { noun: 'c', silence: 42 }],
+      ['d', { noun: 'd' }],
+    ] as [string, never][]);
+    expect([...silencesOf(judgements).keys()]).toEqual(['a']);
+    const census = censusOf([{ gate: 'g', text: '3 a(s)' }]);
+    expect(unexplainedSilences([{ noun: 'a', gates: ['g'] }, { noun: 'z', gates: ['g'] }], census, judgements)).toEqual([
+      { noun: 'z', gates: ['g'] },
+    ]);
+  });
+
+  it('names the silence sentence as the one that stated a figure no gate printed', () => {
+    // The refusal has to say which of the two sentences about a noun is wrong: a message that said
+    // "a sentence states 9" over a noun with a relation and a silence sentence would send the author
+    // to read both. `--write` is the door because it is the one that copies sentences forward, and a
+    // figure in one would otherwise be rewritten into the record by the writer itself.
+    const { path, document } = derive('silent-figure.json');
+    writeFileSync(
+      path,
+      JSON.stringify(judged(document, 'row(s)', { silence: 'printed in the 9 rounds that close a window' }), null, 2),
+    );
+    const result = run(['--write', '--inventory', path, '--readings', RECORDED]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("row(s)'s silence sentence states 9 and the counts under it are 8 and 318");
   });
 
   it('refuses a sentence that states a figure no gate printed (finding 620)', () => {

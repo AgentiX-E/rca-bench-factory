@@ -262,6 +262,14 @@ export function unprintedFiguresOf(census, judgements = new Map()) {
     ];
     const missing = figuresOf(judgement.relation).filter((figure) => !counts.includes(figure));
     if (missing.length > 0) out.push({ noun: judgement.noun, stated: missing, counts });
+    // A silence sentence is the same kind of document as the relation -- a person's words beside a
+    // noun, which no reader recomputes -- so a figure in it is the same hole (finding 620, one
+    // field over). It is checked on the rounds where the noun **is** printed, because that is the
+    // only round with counts to compare against; the rounds it describes are the ones with none.
+    const silentMissing = figuresOf(judgement.silence).filter((figure) => !counts.includes(figure));
+    if (silentMissing.length > 0) {
+      out.push({ noun: judgement.noun, field: 'silence', stated: silentMissing, counts });
+    }
     // The separate sentences are held to a narrower set, because the number beside each of them is
     // one gate's number: a distance may repeat its own count and must not borrow another gate's. The
     // union would have let `check-ci-budget`'s sentence state the `50` that
@@ -277,7 +285,11 @@ export function unprintedFiguresOf(census, judgements = new Map()) {
   return out.sort(
     (a, b) =>
       a.noun.localeCompare(b.noun) ||
-      String(a.gate ?? '').localeCompare(String(b.gate ?? '')),
+      String(a.gate ?? '').localeCompare(String(b.gate ?? '')) ||
+      // The relation and the silence sentence are two answers about one noun, and both are printed
+      // when both are wrong: the third key keeps the order a function of the record rather than of
+      // the order the checks happen to run in.
+      String(a.field ?? '').localeCompare(String(b.field ?? '')),
   );
 }
 
@@ -447,6 +459,61 @@ export function separateOf(judgement) {
       counts: typeof one?.counts === 'string' && one.counts.trim() !== '' ? one.counts : null,
     }))
     .sort((a, b) => (a.gate ?? '').localeCompare(b.gate ?? ''));
+}
+
+/**
+ * The nouns whose judgement says **when they can be silent**, keyed by noun (`O-112`).
+ *
+ * `check-ci-budget` prints `budget(s)` only in a round that widened a bound since the recording it
+ * compares with, so the noun enters the vocabulary with a widening and leaves it with the next
+ * round. The inventory is derived from one run, so a `--write` in a round where nothing moved used
+ * to delete the entry -- and the round after would print it again. A noun that comes and goes with
+ * the tree is not drift to be smoothed: a deletion nobody decided is a rewrite of the record
+ * dressed as maintenance, and a judgement recorded against the noun would be the thing that kept
+ * being retyped.
+ *
+ * The repair is **not** a list of nouns a gate may print. Nothing derives such a list, and a
+ * hand-kept one would need a reader of its own to stay true to the gates -- which is the second
+ * vocabulary this census exists to avoid. It is a sentence attached to the noun, in the same list
+ * the relations live in, saying why a round can print none; `--write` then refuses to drop a noun
+ * that carries none, so a branch going untaken is a decision somebody made rather than a diff the
+ * writer produced.
+ *
+ * Whitespace-only is `null` rather than a sentence: a key with no words is the state `--write`
+ * refuses, and treating `""` as an answer would make the refusal unreachable by a stray space.
+ */
+export function silencesOf(judgements = new Map()) {
+  const out = new Map();
+  for (const one of judgements.values()) {
+    if (typeof one?.silence === 'string' && one.silence.trim() !== '') out.set(keyOf(one), one.silence);
+  }
+  return out;
+}
+
+/**
+ * The nouns the committed record lists and this run did not print, with no sentence saying why.
+ *
+ * This is the state `--write` used to resolve by deletion, and the refusal it now gets instead. Two
+ * facts make deletion the wrong repair: the noun **was** printed by this tree until a branch stopped
+ * being taken, and nothing in this run says which branch or whether it will be taken again -- so a
+ * writer that dropped the line would be answering a question about the gates with a change to the
+ * inventory.
+ *
+ * A noun carrying a silence sentence is the other case and is not returned: the record already says
+ * a round can print none, and the diff that removes the derived line is that sentence coming true.
+ *
+ * `committed` is the inventory's own `nouns` list rather than a derivation: the question is what the
+ * record claims, and deriving the claim from the tree is how the claim would answer itself.
+ */
+export function unexplainedSilences(committed, census, judgements = new Map()) {
+  const silences = silencesOf(judgements);
+  const out = [];
+  for (const one of committed ?? []) {
+    const noun = typeof one?.noun === 'string' ? one.noun : null;
+    if (noun === null || census.has(noun) || silences.has(noun)) continue;
+    out.push({ noun, gates: Array.isArray(one.gates) ? one.gates : [] });
+  }
+  return out.sort((a, b) => a.noun.localeCompare(b.noun));
 }
 
 /**
@@ -884,6 +951,19 @@ export function summaryOf(census, judgements = new Map()) {
           .map((one) => `${String(one.count)} ${one.noun} in ${one.gates.join(' and ')}`)
           .join('; '),
   );
+  // The nouns the record keeps and this run did not print (`O-112`). Not a count of what is
+  // missing: each of them carries a sentence saying when it can be silent, which is the reason the
+  // record holds it at all. It is printed because a reader of this line would otherwise see a
+  // vocabulary smaller than the document and no account of the difference -- and the account is the
+  // whole repair, so it has to be on the line rather than in a comment.
+  const silences = silencesOf(judgements);
+  const silent = [...silences.keys()].filter((noun) => !census.has(noun)).sort();
+  if (silent.length > 0) {
+    parts.push(
+      `${String(silent.length)} noun(s) the record keeps and no gate printed this run, each with a sentence about when it can be: ` +
+        silent.join(', '),
+    );
+  }
   parts.push(
     unreadable.length === 0
       ? 'and every use states its number'
