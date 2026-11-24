@@ -101,12 +101,16 @@ afterAll(() => {
  * whose own exemption list cannot be driven from outside can only be shown to
  * accept the list it ships with.
  */
-function run(body: string, unmeasured?: unknown, measured = MEASURED, present?: 'self') {
+function run(body: string, unmeasured?: unknown, measured: string | null = MEASURED, present?: 'self') {
   const dir = mkdtempSync(join(tmpdir(), 'doc-counts-'));
   dirs.push(dir);
   const doc = join(dir, 'progress.md');
   writeFileSync(doc, body);
-  const argv = [SCRIPT, '--doc', doc, '--measured', measured];
+  // `null` means "do not hand the counts in": the guard then falls back to the committed
+  // snapshot, which is the read path a developer running `docs:check` takes. Two read paths, two
+  // sentences about what was compared, and a test that could only drive one of them would leave
+  // the other's sentence unread (`O-110`).
+  const argv = measured === null ? [SCRIPT, '--doc', doc] : [SCRIPT, '--doc', doc, '--measured', measured];
   if (unmeasured !== undefined) argv.push('--unmeasured', JSON.stringify(unmeasured));
   // Rule 5 reads documents that speak in the present, which are two real files by default. A test
   // that wants to drive it passes its own fixture as that document; without this, the only way to
@@ -745,6 +749,110 @@ describe('check-doc-counts -- which round a claim about now sits under', () => {
     const r = run(
       `${HEADER}## v3.10 — a round\n\n${coreRow('(at v3.10)')}` +
         `\n## Repository\n\n${coreRow('(as of this commit)')}`,
+    );
+    expect(r.code, r.out).toBe(0);
+  });
+});
+
+/**
+ * What the green line says it compared (`O-110`).
+ *
+ * The guard compares the published rows with a **snapshot**, and a snapshot is a number
+ * somebody took rather than the tree. So a snapshot and the rows that quote it can be wrong
+ * together -- measured at v3.137: one test off, this guard's exit **0** against exit **1** from
+ * the reader that re-derives. That reader exists (`measure-doc-counts.mjs --check`, step 6 of
+ * `verify:local`), but a developer who runs `docs:check` and stops has not run it, and until now
+ * nothing in the output said which of the two they had done.
+ *
+ * The repair is not for this gate to read a report when one happens to be present: the reports are
+ * written by the coverage step, so a tree that has not run coverage has none, and a verdict that
+ * depends on whether another command was run is a verdict with two meanings. The repair is for the
+ * line to name the two sides it joined and the reader that would re-take the measurement.
+ */
+describe('check-doc-counts -- what the green line says it compared', () => {
+  const BODY = `${HEADER}| core test suite | **108 files, 3059 tests passed** |\n`;
+
+  it('names the snapshot it read, and the reader that would re-derive it', () => {
+    // No `--measured`: the guard falls back to the committed file, which is the state a developer
+    // running `pnpm docs:check` is in.
+    const r = run(BODY, undefined, null);
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('golden-master/doc-counts.json');
+    expect(r.out).toContain('snapshot rather than a run');
+    expect(r.out).toContain('does not spawn the suite');
+    expect(r.out).toContain('measure-doc-counts.mjs --check');
+  });
+
+  it('says when the counts were handed to it, which is a different comparison', () => {
+    // `--measured` is how the suite drives this guard. The number then came from the caller and
+    // not from any file the gate opened, and a line that called that "a snapshot" would be
+    // describing a read that did not happen.
+    const r = run(BODY);
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('passed in (--measured)');
+    expect(r.out).not.toContain('snapshot rather than a run');
+  });
+});
+
+/**
+ * A date against the round it sits under (`O-115`).
+ *
+ * `(at v3.200)` under `## v3.138` is impossible -- a round cannot record a measurement from a round
+ * that has not happened -- and nothing read the pair. The corpus holds **230** dated rows and 227 of
+ * them sit under a round, so this is a rule over a real population rather than a guard written for a
+ * state that has never occurred: writing it is what turns "no such row exists" into "no such row can
+ * be written without a refusal".
+ *
+ * The comparison is the one rule 3b already uses -- a round token as a pair of numbers -- applied to
+ * a different field. `v3.9` is older than `v3.10`, so a string comparison would pass the row that is
+ * actually impossible and refuse the one that is a correct record.
+ */
+describe('check-doc-counts -- a dated row against the round it sits under', () => {
+  const dated = (marker: string) => `| core test suite | **108 files, 3059 tests passed** ${marker} |\n`;
+
+  it('refuses a date from a round that has not happened yet', () => {
+    const r = run(`${HEADER}## v3.138 — a round\n\n${dated('(at v3.200)')}`);
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('dated (at v3.200)');
+    expect(r.out).toContain('sits under v3.138');
+  });
+
+  it('accepts a date from an earlier round, and one from the round itself', () => {
+    // Both are records: an older round's measurement quoted here, and this round's own. A rule that
+    // refused the second would refuse the row a round writes about itself.
+    const earlier = run(`${HEADER}## v3.138 — a round\n\n${dated('(at v3.130)')}`);
+    expect(earlier.code, earlier.out).toBe(0);
+    const own = run(`${HEADER}## v3.138 — a round\n\n${dated('(at v3.138)')}`);
+    expect(own.code, own.out).toBe(0);
+  });
+
+  it('compares the pair as numbers, so a date in v3.9 is older than a row under v3.10', () => {
+    // The string order is the reverse of the numeric one, which is the whole reason rule 3b compares
+    // a pair. A rule that read the token as text would refuse this record and pass its mirror.
+    const older = run(`${HEADER}## v3.10 — ten\n\n${dated('(at v3.9)')}`);
+    expect(older.code, older.out).toBe(0);
+    const impossible = run(`${HEADER}## v3.9 — nine\n\n${dated('(at v3.10)')}`);
+    expect(impossible.code, impossible.out).toBe(1);
+    expect(impossible.out).toContain('dated (at v3.10)');
+  });
+
+  it('refuses a date newer than every round in the corpus, even under no heading', () => {
+    // `docs/progress.md`'s own tables sit under no round, and three dated rows already do. A date
+    // there is not compared against a heading, so the corpus's newest round is the only thing it can
+    // be compared with -- and a date past it names a round that has not been written.
+    const r = run(
+      `${HEADER}## v3.10 — a round\n\n${dated('(at v3.10)')}\n## Repository\n\n${dated('(at v3.20)')}`,
+    );
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('dated (at v3.20)');
+    expect(r.out).toContain('the newest round');
+  });
+
+  it('leaves a dated row under no heading alone when the round it names exists', () => {
+    // The other half: the index file's tables quote older rounds and are not under any of them, and
+    // a rule that needed a heading would refuse every one of them.
+    const r = run(
+      `${HEADER}## v3.10 — a round\n\n${dated('(at v3.10)')}\n## Repository\n\n${dated('(at v3.9)')}`,
     );
     expect(r.code, r.out).toBe(0);
   });

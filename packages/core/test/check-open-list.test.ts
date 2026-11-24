@@ -1333,11 +1333,11 @@ describe('docs · a section that is only entries is a record, whatever its headi
     expect(r.out).toContain('0 record(s): 0 under a round and 0 under none');
   });
 
-  it('reads the shipped corpus as 242 records, with the addendum counted in', () => {
+  it('reads the shipped corpus as 243 records, with the addendum counted in', () => {
     // The shipped reading, and the rounds it carries: v3.115 found 22 records under two names the
     // guard did not read (218 -> its own), v3.116 found the addendum's record under a name and a form
-    // it did not read (219), and every round since has added one -- v3.137's is the 241st. The rounds
-    // are **232** and the addendum is one: the line used to print `211 round(s)` and `18 of them wrote
+    // it did not read (219), and every round since has added one -- v3.139's is the 243rd. The rounds
+    // are **234** and the addendum is one: the line used to print `211 round(s)` and `18 of them wrote
     // none` while subtracting a count of names from a count of headings (finding 585), and since
     // v3.121 it says which era its number counts, because the gate next door was printing a count of
     // headings under the same word (finding 600).
@@ -1349,7 +1349,7 @@ describe('docs · a section that is only entries is a record, whatever its headi
     const shipped = spawnSync('node', [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
     expect(shipped.status, shipped.stdout + shipped.stderr).toBe(0);
     expect(shipped.stdout).toContain(
-      '242 record(s): 217 under a round and 25 under none; 233 `vX.YY` round(s) + 1 addendum(s), 17 of them wrote none',
+      '243 record(s): 218 under a round and 25 under none; 234 `vX.YY` round(s) + 1 addendum(s), 17 of them wrote none',
     );
     // One corpus, two readers, one number. `check-progress-volumes` counts these same rounds to
     // print the population beside its heading count, and the agreement between the two is the only

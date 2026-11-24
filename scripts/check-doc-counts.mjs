@@ -139,10 +139,31 @@ const namedScopes = SCOPES.map((scope) => `${scope} = ${SCOPE_NOTES[scope]}`).jo
  */
 const ROUND_HEADING = /^## (v\d+\.\d+)(?!\d)/;
 
+/**
+ * The date a row carries, `(at v3.41)`, and the token it names.
+ *
+ * A dated row is a *record*: it says which round measured it, which is why rule 3 stops applying to
+ * it. Until `O-115` nothing read the token, so a row could name a round that had not been written --
+ * `(at v3.200)` under `## v3.138` -- and the corpus's 230 dated rows were quoted without their dates
+ * ever being compared with anything.
+ */
+const AT_ROUND = /\(at (v\d+\.\d+)(?!\d)\)/;
+
 /** The numbers in a round token, or null when the token is not one. */
 function roundNumbers(token) {
   const m = /^v(\d+)\.(\d+)$/.exec(token ?? '');
   return m === null ? null : [Number(m[1]), Number(m[2])];
+}
+
+/**
+ * Whether one round token is the same as, or older than, another pair of numbers.
+ *
+ * A named predicate rather than two inline comparisons, because rule 3c asks it twice -- once
+ * against the round a row sits under and once against the newest round in the corpus -- and two
+ * copies of a comparison that has to agree is how a pair of rules comes to disagree about `v3.9`.
+ */
+function sameOrOlder(a, b) {
+  return a[0] < b[0] || (a[0] === b[0] && a[1] <= b[1]);
 }
 
 /**
@@ -505,6 +526,7 @@ function readCounts(text, where = 'docs/progress.md') {
       where,
       line: i + 1,
       round,
+      dated: AT_ROUND.exec(line)?.[1] ?? null,
       text: line,
       label,
       scope,
@@ -526,6 +548,38 @@ function isCurrent(row) {
 }
 
 /**
+ * The file the measurement is committed to, and the sentence the green line prints about it.
+ *
+ * A guard that compares two things has to say which two (`O-110`). This one joins the published
+ * rows to a **snapshot** -- a number somebody took, held in a file -- and not to the tree, so the
+ * snapshot and the rows that quote it can be wrong *together*: measured at v3.137, one test off,
+ * this guard's exit **0** while the reader that re-derives returned **1**. Nothing in the output
+ * distinguished "the documents agree with the tree" from "the documents agree with the last
+ * measurement", and a green line that cannot be told apart from the stronger claim is the whole
+ * defect.
+ *
+ * The repair is not for this gate to read a report when one happens to be present. The reports are
+ * written by the coverage step, so a tree that has not run coverage has none, and a verdict whose
+ * meaning depends on whether another command was run is a gate with two meanings -- the worse of
+ * the two options `O-110` weighed. The repair is for the sentence to name both sides of the
+ * comparison it actually made, and to name the reader that would re-take the measurement, which is
+ * the one command a developer who stops at `docs:check` has not run.
+ *
+ * `--measured` is how the suite drives this guard, and it is a *different* comparison: the numbers
+ * came from the caller and no file was opened. The two sentences are separate constants because
+ * they are separate read paths, and one string with a hole in it would let the wrong one be printed
+ * for the right reason.
+ */
+const SNAPSHOT = 'golden-master/doc-counts.json';
+const REPORTER = 'node scripts/measure-doc-counts.mjs --check';
+const FROM_SNAPSHOT =
+  `the counts it compared with were read from \`${SNAPSHOT}\`, which is a snapshot rather than a ` +
+  `run: this gate does not spawn the suite, and \`${REPORTER}\` is the reader that re-derives it`;
+const HANDED_IN =
+  `the counts it compared with were passed in (--measured), so this gate read no file of its own, ` +
+  `and \`${REPORTER}\` remains the reader that re-derives them`;
+
+/**
  * The live counts, from the file the suite writes, or from `--measured`.
  *
  * This guard must never spawn the suite itself. It runs as the last step of
@@ -539,8 +593,13 @@ function isCurrent(row) {
  */
 function liveCounts() {
   const raw = argValue('--measured');
-  if (raw) return JSON.parse(raw);
-  const file = resolve(ROOT, 'golden-master', 'doc-counts.json');
+  if (raw) {
+    // The counts came from the caller rather than from a file this gate opened, and the sentence
+    // the green line prints says which -- a comparison described as "the snapshot" when nothing was
+    // read would be a sentence about a read that did not happen (`O-110`).
+    return { counts: JSON.parse(raw), comparedWith: HANDED_IN };
+  }
+  const file = resolve(ROOT, SNAPSHOT);
   if (!existsSync(file)) {
     fail([
       `no measurement at ${file}.`,
@@ -549,7 +608,7 @@ function liveCounts() {
       'runs inside the suite and must not recurse into it.',
     ]);
   }
-  return JSON.parse(readFileSync(file, 'utf8'));
+  return { counts: JSON.parse(readFileSync(file, 'utf8')), comparedWith: FROM_SNAPSHOT };
 }
 
 /**
@@ -638,7 +697,8 @@ function main() {
   }
 
   // 3. Rows marked current must equal the live measurement for their scope.
-  const measured = liveCounts();
+  const measurement = liveCounts();
+  const measured = measurement.counts;
 
   // 3a. The measurement is two parts and a whole, and this is the only place the
   //     relation between them is computed. Rules 1 to 3 above hold *documents* to
@@ -712,6 +772,42 @@ function main() {
           `round that publishes a count is ${newest}. "Now" is one round: date this row ` +
           `("(at ${row.round})") so a reader can tell a record from the state of the tree, or ` +
           `move it under ${newest} if it is this round's measurement.`,
+      );
+    }
+  }
+
+  // 3c. A date is not in the future of the round it is quoted in (`O-115`).
+  //
+  //     `(at v3.200)` under `## v3.138` is impossible: a round cannot record a measurement from a
+  //     round that has not been written. Nothing read the pair, and the corpus quotes **230** dated
+  //     rows -- 227 of them under a round -- so the rule is written over a population rather than
+  //     against a state the tree has never been in. Two comparisons, because a dated row can sit in
+  //     two places: under a round, where the two tokens are in view together, and outside every
+  //     round (`docs/progress.md`'s own tables, three of them today), where the only round the date
+  //     can be measured against is the newest one the corpus publishes.
+  //
+  //     The comparison is rule 3b's, one field over: a round token is a pair of numbers because
+  //     `v3.9` is older than `v3.10`, and a string comparison would pass the impossible row and
+  //     refuse the correct one.
+  if (newest !== null) {
+    for (const row of read) {
+      if (row.dated === null) continue;
+      const said = roundNumbers(row.dated);
+      const under = roundNumbers(row.round);
+      if (under === null) {
+        if (sameOrOlder(said, roundNumbers(newest))) continue;
+        problems.push(
+          `${at(row)}: the row is dated (at ${row.dated}), and the newest round this corpus ` +
+            `publishes is ${newest}. A date past every round names a measurement from a round that ` +
+            `has not been written: either the date is a typo, or the round it belongs to is missing.`,
+        );
+        continue;
+      }
+      if (sameOrOlder(said, under)) continue;
+      problems.push(
+        `${at(row)}: the row is dated (at ${row.dated}) and sits under ${row.round}, and a round ` +
+          `cannot record a measurement from a round that has not happened. Either the date is wrong, ` +
+          `or the row belongs under ${row.dated}.`,
       );
     }
   }
@@ -796,7 +892,8 @@ function main() {
     `check-doc-counts: OK (${read.length} published count(s), each naming its scope; ` +
       `scope(s) covered: ${scopes}; ${excused} unread phrase(s) excused in writing; ` +
       `${siteClaims} gate-site claim(s) agreeing with ${String(sites.claims)} claim(s) across ` +
-      `${String(sites.files)} of the ${String(sites.sourceFiles)} file(s) the source walk reads)`,
+      `${String(sites.files)} of the ${String(sites.sourceFiles)} file(s) the source walk reads; ` +
+      `${measurement.comparedWith})`,
   );
 }
 
