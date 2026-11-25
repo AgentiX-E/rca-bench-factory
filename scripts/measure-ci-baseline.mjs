@@ -387,17 +387,51 @@ function endedOnItsOwn(conclusion) {
  * So a refusal here is an answer -- *this tree cannot be asked* -- rather than a reason to
  * fall back on today's numbers, which are a different tree's.
  *
- * One document, two questions. A seed needs the commands its numbers were spent on and the
- * bounds that could have stopped them; a recording needs the commands it is about to write
- * beside numbers taken from a run, so that the tree on disk can be held to the tree that ran.
+ * ## How far a refusal reaches (`O-130`)
+ *
+ * The reader names the scope of every refusal, and this function stops only for `file`: a file
+ * with no `jobs:` block, a step before any job, or zero steps has no shape to place anything in,
+ * so the day is refused as a whole and there is nothing to hand back.
+ *
+ * A `job` or `step` refusal is returned with the rest, because the two callers need different
+ * things from it and both are decided by how far the doubt spreads:
+ *
+ * - A **seed** asks one question per number -- *which command spent it, and what bound could have
+ *   stopped it* -- and both are facts about that step's own lines. A job whose step list this
+ *   reader could not finish is a job whose steps cannot be placed; the other jobs' steps are
+ *   untouched by it, and dropping the day would lose numbers nothing was in doubt about.
+ * - A **recording** asks whether two trees are one, and that is a question about **both** trees.
+ *   A job this reader could not describe could hold the very difference the comparison exists to
+ *   find, so a recording is refused whole (`driftOf`) rather than partly compared.
  */
 async function workflowOfThatDay(headSha) {
   const body = await get(`/contents/.github/workflows/ci.yml?ref=${encodeURIComponent(headSha)}`);
   const text =
     typeof body?.content === 'string' ? Buffer.from(body.content, 'base64').toString('utf8') : '';
   const then = readWorkflow(text);
-  if (then.errors.length > 0) throw new Error(String(then.errors[0]));
+  const fatal = (then.refusals ?? []).find((one) => one.scope === 'file');
+  if (fatal !== undefined) throw new Error(String(fatal.message));
   return then;
+}
+
+/**
+ * The parts of a day's workflow this reader could not read, and the sentence that says why.
+ *
+ * Two maps because the scope is two: a job whose step list is uncertain (`jobs`), and one step
+ * that cannot be read (`steps`, keyed `job\u0000name`). Their readers are the sentences the seed
+ * writes beside a dropped number -- "the workflow of that day has no job `x`" and "has a job this
+ * reader cannot read" are different acts for whoever comes next (`O-130`).
+ */
+function unreadableOf(workflow) {
+  const jobs = new Map();
+  const steps = new Map();
+  for (const refusal of workflow.refusals ?? []) {
+    if (refusal.scope === 'job' && refusal.job !== null) jobs.set(refusal.job, refusal.message);
+    if (refusal.scope === 'step' && refusal.job !== null && refusal.step !== null) {
+      steps.set(`${refusal.job}\u0000${refusal.step}`, refusal.message);
+    }
+  }
+  return { jobs, steps };
 }
 
 /**
@@ -411,12 +445,20 @@ async function workflowOfThatDay(headSha) {
  * the job's timeout, and GitHub reports that as `cancelled`, which a seed already drops. A job or a
  * step absent from the workflow has no entry, which is what lets a caller say "this workflow cannot
  * place it" rather than "it had no bound".
+ *
+ * A job or step this reader refused is absent for the same reason, and that is why the refusals are
+ * read here rather than left to the caller: a step whose block was not understood has no command this
+ * function could honestly report, and a placeholder would be the guess the reader exists to refuse.
+ * The caller that needs to tell *absent* from *unreadable* asks `unreadableOf`.
  */
 function stepsOfDay(workflow) {
+  const unreadable = unreadableOf(workflow);
   const byJob = new Map();
   for (const job of jobsOf(workflow)) {
+    if (unreadable.jobs.has(job.id)) continue;
     const steps = new Map();
     for (const step of stepsOf(workflow, job.id)) {
+      if (unreadable.steps.has(`${job.id}\u0000${step.name}`)) continue;
       steps.set(step.name, {
         command: commandOf(step),
         minutes: step.inheritedFrom === 'step' ? step.minutes : null,
@@ -443,9 +485,39 @@ function stepsOfDay(workflow) {
  * are another job's measurement of the same commands -- which the entry says in `derived`. The same
  * holds for a job this run did not report at all: the loop's own sentence covers it, and a declared
  * job waiting for its first run is a state the gate is green in.
+ *
+ * ## A tree this reader could not read is the first place the two stop being comparable (`O-130`)
+ *
+ * A seed drops the numbers a refusal puts in doubt and keeps the rest, because a number is a fact
+ * about one step. This comparison is not that: it asks whether **two trees are one**, so a job this
+ * reader could not describe is a job whose difference cannot be ruled out -- and the answer "no
+ * drift" would be a claim about a comparison that never happened. It is also the shape that hides:
+ * a job omitted from the day's map reads as *a job the run did not report*, which this function
+ * already tolerates, so without this the unreadable job would be the one place a drift could sit.
  */
-function driftOf(onDisk, committed, headSha) {
+function driftOf(onDisk, committed, headSha, unreadable = { jobs: new Map(), steps: new Map() }) {
   const at = String(headSha).slice(0, 7);
+  const firstJob = [...unreadable.jobs.entries()][0];
+  if (firstJob !== undefined) {
+    return (
+      `\`${firstJob[0]}\` is a job of the tree this run used (${at}) that this reader cannot read ` +
+      `(${String(firstJob[1])}): a recording writes one file about one tree, and a job whose step list ` +
+      'is unknown could hold the very difference this comparison exists to find. Commit a workflow this ' +
+      'reader can read, or record a run of this one; `--seed` appends a day and drops only the steps it ' +
+      'cannot place'
+    );
+  }
+  const firstStep = [...unreadable.steps.entries()][0];
+  if (firstStep !== undefined) {
+    const [key, why] = firstStep;
+    const [jobId, name] = key.split('\u0000');
+    return (
+      `\`${jobId} / ${name}\` is a step of the tree this run used (${at}) that this reader cannot read ` +
+      `(${String(why)}): a recording writes that step's seconds beside the command the tree on disk states, ` +
+      'and a step whose own block was not understood has no command this tree can state. Fix the step, or ' +
+      'record a run of a tree this reader can read; `--seed` drops the step and keeps the day'
+    );
+  }
   for (const [jobId, steps] of onDisk) {
     const then = committed.get(jobId);
     if (then === undefined) continue;
@@ -535,7 +607,8 @@ async function relabelActions() {
       // Fetched once per tree: two attempts of one run are two readings of one commit, and the file
       // that says what a step ran is a fact about the tree rather than about the attempt.
       try {
-        dayOf.set(commit, stepsOfDay(await workflowOfThatDay(commit)));
+        const read = await workflowOfThatDay(commit);
+        dayOf.set(commit, { steps: stepsOfDay(read), unreadable: unreadableOf(read) });
       } catch (error) {
         throw new Error(
           `run ${String(reading?.run)} records the tree at ${commit.slice(0, 7)}, and the workflow there ` +
@@ -545,17 +618,24 @@ async function relabelActions() {
         );
       }
     }
-    const day = dayOf.get(commit);
+    const { steps: day, unreadable } = dayOf.get(commit);
     const at = commit.slice(0, 7);
     for (const [jobId, steps] of Object.entries(reading?.jobs ?? {})) {
       for (const [name, row] of Object.entries(steps ?? {})) {
         rows += 1;
         const theirs = day.get(jobId)?.get(name);
         if (theirs === undefined) {
+          // A row nothing can place, for one of two reasons since `O-130`: the tree does not have the
+          // step, or the reader could not finish the part of the tree that holds it. Neither can turn a
+          // name into an action, and the second is worth naming because the act that follows is a fix to
+          // the file rather than a repair of the history.
+          const why =
+            unreadable.jobs.get(jobId) ?? unreadable.steps.get(`${jobId}\u0000${name}`) ?? null;
           throw new Error(
             `\`${jobId} / ${name}\` of run ${String(reading?.run)} names no step of the workflow at ${at}, ` +
               `which is the commit that reading records: a row nothing can place cannot be given the ` +
-              'command it spent its seconds on, and the history and the tree it names disagree',
+              'command it spent its seconds on, and the history and the tree it names disagree' +
+              (why === null ? '' : ` -- this reader cannot read the part of that tree that holds it (${String(why)})`),
           );
         }
         if (row.command === theirs.command) continue;
@@ -726,9 +806,9 @@ const derived = {};
 // recording's numbers are written beside today's commands, so the tree on disk has to be the tree that
 // ran. `v3.146` priced this request at the days that hold a stopped step, which was the price of the
 // bound question alone (`O-131`).
-let thatDay;
+let thatDayWorkflow;
 try {
-  thatDay = stepsOfDay(await workflowOfThatDay(run.head_sha));
+  thatDayWorkflow = await workflowOfThatDay(run.head_sha);
 } catch (error) {
   const why = error instanceof Error ? error.message : String(error);
   throw new Error(
@@ -745,8 +825,12 @@ try {
         'and leaves the recording where it is',
   );
 }
+// The day as a seed can use it: the steps it could place, and the ones a refusal put out of reach
+// beside the reason. Both are read once, because both are questions about the same document.
+const thatDay = stepsOfDay(thatDayWorkflow);
+const thatDayUnreadable = unreadableOf(thatDayWorkflow);
 if (!SEED) {
-  const drift = driftOf(stepsOfDay(workflow), thatDay, run.head_sha);
+  const drift = driftOf(stepsOfDay(workflow), thatDay, run.head_sha, thatDayUnreadable);
   if (drift !== null) throw new Error(drift);
 }
 // The command each step ran, per job, kept beside the seconds so the entry appended to
@@ -857,12 +941,22 @@ for (const job of jobsOf(workflow)) {
       if (stepThen === undefined) {
         dropped += 1;
         reasons.add('could not be placed on that day');
+        // Two facts that used to be one sentence (`O-130`). A day whose job or step this reader could
+        // not read is not a day that lacks it, and the act that follows is different: one is a tree that
+        // changed, the other is a file this reader could not finish -- so the sentence names which, and
+        // quotes the line the reader stopped on.
+        const unreadableJob = thatDayUnreadable.jobs.get(job.id);
+        const unreadableStep = thatDayUnreadable.steps.get(`${job.id}\u0000${step.name}`);
         seedGaps.push(
           `\`${job.id} / ${step.name}\` cannot be placed on the day it was measured: the workflow of that ` +
             `day ${
-              jobThen === undefined
-                ? `has no job \`${job.id}\``
-                : `has no step named \`${step.name}\` in that job`
+              unreadableJob !== undefined
+                ? `has a job this reader cannot read (${String(unreadableJob)}), so no step of it can be placed`
+                : unreadableStep !== undefined
+                  ? `has a step this reader cannot read (${String(unreadableStep)})`
+                  : jobThen === undefined
+                    ? `has no job \`${job.id}\``
+                    : `has no step named \`${step.name}\` in that job`
             }`,
         );
         continue;

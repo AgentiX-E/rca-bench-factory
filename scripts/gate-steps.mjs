@@ -667,19 +667,64 @@ export const STEP_PLAN = {
  * with one step per `- name:` at six spaces. Anything else is reported, not
  * guessed: a wrong guess here would silently drop a gate from the local plan,
  * which is the failure mode this file exists to remove.
+ *
+ * ## Every refusal says how far it reaches (`O-130`)
+ *
+ * `errors` is the list of sentences, unchanged, because every reader of this function prints them.
+ * Beside it, `refusals` carries the same sentences with the **scope** each one poisons, which is what
+ * lets a caller treat a day as readable for the steps it could place instead of as a whole:
+ *
+ * - `file` -- the file has no shape this reader can walk (`no `jobs:``, a step before any job, zero
+ *   steps). Nothing in it is placeable, because there is no job to place anything in.
+ * - `job` -- one job's step list or identity is uncertain: an unknown key at four spaces, a refused
+ *   one, a job `if:` that narrows, a `- ` with no `name:`. Every step of that job is unplaceable,
+ *   because the reader cannot say what the job's step list is; no other job is affected.
+ * - `step` -- one step cannot be read: neither `run:` nor `uses:`, a `run:` block with no body, an
+ *   `env:` entry this reader cannot name. The step is unplaceable and its neighbours are not.
+ *
+ * The scopes are only sound because of the floor at the end of this function: a line no rule consumed
+ * is refused, so "no refusal for this job" means "every line of this job was understood" rather than
+ * "this reader did not look".
  */
 export function readWorkflow(text) {
   const lines = text.split('\n');
   const jobsIndex = lines.findIndex((line) => line === 'jobs:');
-  if (jobsIndex < 0) return { steps: [], errors: ['ci.yml has no top-level `jobs:`'], jobs: [] };
+  if (jobsIndex < 0) {
+    const message = 'ci.yml has no top-level `jobs:`';
+    return {
+      steps: [],
+      errors: [message],
+      jobs: [],
+      refusals: [{ scope: 'file', job: null, step: null, message }],
+    };
+  }
 
   const steps = [];
-  const errors = [];
+  const refusals = [];
+  /**
+   * Every line a rule above consumed.
+   *
+   * The reader walks two ways -- a job-and-step scan here, a key-and-block scan per step -- and both
+   * used to leave lines they did not recognise alone. A bound written one space off was one of them:
+   * nothing said so, and the reading that trusted the walk took a killed step's number for a duration.
+   */
+  const consumed = new Set();
+  /** The job whose block the walk is inside, which is what a refusal's scope is named after. */
+  let job = null;
+  /** One refusal, with the thing it poisons. `message` is what every caller prints. */
+  const refuse = (scope, message, stepName = null) => {
+    const named = scope === 'file' ? null : job;
+    refusals.push({
+      scope: named === null ? 'file' : scope,
+      job: named,
+      step: stepName,
+      message,
+    });
+  };
   /** Job-level values, keyed by job and key, read before the steps are classified. */
   const jobValues = new Map();
   /** The jobs in the order they are written, so a reader can name one that holds no step. */
   const jobOrder = [];
-  let job = null;
 
   for (let i = jobsIndex + 1; i < lines.length; i += 1) {
     const line = lines[i];
@@ -691,6 +736,7 @@ export function readWorkflow(text) {
     if (jobMatch !== null) {
       job = jobMatch[1];
       jobOrder.push(job);
+      consumed.add(i);
       continue;
     }
 
@@ -703,8 +749,21 @@ export function readWorkflow(text) {
     if (jobKey !== null && job !== null) {
       const [, key, rest] = jobKey;
       const value = rest.trim();
+      consumed.add(i);
+      // A key at four spaces may open a block whose body is at six: `permissions:` is the one this
+      // workflow writes, and `runs-on:` would be one in list form. `steps:` is the exception -- its body
+      // is the steps themselves, and the branch below reads them one by one -- so its lines are left
+      // alone here and the floor never sees them as body.
+      if (value === '' && key !== 'steps') {
+        for (let k = i + 1; k < lines.length; k += 1) {
+          const bodyLine = lines[k];
+          if (bodyLine.trim() === '') continue;
+          if (!/^ {6}/.test(bodyLine) || /^ {6}- /.test(bodyLine)) break;
+          consumed.add(k);
+        }
+      }
       if (!(key in JOB_KEYS)) {
-        errors.push(
+        refuse('job',
           `line ${String(i + 1)}: this reader does not know what \`${key}:\` does to a job, so it cannot say ` +
             'whether the plan holds',
         );
@@ -714,7 +773,7 @@ export function readWorkflow(text) {
         // The same rule as at step level, one level up: `always()` only widens
         // when the job runs, and anything else narrows what the plan describes.
         if (conditionOf(value) !== 'always()') {
-          errors.push(
+          refuse('job', 
             `line ${String(i + 1)}: \`if: ${value}\` on job "${job}" is a condition this plan cannot describe. ` +
               'Only `always()` can be tolerated, because it is the one condition that widens',
           );
@@ -722,7 +781,7 @@ export function readWorkflow(text) {
         continue;
       }
       if (String(JOB_KEYS[key]).startsWith('refused')) {
-        errors.push(`line ${String(i + 1)}: \`${key}:\` on job "${job}" -- ${String(JOB_KEYS[key])}`);
+        refuse('job', `line ${String(i + 1)}: \`${key}:\` on job "${job}" -- ${String(JOB_KEYS[key])}`);
         continue;
       }
       if (key === 'timeout-minutes') {
@@ -741,14 +800,22 @@ export function readWorkflow(text) {
 
     const stepMatch = /^ {6}- name: (.+)$/.exec(line);
     if (stepMatch === null) {
-      if (/^ {6}- /.test(line)) errors.push(`line ${String(i + 1)}: a step with no \`name:\``);
+      // A `- ` at a step's indent with no `name:` is a step this reader cannot place, and it poisons the
+      // **job** rather than itself: the step that is invisible may hold a bound for a step the report
+      // names, so the job's list is what became uncertain.
+      if (/^ {6}- /.test(line)) {
+        consumed.add(i);
+        refuse('job', `line ${String(i + 1)}: a step with no \`name:\``);
+      }
       continue;
     }
     if (job === null) {
-      errors.push(`line ${String(i + 1)}: a step before any job`);
+      consumed.add(i);
+      refuse('file', `line ${String(i + 1)}: a step before any job`);
       continue;
     }
 
+    consumed.add(i);
     const name = stepMatch[1].trim();
     const step = { job, name, key: `${job} / ${name}`, run: null, uses: null, keys: [], values: {} };
     for (let j = i + 1; j < lines.length; j += 1) {
@@ -762,6 +829,7 @@ export function readWorkflow(text) {
       // run something CI may skip.
       const keyMatch = /^ {8}([A-Za-z][\w-]*):(.*)$/.exec(inner);
       if (keyMatch !== null) {
+        consumed.add(j);
         const [, key, rest] = keyMatch;
         step.keys.push(key);
         // The value is recorded for every key, not only the ones this reader acts
@@ -792,8 +860,10 @@ export function readWorkflow(text) {
               // either the end of the block or an entry this reader would drop in
               // silence. Only the second is an error.
               if (/^ {10}\S/.test(entryLine)) {
-                errors.push(
+                refuse(
+                  'step',
                   `line ${String(k + 1)}: an \`env:\` entry this reader cannot name -- \`NAME: value\` is the spelling it reads`,
+                  name,
                 );
               }
               break;
@@ -806,6 +876,7 @@ export function readWorkflow(text) {
 
       const runMatch = /^ {8}run: (.*)$/.exec(inner);
       if (runMatch !== null) {
+        consumed.add(j);
         const value = runMatch[1].trim();
         if (value === '|' || value === '>' || value.startsWith('|') || value.startsWith('>')) {
           const body = [];
@@ -817,11 +888,12 @@ export function readWorkflow(text) {
               continue;
             }
             if (!/^ {10}/.test(bodyLine)) break;
+            consumed.add(k);
             body.push(bodyLine.slice(10));
           }
           // Trailing blank lines belong to the YAML block, not the command.
           while (body.length > 0 && body[body.length - 1] === '') body.pop();
-          if (body.length === 0) errors.push(`line ${String(j + 1)}: a \`run:\` block with no body`);
+          if (body.length === 0) refuse('step', `line ${String(j + 1)}: a \`run:\` block with no body`, name);
           step.run = body.join('\n');
           i = k - 1;
         } else {
@@ -839,6 +911,7 @@ export function readWorkflow(text) {
 
       const usesMatch = /^ {8}uses: (.+)$/.exec(inner);
       if (usesMatch !== null) {
+        consumed.add(j);
         step.uses = usesMatch[1].trim();
         // Same reason: `with:` and `if:` follow `uses:` in this very workflow.
         continue;
@@ -846,12 +919,45 @@ export function readWorkflow(text) {
     }
 
     if (step.run === null && step.uses === null) {
-      errors.push(`line ${String(i + 1)}: step "${name}" has neither \`run:\` nor \`uses:\``);
+      refuse('step', `line ${String(i + 1)}: step "${name}" has neither \`run:\` nor \`uses:\``, name);
     }
     steps.push(step);
   }
 
-  if (steps.length === 0) errors.push('ci.yml parsed to zero steps');
+  // The floor (`O-130`): a line inside the jobs block that no rule above consumed is refused rather
+  // than skipped. Every scope this function hands out is only sound because of this walk -- "no refusal
+  // for this job" has to mean "every line of this job was understood", and until now it meant "this
+  // reader did not look at the ones it could not place". The shapes that matter are at a step's indent
+  // or above: a `timeout-minutes:` written with one space too many is a bound this reader would not
+  // see, and a reading that trusted a silent walk would take a killed step's number for a duration.
+  // Ten spaces and deeper is block body -- `run:` bodies, `env:` entries, the values of `with:` -- and
+  // none of them can be a bound, so those lines are not examined. The block a body belongs to was
+  // consumed above, and an opener this reader could not place is a refusal of its own.
+  let inside = null;
+  for (let i = jobsIndex + 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^\S/.test(line)) break;
+    const trimmed = line.trim();
+    if (trimmed === '' || trimmed.startsWith('#')) continue;
+    const header = /^ {2}([A-Za-z][\w-]*):\s*$/.exec(line);
+    if (header !== null) {
+      inside = header[1];
+      continue;
+    }
+    if (consumed.has(i) || /^ {10}/.test(line)) continue;
+    const where = inside === null ? 'before any job' : `in \`${inside}\``;
+    refusals.push({
+      scope: inside === null ? 'file' : 'job',
+      job: inside,
+      step: null,
+      message:
+        `line ${String(i + 1)}: this reader cannot place \`${trimmed.replace(/\s+/g, ' ')}\` ${where}, so it ` +
+        'cannot say what that step runs or what bounds it -- the spelling this reader reads is a step at ' +
+        'six spaces, its keys at eight, and a block body at ten',
+    });
+  }
+
+  if (steps.length === 0) refuse('file', 'ci.yml parsed to zero steps');
   // Resolved after the whole file, not while walking it: a job may declare its
   // bound above `steps:` or below it, and only one of those orders reads
   // naturally. Storing the raw value per job and attaching it at the end keeps
@@ -869,7 +975,7 @@ export function readWorkflow(text) {
     name: jobValues.get(`${id}\u0000name`) ?? '',
     timeoutMinutes: timeoutOf(undefined, jobValues.get(`${id}\u0000timeout-minutes`) ?? '').minutes,
   }));
-  return { steps, errors, jobs };
+  return { steps, errors: refusals.map((one) => one.message), jobs, refusals };
 }
 
 /**

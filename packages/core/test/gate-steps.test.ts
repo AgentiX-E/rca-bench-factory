@@ -2590,3 +2590,149 @@ describe('gate-steps · the workflow path, and the empty override that is not a 
     expect(under('/tmp/ci.yml', () => workflowPath())).toBe(resolve('/tmp/ci.yml'));
   });
 });
+
+/**
+ * How far a refusal reaches (`O-130`).
+ *
+ * The reader used to answer with one list of sentences, so every caller had to treat a file as
+ * readable or not. A seed needed neither: a number is a fact about one step, and a job whose step
+ * list the reader could not finish says nothing about the other jobs' numbers. The scope is what
+ * lets the caller decide, and it is only sound because of the floor at the end of the reader -- a
+ * line no rule consumed is refused -- so "no refusal for this job" means "every line of it was
+ * understood" rather than "the reader did not look".
+ */
+describe('how far a refusal reaches', () => {
+  /** A two-job workflow: `one` is the job a case damages, `two` is the control. */
+  const TWO = [
+    'name: CI',
+    'jobs:',
+    '  one:',
+    '    permissions:',
+    '      contents: read',
+    '    steps:',
+    '      - name: Check out',
+    '        uses: actions/checkout@v4',
+    '',
+    '      - name: A gate',
+    '        timeout-minutes: 5',
+    '        run: pnpm gate',
+    '  two:',
+    '    steps:',
+    '      - name: Another gate',
+    '        run: pnpm other',
+  ].join('\n');
+
+  it('reads a workflow whose every line it places, and refuses nothing', () => {
+    const read = readWorkflow(TWO);
+    expect(read.errors).toEqual([]);
+    expect(read.refusals).toEqual([]);
+    expect(read.steps.map((one) => one.name)).toEqual(['Check out', 'A gate', 'Another gate']);
+  });
+
+  it('names the job an unknown key reaches, and leaves the other job placeable', () => {
+    // The scope is the whole point: `concurrency:` is a job key this reader does not know, so nothing
+    // about `one` can be promised -- and `two` is a job whose every line was understood, so its steps
+    // are as placeable as before.
+    const read = readWorkflow(TWO.replace('  one:\n', '  one:\n    concurrency: ci\n'));
+    expect(read.refusals).toHaveLength(1);
+    expect(read.refusals[0]).toMatchObject({ scope: 'job', job: 'one', step: null });
+    expect(read.refusals[0].message).toContain('does not know what `concurrency:` does to a job');
+    // `errors` is the same list as sentences, in the same order: every existing caller prints it.
+    expect(read.errors).toEqual([read.refusals[0].message]);
+    expect(read.steps.filter((one) => one.job === 'two')).toHaveLength(1);
+  });
+
+  it('names the job for the three keys that decide whether its steps are the steps it has', () => {
+    // `strategy:` multiplies the job, `defaults:` changes every step's shell, and a job `if:` decides
+    // whether any of them runs. All three make the job's step *list* uncertain rather than one step.
+    const strategy = readWorkflow(TWO.replace('  one:\n', '  one:\n    strategy:\n      fail-fast: false\n'));
+    expect(strategy.refusals.map((one) => [one.scope, one.job])).toEqual([['job', 'one']]);
+    const defaults = readWorkflow(TWO.replace('  one:\n', '  one:\n    defaults:\n      run:\n        shell: bash\n'));
+    expect(defaults.refusals[0]).toMatchObject({ scope: 'job', job: 'one' });
+    const condition = readWorkflow(TWO.replace('  one:\n', '  one:\n    if: github.event_name == \'push\'\n'));
+    expect(condition.refusals[0]).toMatchObject({ scope: 'job', job: 'one' });
+    expect(condition.refusals[0].message).toContain('a condition this plan cannot describe');
+  });
+
+  it('names the job a nameless step makes uncertain, because the invisible step is in its list', () => {
+    // A `- ` at a step's indent with no `name:` is a step the report cannot be matched against, and the
+    // bound it may carry is invisible: the doubt is the job's list, not the nameless step alone.
+    const read = readWorkflow(TWO.replace('      - name: A gate', '      - run: pnpm gate'));
+    // Three sentences and one scope: the nameless step, and the two lines that were its keys -- which no
+    // rule consumed, so the floor refuses them too. The job is what they all reach.
+    expect(read.refusals).toHaveLength(3);
+    expect(read.refusals.every((one) => one.scope === 'job' && one.job === 'one')).toBe(true);
+    expect(read.refusals[0].message).toContain('a step with no `name:`');
+    expect(read.refusals[1].message).toContain('cannot place `timeout-minutes: 5`');
+  });
+
+  it('names the step for a block it could not read, and its neighbours are untouched', () => {
+    // Three shapes of one scope, because the acts that follow are one: the step is unreachable, the job
+    // it sits in is not, and a caller that drops steps drops this one.
+    const noCommand = readWorkflow(TWO.replace('        run: pnpm gate', '        with:\n          node: 22'));
+    expect(noCommand.refusals).toHaveLength(1);
+    expect(noCommand.refusals[0]).toMatchObject({ scope: 'step', job: 'one', step: 'A gate' });
+    expect(noCommand.refusals[0].message).toContain('has neither `run:` nor `uses:`');
+
+    const emptyBody = readWorkflow(TWO.replace('        run: pnpm gate', '        run: |'));
+    expect(emptyBody.refusals[0]).toMatchObject({ scope: 'step', step: 'A gate' });
+    expect(emptyBody.refusals[0].message).toContain('no body');
+
+    const badEnv = readWorkflow(
+      TWO.replace('        run: pnpm gate', '        env:\n          not a pair\n        run: pnpm gate'),
+    );
+    expect(badEnv.refusals[0]).toMatchObject({ scope: 'step', step: 'A gate' });
+    expect(badEnv.refusals[0].message).toContain('an `env:` entry this reader cannot name');
+  });
+
+  it('refuses the whole file for the three shapes with no place to put anything', () => {
+    // No `jobs:` block, a step before any job, and a file that parses to zero steps are `file`: there
+    // is no job whose steps could be placed, so no caller can use a part of it.
+    expect(readWorkflow('name: CI\non: push\n').refusals).toEqual([
+      { scope: 'file', job: null, step: null, message: 'ci.yml has no top-level `jobs:`' },
+    ]);
+    const before = readWorkflow(['name: CI', 'jobs:', '      - name: Early', '        run: pnpm x'].join('\n'));
+    expect(before.refusals[0]).toMatchObject({ scope: 'file', job: null });
+    expect(before.refusals[0].message).toContain('a step before any job');
+    const empty = readWorkflow(['name: CI', 'jobs:', '  one:', '    runs-on: ubuntu-latest'].join('\n'));
+    expect(empty.refusals[0]).toMatchObject({ scope: 'file', message: 'ci.yml parsed to zero steps' });
+  });
+
+  it('refuses a bound written at an indent it does not read, instead of skipping the line', () => {
+    // The floor, and the reason the scopes are sound. Seven spaces is one space off the step-key indent:
+    // before this round the reader walked past it, so the bound was silently absent -- and a reading that
+    // trusted the walk would take a step killed at that bound for a duration the command spent.
+    const broken = TWO.replace('        timeout-minutes: 5', '       timeout-minutes: 5');
+    const at = broken.split('\n').findIndex((line) => line.trim() === 'timeout-minutes: 5') + 1;
+    const read = readWorkflow(broken);
+    expect(read.refusals).toHaveLength(1);
+    expect(read.refusals[0]).toMatchObject({ scope: 'job', job: 'one' });
+    expect(read.refusals[0].message).toContain(`line ${String(at)}: this reader cannot place \`timeout-minutes: 5\``);
+    // The step is still read; the number is what the refusal is about, and no step of the job declares a
+    // bound of its own afterwards.
+    expect(read.steps.map((one) => one.name)).toContain('A gate');
+    expect(read.steps.every((one) => one.inheritedFrom !== 'step')).toBe(true);
+  });
+
+  it('refuses a step written one indent too deep, which used to be invisible in full', () => {
+    // Eight spaces instead of six: every line of the step was skipped by both walks, and the plan was
+    // quietly one step shorter. A step that is not in the plan is a gate nobody counts.
+    const read = readWorkflow(TWO.replace('      - name: A gate', '        - name: A gate'));
+    expect(read.refusals).toHaveLength(1);
+    expect(read.refusals[0]).toMatchObject({ scope: 'job', job: 'one' });
+    expect(read.refusals[0].message).toContain('cannot place `- name: A gate`');
+  });
+
+  it('keeps the body of a job-level block out of the floor, because a bound cannot be written there', () => {
+    // `permissions:` is the one job key this workflow writes with a body, and its entries are at six
+    // spaces -- the step indent. They are the key's body rather than steps, and the shipped `ci.yml`
+    // holds one, so a floor that refused them would refuse this repository's own file.
+    const read = readWorkflow(TWO);
+    expect(read.refusals).toEqual([]);
+    // And the deeper body of a step's key is body too: `with:` values are at ten spaces.
+    const withBody = readWorkflow(
+      TWO.replace('        uses: actions/checkout@v4', '        uses: actions/checkout@v4\n        with:\n          fetch-depth: 0'),
+    );
+    expect(withBody.refusals).toEqual([]);
+  });
+});

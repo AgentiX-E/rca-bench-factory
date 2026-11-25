@@ -3272,6 +3272,89 @@ describe('a number beside the command that spent it', () => {
     expect(result.recording).toBe(false);
     expect(result.history).toBeNull();
   });
+
+  /** Two jobs, as the API reports a run of `TWO_JOBS`: the checkout and one bounded battery each. */
+  const TWO_JOB_RUN = {
+    jobs: [
+      {
+        name: 'injection batteries, one step each (no survivors, no inert)',
+        started_at: '2026-11-02T10:00:00Z',
+        completed_at: '2026-11-02T10:00:53Z',
+        steps: [
+          { name: 'Check out', conclusion: 'success', started_at: '2026-11-02T10:00:00Z', completed_at: '2026-11-02T10:00:02Z' },
+          { name: 'Slow battery', conclusion: 'success', started_at: '2026-11-02T10:00:02Z', completed_at: '2026-11-02T10:00:52Z' },
+        ],
+      },
+      {
+        name: 'injection batteries, the two that rewrite a probe a hundred times',
+        started_at: '2026-11-02T10:20:00Z',
+        completed_at: '2026-11-02T10:28:02Z',
+        steps: [
+          { name: 'Check out', conclusion: 'success', started_at: '2026-11-02T10:20:00Z', completed_at: '2026-11-02T10:20:02Z' },
+          { name: 'Slow battery', conclusion: 'success', started_at: '2026-11-02T10:20:02Z', completed_at: '2026-11-02T10:21:42Z' },
+        ],
+      },
+    ],
+  };
+
+  it('refuses a recording whose day has a job this reader cannot read, instead of comparing the rest', async () => {
+    // `O-130`, and the hole the seed's half of it would otherwise leave. A job this reader could not
+    // finish is *absent* from the day's map, and an absent job is what a job the run did not report looks
+    // like -- a state this comparison tolerates on purpose. So without the refusal the recording would be
+    // taken, with every job that could be compared compared, and the one job that could hide a drift would
+    // be the one nobody looked at. A recording is one file about one tree: it is refused whole.
+    const day = TWO_JOBS.replace('  batteries:\n', '  batteries:\n    strategy:\n      fail-fast: false\n');
+    const result = await record(['7'], TWO_JOB_RUN, day, TWO_JOBS);
+    expect(result.out.status).toBe(1);
+    expect(result.out.stderr).toContain('`batteries` is a job of the tree this run used (deadbee) that this reader cannot read');
+    expect(result.out.stderr).toContain('could hold the very difference this comparison exists to find');
+    expect(result.recording).toBe(false);
+    expect(result.history).toBeNull();
+  });
+
+  it('refuses a recording whose day has a step this reader cannot read, and does not call it a missing step', async () => {
+    // The other scope, and the sentence it replaces. Without the refusal the day's job is in the map and
+    // the step is not, so the comparison reads the step as one the run measured and the tree on disk lost
+    // -- which is a drift sentence about the wrong tree, and the repair it asks for is the wrong one.
+    const day = TWO_JOBS.replace('        run: node scripts/inject-slow-battery.mjs', '        with:\n          node: 22');
+    const result = await record(['7'], TWO_JOB_RUN, day, TWO_JOBS);
+    expect(result.out.status).toBe(1);
+    expect(result.out.stderr).toContain('`batteries / Slow battery` is a step of the tree this run used (deadbee)');
+    expect(result.out.stderr).toContain('a step whose own block was not understood has no command this tree can state');
+    expect(result.out.stderr).not.toContain('is a step of the tree this run used (deadbee) and not of the one on disk');
+    expect(result.recording).toBe(false);
+  });
+
+  it('appends a seed whose day has a job this reader cannot read, and says which job it lost', async () => {
+    // The seed's half of the same scope, and the reason the scope exists: a number is a fact about one
+    // step, and the job that could not be read says nothing about the other job's numbers. Dropping the
+    // day would lose a measurement nothing was in doubt about -- which is the shape `R10` exists to keep.
+    const day = TWO_JOBS.replace('  batteries:\n', '  batteries:\n    strategy:\n      fail-fast: false\n');
+    const result = await record(['7', '--seed'], TWO_JOB_RUN, day, TWO_JOBS);
+    expect(result.out.status).toBe(0);
+    expect(result.out.stderr).toBe('');
+    expect(result.out.stdout).toContain(
+      '`batteries / Slow battery` cannot be placed on the day it was measured: the workflow of that day has a job ' +
+        'this reader cannot read',
+    );
+    expect(result.out.stdout).toContain('`strategy:` on job "batteries"');
+    expect(Object.keys(result.history.readings[0].jobs)).toEqual(['batteries-heavy']);
+  });
+
+  it('appends a seed whose day has a step this reader cannot read, and keeps the step it could', async () => {
+    // The step scope at a seed: the neighbours in the same job are facts nothing was in doubt about, so the
+    // job still lands -- with one step fewer, and a line naming the one it lost.
+    const day = TWO_JOBS.replace('        run: node scripts/inject-slow-battery.mjs', '        with:\n          node: 22');
+    const result = await record(['7', '--seed'], TWO_JOB_RUN, day, TWO_JOBS);
+    expect(result.out.status).toBe(0);
+    expect(result.out.stdout).toContain(
+      '`batteries / Slow battery` cannot be placed on the day it was measured: the workflow of that day has a step ' +
+        'this reader cannot read',
+    );
+    expect(result.history.readings[0].jobs.batteries).toEqual({
+      'Check out': { seconds: 2, command: 'uses:actions/checkout@v4' },
+    });
+  });
 });
 
 /**
@@ -3320,6 +3403,24 @@ describe('the history, given the action each row spent its seconds on', () => {
       },
       'not a workflow: [',
     );
+
+  it('refuses a row in a job the commit cannot read, and says which line stopped the reader', async () => {
+    // `O-130` reaches this mode too, and the sentence is the difference between two repairs: a row the tree
+    // does not have is a history written against another tree, and a row the reader could not reach is a file
+    // to fix. The mode still refuses the row rather than leaving it as it is -- a name is not an action, and
+    // "we could not look" is not evidence that the name it carries is right.
+    const unreadable = TODAY.replace('  batteries:\n', '  batteries:\n    strategy:\n      fail-fast: false\n');
+    const result = await relabel(
+      historyWith({ 'Check out': { seconds: 2, command: 'step:Check out' } }),
+      unreadable,
+    );
+    expect(result.out.status).toBe(1);
+    expect(result.out.stderr).toContain('`batteries / Check out` of run 45518129185 names no step of the workflow at aaaaaaa');
+    expect(result.out.stderr).toContain('this reader cannot read the part of that tree that holds it');
+    expect(result.out.stderr).toContain('`strategy:` on job "batteries"');
+    // Nothing was rewritten, for the same reason the mode writes nothing on any refusal.
+    expect(result.after).toBe(result.before);
+  });
 
   it('gives a row that names its step the action that step ran, and leaves the commands alone', async () => {
     const result = await relabel(
