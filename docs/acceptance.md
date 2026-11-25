@@ -73,6 +73,7 @@ before the layer above it is meaningful.
 | An action is identified by the action, not by the name of the step that uses it | v3.148 |
 | A day is refused for the steps it cannot place | v3.149 |
 | A tree costs the faster of its attempts | v3.150 |
+| A bound covers the state the command was read in | v3.151 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -2848,7 +2849,13 @@ from an anecdote again.
   seeded: with no job there is no command a number could be placed on.
 - **Falsified by** 10 mutations, 87 reds, no survivor, measured on the green tree.
 
-### A tree costs the faster of its attempts (v3.150)
+### A tree costs the faster of its attempts (v3.150, superseded at v3.151)
+
+> The rule this section states was **retired** at v3.151: a bound divides the worst day the command has
+> spent, not a tree's faster attempt, and the reason is finding 654 -- the two clauses here between them
+> accepted a 22-minute bound on the sites battery while the same round's prose called it unsafe. The
+> measurements below are that round's and are unchanged; the rule that replaced it is the section after
+> this one.
 
 - **A bound divides what a tree costs, not what a day spent.** `R4` and `R10` ask for a bound of twice the
   cost of the program, and a history entry is one afternoon on one box. When one commit has been measured more
@@ -2887,3 +2894,38 @@ from an anecdote again.
   afternoon (`O-138`). Nor that a bound's absolute size is right -- only that it is not left sized from one
   afternoon's slow reading, and that a bound under a day already spent is refused.
 - **Falsified by** 10 mutations, 62 reds, no survivor, measured on the green tree.
+
+### A bound covers the state the command was read in (v3.151)
+
+- **A bound divides the worst day a command has spent.** `R4` and `R10` ask for twice the number a command
+  costs, and that number is a **state**, not a tree's best case: the sites battery's second shard has read
+  600--636 s on four trees and 880--900 s on two, with **146 sites at every one of them**, and the one tree read
+  twice read 881 s and then 880 s. A tree repeats its own state; a run that lands in the slow one is legitimate;
+  so the bound is twice the slow one. The rule that preceded this one divided the tree's faster attempt and
+  floored the result at the worst day already spent, and those two clauses between them accepted a 22-minute
+  bound (1320 s) on a command whose slow state is 900 s -- above twice the 621 s attempt and above the day
+  itself. That is finding 654, and its falsifier is a test that returns `[]` under a reconstruction of the old
+  rule and one refusal under this one.
+- **The attempts of that day's own tree travel beside the number, as evidence.** `R4` prints "the same tree read
+  621 s on its other attempt", `R10` prints the coordinate of the worst day and the other attempt's number, and
+  the summary prints "the same tree was read again at 880 s (run `45595594712` attempt 1), 1 s apart". A pair is
+  the only thing in the file that can say whether a slow day is a tree that repeats itself or a state no second
+  reading has met, and it is not a second candidate for the denominator.
+- **The floor is the multiple's subject, not its neighbour.** One clause replaces two: a rule that needs a
+  second clause to cover a day the first was sized past is one rule reading the wrong number. The gate's refusal
+  names the day, the job, the step and the run; the reader no longer has to work out which of two clauses fired.
+- **What it changes here: nothing.** All **38** bounded work steps were replayed under both rules against the
+  **44** readings and **0** change verdict -- the two agree wherever no tree has been read in two states, which
+  is everywhere in this history. The change is free, and what it buys is the day a tree is read in both states,
+  which is the day the old rule would have halved a denominator.
+- **A range carries the share a pair explains.** The summary prints, for the tightest bound's command, the
+  widest difference two readings of one tree have shown and the share of the range it is: `two readings of one
+  tree timed that step 141 s apart, 44% of the 319 s between its ends`. A share and not an adjective, because
+  whether the rest is the suite's growth or a state nobody read twice is not separable by arithmetic on the
+  file; a step no tree has been read twice on says *that* rather than printing a difference of zero.
+- **Not claimed.** That the state is the machine's: the evidence is identical content and a tree repeating
+  itself, and the instrument that would read the box lives in the job log, which is `O-141`. Nor that the step
+  has exactly two modes -- seven readings cannot tell two clusters from a wide spread, and the rule needs only
+  that a run can land in a state a bound must cover.
+- **Falsified by** 12 mutations, **54** reds, no survivor, measured on the green tree and restored byte for
+  byte.

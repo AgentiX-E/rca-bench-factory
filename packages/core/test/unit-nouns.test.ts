@@ -995,8 +995,9 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     expect(result.status, result.stderr).toBe(0);
     // The sentence a reader gets, for the noun whose two numbers were never on one line: the volumes
     // of audit and of progress, in two directories that share no file. The first number moved with
-    // v3.148, which opened `volume-15.md` at the point the fourteenth crossed its byte budget.
-    expect(result.stdout).toContain('volume(s) — 15 in check-audit-volumes; 20 in check-progress-volumes —');
+    // v3.148, which opened `volume-15.md` at the point the fourteenth crossed its byte budget, and the
+    // second with v3.151, which opened `volume-21.md` at the same wall one directory over.
+    expect(result.stdout).toContain('volume(s) — 15 in check-audit-volumes; 21 in check-progress-volumes —');
     // And the one the reader could not see past: `round(s)` at 219 in both gates, with the qualifier
     // that finding 600's repair inserted and this round's reader had to learn to reach past.
     // A shape rather than a number: the two gates agree at 219 this round and at 220 the next,

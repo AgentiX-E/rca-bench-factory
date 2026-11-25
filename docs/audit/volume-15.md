@@ -1,6 +1,7 @@
 # Audit · volume 15
 
-Findings 651–653, from the rounds recorded in `progress/volume-20.md` as `v3.148`, `v3.149` and `v3.150`.
+Findings 651–655, from the rounds recorded in `progress/volume-20.md` as `v3.148`, `v3.149` and `v3.150`, and
+in `progress/volume-21.md` as `v3.151`.
 
 ## Finding 651 — an action is identified by the action, not by the name of the step that uses it
 
@@ -326,3 +327,102 @@ nothing (**2**).
 **The inventory.** Unchanged: 146 sites across 69 scripts; throws 22 fatal / 83 unguarded / 1 guarded / 10
 rethrow -- 116 partitioned, 248 proved claims; 166 exit calls of which 20 are zero. The round adds no `throw`
 and no `exit`, and every line it added is in `scripts/` -- which is why the coverage figures do not move.
+
+## Finding 654 — a bound the round called unsafe, which the gate accepted
+
+`v3.150` shipped `R14` and, in the same round, three documents that said a **22-minute** bound on the sites
+battery was unsafe: the shard's slow state is 900 s, and 22 minutes is 1320 s. The gate did not agree.
+`budgetErrors` returned an empty list.
+
+The arithmetic is short enough to check by hand, and it is the whole finding. `R4` and `R10` asked for twice the
+**tree's** cost, where a tree cost its faster attempt, and `R14`'s third clause floored that at the worst day
+the command had already spent:
+
+| clause | what it asked of a 1320 s bound | verdict |
+| --- | --- | --- |
+| the multiple, divided by the 621 s attempt | 1242 s | passes |
+| the floor, at the 900 s day | 900 s | passes |
+
+So the bound the round's prose called unsafe was the bound the round's own rule accepted, and no line of the
+tree could see the two disagree -- `docs:check` was green, the summary printed `2.0x`, and the sentence named
+the tree's cost as 621 s.
+
+**The measurement.** A workflow with one bounded step at 22 minutes, a recording of that step at 621 s, and a
+history holding 621 s and 900 s. Under a reconstruction of `R14` -- `readingsOfCommand` reporting the worst
+tree's **cheapest** attempt -- `budgetErrors` returns `[]`. Under the rule this finding leaves behind it returns
+one refusal, naming the 900 s day and the attempt of its own tree that read 621 s. The test is the falsifier and
+it runs on both shapes: `expected '' to contain 'is bounded at 22 min'`.
+
+**Why the clause that was supposed to catch it could not.** `R14`'s floor was written as *a bound under a day
+already spent is not a bound*, which is true and weaker than the multiple: it covers the day, not the command.
+A 1320 s bound covers a 900 s day with 420 s to spare and is still not twice the state the command can be in.
+Two clauses were doing one job, and the one doing it was the one nobody had measured.
+
+**The fix.** `R16`: a bound divides the **worst day the command has spent**, and the attempts of that day's own
+tree travel beside the number as evidence rather than as a second candidate for it. One clause, one comparison,
+and the floor is its subject rather than its neighbour. `R4` says "the tree spent 900 s on it (the same tree
+read 621 s on its other attempt)"; `R10` says "spent 900 s on its worst day, in `sites / ...` in run
+`45595594712` attempt 2"; and the summary says "2.0x of the worst day its command has spent".
+
+**What it does to the shipped tree: nothing.** All **38** bounded work steps were replayed under both rules
+against the **44** readings, and **0** change verdict -- because the two rules agree wherever no tree has been
+read in two states, which is everywhere in this history (the one tree read twice read 881 s and 880 s). The
+change is therefore free, and what it buys is the day that has not happened: a tree read in both states would
+have had its bound divided by the cheaper one.
+
+**Falsifications.** 12 mutations, **54** reds, no survivor, measured on the green tree and restored byte for
+byte: the worst reading reported as the tree's best attempt (**10** reds); the worst day chosen by the fastest
+comparison (**27**); one attempt's two jobs read as the faster job (**1**); the worst day forgetting its
+attempts (**4**); `R4` dividing the recording's number (**1**); `R10` dividing the fastest attempt again (**3**);
+`costOfStep` answering with the cheapest attempt (**2**); the lookup answering for any tree (**2**); the summary
+not printing the other attempt (**1**); the summary printing the pair without the distance (**1**); the summary
+saying nothing about a range's share (**1**); and the share printed as seconds rather than as a percentage
+(**1**).
+
+## Finding 655 — a rule read from a pair that never straddled the states
+
+`R14`'s whole argument was one sentence: *two attempts of one commit cannot differ by the tree, so the
+difference is the machine, and a bound is a multiple of the program.* The first clause is a fact. The second is
+an assumption about what the machine does, and the round's own history refutes it.
+
+**The measurement.** The second shard of the sites battery, on 2026-11-25, six trees, read from
+`golden-master/gate-sites.json` at each commit through the API:
+
+| tree | readings | seconds | sites at that commit |
+| --- | --- | --- | --- |
+| `36a299c8` | 1 | 635 | 146 |
+| `3d69ada9` | 1 | 636 | 146 |
+| `91806080` | 1 | 600 | 146 |
+| `87d78d97` | 2 | 881, 880 | 146 |
+| `b3124638` | 1 | 621 | 146 |
+| `8fb87bcb` | 1 | 900 | 146 |
+
+Three facts follow, and each one is a number rather than a reading of a number:
+
+- **the workload is identical.** A shard runs one test file per claim, so 146 sites at every commit is 146
+  files' worth of work, and a 50% difference between 600 s and 900 s is not the suite's growth;
+- **the tree repeats its own state.** The one tree read twice read 881 s and 880 s -- one second apart, forty
+  minutes apart, which is the interval a re-run takes;
+- **no tree was read in both states.** The 621 s and the 900 s are two different commits (`b3124638` and
+  `8fb87bcb`), so "one tree at 880 s and at 600 s" never happened. The pair that justified the rule is the pair
+  that agrees with itself.
+
+And the runs around it say the box was not uniformly slow: the 900 s run reads **482 s** in the first shard and
+**728 s** in `verify`, inside the 378--505 s and 537--769 s the same seven runs span.
+
+**The defect.** A state a legitimate run lands in is part of what the command costs, so a bound sized from the
+fast state refuses the slow one -- which is finding 654's arithmetic, arrived at from the other end. The rule's
+saving grace was its own floor clause, and the floor asked for one day rather than twice it.
+
+**What survives of the instrument.** The pair. It is the only thing in the file that can say whether a slow day
+is a tree that repeats itself or a state the file has seen once, and it is now printed for that: *the same tree
+was read again at 880 s (run `45595594712` attempt 1), 1 s apart*, and, for the tightest bound's command, *two
+readings of one tree timed that step 141 s apart, 44% of the 319 s between its ends*. A share rather than an
+adjective, because whether the rest of the range is growth or a state is not separable by arithmetic on the file
+-- which is `O-141`, and the instrument it would need (the runner's own load and throttling counters) lives in
+the job log that this sandbox cannot fetch.
+
+**What is not claimed.** That the state is the machine's, rather than the tree's in some way the site count does
+not see. Nor that the step has two modes: seven readings are two clusters here because they are 40% apart with
+nothing between them, and a wide spread would look the same at this sample size. The rule needs neither claim --
+only that a run can land in a state the bound must cover.

@@ -852,6 +852,15 @@
   two report lines as well, so a recording of attempt 2 says `from run … attempt 2`. **Sixteen
   mutations, 40 reds**, no survivors, measured on the green tree. The residue is `O-127`: the
   recorder still records a run that failed, and a step that expired spends exactly its bound.
+- O-126 · ~~**A bound sized in one mode of a bimodal step.**~~ The entry asked whether a step whose cost is
+  dominated by a cache state should **declare** the state, so that `R10`'s denominator could be read per mode
+  rather than across them. **Closed by finding 654**, and the answer is the one the entry's second candidate
+  guessed: the denominator is the worst mode **by construction**, so there is nothing to declare. A declaration
+  would have been a promise about a state no recording holds, which is the shape `R15` already covers for the
+  cold prefix and the shape this round refused for a step: `Install the shells` is bounded at 420 s, its worst
+  day is 198 s, and 420 s is 2.1x that -- without any mode being named anywhere in `ci.yml`. The half of the
+  entry that asked for a list of bounds whose movement exceeds half their reading is `O-140`, because the
+  summary still prints one bound's share rather than the population's.
 - O-127 · ~~**The recorder records a run that failed, and a step that expired spends exactly its bound.**~~
   Nothing asked whether the run being measured succeeded, so `--attempt 2` after a red re-run wrote that
   attempt as the recording, and a step that expired had spent *exactly* its own `timeout-minutes` --
@@ -1042,3 +1051,30 @@
   `O-136` and `O-137`, since the +282 s the six `v3.148` claims cost is a difference between two afternoons
   rather than a measurement. What it does not do is in `O-138`: a tree measured once is still priced from one
   afternoon. **Ten mutations, 62 reds**, no survivor, measured on the green tree.
+- O-138 · ~~**A tree measured once is still priced from one afternoon.**~~ The entry was a consequence of
+  `R14`: if a tree costs the faster of its attempts, then a tree measured once has no cost at all and the
+  recorder's single reading stands in for it, so a contended afternoon raised every future bound for a load no
+  future run had to carry. **Closed by finding 654**, which retired the premise rather than the instrument: a
+  bound divides the worst day, so a reading taken on a contended box is not a mispricing -- a contended box is a
+  state a run lands in, which is what the bound is for. The population the entry wanted printed is printed: the
+  summary counts the pairs the history holds (two, in 44 readings) and prints the share of the tightest
+  command's range that the widest of them explains. What the entry offered as the alternative -- refusing a
+  reading no second attempt corroborates -- is rejected: it would double the cost of every delivery run and of
+  every seed to buy a corroboration the rule no longer needs.
+- O-139 · ~~**A step with two modes is one series, and nothing in the file says which mode a bound is argued
+  from.**~~ The entry was raised by the round that shipped `R14`, and it asked the question that rule had
+  stepped over: the sites battery's second shard reads 600--636 s in one state and 880--900 s in the other, so
+  which of the two a bound should be argued from is not a detail. **Closed by finding 654**, whose falsifier is
+  one test: a reconstructed `R14` returns an empty error list for a 22-minute bound (1320 s) on a command whose
+  slow state is 900 s -- above twice the 621 s attempt, above the 900 s day, and called unsafe in three
+  documents the same round wrote -- and `R16` returns the refusal. The rule is now one clause, a bound divides
+  **the worst day the command has spent**, and 22 minutes is refused. Finding 655 is the measurement under it:
+  six trees of one afternoon, **146 sites at every one of them**, so the shard's work is identical; one tree
+  read twice (**881 s**, then **880 s**, one second apart forty minutes apart) so a tree repeats its own state;
+  and the 621 s and the 900 s are two different commits (`b3124638` and `8fb87bcb`), so "one tree in two
+  states" never happened and `R14`'s denominator changed **0 of 38** verdicts while standing ready to halve one.
+  What the round could not do is record the state itself: the instrument that would is the job log, and it is
+  unreachable from here (`O-141`). What it did instead is print the share of a range that a pair explains --
+  `two readings of one tree timed that step 141 s apart, 44% of the 319 s between its ends` for the tightest
+  bound -- so a reader of a green run can see which part of a spread is measurement and which part is a state
+  nobody read twice. **Twelve mutations, 54 reds**, no survivor, measured on the green tree.

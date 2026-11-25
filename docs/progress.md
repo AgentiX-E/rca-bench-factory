@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 260 core + 4 cli |
-| Test lines | 120,643 core + 3,242 cli |
-| Tests | 7,050 core + 187 cli |
+| Test lines | 120,747 core + 3,242 cli |
+| Tests | 7,052 core + 187 cli |
 | Tracked files | 680 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.150: **51** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.151: **50** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1073,18 +1073,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   whether the place for it is a history rather than a snapshot; and whether the refusal could name the
   round whose count the offending number belongs to, since the number is usually one of the spans the
   corpus already publishes]`
-- O-126 · **A bound sized in one mode of a bimodal step.**
-  Two readings of one tree put `sensitivity / Install the shells the suite cross-checks against` at
-  **109 s** and **10 s**, and `batteries / Install ...` at **23 s** and **9 s** -- a package store
-  hit and a store miss, which is the tree's state rather than the runner's speed. Both jobs bound it
-  at 420 s, which covers every reading either mode has produced, but by the margin and not by an
-  argument: nothing in the workflow says the step has two modes, so a bound sized from a hit would be
-  a bound sized for half the step's behaviour.
-  `[open: whether a step whose cost is dominated by a cache state should declare it, so that `R10`'s
-  denominator is read per mode rather than across them -- a declaration would be a promise about a
-  state no recording holds, which is what `R15` already does for the cold prefix; and whether the
-  margin clause should say which of its 38 bounds rest on a step that moved by more than half its own
-  reading, since two of them do]`
 - O-129 · **The worker cap is derived from the CPU count, and this container's derived count makes four files fail per run.**
   `workerCount` reads the cgroup quota and leaves one CPU for the main process, so a 4-CPU container runs
   three workers. On this box three consecutive full runs each failed four or five *different* files with
@@ -1139,31 +1127,26 @@ is a row about rather than paraphrase one that no `grep` will find.
   can be charged to itself, or whether the step's seconds plus the run count are enough and the arithmetic
   belongs in the round rather than in the instrument]`
 
-- O-138 · **A tree measured once is still priced from one afternoon.**
-  `R14` prices a tree by the faster of the attempts that measured it, which is an answer only when there are
-  two. `v3.150`'s delivery run was re-run because it moved a bound, and that is the manual form of the
-  instrument: a single reading is written down as the tree's cost, so a commit measured once on a contended
-  box raises every future bound for a load no future run has to carry -- the harm `O-135` named, now narrowed
-  to the readings nobody re-ran. The recorder writes one reading per run and nothing beside it says whether a
-  second exists.
-  `[open: whether `measure-ci-baseline.mjs` should refuse to write a reading that no second attempt of the
-  same commit corroborates -- which doubles the cost of every delivery run and of every seed -- or whether a
-  re-run should stay the answer for the readings that move a bound, with the recorder printing which of its
-  history's trees were measured once, so a reader can see the size of the population instead of taking the
-  round's word for it]`
+- O-140 · **The margin clause reports the workflow's narrowest bound, not the bounds whose own movement is
+  more than half their reading.**
+  Two of the 38 rest on a step that moved by more than half its own reading -- `sites`' second shard among
+  them -- and a reader who wanted the list has to assemble it from 38 sentences that are not printed. The
+  summary prints the share of the range for the tightest step (`v3.151`), which answers the question for one
+  bound and not for the population.
+  `[open: whether `budgetSummary` should print the count of bounds whose movement exceeds half their
+  denominator, with the widest one named -- a share of the bound rather than of the range -- or whether the
+  share printed for the tightest step is the whole of what a reader needs]`
 
-- O-139 · **A step with two modes is one series, and nothing in the file says which mode a bound is argued
-  from.**
-  The sites battery's second shard reads **621 s** in its fast mode and **900 s** in its slow one -- five
-  readings between 600 and 636, three between 880 and 900, on four different trees -- so the 30-minute bound is
-  exactly twice the slow mode and 2.9x the fast one. `R14`'s multiple divides one tree's fast attempt and the
-  floor clause covers the slow one, so the arithmetic lands in the right place for a reason no reading records:
-  a reader comparing 22 minutes with 621 s cannot know that 900 s is what makes 22 unsafe.
-  `[open: whether a reading should record the mode it landed in -- which needs an instrument that measures the
-  machine rather than the program: a load average read beside the job, the runner's own timestamps, or a second
-  measurement far enough away in time to be another draw -- or whether the multiple should divide a statistic
-  over the command's series (the middle, or the fast mode by construction) with the floor clause carrying the
-  slow one, which is a change to `R4`, `R10` and the summary at once]`
+- O-141 · **A reading records no evidence of the machine's state, so the state is inferred from the series.**
+  The sites battery's 600 s and 900 s readings are 146 identical sites apart, and the only statement the file
+  can make about them is that one tree repeated itself to a second. The instrument that would say what the box
+  was doing -- `/proc/loadavg`, the cgroup's throttling counters, the runner's own timestamps -- is printed by
+  the job and reachable only through the job log, which this sandbox cannot fetch: the logs endpoint redirects to
+  a blob host that resolves to `198.18.0.16` here.
+  `[open: whether a measured step should print a machine line beside its own output, so the recorder can attach
+  the box's state to the reading -- a step that measures the runner rather than the program, and one whose
+  absence has to read as *not measured* rather than as a quiet machine -- or whether the pair and the site count
+  are the whole of what a reader can be given from a file this repository can read]`
 
 ## Pass log
 
@@ -1201,7 +1184,8 @@ and this table.
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
-| [volume-20.md](progress/volume-20.md) | 17 | v3.134 | v3.150 |
+| [volume-20.md](progress/volume-20.md) | 8 | v3.134 | v3.141 |
+| [volume-21.md](progress/volume-21.md) | 10 | v3.142 | v3.151 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
