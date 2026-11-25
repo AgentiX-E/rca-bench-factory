@@ -63,6 +63,37 @@
  * to the history's newest reading, and a recorder that moved it backwards would write the
  * tree the gate refuses with advice to do what the recorder had just been asked to do.
  *
+ * ## Why a red day's numbers are held against the bound *that day* enforced
+ *
+ * A `failure` conclusion on a step means one of two things and says neither: the command
+ * ran to its end and returned non-zero, or the runner stopped it at the step's own
+ * `timeout-minutes`. The seconds differ in kind between them -- a duration, or the bound
+ * read back -- and a history `R10` divides by may not hold the second.
+ *
+ * `O-127` separated the two by arithmetic: a step that ends on its own ends *before* its
+ * bound, because the bound is when the runner kills it, so a number equal to the bound is
+ * that bound. The arithmetic needs **the bound the runner was enforcing**, and a seed's
+ * day is not today: today's `ci.yml` bounds the step at a number that may be wider or
+ * narrower than the one in force then, and reading it against the wrong one refuses a real
+ * duration or keeps a bound.
+ *
+ * So a red day costs one request: `GET /contents/.github/workflows/ci.yml?ref=<head_sha>`,
+ * read with the same line reader the gate uses, and each `failure` step's seconds compared
+ * with the bound that file states for it. Three answers, three acts:
+ *
+ *  - that day bounded the step at `N` minutes and the step spent at least `N * 60` s: the
+ *    number is that bound, and the step is dropped with a line naming `N`;
+ *  - that day bounded the step nowhere: the runner's own bound cannot have stopped it,
+ *    so the number is a duration and the step is kept;
+ *  - that day's workflow cannot be read at all: the question is open, and a seed that
+ *    answered it by guessing would append a day with its slow steps missing. The day is
+ *    refused, and the reader is told which request failed.
+ *
+ * The request is only made when the run holds a stopped step, because a green day has
+ * none: `success` is what a command that reached its own end reports. A seed of a green run
+ * therefore costs what it always did, and the price of the rule is paid exactly by the days
+ * that need it.
+ *
  * Usage: `node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>] [--seed]`
  * with `GITHUB_TOKEN` set.
  *
@@ -266,6 +297,38 @@ function endedOnItsOwn(conclusion) {
   return conclusion === 'success' || conclusion === 'failure';
 }
 
+/**
+ * The step bounds a seed's own day enforced, keyed by job and then by step.
+ *
+ * Read from the workflow at the commit the run reports, with the same line reader the gate
+ * uses on today's. The strict reader is the point: a file it refuses may hold a
+ * `timeout-minutes` at an indent this repository never writes, and a bound read from the
+ * wrong line is a bound that decides whether a duration enters the history. So a refusal
+ * here is an answer -- *this day cannot be asked* -- rather than a reason to fall back on
+ * today's numbers, which are a different day's.
+ *
+ * Only a bound of the step's own is recorded: a step that inherits its job's budget is
+ * stopped by the job's timeout, and GitHub reports that as `cancelled`, which a seed already
+ * drops. A job that is absent from that day's workflow has no entry at all, which is what
+ * lets the caller say "this day cannot prove it" instead of "this day had no bound".
+ */
+async function boundsOfThatDay(headSha) {
+  const body = await get(`/contents/.github/workflows/ci.yml?ref=${encodeURIComponent(headSha)}`);
+  const text =
+    typeof body?.content === 'string' ? Buffer.from(body.content, 'base64').toString('utf8') : '';
+  const then = readWorkflow(text);
+  if (then.errors.length > 0) throw new Error(String(then.errors[0]));
+  const byJob = new Map();
+  for (const job of jobsOf(then)) {
+    const bounds = new Map();
+    for (const step of stepsOf(then, job.id)) {
+      if (step.inheritedFrom === 'step') bounds.set(step.name, step.minutes);
+    }
+    byJob.set(job.id, bounds);
+  }
+  return byJob;
+}
+
 const workflow = readWorkflow(readFileSync(workflowPath(), 'utf8'));
 if (workflow.errors.length > 0) {
   throw new Error(
@@ -405,6 +468,32 @@ const byId = new Map(jobsOf(workflow).map((one) => [one.id, one]));
 
 const recorded = {};
 const derived = {};
+// Which of this run's steps the runner may have stopped, which is the only kind of day that has to be
+// asked for its workflow. `success` is a command that reached its own end; `failure` is the ambiguous
+// one, and a green run holds none of them because GitHub computes a run's conclusion from its steps.
+const holdsStoppedStep = atAttempt.some((one) =>
+  (one.steps ?? []).some((step) => step.conclusion === 'failure'),
+);
+// A seed's red day costs one request, and only a red day does (`O-128`): the seconds of a stopped step
+// are either a duration or the bound it was killed by, and the bound that separates the two is the one
+// **that day** enforced. Today's `ci.yml` may state a wider or a narrower number, so reading it here
+// would refuse a real duration or keep a bound -- and the reader who asks which of the two happened is
+// asking about the workflow at this run's commit.
+let thatDay = new Map();
+if (SEED && holdsStoppedStep) {
+  try {
+    thatDay = await boundsOfThatDay(run.head_sha);
+  } catch (error) {
+    throw new Error(
+      `run ${RUN} holds a step that stopped rather than finished, so its seconds have to be read against ` +
+        'the bound that day enforced -- and the bound that day enforced cannot be read ' +
+        `(\`.github/workflows/ci.yml\` at ${String(run.head_sha).slice(0, 7)}: ` +
+        `${error instanceof Error ? error.message : String(error)}): a seed may not append a number it ` +
+        'cannot tell from a bound, because `R10` divides by what it appends and would then ask for a bound ' +
+        'twice the number the run was killed by',
+    );
+  }
+}
 // The command each step ran, per job, kept beside the seconds so the entry appended to
 // the history is self-describing: `R10` compares a bound with every reading of *the
 // command*, and a history that named steps would lose a series to a rename.
@@ -499,6 +588,30 @@ for (const job of jobsOf(workflow)) {
           'workflow -- record a run of this tree in which it ran',
       );
     }
+    // A red day's stopped step, held against the bound of its own day (`O-128`). `failure` covers a
+    // command that returned non-zero and a step the runner killed, and the report says which only in the
+    // number: at or above the bound in force that day, it is that bound. Below it, or with no bound that
+    // day, it is a duration the command spent.
+    if (SEED && found.conclusion === 'failure') {
+      const boundsThen = thatDay.get(job.id);
+      if (boundsThen === undefined) {
+        dropped += 1;
+        seedGaps.push(
+          `\`${job.id} / ${step.name}\` did not end on its own (failure, in a job the workflow of that ` +
+            'day does not have)',
+        );
+        continue;
+      }
+      const boundThen = boundsThen.get(step.name);
+      if (boundThen !== undefined && found.seconds >= boundThen * 60) {
+        dropped += 1;
+        seedGaps.push(
+          `\`${job.id} / ${step.name}\` did not end on its own (failure at the ` +
+            `${String(boundThen)} min bound in force that day)`,
+        );
+        continue;
+      }
+    }
     // A step that was stopped rather than finished has seconds that are a lower bound on the command --
     // and for the step killed by its own bound, exactly that bound (`O-127`). Only a seed has to ask this
     // of each step: a green run is one in which every step that ran succeeded, because GitHub computes the
@@ -513,11 +626,15 @@ for (const job of jobsOf(workflow)) {
       );
       continue;
     }
-    if (step.inheritedFrom === 'step' && found.seconds === step.minutes * 60 && borrowedFrom === undefined) {
+    if (!SEED && step.inheritedFrom === 'step' && found.seconds === step.minutes * 60 && borrowedFrom === undefined) {
       // `O-127`'s second question, answered as a rule: a step that ends on its own ends *before* its bound,
       // because the bound is when the runner kills it. A number that equals it is that bound read back --
       // from a step killed with its failure allowed to pass, or from one that finished inside the last
       // second of its allowance, and the report cannot tell the two apart.
+      //
+      // A recording is today's tree and today's workflow, so today's bound is the one the runner was
+      // enforcing. A seed is not (`O-128`): it is held against the bound of its own day, above, and the
+      // same number against today's bound would refuse a duration that day allowed.
       throw new Error(
         `\`${job.id} / ${step.name}\` spent ${String(found.seconds)} s against a bound of exactly ` +
           `${String(step.minutes)} min: a step that ends on its own ends before its bound, because the bound ` +

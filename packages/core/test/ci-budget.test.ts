@@ -2552,8 +2552,16 @@ describe('a number the run did not measure', () => {
     ],
   });
 
+  /**
+   * The workflow as it stood on the day a seed was measured, at the commit that run reports.
+   *
+   * `null` is the third answer a case needs: a day whose workflow cannot be read at all, which is
+   * the one shape in which the recorder has no way to tell a bound from a duration.
+   */
+  const DAY = '/repos/AgentiX-E/rca-bench-factory/contents/.github/workflows/ci.yml?ref=deadbeef';
+
   /** Run the recorder against one answer, and say what it left on disk. */
-  const record = (conclusion: string, jobs: unknown, args: string[] = ['7']) =>
+  const record = (conclusion: string, jobs: unknown, args: string[] = ['7'], thatDay: string | null = WORKFLOW) =>
     withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
@@ -2561,6 +2569,9 @@ describe('a number the run did not measure', () => {
         }
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100') {
           return { status: 200, body: jobs };
+        }
+        if (thatDay !== null && url === DAY) {
+          return { status: 200, body: { content: Buffer.from(thatDay, 'utf8').toString('base64'), encoding: 'base64' } };
         }
         return null;
       },
@@ -2730,11 +2741,119 @@ describe('a number the run did not measure', () => {
   it('keeps a failed step of a seed, whose seconds are a duration the command really spent', async () => {
     // `failure` is the conclusion of a command that ran and returned non-zero. Its duration is a real
     // duration, and a red seed is exactly the act that keeps it: dropping it would lose the slowest day
-    // of the command that failed, which is the day a bound most needs.
+    // of the command that failed, which is the day a bound most needs. The one thing the conclusion
+    // cannot say is whether the runner stopped the step instead (`O-128`), so the number is held against
+    // the bound **that day** enforced -- 12 min here, and 49 s is well inside it.
     const result = await record('failure', reported({ seconds: 49, conclusion: 'failure' }), ['7', '--seed']);
     expect(result.out.stderr).toBe('');
     expect(result.out.status).toBe(0);
     expect(result.history.readings[0].jobs.batteries['Slow battery'].seconds).toBe(49);
+  });
+
+  /**
+   * One job and two steps, with the second bounded at whatever a case says the *day* bounded it at.
+   *
+   * A seed's numbers have to be held against the workflow at the commit the run reports, and a case
+   * that only ever saw one number would not be able to say which of the two workflows was read.
+   */
+  const thatDayBounding = (minutes: number): string =>
+    workflowText([{ id: 'batteries', minutes: 60, steps: [...step('Check out', 3), ...step('Slow battery', minutes)] }]);
+
+  it('holds a red day’s failed step to the bound in force on that day, which is not today’s bound', async () => {
+    // 300 s is a duration today's 12-minute bound would have accepted, and the day the seed was measured
+    // bounded the same step at 5 min -- so this number is that bound read back, 300 s of a step the runner
+    // stopped. The old rule kept it (49 s and 300 s are both `failure`), and `R10` would then divide by a
+    // bound: the multiple would ask for a bound twice the number the run was killed by.
+    const result = await record(
+      'failure',
+      reported({ seconds: 300, conclusion: 'failure' }),
+      ['7', '--seed'],
+      thatDayBounding(5),
+    );
+    expect(result.out.stderr).toBe('');
+    expect(result.out.status).toBe(0);
+    expect(result.out.stdout).toContain(
+      '`batteries / Slow battery` did not end on its own (failure at the 5 min bound in force that day)',
+    );
+    expect(Object.keys(result.history.readings[0].jobs.batteries)).toEqual(['Check out']);
+  });
+
+  it('keeps a seeded step that spent the bound today’s workflow states, when that day allowed more', async () => {
+    // The mirror image, and the reason the arithmetic has to be done with the day's number: 720 s is
+    // exactly today's bound for this step, so a *recording* refuses it (`O-127`). That day allowed 30 min,
+    // and 720 s inside a 30-minute allowance is a duration. A recorder that read today's workflow would
+    // lose this reading -- and, worse, would print a sentence about a bound that never stopped it.
+    const result = await record(
+      'failure',
+      reported({ seconds: 720, conclusion: 'failure' }),
+      ['7', '--seed'],
+      thatDayBounding(30),
+    );
+    expect(result.out.stderr).toBe('');
+    expect(result.out.status).toBe(0);
+    expect(result.history.readings[0].jobs.batteries['Slow battery'].seconds).toBe(720);
+  });
+
+  it('keeps a seeded failed step that day gave no bound of its own, which nothing could have stopped', async () => {
+    // A step that inherits its job's budget is not stopped by a step bound: the job's own timeout cancels
+    // the step, and a cancelled step is already dropped. So a day whose workflow bounded this step nowhere
+    // cannot have produced a bound here, and its number is the command's.
+    const unbounded = workflowText([
+      { id: 'batteries', minutes: 60, steps: [...step('Check out', 3), ...inherited('Slow battery')] },
+    ]);
+    const result = await record('failure', reported({ seconds: 3000, conclusion: 'failure' }), ['7', '--seed'], unbounded);
+    expect(result.out.stderr).toBe('');
+    expect(result.out.status).toBe(0);
+    expect(result.history.readings[0].jobs.batteries['Slow battery'].seconds).toBe(3000);
+  });
+
+  it('refuses a red seed whose day it cannot read, because a bound cannot be told from a duration', async () => {
+    // The cost of the rule above, stated rather than paid quietly: a `failure` step's number is a reading
+    // only if that day's workflow says it was not stopped, and a workflow the API will not return leaves
+    // the question open. Dropping the step silently would append a day with the slow steps missing, which
+    // is the population `R10` divides by -- so the day is refused and the reader is told why.
+    const result = await record('failure', reported({ seconds: 300, conclusion: 'failure' }), ['7', '--seed'], null);
+    expect(result.out.status).toBe(1);
+    expect(result.out.stderr).toContain('the bound that day enforced cannot be read');
+    expect(result.out.stderr).toContain('a seed may not append a number it cannot tell from a bound');
+    expect(result.history).toBeNull();
+  });
+
+  it('refuses a red seed whose day’s workflow does not parse, for the same reason a missing one is refused', async () => {
+    // Two ways to have no answer, and one sentence: a 404 and a file this reader cannot walk both leave the
+    // question of what stopped the step unanswered, and a rule that only handled the first would let the
+    // second decide a bound by falling through.
+    const result = await record('failure', reported({ seconds: 300, conclusion: 'failure' }), ['7', '--seed'], 'not: a workflow\n');
+    expect(result.out.status).toBe(1);
+    expect(result.out.stderr).toContain('the bound that day enforced cannot be read');
+    expect(result.history).toBeNull();
+  });
+
+  it('does not fetch the workflow of a green day, because no step of it was stopped', async () => {
+    // The request is the price of the rule, and a green day has nothing to ask: every step that ran
+    // succeeded, and `success` is the conclusion of a command that reached its own end. A recorder that
+    // fetched anyway would fail a seed on a network error that no number in it depended on.
+    const result = await record('success', reported({ seconds: 49, conclusion: 'success' }), ['7', '--seed'], null);
+    expect(result.out.stderr).toBe('');
+    expect(result.out.status).toBe(0);
+    expect(result.history.readings[0].jobs.batteries['Slow battery'].seconds).toBe(49);
+  });
+
+  it('drops a seeded failed step of a job the workflow of that day does not have', async () => {
+    // The one gap the day's workflow can leave: a job renamed between then and now. The step may well have
+    // run with a bound that day, and this reader has no way to find it -- so the number is dropped and the
+    // gap says which of the two facts it is, because "the tree changed" and "the day stopped it" are
+    // different acts for the reader who comes next.
+    const renamed = workflowText([
+      { id: 'batteries-old', minutes: 60, steps: [...step('Check out', 3), ...step('Slow battery', 5)] },
+    ]);
+    const result = await record('failure', reported({ seconds: 3000, conclusion: 'failure' }), ['7', '--seed'], renamed);
+    expect(result.out.stderr).toBe('');
+    expect(result.out.status).toBe(0);
+    expect(result.out.stdout).toContain(
+      '`batteries / Slow battery` did not end on its own (failure, in a job the workflow of that day does not have)',
+    );
+    expect(Object.keys(result.history.readings[0].jobs.batteries)).toEqual(['Check out']);
   });
 
   it('says a seeded job measured nothing that finished, rather than that the tree has none of its steps', async () => {
@@ -2777,6 +2896,12 @@ describe('a number the run did not measure', () => {
               ],
             },
           };
+        }
+        // A red day, so the recorder reads that day's workflow to tell a duration from a bound (`O-128`).
+        // The day is today's two-job fixture: nothing in this case is about a bound, and the file has to
+        // exist for the question the recorder now asks of every `failure` step.
+        if (url === DAY) {
+          return { status: 200, body: { content: Buffer.from(twoJobs, 'utf8').toString('base64'), encoding: 'base64' } };
         }
         return null;
       },
