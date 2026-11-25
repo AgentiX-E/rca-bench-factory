@@ -2795,8 +2795,9 @@ the multiple clears and the day does not -- is now a simplification of a shipped
 
 ### Left open
 
-`O-126`, `O-133`, `O-108` and `O-134` are unchanged. `O-135` is closed by finding 653, and three entries come out
-of the round -- two about the battery's cost, one about the instrument the closure was argued from:
+`O-126`, `O-133`, `O-108` and `O-134` are unchanged. `O-135` is closed by finding 653, and four entries come out
+of the round -- two about the battery's price, one about a tree measured once, one about the modes the closure
+turned out not to explain:
 
 - `O-136` · **A claim costs its whole test file, so the battery's price is claims times file, not claims times
   test.** `ci-budget.test.ts` holds 30 of the 248 claims and takes 12 s of a 32-CPU box; thirty-one runs of it
