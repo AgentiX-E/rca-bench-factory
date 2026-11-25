@@ -350,4 +350,53 @@ describe('scripts/check-repository-table.mjs · the refusals inside the derivati
     expect(accepted.status).toBe(0);
     expect(readFileSync(fixture.doc, 'utf8')).toContain('| Tracked files | 9 |');
   });
+
+  it('refuses to judge a tree whose index and filesystem describe different trees', () => {
+    // The refusal above lived inside `--write`, and the mode that *judges* could not see the
+    // same discrepancy. Measured at v3.151: a round added `docs/progress/volume-21.md`,
+    // published `Tracked files 680` while the file was untracked, and `docs:check` exited 0
+    // -- because `Tracked files` is cut from the index (680) and the file was not in it.
+    // `git add -A` then made the same command say `the tree says '681'`, and CI, which checks
+    // out a tree where nothing can be untracked, failed on the line the local gate had just
+    // blessed. The two modes read one table; they have to refuse one tree.
+    const fixture = makeTree('check-untracked');
+    withTable(fixture, defaultTable(fixture.rev));
+    expect(run(fixture).status).toBe(0);
+
+    writeFileSync(join(fixture.root, 'notes.md'), 'A file the round has not staged yet.\n');
+    const before = readFileSync(fixture.doc, 'utf8');
+    const rejected = run(fixture);
+
+    expect(rejected.status).toBe(1);
+    expect(rejected.err).toContain('1 file(s) exist and are not tracked (first: notes.md)');
+    // The sentence has to say *which* rows disagree. "Two trees" is the claim; the row names
+    // are what a reader can go and check, and without them the refusal reads as a scratch-file
+    // complaint rather than as "this table would be about two different populations".
+    expect(rejected.err).toContain('`Tracked files` would count the index');
+    expect(rejected.err).toContain('`Test files` count the worktree');
+    expect(rejected.err).toContain('stage them first');
+    expect(readFileSync(fixture.doc, 'utf8')).toBe(before);
+  });
+
+  it('names the number once the file is staged, instead of refusing', () => {
+    // The other side of the same boundary: staging the file does not silence the guard, it
+    // moves it onto the number. A refusal that persisted would be a guard that cannot be
+    // satisfied, and a guard that went quietly green would be the defect above with an extra
+    // step. So the assertion is that the message *changes kind* -- refusal, then drift.
+    const fixture = makeTree('check-untracked-staged');
+    withTable(fixture, defaultTable(fixture.rev));
+    writeFileSync(join(fixture.root, 'notes.md'), 'A file the round has not staged yet.\n');
+    expect(run(fixture).err).toContain('exist and are not tracked');
+
+    const staged = spawnSync('git', ['-C', fixture.root, 'add', '-A'], { encoding: 'utf8' });
+    expect(staged.status, staged.stderr).toBe(0);
+    const judged = run(fixture);
+
+    expect(judged.err).not.toContain('exist and are not tracked');
+    expect(judged.err).toContain("says '8' for Tracked files; the tree says '9'");
+
+    const repaired = run(fixture, '--write');
+    expect(repaired.status).toBe(0);
+    expect(readFileSync(fixture.doc, 'utf8')).toContain('| Tracked files | 9 |');
+  });
 });

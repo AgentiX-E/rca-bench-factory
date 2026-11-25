@@ -62,6 +62,14 @@
  * describes the tree the gate ran on, and a reader who checks out the commit gets those
  * numbers only because the commit carried them.
  *
+ * One state is refused instead of measured, in **both** modes: a path that exists and is not
+ * in the index. The rows do not share a population -- `Tracked files` is cut from
+ * `git ls-files`, the source and test rows are read off the filesystem -- so with one
+ * untracked file present the table would be about two trees at once, and the mode that
+ * judges would see the number it published rather than the number the commit will carry. The
+ * refusal lived in `--write` alone until v3.152, and that is how a green local gate and a red
+ * CI job came to be the same commit.
+ *
  * ## Usage
  *
  *   node scripts/check-repository-table.mjs           # fail when the table is stale
@@ -400,33 +408,42 @@ function check() {
   }
   const text = readFileSync(PROGRESS, 'utf8');
   const writing = process.argv.includes('--write');
+  // One way the *measurement* fails, and it is not about the document at all: a file that
+  // exists and is not in the index is counted by some rows and not by others. `Tracked files`
+  // is cut from `git ls-files`, while `Source files`, `Test files` and both line rows are read
+  // off the filesystem. Two populations in one table is not a stale number; it is a table
+  // about two different trees, so **both** modes refuse it -- the mode that judges as much as
+  // the mode that repairs.
+  //
+  // Measured twice. At v3.83 a round ran `--write` before `git add`, published `Tracked files
+  // 638`, committed, and the next check read `639`: the contradiction arrived one mode later.
+  // The repair then was to refuse inside `--write`, which left the judging mode blind --
+  // measured again at v3.151, when a round added `docs/progress/volume-21.md`, published `680`
+  // while the file was untracked, and `docs:check` exited 0 because the index really did hold
+  // 680. `git add -A` made the same command say `the tree says '681'`, and CI -- which checks
+  // out a tree where nothing can be untracked -- failed on the line the local gate had just
+  // blessed. A refusal available only in the mode that writes is a refusal that arrives after
+  // the number is published.
+  const untracked = git(['ls-files', '--others', '--exclude-standard', '-z'])
+    .split('\u0000')
+    .filter((path) => path !== '');
+  if (untracked.length > 0) {
+    console.error(
+      `  - ${String(untracked.length)} file(s) exist and are not tracked (first: ${untracked[0]}), so ` +
+        (writing
+          ? 'the counts this rewrite would publish are counts of a tree the commit will contradict; '
+          : '`Tracked files` would count the index and `Source files` and `Test files` count the worktree, ' +
+            'which is one table describing two trees; ') +
+        'stage them first (`git add -A`) or remove them',
+    );
+    console.error('check-repository-table: FAILED');
+    return 1;
+  }
   if (writing) {
     // A rewrite that cannot proceed is a refusal with a sentence, not a stack trace. The
     // two ways it fails -- a document with no table to rewrite, and a table whose dated
     // revision does not resolve -- are both states a reader can act on, and a trace would
     // bury the one line that says which.
-    //
-    // And one way the *measurement* fails, which is not about the document at all: every
-    // file row is cut from `git ls-files`, so a file that exists and is not staged is a file
-    // the numbers do not count. Measured, at v3.83: a round added one test file, ran
-    // `--write` before `git add`, published `Tracked files 638`, committed, and the next
-    // check read `639` -- a number that was wrong the moment it was written and that nothing
-    // could have caught, because deriving and publishing happened in one mode and the
-    // contradiction arrived in the next. The repair is to refuse while the index disagrees
-    // with the worktree, because "the tree it was just rewritten from" has to be the tree the
-    // commit will contain.
-    const untracked = git(['ls-files', '--others', '--exclude-standard', '-z'])
-      .split('\u0000')
-      .filter((path) => path !== '');
-    if (untracked.length > 0) {
-      console.error(
-        `  - ${String(untracked.length)} file(s) exist and are not tracked (first: ${untracked[0]}), so ` +
-          'the counts this rewrite would publish are counts of a tree the commit will contradict; ' +
-          'stage them first (`git add -A`) or remove them',
-      );
-      console.error('check-repository-table: FAILED');
-      return 1;
-    }
     let rewritten;
     try {
       rewritten = rewrite(text);
