@@ -324,7 +324,10 @@ describe('the four baskets are a partition of the throws, not a remainder', { ti
     // 107 is v3.145's three (`O-127`), and they are one number each way a step's seconds can fail to
     // be a duration: a run that did not succeed, a step that never started, and a step whose number
     // is exactly the bound that would have killed it.
-    expect(total).toBe(107);
+    // 109 is v3.146's two (`O-128`), and they are the two ways a red seed's day can fail to answer: a
+    // workflow of that day its reader cannot walk, and one the API will not return. Both are the same
+    // refusal -- the number cannot be told from a bound -- at the two places the answer can be missing.
+    expect(total).toBe(109);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -348,25 +351,29 @@ describe('the four baskets are a partition of the throws, not a remainder', { ti
       fatal.push(...read.rows.filter((row) => row.disposition === 'fatal').map((row) => `${file}:${String(row.line)}`));
     }
     expect(fatal).toEqual([
-      'measure-ci-baseline.mjs:198',
-      'measure-ci-baseline.mjs:271',
-      'measure-ci-baseline.mjs:281',
-      'measure-ci-baseline.mjs:303',
-      'measure-ci-baseline.mjs:358',
-      'measure-ci-baseline.mjs:361',
+      'measure-ci-baseline.mjs:229',
+      'measure-ci-baseline.mjs:334',
+      'measure-ci-baseline.mjs:344',
       'measure-ci-baseline.mjs:366',
-      'measure-ci-baseline.mjs:373',
-      'measure-ci-baseline.mjs:380',
-      'measure-ci-baseline.mjs:398',
-      'measure-ci-baseline.mjs:423',
-      'measure-ci-baseline.mjs:434',
-      'measure-ci-baseline.mjs:445',
-      'measure-ci-baseline.mjs:467',
-      'measure-ci-baseline.mjs:482',
-      'measure-ci-baseline.mjs:495',
-      'measure-ci-baseline.mjs:521',
-      'measure-ci-baseline.mjs:549',
-      'measure-ci-baseline.mjs:589',
+      'measure-ci-baseline.mjs:421',
+      'measure-ci-baseline.mjs:424',
+      'measure-ci-baseline.mjs:429',
+      'measure-ci-baseline.mjs:436',
+      'measure-ci-baseline.mjs:443',
+      'measure-ci-baseline.mjs:461',
+      // v3.146's one: a red seed whose day's workflow cannot be read. The refusal is taken between the
+      // jobs request and either write, so it has no caller to hand control to -- which is what makes it
+      // `fatal` rather than a refusal a function returns.
+      'measure-ci-baseline.mjs:487',
+      'measure-ci-baseline.mjs:512',
+      'measure-ci-baseline.mjs:523',
+      'measure-ci-baseline.mjs:534',
+      'measure-ci-baseline.mjs:556',
+      'measure-ci-baseline.mjs:571',
+      'measure-ci-baseline.mjs:584',
+      'measure-ci-baseline.mjs:638',
+      'measure-ci-baseline.mjs:666',
+      'measure-ci-baseline.mjs:706',
     ]);
     // 60 unguarded: the two pack guards are `unguarded`, like every other throw inside a
     // function with no enclosing `try`. 11 fatal is v3.55's addition of five to v3.54's
@@ -402,7 +409,11 @@ describe('the four baskets are a partition of the throws, not a remainder', { ti
     // 16 -> 19 in v3.145, same pattern again: a run that did not succeed, a step that never started,
     // and a step whose seconds are its own bound are all decided from the run's answer before either
     // file is written, so all three end the process rather than handing anyone a refusal.
-    expect(counts).toEqual({ fatal: 19, unguarded: 77, guarded: 1, rethrow: 10 });
+    // 19 -> 20 and 77 -> 78 in v3.146, one of each: the refusal for a day whose workflow the API will
+    // not return is taken at the top level and ends the process, while the refusal for a workflow this
+    // reader cannot walk is thrown inside `boundsOfThatDay` and handed to that `catch` -- which is one
+    // function away, and a function boundary is where a `try` stops counting.
+    expect(counts).toEqual({ fatal: 20, unguarded: 78, guarded: 1, rethrow: 10 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {
