@@ -2855,18 +2855,21 @@ from an anecdote again.
   than once, its cost is the **faster** attempt: the bytes did not change between the two, so the difference
   cannot be the tree. The case is measured -- the sites battery's second shard read **881 s** and **880 s** on
   two attempts of one commit -- and so is the limit of the instrument: a third measurement, on the tree this
-  round ships, read **621 s**, with three earlier readings at 629, 635 and 636. So a re-run proves that a bound
-  is not left sized from one afternoon's slow reading; it does **not** prove the faster attempt is the
-  program's cost, and the file cannot yet mark a reading as not comparable (`O-139`).
+  round ships, read **621 s** and the other **900 s**, with three earlier readings at 629, 635 and 636. The step
+  has **two modes** -- five readings between 600 and 636, three between 880 and 900, two trees in each -- so a
+  re-run proves that a bound is not left sized from one afternoon's slow reading; it does **not** prove the
+  faster attempt is the program's cost, and nothing in the file records which mode a reading landed in
+  (`O-139`).
 - **The minimum is taken over one tree's attempts, never over the history and never over one attempt's jobs.**
   Two commits are two programs, so the file's other days cannot lower this one; and one attempt that ran the
   command in two jobs is one day, whose cost is the slower job -- otherwise a package-mirror hit sizes the
   bound (`R10`'s original 153 s against 8 s).
 - **A bound is also at least the worst day the command has already spent.** Twice the tree's cost is a
   statement about the program; a day the command has already run is a fact about the machine, and neither
-  implies the other once the multiple stops dividing the slowest day. A command with two modes -- a store hit
-  and a miss (`O-126`) -- needs both clauses, and its case is a fixture: 1300 s and 600 s on two attempts of
-  one tree, with a bound the multiple clears and the day does not.
+  implies the other once the multiple stops dividing the slowest day. A command with two modes needs both
+  clauses, and the fixture that stood for it -- 1300 s and 600 s on two attempts of one tree, with a bound the
+  multiple clears and the day does not -- is now a simplification of a **shipped** case rather than a
+  hypothetical: the sites battery has modes, and the 30-minute bound is exactly twice its slow one.
 - **Every refusal prints the other attempt.** `R4` says "the tree spent 400 s on it (the other attempt of the
   same commit read 881 s)", `R10` says "cost 400 s on the slowest tree that ran it ... (the other attempt of
   that commit read 881 s)", and `budgetSummary` prints the slower attempt beside the ratio it divides, so a
@@ -2875,9 +2878,10 @@ from an anecdote again.
   shard's **34 -> 42**, the file's declared bound-minutes **247 -> 263**; the forty-first reading is run
   `45595594712` attempt 2, with attempt 1 seeded beside it, and the forty-second is run `45615317655` -- the tree
   this round ships -- for **43** readings over **41** commits.
-- **What that costs is stated as a defect, not as a choice.** 30 minutes against a 620 s cluster is 2.9x, where
-  the multiple would be satisfied at 22; `R10` cannot accept 22 while 880 s is a tree's cost in the file, and
-  marking a reading as not comparable needs evidence the file does not carry (`O-139`).
+- **What that costs, and what it buys.** 30 minutes is 2.9x the fast mode's 621 s and exactly twice the slow
+  mode's 900 s, so the room is not slack -- it is clause 3 keeping a slow-mode run from being refused for being
+  slow. Without it the multiple alone would have asked for 22 minutes, which three of the eight samples here
+  would have met.
 - **Not claimed.** That a repeated reading separates the program from the machine -- the round claimed it and
   the fourth measurement took it back. Nor that a tree measured once is priced correctly: it is priced from one
   afternoon (`O-138`). Nor that a bound's absolute size is right -- only that it is not left sized from one

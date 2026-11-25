@@ -1152,17 +1152,18 @@ is a row about rather than paraphrase one that no `grep` will find.
   history's trees were measured once, so a reader can see the size of the population instead of taking the
   round's word for it]`
 
-- O-139 · **Two attempts of one commit are one sample of the machine, so `R14`'s minimum divides a day.**
-  A re-run is the only instrument this file has for the machine, and the reach of it is measured: the sites
-  battery's second shard read **881 s** and **880 s** on two attempts of one tree, then **621 s** on the next
-  tree's delivery run, with three earlier readings at 629, 635 and 636. The pair is an outlier 40% above the
-  cluster and it entered the history as that tree's cost, so the gate asks 30 minutes for a step that costs
-  620 s (2.9x, where the multiple would be satisfied at 22) and nothing in the file lets a reader tell a loaded
-  afternoon from a slow program.
-  `[open: whether a reading should be able to carry evidence that it is not comparable -- a load average read
-  beside the job, the runner's own timestamps, or a second measurement far enough away in time to be another
-  draw -- or whether the multiple should divide a robust statistic over the command's series (the middle of the
-  last N trees) rather than one tree's faster attempt, which is a change to `R4`, `R10` and the summary at once]`
+- O-139 · **A step with two modes is one series, and nothing in the file says which mode a bound is argued
+  from.**
+  The sites battery's second shard reads **621 s** in its fast mode and **900 s** in its slow one -- five
+  readings between 600 and 636, three between 880 and 900, on four different trees -- so the 30-minute bound is
+  exactly twice the slow mode and 2.9x the fast one. `R14`'s multiple divides one tree's fast attempt and the
+  floor clause covers the slow one, so the arithmetic lands in the right place for a reason no reading records:
+  a reader comparing 22 minutes with 621 s cannot know that 900 s is what makes 22 unsafe.
+  `[open: whether a reading should record the mode it landed in -- which needs an instrument that measures the
+  machine rather than the program: a load average read beside the job, the runner's own timestamps, or a second
+  measurement far enough away in time to be another draw -- or whether the multiple should divide a statistic
+  over the command's series (the middle, or the fast mode by construction) with the floor clause carrying the
+  slow one, which is a change to `R4`, `R10` and the summary at once]`
 
 ## Pass log
 

@@ -1022,12 +1022,14 @@
   measured twice on one tree* -- because it is the only one that answers the question rather than describing
   the box: the delivery run was re-run as attempt 2 of run `45595594712`, and the second shard repeated itself
   to **880 s** while its sibling shard moved from **501 s** to **418 s** in the same window. Two attempts whose
-  bytes are identical cannot differ by the tree, so the pair was read as the work -- and this round's own
-  delivery run took that reading back: on the next tree the same step spent **621 s**, with three earlier
-  readings at 629, 635 and 636, so 881/880 is an outlier pair 40% above the cluster and the agreement was the
-  machine's persistence across forty minutes rather than the program's cost. `R14` still stands where it was
-  argued from the multiple -- a bound is not sized from the slowest day -- but it does not answer the entry's
-  question, and the evidence a reading would need, or a marker saying it is not comparable, is `O-139`. `R14` states the rule in three clauses: a tree measured twice costs the faster attempt;
+  bytes are identical cannot differ by the tree, so the pair was read as the work -- and the two trees this
+  round delivered took that reading back: the same step spent **621 s** on one and **900 s** on the other, with
+  three earlier readings at 629, 635 and 636. The step has **two modes** (five readings between 600 and 636,
+  three between 880 and 900) and two trees land in each, so the pair's agreement was the machine's persistence
+  across forty minutes rather than the program's cost: a re-run inside one mode reproduces the mode. What closed
+  the entry is the arithmetic the question forced -- a bound is a multiple of one mode and at least the worst day
+  already spent, which is clause 3, and the 30 minutes shipped here is exactly twice the slow mode. What did not
+  close is stated in `O-139`: nothing in the file records that a step has modes. `R14` states the rule in three clauses: a tree measured twice costs the faster attempt;
   one attempt that ran a command in two jobs costs the slower job, because that is `R10`'s mirror-hit evidence
   and the pair is the only set the minimum is taken over; and a bound is also at least the worst day the
   command has already spent, which had been doing nothing while the multiple divided the slowest reading and
