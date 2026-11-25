@@ -1597,9 +1597,9 @@ const API_JOBS = {
       started_at: '2026-11-02T10:00:00Z',
       completed_at: '2026-11-02T10:00:53Z',
       steps: [
-        { name: 'Set up job', started_at: '2026-11-02T10:00:00Z', completed_at: '2026-11-02T10:00:01Z' },
-        { name: 'Check out', started_at: '2026-11-02T10:00:01Z', completed_at: '2026-11-02T10:00:03Z' },
-        { name: 'Slow battery', started_at: '2026-11-02T10:00:03Z', completed_at: '2026-11-02T10:00:52Z' },
+        { name: 'Set up job', started_at: '2026-11-02T10:00:00Z', completed_at: '2026-11-02T10:00:01Z', conclusion: 'success' },
+        { name: 'Check out', started_at: '2026-11-02T10:00:01Z', completed_at: '2026-11-02T10:00:03Z', conclusion: 'success' },
+        { name: 'Slow battery', started_at: '2026-11-02T10:00:03Z', completed_at: '2026-11-02T10:00:52Z', conclusion: 'success' },
       ],
     },
     {
@@ -1607,9 +1607,9 @@ const API_JOBS = {
       started_at: '2026-11-02T10:20:00Z',
       completed_at: '2026-11-02T10:28:02Z',
       steps: [
-        { name: 'Set up job', started_at: '2026-11-02T10:20:00Z', completed_at: '2026-11-02T10:20:01Z' },
-        { name: 'Check out', started_at: '2026-11-02T10:20:01Z', completed_at: '2026-11-02T10:20:02Z' },
-        { name: 'Slow battery', started_at: '2026-11-02T10:20:02Z', completed_at: '2026-11-02T10:28:01Z' },
+        { name: 'Set up job', started_at: '2026-11-02T10:20:00Z', completed_at: '2026-11-02T10:20:01Z', conclusion: 'success' },
+        { name: 'Check out', started_at: '2026-11-02T10:20:01Z', completed_at: '2026-11-02T10:20:02Z', conclusion: 'success' },
+        { name: 'Slow battery', started_at: '2026-11-02T10:20:02Z', completed_at: '2026-11-02T10:28:01Z', conclusion: 'success' },
       ],
     },
   ],
@@ -1715,7 +1715,7 @@ describe('the recorder', () => {
     const result = await withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
-          return { status: 200, body: { head_sha: 'deadbeef', updated_at: '2026-11-02T10:31:00Z' } };
+          return { status: 200, body: { head_sha: 'deadbeef', updated_at: '2026-11-02T10:31:00Z', conclusion: 'success' } };
         }
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100') {
           return { status: 200, body: API_JOBS };
@@ -1757,7 +1757,7 @@ describe('the recorder', () => {
       (url) => {
         asked.push(url);
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
-          return { status: 200, body: { head_sha: 'deadbeef', run_attempt: 2, updated_at: '2026-11-02T10:31:00Z' } };
+          return { status: 200, body: { head_sha: 'deadbeef', run_attempt: 2, updated_at: '2026-11-02T10:31:00Z', conclusion: 'success' } };
         }
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100&filter=all') {
           const jobs = JSON.parse(JSON.stringify(API_JOBS)) as { jobs: Record<string, unknown>[] };
@@ -1766,8 +1766,8 @@ describe('the recorder', () => {
             // The first attempt was slower on the battery, which is the difference the pair is for.
             if (at === 0) {
               one.steps = [
-                { name: 'Check out', started_at: '2026-11-02T10:00:01Z', completed_at: '2026-11-02T10:00:03Z' },
-                { name: 'Slow battery', started_at: '2026-11-02T10:00:03Z', completed_at: '2026-11-02T10:00:44Z' },
+                { name: 'Check out', started_at: '2026-11-02T10:00:01Z', completed_at: '2026-11-02T10:00:03Z', conclusion: 'success' },
+                { name: 'Slow battery', started_at: '2026-11-02T10:00:03Z', completed_at: '2026-11-02T10:00:44Z', conclusion: 'success' },
               ];
             }
           }
@@ -1810,7 +1810,7 @@ describe('the recorder', () => {
     const result = await withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
-          return { status: 200, body: { head_sha: 'deadbeef', run_attempt: 2, updated_at: '2026-11-02T10:31:00Z' } };
+          return { status: 200, body: { head_sha: 'deadbeef', run_attempt: 2, updated_at: '2026-11-02T10:31:00Z', conclusion: 'success' } };
         }
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100&filter=all') {
           return { status: 200, body: API_JOBS };
@@ -1851,7 +1851,7 @@ describe('the recorder', () => {
     const result = await withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
-          return { status: 200, body: { head_sha: 'deadbeef', run_attempt: 2, updated_at: '2026-11-02T10:31:00Z' } };
+          return { status: 200, body: { head_sha: 'deadbeef', run_attempt: 2, updated_at: '2026-11-02T10:31:00Z', conclusion: 'success' } };
         }
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100&filter=all') {
           const jobs = JSON.parse(JSON.stringify(API_JOBS)) as { jobs: Record<string, unknown>[] };
@@ -1887,7 +1887,7 @@ describe('the recorder', () => {
     const unparseable = await withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
-          return { status: 200, body: { head_sha: 'deadbeef', updated_at: '2026-11-02T10:31:00Z' } };
+          return { status: 200, body: { head_sha: 'deadbeef', updated_at: '2026-11-02T10:31:00Z', conclusion: 'success' } };
         }
         return null;
       },
@@ -1905,7 +1905,7 @@ describe('the recorder', () => {
     const nameless = await withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
-          return { status: 200, body: { head_sha: 'deadbeef', updated_at: '2026-11-02T10:31:00Z' } };
+          return { status: 200, body: { head_sha: 'deadbeef', updated_at: '2026-11-02T10:31:00Z', conclusion: 'success' } };
         }
         return null;
       },
@@ -1924,7 +1924,7 @@ describe('the recorder', () => {
     const result = await withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
-          return { status: 200, body: { head_sha: 'deadbeef', run_attempt: 2, updated_at: '2026-11-02T10:31:00Z' } };
+          return { status: 200, body: { head_sha: 'deadbeef', run_attempt: 2, updated_at: '2026-11-02T10:31:00Z', conclusion: 'success' } };
         }
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100&filter=all') {
           return { status: 200, body: API_JOBS };
@@ -1945,7 +1945,7 @@ describe('the recorder', () => {
     const result = await withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
-          return { status: 200, body: { head_sha: 'deadbeef', run_attempt: 2, updated_at: '2026-11-02T10:31:00Z' } };
+          return { status: 200, body: { head_sha: 'deadbeef', run_attempt: 2, updated_at: '2026-11-02T10:31:00Z', conclusion: 'success' } };
         }
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100&filter=all') {
           const only = JSON.parse(JSON.stringify(API_JOBS)) as { jobs: Record<string, unknown>[] };
@@ -1980,7 +1980,7 @@ describe('the recorder', () => {
     const result = await withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/31') {
-          return { status: 200, body: { head_sha: 'deadbeef', updated_at: '2026-11-02T10:31:00Z' } };
+          return { status: 200, body: { head_sha: 'deadbeef', updated_at: '2026-11-02T10:31:00Z', conclusion: 'success' } };
         }
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/31/jobs?per_page=100') {
           const jobs = JSON.parse(JSON.stringify(API_JOBS));
@@ -2004,7 +2004,7 @@ describe('the recorder', () => {
     const result = await withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/11') {
-          return { status: 200, body: { head_sha: 'beefdead', updated_at: '2026-11-02T10:31:00Z' } };
+          return { status: 200, body: { head_sha: 'beefdead', updated_at: '2026-11-02T10:31:00Z', conclusion: 'success' } };
         }
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/11/jobs?per_page=100') {
           return {
@@ -2036,7 +2036,7 @@ describe('the recorder', () => {
     const result = await withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/13') {
-          return { status: 200, body: { head_sha: 'feedface', updated_at: '2026-11-02T10:31:00Z' } };
+          return { status: 200, body: { head_sha: 'feedface', updated_at: '2026-11-02T10:31:00Z', conclusion: 'success' } };
         }
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/13/jobs?per_page=100') {
           return { status: 200, body: API_JOBS };
@@ -2097,7 +2097,7 @@ describe('the recorder', () => {
     const result = await withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/14') {
-          return { status: 200, body: { head_sha: 'cafebabe', updated_at: '2026-11-02T10:31:00Z' } };
+          return { status: 200, body: { head_sha: 'cafebabe', updated_at: '2026-11-02T10:31:00Z', conclusion: 'success' } };
         }
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/14/jobs?per_page=100') {
           return { status: 200, body: { jobs: [API_JOBS.jobs[0]] } };
@@ -2117,7 +2117,7 @@ describe('the recorder', () => {
     const result = await withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/12') {
-          return { status: 200, body: { head_sha: 'beefdead', updated_at: '2026-11-02T10:31:00Z' } };
+          return { status: 200, body: { head_sha: 'beefdead', updated_at: '2026-11-02T10:31:00Z', conclusion: 'success' } };
         }
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/12/jobs?per_page=100') {
           return { status: 200, body: API_JOBS };
@@ -2139,7 +2139,7 @@ describe('the recorder', () => {
     const noJob = await withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/9') {
-          return { status: 200, body: { head_sha: 'abc', updated_at: '2026-11-02T10:31:00Z' } };
+          return { status: 200, body: { head_sha: 'abc', updated_at: '2026-11-02T10:31:00Z', conclusion: 'success' } };
         }
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/9/jobs?per_page=100') {
           // A job whose name is deliberately not the one asked for. The word list in
@@ -2172,7 +2172,7 @@ describe('the recorder', () => {
     const result = await withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/13') {
-          return { status: 200, body: { head_sha: 'beefdead', updated_at: '2026-11-02T10:31:00Z' } };
+          return { status: 200, body: { head_sha: 'beefdead', updated_at: '2026-11-02T10:31:00Z', conclusion: 'success' } };
         }
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/13/jobs?per_page=100') {
           return {
@@ -2506,6 +2506,361 @@ describe('a job the recording has never measured', () => {
   });
 });
 
+/**
+ * A number the run did not measure, and the three shapes it arrives in (`O-127`).
+ *
+ * The recording is the file every bound is a multiple of, and `R4` asks a bound to be at least twice the
+ * number beside it. That demand is only meaningful when the number is a **duration the command spent**: a
+ * step that stopped before its end spent less, and a step stopped by its own bound spent *exactly that
+ * bound* -- so comparing the bound with it asks for a number to be doubled by the evidence that it was
+ * wrong. The evidence the recorder has is the run's conclusion and each step's own, and both are read here
+ * rather than assumed.
+ */
+describe('a number the run did not measure', () => {
+  /** One job, two steps, the second with a bound of its own: the shape every case here needs. */
+  const WORKFLOW = workflowText([
+    { id: 'batteries', minutes: 25, steps: [...step('Check out', 3), ...step('Slow battery', 12)] },
+  ]);
+
+  /** The same job as the API reports it, with the two things a case varies: the times and the conclusions. */
+  const reported = (
+    battery: { seconds: number | null; conclusion: string },
+    checkout: { seconds: number | null; conclusion: string } = { seconds: 2, conclusion: 'success' },
+  ): unknown => ({
+    jobs: [
+      {
+        name: 'batteries',
+        started_at: '2026-11-02T10:00:00Z',
+        completed_at: '2026-11-02T10:30:00Z',
+        steps: [
+          {
+            name: 'Check out',
+            conclusion: checkout.conclusion,
+            started_at: checkout.seconds === null ? null : '2026-11-02T10:00:00Z',
+            completed_at:
+              checkout.seconds === null ? null : new Date(Date.parse('2026-11-02T10:00:00Z') + checkout.seconds * 1000).toISOString(),
+          },
+          {
+            name: 'Slow battery',
+            conclusion: battery.conclusion,
+            started_at: battery.seconds === null ? null : '2026-11-02T10:02:00Z',
+            completed_at:
+              battery.seconds === null ? null : new Date(Date.parse('2026-11-02T10:02:00Z') + battery.seconds * 1000).toISOString(),
+          },
+        ],
+      },
+    ],
+  });
+
+  /** Run the recorder against one answer, and say what it left on disk. */
+  const record = (conclusion: string, jobs: unknown, args: string[] = ['7']) =>
+    withApi(
+      (url) => {
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
+          return { status: 200, body: { head_sha: 'deadbeef', conclusion, updated_at: '2026-11-02T10:31:00Z' } };
+        }
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100') {
+          return { status: 200, body: jobs };
+        }
+        return null;
+      },
+      async (env) => {
+        // A seed has to be older than the recording it is appended beside, so the recording is written
+        // first: a fixture that seeded into a directory with no recording would be refused for the
+        // placement rather than for the number, and the case would pass for the wrong reason.
+        if (args.includes('--seed')) {
+          writeFileSync(
+            env['RCA_CI_OUT'] as string,
+            JSON.stringify({
+              run: 9,
+              attempt: 1,
+              commit: 'c'.repeat(40),
+              measured: '2026-11-03',
+              jobs: { batteries: { name: 'batteries', timeoutMinutes: 25, total: 53, steps: { 'Slow battery': 49 } } },
+            }),
+          );
+        }
+        const out = await runRecorder(args, env);
+        return {
+          out,
+          recording: existsSync(env['RCA_CI_OUT'] as string),
+          history: existsSync(env['RCA_CI_READINGS'] as string)
+            ? JSON.parse(readFileSync(env['RCA_CI_READINGS'] as string, 'utf8'))
+            : null,
+        };
+      },
+      WORKFLOW,
+    );
+
+  it('refuses a recording from a run that did not succeed, and names the seed that keeps what it did measure', async () => {
+    // The run concluded `failure`, which is the conclusion a killed step carries as well as a genuine
+    // one: the report cannot tell them apart, so a file every bound divides by may not be taken from it.
+    const result = await record('failure', reported({ seconds: 49, conclusion: 'failure' }));
+    expect(result.out.status).toBe(1);
+    expect(result.out.stderr).toContain('concluded `failure`');
+    expect(result.out.stderr).toContain('a step that stopped at its own bound rather than after the command');
+    expect(result.out.stderr).toContain('`--seed` appends them to the history');
+    // Nothing was written: the refusal is taken before either file, and a half-written pair is the state
+    // the two-files-disagree rule exists to refuse.
+    expect(result.recording).toBe(false);
+    expect(result.history).toBeNull();
+    // And the other conclusion a kill wears. `cancelled` is what a job timeout reports, so a refusal that
+    // named only `failure` would let the shape the entry was opened for through.
+    const cancelled = await record('cancelled', reported({ seconds: 49, conclusion: 'cancelled' }));
+    expect(cancelled.out.status).toBe(1);
+    expect(cancelled.out.stderr).toContain('concluded `cancelled`');
+    expect(cancelled.recording).toBe(false);
+  });
+
+  it('records the same run once it succeeds, because the numbers are then durations', async () => {
+    // The other half of the rule: `success` is not a courtesy, it is the evidence that every step that
+    // ran finished, and with it the same seconds are a measurement.
+    const result = await record('success', reported({ seconds: 49, conclusion: 'success' }));
+    expect(result.out.stderr).toBe('');
+    expect(result.out.status).toBe(0);
+    expect(result.history.readings).toHaveLength(1);
+    expect(result.history.readings[0].jobs.batteries['Slow battery'].seconds).toBe(49);
+  });
+
+  it('refuses a step whose seconds are exactly its own bound, which is the bound read back', async () => {
+    // `O-127`'s second question. 720 s against `timeout-minutes: 12` is not a coincidence a green run can
+    // be trusted with: the bound is when the runner kills the step, so a number at it is that bound.
+    const result = await record('success', reported({ seconds: 720, conclusion: 'success' }));
+    expect(result.out.status).toBe(1);
+    expect(result.out.stderr).toContain('spent 720 s against a bound of exactly 12 min');
+    expect(result.out.stderr).toContain('the bound read back rather than a duration of the command');
+    expect(result.out.stderr).toContain('Raise the bound by one minute and record again');
+    expect(result.recording).toBe(false);
+  });
+
+  it('accepts a step one second inside its bound, which is the boundary the rule must not cross', async () => {
+    // The false positive the sentence admits to: a command that finished in the last second of its
+    // allowance is a duration, and refusing it would make the recorder refuse a true measurement.
+    const result = await record('success', reported({ seconds: 719, conclusion: 'success' }));
+    expect(result.out.stderr).toBe('');
+    expect(result.out.status).toBe(0);
+    expect(result.history.readings[0].jobs.batteries['Slow battery'].seconds).toBe(719);
+  });
+
+  it('records a step whose seconds are above its bound, because the question that follows is the gate owns', async () => {
+    // A run measured before a bound was tightened can hold a number larger than the bound that will
+    // enforce it, and the act that follows is `R4`'s: size the bound from the reading, or say why it is not
+    // comparable. Refusing it here would make the recorder the arbiter of a rule it does not enforce, and
+    // would keep the slow day the reading is evidence of out of both files.
+    const result = await record('success', reported({ seconds: 900, conclusion: 'success' }));
+    expect(result.out.stderr).toBe('');
+    expect(result.out.status).toBe(0);
+    expect(result.history.readings[0].jobs.batteries['Slow battery'].seconds).toBe(900);
+  });
+
+  it('refuses a step the run reports as skipped, and says it did not run rather than that the job lacks it', async () => {
+    // A skipped step is a step of the job with no times, and the old sentence -- "is not a step of" --
+    // was false about it: the job does have the step, and the reason no number exists is that it never
+    // started. The distinction matters because the acts that fix the two are different.
+    const result = await record('success', reported({ seconds: null, conclusion: 'skipped' }));
+    expect(result.out.status).toBe(1);
+    expect(result.out.stderr).toContain('did not run in "batteries" of run 7');
+    expect(result.out.stderr).toContain('it is skipped');
+    expect(result.out.stderr).not.toContain('is not a step of');
+  });
+
+  it('keeps a red seed’s steps that ended on their own, and drops the ones that did not', async () => {
+    // A seed is evidence about commands rather than a description of the tree, so a red day may be
+    // appended -- but only with the numbers of steps that ran to their end. A cancelled step's seconds
+    // are a lower bound: the command was stopped, it did not take that long.
+    const result = await record('failure', reported({ seconds: 49, conclusion: 'cancelled' }), ['7', '--seed']);
+    expect(result.out.stderr).toBe('');
+    expect(result.out.status).toBe(0);
+    expect(result.out.stdout).toContain('did not end on its own (cancelled)');
+    expect(result.history.readings).toHaveLength(1);
+    expect(Object.keys(result.history.readings[0].jobs.batteries)).toEqual(['Check out']);
+    expect(result.history.readings[0].jobs.batteries['Check out'].seconds).toBe(2);
+  });
+
+  it('drops a seeded step whose report names no conclusion, because it cannot say the step finished', async () => {
+    // The API reports a conclusion for every step of a finished run, so a report without one is a report
+    // that does not say. A seed may not read that silence as success: the number would enter the history on
+    // the strength of a field nobody sent.
+    const result = await withApi(
+      (url) => {
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
+          return { status: 200, body: { head_sha: 'deadbeef', conclusion: 'failure', updated_at: '2026-11-02T10:31:00Z' } };
+        }
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100') {
+          return {
+            status: 200,
+            body: {
+              jobs: [
+                {
+                  name: 'batteries',
+                  started_at: '2026-11-02T10:00:00Z',
+                  completed_at: '2026-11-02T10:10:00Z',
+                  steps: [
+                    { name: 'Check out', conclusion: 'success', started_at: '2026-11-02T10:00:01Z', completed_at: '2026-11-02T10:00:03Z' },
+                    { name: 'Slow battery', started_at: '2026-11-02T10:00:03Z', completed_at: '2026-11-02T10:00:52Z' },
+                  ],
+                },
+              ],
+            },
+          };
+        }
+        return null;
+      },
+      async (env) => {
+        writeFileSync(
+          env['RCA_CI_OUT'] as string,
+          JSON.stringify({
+            run: 9,
+            attempt: 1,
+            commit: 'c'.repeat(40),
+            measured: '2026-11-03',
+            jobs: { batteries: { name: 'batteries', timeoutMinutes: 25, total: 53, steps: { 'Slow battery': 49 } } },
+          }),
+        );
+        const out = await runRecorder(['7', '--seed'], env);
+        return { out, history: JSON.parse(readFileSync(env['RCA_CI_READINGS'] as string, 'utf8')) };
+      },
+      WORKFLOW,
+    );
+    expect(result.out.status).toBe(0);
+    expect(result.out.stdout).toContain('did not end on its own (the report names no conclusion for it)');
+    expect(Object.keys(result.history.readings[0].jobs.batteries)).toEqual(['Check out']);
+  });
+
+  it('keeps a failed step of a seed, whose seconds are a duration the command really spent', async () => {
+    // `failure` is the conclusion of a command that ran and returned non-zero. Its duration is a real
+    // duration, and a red seed is exactly the act that keeps it: dropping it would lose the slowest day
+    // of the command that failed, which is the day a bound most needs.
+    const result = await record('failure', reported({ seconds: 49, conclusion: 'failure' }), ['7', '--seed']);
+    expect(result.out.stderr).toBe('');
+    expect(result.out.status).toBe(0);
+    expect(result.history.readings[0].jobs.batteries['Slow battery'].seconds).toBe(49);
+  });
+
+  it('says a seeded job measured nothing that finished, rather than that the tree has none of its steps', async () => {
+    // Two facts, one gap. A job whose steps this workflow no longer has and a job whose every step was
+    // stopped early both leave nothing to append, and the acts that follow are different: one is about a
+    // tree that changed, the other about a day that did not finish. The seeds' own lines name each step,
+    // so the job line says which of the two it is.
+    const twoJobs = workflowText([
+      { id: 'batteries', minutes: 25, steps: [...step('Check out', 3), ...step('Slow battery', 12)] },
+      { id: 'artefacts', minutes: 25, steps: [...step('Check out', 3), ...step('Upload', 6)] },
+    ]);
+    const result = await withApi(
+      (url) => {
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
+          return { status: 200, body: { head_sha: 'deadbeef', conclusion: 'failure', updated_at: '2026-11-02T10:31:00Z' } };
+        }
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100') {
+          return {
+            status: 200,
+            body: {
+              jobs: [
+                {
+                  name: 'batteries',
+                  started_at: '2026-11-02T10:00:00Z',
+                  completed_at: '2026-11-02T10:10:00Z',
+                  steps: [
+                    { name: 'Check out', conclusion: 'success', started_at: '2026-11-02T10:00:01Z', completed_at: '2026-11-02T10:00:03Z' },
+                    { name: 'Slow battery', conclusion: 'failure', started_at: '2026-11-02T10:00:03Z', completed_at: '2026-11-02T10:00:52Z' },
+                  ],
+                },
+                {
+                  name: 'artefacts',
+                  started_at: '2026-11-02T10:00:00Z',
+                  completed_at: '2026-11-02T10:10:00Z',
+                  steps: [
+                    { name: 'Check out', conclusion: 'cancelled', started_at: '2026-11-02T10:00:01Z', completed_at: '2026-11-02T10:00:30Z' },
+                    { name: 'Upload', conclusion: 'cancelled', started_at: '2026-11-02T10:00:30Z', completed_at: '2026-11-02T10:01:00Z' },
+                  ],
+                },
+              ],
+            },
+          };
+        }
+        return null;
+      },
+      async (env) => {
+        writeFileSync(
+          env['RCA_CI_OUT'] as string,
+          JSON.stringify({
+            run: 9,
+            attempt: 1,
+            commit: 'c'.repeat(40),
+            measured: '2026-11-03',
+            jobs: { batteries: { name: 'batteries', timeoutMinutes: 25, total: 53, steps: { 'Slow battery': 49 } } },
+          }),
+        );
+        const out = await runRecorder(['7', '--seed'], env);
+        return { out, history: JSON.parse(readFileSync(env['RCA_CI_READINGS'] as string, 'utf8')) };
+      },
+      twoJobs,
+    );
+    expect(result.out.stderr).toBe('');
+    expect(result.out.status).toBe(0);
+    expect(result.out.stdout).toContain('`artefacts` measured no step that ended on its own');
+    expect(result.out.stdout).toContain('`artefacts / Upload` did not end on its own (cancelled)');
+    // The other job's numbers are still evidence, and the day is still a day.
+    expect(Object.keys(result.history.readings[0].jobs)).toEqual(['batteries']);
+  });
+
+  it('does not ask a borrowed job of the bound that will enforce its seconds', async () => {
+    // A borrow copies the seconds of the same commands from a job that ran them, and the bound it is
+    // compared with belongs to the job that will enforce it. Two jobs can bound one command differently,
+    // so a borrowed number that lands exactly on the target's bound says nothing about a kill: the kill
+    // would have happened, or not, in the other job.
+    const split = workflowText([
+      { id: 'batteries', minutes: 40, steps: [...step('Check out', 3), ...step('Slow battery', 30)] },
+      { id: 'batteries-heavy', minutes: 40, steps: [...step('Check out', 3), ...step('Slow battery', 12, 'node scripts/inject-slow-heavy.mjs')] },
+    ]);
+    const result = await withApi(
+      (url) => {
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
+          return { status: 200, body: { head_sha: 'deadbeef', conclusion: 'success', updated_at: '2026-11-02T10:31:00Z' } };
+        }
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100') {
+          return {
+            status: 200,
+            body: {
+              jobs: [
+                {
+                  name: 'batteries',
+                  started_at: '2026-11-02T10:00:00Z',
+                  completed_at: '2026-11-02T10:16:05Z',
+                  steps: [
+                    { name: 'Check out', conclusion: 'success', started_at: '2026-11-02T10:00:01Z', completed_at: '2026-11-02T10:00:03Z' },
+                    // Exactly the target job's bound of 12 min, and nowhere near the source's of 30.
+                    { name: 'Slow battery', conclusion: 'success', started_at: '2026-11-02T10:00:03Z', completed_at: '2026-11-02T10:12:03Z' },
+                  ],
+                },
+              ],
+            },
+          };
+        }
+        return null;
+      },
+      async (env) => {
+        const out = await runRecorder(['7', '--borrow', 'batteries-heavy=batteries'], env);
+        return { out, written: JSON.parse(readFileSync(env['RCA_CI_OUT'] as string, 'utf8')) };
+      },
+      split,
+    );
+    expect(result.out.status).toBe(0);
+    expect(result.written.jobs['batteries-heavy'].steps['Slow battery']).toBe(720);
+  });
+
+  it('appends a red seed even though the same run is refused as a recording', async () => {
+    // One run, two relations: as the recording it would describe a tree it did not finish, and as a seed
+    // it is a day the commands ran. The refusal above and this acceptance are the same measurement read
+    // two ways, and a case that only held the refusal would make the recorder look like it lost it.
+    const result = await record('failure', reported({ seconds: 49, conclusion: 'failure' }), ['7', '--seed']);
+    expect(result.out.status).toBe(0);
+    expect(result.out.stdout).toContain('seeded run 7 with 1 of 1 job(s) and 2 step(s)');
+    // And the recording is the one the fixture wrote, untouched: a seed never describes the tree.
+    expect(result.recording).toBe(true);
+  });
+});
+
 describe('the recorder and a declared job', () => {
   it('leaves the gap open when a declared job never ran, and says it is still waiting', async () => {
     // Cannot produce: a run in which GitHub scheduled the job. The server answers with
@@ -2514,7 +2869,7 @@ describe('the recorder and a declared job', () => {
     const result = await withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/21') {
-          return { status: 200, body: { head_sha: 'd00dd00d', updated_at: '2026-11-06T10:00:00Z' } };
+          return { status: 200, body: { head_sha: 'd00dd00d', updated_at: '2026-11-06T10:00:00Z', conclusion: 'success' } };
         }
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/21/jobs?per_page=100') {
           return { status: 200, body: { jobs: [API_JOBS.jobs[0]] } };
@@ -2541,7 +2896,7 @@ describe('the recorder and a declared job', () => {
     const result = await withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/22') {
-          return { status: 200, body: { head_sha: 'f00df00d', updated_at: '2026-11-06T11:00:00Z' } };
+          return { status: 200, body: { head_sha: 'f00df00d', updated_at: '2026-11-06T11:00:00Z', conclusion: 'success' } };
         }
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/22/jobs?per_page=100') {
           return { status: 200, body: API_JOBS };
@@ -2568,7 +2923,7 @@ describe('the recorder and a declared job', () => {
     const result = await withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/23') {
-          return { status: 200, body: { head_sha: 'c0dec0de', updated_at: '2026-11-06T12:00:00Z' } };
+          return { status: 200, body: { head_sha: 'c0dec0de', updated_at: '2026-11-06T12:00:00Z', conclusion: 'success' } };
         }
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/23/jobs?per_page=100') {
           return { status: 200, body: { jobs: [API_JOBS.jobs[0]] } };

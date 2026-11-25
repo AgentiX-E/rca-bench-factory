@@ -321,7 +321,10 @@ describe('the four baskets are a partition of the throws, not a remainder', { ti
     // refused rather than replaced, and so is a measurement older than the one it would replace.
     // The seed refusals beside them changed wording rather than count -- "older" became a pair
     // rather than a run id -- which is why the site list below moved by three lines and not by two.
-    expect(total).toBe(104);
+    // 107 is v3.145's three (`O-127`), and they are one number each way a step's seconds can fail to
+    // be a duration: a run that did not succeed, a step that never started, and a step whose number
+    // is exactly the bound that would have killed it.
+    expect(total).toBe(107);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -346,21 +349,24 @@ describe('the four baskets are a partition of the throws, not a remainder', { ti
     }
     expect(fatal).toEqual([
       'measure-ci-baseline.mjs:198',
-      'measure-ci-baseline.mjs:253',
-      'measure-ci-baseline.mjs:263',
-      'measure-ci-baseline.mjs:315',
-      'measure-ci-baseline.mjs:318',
-      'measure-ci-baseline.mjs:323',
-      'measure-ci-baseline.mjs:330',
-      'measure-ci-baseline.mjs:337',
-      'measure-ci-baseline.mjs:355',
+      'measure-ci-baseline.mjs:271',
+      'measure-ci-baseline.mjs:281',
+      'measure-ci-baseline.mjs:303',
+      'measure-ci-baseline.mjs:358',
+      'measure-ci-baseline.mjs:361',
+      'measure-ci-baseline.mjs:366',
+      'measure-ci-baseline.mjs:373',
       'measure-ci-baseline.mjs:380',
-      'measure-ci-baseline.mjs:391',
-      'measure-ci-baseline.mjs:402',
-      'measure-ci-baseline.mjs:424',
-      'measure-ci-baseline.mjs:436',
-      'measure-ci-baseline.mjs:452',
-      'measure-ci-baseline.mjs:492',
+      'measure-ci-baseline.mjs:398',
+      'measure-ci-baseline.mjs:423',
+      'measure-ci-baseline.mjs:434',
+      'measure-ci-baseline.mjs:445',
+      'measure-ci-baseline.mjs:467',
+      'measure-ci-baseline.mjs:482',
+      'measure-ci-baseline.mjs:495',
+      'measure-ci-baseline.mjs:521',
+      'measure-ci-baseline.mjs:549',
+      'measure-ci-baseline.mjs:589',
     ]);
     // 60 unguarded: the two pack guards are `unguarded`, like every other throw inside a
     // function with no enclosing `try`. 11 fatal is v3.55's addition of five to v3.54's
@@ -393,7 +399,10 @@ describe('the four baskets are a partition of the throws, not a remainder', { ti
     // 14 -> 16 in v3.144, and again the other three did not move: a recording that cannot be read
     // and a measurement older than the recording are both taken between the first request and the
     // second, so neither has a caller to hand control to and neither writes a file first.
-    expect(counts).toEqual({ fatal: 16, unguarded: 77, guarded: 1, rethrow: 10 });
+    // 16 -> 19 in v3.145, same pattern again: a run that did not succeed, a step that never started,
+    // and a step whose seconds are its own bound are all decided from the run's answer before either
+    // file is written, so all three end the process rather than handing anyone a refusal.
+    expect(counts).toEqual({ fatal: 19, unguarded: 77, guarded: 1, rethrow: 10 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

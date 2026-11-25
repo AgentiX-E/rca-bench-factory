@@ -235,17 +235,35 @@ function totalSecondsOf(job) {
   return Number.isNaN(ms) ? null : Math.ceil(ms / 1000);
 }
 
-/** One API job's steps, by name, in seconds. */
+/** One API job's steps, by name: the seconds, and the conclusion the API attached to them. */
 function secondsByName(job) {
-  const seconds = new Map();
+  const found = new Map();
   for (const step of job.steps) {
     if (SYNTHETIC.test(step.name)) continue;
-    if (step.started_at === null || step.completed_at === null) continue;
+    // A conclusion of `null` is a step that had not finished when the report was made, and one that is
+    // absent is a report that does not describe the step it names. Both are kept as they are rather than
+    // read as success: what a seed may append is decided by this field.
+    const conclusion = step.conclusion ?? null;
+    if (step.started_at === null || step.completed_at === null) {
+      found.set(step.name, { seconds: null, conclusion });
+      continue;
+    }
     const ms = Date.parse(step.completed_at) - Date.parse(step.started_at);
-    if (Number.isNaN(ms)) continue;
-    seconds.set(step.name, Math.ceil(ms / 1000));
+    found.set(step.name, { seconds: Number.isNaN(ms) ? null : Math.ceil(ms / 1000), conclusion });
   }
-  return seconds;
+  return found;
+}
+
+/**
+ * Whether a step's number is a duration the command spent.
+ *
+ * A step that ran to its own end reports `success` or `failure`: the command finished, and whether it
+ * returned zero is a question about the command rather than about its duration. `cancelled` and `skipped`
+ * say the step was stopped or never started, so its seconds are a lower bound on what the command takes --
+ * or, for the step killed by its own bound, exactly that bound (`O-127`).
+ */
+function endedOnItsOwn(conclusion) {
+  return conclusion === 'success' || conclusion === 'failure';
 }
 
 const workflow = readWorkflow(readFileSync(workflowPath(), 'utf8'));
@@ -264,6 +282,31 @@ if (runAttempt > Number(run.run_attempt ?? 1)) {
     `run ${RUN} has been executed ${String(run.run_attempt ?? 1)} time(s) and --attempt names ` +
       `${String(runAttempt)}: an attempt that does not exist has no seconds, and recording it would ` +
       'put a day in the history that no machine spent',
+  );
+}
+
+/**
+ * The recording's first requirement: the run finished.
+ *
+ * `R4` asks a bound to be at least twice the number beside it, and that demand is only an argument when the
+ * number is a **duration the command spent**. A run that did not succeed may hold a step that stopped at its
+ * own bound instead of after the command -- and the API calls that step `failure`, the same conclusion a
+ * genuine failure carries, so neither the file nor a reader can tell the two apart. A number that is a bound
+ * read back, divided by two, asks for the bound to be doubled by the evidence that it was wrong (`O-127`).
+ *
+ * A seed is the other relation: it is a day the commands ran, and the steps that did end on their own are
+ * evidence about those commands whatever the run's conclusion was. So the refusal is about the recording
+ * only, and it names the act that keeps the rest.
+ */
+if (!SEED && (run.conclusion ?? null) !== 'success') {
+  const concluded = run.conclusion === undefined || run.conclusion === null ? 'nothing' : `\`${String(run.conclusion)}\``;
+  throw new Error(
+    `run ${RUN} concluded ${concluded}, and a recording is only taken from a run that succeeded: a red run may ` +
+      'hold a step that stopped at its own bound rather than after the command, and the report calls both of ' +
+      'them `failure`, so the file every bound is a multiple of could not tell a duration from a bound read ' +
+      'back. Fix what failed, re-run, and record that run; the steps of this one that did end on their own ' +
+      'are still evidence about the commands, and `--seed` appends them to the history while leaving the ' +
+      'recording where it is',
   );
 }
 
@@ -426,9 +469,12 @@ for (const job of jobsOf(workflow)) {
   const measured = secondsByName(source);
   const steps = {};
   const commands = {};
+  // How many of this job's numbers a seed refused, so that a job left with none says which of the two
+  // reasons it was: a step this workflow no longer has, or a step that did not finish.
+  let dropped = 0;
   for (const step of stepsOf(workflow, job.id)) {
-    const seconds = measured.get(step.name);
-    if (seconds === undefined) {
+    const found = measured.get(step.name);
+    if (found === undefined) {
       if (SEED) {
         seedGaps.push(`\`${job.id} / ${step.name}\` did not run`);
         continue;
@@ -438,13 +484,64 @@ for (const job of jobsOf(workflow)) {
           'sized from a step that did not run',
       );
     }
-    steps[step.name] = seconds;
+    if (found.seconds === null) {
+      // A step the job reports with no times never started. The recording describes every step of the
+      // workflow, so it has no number to offer here; a seed is partial by construction and says so.
+      if (SEED) {
+        dropped += 1;
+        seedGaps.push(`\`${job.id} / ${step.name}\` did not run`);
+        continue;
+      }
+      throw new Error(
+        `\`${job.id} / ${step.name}\` did not run in "${source.name}" of run ${RUN} (` +
+          `${found.conclusion === null ? 'the report names no conclusion for it' : `it is ${found.conclusion}`}): ` +
+          'a step that never started spent no seconds, and the recording describes every step of the ' +
+          'workflow -- record a run of this tree in which it ran',
+      );
+    }
+    // A step that was stopped rather than finished has seconds that are a lower bound on the command --
+    // and for the step killed by its own bound, exactly that bound (`O-127`). Only a seed has to ask this
+    // of each step: a green run is one in which every step that ran succeeded, because GitHub computes the
+    // run's conclusion from its steps, while "red" says nothing about *which* step stopped early.
+    if (SEED && !endedOnItsOwn(found.conclusion)) {
+      dropped += 1;
+      // A report that names no conclusion for a step with times is a report that cannot say the step
+      // finished, and a seed may not turn "cannot say" into "did".
+      seedGaps.push(
+        `\`${job.id} / ${step.name}\` did not end on its own (` +
+          `${found.conclusion === null ? 'the report names no conclusion for it' : found.conclusion})`,
+      );
+      continue;
+    }
+    if (step.inheritedFrom === 'step' && found.seconds === step.minutes * 60 && borrowedFrom === undefined) {
+      // `O-127`'s second question, answered as a rule: a step that ends on its own ends *before* its bound,
+      // because the bound is when the runner kills it. A number that equals it is that bound read back --
+      // from a step killed with its failure allowed to pass, or from one that finished inside the last
+      // second of its allowance, and the report cannot tell the two apart.
+      throw new Error(
+        `\`${job.id} / ${step.name}\` spent ${String(found.seconds)} s against a bound of exactly ` +
+          `${String(step.minutes)} min: a step that ends on its own ends before its bound, because the bound ` +
+          'is when the runner kills it, so this number is the bound read back rather than a duration of the ' +
+          'command. Two shapes produce it -- a step that was killed and whose failure was allowed to pass, ' +
+          'and one that finished inside the last second of its allowance -- and a report cannot tell them ' +
+          'apart. Raise the bound by one minute and record again, so the number has room to move, or fix ' +
+          'what hung',
+      );
+    }
+    steps[step.name] = found.seconds;
     commands[step.name] = commandOf(step);
   }
   // A job none of whose steps this workflow still has is a job from a different tree
   // altogether: its seconds measure nothing a bound of today could be written against.
   if (Object.keys(steps).length === 0) {
-    seedGaps.push(`\`${job.id}\` ran no step this workflow still has`);
+    // Two different facts, and only one of them is about the tree: a job from a workflow that had other
+    // steps, and a job whose every step was reported and stopped early. The first says the run and this
+    // workflow share nothing; the second says the day measured nothing that finished.
+    seedGaps.push(
+      dropped === 0
+        ? `\`${job.id}\` ran no step this workflow still has`
+        : `\`${job.id}\` measured no step that ended on its own`,
+    );
     continue;
   }
   const total = totalSecondsOf(source);

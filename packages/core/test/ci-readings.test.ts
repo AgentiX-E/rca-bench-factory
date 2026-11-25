@@ -590,9 +590,9 @@ const API_JOBS = {
       started_at: '2026-11-06T10:20:00Z',
       completed_at: '2026-11-06T10:21:53Z',
       steps: [
-        { name: 'Set up job', started_at: '2026-11-06T10:20:00Z', completed_at: '2026-11-06T10:20:01Z' },
-        { name: 'Check out', started_at: '2026-11-06T10:20:01Z', completed_at: '2026-11-06T10:20:03Z' },
-        { name: 'Slow battery', started_at: '2026-11-06T10:20:03Z', completed_at: '2026-11-06T10:21:52Z' },
+        { name: 'Set up job', started_at: '2026-11-06T10:20:00Z', completed_at: '2026-11-06T10:20:01Z', conclusion: 'success' },
+        { name: 'Check out', started_at: '2026-11-06T10:20:01Z', completed_at: '2026-11-06T10:20:03Z', conclusion: 'success' },
+        { name: 'Slow battery', started_at: '2026-11-06T10:20:03Z', completed_at: '2026-11-06T10:21:52Z', conclusion: 'success' },
       ],
     },
   ],
@@ -616,6 +616,14 @@ interface ApiOver {
    * and an attempt the run has never reached is refused before the jobs are asked for.
    */
   attempts?: number;
+  /**
+   * What the run concluded, when the case is about one that did not succeed.
+   *
+   * A recording is a description of this workflow, so it may only come from a run in which every step that
+   * ran finished: a red run's numbers may include a step that stopped at its own bound, and the report says
+   * `failure` for both. The API reports the field on every run, so the fixture reports it too.
+   */
+  conclusion?: string;
 }
 
 async function withApi<T>(
@@ -663,6 +671,7 @@ async function withApi<T>(
         JSON.stringify({
           head_sha: 'e'.repeat(40),
           run_attempt: over.attempts ?? 1,
+          conclusion: over.conclusion ?? 'success',
           updated_at: '2026-11-06T10:31:00Z',
         }),
       );
@@ -813,8 +822,8 @@ describe('a past day is appended without becoming the recording', () => {
         started_at: '2026-11-01T10:20:00Z',
         completed_at: '2026-11-01T10:21:53Z',
         steps: [
-          { name: 'Check out', started_at: '2026-11-01T10:20:01Z', completed_at: '2026-11-01T10:20:03Z' },
-          { name: 'Slow battery', started_at: '2026-11-01T10:20:03Z', completed_at: '2026-11-01T10:21:52Z' },
+          { name: 'Check out', started_at: '2026-11-01T10:20:01Z', completed_at: '2026-11-01T10:20:03Z', conclusion: 'success' },
+          { name: 'Slow battery', started_at: '2026-11-01T10:20:03Z', completed_at: '2026-11-01T10:21:52Z', conclusion: 'success' },
         ],
       },
     ],
