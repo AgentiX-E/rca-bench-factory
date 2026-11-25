@@ -2610,40 +2610,6 @@ second shard's cost is the **work** and the first shard's movement is the machin
 880 s. Read with the measurement this round ended on -- one section below -- it says something weaker, and the
 difference is the round's own finding about its own instrument.
 
-### `R14`: a tree costs the faster of its attempts
-
-The rule the pair was read as justifying, and the three clauses it needs to be safe -- of which the third is
-the one this round measured the value of:
-
-1. **A tree measured more than once costs the faster attempt.** The tree cannot have changed between two
-   attempts of one commit, so the difference is the machine, and a bound is a multiple of the program.
-2. **One attempt that ran the command in two jobs costs the slower job.** This is `R10`'s original evidence --
-   the install step at 153 s in one job and 8 s in another, because its cost belongs to a package mirror. The
-   minimum is taken *across attempts of one tree*, never across the jobs of one attempt.
-3. **A bound is also at least the worst day the command has already spent.** The clause had been doing nothing
-   while the multiple divided the slowest reading, and it starts to matter the moment the multiple stops: a
-   command with two modes -- a package store hit at 10 s, a miss at 109 s (`O-126`) -- has a faster attempt that
-   is the cheap mode, and twice a cheap mode is not a bound on the expensive one.
-
-The words changed with the arithmetic. `R4` said "measured 351 s" and says "the tree spent 351 s on it"; `R10`
-said "took 361 s in" and says "cost 361 s on the slowest tree that ran it, in", with the other attempt's number
-in the same sentence when there is one. A refusal that printed only the chosen number would leave a reader who
-has seen 881 s in the history believing the gate had ignored it.
-
-### What the rule does to this tree
-
-| | before | after |
-| --- | --- | --- |
-| the sites battery's bound, both shards | 22 min | **30 min** (twice the slow mode's 900 s is 1800 s) |
-| `sensitivity`'s ceiling | 35 min | **43 min** (39 min of bounds plus the 3-minute prefix allowance) |
-| `sensitivity-shard`'s ceiling | 34 min | **42 min** (38 plus 3) |
-| bounds in the file | 247 min | **263 min** |
-
-The recording of the pair is run 45595594712 attempt 2: **8 of 8 jobs success**, 880 s of the second shard and
-418 s of the first. Attempt 1 was seeded beside it, because the history is where the pair lives. The recording
-the round ships is the second delivery run, `45621022185`: **8 of 8 jobs success**, 900 s of the second shard
-and 482 s of the first.
-
 ### The fourth and fifth measurements, and the argument they took back
 
 The trees this round delivered ran their own CI, and the battery was measured twice more:
@@ -2711,33 +2677,6 @@ The recording of the pair is run 45595594712 attempt 2: **8 of 8 jobs success**,
 418 s of the first. Attempt 1 was seeded beside it, because the history is where the pair lives. The recording
 the round ships is the second delivery run, `45621022185`: **8 of 8 jobs success**, 900 s of the second shard
 and 482 s of the first.
-
-### The fourth measurement, and the argument it took back
-
-The tree this round ships ran its own CI, and the battery was measured a third time, on a third tree:
-
-| the second shard | run | tree | seconds |
-| --- | --- | --- | --- |
-| attempt 1 | 45595594712 | `87d78d97` | 881 |
-| attempt 2 | 45595594712 | `87d78d97` | 880 |
-| the delivery run | 45615317655 | `b3124638` | **621** |
-| three readings before them | 44516888528, 45518129185, 45531664638 | three trees | 629, 635, 636 |
-
-Read across the series, 880 and 881 are an **outlier pair**, 40% above a cluster of four readings between 621 and
-636, and the first shard's own delivery reading (505 s) sits inside its cluster rather than above it. So the pair
-agreed because the machine was in the same state forty minutes later, not because the second shard's cost is
-880 s: a re-run of one commit inside one congestion window is **one sample of the machine**, and `R14`'s
-minimum over attempts cannot separate what it was written to separate.
-
-What survives is narrower and still worth having. A bound no longer grows by eight minutes because one afternoon
-was slow *and stays grown for every later day*: the multiple divides a cheaper attempt of the same tree than the
-recording's, and the rule prints both numbers. What does not survive is the sentence this round had already
-written into three documents -- that the pair ruled the box out. The honest statement is that the tree's cost is
-the **cluster** (621-636 s here), that the outlier pair entered the history as a tree's cost, and that the gate
-now asks for **30 minutes** on a step that does the work in ten -- 2.9x, where the multiple would be satisfied at
-22. The repair is not a number this round can pick: `R10` refuses a bound under twice the slowest tree's cost,
-and 880 s is a tree's cost in the file until a reading can be marked not comparable *with evidence*. That
-evidence, and that marker, are `O-139`.
 
 ### Why the battery costs 621 s in its fast mode, which is the finding under the reading
 
