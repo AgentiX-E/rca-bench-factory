@@ -1846,12 +1846,187 @@ entry moves, and it is sharpened rather than closed, because the measurement say
 | --- | --- |
 | CI | **8 of 8 jobs success** -- run `45673244483` on `e2bf2db`, **771 s**, and the **forty-seventh reading**: the two shard steps read **231 s** and **460 s**, against **488 s** and **596 s** in the reading before it |
 | the run before it | run `45652928012` on `9269682` -- **8 of 8 jobs success**, 969 s, the **forty-sixth reading**, taken at the start of this round because the previous one shipped that tree and could not record it |
-| `core` test suite | **260 files, 7057 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7244 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 7057 tests passed** (at v3.153) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.153) |
+| repo test suite | **264 files, 7244 tests passed** (at v3.153) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: every line this round added is in `scripts/` |
 | new tests | **7,054 -> 7,057, +3**: the per-claimant rows, the flag on the mutant's argv, and the baseline's refusal of it |
 | the pair | **1382.7 s -> 577.1 s** over 32 claimants, 125 claims and 125 runs either side, an hour apart on one box; the shard **6.4 -> 3.1 min** |
 | the battery, both shards | **129 claims in 3.1 min** and **119 claims in 2.0 min**, 0 survivors, 0 unrecorded, 0 truncated |
 | mutation | **4 groups, 4 red cases, 0 survivors**, each measured on the green tree and restored to an identical `md5` |
 | the inventory | **146** sites, one coordinate moved by the round's own insertions (768 -> 829), and the file re-derived rather than edited |
+
+## v3.154 — a run pays for the claim it makes, and the compile nobody read
+
+`v3.153`'s ledger ended with a sentence that named the next round's subject: the critical path was no
+longer the sites battery, `batteries-heavy` had taken **761 s** of a 771 s run, and "the instrument for it
+is the one this round built". This round pointed that instrument at both batteries, and both were buying
+work nobody had asked for.
+
+### The instrument, applied
+
+`type-miss-probe` prints one row per **claimant** -- the file an injection edits -- with the injections it
+holds, the compiles it paid for, and the seconds split between compiling and probing. `backend-support`
+prints one row per **test file**, with its runs, its seconds and its slowest single run. Both end with a
+total that names its own run count. The instrument had to come first: the two steps reported `360 s` and
+`379 s`, and a total is not a measurement (finding 657), so neither could say which injection or which
+file the time belonged to.
+
+The first reading of the type-miss battery, on the box this round measured everything on:
+
+| claimant | injections | builds | seconds | of which compiling |
+| --- | --- | --- | --- | --- |
+| `derivation` | 17 | 17 | 41.4 | 38.6 |
+| `scorer` | 6 | 6 | 14.8 | 13.8 |
+| `rca100` | 6 | 6 | 14.4 | 13.4 |
+| `collector` | 4 | 4 | 9.6 | 9.0 |
+| the other twelve | 41 | 27 | 67.4 | 53.4 |
+| **74 injections** | | **60** | **147.7** | **130.1** |
+
+Two numbers in that table are the round. Compiling is **88%** of the child time, and there are **60**
+compiles for 57 in-package injections -- where there had been 114.
+
+### Finding 658: a whole-file run is a superset of the claim it is run for
+
+The 83 rows of `backend-support` are each a claim of the form *this mutation makes this named test fail*,
+and each was measured by running the file the test lives in and looking for the name in the output. That
+is **347 s** of child time to measure 83 claims about one test each.
+
+`--testNamePattern` is the same claim asked directly, and it is not the weaker instrument: the verdict
+still requires a non-zero exit **and** the name in the output, so a run that collected nothing and a run
+whose named test passed stay distinguishable. What is no longer observed is the case "a different test
+went red", which used to read MISATTRIBUTED and now reads SURVIVED -- the named test did not catch the
+mutation, which is exactly what the row claims.
+
+The change was measured before it was taken, on one tree, alternating the two forms row by row:
+
+| | whole file | named test | |
+| --- | --- | --- | --- |
+| 83 runs, child time | 347.0 s | **53.2 s** | **-84.7%** |
+| verdicts that agreed | 83 | 83 | **0** disagreements |
+
+and the battery run alone, on its own: **83 caught, 0 survived, 0 inert, 0 misattributed, 54 s**.
+
+The name is passed through `re.escape`, and that is the one place the care looks excessive.
+`--testNamePattern` compiles its argument as a regular expression, and one of the 83 names contains
+`[timestamp, line]`: unescaped, the class matches a single character and the pattern matches no test at
+all, so a mutation that was caught perfectly well would be reported MISATTRIBUTED -- a battery blaming
+its own suite for an escaping defect. The new test measures both directions on the real name rather than
+on a name invented for it.
+
+### Finding 659: the restore compiled the package back, and the next injection overwrote it
+
+An in-package injection must compile; that compile **is** the measurement, and a mutation that does not
+compile would otherwise run the previous build and report against a rule it did not install. What was
+not a measurement was the second compile: the `finally` put the committed source back and compiled it,
+and the next injection's build then wrote its own output over the same `dist`. 57 measurements, 114
+compiles of a 260-file package, and half of them read by nothing.
+
+The source is still restored immediately -- that is what the byte-for-byte check at the bottom of
+`run_probe` reads -- and the **compile** is deferred to the first reader that needs the committed rule:
+the next injection that edits only the probe or the fixture, or the end of the battery. `_STALE_DIST`
+records which state `dist` is in, `flush_dist` is the one thing that compiles it back, and the same
+function is registered with `atexit`, so a run that never reaches the end -- an injection raising, a
+guard calling `sys.exit` -- still leaves a package that reflects the tree. That last path is a test, not
+a promise: a child imports the battery, marks the package stale, and exits without calling `flush_dist`,
+and the marker its patched compiler writes is the measurement.
+
+| | before | after |
+| --- | --- | --- |
+| compiles of `packages/core` | 114 | **60** |
+| wall clock, one tree, back to back | 269.1 s | **150.8 s** |
+| battery verdict | 74 caught, 0 survived, 0 inert, 0 blind | the same |
+
+Three alternatives were measured or reasoned and refused:
+
+- **`--incremental`**: 2.27 s -> 0.77 s per compile, three times the saving this round took. Refused
+  because tsc keys a file by modification time and size, and the whole job here is to compile a file that
+  was just written twice. A size-preserving mutation, restored inside one tick, would be read as
+  unchanged -- and a `dist` that keeps a mutation is the worst state this battery can leave, because
+  `_witnesses` journals the source and not the build output.
+- **mutating `dist` directly**: no compile at all, and 57 anchors restated against emitted JavaScript --
+  a second table to maintain, coupled to what `tsc` emits, and it would lose the compile check.
+- **reordering the injections** so the in-package ones are contiguous: 60 builds -> 58, at the price of a
+  report whose order is chosen by cost. Two compiles are not worth that.
+
+### What CI said
+
+(the round's own run, filled below in `Readings`)
+
+### Six things this round did wrong
+
+- **The first version of the new test wrote the probe back over itself.** `run_probe` restores
+  `scripts/probe-type-misses.mjs` on every path, including the ones with nothing to restore, so a test
+  that drove it was a test writing inside the package it tests -- which
+  `tests-do-not-write-inside-the-package.test.ts` refused. The fix is to point the battery's own two
+  inputs at the temporary directory as well, and it is the right fix rather than an exemption: the case
+  is about the *schedule* of compiles, and it has no business touching the shipped probe.
+- **Backticks inside a `python3 -c` heredoc inside a template literal.** esbuild ended the template at the
+  first backtick and reported `Expected ")" but found "scripts"`, which names the transformer and not the
+  mistake. Third time in this campaign that a JavaScript diagnostic has cost a read.
+- **The counts could not be measured before they were published.** `measure-doc-counts` runs the suite,
+  and the suite holds the document to the counts it publishes, so the first move had to be arithmetic
+  (`7,057 + 3` tests, `260 + 1` files) with the measurement confirming it afterwards. It confirmed first
+  time, which is the fixed point being reached by luck rather than by method: the round wrote down what
+  it expected and the run agreed, and a run that disagreed would have been the only evidence.
+- **Dating v3.153's three `as of this commit` rows emptied the corpus's only current-state rows.**
+  `check-doc-counts.test.ts`'s non-vacuity assertion caught it, and its message -- `no current-state rows
+  found` -- is the one sentence in this campaign that says what the convention is: exactly one ledger,
+  the newest, carries them. The volumes do not say it anywhere.
+- **`golden-master/unit-nouns.json`'s `file(s)` relation still said 479**, which had been true since
+  v3.136 because no round between had added a file. This one added one, and the gate refused a sentence
+  quoting a corpus that had grown -- the first reading of a figure that had been right by not moving.
+- **The paired run's output was buffered through `tail`**, so a 6 m 40 s measurement was unreadable until
+  it ended. The numbers arrived; the round could not have noticed a hang.
+
+### Mutations
+
+| mutation | red |
+| --- | --- |
+| `backend-support` asks for the whole file again | 1 |
+| `backend-support` passes the name unescaped | 1 |
+| `type-miss` compiles the restore again | 1 |
+| `type-miss` leaves a reader without the committed rule | 1 |
+| `type-miss` drops the `atexit` backstop | 1 |
+
+**5 groups, 5 red cases, 0 survivors**, each measured on the green tree and restored to an identical
+`md5`.
+
+### Left open
+
+Nothing closes this round. The eight entries that were open are open, and the round's other result is that
+the list's prices have moved:
+
+- `O-136` · **A claim's run still pays the fixed cost of a run and every test before its first red, and the
+  inventory names no test.** This round took the fixed cost out of a *battery's* arithmetic -- 83 runs of one
+  test instead of 83 whole files -- and left this one's subject alone: a single claim still pays vitest's
+  startup and the file's work up to its first red, and `golden-master/gate-sites.json` still names a file
+  rather than a test.
+  `[open: this round removed a battery's fixed cost and not a claim's -- one claim still pays vitest's startup
+  plus its file up to the first red, and `provedBy` still names a file, so the decision the live entry holds is
+  the same one it held before the round]`
+
+`O-133`, `O-140`, `O-141`, `O-108`, `O-134`, `O-129` and `O-142` are unchanged. What moved is the critical
+path, and the movement is the other half of this round's result: with both probe batteries at roughly a third
+of what they were, `batteries-heavy` stops holding the workflow and the wall clock moves to `verify`
+(**732 s**, of which `Lint` is **509 s**) and to `batteries` (**659 s**, of which `Every gate can be shown to
+fail` is **242 s**). The next round that wants the wall clock starts with `verify-site-proofs.mjs`, which this
+round timed at **273 s** on this box and which spawns one child per file, serially, over 69 files.
+
+### Readings
+
+> Ledger for `v3.154`.
+
+| item | value |
+| --- | --- |
+| CI | **8 of 8 jobs success** -- run `45673244483` on `e2bf2db`, which is the run of the round *before* this one: a round cannot cite the run its own commit causes, and a row that guessed one would be a promise. It is replaced by this round's run in the commit that follows this one, which is the same two-step every round in this log has taken |
+| `core` test suite | **261 files, 7060 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **265 files, 7247 tests passed** (as of this commit) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: every line this round added is in `scripts/` |
+| new tests | **7,057 -> 7,060, +3**: the named-test argv and its escaping, the compile schedule, and the `atexit` backstop |
+| the pair, `backend-support` | **347.0 s -> 53.2 s** over 83 runs measured both ways on one tree, **83 of 83** verdicts identical |
+| the pair, `type-miss` | **269.1 s -> 150.8 s** on one tree, back to back; **114 -> 60** compiles |
+| the batteries, as run | `type-miss` **74 caught, 0 survived, 0 inert, 0 blind**, 147.7 s of child time in 151 s; `backend-support` **83 caught, 0 survived, 0 inert, 0 misattributed**, 53.0 s in 54 s |
+| mutation | **5 groups, 5 red cases, 0 survivors**, each measured on the green tree and restored to an identical `md5` |
+| the inventory | **146** sites, unmoved: both repairs are in `scripts/injection/`, which `derive-gate-sites` does not scan |

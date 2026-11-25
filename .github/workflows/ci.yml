@@ -1186,6 +1186,12 @@ jobs:
       # partition must move" is the whole point of the edit.
       # 530 s on run 41749989956, so twice is 1060 and the bound is 18 -- the same
       # arithmetic as every other bound here, applied to a measurement that had moved.
+      #
+      # 360 s on run 45673244483, and v3.154 found what it was: 114 compiles of a
+      # 260-file package for 57 measurements, because the restore compiled the committed
+      # rule back and the next injection overwrote it. The compile is now deferred to the
+      # first reader that needs the committed rule, which is 60 compiles -- measured on one
+      # tree, back to back, at 269 s before and 151 s after (finding 659).
       - name: Type-miss probe battery (no survivors, no inert, no blind mutations)
         timeout-minutes: 18
         run: python3 scripts/injection/type-miss-probe.py
@@ -1200,6 +1206,11 @@ jobs:
       # vocabulary exists for: the anchor had the wrong indentation, so nothing
       # was mutated, and a mutation that never applied is not evidence about
       # anything.
+      #
+      # 379 s on run 45673244483, for 83 claims that one named test goes red. Each was
+      # measured by running the whole file; v3.154 measured the same claims by asking for
+      # the named test, in a paired run on one tree where 83 of 83 verdicts agreed and the
+      # child time fell from 347.0 s to 53.2 s (finding 658).
       - name: Backend-support battery (no survivors, no inert, no misattributed mutations)
         timeout-minutes: 15
         run: python3 scripts/injection/backend-support.py

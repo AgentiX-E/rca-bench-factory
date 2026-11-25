@@ -76,6 +76,7 @@ before the layer above it is meaningful.
 | A bound covers the state the command was read in | v3.151 |
 | A table has one population, or the guard refuses the tree | v3.152 |
 | A battery charges each run to its claimant, and stops at the first red | v3.153 |
+| A run pays for the claim it makes, and the compile nobody read | v3.154 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -2980,3 +2981,29 @@ from an anecdote again.
 - **Falsified by** 4 mutations -- the flag removed, the flag given to the baseline, the per-claimant rows
   deleted, and every row charged the whole inventory's claim count -- **4** reds, no survivor, each measured on
   the green tree and restored byte for byte.
+
+### A run pays for the claim it makes, and the compile nobody read (v3.154)
+
+- **The instrument comes before the repair.** `batteries-heavy` was 761 s of a 771 s run and reported two
+  totals. Both batteries now print one row per claimant -- injections or runs, compiles paid, and the seconds
+  split between compiling and probing -- and a total that names its run count. The first reading says
+  compiling is **88%** of the `type-miss` battery's child time, which is the number the repair is about.
+- **A claim about one test is measured by running that test.** 83 rows, each claiming that a named test goes
+  red, were measured by running the whole file: **347.0 s** of child time. `--testNamePattern` measures the
+  same claim directly, and the paired run -- one tree, alternating, **83 of 83** verdicts identical -- costs
+  **53.2 s**.
+- **The escaping is load-bearing, and the test says why.** One of the 83 names contains `[timestamp, line]`,
+  which is a character class to the pattern compiler. The case asserts that the escaped pattern matches the
+  real name and the unescaped one does not, both measured on the name the table ships.
+- **A compile that the next injection overwrites is not a measurement.** 57 in-package injections compiled
+  the package twice; the restore compile is now deferred to the first reader that needs the committed rule,
+  and to `atexit` if no reader comes. **114 -> 60** compiles, **269.1 s -> 150.8 s** on one tree back to back.
+- **The deferral's three alternatives are refused on measurement or on a stated risk.** `--incremental`
+  (2.27 s -> 0.77 s) keys a file by mtime and size, and a size-preserving mutation restored inside one tick
+  would leave a `dist` that keeps it; mutating `dist` directly loses the compile check and doubles the table;
+  reordering the injections buys two compiles for a report ordered by cost.
+- **The backstop is a test, not a promise.** A child imports the battery, marks the package stale and exits
+  without flushing; the marker its patched compiler writes is what proves `atexit` is registered.
+- **Falsified by** 5 mutations -- the whole file asked for again, the name passed unescaped, the restore
+  compiled again, a reader left without the committed rule, and the backstop unregistered -- **5** reds, no
+  survivor, each measured on the green tree and restored byte for byte.

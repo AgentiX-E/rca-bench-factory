@@ -440,10 +440,10 @@ document that described it as downloading the data was describing an intention.
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 98 |
 | Source lines | 34,609 |
-| Test files | 260 core + 4 cli |
-| Test lines | 120,876 core + 3,242 cli |
-| Tests | 7,057 core + 187 cli |
-| Tracked files | 681 |
+| Test files | 261 core + 4 cli |
+| Test lines | 121,088 core + 3,242 cli |
+| Tests | 7,060 core + 187 cli |
+| Tracked files | 682 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.153: **50** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.154: **50** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1193,7 +1193,7 @@ and this table.
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
 | [volume-20.md](progress/volume-20.md) | 8 | v3.134 | v3.141 |
-| [volume-21.md](progress/volume-21.md) | 12 | v3.142 | v3.153 |
+| [volume-21.md](progress/volume-21.md) | 13 | v3.142 | v3.154 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

@@ -42,16 +42,33 @@ its four pairs in prose and reported four SURVIVED, which is the correct outcome
 for a battery testing half a pair -- the pairing was a claim in a comment rather
 than something the run established.
 
+## What a run costs, and why it is printed
+
+Every in-package injection compiles `packages/core` twice in the original design:
+once to install its mutation, and once in the `finally` to put the committed rule
+back -- and the next injection then overwrote that second compile with its own.
+The battery was 57 measurements a run and 114 compiles of a 260-file package, and
+it took 360 s on the runner to do it (finding 659). The restore compile is now
+deferred to the first reader that needs the committed rule, so the count is one
+per in-package injection plus one.
+
+The rows printed before the verdict are what makes that checkable rather than
+asserted: per claimant, the injections it holds, the compiles it paid for, and the
+seconds split between compiling and probing. Adding an injection to `derivation`
+now has a price on the page.
+
 Run: python3 scripts/injection/type-miss-probe.py
 Exit: 0 all caught, 1 otherwise
 """
 
 from __future__ import annotations
 
+import atexit
 import json
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -211,6 +228,55 @@ def build_core() -> None:
         raise AssertionError(f"the mutated rule did not compile: {proc.stdout[-400:]}")
 
 
+# Which source `dist` was last built from, when that source is not the committed
+# one. `None` means the compiled package reflects the committed tree.
+#
+# ## Why this exists at all
+#
+# Every in-package injection needs `dist` to reflect its mutation, so it must
+# compile; that build is the measurement and cannot be removed. What *can* be
+# removed is the second one: the restore path used to compile the committed source
+# back immediately after each injection's run, and the next injection then
+# overwrote that output with its own build. On the runner that was 114 compiles of
+# a 260-file package for 57 measurements, and the battery spent 360 s of a 379 s
+# step to produce them (finding 659).
+#
+# So the source is still restored immediately -- that is what the byte-for-byte
+# check at the bottom of `run_probe` reads -- and the *compile* is deferred to the
+# first reader that needs the committed rule: the next injection that edits only
+# the probe or the fixture, or `flush_dist` at the end of the battery. The number
+# of compiles becomes one per in-package injection plus one, and a reader can
+# still never observe a mutated package it did not ask for.
+_STALE_DIST: list[Path | None] = [None]
+
+# What the last `run_probe` paid, filled in by it and read by the rows the battery
+# prints at the end. A total is not a measurement (finding 657): an injection
+# added to the `derivation` target has to be answerable with what it costs, and
+# the two phases have different prices -- a compile is ~2.4 s and a probe is
+# ~0.15 s, so a battery that reports one number cannot say which of the two a new
+# injection is buying.
+LAST_COST: dict[str, float] = {"builds": 0.0, "build": 0.0, "probe": 0.0}
+
+
+def flush_dist() -> None:
+    """Compile the committed source if `dist` still reflects a mutation.
+
+    Registered with `atexit` as well as called explicitly, because the failure
+    this guards against is a mutated `dist` surviving the process: the source
+    restore is journalled by `_witnesses`, and the compiled output is not. A
+    `try/finally` around the injection loop would cover an exception; `atexit`
+    also covers `sys.exit` from a guard inside the loop, which is how a battery
+    that refuses to continue leaves the tree.
+    """
+    if _STALE_DIST[0] is None:
+        return
+    build_core()
+    _STALE_DIST[0] = None
+
+
+atexit.register(flush_dist)
+
+
 def _run_json_probe(script: Path) -> subprocess.CompletedProcess:
     """Run a probe with `--json` and capture its output **through a file**.
 
@@ -316,9 +382,25 @@ def run_probe(
             PROBE.write_text(mutation)
         if data is not None:
             FIXTURE.write_text(data)
+        LAST_COST.update({"builds": 0.0, "build": 0.0, "probe": 0.0})
         if target_edit is not None:
             target_path.write_text(target_edit)
+            started_build = time.monotonic()
             build_core()
+            LAST_COST["builds"] += 1
+            LAST_COST["build"] += time.monotonic() - started_build
+            _STALE_DIST[0] = target_path
+        elif _STALE_DIST[0] is not None:
+            # This injection reads the package as committed, and the last
+            # in-package injection left it compiled from a mutation. The source is
+            # already back -- `run_probe`'s own restore wrote it -- so the compile
+            # that was deferred then is paid here, once, before anything reads the
+            # package.
+            started_build = time.monotonic()
+            flush_dist()
+            LAST_COST["builds"] += 1
+            LAST_COST["build"] += time.monotonic() - started_build
+        started_probe = time.monotonic()
         proc = _run_json_probe(PROBE)
         # The category probe runs in the same try, over the same mutated tree, so
         # an injection into the classifier is measured on the classifier as it was
@@ -326,6 +408,7 @@ def run_probe(
         # report under `category`; the two probes observe different objects and the
         # keys keep them apart.
         cat_proc = _run_json_probe(CATEGORY_PROBE)
+        LAST_COST["probe"] += time.monotonic() - started_probe
     finally:
         # Restore in reverse order of mutation, and verify -- a `finally` that
         # writes without checking is a promise, not a guarantee. This matters most
@@ -337,21 +420,21 @@ def run_probe(
         FIXTURE.write_text(original_fixture)
         if target_edit is not None:
             assert original_target is not None
+            # The source is restored here and the *compile* is not paid here.
+            #
+            # Writing back a saved copy of `dist` was the first design and it is
+            # unsafe in a way that is invisible until it bites: the snapshot is
+            # taken at entry, so if `dist` was already stale or corrupt when the
+            # battery started -- which is exactly what the M-writing failure left
+            # behind -- every subsequent `run_probe` faithfully restores the
+            # corruption. The rule source is the authority and `dist` is derived,
+            # so the restore is a compile -- of the *committed* source, which is a
+            # pure function of the tree, and `_STALE_DIST` is what says whether
+            # that compile has been paid yet. `flush_dist` pays it at the next
+            # reader that needs the committed rule, and `atexit` at the latest.
+            # Compiling it here instead was the second half of this battery's
+            # build cost and measured nothing (finding 659).
             target_path.write_text(original_target)
-            # Rebuild rather than write back a saved copy of `dist`.
-            #
-            # Writing back `original_dist` was the first design and it is unsafe in
-            # a way that is invisible until it bites: the snapshot is taken at entry,
-            # so if `dist` was *already* stale or corrupt when the battery started --
-            # which is exactly what the M-writing failure left behind -- every
-            # subsequent `run_probe` faithfully restores the corruption. The probe
-            # then fails to parse, the battery reports a syntax error from
-            # `node_modules`-adjacent code, and nothing points at the restore.
-            #
-            # The rule source is the authority and `dist` is derived, so the restore
-            # is a compile. A build failure here is not swallowed: a battery that
-            # cannot leave the tree buildable has to say so.
-            build_core()
         for label, path, original in (
             ("probe", PROBE, original_probe),
             ("fixture", FIXTURE, original_fixture),
@@ -3082,6 +3165,11 @@ def assert_anchor_is_reachable(entries: list) -> None:
 
 
 def _measure() -> int:
+    started = time.monotonic()
+    # (claimant, injection, builds, build seconds, probe seconds) -- one row per
+    # injection, printed at the end. It is the same shape the sites battery prints
+    # per claimant (finding 657): a total cannot say which injection paid for it.
+    paid: list[tuple[str, str, float, float, float]] = []
     # Before anything is mutated: every entry must match a declared shape. The
     # positional reads below all have silent fallbacks, so a malformed entry is
     # not an error at the point it is misread -- it is a plausible report about
@@ -3103,6 +3191,11 @@ def _measure() -> int:
     }
 
     report = run_probe()
+    # What the unmutated run cost, kept apart from the rows below because it is not
+    # an injection: it is the control every requirement is read against. Printed in
+    # the total all the same, so the total is the sum of what the battery spent
+    # rather than the sum of most of it.
+    baseline_cost = (LAST_COST["builds"], LAST_COST["build"], LAST_COST["probe"])
     BASELINE.clear()
     BASELINE.update(report)
     # The classifier's baseline, captured from the same unmutated run. Every
@@ -3265,6 +3358,13 @@ def _measure() -> int:
         # and also removes the evidence that the battery reports it, so the default
         # is kept and every `'rule'` and `'fixture'` entry states itself.
         target = entry[5] if len(entry) > 5 else 'source'
+        # What this injection is charged to, read before the branch below reuses
+        # `target` for the *paired* edit's file. An in-package injection that also
+        # pairs a probe or fixture edit is still an injection into the package, and
+        # the row this battery prints has to say so -- the four non-package targets
+        # are charged nothing, which is the reading that makes the price of a new
+        # in-package injection visible.
+        claimant = target
 
         # Which block the blind check anchors on, declared by the entry with a seventh slot.
         #
@@ -3364,6 +3464,20 @@ def _measure() -> int:
             result = None
             crashed = True
 
+        # Charged whether or not the requirement held: a mutation that published
+        # nothing still paid for its compile and its probes, and a cost table that
+        # only counted the caught ones would understate the battery exactly when it
+        # matters most -- on a run that is red.
+        paid.append(
+            (
+                claimant,
+                name,
+                LAST_COST["builds"],
+                LAST_COST["build"],
+                LAST_COST["probe"],
+            )
+        )
+
         if crashed is not None:
             print(f"CAUGHT   {name}")
             print("         (the probe produced no report, so no classification was published)")
@@ -3416,6 +3530,12 @@ def _measure() -> int:
             )
             caught += 1
 
+    # The deferred compile, paid once. Everything above reads the package either
+    # through an injection's own build or through `run_probe`'s on-demand flush, so
+    # this is the last reader: it is what leaves `dist` reflecting the committed
+    # tree, and `atexit` is only the backstop for a run that never reaches here.
+    flush_dist()
+
     # Restore and verify every input byte-for-byte. A battery that leaves a mutated
     # file behind produces a green run and a broken repository, and the check has
     # to cover every input now: the in-package injections write into the *package*,
@@ -3431,6 +3551,39 @@ def _measure() -> int:
         for label, path in IN_PACKAGE_TARGETS.items()
     }
     restored = restored_probe and restored_fixture and all(restored_package.values())
+
+    # What the injections cost, per claimant, before the verdict.
+    #
+    # Two phases, priced apart: a compile is ~2.4 s and the pair of probes is
+    # ~0.2 s, so an injection's cost is almost entirely whether it lands in the
+    # package. A single total would hide the only decision a reader of this table
+    # can make -- whether to add an injection to `derivation` or to `source`.
+    by_claimant: dict[str, dict[str, float]] = {}
+    for claimant, _name, builds, build_s, probe_s in paid:
+        row = by_claimant.setdefault(
+            claimant, {"injections": 0.0, "builds": 0.0, "build": 0.0, "probe": 0.0}
+        )
+        row["injections"] += 1
+        row["builds"] += builds
+        row["build"] += build_s
+        row["probe"] += probe_s
+
+    for claimant in sorted(by_claimant, key=lambda c: -(by_claimant[c]["build"] + by_claimant[c]["probe"])):
+        row = by_claimant[claimant]
+        print(
+            f"type-miss-probe: {claimant} -- {int(row['injections'])} injection(s), "
+            f"{int(row['builds'])} build(s), {row['build'] + row['probe']:.1f} s "
+            f"({row['build']:.1f} s compiling, {row['probe']:.1f} s probing)"
+        )
+    child = sum(row["build"] + row["probe"] for row in by_claimant.values())
+    builds = int(sum(row["builds"] for row in by_claimant.values()))
+    wall = time.monotonic() - started
+    print(
+        f"type-miss-probe: {len(paid)} injection(s) cost {child:.1f} s of child time inside "
+        f"{wall:.0f} s of wall clock, {builds} build(s) and {2 * len(paid)} probe run(s); "
+        f"the unmutated baseline cost {sum(baseline_cost[1:]):.1f} s more"
+        f" ({int(baseline_cost[0])} build(s), 2 probe run(s))"
+    )
 
     print(f"\nbattery: {caught} caught, {survived} survived, {inert} inert, {blind} blind")
     if restored:

@@ -25,12 +25,30 @@ Outcomes, the vocabulary the batteries in this repository share:
 
   - CAUGHT        the mutation made the named test fail. The assertion is
                   load-bearing.
-  - SURVIVED      the file stayed green. The test does not test what its name says.
+  - SURVIVED      the run stayed green. The test does not test what its name says.
   - INERT         the anchor did not match, so nothing was mutated.
-  - MISATTRIBUTED the file went red but not on the named test, which is how a
-                  crash gets credited as a proof (finding 152).
+  - MISATTRIBUTED the run went red for something other than the named test -- a
+                  module that no longer collects, or a name that matches no test
+                  at all -- which is how a crash gets credited as a proof
+                  (finding 152).
   - TIMEOUT       the run exceeded the bound. Kept apart from SURVIVED because
                   the two call for opposite repairs.
+
+## Why each run asks for one test by name
+
+The claim this battery makes is per row: *this* mutation makes *this* named test
+fail. It used to measure that by running the whole file and looking for the name
+in the output, which is a superset -- 83 whole-file runs, each of them the file's
+every test, and 379 s on the runner for a claim about one test per run.
+
+`--testNamePattern` is the same claim measured directly, and it is not a weaker
+instrument: the verdict still requires a non-zero exit *and* the name in the
+output, so a run that collects nothing and a run whose test passes stay
+distinguishable. What it no longer observes is the case "a different test went
+red" -- that verdict used to read MISATTRIBUTED and now reads SURVIVED, because
+the named test really did not catch the mutation, which is what the row claims.
+The trade was measured before it was taken: all 83 rows were run both ways on one
+tree and every verdict agreed (finding 658).
 
 Run: python3 scripts/injection/backend-support.py
 Exit: 0 all caught, 1 otherwise
@@ -123,9 +141,20 @@ def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def run_tests(test_file: str) -> tuple[int, str]:
+def run_tests(test_file: str, expected: str) -> tuple[int, str]:
+    """Run the one test the row names, and nothing else in the file.
+
+    `re.escape` is not decoration: `--testNamePattern` is compiled as a regular
+    expression, and one of the names in `MUTATIONS` is
+    `quarantines a line that is not a [timestamp, line] pair, ...`, where
+    `[timestamp, line]` would otherwise be a character class and the pattern
+    would match a name that does not exist. That is an escaping defect that reads
+    as a battery defect -- the row would report MISATTRIBUTED for a mutation that
+    was caught perfectly well -- so it is done here, once, rather than at the
+    call sites.
+    """
     proc = subprocess.run(
-        [*VITEST, test_file],
+        [*VITEST, test_file, "--testNamePattern", re.escape(expected)],
         cwd=REPO,
         capture_output=True,
         text=True,
@@ -899,24 +928,33 @@ def _measure() -> int:
     originals = {path: (REPO / path).read_text() for path in subjects}
     digests = {path: digest(REPO / path) for path in subjects}
 
-    results: list[tuple[str, str, str]] = []
+    results: list[tuple[str, str, str, str, float | None]] = []
     try:
         for name, target, anchor, replacement, test_file, expected in MUTATIONS:
             path = REPO / target
             try:
                 mutated = rename(originals[target], anchor, replacement)
             except AssertionError as exc:
-                results.append((name, "INERT", str(exc)))
+                results.append((name, "INERT", str(exc), test_file, None))
                 continue
 
             path.write_text(mutated)
+            # The child's own seconds, measured around the child and nothing else.
+            # The wall clock of the step is also printed, at the end, and the two
+            # differ by this process's own work: a run whose cost is reported as a
+            # share of the step cannot say which injection paid for it, which is
+            # the arithmetic finding 657 refused one battery over.
+            run_started = time.monotonic()
             try:
-                code, out = run_tests(test_file)
+                code, out = run_tests(test_file, expected)
             except subprocess.TimeoutExpired:
-                results.append((name, "TIMEOUT", f">{PER_INJECTION_TIMEOUT_S}s"))
+                results.append(
+                    (name, "TIMEOUT", f">{PER_INJECTION_TIMEOUT_S}s", test_file, None)
+                )
                 continue
             finally:
                 path.write_text(originals[target])
+            elapsed = time.monotonic() - run_started
 
             # Read back rather than trust the `finally`: one of these subjects is
             # the guard a later CI step executes, and a restore that did not land
@@ -935,7 +973,7 @@ def _measure() -> int:
                 verdict = "CAUGHT"
             else:
                 verdict = "MISATTRIBUTED"
-            results.append((name, verdict, expected))
+            results.append((name, verdict, expected, test_file, elapsed))
     finally:
         for path_name, text in originals.items():
             (REPO / path_name).write_text(text)
@@ -947,12 +985,13 @@ def _measure() -> int:
             print(f"{path_name} is not back to its committed bytes; do not trust this run")
             return 2
 
-    width = max(len(name) for name, _, _ in results)
+    width = max(len(name) for name, *_ in results)
     caught = survived = inert = misattributed = 0
     failed = False
-    for name, verdict, detail in results:
+    for name, verdict, detail, _file, seconds in results:
         marker = "ok  " if verdict == "CAUGHT" else "FAIL"
-        print(f"{marker}  {name.ljust(width)}  {verdict:14}  {detail[:64]}")
+        cost = f"{seconds:6.1f}s" if seconds is not None else "       "
+        print(f"{marker}  {name.ljust(width)}  {verdict:14}  {cost}  {detail[:64]}")
         if verdict == "CAUGHT":
             caught += 1
             continue
@@ -963,6 +1002,43 @@ def _measure() -> int:
         survived += 1 if verdict == "SURVIVED" else 0
         inert += 1 if verdict == "INERT" else 0
         misattributed += 1 if verdict == "MISATTRIBUTED" else 0
+
+    # What the runs cost, per claimant, before the verdict line.
+    #
+    # The verdict line has always carried one number -- the step's wall clock --
+    # and a total cannot be divided after the fact (finding 657). A row that adds
+    # an injection to `clickhouse.test.ts` could therefore not be priced. These
+    # rows are the measurement that prices it: one per test file, the runs it paid
+    # for, and the slowest single run, so the spread inside a claimant is visible
+    # too rather than averaged away.
+    paid: dict[str, dict[str, float]] = {}
+    for _name, _verdict, _detail, file, seconds in results:
+        if seconds is None:
+            continue
+        row = paid.setdefault(file, {"runs": 0.0, "s": 0.0, "slowest": 0.0})
+        row["runs"] += 1
+        row["s"] += seconds
+        row["slowest"] = max(row["slowest"], seconds)
+
+    for file in sorted(paid, key=lambda f: -paid[f]["s"]):
+        row = paid[file]
+        print(
+            f"backend-support: {file} -- {int(row['runs'])} run(s), "
+            f"{row['s']:.1f} s (slowest {row['slowest']:.1f} s)"
+        )
+    child = sum(row["s"] for row in paid.values())
+    runs = int(sum(row["runs"] for row in paid.values()))
+    wall = time.monotonic() - started
+    dearest = max(paid, key=lambda f: paid[f]["s"]) if paid else None
+    print(
+        f"backend-support: {runs} run(s) cost {child:.1f} s of child time inside "
+        f"{wall:.0f} s of wall clock"
+        + (
+            f"; the dearest claimant is {dearest} at {100 * paid[dearest]['s'] / child:.0f}% of that"
+            if dearest is not None and child > 0
+            else ""
+        )
+    )
 
     print(
         f"\nbackend-support: {caught} caught, {survived} survived, {inert} inert, "

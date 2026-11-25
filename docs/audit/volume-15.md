@@ -1,7 +1,7 @@
 # Audit · volume 15
 
-Findings 651–657, from the rounds recorded in `progress/volume-20.md` as `v3.148`, `v3.149` and `v3.150`, and
-in `progress/volume-21.md` as `v3.151`, `v3.152` and `v3.153`.
+Findings 651–659, from the rounds recorded in `progress/volume-20.md` as `v3.148`, `v3.149` and `v3.150`, and
+in `progress/volume-21.md` as `v3.151`, `v3.152`, `v3.153` and `v3.154`.
 
 ## Finding 651 — an action is identified by the action, not by the name of the step that uses it
 
@@ -540,3 +540,84 @@ is the arithmetic this campaign exists to remove. The table above is the third a
 were retaken and the inventory re-derived -- and `prometheus` had to be installed first, because
 `reader-against-backend` refuses to run without it and the first "green" shard was green over 33 of 34
 claimants.
+
+## Finding 658 — a whole-file run is a superset of the claim it is run for
+
+`backend-support` holds 83 rows, and each row is a claim of one shape: *this mutation makes this named test
+fail*. The battery measured each one by running the whole file the test lives in and looking for the name in
+the output. On the runner the step cost **379 s**, and on the box this finding was measured on the 83 runs
+cost **347.0 s** of child time -- for 83 sentences about a single test each.
+
+**The claim, asked directly.** `--testNamePattern` runs the one test the row names. It is not a weaker
+instrument, and the argument is the verdict rather than the seconds: the battery calls a row CAUGHT only when
+the run exits non-zero **and** the expected name appears in its output, so a run that collects nothing and a
+run whose named test passed stay distinguishable. What the instrument loses is one diagnosis -- "a different
+test went red" -- which used to be reported MISATTRIBUTED and is now SURVIVED, because the named test really
+did not catch the mutation. That is the row's claim stated truthfully, and the vocabulary entry was rewritten
+rather than left to describe a branch that can no longer be reached.
+
+**The pair.** One tree, one box, the same process, alternating the two forms row by row -- so no number here is
+read across two afternoons:
+
+| | whole file | named test |
+| --- | --- | --- |
+| 83 runs, child time | 347.0 s | **53.2 s** |
+| verdicts that agreed | 83 | 83 |
+
+**The escaping that is load-bearing rather than tidy.** `--testNamePattern` compiles its argument as a regular
+expression, and one of the 83 names is `quarantines a line that is not a [timestamp, line] pair, naming what the
+extra element would be`. Unescaped, `[timestamp, line]` is a character class, so the pattern requires a single
+character from that set where the name has eleven, and matches no test at all -- the mutation would be caught
+perfectly well and the row would report MISATTRIBUTED, a battery blaming its suite for an escaping defect. The
+test asserts both directions on the shipped name: the escaped pattern matches it, the raw one does not.
+
+**What was not done.** The file filter is kept (`test/clickhouse.test.ts` is still one argument), because a
+suite-wide run would answer a different question; and the table still names the file as well as the test, which
+is what `--verify-expectations` reconciles against. The repair removes a superset, not the subject.
+
+## Finding 659 — the restore compiled the package, and the next injection overwrote it
+
+`type-miss-probe` mutates `packages/core` for 57 of its 74 injections and must compile the package for each,
+because the probe reads `dist` and a mutation that does not compile would run the previous build. That compile
+is the measurement. The second one was not: the `finally` put the committed source back and compiled it, and the
+next injection's own build then wrote its output over the same `dist`. **114 compiles of a 260-file package for
+57 measurements**, and the step cost **360 s** on the runner.
+
+**The instrument first, because the totals could not be divided** (finding 657). One row per claimant -- the
+file an injection edits -- with the injections it holds, the compiles it paid for, and the seconds split:
+
+```
+type-miss-probe: derivation -- 17 injection(s), 17 build(s), 41.4 s (38.6 s compiling, 2.8 s probing)
+type-miss-probe: scorer -- 6 injection(s), 6 build(s), 14.8 s (13.8 s compiling, 1.0 s probing)
+type-miss-probe: 74 injection(s) cost 147.7 s of child time inside 151 s of wall clock, 60 build(s) and
+  148 probe run(s); the unmutated baseline cost 0.3 s more (0 build(s), 2 probe run(s))
+```
+
+Compiling is **88%** of the child time, which is the fact the repair needed and the reason the probes are not
+worth a second thought: a probe is 0.15 s and a compile is 2.3 s.
+
+**The repair.** The source is still restored immediately -- that is what the byte-for-byte check at the bottom
+of `run_probe` reads -- and the *compile* is deferred to the first reader that needs the committed rule. There
+are exactly two such readers: an injection that edits only the probe or the fixture, and the end of the battery.
+`_STALE_DIST` records that `dist` currently reflects a mutation; `flush_dist` is the only thing that compiles it
+back, and it is also registered with `atexit`, so a run that never reaches the end still leaves a package that
+reflects the tree. The restore check reads *source*, so what it asserts is unaffected by the deferral; what
+changes is when the derived artefact catches up.
+
+| | before | after |
+| --- | --- | --- |
+| compiles | 114 | **60** |
+| wall clock, one tree, back to back | 269.1 s | **150.8 s** |
+| verdicts | 74 caught, 0 survived, 0 inert, 0 blind | the same |
+
+The 60 is arithmetic rather than a coincidence: 57 in-package injections, two probe-only injections that follow
+one of them and therefore pay a restore compile, and the final flush.
+
+**Three alternatives, and why the second-best one lost.** `--incremental` was measured at **0.77 s** against
+2.27 s -- three times this round's saving -- and refused, because tsc keys a file by modification time and size
+and the deferral exists to compile a file that was just written twice: a size-preserving mutation restored
+inside one tick would be read as unchanged, and a `dist` that keeps a mutation is the worst state this battery
+can leave, since `_witnesses` journals the source and not the build output. Mutating `dist` directly would
+remove every compile and double the table into emitted JavaScript while losing the compile check. Reordering
+the injections so the in-package ones are contiguous buys two compiles for a report whose order is chosen by
+cost.
