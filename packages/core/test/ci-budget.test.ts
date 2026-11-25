@@ -128,6 +128,16 @@ function inherited(
 }
 
 /**
+ * A step that uses an action, and so has no command of its own (`O-132`).
+ *
+ * The reference defaults to today's `actions/checkout@v4`; the cases that are about an action's
+ * version pass another, because the version is the half of the identity a name cannot see.
+ */
+function usesOf(name: string, ref = 'actions/checkout@v4'): string[] {
+  return [`      - name: ${name}`, `        uses: ${ref}`];
+}
+
+/**
  * A recording, keyed by job id, as `measure-ci-baseline.mjs` writes it.
  *
  * The seconds are given per job because that is the unit the rules work in: a bound is
@@ -3237,6 +3247,196 @@ describe('a number beside the command that spent it', () => {
     expect(result.out.status).toBe(0);
     expect(result.out.stdout).toContain('ran a different command that day (`node scripts/old-battery.mjs`)');
     expect(result.out.stdout).not.toContain('bound in force that day');
+  });
+
+  it('holds the tree on disk to the version of the action the run used', async () => {
+    // `O-132` reaches the recorder as well. An upgrade of an action moves the program without moving
+    // the step's name or its line in the file, so a recording taken after the upgrade would write
+    // `actions/checkout@v4` beside seconds a `@v3` spent -- the same mistake as writing another
+    // command's seconds, with the version doing the hiding. Nothing else in this repository can see it:
+    // the step keeps its name, its position, and its inputs.
+    const atV4 = workflowText([
+      { id: 'batteries', minutes: 25, steps: [...usesOf('Check out', 'actions/checkout@v4'), ...step('Slow battery', 12)] },
+    ]);
+    const atV3 = workflowText([
+      { id: 'batteries', minutes: 25, steps: [...usesOf('Check out', 'actions/checkout@v3'), ...step('Slow battery', 12)] },
+    ]);
+    const result = await record(['7'], ran({ seconds: 49, conclusion: 'success' }), atV4, atV3);
+    expect(result.out.status).toBe(1);
+    expect(result.out.stderr).toContain(
+      '`batteries / Check out` runs `uses:actions/checkout@v3` on disk and ran `uses:actions/checkout@v4` ' +
+        'in the tree this run used (deadbee)',
+    );
+    // Nothing is written, for the reason every refusal here writes nothing: a half-written pair is the
+    // state the two-files-disagree rule exists to refuse.
+    expect(result.recording).toBe(false);
+    expect(result.history).toBeNull();
+  });
+});
+
+/**
+ * The rows an earlier recorder wrote under a step name (`O-132`, the history's half).
+ *
+ * The identity changed under rows that already exist, so the history has to be given what it was
+ * missing. The document that can say which action a row ran is the workflow at the row's own commit,
+ * which is the same document every other question here is answered from -- so the rewrite is a
+ * derivation rather than a number somebody typed, and a row that disagrees with its own commit is
+ * refused rather than repaired.
+ *
+ * The shipped history holds 994 such rows over 40 readings on 39 trees, and every one of them ran
+ * the action today's tree states. That is why the mode exists at all: 994 rows are 994 numbers whose
+ * series would otherwise start again on the day the identity changed.
+ */
+describe('the history, given the action each row spent its seconds on', () => {
+  const TODAY = workflowText([
+    { id: 'batteries', minutes: 25, steps: [...usesOf('Check out', 'actions/checkout@v4'), ...step('Slow battery', 12)] },
+  ]);
+  const COMMIT = 'a'.repeat(40);
+
+  /** A history as the recorder writes it, with one row per step of the fixture. */
+  const historyWith = (steps: Record<string, { seconds: number; command: string }>) => ({
+    readings: [{ run: 45518129185, attempt: 1, commit: COMMIT, measured: '2026-11-20', jobs: { batteries: steps } }],
+  });
+
+  /**
+   * Run the mode over one history file, and hand back the bytes before and after.
+   *
+   * The workflow on disk is deliberately unreadable: this mode is about the history and the commits it
+   * names, and a tree that does not parse is a tree it does not need. A mode that read the disk would be
+   * answering "what does today run" to a question about "what did that day run".
+   */
+  const relabel = (file: string | ReturnType<typeof historyWith>, atCommit = TODAY) =>
+    withApi(
+      (url) =>
+        url.includes('/contents/.github/workflows/ci.yml')
+          ? { status: 200, body: { content: Buffer.from(atCommit, 'utf8').toString('base64'), encoding: 'base64' } }
+          : null,
+      async (env) => {
+        const path = env['RCA_CI_READINGS'] as string;
+        writeFileSync(path, typeof file === 'string' ? file : `${JSON.stringify(file, null, 2)}\n`);
+        const before = readFileSync(path, 'utf8');
+        const out = await runRecorder(['--relabel-actions'], env);
+        return { out, before, after: readFileSync(path, 'utf8') };
+      },
+      'not a workflow: [',
+    );
+
+  it('gives a row that names its step the action that step ran, and leaves the commands alone', async () => {
+    const result = await relabel(
+      historyWith({
+        'Check out': { seconds: 2, command: 'step:Check out' },
+        'Slow battery': { seconds: 49, command: 'node scripts/inject-slow-battery.mjs' },
+      }),
+    );
+    expect(result.out.stderr).toBe('');
+    expect(result.out.status).toBe(0);
+    // The population is printed, because "1" without "2" is a number a reader cannot check: the two rows
+    // and the one tree are what say the mode read the whole reading.
+    expect(result.out.stdout).toContain('1 of 2 row(s) across 1 reading(s) named a step where the tree runs an action');
+    expect(result.out.stdout).toContain('1 tree(s) were read to say which action, and the history now names it');
+    const written = JSON.parse(result.after);
+    expect(written.readings[0].jobs.batteries['Check out']).toEqual({
+      seconds: 2,
+      command: 'uses:actions/checkout@v4',
+    });
+    // A `run:` step's row already carried the command its commit states (v3.147 measured that over the
+    // whole population), so the mode may not touch it.
+    expect(written.readings[0].jobs.batteries['Slow battery']).toEqual({
+      seconds: 49,
+      command: 'node scripts/inject-slow-battery.mjs',
+    });
+  });
+
+  it('writes nothing when every row already names its action, so a second run is not a diff', async () => {
+    // Idempotence is not a nicety here: the mode is run against a file in git, and a run that rewrote the
+    // same content in another layout would leave a commit whose only subject is whitespace. The fixture is
+    // therefore written **compact**, which is not how the mode writes: a case that handed it the mode's own
+    // layout could not tell "left alone" from "rewritten identically", and the mutation that always writes
+    // survived this case until it was written this way.
+    const already = historyWith({ 'Check out': { seconds: 2, command: 'uses:actions/checkout@v4' } });
+    const result = await relabel(JSON.stringify(already));
+    expect(result.out.status).toBe(0);
+    expect(result.out.stdout).toContain('0 of 1 row(s) across 1 reading(s)');
+    expect(result.out.stdout).toContain('the history already says it');
+    expect(result.after).toBe(result.before);
+  });
+
+  it('refuses a row the workflow of its own commit cannot place', async () => {
+    // A row naming a step that commit does not have is a row from another tree: the reading records one
+    // commit and the row describes another, and no document here can say what it ran.
+    const result = await relabel(historyWith({ 'Set up Node.js': { seconds: 1, command: 'step:Set up Node.js' } }));
+    expect(result.out.status).toBe(1);
+    expect(result.out.stderr).toContain(
+      '`batteries / Set up Node.js` of run 45518129185 names no step of the workflow at aaaaaaa',
+    );
+    expect(result.out.stderr).toContain('the history and the tree it names disagree');
+    expect(result.after).toBe(result.before);
+  });
+
+  it('refuses a row that carries a command its own commit does not state', async () => {
+    // Two shapes, one act. The first names another version of the action -- the upgrade the identity now
+    // makes visible. The second names a step where that commit runs a command, which no recorder in this
+    // tree ever wrote: both say the file was edited, and neither is a name the commit can turn into a
+    // command.
+    const anotherAction = await relabel(
+      historyWith({ 'Check out': { seconds: 2, command: 'uses:actions/checkout@v3' } }),
+    );
+    expect(anotherAction.out.status).toBe(1);
+    expect(anotherAction.out.stderr).toContain(
+      '`batteries / Check out` of run 45518129185 carries `uses:actions/checkout@v3` and the workflow at ' +
+        'aaaaaaa says the step ran `uses:actions/checkout@v4`',
+    );
+    expect(anotherAction.after).toBe(anotherAction.before);
+
+    const nameOverACommand = await relabel(
+      historyWith({ 'Slow battery': { seconds: 49, command: 'step:Slow battery' } }),
+    );
+    expect(nameOverACommand.out.status).toBe(1);
+    expect(nameOverACommand.out.stderr).toContain('only a row that names a step whose commit runs an action');
+    expect(nameOverACommand.after).toBe(nameOverACommand.before);
+  });
+
+  it('refuses a history it cannot parse, and one with no reading in it', async () => {
+    const broken = await relabel('{ not json');
+    expect(broken.out.status).toBe(1);
+    expect(broken.out.stderr).toContain('cannot be parsed');
+    expect(broken.out.stderr).toContain('restoring it is the act that makes the question answerable again');
+    expect(broken.after).toBe('{ not json');
+
+    const empty = await relabel({ readings: [] });
+    expect(empty.out.status).toBe(1);
+    expect(empty.out.stderr).toContain('hold no reading');
+  });
+
+  it('refuses a commit whose workflow cannot be read, naming the run that records it', async () => {
+    // A tree this reader cannot parse is a tree whose rows cannot be given their action, and the run id is
+    // the coordinate a person needs: the same commit may be in several readings, and "a tree under a
+    // reading" is not a place anybody can go and look.
+    const unreadable = await relabel(historyWith({ 'Check out': { seconds: 2, command: 'step:Check out' } }), 'jobs: [');
+    expect(unreadable.out.status).toBe(1);
+    expect(unreadable.out.stderr).toContain('run 45518129185 records the tree at aaaaaaa, and the workflow there cannot be read');
+    expect(unreadable.out.stderr).toContain('leaves its rows exactly as they are');
+    expect(unreadable.after).toBe(unreadable.before);
+  });
+
+  it('refuses to be given a measurement, because it measures nothing', async () => {
+    // The flag names no run. A caller who passes one believes it selects a run, and a mode that ignored it
+    // would answer a question nobody asked -- the shape of a rule that passes for a reason it cannot see.
+    // The file is a valid history, so the refusal is the parser's and not the reader's.
+    const withRun = await withApi(
+      () => null,
+      async (env) => {
+        const path = env['RCA_CI_READINGS'] as string;
+        writeFileSync(path, `${JSON.stringify(historyWith({ 'Check out': { seconds: 2, command: 'step:Check out' } }), null, 2)}\n`);
+        const before = readFileSync(path, 'utf8');
+        const out = await runRecorder(['45518129185', '--relabel-actions'], env);
+        return { out, before, after: readFileSync(path, 'utf8') };
+      },
+      TODAY,
+    );
+    expect(withRun.out.status).toBe(1);
+    expect(withRun.out.stderr).toContain('takes no run id, no --attempt, no --borrow and no --seed');
+    expect(withRun.after).toBe(withRun.before);
   });
 });
 

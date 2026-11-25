@@ -368,7 +368,13 @@ describe('the two baskets are a partition of the calls, not a remainder', { time
     // index beneath the lead is compared line by line with the headings it projects. One exit,
     // one site: the clause rules and the index comparison return sentences, and `fail()` is the
     // only place the verdict is spent -- the shape v3.98 and v3.99 established.
-    expect(calls).toBe(165);
+    // 166/146 is v3.148's, and the pair moves apart for the first time in eleven rounds: the mode that
+    // rewrites the history ends on `process.exit(0)`, which is a **call** and not a site -- the predicate
+    // is "an argument that is not a known zero", so a success exit joins `excluded.zero` (19 -> 20) and
+    // leaves the inventory at 146. A round that moved both would have had to add a refusal, and this one
+    // did: the usage check that used to be one call is now one call with a second clause, which is why
+    // the pair is not a line through the origin.
+    expect(calls).toBe(166);
     expect(sites).toBe(146);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.

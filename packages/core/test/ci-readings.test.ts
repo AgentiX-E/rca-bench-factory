@@ -9,6 +9,7 @@ import {
   MULTIPLE,
   budgetErrors,
   budgetSummary,
+  commandOf,
   jobsOf,
   mergeReading,
   readReadings,
@@ -84,8 +85,8 @@ function step(name: string, minutes: number, command?: string): string[] {
 }
 
 /** A step that uses an action, and so has no command of its own. */
-function action(name: string, minutes: number): string[] {
-  return [`      - name: ${name}`, `        timeout-minutes: ${String(minutes)}`, '        uses: actions/checkout@v4'];
+function action(name: string, minutes: number, ref = 'actions/checkout@v4'): string[] {
+  return [`      - name: ${name}`, `        timeout-minutes: ${String(minutes)}`, `        uses: ${ref}`];
 }
 
 /** A recording of one workflow, as `measure-ci-baseline.mjs` writes it. */
@@ -145,8 +146,9 @@ function historyOfRecording(
     for (const one of stepsOf(workflow, job.id)) {
       const seconds = (record as { steps: Record<string, number> }).steps[one.name];
       if (typeof seconds !== 'number') continue;
-      const command = typeof one.run === 'string' ? one.run : `step:${one.name}`;
-      jobs[job.id][one.name] = [seconds, command];
+      // The identity the recorder writes, by the same function: a fixture that spelled it out would be a
+      // second answer to the question of what a step's command is, and the two would drift.
+      jobs[job.id][one.name] = [seconds, commandOf(one)];
     }
   }
   return historyOf([[recording.run, jobs]]);
@@ -441,10 +443,13 @@ describe('a bound is divided by the slowest reading of the command it bounds', (
     expect(errors[0]).toContain('is bounded at 3 min and measured 120 s');
   });
 
-  it('groups a step that uses an action by its name, because the action is what costs', () => {
-    // An action has no `run:` to key on, and `Set up Node.js` in two jobs is one download
-    // and one extraction. Its name is the only handle the workflow gives, and the rule
-    // uses it rather than treating every action step as its own series.
+  it('groups a step that uses an action by the action, because the action is what costs', () => {
+    // An action has no `run:` to key on, and `Set up Node.js` in two jobs is one download and one
+    // extraction. Until v3.148 the handle was the step's **name**, which answered the two-jobs question
+    // correctly and the version question wrongly: `actions/checkout@v3` and `@v4` were one command under
+    // a name, so an upgrade moved the program without moving the identity (`O-132`). The series is the
+    // action now, and this case still passes for the reason it was written -- two jobs, one action, one
+    // series -- with the name no longer doing the work.
     const workflow = workflowOf([
       // 31 minutes, because `R13` holds a ceiling to the bounds inside it and a 30-minute
       // bound needs 31 -- the two jobs are here for `R10`'s keying, and a fixture that also
@@ -462,8 +467,8 @@ describe('a bound is divided by the slowest reading of the command it bounds', (
       [
         900,
         {
-          batteries: { 'Check out': [2, 'node scripts/check-out-a.mjs'], 'Set up Node.js': [1, 'step:Set up Node.js'] },
-          artefacts: { 'Check out': [2, 'node scripts/check-out-b.mjs'], 'Set up Node.js': [120, 'step:Set up Node.js'] },
+          batteries: { 'Check out': [2, 'node scripts/check-out-a.mjs'], 'Set up Node.js': [1, 'uses:actions/checkout@v4'] },
+          artefacts: { 'Check out': [2, 'node scripts/check-out-b.mjs'], 'Set up Node.js': [120, 'uses:actions/checkout@v4'] },
         },
       ],
     ]);
@@ -481,6 +486,74 @@ describe('a bound is divided by the slowest reading of the command it bounds', (
     // 720 s against 350 s is 2.06x: the tightest legal bound, and legal.
     expect(budgetErrors(workflow, recording, null, null, history)).toEqual([]);
     expect(MULTIPLE).toBe(2);
+  });
+});
+
+describe('an action is identified by the action, not by the name of the step that uses it', () => {
+  /**
+   * `O-132`, and the second half of `v3.147`'s question.
+   *
+   * A reading is a number beside the command that spent it. For a step with a `run:`, the command is
+   * the text and the history has carried it since `R10` was written. For a step with a `uses:`, the
+   * handle was the step's **name** -- so `actions/checkout@v3` and `actions/checkout@v4`, two
+   * programs, were one command, and the readings of the old one went on sizing the new one. The name
+   * is the label; the action and its version are what ran.
+   *
+   * The shipped history holds **994** such rows over 40 readings, and every one of them ran the
+   * action today's tree states -- measured by fetching the workflow at each row's commit. So the
+   * defect was latent rather than live: no bound in this tree divides by an action's series (the
+   * action steps are the prefix, and a prefix step may not carry a bound), and no action in the
+   * history has ever been upgraded. `v3.146` made the same distinction about `failure` steps, and for
+   * the same reason: a rule that is only ever right because nothing has moved is a rule nobody has
+   * seen work.
+   */
+  it('keys a `uses:` step by the action and the version of it that ran', () => {
+    const workflow = oneJob([...action('Set up Node.js', 3)]);
+    const [first] = stepsOf(workflow, 'batteries');
+    expect(first?.uses).toBe('actions/checkout@v4');
+    expect(commandOf(first)).toBe('uses:actions/checkout@v4');
+  });
+
+  it('holds two versions of one action as two series, so an older day does not size a newer bound', () => {
+    const rows = readReadings(
+      historyOf([
+        [10, { batteries: { 'Check out': [500, 'uses:actions/checkout@v3'] } }],
+        [11, { batteries: { 'Check out': [20, 'uses:actions/checkout@v4'] } }],
+      ]),
+    ).rows;
+    expect(worstReadingFor(rows, 'uses:actions/checkout@v4')?.seconds).toBe(20);
+    expect(worstReadingFor(rows, 'uses:actions/checkout@v3')?.seconds).toBe(500);
+  });
+
+  it('keeps a series through a rename, because a name is a label and the action is what ran', () => {
+    // The other direction of the same identity, and the one the name-keyed version got wrong in a way
+    // nobody could see: a step renamed between two days lost its history, and `R10` then divided by the
+    // newest day alone -- the sample of one the rule exists to remove.
+    expect(commandOf({ name: 'Check out the tree', uses: 'actions/checkout@v4' })).toBe(
+      commandOf({ name: 'Check out', uses: 'actions/checkout@v4' }),
+    );
+    // A step with neither a `run:` nor a `uses:` is not a step the workflow reader accepts, and the
+    // identity still has to be a string rather than `undefined`: the fallback is the name.
+    expect(commandOf({ name: 'Mystery' })).toBe('step:Mystery');
+  });
+
+  it('stops the shared prefix where two jobs run two versions of one action', () => {
+    // The prefix rule says "the same thing in the same position", and its docstring has said "name and
+    // command both" since it was written -- while comparing the name and an empty string for every
+    // action step, which is the one kind of step a workflow writes most often. Two versions of one
+    // action are two things, so the shared run of setup steps ends at the one that differs.
+    const checkedOut = (ref: string) => ['      - name: Check out', `        uses: ${ref}`];
+    const same = workflowOf([
+      { id: 'batteries', minutes: 30, steps: [...checkedOut('actions/checkout@v4'), ...step('Slow battery', 3)] },
+      { id: 'artefacts', minutes: 30, steps: [...checkedOut('actions/checkout@v4'), ...step('Slow battery', 3)] },
+    ]);
+    expect(stepsOf(same, 'batteries')[0]?.inPrefix).toBe(true);
+    const split = workflowOf([
+      { id: 'batteries', minutes: 30, steps: [...checkedOut('actions/checkout@v4'), ...step('Slow battery', 3)] },
+      { id: 'artefacts', minutes: 30, steps: [...checkedOut('actions/checkout@v3'), ...step('Slow battery', 3)] },
+    ]);
+    expect(stepsOf(split, 'batteries')[0]?.inPrefix).toBe(false);
+    expect(stepsOf(split, 'artefacts')[0]?.inPrefix).toBe(false);
   });
 });
 

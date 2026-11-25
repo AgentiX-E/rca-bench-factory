@@ -330,7 +330,12 @@ describe('the four baskets are a partition of the throws, not a remainder', { ti
     // 110 is v3.147's one (`O-131`): a recording whose tree on disk is not the tree the run used. The
     // two refusals v3.146 added are still two -- their sentences changed, not their number -- and this
     // one is new because a recording never asked which tree its commands came from.
-    expect(total).toBe(110);
+    // 110 -> 116 in v3.148 (`O-132`): the six refusals of the history's own rewrite. One ends the process
+    // at the top level -- `--relabel-actions` given a measurement -- and the other five sit inside
+    // `relabelActions`, which is the basket below rather than this one. Both counts are asserted because
+    // the two questions are different: this one is "how many throw statements", the other is "which of
+    // them nothing can catch".
+    expect(total).toBe(116);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -354,27 +359,28 @@ describe('the four baskets are a partition of the throws, not a remainder', { ti
       fatal.push(...read.rows.filter((row) => row.disposition === 'fatal').map((row) => `${file}:${String(row.line)}`));
     }
     expect(fatal).toEqual([
-      'measure-ci-baseline.mjs:256',
-      'measure-ci-baseline.mjs:431',
-      'measure-ci-baseline.mjs:441',
-      'measure-ci-baseline.mjs:463',
-      'measure-ci-baseline.mjs:518',
-      'measure-ci-baseline.mjs:521',
-      'measure-ci-baseline.mjs:526',
-      'measure-ci-baseline.mjs:533',
-      'measure-ci-baseline.mjs:540',
-      'measure-ci-baseline.mjs:558',
-      'measure-ci-baseline.mjs:579',
-      'measure-ci-baseline.mjs:595',
-      'measure-ci-baseline.mjs:612',
-      'measure-ci-baseline.mjs:623',
-      'measure-ci-baseline.mjs:634',
-      'measure-ci-baseline.mjs:656',
+      'measure-ci-baseline.mjs:300',
+      'measure-ci-baseline.mjs:310',
+      'measure-ci-baseline.mjs:586',
+      'measure-ci-baseline.mjs:596',
+      'measure-ci-baseline.mjs:618',
       'measure-ci-baseline.mjs:673',
-      'measure-ci-baseline.mjs:687',
-      'measure-ci-baseline.mjs:766',
-      'measure-ci-baseline.mjs:794',
-      'measure-ci-baseline.mjs:834',
+      'measure-ci-baseline.mjs:676',
+      'measure-ci-baseline.mjs:681',
+      'measure-ci-baseline.mjs:688',
+      'measure-ci-baseline.mjs:695',
+      'measure-ci-baseline.mjs:713',
+      'measure-ci-baseline.mjs:734',
+      'measure-ci-baseline.mjs:750',
+      'measure-ci-baseline.mjs:767',
+      'measure-ci-baseline.mjs:778',
+      'measure-ci-baseline.mjs:789',
+      'measure-ci-baseline.mjs:811',
+      'measure-ci-baseline.mjs:828',
+      'measure-ci-baseline.mjs:842',
+      'measure-ci-baseline.mjs:921',
+      'measure-ci-baseline.mjs:949',
+      'measure-ci-baseline.mjs:989',
     ]);
     // 60 unguarded: the two pack guards are `unguarded`, like every other throw inside a
     // function with no enclosing `try`. 11 fatal is v3.55's addition of five to v3.54's
@@ -416,7 +422,12 @@ describe('the four baskets are a partition of the throws, not a remainder', { ti
     // function away, and a function boundary is where a `try` stops counting.
     // 20 -> 21 in v3.147, and unguarded unchanged: a recording whose tree on disk is not the tree the run
     // used ends the process where the drift is found, one line below the fetch whose document it read.
-    expect(counts).toEqual({ fatal: 21, unguarded: 78, guarded: 1, rethrow: 10 });
+    // 21 -> 22 and 78 -> 83 in v3.148 (`O-132`), and the split is the interesting part: the flag refusal
+    // is written at the top level and ends the process (`fatal`), while the five refusals of the history's
+    // rewrite sit inside `relabelActions` and hand control to their only caller, which is the top level --
+    // so the inventory says `unguarded` about five statements that do end the process, and says it for the
+    // reason the basket is drawn by syntax rather than by call graph.
+    expect(counts).toEqual({ fatal: 22, unguarded: 83, guarded: 1, rethrow: 10 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

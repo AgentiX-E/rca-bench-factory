@@ -251,6 +251,10 @@ export function stepsOf(workflow, job) {
       return {
         name: step.name,
         run: step.run,
+        // The action a step with no `run:` of its own uses (`O-132`). Carried through because the
+        // identity `commandOf` builds is the action **and its version**, and a reader that kept only
+        // the name could not tell `actions/checkout@v3` from `@v4`.
+        uses: step.uses ?? null,
         minutes: resolved.minutes,
         inheritedFrom: own !== '' ? 'step' : inPrefix ? 'prefix' : jobBound ? 'job' : null,
         inPrefix,
@@ -290,7 +294,11 @@ function sharedPrefixOf(workflow) {
     for (let index = 0; ; index += 1) {
       const at = perJob.map((steps) => steps[index]);
       if (at.some((step) => step === undefined)) break;
-      const signatures = at.map((step) => `${step.name}\u0000${step.run ?? ''}`);
+      // `commandOf` rather than the raw `run:`, so that a `uses:` step is compared by the action it
+      // runs instead of by its name alone (`O-132`). The docstring above says "name and command both"
+      // and, until v3.148, compared the name and an empty string for every action step: the one kind
+      // of step the workflow writes most often was the one kind whose command this rule never read.
+      const signatures = at.map((step) => `${step.name}\u0000${commandOf(step)}`);
       if (new Set(signatures).size !== 1) break;
       shared.push(at[0].name);
     }
@@ -596,14 +604,45 @@ export function readDeclarations(workflow, declarations) {
 /**
  * The command a step runs, which is what a bound is really about (v3.55, `R10`).
  *
- * A step with no `run` of its own uses an action, and the action is what costs, so its
- * name is the handle: `Set up Node.js` in two jobs is the same download and the same
- * extraction, and it should not be timed twice as if it were two different things. The
- * whitespace is collapsed because a `run:` block is folded by YAML and a bound is not.
+ * A step with no `run` of its own uses an action, and the action is what costs. `Set up Node.js`
+ * in two jobs is the same download and the same extraction, and it should not be timed twice as
+ * if it were two different things -- so the handle is the action, not the job it sits in.
+ *
+ * ## The handle is the action **and its version** (`O-132`)
+ *
+ * Until v3.148 the handle was the step's **name**, which made `actions/checkout@v3` and
+ * `actions/checkout@v4` one command: an upgrade of an action moved the program without moving the
+ * identity, and the readings of the old program went on sizing the new one's bounds. The version
+ * is not decoration -- it is which program ran -- and the file's own rule since v3.147 is that a
+ * reading is a number beside the command that spent it.
+ *
+ * The name is not part of it, and dropping it is the other half of the same argument: a name is a
+ * label, and a label survives a change of the line under it. A step renamed from `Check out` to
+ * `Check out the tree` still runs the same action, and `R10` must go on seeing its history --
+ * which is exactly what a name-keyed identity could not do.
+ *
+ * ## What the identity leaves out, and why that is not the same mistake
+ *
+ * An action's `with:` block and a step's `env:` are not in it. They are the parameters a command is
+ * given, not the command, and the workflow already answers this way for `run:` steps: the same
+ * `pnpm build` under two `env:` blocks is one series. The choice also errs in `R10`'s direction --
+ * pooling two shapes of one action makes the denominator the slower of the two, while splitting
+ * them would let the faster shape justify a smaller bound. This tree really does hold the pair:
+ * `backend / Check out` clones shallow and the other seven jobs clone the full history, and they
+ * are one series by that rule.
+ *
+ * The one limit worth stating: `uses: ./some-action` names a **path**, and the workflow does not
+ * say what bytes are behind it. A local action whose code changed is two programs under one
+ * identity, which no reading of the workflow can separate. Nothing in this tree uses one.
+ *
+ * The whitespace of a `run:` block is collapsed because YAML folds it and a bound is not.
  */
 export function commandOf(step) {
   const run = typeof step?.run === 'string' ? step.run.replace(/\s+/g, ' ').trim() : '';
-  return run === '' ? `step:${String(step?.name ?? '')}` : run;
+  if (run !== '') return run;
+  const uses = typeof step?.uses === 'string' ? step.uses.trim() : '';
+  if (uses !== '') return `uses:${uses}`;
+  return `step:${String(step?.name ?? '')}`;
 }
 
 /**

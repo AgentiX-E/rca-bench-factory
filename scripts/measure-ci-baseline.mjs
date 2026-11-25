@@ -121,7 +121,27 @@
  * A `--borrow` is not drift: the borrowed job exists only on disk by construction, and its
  * seconds are another job's measurement of the same commands, which the entry states.
  *
+ * ## `--relabel-actions`: the rows written before an action had a name of its own (`O-132`)
+ *
+ * Until v3.148 a step with no `run:` was identified by its **name** -- `step:Check out` -- so the
+ * action a row was spent by was not in the history at all. The identity now includes the action and
+ * its version, and every reading taken from here on states it. The rows already written state a
+ * name, and leaving them that way would split one step's series in two: the history would answer
+ * "what has a checkout cost" with the newest days only, which is losing the slow day a bound is
+ * sized from -- the defect `R10` exists to remove, one file over.
+ *
+ * The rewrite is a derivation and not an invention: the same document every other question here
+ * uses, the workflow **at the row's own commit**, says which action that step ran. A repository
+ * with no network can read neither this mode nor the histories it repairs, which is why the mode
+ * lives in the tool that owns provenance rather than in a script beside it.
+ *
+ * A row whose file and whose stored command disagree is refused rather than rewritten. The two
+ * shapes are a row naming an action other than the one that commit ran, and a row naming a step
+ * where that commit runs a command; both say the history was edited, or written by a rule this
+ * tree never had, and neither is a name the file at the commit can turn into a command.
+ *
  * Usage: `node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>] [--seed]`
+ *        `node scripts/measure-ci-baseline.mjs --relabel-actions`
  * with `GITHUB_TOKEN` set.
  *
  * `RCA_GITHUB_API`, `RCA_CI_WORKFLOW` and `RCA_CI_OUT` are read only by
@@ -245,12 +265,46 @@ const ATTEMPT = (() => {
   return Number.isInteger(value) && value >= 1 ? value : NaN;
 })();
 
-if (TOKEN === '' || !/^\d+$/.test(RUN) || Number.isNaN(ATTEMPT)) {
+/**
+ * `--relabel-actions`: rewrite the rows that name a step into the action that step ran (`O-132`).
+ *
+ * A mode rather than a run: it is a statement about the history's own past, and the run ids it
+ * reads are the ones each row already carries. It is parsed from anywhere in the argument list
+ * because it names no run, so there is no position the run id could occupy -- and a flag that had
+ * to be written in one position is a flag a person gets wrong once and never discovers.
+ */
+const RELABEL = process.argv.slice(2).includes('--relabel-actions');
+
+// One usage refusal for both ways to call this script, because the two questions it answers are one:
+// *is there a token*, and *is this a run id or the mode that reads the history*. Two exits would be two
+// sites in the inventory, two proofs, and one sentence written twice.
+//
+// The second clause is excused for the mode rather than restated inside it: `--relabel-actions` occupies
+// the position a run id occupies, so a digits test applied to it would refuse the only way the mode can
+// be called.
+if (TOKEN === '' || (!RELABEL && (!/^\d+$/.test(RUN) || Number.isNaN(ATTEMPT)))) {
   process.stderr.write(
     'usage: GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs <run-id> [--attempt <n>] ' +
-      '[--borrow <job>=<ran>] [--seed]\n',
+      '[--borrow <job>=<ran>] [--seed]\n' +
+      '       GITHUB_TOKEN=… node scripts/measure-ci-baseline.mjs --relabel-actions\n',
   );
   process.exit(2);
+}
+
+if (RELABEL) {
+  // The mode reads the history and asks GitHub about each reading's commit; a run id, an attempt or
+  // a borrow belongs to a measurement, and accepting one here would leave the reader believing it
+  // had been used. A seed is the sharpest case: `--seed` says "append this run", and this mode
+  // appends nothing.
+  if (SEED || BORROW.size > 0 || ATTEMPT !== null || /^\d+$/.test(RUN)) {
+    throw new Error(
+      '--relabel-actions rewrites the rows already in the history and measures nothing, so it takes no ' +
+        'run id, no --attempt, no --borrow and no --seed: those name a measurement, and a mode that ' +
+        'silently ignored one would answer a different question than the one it was asked',
+    );
+  }
+  await relabelActions();
+  process.exit(0);
 }
 if (SEED && BORROW.size > 0) {
   throw new Error(
@@ -424,6 +478,107 @@ function driftOf(onDisk, committed, headSha) {
     }
   }
   return null;
+}
+
+/**
+ * Give every row that names its step the action the step ran, read from that row's own commit.
+ *
+ * The history's rows are self-describing: each carries the command its seconds were spent on. The
+ * rows written before v3.148 carry a step **name** where the step has no `run:` of its own, and
+ * that name is not the command -- `actions/checkout@v3` and `@v4` are one row under it. The
+ * identity now includes the action, so the old rows have to be given theirs, and the only document
+ * that can say which one they ran is the workflow at the commit each row records.
+ *
+ * ## What is rewritten, and what is refused
+ *
+ * Exactly the rows whose stored command is `step:<the step's own name>` **and** whose commit's step
+ * uses an action. Every other row is left alone: a `run:` step's row already holds the command its
+ * commit states (v3.147 measured that over the whole population, 3,217 of 3,217), and a row that
+ * already names an action is compared rather than rewritten, so this mode is also the audit that
+ * the history agrees with the trees it names.
+ *
+ * A disagreement is a refusal and not a repair. Two shapes, and both mean the file was edited or
+ * written by a rule this tree never had: a row carrying another action than its commit's, and a row
+ * carrying a name where its commit runs a command. Neither can be turned into a command by reading
+ * the commit, and writing one anyway would put a number beside a command nothing says spent it.
+ *
+ * ## The cost
+ *
+ * One request per **commit**, not per reading: two attempts of one run share a tree, and the two
+ * readings of it must be given the same action. Measured over the shipped history: 40 readings on
+ * 39 commits, so 39 requests for 3,217 rows.
+ */
+async function relabelActions() {
+  let held;
+  try {
+    held = JSON.parse(readFileSync(READINGS, 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `the readings at ${READINGS} cannot be parsed (${String(error)}), so no row can be given the action ` +
+        'it spent its seconds on: the file is one JSON object in git, and restoring it is the act that ' +
+        'makes the question answerable again',
+    );
+  }
+  const readings = Array.isArray(held?.readings) ? held.readings : [];
+  if (readings.length === 0) {
+    throw new Error(
+      `the readings at ${READINGS} hold no reading, so there is no row to relabel: this mode rewrites the ` +
+        'rows an earlier recorder wrote under a step name, and a history with no reading has none of them',
+    );
+  }
+  const dayOf = new Map();
+  let rows = 0;
+  let relabelled = 0;
+  for (const reading of readings) {
+    const commit = String(reading?.commit ?? '');
+    if (!dayOf.has(commit)) {
+      // Fetched once per tree: two attempts of one run are two readings of one commit, and the file
+      // that says what a step ran is a fact about the tree rather than about the attempt.
+      try {
+        dayOf.set(commit, stepsOfDay(await workflowOfThatDay(commit)));
+      } catch (error) {
+        throw new Error(
+          `run ${String(reading?.run)} records the tree at ${commit.slice(0, 7)}, and the workflow there ` +
+            `cannot be read (${error instanceof Error ? error.message : String(error)}): the action a row ` +
+            'names has to be read from the commit the row records, and a tree this reader cannot read ' +
+            'leaves its rows exactly as they are',
+        );
+      }
+    }
+    const day = dayOf.get(commit);
+    const at = commit.slice(0, 7);
+    for (const [jobId, steps] of Object.entries(reading?.jobs ?? {})) {
+      for (const [name, row] of Object.entries(steps ?? {})) {
+        rows += 1;
+        const theirs = day.get(jobId)?.get(name);
+        if (theirs === undefined) {
+          throw new Error(
+            `\`${jobId} / ${name}\` of run ${String(reading?.run)} names no step of the workflow at ${at}, ` +
+              `which is the commit that reading records: a row nothing can place cannot be given the ` +
+              'command it spent its seconds on, and the history and the tree it names disagree',
+          );
+        }
+        if (row.command === theirs.command) continue;
+        if (row.command !== `step:${name}` || !theirs.command.startsWith('uses:')) {
+          throw new Error(
+            `\`${jobId} / ${name}\` of run ${String(reading?.run)} carries \`${String(row.command)}\` and the ` +
+              `workflow at ${at} says the step ran \`${theirs.command}\`: only a row that names a step whose ` +
+              'commit runs an action can be relabelled, and this is neither -- the history was edited, or ' +
+              'written by a rule this tree never had',
+          );
+        }
+        row.command = theirs.command;
+        relabelled += 1;
+      }
+    }
+  }
+  if (relabelled > 0) writeFileSync(READINGS, `${JSON.stringify(held, null, 2)}\n`);
+  process.stdout.write(
+    `ci-baseline: ${String(relabelled)} of ${String(rows)} row(s) across ${String(readings.length)} ` +
+      `reading(s) named a step where the tree runs an action; ${String(dayOf.size)} tree(s) were read to ` +
+      `say which action` +
+      `${relabelled === 0 ? ', so the history already says it' : ', and the history now names it'}\n`,
+  );
 }
 
 const workflow = readWorkflow(readFileSync(workflowPath(), 'utf8'));
