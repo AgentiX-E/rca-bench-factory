@@ -490,7 +490,7 @@
           "check-workflow-language"
         ]
       ],
-      "relation": "four walks over four corpora -- the 39 documentation files `check-citations` anchors its findings in, the source walk's 479 (printed by two gates because one takes its denominator from the other), and the 6 workflow files"
+      "relation": "four walks over four corpora -- the 40 documentation files `check-citations` anchors its findings in, the source walk's 479 (printed by two gates because one takes its denominator from the other), and the 6 workflow files"
     },
     {
       "noun": "pair(s)",
@@ -596,7 +596,7 @@
           "check-progress-volumes"
         ]
       ],
-      "relation": "two disjoint directories of volumes -- `docs/audit` holds 14 and `docs/progress` 20, and no file is in both"
+      "relation": "two disjoint directories of volumes -- `docs/audit` holds 15 and `docs/progress` 20, and no file is in both"
     }
   ]
 }
