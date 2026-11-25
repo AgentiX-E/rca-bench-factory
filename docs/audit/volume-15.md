@@ -279,8 +279,8 @@ refusal divides, and prints the slower attempt beside it as a second fact.
 | bound-minutes declared in the file | 247 | **263** |
 
 The forty-first reading is run `45595594712` attempt 2 -- 8 of 8 jobs success -- with attempt 1 seeded beside it,
-and the forty-second is the tree this round ships, run `45615317655`: **43** readings over **41** commits, three
-of which measured one of two trees twice.
+and the forty-second is the tree this round ships, run `45615317655`: **43** readings over **41** commits, four
+of which are two pairs -- two trees measured twice each.
 
 **What that costs, stated as the defect it is.** The gate asks 30 minutes for a step whose cluster is 620 s, and
 the multiple would be satisfied at 22: 2.9x of room, where `R13` tolerates it because the ceiling it sits under
