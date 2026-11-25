@@ -1,7 +1,7 @@
 # Audit · volume 15
 
-Findings 651–656, from the rounds recorded in `progress/volume-20.md` as `v3.148`, `v3.149` and `v3.150`, and
-in `progress/volume-21.md` as `v3.151` and `v3.152`.
+Findings 651–657, from the rounds recorded in `progress/volume-20.md` as `v3.148`, `v3.149` and `v3.150`, and
+in `progress/volume-21.md` as `v3.151`, `v3.152` and `v3.153`.
 
 ## Finding 651 — an action is identified by the action, not by the name of the step that uses it
 
@@ -482,3 +482,57 @@ added no claim: the site existed and was proved; what changed is which state rea
 measured. It does not: a tracked file with uncommitted edits is measured and committed from two states, and the
 corpus's own order -- `docs:check` before `git add` -- is the order that hides it. That is `O-142`, and it is
 open because the refusal that would close it (any modified tracked file) costs a round its feedback loop.
+
+## Finding 657 — a total is not a measurement, and a shard is not a claim
+
+`verify-sites-are-sensitive` prints one summary line, and the recorder sees one step's seconds. That is enough
+to know the battery is slow and not enough to know what anything costs: `v3.150` added six claims to
+`ci-budget.test.ts` and the round after it charged them **282 s**, a number that is the difference between two
+afternoons and is printed as if it were six runs.
+
+**The instrument.** One row per claimant, printed before the summary, with the seconds measured around that
+claimant's own children:
+
+```
+verify-sites-are-sensitive: packages/core/test/ci-budget.test.ts -- 30 claim(s) in 30 run(s), 541.8 s (slowest 21.0 s)
+verify-sites-are-sensitive: 129 mutant run(s) cost 587.1 s of child time inside 3.1 min of wall clock,
+  3.2x the clock with 4 at a time; the dearest claimant is packages/core/test/ci-budget.test.ts at 48% of that
+```
+
+Two facts the total could not carry: **who** paid, and **how many runs** the total is made of.
+
+**The defect the instrument found.** With the rows in place, the same shard was run twice an hour apart on the
+same tree, differing in one line of the gate. The 32 claimants both runs could measure, and their 125 claims:
+
+| claimant | without the flag | with it |
+| --- | --- | --- |
+| `ci-budget.test.ts` | 541.8 s | 282.3 s |
+| `fetch-official.test.ts` | 294.0 s | 89.5 s |
+| `check-fault-cases.test.ts` | 250.7 s | 40.1 s |
+| `gates-are-testable-is-enumerated.test.ts` | 54.1 s | 25.9 s |
+| `check-official-roundtrip.test.ts` | 49.0 s | 17.1 s |
+| `gen-examples.test.ts` | 45.2 s | 28.1 s |
+| **all 32** | **1382.7 s** | **577.1 s** |
+
+The shard's wall clock went from **6.4 min to 3.1 min**. The price of a claim was never "claims times file":
+it was "claims times the file up to the first red", and the entry that said otherwise (`O-136`) had the right
+complaint and the wrong mechanism.
+
+**Why one flag is the whole of it.** A mutant is proved by *a* test going red; the rest of the file adds
+nothing to that sentence and is charged to the claim anyway. The two ways the flag could weaken the battery
+close by construction: a survivor's verdict is the whole file staying green, so a file that never goes red
+never bails; and a baseline is **refused** the flag, because its verdict is the longest single test of a file
+it would not have finished. The mutant's record is written when the site executes, which is before the
+failure, so the "recorded its mutant" clause is unaffected -- 129 of 129 runs are still credited.
+
+**What is not claimed.** That the CI number moves by the local ratio. Reading 46 (run `45652928012`) records
+the two shard steps at 613 s and 533 s of a 969 s run; the next green run is what the flag did on a runner,
+and a local pair is not evidence about a four-vCPU box.
+
+**The measurement's own defects, since a paired run has more ways to be wrong than a single one.** The first
+control was run on a tree whose own test asserts the flag, and separately while the counts were mid-edit, so
+three claimants failed on their own; the first flagged run was compared to it as a ratio of two shards, which
+is the arithmetic this campaign exists to remove. The table above is the third attempt, taken after the counts
+were retaken and the inventory re-derived -- and `prometheus` had to be installed first, because
+`reader-against-backend` refuses to run without it and the first "green" shard was green over 33 of 34
+claimants.

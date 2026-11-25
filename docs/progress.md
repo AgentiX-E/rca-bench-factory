@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 260 core + 4 cli |
-| Test lines | 120,796 core + 3,242 cli |
-| Tests | 7,054 core + 187 cli |
+| Test lines | 120,876 core + 3,242 cli |
+| Tests | 7,057 core + 187 cli |
 | Tracked files | 681 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.152: **51** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.153: **50** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1110,22 +1110,19 @@ is a row about rather than paraphrase one that no `grep` will find.
   whether a step whose `uses:` names a path should be refused a bound outright, since this file cannot say what
   ran]`
 
-- O-136 · **A claim costs its whole test file, so the battery's price is claims times file, not claims times
-  test.**
-  `ci-budget.test.ts` holds 30 of the 248 claims and takes 12 s of a 32-CPU box; thirty-one runs of it are
-  372 s of the second shard's 882 s. No claim names a test -- `provedBy` is a file -- so a run cannot be
-  narrowed to the test that goes red, and the six throws added in `v3.148` cost 47 s each.
-  `[open: whether a claim should carry the test that proves it, so the battery can run one test rather than
-  one file -- an inventory change that `derive-gate-sites` would have to write and every claim would have to
-  survive -- or whether the mutant runs should take `--bail`, which stops at the first red and changes nothing
-  for a survivor, since a survivor's verdict is the whole file staying green]`
-
-- O-137 · **The battery publishes claims, runs and wall clock, and no per-run seconds.**
-  The +282 s `v3.150` attributed to six claims is a difference between two afternoons, not a measurement of
-  the six runs: the battery prints one summary line, and the recorder only ever sees the step's total.
-  `[open: whether the battery should write its own per-run seconds beside the summary, so the next claim added
-  can be charged to itself, or whether the step's seconds plus the run count are enough and the arithmetic
-  belongs in the round rather than in the instrument]`
+- O-136 · **A claim's run still pays the fixed cost of a run and every test before its first red, and the
+  inventory names no test.**
+  The premise this entry was raised on was half wrong, and `v3.153` measured it: the price was not "claims
+  times file" but "claims times the file up to the first red", and `--bail` took **58.3%** of it in a paired
+  run (32 claimants, 125 claims and 125 runs either side, `1382.7 s -> 577.1 s`). What is left is the run
+  itself: `ci-budget.test.ts`'s 30 claims still cost **282 s**, against the **0.6--0.8 s** a single-claim
+  claimant pays, and the difference is nine-ish seconds per run of tests that had to execute before the red.
+  Naming the one test in the inventory would remove that half, at the price of an inventory every claim has to
+  survive and a deriver that would have to find the test without running it.
+  `[open: whether a claim should carry the test that proves it, so a run can be narrowed by name rather than by
+  stopping -- a `provedBy` change that `derive-gate-sites` cannot derive statically, since which test goes red
+  is a fact about a mutation that has to be measured first -- or whether the 9 s a run still pays is a price
+  worth paying for an inventory that is derived rather than recorded]`
 
 - O-140 · **The margin clause reports the workflow's narrowest bound, not the bounds whose own movement is
   more than half their reading.**
@@ -1196,7 +1193,7 @@ and this table.
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
 | [volume-20.md](progress/volume-20.md) | 8 | v3.134 | v3.141 |
-| [volume-21.md](progress/volume-21.md) | 11 | v3.142 | v3.152 |
+| [volume-21.md](progress/volume-21.md) | 12 | v3.142 | v3.153 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

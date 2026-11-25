@@ -75,6 +75,7 @@ before the layer above it is meaningful.
 | A tree costs the faster of its attempts | v3.150 |
 | A bound covers the state the command was read in | v3.151 |
 | A table has one population, or the guard refuses the tree | v3.152 |
+| A battery charges each run to its claimant, and stops at the first red | v3.153 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -2956,3 +2957,24 @@ from an anecdote again.
 - **Falsified by** 3 mutations -- the refusal deleted, the two modes sharing one sentence, and the refusal
   narrowed back to `--write` -- **6** reds, no survivor, each measured on the green tree and restored byte for
   byte.
+
+### A battery charges each run to its claimant, and stops at the first red (v3.153)
+
+- **A total that cannot be divided is not a measurement.** The battery printed one summary and the recorder saw
+  one step, so `v3.150`'s six new claims were charged 282 s that were the difference between two afternoons.
+  The gate now prints one row per claimant -- `packages/core/test/ci-budget.test.ts -- 30 claim(s) in 30 run(s),
+  541.8 s (slowest 21.0 s)` -- with the seconds measured around that claimant's own children.
+- **The comparison is paired, because two afternoons are not a control.** Same tree, same box, same shard, one
+  hour apart, the only difference one line: the 32 claimants both runs measured, **125 claims and 125 runs either
+  side**, cost **1382.7 s -> 577.1 s (-58.3%)**; the shard's wall clock **6.4 -> 3.1 min**. No number here is
+  read across two different days.
+- **The flag's soundness is a table, not a comment.** A mutant's verdict is "some test goes red" and the first
+  red is that test; a survivor never reaches a red, so it still runs the whole file; the baseline is **refused**
+  the flag, because its verdict is the longest single test of a file it would not have finished.
+- **The boundary is asserted on the argv, in both directions.** The mutant's argv carries `--bail`, the
+  baseline's does not, and the baseline case is taken from a run that never reaches a mutant.
+- **Not claimed.** That the CI number moves by the local ratio: reading 46 records the two shard steps at 613 s
+  and 533 s of a 969 s run, and the next green run is what says what the flag did there.
+- **Falsified by** 4 mutations -- the flag removed, the flag given to the baseline, the per-claimant rows
+  deleted, and every row charged the whole inventory's claim count -- **4** reds, no survivor, each measured on
+  the green tree and restored byte for byte.

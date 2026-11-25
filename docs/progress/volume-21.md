@@ -1694,9 +1694,9 @@ things in a misleading order would pass.
 | CI | **8 of 8 jobs success** -- run `45626206585` on `90303700`, the newest green run and the one the recording was taken from; this round adds no reading, because the tree it reports first ran red (below) and a red run's step seconds are the seconds of a step that stopped |
 | the run this round reports | run `45643248364` on `d4ae8d6` -- the tree `v3.151` shipped -- **4 of 8 jobs success**, the four named in the table above; `45643248351` (anchor round trip) was green on the same tree, so the breakage is inside `CI` and not in the tree's own content |
 | `pnpm run docs:check` | **23 steps, exit 0**, after the number and the snapshot were retaken |
-| `core` test suite | **260 files, 7054 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7241 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 7054 tests passed** (at v3.152) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.152) |
+| repo test suite | **264 files, 7241 tests passed** (at v3.152) |
 | the history | **45** readings over **43** commits -- unchanged: this round's CI run is the next reading, not this one |
 | new tests | **7,052 -> 7,054, +2**: the refusal in the judging mode, and the same boundary from the other side after `git add` |
 | `golden-master/gate-sites.json` | re-derived; **146 sites across 69 of 103 scripts**, one line number moved (466 -> 483), no site added or removed |
@@ -1717,3 +1717,131 @@ round:
   would make every mid-round run red, or whether the round's ledger should carry the worktree's own digest
   beside the numbers so a reader can tell which tree was measured -- a refusal that costs a round its
   feedback loop, against a digest that costs a reader one more number to compare]`
+
+## v3.153 — the battery charges each run to the claimant that paid, and stops at the first red
+
+`v3.150` added six claims to one file and charged them **282 s**. That number was not a measurement of the six
+runs: it was the difference between two afternoons. The battery printed one total, the recorder only ever saw
+the step's wall clock, and a total cannot be divided after the fact -- so the round that adds a claim cannot
+say what the claim cost. Two entries came out of that observation, and this round closes one and sharpens the
+other.
+
+### The instrument first: one row per claimant, with its own claims and runs
+
+The battery now prints one row per claimant after the credit line:
+
+```
+verify-sites-are-sensitive: packages/core/test/ci-budget.test.ts -- 30 claim(s) in 30 run(s), 541.8 s (slowest 21.0 s)
+verify-sites-are-sensitive: 129 mutant run(s) cost 587.1 s of child time inside 3.1 min of wall clock,
+  3.2x the clock with 4 at a time; the dearest claimant is packages/core/test/ci-budget.test.ts at 48% of that
+```
+
+Two facts follow that no earlier line could carry: **which claimant** paid, and **how many runs** the total is
+made of. The seconds come from `elapsedMs` measured around each child, so they are that claimant's own time
+rather than a share of the shard's.
+
+### The pair: one tree, one claim set, an hour apart
+
+The comparison is paired, because the last two rounds established that two afternoons are not a control (finding
+655). Same tree, same box, same shard, two runs an hour apart, the only difference being one line of the gate.
+The 32 claimants both runs could measure, and their 125 claims:
+
+| claimant | without `--bail` | with it |
+| --- | --- | --- |
+| `ci-budget.test.ts` | 541.8 s | **282.3 s** |
+| `fetch-official.test.ts` | 294.0 s | **89.5 s** |
+| `check-fault-cases.test.ts` | 250.7 s | **40.1 s** |
+| `gates-are-testable-is-enumerated.test.ts` | 54.1 s | **25.9 s** |
+| `check-official-roundtrip.test.ts` | 49.0 s | **17.1 s** |
+| `gen-examples.test.ts` | 45.2 s | **28.1 s** |
+| **the 32, added up** | **1382.7 s** | **577.1 s** — **-58.3%** |
+
+And the shard as a whole: **6.4 min -> 3.1 min** of wall clock with four runs at a time.
+
+The one asymmetry is worth writing down rather than smoothing: the control run measured **125** claims and the
+flagged run **129**, because the four claims of the battery's own test file cannot be measured while the flag is
+absent -- the file asserts it. The flag's own proof is the one claim the control cannot run.
+
+### Why the flag is sound, and not merely faster
+
+The claim a mutant run proves is **"some test goes red"**. Once one does, the rest of the file adds nothing to
+that sentence and is charged to the claim anyway. The two ways the flag could weaken the battery are both
+closed by construction:
+
+| run | verdict | what `--bail` would do to it |
+| --- | --- | --- |
+| a mutant | some test goes red | stops at the first red; the verdict is unchanged, and the mutant's record is written when the site executes, which is before the failure |
+| a survivor | no test goes red | nothing: a survivor's verdict **is** the whole file staying green, and a file that never went red never bails |
+| a baseline | the longest single test of this file | **refused the flag**: a run that stopped at the first red would report the longest test of a file it had not finished -- a number about a subset printed as a number about the file |
+
+The third row is the one that had to be written as a test rather than as a comment, and it is: the mutant's
+argv carries `--bail`, the baseline's does not, and the baseline case is taken from a run that never reaches a
+mutant (a claimant that is red on its own).
+
+### What CI has to say, and what this round does not claim
+
+Reading 46 (run `45652928012`, the tree `v3.152` shipped) records the two shard steps at **613 s** and **533 s**
+of a 969 s run, so the battery is roughly a quarter of the workflow's wall clock. A 52% cut on the shard that
+the 900 s reading came from is the first change in this campaign that moves the reading rather than the prose
+around it. The next green run records what it actually was, and this round does not claim the CI number: the
+pair above is local, and a local pair is what a machine can be held to.
+
+### Four things this round did wrong
+
+- **The first control was run on a tree that was not consistent.** The control run removed `--bail` from a tree whose
+  own test asserts it, and separately the tree's counts were mid-edit, so three claimants failed on their own
+  and two more could not be measured. The pair above is the second attempt, run after the counts were retaken
+  and after the inventory was re-derived -- and the first attempt is written here because it is the third time
+  in three rounds that a measurement was taken on a tree that was not ready to be measured.
+- **The inventory was not re-derived after the script was edited.** `gate-sites.json` records line numbers; inserting fifty lines moved
+  one of them and the battery then armed a mutant at the wrong statement, which surfaced as "passed with the
+  exit hollowed but never recorded the mutant". The deriver is not part of the battery and nothing reminded me.
+- **The flag's gain was measured twice in one day before the numbers matched.** The first flagged run reported 583.9 s against a control's
+  1415.3 s, on different claim sets: a ratio of two shards, which is the arithmetic this whole campaign has
+  been removing. The paired table is the repair.
+- **`prometheus` was not in this sandbox.** `reader-against-backend` refused to run until it was installed, so the first
+  green-looking shard was green over 33 of 34 claimants. The CI job installs it (step 6); this box did not, and
+  the round had to install it to measure the shard it was changing.
+
+### Mutations
+
+| mutation | red |
+| --- | --- |
+| the flag removed from the mutant run | 1 |
+| the flag given to the baseline as well | 1 |
+| the per-claimant rows deleted | 1 |
+| every row charged the whole inventory's claim count | 1 |
+
+**4 groups, 4 red cases, 0 survivors**, each measured on the green tree and restored to an identical `md5`.
+
+### Left open
+
+`O-133`, `O-140`, `O-141`, `O-108`, `O-134` and `O-129` are unchanged, and `O-137` is closed by this round's
+rows: the battery says what each claimant's runs cost, so a claim added to a file can be charged to it. One
+entry moves, and it is sharpened rather than closed, because the measurement says its premise was half wrong:
+
+- `O-136` · **A claim's run still pays the fixed cost of a run and every test before its first red, and the
+  inventory names no test.** The price was never "claims times file": it was "claims times the file up to the
+  first red", which is why one flag took **58.3%** of it. What is left is the run itself -- `ci-budget.test.ts`'s
+  30 claims cost **282 s**, against the **0.6--0.8 s** a single-claim claimant pays -- and naming the test in the
+  inventory would remove the second half at the price of an inventory every claim has to survive.
+  `[open: whether `provedBy` should carry the test, which `derive-gate-sites` cannot derive statically because
+  which test goes red is a fact about a mutation and has to be measured first, or whether nine seconds a run is
+  a price worth paying for an inventory that is derived rather than recorded]`
+
+### Readings
+
+> Ledger for `v3.153`.
+
+| item | value |
+| --- | --- |
+| CI | **8 of 8 jobs success** -- run `45652928012` on `9269682`, 969 s, and the **forty-sixth reading** the recorder takes from it (613 s of second shard, 533 s of first); this is the run the previous round shipped and could not record, taken now so the recording names the tree v3.152 delivered |
+| `core` test suite | **260 files, 7057 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **264 files, 7244 tests passed** (as of this commit) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: every line this round added is in `scripts/` |
+| new tests | **7,054 -> 7,057, +3**: the per-claimant rows, the flag on the mutant's argv, and the baseline's refusal of it |
+| the pair | **1382.7 s -> 577.1 s** over 32 claimants, 125 claims and 125 runs either side, an hour apart on one box; the shard **6.4 -> 3.1 min** |
+| the battery, both shards | **129 claims in 3.1 min** and **119 claims in 2.0 min**, 0 survivors, 0 unrecorded, 0 truncated |
+| mutation | **4 groups, 4 red cases, 0 survivors**, each measured on the green tree and restored to an identical `md5` |
+| the inventory | **146** sites, one coordinate moved by the round's own insertions (768 -> 829), and the file re-derived rather than edited |

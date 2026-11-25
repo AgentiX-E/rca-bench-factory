@@ -1051,6 +1051,17 @@
   `O-136` and `O-137`, since the +282 s the six `v3.148` claims cost is a difference between two afternoons
   rather than a measurement. What it does not do is in `O-138`: a tree measured once is still priced from one
   afternoon. **Ten mutations, 62 reds**, no survivor, measured on the green tree.
+- O-137 · ~~**The battery publishes claims, runs and wall clock, and no per-run seconds.**~~ The entry's
+  evidence was a number that could not be divided: `v3.150` charged six new claims **282 s**, which was the
+  difference between two afternoons rather than a measurement of the six runs, because the battery printed one
+  total and the recorder only ever saw the step's clock. **Closed by finding 657**: the gate now prints one row
+  per claimant before its summary -- `packages/core/test/ci-budget.test.ts -- 30 claim(s) in 30 run(s), 541.8 s
+  (slowest 21.0 s)` -- with the seconds measured around each child, and a total that says how many runs it is
+  made of. The number is now divisible in the direction a round needs: a claim added to a file is charged to
+  that file. The same instrument produced the round's other reading, a paired one -- the 32 claimants both runs
+  could measure, 125 claims and 125 runs either side, **1382.7 s -> 577.1 s (-58.3%)** -- and the shard's wall
+  clock, **6.4 -> 3.1 min**, which is the first change in this campaign that moves the step's reading rather
+  than the prose around it. **Four mutations, 4 reds**, no survivor.
 - O-138 · ~~**A tree measured once is still priced from one afternoon.**~~ The entry was a consequence of
   `R14`: if a tree costs the faster of its attempts, then a tree measured once has no cost at all and the
   recorder's single reading stands in for it, so a contended afternoon raised every future bound for a load no
