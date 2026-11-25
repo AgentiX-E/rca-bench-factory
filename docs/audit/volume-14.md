@@ -1,7 +1,7 @@
 # Audit · volume 14
 
-Findings 579–648, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
-`progress/volume-19.md` as `v3.115` through `v3.145`.
+Findings 579–649, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md`,
+`progress/volume-19.md` and `progress/volume-20.md` as `v3.115` through `v3.146`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -4549,3 +4549,105 @@ with the bound in force then.
 
 **12 mutations, 17 reds**, measured on the green tree, no survivors. The second row's five reds are the
 five seed cases, which is the count a rule covering both relations would have to pass.
+
+## Finding 649 — the arithmetic that separates a duration from a bound was done with today's bound, and a seed's day had written its own
+
+`O-127`'s repair left one sentence standing: *a `failure` step is kept, because `failure` is what a command
+that ran and returned non-zero reports and its duration is a real duration*. The first half of that is true
+and the second is not always. A `failure` conclusion covers **two** shapes, and the report does not say which:
+
+| the shape | what the number is | what `R10` then divides by |
+| --- | --- | --- |
+| the command ran to its end and returned non-zero | a duration | the slowest day of the command, which is what the rule means |
+| the runner stopped the step at its own `timeout-minutes` | the bound in force that day, read back | a bound, so the multiple asks for a bound twice the number the run was killed by |
+
+The recording path already refuses both, because it refuses every run that did not conclude `success`. The
+**seed** path cannot: a seed exists precisely to keep a red day's numbers, and `R10`'s denominator is the
+worst day rather than the greenest one, so dropping red days would delete the evidence the rule was built
+on. Nor can the arithmetic of `O-127` be reused as it stands, and this is the whole finding: **the
+inequality `seconds < bound` is an argument only when `bound` is the number the runner was enforcing**. A
+seed's day is not today. `ci.yml` states today's bound; that day's `ci.yml` stated the one that killed the
+step, and the two differ whenever a bound has been widened or tightened in between -- which is the ordinary
+history of every bound in this file.
+
+### Three answers, and why the middle one is not a compromise
+
+The recorder now reads the workflow **at the seed's `head_sha`**, with the same line reader the gate uses on
+today's, and holds each `failure` step's seconds to the bound that file states for it:
+
+- **that day bounded the step at `N` minutes and the step spent at least `N * 60` s** — the number is that
+  bound, and the step is dropped with a line that names `N` and says *that day*;
+- **that day bounded the step nowhere** — the step inherits its job's budget, and a job timeout cancels the
+  running step rather than failing it, which a seed already drops. So no step bound can have stopped it, and
+  the number is the command's;
+- **that day's workflow cannot be read at all** — a `404`, a file this reader will not walk, or a job the
+  file does not have. The question is open, and the day is refused. Dropping the steps quietly would append
+  a day with its slow steps missing, which is the population the rule divides by; and answering with
+  today's bound would be the defect itself, one indirection further away.
+
+The third answer is why the middle one is not a compromise: the rule is not "keep what we cannot disprove",
+it is "ask the day, and refuse the seed when the day cannot answer". A refusal is a state a reader can act
+on; a guessed bound is a number nobody can.
+
+### The cost, and why it is paid only by the days that need it
+
+One request per seed, and only when the run holds a step the API called `failure` -- which a green run never
+does, because GitHub computes a run's conclusion from its steps. So a seed of a green day costs what it
+always did, and the price lands exactly on the red days, which are the days the question exists for. The
+request is `GET /contents/.github/workflows/ci.yml?ref=<head_sha>`, the same document the gate reads from
+disk.
+
+### The population says the rule has never fired
+
+| fact | value |
+| --- | --- |
+| readings in the history | **38** |
+| runs they came from | **37** |
+| those runs' conclusions, asked of the API one by one | **37 `success`**, none otherwise |
+| step entries in the history | **3,134** |
+| entries whose run holds a `failure` step | **0** |
+
+So no shipped row can change under this rule: the new refusal is reachable only from a red day, and the
+history has none -- because the recording path has refused non-`success` runs since `O-127`, and no seed of a
+red day has been appended yet. The rule's first real cost will be paid by the first red day somebody seeds,
+which is also the first day it can save: a history that kept the bound as a reading would divide by it and
+ask for a bound twice it.
+
+### The second half: a seed is no longer held to today's bound
+
+The same defect had a mirror image inside the recorder, and it was reachable before this round. The equality
+check of `O-127` -- *a step whose seconds equal its bound is the bound read back* -- compared **every** run
+with **today's** bound, seeds included. A seed of a day that allowed 30 minutes, of a step today's workflow
+bounds at 12, was therefore refused when its seconds were exactly 720: today's bound read back, from a
+number that day had every right to spend. The check is now the recording's alone, and the seed's version is
+the red-day comparison above. Two relations, two bounds, one arithmetic.
+
+### What it costs, and the residue
+
+**20 fatal** throws in `measure-ci-baseline.mjs` rather than 19, **78 unguarded** rather than 77, **109**
+partitioned statements rather than 107, and **241** proved claims rather than 239: a day whose workflow the
+API will not return is refused at the top level and ends the process, and one this reader will not walk is
+thrown inside `boundsOfThatDay` and handed to that call's `catch`, which is one function away -- and a
+function boundary is where a `try` stops counting.
+
+The residue is the other half of `O-128`'s own question, and it is not a defect: a seed whose `head_sha`
+predates a syntax this reader accepts is now unseedable, and the alternative -- a permissive reader for that
+day alone -- would put a second reader of `ci.yml` in the tree. The two are one question about whether a
+bound may be read by a rule no gate enforces, and the answer this round took is no.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| a red seed keeps every failed step, whatever the bound of its own day was | 2 |
+| the bound is compared with `>`, so a step that spent exactly it is kept | 1 |
+| the seconds are held against today's bound instead of the one that day enforced | 2 |
+| a job absent from that day's workflow is dropped without saying which fact it is | 1 |
+| a day whose workflow cannot be read falls back on an empty map rather than refusing the seed | 2 |
+| the day's workflow is fetched for every seed, not only one that holds a stopped step | 6 |
+| a stopped step is one the API called cancelled, so no red day is ever read | 7 |
+| the workflow of that day is read as text rather than decoded from base64 | 7 |
+| a workflow this reader refuses is walked as far as it goes | 1 |
+| a seed is held to today's bound as well, which is a different day's | 1 |
+
+**10 mutations, 30 reds**, measured on the green tree, no survivors.

@@ -881,3 +881,31 @@
   history with **0** equal to its bound and **0** within 6 s of it, and the recording's closest step at
   **531 of 1080 s**. The residue is `O-128`, a kill inside a red seed, which the report calls `failure`
   and which the recorder cannot separate from a duration because it reads today's workflow.
+- O-128 · ~~**A step killed at its own bound in a red seed enters the history as the bound it was killed
+  by.**~~ `O-127` refused the recording for a run that did not succeed and kept `failure` steps in a seed, on
+  the argument that `failure` is what a command that ran and returned non-zero reports. That argument holds
+  for one of the two shapes the conclusion covers, and the report does not say which: a step the runner
+  stopped at its own `timeout-minutes` also reports `failure`, and its seconds are the bound that was in
+  force that day -- so `R10`, which divides a bound by the slowest reading of its command, would divide by a
+  bound and ask for a bound twice the number the run was killed by. The two routes the entry named were
+  *read `ci.yml` at the seed's `head_sha`* and *keep only `success` steps*. ~~`[open: whether the recorder
+  should fetch `.github/workflows/ci.yml` at the seed's `head_sha` and compare each step's number with the
+  bound in force then -- one request per seed, and a workflow from before a syntax change may not parse --
+  or whether a seed should keep only `success` steps, which would lose the slowest day of the command that
+  failed]`~~
+  **Closed by finding 649**: the first route, and the second refused because a seed exists to keep a red
+  day's numbers -- `R10`'s denominator is the worst day, not the greenest one, so keeping only `success`
+  steps would silently delete the days the rule was written for. The recorder reads that day's file with the
+  same line reader the gate uses, and three answers follow: at or above the bound that day states, the
+  number is that bound and the step is dropped with a line naming it; a step that day bounded nowhere is
+  kept, because a job timeout cancels the running step and a cancelled step is already dropped; and a day
+  whose file cannot be read, or which has no such job, cannot answer, so the seed is refused rather than
+  appended with a number it cannot tell from a bound. The request is made only when the run holds a step the
+  API called `failure`, which a green run never does, so the price lands on the days that need it. The same
+  defect had a reachable mirror: the equality check of `O-127` held **seeds** to **today's** bound, and
+  refused a 720-second reading of a step today's workflow bounds at 12 minutes even when that day allowed 30.
+  **Ten mutations, 30 reds**, no survivors; **20** fatal throws in the recorder rather than 19, **109**
+  partitioned statements, **241** proved claims. The population is why nothing shipped changes: **38**
+  readings of **37** runs, every run `success`, **3,134** step entries, **0** of them from a run that holds a
+  `failure` step. The residue is `O-130`: a seed whose commit predates a syntax this reader accepts is now
+  unseedable, where it would have been appended with an unrecognised bound.

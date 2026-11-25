@@ -68,6 +68,7 @@ before the layer above it is meaningful.
 | A reading is named by its run and its attempt | v3.143 |
 | A measurement is written where it is the newest one | v3.144 |
 | Only a number the run measured is a reading | v3.145 |
+| A red day's number is read against the bound it enforced | v3.146 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -158,13 +159,15 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   the `sensitivity` job runs `verify-sites-are-sensitive.mjs`, which asks whether that
   file **notices** the exit's absence -- one run per claim with that site's code
   replaced by success, and a baseline run per file so a red claimant cannot be
-  credited with catching anything. Measured at **239 of 239** claim(s) across 68 file(s) -- two more
+  credited with catching anything. Measured at **241 of 241** claim(s) across 68 file(s) -- two more
   than v3.140's 232, because an attempt that does not exist and an attempt with no job in it are two
   refusals `measure-ci-baseline.mjs` did not have before, and each carries a proof; two more again
   at v3.144, because a recording that cannot say which measurement is the newest and a measurement
-  older than the one it would replace are two refusals the recorder did not have either; and three
+  older than the one it would replace are two refusals the recorder did not have either; three
   more at v3.145, because a run that did not succeed, a step that never started, and a step whose
-  number is its own bound are three shapes in which a number is not a duration.
+  number is its own bound are three shapes in which a number is not a duration; and two more at
+  v3.146, because a red seed's day can fail to answer in two ways -- a workflow its reader cannot
+  walk, and one the API will not return.
   The figure was 105 of 105 in both halves at v3.41, and it drifted for twenty-four rounds
   because nothing read the sentence -- an external reviewer quoted the 105 as the current
   state, which is what a number with no reader costs. `check-doc-counts` reads it now:
@@ -2697,3 +2700,37 @@ from an anecdote again.
   `failure`, so a seed may append the bound that was in force that day -- `O-128`, whose route is
   reading `ci.yml` at the seed's commit.
 - **Falsified by** 12 mutations, 17 reds, no survivor, measured on the green tree.
+
+### A red day's number is read against the bound it enforced (v3.146)
+
+- **`failure` is two shapes, and `R10` may divide by only one.** A command that ran to its end and returned
+  non-zero spent a duration; a step the runner stopped at its own `timeout-minutes` spent that bound, and
+  `R10`'s multiple would then ask for a bound twice the number the run was killed by. The report carries the
+  same conclusion for both and no field separates them (finding 649).
+- **The arithmetic of `O-127` needs the bound the runner was enforcing.** *A step that ends on its own ends
+  before its bound, so a number at it is that bound* is an argument about **that day's** number. A seed's day
+  is not today: `ci.yml` states today's bound, and widening or tightening a bound between the two days is the
+  ordinary history of every bound in this file.
+- **So a red seed costs one request, and the recorder reads that day's file.** `GET
+  /contents/.github/workflows/ci.yml?ref=<head_sha>`, walked by the same line reader the gate uses on
+  today's, and each `failure` step held to the bound the file states for it.
+- **Three answers, and the third is a refusal rather than a guess.** At or above that day's bound: the
+  number is the bound, and the step is dropped with a line naming `N` and *that day*. No bound of its own
+  that day: the step is kept, because a job timeout **cancels** the running step and a cancelled step is
+  already dropped -- no step bound can have stopped this one. A file that cannot be read, or a job that day
+  does not have: the question is open, so the **seed is refused** rather than appended with a day whose slow
+  steps are missing.
+- **Keeping only `success` steps was refused, and it is the same argument.** A seed exists to keep a red
+  day's numbers, because `R10`'s denominator is the worst day rather than the greenest one; dropping red
+  days would delete the evidence the rule was written for, and would do it silently.
+- **The request is made only where the question exists.** A green run holds no `failure` step, because
+  GitHub computes a run's conclusion from its steps, so a seed of a green day costs what it always did. The
+  price lands on the red days -- which are the days the rule is for.
+- **The mirror image was reachable and is repaired.** `O-127`'s equality check held **seeds** to **today's**
+  bound, and refused 720 s of a step today's workflow bounds at 12 minutes even when that day allowed 30.
+  The check is the recording's alone now; a seed's version is the comparison above. Two relations, two
+  bounds, one arithmetic.
+- **Not claimed.** That a day whose `ci.yml` this reader cannot walk can be appended at all: it is refused as
+  a whole, and the alternative -- a permissive second reader for that day -- would be a bound decided by a
+  rule no gate enforces (`O-130`).
+- **Falsified by** 10 mutations, 30 reds, no survivor, measured on the green tree.

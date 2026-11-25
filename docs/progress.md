@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 260 core + 4 cli |
-| Test lines | 119,457 core + 3,242 cli |
-| Tests | 7,000 core + 187 cli |
+| Test lines | 119,593 core + 3,242 cli |
+| Tests | 7,007 core + 187 cli |
 | Tracked files | 679 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.145: **46** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.146: **46** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1085,16 +1085,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   state no recording holds, which is what `R15` already does for the cold prefix; and whether the
   margin clause should say which of its 38 bounds rest on a step that moved by more than half its own
   reading, since two of them do]`
-- O-128 · **A step killed at its own bound in a red seed enters the history as the bound it was killed by.**
-  The recording is now refused for a run that did not succeed, and a seed keeps only the steps that ended on
-  their own (`O-127`) -- so `cancelled` and `skipped` are dropped and `failure` is kept. A step killed by its
-  own `timeout-minutes` in a *red run* is reported `failure`, the same conclusion a genuine failure carries,
-  so a seed appends the bound that was in force that day: a number up to twice a real reading, and `R10`
-  divides by it. The recorder reads today's workflow, so it cannot know the bound of that day.
-  `[open: whether the recorder should fetch `.github/workflows/ci.yml` at the seed's `head_sha` and compare
-  each step's number with the bound in force then -- one request per seed, and a workflow from before a
-  syntax change may not parse -- or whether a seed should keep only `success` steps, which would lose the
-  slowest day of the command that failed]`
 - O-129 · **The worker cap is derived from the CPU count, and this container's derived count makes four files fail per run.**
   `workerCount` reads the cgroup quota and leaves one CPU for the main process, so a 4-CPU container runs
   three workers. On this box three consecutive full runs each failed four or five *different* files with
@@ -1105,6 +1095,15 @@ is a row about rather than paraphrase one that no `grep` will find.
   rather than only the CPU allowance, and whether the files that spawn processes should declare their own
   hook budgets instead -- the two are one question about where a machine's slowness is allowed to be
   answered, and neither can be decided from this container alone]`
+- O-130 · **A seed whose commit predates a syntax this reader accepts can no longer be appended at all.**
+  `boundsOfThatDay` walks that day's `ci.yml` with the same strict line reader the gate uses, and a shape it
+  does not recognise is a refusal (`O-128`'s repair) -- so a day from before a syntax change is unseedable,
+  where `v3.145` would have appended it with a bound nobody could read. The alternative is a second,
+  permissive reader for that day alone, which is a bound decided by a rule no gate enforces.
+  `[open: whether a refused day should be appended with only its `success` steps -- the route `O-128`
+  refused for a day it could read, and a different proposition for one it cannot -- or whether the reader
+  should return the bounds it did recognise alongside its errors, so a day is refused for the steps it
+  cannot place rather than as a whole]`
 
 ## Pass log
 
@@ -1142,7 +1141,7 @@ and this table.
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
-| [volume-20.md](progress/volume-20.md) | 12 | v3.134 | v3.145 |
+| [volume-20.md](progress/volume-20.md) | 13 | v3.134 | v3.146 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

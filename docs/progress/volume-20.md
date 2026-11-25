@@ -1964,9 +1964,9 @@ the reason.
 | --- | --- |
 | CI | run `45445200416` on `61d433dd`: **8 of 8 jobs success**, 891 s, the run that published v3.144 and the thirty-seventh reading (`45393534319` is the thirty-fifth, `45421625317` the thirty-sixth) |
 | `pnpm run docs:check` | **23 steps, exit 0** |
-| `core` test suite | **260 files, 7000 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7187 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 7000 tests passed** (at v3.145) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.145) |
+| repo test suite | **264 files, 7187 tests passed** (at v3.145) |
 | new tests | **6,988 -> 7,000, +12**: eleven for the recorder's three shapes (a red run refused twice over, a step above its bound accepted, an equality refused, one second inside it accepted, a skipped step, a red seed's kept and dropped steps, a seed step with no conclusion, a seeded job with nothing left, a borrowed number), and one for the two sorts of empty seeded job |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: every line this round added is in `scripts/`, and the instrument reads `src/` |
 | the recorder's refusals | **3** new in the block that decides what may be written: a run that did not succeed, a step that never started, and a step whose number is its own bound -- beside one filter and two gap sentences |
@@ -1977,14 +1977,15 @@ the reason.
 
 ### Left open
 
-- `O-128` · **A step killed at its own bound in a red seed enters the history as the bound it was killed
-  by.** A seed keeps the steps that ended on their own, and the report calls a kill `failure`, so the seed
+- `O-128` · ~~**A step killed at its own bound in a red seed enters the history as the bound it was killed
+  by.**~~ A seed keeps the steps that ended on their own, and the report calls a kill `failure`, so the seed
   path cannot separate it from a duration -- and the bound that was in force that day is not one the
-  recorder reads, because it reads today's workflow.
-  `[open: whether the recorder should fetch `.github/workflows/ci.yml` at the seed's `head_sha` and compare
-  each step's number with the bound in force then -- one request per seed, and a workflow from before a
-  syntax change may not parse -- or whether a seed should keep only `success` steps, which would lose the
-  slowest day of the command that failed]`
+  recorder reads, because it reads today's workflow. ~~`[open: whether the recorder should fetch
+  `.github/workflows/ci.yml` at the seed's `head_sha` and compare each step's number with the bound in force
+  then -- one request per seed, and a workflow from before a syntax change may not parse -- or whether a
+  seed should keep only `success` steps, which would lose the slowest day of the command that failed]`~~
+  **Closed by finding 649**: the first route, taken, and the second refused with a reason -- keeping only
+  `success` steps would lose exactly the days a bound is sized from.
 - `O-129` · **The worker cap is derived from the CPU count, and this container's derived count makes four
   files fail per run.** Two workers here is 7,183 of 7,183 green and three is four failures a run, which is
   a fact about this box rather than about the tree: the entry holds the numbers and the two ways to answer
@@ -1993,3 +1994,130 @@ the reason.
   rather than only the CPU allowance, and whether the files that spawn processes should declare their own
   hook budgets instead -- the two are one question about where a machine's slowness is allowed to be
   answered, and neither can be decided from this container alone]`
+
+## v3.146 — the bound a red day enforced, and the one it did not
+
+`v3.145` closed `O-127` and left `O-128` standing with two routes: read `ci.yml` at the seed's `head_sha`,
+or keep only `success` steps. The round took the first and refused the second, and the refusal is the
+argument the round is built on.
+
+### One conclusion, two shapes, and the field that does not separate them
+
+`O-127` said a `failure` step of a seed is kept "because a command that ran and returned non-zero spent that
+long". The first half is true and the second is only sometimes:
+
+| the shape | what the number is | what `R10` then divides by |
+| --- | --- | --- |
+| the command ran to its end and returned non-zero | a duration | the worst day of the command, which is what the rule means |
+| the runner stopped the step at its own `timeout-minutes` | the bound in force that day | a bound, so the multiple asks for a bound twice the number the run was killed by |
+
+Why the second route was refused: a seed exists to keep a **red** day's numbers, because `R10`'s denominator
+is the worst day rather than the greenest one. Keeping only `success` steps would delete exactly the days
+the rule was written for, and would do it silently -- the file would look healthy with its slow rows gone.
+
+### The arithmetic was right and the number in it was today's
+
+`O-127`'s separation of a duration from a bound is *a step that ends on its own ends before its bound*, so
+`seconds >= bound` means the number is that bound. The inequality is an argument only when `bound` is the
+number the runner was enforcing. A seed's day is not today: `ci.yml` states today's bound, and that day's
+`ci.yml` stated the one that killed the step.
+
+So the recorder reads that day's file -- `GET /contents/.github/workflows/ci.yml?ref=<head_sha>`, walked by
+the same line reader the gate uses on today's -- and holds each `failure` step to the bound it states:
+
+| what that day says about the step | what the recorder does | why |
+| --- | --- | --- |
+| bounded at `N`, and the step spent at least `N * 60` s | drops it, naming `N` and *that day* | the number is that bound read back |
+| bounded nowhere | keeps it | the job timeout cancels the running step rather than failing it, and a cancelled step is already dropped -- no step bound can have stopped this one |
+| no such job in that day's workflow | drops it, saying which fact it is | the step may have run under a bound this reader cannot find, so the number cannot be proved a duration |
+| the file cannot be read at all | refuses the seed | the question is open; a seed that answered it by guessing would append a day with its slow steps missing |
+
+The last row is why the middle ones are not a compromise. The rule is not "keep what we cannot disprove",
+it is "ask the day, and refuse when the day cannot answer". A refusal is a state a reader can act on.
+
+### The cost, and who pays it
+
+One request per seed, and only when the run holds a step the API called `failure` -- which a green run never
+holds, because GitHub computes a run's conclusion from its steps. A seed of a green day costs what it always
+did; the price lands on the red days, which are the days the question exists for.
+
+### The population says the rule has never fired
+
+| fact | value |
+| --- | --- |
+| readings in the history | **38** |
+| runs they came from | **37** |
+| those runs' conclusions, asked of the API one by one | **37 `success`** |
+| step entries in the history | **3,134** |
+| entries whose run holds a `failure` step | **0** |
+
+So no shipped row can change under this rule. Its first real cost will be paid by the first red day somebody
+seeds -- which is also the first day it saves.
+
+### The mirror image, which was reachable
+
+The equality check of `O-127` compared **every** run with **today's** bound, seeds included. A seed of a day
+that allowed 30 minutes, of a step today's workflow bounds at 12, was refused when its seconds were exactly
+720: today's bound read back, from a number that day had every right to spend. The check is the recording's
+alone now, and the seed's version is the red-day comparison. Two relations, two bounds, one arithmetic.
+
+### The round's own defects
+
+- **A mutation that makes the subject unparseable measures nothing about the rule.** The first draft replaced
+  `if (boundsThen === undefined) {` with `if (boundsThen === undefined) continue;`, which left the block's
+  closing brace behind: 51 reds, and every one of them was a test that spawns the recorder failing to load
+  it. A mutation battery that does not check the file still parses would report a rule as covered by the
+  syntax error of a tool. The entry was rewritten as a whole-block replacement, and the honest count is 1.
+- **An anchor copied by hand carried the wrong indent.** The base64 line sits at four spaces and the mutation
+  was written with six, so the script printed `SKIP (anchor 0x)` -- which is the one failure mode a mutation
+  battery can have and still look green, because a skipped mutation is not a surviving one.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| a red seed keeps every failed step, whatever the bound of its own day was | 2 |
+| the bound is compared with `>`, so a step that spent exactly it is kept | 1 |
+| the seconds are held against today's bound instead of the one that day enforced | 2 |
+| a job absent from that day's workflow is dropped without saying which fact it is | 1 |
+| a day whose workflow cannot be read falls back on an empty map rather than refusing the seed | 2 |
+| the day's workflow is fetched for every seed, not only one that holds a stopped step | 6 |
+| a stopped step is one the API called cancelled, so no red day is ever read | 7 |
+| the workflow of that day is read as text rather than decoded from base64 | 7 |
+| a workflow this reader refuses is walked as far as it goes | 1 |
+| a seed is held to today's bound as well, which is a different day's | 1 |
+
+**10 mutations, 30 reds**, measured on the green tree, no survivors.
+
+### Readings
+
+> Ledger for `v3.146`.
+
+| item | value |
+| --- | --- |
+| CI | run `45518129185` on `36a299c8`: **8 of 8 jobs success**, 909 s -- the thirty-eighth reading |
+| `pnpm run docs:check` | **23 steps, exit 0** |
+| `core` test suite | **260 files, 7007 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **264 files, 7194 tests passed** (as of this commit) |
+| new tests | **7,000 -> 7,007, +7**: a red day's step at the bound it enforced (dropped), a step that spent today's bound while that day allowed more (kept), a day that gave the step no bound of its own (kept), a day whose workflow cannot be read (seed refused), a day whose workflow does not parse (seed refused), a green day that is not asked at all, and a step of a job that day's workflow does not have (dropped, with the fact named) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: every line this round added is in `scripts/`, and the instrument reads `src/` |
+| the recorder's refusals | **2** new: a red seed whose day's workflow cannot be read, at the top level, and one this reader cannot walk, thrown from `boundsOfThatDay` |
+| the gate's inventory | **146** failure site(s) across 69 script(s); throws **20 fatal, 78 unguarded, 1 guarded, 10 rethrow** -- 109 partitioned, **241** proved claims |
+| the population | **38** readings, **37** runs, **37** trees; **1** pair measured one tree |
+| `docs/acceptance.md` | **60** clauses across **42** rounds |
+| the census | **4** coincidences, unchanged |
+
+### Left open
+
+`O-129` stands as `v3.145` left it: this round measured nothing about the worker cap and did not touch it.
+
+- `O-130` · **A seed whose commit predates a syntax this reader accepts can no longer be appended at all.**
+  `boundsOfThatDay` walks that day's `ci.yml` with the same strict line reader the gate uses, and a shape it
+  does not recognise is a refusal -- so a day from before a syntax change is unseedable, where `v3.145`
+  would have appended it (with a bound it could not recognise). The alternative is a second, permissive
+  reader for that day alone, which is a bound read by a rule no gate enforces.
+  `[open: whether a refused day should be appended with only its `success` steps -- which is the route
+  `O-128` refused for a day it could read, and a different proposition for one it cannot -- or whether the
+  reader should return the bounds it did recognise alongside its errors, so a day is refused for the steps
+  it cannot place rather than as a whole]`
