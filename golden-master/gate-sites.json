@@ -413,7 +413,7 @@
     },
     {
       "script": "scripts/check-repository-table.mjs",
-      "line": 466,
+      "line": 483,
       "condition": "check() !== 0",
       "diagnostic": "check-repository-table: FAILED",
       "status": "proved",
@@ -1241,7 +1241,7 @@
       },
       {
         "script": "scripts/check-repository-table.mjs",
-        "line": 253,
+        "line": 261,
         "disposition": "unguarded",
         "message": "${SNAPSHOT} carries no '${scope}' scope, so this row cannot be derived",
         "status": "proved",
@@ -1249,7 +1249,7 @@
       },
       {
         "script": "scripts/check-repository-table.mjs",
-        "line": 272,
+        "line": 280,
         "disposition": "unguarded",
         "message": "new Error( `packages/${suite.scope}/test holds ${String(suite.files().length)} test file(s) and the ` + `suite reported ",
         "status": "proved",
@@ -1257,7 +1257,7 @@
       },
       {
         "script": "scripts/check-repository-table.mjs",
-        "line": 372,
+        "line": 380,
         "disposition": "unguarded",
         "message": "new Error(table.error)",
         "status": "proved",
@@ -1265,7 +1265,7 @@
       },
       {
         "script": "scripts/check-repository-table.mjs",
-        "line": 380,
+        "line": 388,
         "disposition": "unguarded",
         "message": "${spec.name}: ${expected.error}",
         "status": "proved",
