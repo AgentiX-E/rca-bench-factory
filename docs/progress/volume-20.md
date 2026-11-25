@@ -2110,7 +2110,9 @@ alone now, and the seed's version is the red-day comparison. Two relations, two 
 
 ### Left open
 
-`O-129` stands as `v3.145` left it: this round measured nothing about the worker cap and did not touch it.
+`O-129` was measured once more and not closed: at the same derived three workers the full suite was
+**7,007 of 7,007** green in 92 s, so the four failures a round are intermittent rather than necessary -- and
+a rule that fires one run in four is not answered by a run in which it did not.
 
 - `O-130` · **A seed whose commit predates a syntax this reader accepts can no longer be appended at all.**
   `boundsOfThatDay` walks that day's `ci.yml` with the same strict line reader the gate uses, and a shape it
@@ -2121,3 +2123,12 @@ alone now, and the seed's version is the red-day comparison. Two relations, two 
   `O-128` refused for a day it could read, and a different proposition for one it cannot -- or whether the
   reader should return the bounds it did recognise alongside its errors, so a day is refused for the steps
   it cannot place rather than as a whole]`
+- `O-131` · **A red day's bound is looked up by step name, and a step's identity in this file is its
+  command.** `boundsOfThatDay` keys that day's bounds by `step.name` and the recorder looks today's step up
+  by the same name, so a step renamed between the two days -- the bound still managing the same command --
+  reads as a step that day gave no bound, and a number equal to that bound is kept. Everywhere else a
+  reading is keyed by `commandOf(step)`, because `R10`'s denominator is a series over commands rather than
+  over names.
+  `[open: whether the lookup should key on the command, which is the identity the rest of this file uses,
+  or keep the name and accept the gap -- a command match would also have to decide what two steps of one
+  job that ran the same command mean, and a bound is one number while a command can be run twice]`

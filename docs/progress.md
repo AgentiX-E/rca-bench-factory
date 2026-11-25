@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.146: **46** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.146: **47** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1095,6 +1095,17 @@ is a row about rather than paraphrase one that no `grep` will find.
   rather than only the CPU allowance, and whether the files that spawn processes should declare their own
   hook budgets instead -- the two are one question about where a machine's slowness is allowed to be
   answered, and neither can be decided from this container alone]`
+  `v3.146` measured it once more: at the same derived three workers the full suite was **7,007 of 7,007**
+  green in 92 s, so the four failures a round are intermittent rather than necessary -- which is why the
+  entry is not closed: a rule that fires one run in four is not answered by a run in which it did not.
+- O-131 · **A red day's bound is looked up by step name, and a step's identity in this file is its command.**
+  `boundsOfThatDay` keys that day's bounds by `step.name` and the recorder looks today's step up by the
+  same name, so a step renamed between the two days -- the bound still managing the same command -- reads
+  as a step that day gave no bound, and a number equal to that bound is kept. Everywhere else a reading is
+  keyed by `commandOf(step)`, because `R10`'s denominator is a series over commands rather than over names.
+  `[open: whether the lookup should key on the command, which is the identity the rest of this file uses,
+  or keep the name and accept the gap -- a command match would also have to decide what two steps of one
+  job that ran the same command mean, and a bound is one number while a command can be run twice]`
 - O-130 · **A seed whose commit predates a syntax this reader accepts can no longer be appended at all.**
   `boundsOfThatDay` walks that day's `ci.yml` with the same strict line reader the gate uses, and a shape it
   does not recognise is a refusal (`O-128`'s repair) -- so a day from before a syntax change is unseedable,
