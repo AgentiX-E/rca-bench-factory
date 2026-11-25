@@ -31,6 +31,7 @@ import {
   readReadings,
   readingsOfCommand,
   stepsOf,
+  worstStateFor,
 } from '../../../scripts/ci-budget.mjs';
 import { readWorkflow } from '../../../scripts/gate-steps.mjs';
 import { readLedger } from '../../../scripts/ledger-runs.mjs';
@@ -238,7 +239,7 @@ describe('the arithmetic of one job', () => {
     const workflow = oneJob([...step('Slow battery', 6)]);
     const errors = budgetErrors(workflow, recordingOf({ batteries: { steps: { 'Slow battery': 351 } } })).join('\n');
     expect(errors).toContain('bounded at 6 min and the tree spent 351 s on it');
-    expect(errors).toContain(`under ${String(MULTIPLE)} times what the tree costs`);
+    expect(errors).toContain(`under ${String(MULTIPLE)} times what the command costs on that tree`);
     expect(errors).toContain('refused for being slow rather than for hanging');
   });
 
@@ -255,7 +256,7 @@ describe('the arithmetic of one job', () => {
   it('refuses a work step under twice its own day, whatever the floor would have said', () => {
     const workflow = oneJob([...step('Quick battery', 1)]);
     const errors = budgetErrors(workflow, recordingOf({ batteries: { steps: { 'Quick battery': 46 } } })).join('\n');
-    expect(errors).toContain(`the bound is under ${String(MULTIPLE)} times what the tree costs`);
+    expect(errors).toContain(`the bound is under ${String(MULTIPLE)} times what the command costs on that tree`);
   });
 
   /** A two-job workflow whose first step both jobs share, which is what makes it a prefix. */
@@ -3885,18 +3886,26 @@ describe('the spread of one command, and the multiple that does not say it', () 
       }),
     );
     expect(readingsOfCommand(rows, 'pip install x')).toEqual({
-      fastest: { seconds: 16, run: 1, attempt: 1, job: 'backend', step: 'Install' },
-      slowest: { seconds: 888, run: 3, attempt: 1, job: 'backend', step: 'Install' },
-      // The same readings held by tree (`R14`). Three runs, three commits, so each tree was
-      // measured once and costs what it spent: the slowest is the 888 s day, and the list of
-      // its attempts has one entry because nothing has replicated it.
-      slowestCost: {
+      fastest: { seconds: 16, run: 1, attempt: 1, commit: '1'.padStart(40, '0'), job: 'backend', step: 'Install' },
+      // The worst day is the denominator (`R16`), and it keeps the attempts of **its own tree**:
+      // three runs, three commits, so the list is one long and it says the 888 s was read once.
+      slowest: {
         seconds: 888,
         run: 3,
         attempt: 1,
+        commit: '3'.padStart(40, '0'),
         job: 'backend',
         step: 'Install',
-        attempts: [{ seconds: 888, run: 3, attempt: 1, job: 'backend', step: 'Install' }],
+        attempts: [
+          {
+            seconds: 888,
+            run: 3,
+            attempt: 1,
+            commit: '3'.padStart(40, '0'),
+            job: 'backend',
+            step: 'Install',
+          },
+        ],
       },
       count: 4,
       // Four readings have no middle one: the axis is the two numbers the interval is between,
@@ -4807,26 +4816,26 @@ describe('a reading is named by its run, and a re-run made one run two readings'
 
   it('names the attempt in the refusal about the slowest day, because the run holds two of them', () => {
     // Run 100 was re-run, and its second attempt is the slowest the command has ever been. `run 100`
-    // sends the reader to the first attempt, where the step spent 500 s and the bound of 20 min
+    // sends the reader to the first attempt, where the step spent 1000 s and the bound of 20 min
     // would have been fine -- so the sentence would be pointing at a number it is not about.
     const workflow = oneJob([...step('Slow battery', 20, COMMAND)], 30);
-    const history = { readings: [at(100, 1, 1000), at(100, 2, 900), at(200, 1, 600)] };
+    const history = { readings: [at(100, 1, 900), at(100, 2, 1000), at(200, 1, 600)] };
     const errors = budgetErrors(workflow, recordingAt(600), null, null, history).join('\n');
-    // Both facts in one sentence: the coordinate of the cost, and the attempt of that commit the
-    // cost is not -- the pair is what says the 1000 s was the machine rather than the tree (`R14`).
+    // Both facts in one sentence: the coordinate of the worst day, and what the other attempt of
+    // that commit read -- the pair is what says whether the 1000 s repeats or stands alone (`R16`).
     expect(errors).toContain(
-      'in `batteries / Slow battery` in run 100 attempt 2 (the other attempt of that commit read 1000 s)',
+      'in `batteries / Slow battery` in run 100 attempt 2 (the same tree read 900 s on its other attempt)',
     );
     expect(errors).not.toContain('in run 100:');
   });
 
   it('names the attempt of the reading the tightest multiple divides by', () => {
-    // The same witness, in the sentence that reports rather than refuses: `2.1x of 700 s` is a
+    // The same witness, in the sentence that reports rather than refuses: `1.9x of 800 s` is a
     // claim about one measurement, and the measurement is the second attempt.
     const workflow = oneJob([...step('Slow battery', 25, COMMAND)], 30);
-    const history = { readings: [at(100, 1, 800), at(100, 2, 700), at(200, 1, 600)] };
+    const history = { readings: [at(100, 1, 700), at(100, 2, 800), at(200, 1, 600)] };
     const summary = budgetSummary(workflow, recordingAt(600), null, null, history);
-    expect(summary).toContain('(700 s in `batteries / Slow battery`, run 100 attempt 2)');
+    expect(summary).toContain('(800 s in `batteries / Slow battery`, run 100 attempt 2)');
   });
 
   it('names the attempt of the fastest reading the headroom is measured against', () => {
@@ -5147,8 +5156,8 @@ describe('the margin is chosen among bounds, and measured against the day the ga
       null,
       { readings: [row(100, 1, 500, 300), row(100, 2, 200, 280), row(200, 1, 400, 300)] },
     );
-    expect(summary).toContain('by at least 1.7x');
-    expect(summary).toContain('(the narrowest `batteries / Slow battery` clears 500 s against 300 s)');
+    expect(summary).toContain('by at least 1.3x');
+    expect(summary).toContain('(the narrowest `batteries / Slow battery` clears 400 s against 300 s)');
   });
 
   it("measures the headroom above the slowest day, which the recording need not be", () => {
@@ -5162,7 +5171,7 @@ describe('the margin is chosen among bounds, and measured against the day the ga
       null,
       { readings: [row(100, 1, 400, 0), row(100, 2, 380, 0), row(200, 1, 300, 0)] },
     );
-    expect(summary).toContain('clears 520 s against 20 s');
+    expect(summary).toContain('clears 500 s against 20 s');
   });
 
   it('counts a bound whose step came back identical beside the one that moved', () => {
@@ -5250,25 +5259,35 @@ describe('a step only one of two readings timed', () => {
 });
 
 /**
- * A tree is not a day (`R14`, `O-135`).
+ * A tree is not a day, and a state is not the tree (`R16`, `O-139`).
  *
  * Every rule above divides a bound by **a number from the history**, and until v3.150 that number
- * was a reading: one box, on one afternoon, for one step. `v3.149`'s delivery run is the case that
- * broke it. The second shard of the sites battery spent **881 s**, the same commit had spent
- * **600 s** forty minutes earlier, and the run was green in every one of its eight jobs -- so
- * recording it would have asked `R4` to raise a twenty-two-minute bound to thirty, and the rise
- * would have been charged to every future hang of a step that can do the work in ten minutes. The
- * instrument had the answer and the rules did not read it: two attempts of one commit cannot differ
- * by the tree, because the tree did not change.
+ * was a reading: one box, on one afternoon, for one step. `v3.150` narrowed it to a tree's *faster*
+ * attempt, on the argument that the tree cannot have changed between two attempts of one commit, so
+ * the difference is the machine and a bound is a multiple of the program. The first half is a fact
+ * about the tree; the second is an assumption about the machine, and the history that produced the
+ * rule refutes it.
  *
- * So a bound is sized from what a **tree** costs, and a tree costs the faster of the attempts that
- * measured it. Two things follow, and both are cases below. The multiple stops paying for the
- * machine. And a clause that had been doing nothing starts to matter: a bound is still at least the
- * worst day the command has actually spent, because a command with two modes -- a package store hit
- * and a miss -- has a "faster attempt" that is the cheap mode, and twice a cheap mode is not a bound
- * on the expensive one.
+ * The second shard of the sites battery is the case, and it is seven trees of one afternoon holding
+ * **146** sites each -- the same work, twice, with nothing between them for the suite to grow on:
+ *
+ * | reading | tree | seconds |
+ * | --- | --- | --- |
+ * | the only tree read twice | `87d78d97` | 881 s, then 880 s |
+ * | four trees | `36a299c8`, `3d69ada9`, `91806080`, `b3124638` | 635, 636, 600, 621 |
+ * | three trees | `87d78d97`, `8fb87bcb`, `90303700` | 881, 900, 885 |
+ *
+ * A tree repeats its own state to the second, and the states are 50% apart -- so "the faster
+ * attempt" was not the program's cost, it was the state the tree happened to be measured in, twice.
+ * A run that lands in the slow state is a legitimate run, and a bound sized from the fast one
+ * refuses it: 22 minutes (1320 s) is above twice 621 s and above the 900 s day itself, so `R14`'s
+ * two clauses both passed a bound its own round had called unsafe in three documents. That is
+ * finding 654, and the first case below is the falsifier.
+ *
+ * So a bound divides the **worst day** the command has spent, the pair travels beside the number as
+ * evidence rather than as the denominator, and one clause does what two used to.
  */
-describe('a tree costs the faster of its attempts, and a day costs what it spent', () => {
+describe('a bound covers the state the command was read in', () => {
   const COMMAND = 'node scripts/verify-sites-are-sensitive.mjs --shard 2/2';
   const TREE = 'a'.repeat(40);
   const OTHER_TREE = 'b'.repeat(40);
@@ -5282,37 +5301,53 @@ describe('a tree costs the faster of its attempts, and a day costs what it spent
     jobs: { sites: { 'Every proved exit (shard 2 of 2)': { seconds, command: COMMAND } } },
   });
 
-  /** The workflow the numbers are about: one job, one bounded battery. */
-  const oneShard = () =>
-    workflowOf([{ id: 'sites', minutes: 35, steps: step('Every proved exit (shard 2 of 2)', 22, COMMAND) }]);
+  /** The workflow the numbers are about: one job, one bounded battery at `minutes`. */
+  const oneShard = (minutes = 35) =>
+    workflowOf([{ id: 'sites', minutes: 35, steps: step('Every proved exit (shard 2 of 2)', minutes, COMMAND) }]);
 
   /** The recording of one attempt of one tree, which is what the recorder writes after a run. */
   const recorded = (commit: string, run: number, attempt: number, seconds: number) =>
     recordingOf({ sites: { minutes: 35, steps: { 'Every proved exit (shard 2 of 2)': seconds } } }, { commit, run, attempt });
 
-  it('reads one tree\'s two attempts as one cost, and keeps both numbers beside it', () => {
-    // The pair, at the unit the rule works in. The cost is the faster attempt; the list is every
-    // attempt of that tree, oldest first, because the refusal that prints `600 s` has to be able to
-    // say what the other attempt read -- otherwise a reader holding `881 s` in the file concludes
-    // the gate ignored it.
+  it('reads the worst day of a tree, with every attempt of that tree beside it', () => {
+    // `R16`. The pair is evidence and not a second candidate: 881 s is what the bound divides, and
+    // the 600 s beside it is the fact a reader needs to judge whether 881 s is the program or the
+    // box. `R14` took the 600 s as the cost, which is the one reading of the two that no bound can
+    // be sized from -- a run landing in the 881 s state would then be refused for being slow.
     const rows = readReadings({ readings: [at(TREE, 45595594712, 1, 881), at(TREE, 45595594712, 2, 600)] }).rows;
-    expect(readingsOfCommand(rows, COMMAND)?.slowestCost).toEqual({
-      seconds: 600,
+    expect(readingsOfCommand(rows, COMMAND)?.slowest).toEqual({
+      seconds: 881,
       run: 45595594712,
-      attempt: 2,
+      attempt: 1,
+      commit: TREE,
       job: 'sites',
       step: 'Every proved exit (shard 2 of 2)',
       attempts: [
-        { seconds: 881, run: 45595594712, attempt: 1, job: 'sites', step: 'Every proved exit (shard 2 of 2)' },
-        { seconds: 600, run: 45595594712, attempt: 2, job: 'sites', step: 'Every proved exit (shard 2 of 2)' },
+        {
+          seconds: 881,
+          run: 45595594712,
+          attempt: 1,
+          commit: TREE,
+          job: 'sites',
+          step: 'Every proved exit (shard 2 of 2)',
+        },
+        {
+          seconds: 600,
+          run: 45595594712,
+          attempt: 2,
+          commit: TREE,
+          job: 'sites',
+          step: 'Every proved exit (shard 2 of 2)',
+        },
       ],
     });
   });
 
-  it('counts one attempt\'s two jobs as one cost, and takes the slower of them', () => {
+  it("counts one attempt's two jobs as one reading, and keeps the slower job", () => {
     // A command can run in two jobs of the same attempt -- the five that install the shells do --
     // and the day's cost is the slower job: sizing from the fast one would size from a mirror hit
-    // (`R10`'s original evidence, 153 s against 8 s on one run).
+    // (`R10`'s original evidence, 153 s against 8 s on one run). The attempt is one reading, so the
+    // list is one long even though two jobs timed it.
     const rows = readReadings({
       readings: [
         {
@@ -5327,99 +5362,112 @@ describe('a tree costs the faster of its attempts, and a day costs what it spent
         },
       ],
     }).rows;
-    const cost = readingsOfCommand(rows, COMMAND)?.slowestCost;
-    expect(cost?.seconds).toBe(153);
-    expect(cost?.attempts).toHaveLength(1);
-    expect(cost?.job).toBe('sites-heavy');
+    const worst = readingsOfCommand(rows, COMMAND)?.slowest;
+    expect(worst?.seconds).toBe(153);
+    expect(worst?.attempts).toHaveLength(1);
+    expect(worst?.job).toBe('sites-heavy');
   });
 
-  it('sizes from the slowest tree, not from the slowest attempt any tree has had', () => {
-    // The other direction of the same arithmetic, and the one that keeps it from being a minimum
-    // over history: a tree read at 1000 s and 900 s costs 900, and another tree read once at 950
-    // costs 950 -- so the bound is sized from the 950 and not from the 1000. A rule written as "the
-    // fastest reading of every command" would have said 900 and been wrong in the other direction.
+  it('sizes from the worst state any tree has shown, not from the worst tree\'s best attempt', () => {
+    // Both directions at once. The tree read twice costs 1000 s, because a bound has to cover the
+    // state it was in; and the tree read once at 950 s is not a reason to lower that -- the 950 is a
+    // day, and a day is a state rather than a ceiling on what the command can spend. `R14` answered
+    // 950 here by taking each tree's faster attempt, which is the number this rule refuses to take.
     const rows = readReadings({
       readings: [at(TREE, 10, 1, 1000), at(TREE, 10, 2, 900), at(OTHER_TREE, 11, 1, 950)],
     }).rows;
-    expect(readingsOfCommand(rows, COMMAND)?.slowestCost).toMatchObject({ seconds: 950, run: 11, attempt: 1 });
+    expect(worstStateFor(rows, COMMAND)).toMatchObject({ seconds: 1000, run: 10, attempt: 1 });
   });
 
-  it('accepts a bound twice the faster attempt, where twice the slower one would have raised it', () => {
-    // The case in hand. 22 min is 1320 s: twice the tree's 600 s fits, and twice the 881 s day does
-    // not -- so the same workflow, the same recording and the same history were refused by the old
-    // rule and are accepted by this one. The tree did not change between the two attempts, which is
-    // the whole of the argument, and the pair is what says so.
+  it('refuses twenty-two minutes on a command read at 900 s, which `R14` accepted', () => {
+    // The falsifier, and it is the state `R14` was written for: one tree, two readings, 621 s and
+    // 900 s. `R14` divided the 621 (1242 s of requirement), its floor clause asked only for the 900
+    // itself, and 1320 s of bound passed both -- while the round that wrote the clause called
+    // twenty-two minutes unsafe in three documents. A rule whose prose and whose arithmetic disagree
+    // is a rule with one of them wrong, and the arithmetic was.
     const errors = budgetErrors(
-      oneShard(),
+      oneShard(22),
+      recorded(OTHER_TREE, 45595594713, 1, 621),
+      null,
+      null,
+      {
+        readings: [
+          at(TREE, 45595594712, 1, 621),
+          at(TREE, 45595594712, 2, 900),
+          at(OTHER_TREE, 45595594713, 1, 621),
+        ],
+      },
+    ).join('\n');
+    expect(errors).toContain('is bounded at 22 min');
+    expect(errors).toContain('spent 900 s on its worst day');
+    expect(errors).toContain('the bound is under twice the worst day this command has already spent');
+  });
+
+  it('refuses a recording that landed in the fast state, and divides the slow one instead', () => {
+    // `R4`'s half, in the same direction. The recording is attempt 2 at 600 s; the same bytes spent
+    // 881 s on attempt 1, so the tree's cost is 881 s and a 22-minute bound is under twice it.
+    // `R14` divided 600 s here -- the faster attempt -- and accepted the bound.
+    const errors = budgetErrors(
+      oneShard(22),
       recorded(TREE, 45595594712, 2, 600),
       null,
       null,
       { readings: [at(TREE, 45595594712, 1, 881), at(TREE, 45595594712, 2, 600)] },
+    ).join('\n');
+    expect(errors).toContain('the tree spent 881 s on it');
+    expect(errors).toContain('(the same tree read 600 s on its other attempt)');
+    expect(errors).toContain('the bound is under 2 times what the command costs on that tree');
+  });
+
+  it('accepts thirty minutes, which is twice the worst state of either reading', () => {
+    // The bound the shipped tree carries, and the one the rule asks for: 1800 s against a worst day
+    // of 900 s. The pair is present and changes nothing about the requirement -- it is the evidence
+    // that the 900 s is a state, and a state a bound covers is a bound.
+    const errors = budgetErrors(
+      oneShard(30),
+      recorded(TREE, 45595594712, 2, 900),
+      null,
+      null,
+      { readings: [at(TREE, 45595594712, 1, 621), at(TREE, 45595594712, 2, 900)] },
     );
     expect(errors).toEqual([]);
   });
 
-  it('divides the tree\'s cost and not the recording\'s number, when the last attempt is the slow one', () => {
-    // The recording has to be the newest reading (`R10` refuses one that is not), and the newest
-    // attempt is whichever the re-run happened to be. Here the re-run landed on a slow box: attempt
-    // 2 reads 881 s and is the recording, attempt 1 read 600 s on the same bytes. `R4` must divide
-    // 600 -- otherwise the same tree is refused or accepted depending on which attempt the rerun
-    // produced, which is the shape `O-114` removed from the history one level down.
-    const slowRecording = budgetErrors(
-      oneShard(),
+  it('names the worst day and what the other attempt of the same tree read', () => {
+    // A refusal that printed only `900 s` would leave a reader who has seen `621 s` in the history
+    // believing the gate had ignored the fast day. It did not: the pair is the evidence for the
+    // number, and the sentence is where it says so.
+    const errors = budgetErrors(
+      oneShard(22),
+      recorded(OTHER_TREE, 45595594713, 1, 621),
+      null,
+      null,
+      {
+        readings: [
+          at(TREE, 45595594712, 1, 621),
+          at(TREE, 45595594712, 2, 900),
+          at(OTHER_TREE, 45595594713, 1, 621),
+        ],
+      },
+    ).join('\n');
+    expect(errors).toContain('in `sites / Every proved exit (shard 2 of 2)` in run 45595594712 attempt 2');
+    expect(errors).toContain('(the same tree read 621 s on its other attempt)');
+  });
+
+  it('prints the pair beside the multiple, and how far apart the two readings are', () => {
+    // The summary is the other reader of the same pair. `2.0x of the worst day` without the other
+    // attempt cannot be told from a tree that grew; with it, the sentence says the two readings of
+    // one tree are 1 s apart, which is a number a reader can act on and a claim the file can check.
+    const summary = budgetSummary(
+      oneShard(30),
       recorded(TREE, 45595594712, 2, 881),
       null,
       null,
-      { readings: [at(TREE, 45595594712, 1, 600), at(TREE, 45595594712, 2, 881)] },
+      { readings: [at(TREE, 45595594712, 1, 880), at(TREE, 45595594712, 2, 881)] },
     );
-    expect(slowRecording).toEqual([]);
-  });
-
-  it('refuses the same bound when the tree was read once, because then the slow day is all there is', () => {
-    // The control, and the reason the rule is not "the fastest reading wins": with one attempt there
-    // is no pair, the 881 s cannot be attributed to the machine, and the bound is under twice it.
-    // Deleting the second attempt is the only difference between this case and the one above.
-    const errors = budgetErrors(
-      oneShard(),
-      recorded(TREE, 45595594712, 1, 881),
-      null,
-      null,
-      { readings: [at(TREE, 45595594712, 1, 881)] },
-    ).join('\n');
-    expect(errors).toContain('the tree spent 881 s on it');
-    expect(errors).toContain('the bound is under 2 times what the tree costs');
-  });
-
-  it('refuses a bound the multiple clears and a day already spent does not', () => {
-    // The clause that starts working the moment the multiple stops dividing the slowest day. A
-    // command with two modes -- 600 s and 1300 s on two attempts of one tree -- costs 600, twice
-    // that is 1200, and a 20-minute bound would be legal by the multiple and would fire on the
-    // 1300 s mode the same tree has already been seen in. A bound that a day already spent exceeds
-    // is not a bound, so the bound is the larger of the two requirements.
-    const errors = budgetErrors(
-      workflowOf([{ id: 'sites', minutes: 35, steps: step('Every proved exit (shard 2 of 2)', 20, COMMAND) }]),
-      recorded(TREE, 45595594712, 3, 600),
-      null,
-      null,
-      { readings: [at(TREE, 45595594712, 1, 1300), at(TREE, 45595594712, 2, 600)] },
-    ).join('\n');
-    expect(errors).toContain('the same command spent 1300 s in `sites / Every proved exit (shard 2 of 2)`');
-    expect(errors).toContain('the bound is under a day already recorded');
-    expect(errors).not.toContain('twice the slowest tree');
-  });
-
-  it('says which attempt the cost came from and what the other one read', () => {
-    // A refusal that printed only `600 s` would leave a reader who has seen `881 s` in the history
-    // believing the gate had ignored the slow day. It did: the sentence is where it says so.
-    const summary = budgetSummary(
-      oneShard(),
-      recorded(TREE, 45595594712, 2, 600),
-      null,
-      null,
-      { readings: [at(TREE, 45595594712, 1, 881), at(TREE, 45595594712, 2, 600)] },
-    );
+    expect(summary).toContain('of the worst day its command has spent (881 s in');
     expect(summary).toContain(
-      'the same tree was read again at 881 s (run 45595594712 attempt 1) and a tree costs the faster of its attempts',
+      'the same tree was read again at 880 s (run 45595594712 attempt 1), 1 s apart',
     );
   });
 
@@ -5433,9 +5481,10 @@ describe('a tree costs the faster of its attempts, and a day costs what it spent
     expect(costOfStep(null, { commit: TREE, job: 'sites', step: 'x', command: COMMAND })).toBeNull();
   });
 
-  it('finds a step\'s cost on its own tree, at the job and step that spent it', () => {
+  it("finds a step's cost on its own tree as the worst of the attempts that measured it", () => {
     // The lookup `R4` needs: by commit, job and step -- not by command, because a command can run in
-    // two jobs and `R4` asks what *this* step cost. The attempts come back oldest first.
+    // two jobs and `R4` asks what *this* step cost. The attempts come back oldest first, and the
+    // answer is the worst of them rather than the first or the cheapest.
     const rows = readReadings({
       readings: [
         at(TREE, 1, 1, 881),
@@ -5453,7 +5502,51 @@ describe('a tree costs the faster of its attempts, and a day costs what it spent
       step: 'Every proved exit (shard 2 of 2)',
       command: COMMAND,
     });
-    expect(cost?.seconds).toBe(600);
+    expect(cost?.seconds).toBe(881);
     expect(cost?.attempts.map((one) => one.seconds)).toEqual([881, 600, 610]);
+  });
+
+  it('refuses the same bound when the tree was read once, because the state is all there is', () => {
+    // The control. One attempt is not a weaker measurement of the cost -- it is the only state the
+    // file has seen, and a bound has to cover it. This case also says the rule is not "the fastest
+    // reading wins": deleting the second attempt changes nothing.
+    const errors = budgetErrors(
+      oneShard(22),
+      recorded(TREE, 45595594712, 1, 881),
+      null,
+      null,
+      { readings: [at(TREE, 45595594712, 1, 881)] },
+    ).join('\n');
+    expect(errors).toContain('the tree spent 881 s on it');
+    expect(errors).toContain('the bound is under 2 times what the command costs on that tree');
+  });
+
+  it('says how much of a range two readings of one tree explain, and nothing when no tree was read twice', () => {
+    // The sentence `O-139` asked for: the range over the history is two facts -- the suite's growth
+    // and the state of the box -- and the only instrument that separates them is a tree read twice.
+    // A share is printed rather than an adjective, and a step no tree has been read twice on says so
+    // instead of printing a zero difference it never measured.
+    const share = budgetSummary(
+      oneShard(30),
+      recorded(TREE, 45595594712, 2, 881),
+      null,
+      null,
+      {
+        readings: [
+          at(TREE, 45595594712, 1, 600),
+          at(TREE, 45595594712, 2, 881),
+          at(OTHER_TREE, 12, 1, 900),
+        ],
+      },
+    );
+    expect(share).toContain('two readings of one tree timed that step 281 s apart, 94% of the 300 s between its ends');
+    const unpaired = budgetSummary(oneShard(30), recorded(OTHER_TREE, 12, 1, 900), null, null, {
+      readings: [at(TREE, 11, 1, 600), at(OTHER_TREE, 12, 1, 900)],
+    });
+    expect(unpaired).toContain('no tree the history holds twice has timed that step');
+    const unmoved = budgetSummary(oneShard(30), recorded(TREE, 45595594712, 2, 900), null, null, {
+      readings: [at(TREE, 45595594712, 1, 900), at(TREE, 45595594712, 2, 900), at(OTHER_TREE, 12, 1, 600)],
+    });
+    expect(unmoved).toContain('two readings of one tree timed that step in the same second, and its ends are 300 s apart');
   });
 });
