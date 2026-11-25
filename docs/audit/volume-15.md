@@ -1,6 +1,6 @@
 # Audit · volume 15
 
-Findings 651–652, from the rounds recorded in `progress/volume-20.md` as `v3.148` and `v3.149`.
+Findings 651–653, from the rounds recorded in `progress/volume-20.md` as `v3.148`, `v3.149` and `v3.150`.
 
 ## Finding 651 — an action is identified by the action, not by the name of the step that uses it
 
@@ -205,3 +205,101 @@ refusal without its reason (1).
 rethrow -- 116 partitioned, 248 proved claims, 166 exit calls of which 20 are zero. One row did move:
 `workflowOfThatDay`'s throw changed its sentence, the carry matches a sentence, so its proof was dropped rather
 than carried, and it was re-declared against the test that reaches it and measured again.
+
+## Finding 653 — a tree costs the faster of its attempts
+
+`O-135` asked whether a reading can say that it measured a slow **program** or a slow **machine**, and it asked
+it about one number: the sites battery's second shard, **881 s** on a shared runner at load 5.6 with a
+four-CPU quota. Read by `R4` and `R10`, that number is a requirement of thirty minutes against a bound of
+twenty-two, so recording the day would have raised a bound for a reason that is not the program's. The entry
+offered three instruments -- the runner's own timestamps, a load average read beside the job, and *the same
+step measured twice on one tree* -- and named the third as the only form of the question the file already
+knows how to ask. This round took it.
+
+**The entry's own arithmetic was wrong, and wrong in the way the campaign is against.** `v3.149` wrote "717 s
+where the fastest reading of it is 519 s". The shard spent 881 s; 519 s is a reading of the *first* shard's
+step, in another run. One command's slow day was compared with another command's fast one -- `R10`'s defect,
+in prose rather than in arithmetic -- and it made a 47% gap look like a 38% one. The series the bound is
+actually sized from holds 40 readings before this round: **285 s** fastest, **481 s** middle, **881 s**
+slowest.
+
+**The measurement.** The delivery run was re-run, which GitHub numbers as attempt 2 of the same run id, and
+the recorder gained `--attempt`:
+
+| | attempt 1 | attempt 2 | the two attempts |
+| --- | --- | --- | --- |
+| the second shard | 881 s | **880 s** | 0.1% apart |
+| the first shard | 501 s | **418 s** | 17% apart |
+
+The same bytes cannot differ by the tree. So the second shard's seconds are the work -- they reproduced to a
+second -- and the sibling shard, 119 claims in both runs, is what the machine's state looks like. A timestamp
+would not have said this, and neither would a load average: both describe the box, and the question is what
+the *same work* would have cost on a quiet one.
+
+**`R14`, and the three clauses it needs.** The rule is one sentence -- a bound is a multiple of what a tree
+costs, not of what a day spent -- and each clause below is a way to get it wrong:
+
+1. **A tree measured more than once costs the faster attempt.** The minimum is taken over the attempts of one
+   commit, never over the history: two trees are two programs, and the file's other days are other trees.
+2. **One attempt that ran the command in two jobs costs the slower job.** This is `R10`'s original evidence --
+   the install step at 153 s in one job and 8 s in another, because its cost belongs to a package mirror -- and
+   it is not the same minimum: the pair is a set of *attempts*, and one attempt's jobs are one day.
+3. **A bound is also at least the worst day the command has already spent.** The clause had been doing nothing
+   while the multiple divided the slowest reading, and it starts to matter the moment the multiple stops: a
+   command with two modes -- a package store hit at 10 s, a miss at 109 s (`O-126`) -- has a faster attempt
+   that is the cheap mode, and twice a cheap mode is not a bound on the expensive one.
+
+The words moved with the arithmetic, because a refusal is read by somebody holding the file. `R4` said
+"measured 351 s" and says "the tree spent 351 s on it"; `R10` said "took 361 s in" and says "cost 361 s on the
+slowest tree that ran it, in", and both now print the other attempt of that commit in the same sentence. A
+refusal that printed only the chosen number would leave a reader who has seen 881 s in the history believing
+the gate had ignored it -- and `budgetSummary` had the same duty: the ratio it prints divides the number the
+refusal divides, and prints the slower attempt beside it as a second fact.
+
+**What it does to this tree.**
+
+| | before | after |
+| --- | --- | --- |
+| the sites battery's bound, both shards | 22 min | **30 min** |
+| `sensitivity`'s ceiling | 35 min | **43 min** |
+| `sensitivity-shard`'s ceiling | 34 min | **42 min** |
+| bound-minutes declared in the file | 247 | **263** |
+
+The forty-first reading is run `45595594712` attempt 2 -- 8 of 8 jobs success -- and attempt 1 is seeded
+beside it, because the history is where the pair lives: **42** readings over **40** commits, two of which
+measured a tree that another reading also measured.
+
+**Why the battery costs 880 s, which is the finding under the reading.** A bound that rises eight minutes is
+worth asking about. Both shards were compared across the two runs that measured them: the second shard went
+from 123 claims and 157 runs to 129 claims and 163 runs -- 4% more work -- while its wall clock went from
+600 s to 882 s, and the first shard, 119 claims in both, got 14% *faster* in the same window. So the +282 s is
+six claims at **47 s each** against an average claim's 3.8 s, and the cost model says why: a claim runs **its
+whole test file**. `verify-sites-are-sensitive.mjs` spawns `vitest run <file> --maxWorkers=1`, and no claim in
+the inventory names a test -- `provedBy` is a file. That hypothesis is charged to `O-136`, and the instrument
+that would confirm it is `O-137`: the battery prints claims, runs and wall clock, and no per-run seconds, so
+the marginal cost is a difference between two afternoons.
+
+**What it does not claim.** That the machine caused `v3.149`'s morning, or that it did not: 881 s and 880 s
+are two samples of one afternoon on one runner class, and a third afternoon could be slower. What the pair
+rules out is the reading being *about the box* in the way the sibling shard's 501 -> 418 s is. Nor that a
+tree measured once is priced correctly -- it is priced from one afternoon, which is `O-138`. The floor clause
+is stated and not exercised by the shipped tree, since no command here has two modes: its case is a fixture.
+
+**The round's own defects.** `budgetSummary`'s denominator was first written as a `Math.max` over three
+candidate numbers with a ternary that then had to work out which of them it had taken; it named a reading
+whenever the recording's own number happened to lose, so the printed ratio and the refusal could divide
+different numbers on the same step. It is now one lookup of the tree's cost and a `null` when the denominator
+is the recording's own -- the same defect `R14` removes from `R4`, one level up. And `v3.149`'s `717 / 519`
+above: a round quoting numbers it had not read from the file it was describing.
+
+**Falsifications.** 10 mutations, **62** reds, measured on the green tree, no survivors: a tree priced by its
+**slowest** attempt, so replication buys nothing (**9** reds); the fastest tree rather than the slowest (**8**);
+one attempt's two jobs taken at the faster (**4**); the cost forgetting the attempts it was measured on (**3**);
+`R4` dividing the recording's number (**1**); the "worst day already spent" clause deleted (**1**); `R10` dividing
+the slowest reading again (**32**); `costOfStep` answering for a tree that is not the recording's (**1**); the
+summary not printing the other attempt (**1**); and a step the history does not hold answering **0** rather than
+nothing (**2**).
+
+**The inventory.** Unchanged: 146 sites across 69 scripts; throws 22 fatal / 83 unguarded / 1 guarded / 10
+rethrow -- 116 partitioned, 248 proved claims; 166 exit calls of which 20 are zero. The round adds no `throw`
+and no `exit`, and every line it added is in `scripts/` -- which is why the coverage figures do not move.

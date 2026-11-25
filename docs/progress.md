@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 260 core + 4 cli |
-| Test lines | 120,401 core + 3,242 cli |
-| Tests | 7,040 core + 187 cli |
+| Test lines | 120,643 core + 3,242 cli |
+| Tests | 7,050 core + 187 cli |
 | Tracked files | 680 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.149: **48** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.150: **50** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1110,19 +1110,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   the floor as the enforcement of it -- the second is what this tree can hold to account today, and the first
   is a rewrite of the reader every gate but one depends on]`
 
-- O-135 · **A reading cannot say whether it measured a slow program or a slow machine.**
-  A recording's seconds become the denominator every future bound is a multiple of (`R10`), and the file holds
-  no field that says what else the machine was doing. `v3.149`'s delivery run is the case in hand: 8 of 8 jobs
-  green, the sites battery's second shard at **717 s** against a fastest reading of 519 s, on a shared box at
-  load 5.6 with a four-CPU quota -- so recording it would have asked `R4` to raise a 22-minute bound for a
-  reason that is not the program's. The reading was not recorded, which is a decision a reader cannot check
-  from the file: a run that is absent looks like a run that never happened.
-  `[open: whether a reading should carry the evidence that would separate the two -- the runner's own
-  timestamps, a load average the recorder reads beside the job, or the same step measured twice on one tree,
-  which is the only form of the question this file already knows how to ask -- or whether the rule should stay
-  "the slowest day wins" and the recorder should refuse a reading taken while another measurement was running
-  on the same machine]`
-
 - O-133 · **A local action is identified by its path, so a change to the action's own code is invisible to the
   comparison.**
   `commandOf` answers `uses:./x` for a step that runs a local action, and the workflow names a path rather than
@@ -1134,6 +1121,36 @@ is a row about rather than paraphrase one that no `grep` will find.
   `ci.yml` can supply -- the identity would then have to be written by something that reads the tree -- or
   whether a step whose `uses:` names a path should be refused a bound outright, since this file cannot say what
   ran]`
+
+- O-136 · **A claim costs its whole test file, so the battery's price is claims times file, not claims times
+  test.**
+  `ci-budget.test.ts` holds 30 of the 248 claims and takes 12 s of a 32-CPU box; thirty-one runs of it are
+  372 s of the second shard's 882 s. No claim names a test -- `provedBy` is a file -- so a run cannot be
+  narrowed to the test that goes red, and the six throws added in `v3.148` cost 47 s each.
+  `[open: whether a claim should carry the test that proves it, so the battery can run one test rather than
+  one file -- an inventory change that `derive-gate-sites` would have to write and every claim would have to
+  survive -- or whether the mutant runs should take `--bail`, which stops at the first red and changes nothing
+  for a survivor, since a survivor's verdict is the whole file staying green]`
+
+- O-137 · **The battery publishes claims, runs and wall clock, and no per-run seconds.**
+  The +282 s `v3.150` attributed to six claims is a difference between two afternoons, not a measurement of
+  the six runs: the battery prints one summary line, and the recorder only ever sees the step's total.
+  `[open: whether the battery should write its own per-run seconds beside the summary, so the next claim added
+  can be charged to itself, or whether the step's seconds plus the run count are enough and the arithmetic
+  belongs in the round rather than in the instrument]`
+
+- O-138 · **A tree measured once is still priced from one afternoon.**
+  `R14` prices a tree by the faster of the attempts that measured it, which is an answer only when there are
+  two. `v3.150`'s delivery run was re-run because it moved a bound, and that is the manual form of the
+  instrument: a single reading is written down as the tree's cost, so a commit measured once on a contended
+  box raises every future bound for a load no future run has to carry -- the harm `O-135` named, now narrowed
+  to the readings nobody re-ran. The recorder writes one reading per run and nothing beside it says whether a
+  second exists.
+  `[open: whether `measure-ci-baseline.mjs` should refuse to write a reading that no second attempt of the
+  same commit corroborates -- which doubles the cost of every delivery run and of every seed -- or whether a
+  re-run should stay the answer for the readings that move a bound, with the recorder printing which of its
+  history's trees were measured once, so a reader can see the size of the population instead of taking the
+  round's word for it]`
 
 ## Pass log
 
@@ -1171,7 +1188,7 @@ and this table.
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
-| [volume-20.md](progress/volume-20.md) | 16 | v3.134 | v3.149 |
+| [volume-20.md](progress/volume-20.md) | 17 | v3.134 | v3.150 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

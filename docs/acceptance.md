@@ -72,6 +72,7 @@ before the layer above it is meaningful.
 | A reading is a number beside the command that spent it | v3.147 |
 | An action is identified by the action, not by the name of the step that uses it | v3.148 |
 | A day is refused for the steps it cannot place | v3.149 |
+| A tree costs the faster of its attempts | v3.150 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -2846,3 +2847,32 @@ from an anecdote again.
   should be removed by an indentation-aware parser is `O-134`. Nor that a day with no `jobs:` block can be
   seeded: with no job there is no command a number could be placed on.
 - **Falsified by** 10 mutations, 87 reds, no survivor, measured on the green tree.
+
+### A tree costs the faster of its attempts (v3.150)
+
+- **A bound divides what a tree costs, not what a day spent.** `R4` and `R10` ask for a bound of twice the
+  cost of the program, and a history entry is one afternoon on one box. When one commit has been measured more
+  than once, its cost is the **faster** attempt: the bytes did not change between the two, so the difference
+  cannot be the tree. The case is measured -- the sites battery's second shard read **881 s** and **880 s** on
+  two attempts of one commit, while its sibling shard moved 17% in the same window.
+- **The minimum is taken over one tree's attempts, never over the history and never over one attempt's jobs.**
+  Two commits are two programs, so the file's other days cannot lower this one; and one attempt that ran the
+  command in two jobs is one day, whose cost is the slower job -- otherwise a package-mirror hit sizes the
+  bound (`R10`'s original 153 s against 8 s).
+- **A bound is also at least the worst day the command has already spent.** Twice the tree's cost is a
+  statement about the program; a day the command has already run is a fact about the machine, and neither
+  implies the other once the multiple stops dividing the slowest day. A command with two modes -- a store hit
+  and a miss (`O-126`) -- needs both clauses, and its case is a fixture: 1300 s and 600 s on two attempts of
+  one tree, with a bound the multiple clears and the day does not.
+- **Every refusal prints the other attempt.** `R4` says "the tree spent 400 s on it (the other attempt of the
+  same commit read 881 s)", `R10` says "cost 400 s on the slowest tree that ran it ... (the other attempt of
+  that commit read 881 s)", and `budgetSummary` prints the slower attempt beside the ratio it divides, so a
+  reader comparing a sentence with the file is comparing the same numbers.
+- **What it changes here.** Both sites bounds **22 -> 30 min**, `sensitivity`'s ceiling **35 -> 43**, its
+  shard's **34 -> 42**, the file's declared bound-minutes **247 -> 263**; the forty-first reading is run
+  `45595594712` attempt 2, with attempt 1 seeded beside it -- **42** readings over **40** commits.
+- **Not claimed.** That a tree measured once is priced correctly: it is priced from one afternoon, which is
+  `O-138`. Nor that the machine caused the previous round's numbers, or that it did not: two samples of one
+  afternoon cannot say. Nor that a bound's absolute size is right -- only that the multiple it is argued from
+  is a multiple of the program, and that a bound under a day already spent is refused.
+- **Falsified by** 10 mutations, 62 reds, no survivor, measured on the green tree.

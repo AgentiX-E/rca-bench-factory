@@ -1011,3 +1011,28 @@
   **146**.
 
 
+
+- O-135 · ~~**A reading cannot say whether it measured a slow program or a slow machine.**~~ The entry was
+  raised on the sites battery's second shard, and its own two numbers were both wrong: the shard spent **881 s**
+  and not 717, and the "fastest reading of it" was **519 s** of the *first* shard's step -- one command's slow
+  day compared against another command's fast one, which is `R10`'s defect in prose. Read correctly, the series
+  had 40 readings: 285 s at its fastest, 481 s in the middle, 881 s at its slowest, and `R4` plus `R10` would
+  have taken the 881 s for the program's cost and asked for a thirty-minute bound on a step that does the work
+  in ten. **Closed by finding 653**, which took the third of the entry's own three candidates -- *the same step
+  measured twice on one tree* -- because it is the only one that answers the question rather than describing
+  the box: the delivery run was re-run as attempt 2 of run `45595594712`, and the second shard repeated itself
+  to **880 s** while its sibling shard moved from **501 s** to **418 s** in the same window. Two attempts whose
+  bytes are identical cannot differ by the tree, so the second shard's seconds are the work and the sibling's
+  17% is the machine. `R14` states the rule in three clauses: a tree measured twice costs the faster attempt;
+  one attempt that ran a command in two jobs costs the slower job, because that is `R10`'s mirror-hit evidence
+  and the pair is the only set the minimum is taken over; and a bound is also at least the worst day the
+  command has already spent, which had been doing nothing while the multiple divided the slowest reading and
+  starts to matter the moment it does not. The words moved with the arithmetic -- `R4`'s "measured 351 s"
+  became "the tree spent 351 s on it", `R10`'s "took 361 s in" became "cost 361 s on the slowest tree that ran
+  it", each printing the other attempt in the same sentence -- because a refusal that printed only the chosen
+  number would leave a reader who has seen 881 s in the file believing the gate had ignored it. What the rule
+  does to this tree: both sites bounds **22 -> 30 min**, `sensitivity`'s ceiling **35 -> 43**, its shard's
+  **34 -> 42**, the file's bounds **247 -> 263 min** -- with the finding underneath the reading left open as
+  `O-136` and `O-137`, since the +282 s the six `v3.148` claims cost is a difference between two afternoons
+  rather than a measurement. What it does not do is in `O-138`: a tree measured once is still priced from one
+  afternoon. **Ten mutations, 62 reds**, no survivor, measured on the green tree.

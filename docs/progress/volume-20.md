@@ -2532,9 +2532,9 @@ A day whose **file** cannot be placed at all is still unseedable. That half of `
 | --- | --- |
 | CI | run `45545113405` on `91806080`: **8 of 8 jobs success**, 744 s -- the fortieth reading, and the one `R7` compares the recording with |
 | `pnpm run docs:check` | **23 steps, exit 0** |
-| `core` test suite | **260 files, 7040 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7227 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 7040 tests passed** (at v3.149) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.149) |
+| repo test suite | **264 files, 7227 tests passed** (at v3.149) |
 | new tests | **7,026 -> 7,040, +14**: nine on the reader (the control, an unknown key, the three keys that decide a job's step list, a nameless step, the three step-scope shapes, the whole-file shapes, a bound one space off, a step one indent deep, and the two bodies the floor must leave alone) and five on its two callers (a recording refused for a job and for a step, a seed that loses one job, a seed that loses one step, and a row the mode refuses with the line named) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: every line this round added is in `scripts/` |
 | the gate's inventory | **146** failure site(s) across 69 script(s); throws **22 fatal, 83 unguarded, 1 guarded, 10 rethrow** -- 116 partitioned, **248** proved claims; 166 exit calls, of which 20 are zero |
@@ -2565,3 +2565,160 @@ The entry this round opens is the boundary the floor made visible:
   and can then say which lines it still cannot place, or whether one spelling should stay the contract with
   the floor as the enforcement of it -- the second is what this tree can hold to account today, and the first
   is a rewrite of the reader every gate but one depends on]`
+
+## v3.150 — a tree costs the faster of its attempts
+
+`v3.149` closed `O-130` and left `O-135` open with three candidate answers: a reading could carry the runner's own
+timestamps, a load average the recorder reads beside the job, or **the same step measured twice on one tree** --
+"the only form of the question this file already knows how to ask". This round took the third, and the arithmetic
+it exposed is the one the previous round's prose got wrong.
+
+### The numbers the last round reported, corrected
+
+`v3.149`'s entry says the sites battery's second shard "spent **717 s** where the fastest reading of it is
+**519 s**". Both figures are wrong, and the second is wrong in the way this file is a campaign against:
+
+| what the paragraph said | what the recording holds |
+| --- | --- |
+| the second shard spent 717 s | **881 s** (`sensitivity-shard / Every proved exit… (shard 2 of 2)`, run 45595594712 attempt 1) |
+| the fastest reading of it is 519 s | **285 s** (run 44656781771); 519 s is a reading of the *first* shard's step, in run 45345210544 |
+
+519 is a real number and it belongs to the other series, so the sentence compared one command's slow day with
+another command's fast one -- the defect `R10` was written to remove, in prose rather than in arithmetic. The
+series the bound is actually sized from has 40 readings: **285 s** at its fastest, **481 s** in the middle,
+**881 s** at its slowest. The round that read 519 as its own made a 47% gap look like a 38% one.
+
+### The question, and the only instrument that can answer it
+
+A recording's seconds become the denominator every future bound is a multiple of, and 881 s against a 22-minute
+bound is 1762 s of requirement against 1320 s of bound: `R4` and `R10` both refuse it. The question is whether
+881 s is the **program** or the **box**, and the file has exactly one instrument that can tell them apart -- the
+same commit measured twice. Nothing else can: a range over the history mixes the tree's growth with the
+machine's state, and neither a timestamp nor a load average says what the *same work* would have cost on a quiet
+box.
+
+So the delivery run was re-run, which GitHub numbers as attempt 2 of the same run id, and the recorder was given
+`--attempt`:
+
+| | attempt 1 | attempt 2 | the second shard | the first shard |
+| --- | --- | --- | --- | --- |
+| shard 2 of 2 | 881 s | **880 s** | the tree, twice | |
+| shard 1 of 2 | 501 s | **418 s** | | 17% apart, same tree |
+
+The pair agrees to a second, and the sibling shard moved 17% in the same window -- so the second shard's cost is
+the **work** and the first shard's movement is the machine. `v3.149`'s reading is a tree's cost, not an
+afternoon's, and the honest bound is twice 880 s.
+
+### `R14`: a tree costs the faster of its attempts
+
+The rule the pair justifies, and the three clauses it needs to be safe:
+
+1. **A tree measured more than once costs the faster attempt.** The tree cannot have changed between two
+   attempts of one commit, so the difference is the machine, and a bound is a multiple of the program.
+2. **One attempt that ran the command in two jobs costs the slower job.** This is `R10`'s original evidence --
+   the install step at 153 s in one job and 8 s in another, because its cost belongs to a package mirror. The
+   minimum is taken *across attempts of one tree*, never across the jobs of one attempt.
+3. **A bound is also at least the worst day the command has already spent.** The clause had been doing nothing
+   while the multiple divided the slowest reading, and it starts to matter the moment the multiple stops: a
+   command with two modes -- a package store hit at 10 s, a miss at 109 s (`O-126`) -- has a faster attempt that
+   is the cheap mode, and twice a cheap mode is not a bound on the expensive one.
+
+The words changed with the arithmetic. `R4` said "measured 351 s" and says "the tree spent 351 s on it"; `R10`
+said "took 361 s in" and says "cost 361 s on the slowest tree that ran it, in", with the other attempt's number
+in the same sentence when there is one. A refusal that printed only the chosen number would leave a reader who
+has seen 881 s in the history believing the gate had ignored it.
+
+### What the rule does to this tree
+
+| | before | after |
+| --- | --- | --- |
+| the sites battery's bound, both shards | 22 min | **30 min** (twice 880 s is 1760 s) |
+| `sensitivity`'s ceiling | 35 min | **43 min** (39 min of bounds plus the 3-minute prefix allowance) |
+| `sensitivity-shard`'s ceiling | 34 min | **42 min** (38 plus 3) |
+| bounds in the file | 247 min | **263 min** |
+
+The recording is run 45595594712 attempt 2: **8 of 8 jobs success**, 880 s of the second shard and 418 s of the
+first. Attempt 1 was seeded beside it, because the history is where the pair lives -- 42 readings now, two of
+which measured a tree that another reading also measured.
+
+### Why the battery costs 880 s, which is the finding underneath the reading
+
+A bound that rises 8 minutes is worth asking about, and the answer is not the tree's size in any general sense.
+Both shards of the sites battery were compared across the two runs that measured them:
+
+| | claims | runs | wall clock | seconds per run |
+| --- | --- | --- | --- | --- |
+| the second shard, run 45545113405 | 123 | 157 | 600 s | 3.82 |
+| the second shard, run 45595594712 | 129 | 163 | 882 s | **5.41** |
+| the first shard, same two runs | 119 | 153 | 486 s → 420 s | 3.18 → 2.75 |
+
+Six claims were added between those runs, all of them throws, and all of them in `measure-ci-baseline.mjs`
+(five proved by `ci-budget.test.ts`, one by `ci-readings.test.ts`). Run count rose 4% and wall clock rose 47%,
+while the sibling shard -- same machine class, same hour, 119 claims in both -- got 14% *faster*. So the +282 s
+is not the box, and it is not the tree's general growth: it is the six claims, at **47 s of wall clock each**
+against an average claim's 3.8 s.
+
+The cost model explains the size of that: a claim runs **its whole test file**, not the test that proves it --
+`verify-sites-are-sensitive.mjs` spawns `vitest run <file>` with `--maxWorkers=1`, because the file is the
+witness and nothing in the inventory names a test. `ci-budget.test.ts` takes 12 s of a 32-CPU box; under the
+throw witness, which instruments every module a `throw` can sit in, the same file is what the six new claims
+pay for. That is the hypothesis, and the next round's instrument is named in `O-137`: the battery publishes
+claims, runs and wall clock, and no per-run seconds, so the marginal cost is measured as a difference between
+two afternoons rather than as six numbers.
+
+### Not claimed
+
+The pair agrees, so the machine cannot be shown to be the cause of the 2026-11-25 morning's numbers; the round
+does not claim the opposite either. 881 s and 880 s are two samples of one afternoon on one runner class, and a
+third afternoon could be slower. What the pair rules out is the reading being *about the box* in the way the
+sibling shard's 501 → 418 s is: the two attempts of one shard agreeing to 0.1% while the other shard moved 17%
+is not a coincidence a machine produces.
+
+The floor clause is stated and not exercised by the shipped tree: no command here has two modes, so the clause
+holds trivially. Its case is a fixture -- 1300 s and 600 s on two attempts of one tree, a bound of 20 minutes
+that the multiple clears and the day does not.
+
+### Readings
+
+> Ledger for `v3.150`.
+
+| item | value |
+| --- | --- |
+| CI | run `45595594712` on `87d78d97`: **8 of 8 jobs success**, 911 s on attempt 1, 907 s on attempt 2 -- the forty-first reading, attempt 2, with attempt 1 seeded beside it |
+| `pnpm run docs:check` | **23 steps, exit 0** |
+| `core` test suite | **260 files, 7050 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **264 files, 7237 tests passed** (as of this commit) |
+| new tests | **7,040 -> 7,050, +10**: nine on the arithmetic (one tree's two attempts read as one cost, one attempt's two jobs taken at the slower, the slowest tree rather than the slowest attempt, a bound twice the faster attempt accepted, the same bound refused when the tree was read once, the recording's number against the tree's cost, the floor clause, the sentence naming the other attempt, and the two shapes of a lookup that answers nothing) and one on the summary |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: every line this round added is in `scripts/` |
+| mutation | **10 groups, 62 red cases, 0 survivors**, each measured on the green tree and restored byte for byte |
+| the gate's inventory | **146** failure site(s) across 69 script(s); throws **22 fatal, 83 unguarded, 1 guarded, 10 rethrow** -- 116 partitioned, **248** proved claims; 166 exit calls, of which 20 are zero |
+
+### Left open
+
+`O-126`, `O-133`, `O-108` and `O-134` are unchanged. `O-135` is closed by finding 653. Two entries replace it,
+both about the battery's cost rather than about the reading:
+
+- `O-136` · **A claim costs its whole test file, so the battery's price is claims times file, not claims times
+  test.** `ci-budget.test.ts` holds 30 of the 248 claims and takes 12 s of a 32-CPU box; thirty-one runs of it
+  are 372 s of the second shard's 882 s. No claim names a test -- `provedBy` is a file -- so a run cannot be
+  narrowed to the test that goes red, and the six throws added in `v3.148` cost 47 s each.
+  `[open: whether a claim should carry the test that proves it, so the battery can run one test rather than one
+  file -- an inventory change that `derive-gate-sites` would have to write and every claim would have to
+  survive -- or whether the mutant runs should take `--bail`, which stops at the first red and changes nothing
+  for a survivor, since a survivor's verdict is the whole file staying green]`
+- `O-137` · **The battery publishes claims, runs and wall clock, and no per-run seconds.** The +282 s this round
+  attributed to six claims is a difference between two afternoons, not a measurement of the six runs: the
+  battery prints one summary line, and the recorder only ever sees the step's total.
+  `[open: whether the battery should write its own per-run seconds beside the summary, so the next claim added
+  can be charged to itself, or whether the step's seconds plus the run count are enough and the arithmetic
+  belongs in the round rather than in the instrument]`
+- `O-138` · **A tree measured once is still priced from one afternoon.** `R14` prices a tree by the faster of
+  the attempts that measured it, which is an answer only when there are two, and `v3.150`'s re-run was the
+  manual form of the instrument. A reading that nobody re-ran is still written down as its tree's cost, so a
+  commit measured once on a contended box raises every future bound for a load no future run has to carry.
+  `[open: whether `measure-ci-baseline.mjs` should refuse to write a reading that no second attempt of the same
+  commit corroborates -- which doubles the cost of every delivery run and of every seed -- or whether a re-run
+  should stay the answer for the readings that move a bound, with the recorder printing which of its history's
+  trees were measured once, so a reader can see the size of the population instead of taking the round's word
+  for it]`
