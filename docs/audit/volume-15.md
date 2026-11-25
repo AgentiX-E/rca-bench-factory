@@ -1,6 +1,6 @@
 # Audit · volume 15
 
-Findings 651–651, from the round recorded in `progress/volume-20.md` as `v3.148`.
+Findings 651–652, from the rounds recorded in `progress/volume-20.md` as `v3.148` and `v3.149`.
 
 ## Finding 651 — an action is identified by the action, not by the name of the step that uses it
 
@@ -122,3 +122,86 @@ one exit, which is the usage check that gained the mode's clause, and six throws
 `verify-sites-are-sensitive.mjs` (1 exit hollowed, 6 throws removed, 0 survivors). The mode's success path
 ends on `process.exit(0)`, which is a call and not a site: **165** calls and **146** sites became **166** and
 **146**, the first time in eleven rounds the pair has moved apart.
+
+## Finding 652 — a day is refused for the steps it cannot place, and the floor that makes that sayable
+
+`O-130` was opened by `v3.146`'s repair: a day whose `ci.yml` the reader could not walk became unseedable **in
+full**, where `v3.145` would have appended it with a bound nobody could read. The entry offered two answers --
+keep only the day's `success` steps, or let the reader return the bounds it recognised so a day is refused for
+the steps it cannot place -- and the first was already refused for a *readable* day: a seed that keeps the
+steps it likes deletes the slow steps of the day, and those are the denominator.
+
+The second answer is right, and it is unsound without a floor. The reader walks two ways -- a job-and-step scan,
+then a key-and-block scan per step -- and both left the lines they did not recognise **alone**. So "no refusal
+for this job" did not mean "every line of this job was understood"; it meant "this reader did not look". A
+bound written one space off was the shape that matters, and it was measurable on the shipped file:
+
+| the file | steps declaring their own bound | what the reader said |
+| --- | --- | --- |
+| `.github/workflows/ci.yml` | **38** | nothing |
+| the same file, one bound one space left | **37** | nothing |
+
+One bound left the reading in silence. A seed built on that reading would take a step the runner killed at
+that bound for a duration the command spent, which is `O-127` reached by a route nobody was watching.
+
+The repair is two halves that only work together.
+
+**The floor.** Every line a rule consumed is recorded; every line inside the jobs block that no rule consumed
+is refused, at a step's indent or above. Ten spaces and deeper is block body -- `run:` bodies, `env:` entries,
+the values of `with:` -- because no bound can be written there, and the block a body belongs to is a key the
+floor has already judged. The same file now answers with one sentence naming the line, the job, and the
+spelling the reader reads.
+
+**The scopes.** The sentences are unchanged -- `errors` is what every caller prints -- and beside them each
+refusal names what it poisons:
+
+| scope | the shapes | what a caller may still use |
+| --- | --- | --- |
+| `file` | no `jobs:`, a step before any job, zero steps | nothing |
+| `job` | unknown key at four spaces, refused key, job `if:` that narrows, a `- ` with no `name:` | every other job |
+| `step` | neither `run:` nor `uses:`, a `run:` block with no body, an `env:` entry with no name | the step's neighbours |
+
+A name-less step poisons its **job** rather than itself, and that is not a detail: the invisible step may hold
+a bound for a step the report names, so the doubt is the job's list.
+
+**Two callers, two answers, and the difference is the spread of the doubt.** A seed asks, per number, which
+command spent it and what bound could have stopped it; both are facts about that step's own lines. So a job the
+reader could not finish costs that job's steps, and the day still lands with a line naming the job, quoting the
+reader's own sentence, and saying that no step of it can be placed -- which is a different sentence from "that
+day has no job `x`", because the acts that follow differ. A recording asks whether **two trees are one**, so a
+job this reader could not describe is refused whole.
+
+That second refusal is also a repair, and it is the round's own find. An unreadable job is *absent* from the
+day's map, and an absent job is exactly what a job the run did not report looks like -- a state `driftOf`
+tolerates on purpose, because a declared job waiting for its first run is a state the gate is green in. So the
+one job the reader could not describe was the one place a drift could sit unseen. It is now the first thing the
+comparison returns, before any pair it would otherwise have compared.
+
+**What the floor says about this repository: nothing.** The mode that reads every tree the history names was
+run again under it -- 40 readings on 39 commits -- and found **0** lines it could not place, **0 of 3,300** rows
+to rewrite, and wrote nothing. The floor refuses no day this project has ever recorded, and the scopes cost no
+reading its numbers.
+
+**What it does not claim.** That the reader reads any spelling. It reads one -- a step at six spaces, its keys
+at eight, a body at ten -- and the floor converts the others from a misreading into a refusal. Whether that
+boundary should be removed by an indentation-aware parser is `O-134`, and it is a rewrite of the reader every
+gate but one depends on. Nor that a day with no `jobs:` block can be seeded: with no job there is no command a
+number could be placed on.
+
+**The round's own defects.** A body consumed only for the keys that were tolerated: `strategy:` -- refused --
+had its `fail-fast:` body read as a step, so the job answered with two refusals where the rule is one, and the
+case that pins *one* refusal found it. And a mutation harness that measured its own environment: it passed a
+hand-built environment instead of inheriting one, and under it a dozen tests in a different file reported red
+for every mutation of the recorder, including ones they do not touch. The same mutation with the parent's
+environment gives one red. The published counts are the second measurement.
+
+**Falsifications.** 10 mutations, **87** reds, measured on the green tree, no survivors: a job refusal reaching
+the whole file (9), a step refusal reaching its job (3), the floor gone (3), the floor refusing block bodies
+(26), a job key's body read as steps (31), the sentences detached from the refusals (6), a day refused whole
+again (5), a refused job placed anyway (2), the comparison ignoring what it could not read (1), and the mode's
+refusal without its reason (1).
+
+**The inventory.** Nothing moved: 146 sites across 69 scripts, throws 22 fatal / 83 unguarded / 1 guarded / 10
+rethrow -- 116 partitioned, 248 proved claims, 166 exit calls of which 20 are zero. One row did move:
+`workflowOfThatDay`'s throw changed its sentence, the carry matches a sentence, so its proof was dropped rather
+than carried, and it was re-declared against the test that reaches it and measured again.

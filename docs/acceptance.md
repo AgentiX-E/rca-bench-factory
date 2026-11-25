@@ -71,6 +71,7 @@ before the layer above it is meaningful.
 | A red day's number is read against the bound it enforced | v3.146 |
 | A reading is a number beside the command that spent it | v3.147 |
 | An action is identified by the action, not by the name of the step that uses it | v3.148 |
+| A day is refused for the steps it cannot place | v3.149 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -173,7 +174,10 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   disk is not the tree that ran is a refusal the recorder did not have, and it is the fetch above it
   that answers which tree that is; and six more at v3.148, because a history written before an action
   had a name of its own needs six refusals to rewrite it safely -- and the usage check that gained the
-  mode's clause is the same one site, so the exits did not move.
+  mode's clause is the same one site, so the exits did not move. At v3.149 the count moved neither way,
+  and one row moved: `workflowOfThatDay`'s throw changed its sentence, the carry matches a sentence, so its
+  proof was dropped rather than carried and was re-declared against the test that reaches it. A proof carried
+  by a sentence the round had rewritten would be a pointer nobody had checked.
   The figure was 105 of 105 in both halves at v3.41, and it drifted for twenty-four rounds
   because nothing read the sentence -- an external reviewer quoted the 105 as the current
   state, which is what a number with no reader costs. `check-doc-counts` reads it now:
@@ -2813,3 +2817,32 @@ from an anecdote again.
 - **Falsified by** 10 mutations, 32 reds, no survivor, measured on the green tree; and, for the seven new
   claims in the inventory (one exit, six throws; the exit is where the mode's clause lives), 7 mutant runs
   of which every one is credited -- 1 exit hollowed, 6 throws removed, 0 survivors.
+
+### A day is refused for the steps it cannot place (v3.149)
+
+- **A refusal is a fact about a place, not about a file.** `workflowOfThatDay` threw on the first sentence the
+  reader produced, so a day whose *fourth* job held one unreadable line was unseedable in full -- and a seed's
+  numbers are facts about one step each. The reader now returns the same sentences with the scope each one
+  poisons: `file` (no `jobs:`, a step before any job, zero steps), `job` (an unknown or refused key at four
+  spaces, a job `if:` that narrows, a `- ` with no `name:`), `step` (neither `run:` nor `uses:`, a `run:` block
+  with no body, an `env:` entry with no name).
+- **The floor is what makes a scope mean anything.** The reader walks two ways and both used to leave the lines
+  they did not recognise alone, so "no refusal for this job" meant "the reader did not look". Measured on the
+  shipped `ci.yml`: **38** steps declare a bound of their own, and moving one of those lines one space left made
+  the reader report **37** and say **nothing**. A line inside the jobs block that no rule consumed is now
+  refused, at a step's indent or above -- ten spaces and deeper is block body, and no bound can be written there.
+- **A seed loses the steps, a recording loses the day.** A seed asks one question per number, and both halves of
+  it are facts about that step's own lines, so a job this reader could not finish costs that job's steps and the
+  day still lands, with a line naming the job and quoting the reader's sentence. A recording asks whether two
+  trees are one -- a question about both -- so it is refused whole.
+- **That refusal is also a repair.** An unreadable job is *absent* from the day's map, and an absent job is what
+  a job the run did not report looks like, which `driftOf` tolerates on purpose. So before this round the one job
+  the reader could not describe was the one place a drift could sit unseen; it is now the first thing the
+  comparison returns.
+- **The floor refuses nothing this project has recorded.** `--relabel-actions` re-read **39** trees across 40
+  readings under it: **0** lines it could not place, **0 of 3,300** rows rewritten, and the file not written.
+- **Not claimed.** That the reader reads any spelling. It reads one -- a step at six spaces, its keys at eight,
+  a body at ten -- and the floor makes the others a refusal rather than a misreading; whether that boundary
+  should be removed by an indentation-aware parser is `O-134`. Nor that a day with no `jobs:` block can be
+  seeded: with no job there is no command a number could be placed on.
+- **Falsified by** 10 mutations, 87 reds, no survivor, measured on the green tree.

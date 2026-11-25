@@ -909,6 +909,44 @@
   readings of **37** runs, every run `success`, **3,134** step entries, **0** of them from a run that holds a
   `failure` step. The residue is `O-130`: a seed whose commit predates a syntax this reader accepts is now
   unseedable, where it would have been appended with an unrecognised bound.
+- O-130 · ~~**A seed whose commit predates a syntax this reader accepts can no longer be appended at all.**
+  `workflowOfThatDay` walks that day's `ci.yml` with the same strict line reader the gate uses, and a shape it
+  does not recognise is a refusal (`O-128`'s repair) -- so a day from before a syntax change is unseedable,
+  where `v3.145` would have appended it with a bound nobody could read. The alternative is a second,
+  permissive reader for that day alone, which is a bound decided by a rule no gate enforces.~~
+  ~~`[open: whether a refused day should be appended with only its `success` steps -- the route `O-128`
+  refused for a day it could read, and a different proposition for one it cannot -- or whether the reader
+  should return the bounds it did recognise alongside its errors, so a day is refused for the steps it
+  cannot place rather than as a whole]`~~
+  **Closed by finding 652**, and the answer to the entry's own question is the second: the reader returns the
+  bounds it did recognise alongside its errors, so a day is refused for the steps it cannot place. The first
+  route -- append the day with only its `success` steps -- was already refused at `v3.145` for a day the reader
+  *can* read, and it is refused here for the same reason: the steps a seed keeps are the ones it likes, and the
+  slow steps of the day are exactly the ones it would drop.
+  What the entry could not see from where it stood is that the second route needs a **floor** first. The reader
+  walks two ways and both left the lines they did not recognise alone, so "no refusal for this job" did not mean
+  "every line of this job was understood" -- it meant "this reader did not look". Measured on the shipped
+  `ci.yml`: **38** steps declare a bound of their own, and moving one of those lines one space left left the
+  reader reporting **37** and saying nothing. The floor now refuses any line inside the jobs block that no rule
+  consumed, at a step's indent or above, and the same file answers with one sentence naming the line and the job.
+  Every scope the reader hands out is worth exactly as much as that floor.
+  Two callers, two answers, and the difference is how far the doubt spreads. A seed asks one question per
+  number, and both halves of it -- the command and the bound that could have stopped it -- are facts about that
+  step's own lines, so a job the reader could not finish costs that job's steps and nothing else: the day still
+  lands, with a line naming the job and the reader's own complaint. A recording asks whether two trees are one,
+  which is a question about both, so it is refused whole -- and that refusal is also a repair, because an
+  unreadable job is *absent* from the day's map, which is exactly what a job the run did not report looks like,
+  and `driftOf` tolerates that on purpose. The unreadable job was the one place a drift could sit unseen.
+  The floor refuses no day this project has ever recorded: `--relabel-actions` re-read **39** trees across 40
+  readings under it, found **0** lines it could not place, and rewrote **0 of 3,300** rows.
+  **Ten mutations, 87 reds**, no survivors; the inventory is unchanged at **146** sites across 69 scripts,
+  **22 fatal / 83 unguarded / 1 guarded / 10 rethrow**, **248** proved claims -- and the one row this round moved
+  is worth naming: `workflowOfThatDay`'s throw changed its sentence, the carry matches a sentence, so its proof
+  was dropped rather than carried, and it was re-declared against the test that reaches it and measured again.
+  A proof carried by a sentence the round had rewritten would have been a pointer nobody checked. The boundary
+  the floor makes visible is `O-134`: one spelling is what the reader reads, and it now says so instead of
+  misreading the others.
+
 - O-131 · ~~**A red day's bound is looked up by step name, and a step's identity in this file is its
   command.**~~ The entry's mechanism was wrong and the defect was one level up, which is why it is closed by a
   finding rather than by the repair it named: `boundsOfThatDay` and the report it compares against **both**
@@ -971,3 +1009,5 @@
   the mode's five inside `relabelActions`, which is the `unguarded` basket. The mode's success exit is a
   `process.exit(0)`, which is a call and not a site: `165` calls became `166`, and the inventory stayed at
   **146**.
+
+

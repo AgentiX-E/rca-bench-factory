@@ -1349,7 +1349,7 @@ describe('docs · a section that is only entries is a record, whatever its headi
     const shipped = spawnSync('node', [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
     expect(shipped.status, shipped.stdout + shipped.stderr).toBe(0);
     expect(shipped.stdout).toContain(
-      '252 record(s): 227 under a round and 25 under none; 243 `vX.YY` round(s) + 1 addendum(s), 17 of them wrote none',
+      '253 record(s): 228 under a round and 25 under none; 244 `vX.YY` round(s) + 1 addendum(s), 17 of them wrote none',
     );
     // One corpus, two readers, one number. `check-progress-volumes` counts these same rounds to
     // print the population beside its heading count, and the agreement between the two is the only

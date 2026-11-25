@@ -2377,9 +2377,9 @@ with its second clause, and the mode's six throws -- are 7 of 7 credited by the 
 | --- | --- |
 | CI | run `45545113405` on `91806080`: **8 of 8 jobs success**, 744 s -- the fortieth reading |
 | `pnpm run docs:check` | **23 steps, exit 0** |
-| `core` test suite | **260 files, 7026 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7213 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 7026 tests passed** (at v3.148) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.148) |
+| repo test suite | **264 files, 7213 tests passed** (at v3.148) |
 | new tests | **7,014 -> 7,026, +12**: four on the identity (a `uses:` step keyed by its action, two versions as two series, a rename that keeps its series, a prefix that stops at a version) and eight on the mode (a row given its action, a second run that writes nothing, an unplaceable row, a row that contradicts its commit, a history that cannot be parsed, one with no reading, a commit whose file cannot be read, and a flag given a measurement) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: the round's code is in `scripts/` |
 | the recorder's refusals | **6** new: five in the mode, and one at the top level for a mode given a measurement |
@@ -2391,6 +2391,17 @@ with its second clause, and the mode's six throws -- are 7 of 7 credited by the 
 round that closes it has to decide whether the reader returns the bounds it recognised alongside its errors.
 It is the next P1 on the path, and the mode this round added does not touch it -- a seed is a measurement and
 the mode measures nothing.
+
+- `O-135` · **A reading cannot say whether it measured a slow program or a slow machine.** A recording's seconds
+  are the denominator every future bound is a multiple of, and no field says what else the machine was doing.
+  This round's own delivery run is the case: 8 of 8 jobs green, the sites battery's second shard at **717 s**
+  against a fastest reading of 519 s, on a shared box at load 5.6 with a four-CPU quota -- so recording it
+  would have asked `R4` to raise a 22-minute bound for a reason that is not the program's, and it was not
+  recorded. That decision is unreadable from the file: a run that is absent looks like a run that never
+  happened. `[open: whether a reading should carry the evidence that would separate a slow program from a busy
+  box -- the runner's own timestamps, a load average the recorder reads beside the job, or the same step
+  measured twice on one tree -- or whether the rule should stay "the slowest day wins" and the recorder should
+  refuse a reading taken while another measurement was running on the same machine]`
 
 `O-126` (an install step whose bound depends on which of two modes ran) and `O-108` (the two `lint` spawners)
 are unchanged and unmeasured here for the same reason: both need a run whose shape this round did not produce.
@@ -2405,3 +2416,152 @@ The one entry this round opens is the limit of the identity it just made true:
   `[open: whether a local action's identity should carry a digest of the files behind it, which no reading of
   `ci.yml` can supply -- the identity would then have to be written by something that reads the tree -- or
   whether a step whose `uses:` names a path should be refused a bound outright]`
+
+## v3.149 — a day is refused for the steps it cannot place
+
+`v3.148` closed the identity of a reading and left `O-130` open with two answers: append a refused day with
+only its `success` steps, or let the reader return the bounds it did recognise so a day is refused **for the
+steps it cannot place** rather than as a whole. The first answer was refused at `v3.145` for a day the reader
+*can* read -- a seed that keeps only the steps it likes deletes the slow steps of the day, which are the
+denominator `R10` divides by. This round took the second, and found that the second is only sound with a floor
+underneath it.
+
+### The floor: a line no rule consumed
+
+The reader walks two ways -- a job-and-step scan, then a key-and-block scan per step -- and both used to leave
+lines they did not recognise **alone**. A `timeout-minutes:` written with one space too many matched no rule,
+so the bound was silently absent, and the day was appended with a step that could have been killed at that
+bound reading as a duration the command spent. Measured on the shipped file:
+
+| the file | steps with a bound of their own | what the reader said |
+| --- | --- | --- |
+| `.github/workflows/ci.yml` | **38** | nothing |
+| the same file, one bound moved one space left | **37** | nothing, before this round |
+
+The second row is the defect: one bound disappeared from the reading and no sentence said so. The reader now
+records every line a rule consumed and refuses the ones none did, at a step's indent or above -- ten spaces and
+deeper is block body (`run:` bodies, `env:` entries, `with:` values), and none of that can be a bound. The
+same file now answers with one refusal that names the line, the job, and the spelling it reads.
+
+The floor is what makes the scopes sound. "No refusal for this job" has to mean "every line of this job was
+understood", and until this round it meant "this reader did not look".
+
+### Two scopes, because a doubt spreads as far as the fact's dependence
+
+The reader's `refusals` carry the same sentences as `errors`, with the thing each one poisons:
+
+| scope | what it covers | what a caller may still use |
+| --- | --- | --- |
+| `file` | no `jobs:`, a step before any job, zero steps | nothing: there is no job to place a step in |
+| `job` | an unknown key at four spaces, a refused one, a job `if:` that narrows, a `- ` with no `name:` | every other job |
+| `step` | neither `run:` nor `uses:`, a `run:` block with no body, an `env:` entry with no name | the step's neighbours |
+
+A **seed** asks one question per number -- which command spent it, and what bound could have stopped it -- and
+both are facts about that step's own lines, so a job this reader could not finish costs that job's steps and
+nothing else. A **recording** asks whether two trees are one, which is a question about **both**, so it is
+refused whole.
+
+That asymmetry is also a repair. A job the reader could not describe is *absent* from the day's map, and an
+absent job is exactly what a job the run did not report looks like -- a state `driftOf` tolerates on purpose.
+So before this round the unreadable job was the one place a drift could sit unseen. It is now the first thing
+the comparison returns, ahead of any pair it would otherwise have compared.
+
+### What the floor says about this repository
+
+Nothing. The mode that reads every tree the history names was run again with the floor in place -- 40 readings
+on 39 commits:
+
+| fact | value |
+| --- | --- |
+| trees read | **39** |
+| trees holding a line the floor refuses | **0** |
+| rows that had to be relabelled | **0 of 3,300** |
+| the file | not written: nothing changed |
+
+So the floor refuses no day this project has ever recorded, and the scopes cost no reading its numbers.
+
+### What it does not claim
+
+The floor reads one spelling -- a step at six spaces, its keys at eight, a block body at ten -- and it now says
+so when the file is written another way instead of misreading it. A file whose steps are at eight spaces is
+refused, where before it was quietly one step shorter. Whether that boundary should be removed by reading YAML
+indentation in general is a different round with a different cost, and it is `O-134`.
+
+A day whose **file** cannot be placed at all is still unseedable. That half of `O-130` is not a defect: with no
+`jobs:` block there is no job whose command a number could be placed on, and no sentence a seed could write.
+
+### The round's own defects
+
+- **A body consumed only for the keys that were tolerated.** The first draft read the six-space body of a
+  four-space key only after the key had been accepted, so `strategy:` -- refused -- had its `fail-fast:` body
+  read as a step and the job answered with two refusals where the rule is one. The case that pins *one*
+  refusal found it; the body is now consumed before the key is judged, because a refused key's body is not a
+  step either.
+- **A mutation harness that measured its own environment.** The first battery passed a hand-built environment
+  to the child instead of inheriting one, and under it a dozen tests in a *different* file reported red for
+  every mutation of the recorder, including mutations they do not touch. The same mutation, run with the
+  parent's environment, gives one red -- the test that names the claim. The published counts are the second
+  measurement, and the first is recorded here because a number measured through a harness nobody checked is
+  the shape this repository keeps finding.
+- **A sentence that promised more than the reader knew.** The mode's new refusal first said "the tree holds the
+  step, and this reader cannot read it"; for a *job*-scoped refusal the reader never reached the step. It says
+  "the part of that tree that holds it" now.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| a job refusal reaches the whole file | 9 |
+| a step refusal reaches its whole job | 3 |
+| the floor is gone: a line no rule consumed is skipped again | 3 |
+| the floor also refuses the body of a block, which is not a step | 26 |
+| the body of a job key is read as steps, so `permissions:` poisons the job | 31 |
+| the sentences are no longer the refusals, so a caller prints nothing | 6 |
+| a day with any refusal is refused whole, as before | 5 |
+| a job this reader refused is placed anyway, from the lines it did read | 2 |
+| the comparison ignores what the reader could not read, the way it did before | 1 |
+| a row the reader could not reach is refused without saying why | 1 |
+
+**10 mutations, 87 reds**, measured on the green tree, no survivors.
+
+### Readings
+
+> Ledger for `v3.149`.
+
+| item | value |
+| --- | --- |
+| CI | run `45545113405` on `91806080`: **8 of 8 jobs success**, 744 s -- the fortieth reading, and the one `R7` compares the recording with |
+| `pnpm run docs:check` | **23 steps, exit 0** |
+| `core` test suite | **260 files, 7040 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **264 files, 7227 tests passed** (as of this commit) |
+| new tests | **7,026 -> 7,040, +14**: nine on the reader (the control, an unknown key, the three keys that decide a job's step list, a nameless step, the three step-scope shapes, the whole-file shapes, a bound one space off, a step one indent deep, and the two bodies the floor must leave alone) and five on its two callers (a recording refused for a job and for a step, a seed that loses one job, a seed that loses one step, and a row the mode refuses with the line named) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: every line this round added is in `scripts/` |
+| the gate's inventory | **146** failure site(s) across 69 script(s); throws **22 fatal, 83 unguarded, 1 guarded, 10 rethrow** -- 116 partitioned, **248** proved claims; 166 exit calls, of which 20 are zero |
+
+**Why the round's own run is not the row.** The first run of the tree this round ships is green -- 8 of 8 jobs -- and it is
+the tree this round ships. Its seconds are not recorded as a reading, and the reason is measurable rather than
+convenient: the machine was at load 5.6 with a four-CPU quota for the whole run, the sites battery's second
+shard spent **717 s** where the fastest reading of it is 519 s, and `R4` would then ask for a 23-minute bound
+where 22 is now. A recording is the denominator every future bound is a multiple of, so a contended machine's
+measurement would raise every bound in the file to cover a busy box. The round that records this run will do so
+against its own day; the question the refusal exposes -- a reading cannot say whether it measured a slow
+program or a slow machine -- is `O-135`.
+
+### Left open
+
+`O-126` (an install step whose bound depends on which of two modes ran) and `O-108` (the two `lint` spawners)
+are unchanged and unmeasured here for the same reason as last round: both need a run whose shape this round did
+not produce. `O-133` (a local action identified by its path) is unchanged.
+
+The entry this round opens is the boundary the floor made visible:
+
+- `O-134` · **The reader is a line scanner for one spelling, so a workflow written another way is refused
+  rather than read.** A step at eight spaces, a key at seven, a bound at six: each is now named by the floor
+  instead of being skipped, which is the repair -- but the repair for the *day* is still "this file cannot be
+  read", and a repository that one day indents its steps differently would find its history unseedable rather
+  than its reader wrong.
+  `[open: whether the reader should become an indentation-aware parser, which reads any consistent spelling
+  and can then say which lines it still cannot place, or whether one spelling should stay the contract with
+  the floor as the enforcement of it -- the second is what this tree can hold to account today, and the first
+  is a rewrite of the reader every gate but one depends on]`

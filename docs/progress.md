@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 260 core + 4 cli |
-| Test lines | 120,154 core + 3,242 cli |
-| Tests | 7,026 core + 187 cli |
+| Test lines | 120,401 core + 3,242 cli |
+| Tests | 7,040 core + 187 cli |
 | Tracked files | 680 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.148: **47** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.149: **48** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1098,15 +1098,30 @@ is a row about rather than paraphrase one that no `grep` will find.
   `v3.146` measured it once more: at the same derived three workers the full suite was **7,007 of 7,007**
   green in 92 s, so the four failures a round are intermittent rather than necessary -- which is why the
   entry is not closed: a rule that fires one run in four is not answered by a run in which it did not.
-- O-130 · **A seed whose commit predates a syntax this reader accepts can no longer be appended at all.**
-  `workflowOfThatDay` walks that day's `ci.yml` with the same strict line reader the gate uses, and a shape it
-  does not recognise is a refusal (`O-128`'s repair) -- so a day from before a syntax change is unseedable,
-  where `v3.145` would have appended it with a bound nobody could read. The alternative is a second,
-  permissive reader for that day alone, which is a bound decided by a rule no gate enforces.
-  `[open: whether a refused day should be appended with only its `success` steps -- the route `O-128`
-  refused for a day it could read, and a different proposition for one it cannot -- or whether the reader
-  should return the bounds it did recognise alongside its errors, so a day is refused for the steps it
-  cannot place rather than as a whole]`
+- O-134 · **The reader is a line scanner for one spelling, so a workflow written another way is refused
+  rather than read.**
+  A step at eight spaces, a key at seven, a bound at six: since `v3.149` each is named by the floor instead of
+  being skipped, which is the repair -- but the repair for a *day* is still "this file cannot be read", and a
+  repository that one day indents its steps differently would find its history unseedable rather than its
+  reader wrong. The reader is a scanner for one indent because every gate but one depends on it, and the
+  question the floor makes visible is whether that is a contract or a limitation.
+  `[open: whether the reader should become an indentation-aware parser, which reads any consistent spelling
+  and can then say which lines it still cannot place, or whether one spelling should stay the contract with
+  the floor as the enforcement of it -- the second is what this tree can hold to account today, and the first
+  is a rewrite of the reader every gate but one depends on]`
+
+- O-135 · **A reading cannot say whether it measured a slow program or a slow machine.**
+  A recording's seconds become the denominator every future bound is a multiple of (`R10`), and the file holds
+  no field that says what else the machine was doing. `v3.149`'s delivery run is the case in hand: 8 of 8 jobs
+  green, the sites battery's second shard at **717 s** against a fastest reading of 519 s, on a shared box at
+  load 5.6 with a four-CPU quota -- so recording it would have asked `R4` to raise a 22-minute bound for a
+  reason that is not the program's. The reading was not recorded, which is a decision a reader cannot check
+  from the file: a run that is absent looks like a run that never happened.
+  `[open: whether a reading should carry the evidence that would separate the two -- the runner's own
+  timestamps, a load average the recorder reads beside the job, or the same step measured twice on one tree,
+  which is the only form of the question this file already knows how to ask -- or whether the rule should stay
+  "the slowest day wins" and the recorder should refuse a reading taken while another measurement was running
+  on the same machine]`
 
 - O-133 · **A local action is identified by its path, so a change to the action's own code is invisible to the
   comparison.**
@@ -1156,7 +1171,7 @@ and this table.
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
-| [volume-20.md](progress/volume-20.md) | 15 | v3.134 | v3.148 |
+| [volume-20.md](progress/volume-20.md) | 16 | v3.134 | v3.149 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
