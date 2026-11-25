@@ -1,7 +1,7 @@
 # Audit · volume 14
 
-Findings 579–647, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
-`progress/volume-19.md` as `v3.115` through `v3.144`.
+Findings 579–648, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md` and
+`progress/volume-19.md` as `v3.115` through `v3.145`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -4441,3 +4441,111 @@ was worth opening before it happened.
 **16 mutations, 40 reds**, measured on the green tree, no survivors. The first mutation is the one the
 finding is about, and its seven reds are the seven places that now ask one function instead of
 comparing a field.
+
+## Finding 648 — the recorder wrote numbers that were never durations, and `R4` then asked a bound to double the evidence that it was wrong
+
+`O-127` described the state in two halves: the recorder records a run that failed, and a step that expires
+spends *exactly* its bound. Both are the same defect one level down, and it is a defect about **what a
+number in the recording means**. `R4` asks a bound to be at least `MULTIPLE` times the number beside it, on
+the argument that a runner twice as slow is refused for being slow rather than for hanging. That argument
+needs the number to be a duration the command spent. Three shapes in the report are not:
+
+| the shape | what the number is | what `R4` then asks |
+| --- | --- | --- |
+| a step killed at its own `timeout-minutes` | the bound, read back | `bound >= 2 * bound` -- unsatisfiable while the step keeps timing out, and the act it names is the one that caused the number |
+| a step that stopped early (`cancelled`) | a lower bound on the command | nothing useful: the number is short, so the bound it argues for is short |
+| a run that failed | every step after the failure never ran | a bound per step of a job the run did not finish |
+
+The first row is the loud one and the entry's own example: a step bounded at 900 s that expires records
+`900`, `R4` compares `900 < 1800` and advises doubling the bound -- so a **hang becomes slack**, which is
+how a budget rots. The second row is quiet and worse: a step stopped four seconds in records `4`, and a
+bound of `8` would pass every rule in the gate.
+
+### What the population says
+
+The defect is latent in both shipped files, and this is measurable rather than asserted:
+
+| fact | value |
+| --- | --- |
+| runs in the history | **36** |
+| their conclusions, asked of the API one by one | **36 `success`**, none otherwise |
+| step-seconds in the history whose step has a bound of its own | **1,394** |
+| of those, equal to their bound | **0** |
+| of those, within 6 s of their bound | **0** |
+| the recording's closest step to its bound | `verify / Lint (…)` at **531 s of 1080 s** (0.492) |
+
+So nothing in the files as shipped is a non-duration, and the recorder's new refusals cannot fire on any
+run in the history. They fire on the next red run somebody records, which is the ordinary way a red tree is
+retried.
+
+### The second question, answered as arithmetic
+
+`O-127` also asked whether a step whose seconds equal its bound is a reading or the bound read back as one.
+It is the bound read back, and the reason is the direction of the inequality: **a step that ends on its own
+ends before its bound**, because the bound is when the runner kills it. Two shapes produce the equality --
+a step that was killed and whose failure was allowed to pass (`continue-on-error`), and a step that
+finished inside the last second of its allowance -- and no field in the report separates them. So the
+recorder refuses the number rather than guessing, and the sentence names both shapes and the act: raise the
+bound by a minute so the number has room to move, then record again.
+
+The rule is deliberately **not** `>=`. A number *above* today's bound is a run measured before the bound was
+tightened, and the act that follows is `R4`'s -- size the bound from the reading, or say why it is not
+comparable. A recorder that refused it would be arbitrating a rule it does not enforce, and would keep the
+slow day the reading is evidence of out of both files.
+
+### The first question, answered asymmetrically, and why the asymmetry is the argument
+
+The recording is refused for any run whose conclusion is not `success`; a seed is not. The difference is not
+policy, it is what each file claims:
+
+- **A recording describes this workflow.** GitHub computes a run's conclusion from its steps, so a run that
+  succeeded is one in which every step that ran succeeded -- the recorder does not have to ask each step,
+  and asking would be a branch that cannot fire. A red run has at least one step that did not finish (a kill
+  the report calls `failure`, the same conclusion a genuine failure carries) and every step after it never
+  started, so the file every bound is a multiple of cannot be taken from it.
+- **A seed is a day the commands ran.** Its steps that ended on their own are evidence about those commands
+  whatever the run concluded, and `R10`'s denominator is the worst day, not the greenest one. So a red day
+  is appended with the numbers of the steps that finished, and the ones that did not are named in the
+  report: `did not end on its own (cancelled)`, `did not end on its own (the report names no conclusion for
+  it)`. A `failure` step is kept, because `failure` is what a command that ran and returned non-zero
+  reports and its duration is a real duration.
+
+Two smaller shapes fell out of the same predicate:
+
+- **A step the run reports as skipped** was refused as "is not a step of `batteries` in run 7", which is
+  false -- the job does have the step, and what it does not have is a number. The two states are now two
+  sentences, because the acts that follow are different: a renamed step is a tree that changed, a skipped
+  one is a run that did not do the work.
+- **A seeded job left with nothing** said "ran no step this workflow still has" whether the tree had lost
+  its steps or every one of them had stopped early. The second is the day's fact and the first is the
+  tree's, and the line now says which.
+
+### What it costs, and the residue
+
+`O-127`'s repair is three refusals and one filter, all decided from the answer the run already carries:
+**19 fatal** throws in `measure-ci-baseline.mjs` rather than 16, **107** partitioned statements, and
+**239** proved claims. The residue is `O-128`: a step killed at its own bound in a *red seed* is reported
+`failure`, so the seed path cannot tell it from a genuine failure, and the number that enters the history
+is the bound that was in force that day -- which the recorder cannot read, because it reads today's
+workflow. The route is named there: fetch `ci.yml` at the seed's `head_sha` and compare each step's number
+with the bound in force then.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the recording is taken from any run, whatever it concluded | 1 |
+| the conclusion rule applies to a seed as well | 5 |
+| only `failure` is refused, so the conclusion a job timeout reports is recorded | 1 |
+| a step that failed is read as one that did not finish | 2 |
+| a step the report says nothing about is read as one that finished | 1 |
+| an absent conclusion is read as success | 1 |
+| a step whose seconds are its own bound is recorded | 1 |
+| the equality is read as `>=` | 1 |
+| the equality compares seconds with minutes | 1 |
+| a borrowed number is held to the bound of the job that will enforce it | 1 |
+| a step with no times is reported as one the job does not have | 1 |
+| a seeded job left with nothing says the tree lost its steps | 1 |
+
+**12 mutations, 17 reds**, measured on the green tree, no survivors. The second row's five reds are the
+five seed cases, which is the count a rule covering both relations would have to pass.

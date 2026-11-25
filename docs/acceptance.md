@@ -67,6 +67,7 @@ before the layer above it is meaningful.
 | A bound's headroom is measured in the movement one tree has already shown | v3.143 |
 | A reading is named by its run and its attempt | v3.143 |
 | A measurement is written where it is the newest one | v3.144 |
+| Only a number the run measured is a reading | v3.145 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -157,11 +158,13 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   the `sensitivity` job runs `verify-sites-are-sensitive.mjs`, which asks whether that
   file **notices** the exit's absence -- one run per claim with that site's code
   replaced by success, and a baseline run per file so a red claimant cannot be
-  credited with catching anything. Measured at **236 of 236** claim(s) across 68 file(s) -- two more
+  credited with catching anything. Measured at **239 of 239** claim(s) across 68 file(s) -- two more
   than v3.140's 232, because an attempt that does not exist and an attempt with no job in it are two
-  refusals `measure-ci-baseline.mjs` did not have before, and each carries a proof; and two more again
+  refusals `measure-ci-baseline.mjs` did not have before, and each carries a proof; two more again
   at v3.144, because a recording that cannot say which measurement is the newest and a measurement
-  older than the one it would replace are two refusals the recorder did not have either.
+  older than the one it would replace are two refusals the recorder did not have either; and three
+  more at v3.145, because a run that did not succeed, a step that never started, and a step whose
+  number is its own bound are three shapes in which a number is not a duration.
   The figure was 105 of 105 in both halves at v3.41, and it drifted for twenty-four rounds
   because nothing read the sentence -- an external reviewer quoted the 105 as the current
   state, which is what a number with no reader costs. `check-doc-counts` reads it now:
@@ -2666,3 +2669,31 @@ from an anecdote again.
 - **Not claimed.** That the recorder can withdraw a measurement: a red attempt recorded by mistake is
   replaced only by a newer one, and a step that expired spends exactly its bound, which makes `R4`
   demand the bound be doubled by the run that failed inside it -- `O-127`.
+
+### Only a number the run measured is a reading (v3.145)
+
+- **`R4`'s multiple needs a duration, and three shapes in the report are not one.** A step killed at
+  its own `timeout-minutes` reports exactly that bound, so `R4` compared the bound with itself and
+  advised doubling it -- which turns a hang into slack. A step stopped early reports a lower bound, and
+  a step after a failure never ran at all (finding 648).
+- **The recording is taken only from a run that succeeded.** A green run is one in which every step
+  that ran succeeded, because GitHub computes the conclusion from the steps, so the recorder does not
+  ask each step -- that branch could not fire. A red run's numbers may include a kill the report calls
+  `failure`, indistinguishable from a genuine failure, and its later steps never started.
+- **A seed is a day, not a description, so a red day is appended with the numbers that finished.**
+  `failure` is kept -- a command that ran and returned non-zero spent that long -- and `cancelled`,
+  `skipped` and a step whose report names no conclusion are dropped and named in the report, because
+  "cannot say it finished" may not be read as "did". `R10`'s denominator is the worst day rather than
+  the greenest one, which is the whole reason the two relations differ.
+- **A number equal to its own bound is the bound read back.** A step that ends on its own ends *before*
+  its bound, because the bound is when the runner kills it; the two shapes that produce the equality --
+  a kill whose failure was allowed to pass, and a step finishing inside the last second of its
+  allowance -- are one number apart in the report, so the recorder refuses with the act that fixes it
+  (raise the bound by a minute so the number has room to move, or fix what hung).
+- **The rule is not `>=`, and a borrowed number is not held to the target's bound.** A number above
+  today's bound is a run measured before the bound was tightened, and the act that follows is `R4`'s;
+  a borrow copies seconds from another job, whose kill -- or not -- happened under its own bound.
+- **Not claimed.** That a red seed's kill can be told from a genuine failure: the report calls both
+  `failure`, so a seed may append the bound that was in force that day -- `O-128`, whose route is
+  reading `ci.yml` at the seed's commit.
+- **Falsified by** 12 mutations, 17 reds, no survivor, measured on the green tree.

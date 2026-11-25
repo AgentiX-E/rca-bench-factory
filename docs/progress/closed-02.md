@@ -852,3 +852,32 @@
   two report lines as well, so a recording of attempt 2 says `from run … attempt 2`. **Sixteen
   mutations, 40 reds**, no survivors, measured on the green tree. The residue is `O-127`: the
   recorder still records a run that failed, and a step that expired spends exactly its bound.
+- O-127 · ~~**The recorder records a run that failed, and a step that expired spends exactly its bound.**~~
+  Nothing asked whether the run being measured succeeded, so `--attempt 2` after a red re-run wrote that
+  attempt as the recording, and a step that expired had spent *exactly* its own `timeout-minutes` --
+  `R4` then compared the bound with the number it had just produced and demanded twice it, so recording a
+  timed-out run asked for the bound to be doubled by the run that failed inside it. ~~`[open: whether the
+  recorder should refuse a conclusion other than success, or record it and say so in the file -- the
+  seconds are the machine's either way, and `R10`'s denominator is the worst day rather than the
+  greenest one -- and whether a step whose seconds equal its bound exactly is a reading or the bound read
+  back as one]`~~
+  **Closed by finding 648**, both questions answered and the asymmetry argued rather than chosen. The
+  recording is refused for any run whose conclusion is not `success`, because it **describes this
+  workflow** and GitHub computes a run's conclusion from its steps: a green run is one in which every step
+  that ran succeeded, so the per-step question would be a branch that cannot fire. A seed **is a day the
+  commands ran**, so a red day is appended with the numbers of the steps that ended on their own --
+  `failure` kept, because that is what a command that ran and returned non-zero reports, and `cancelled` /
+  `skipped` / no-conclusion dropped and named in the report. The second question is arithmetic rather than
+  judgement: a step that ends on its own ends *before* its bound, because the bound is when the runner
+  kills it, so a number equal to it is the bound read back -- and the two shapes that produce it (a kill
+  whose failure was allowed to pass, a step finishing inside the last second of its allowance) are one
+  number apart from each other in the report, so the recorder refuses rather than guesses. The rule is
+  deliberately not `>=`: a number *above* today's bound is a run measured before the bound was tightened,
+  and that act belongs to `R4`. Two smaller shapes came out of the same predicate: a skipped step was
+  refused as one the job does not have, which is false about the job, and a seeded job left with nothing
+  said the tree had lost its steps whatever the reason. **Twelve mutations, 17 reds**, no survivors; **19**
+  fatal throws in the recorder rather than 16, **107** partitioned statements, **239** proved claims. The
+  population is why this was latent: **36** runs, every one `success`, **1,394** bounded step-seconds in the
+  history with **0** equal to its bound and **0** within 6 s of it, and the recording's closest step at
+  **531 of 1080 s**. The residue is `O-128`, a kill inside a red seed, which the report calls `failure`
+  and which the recorder cannot separate from a duration because it reads today's workflow.

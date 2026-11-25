@@ -495,7 +495,7 @@ after the tree has moved again.
 ### The marker that said "now" about a past tree
 
 The same distinction had a live defect in last round's record. Its three suite rows were written
-`(as of this commit)` -- the phrase the guard reads as *the current state* -- where every other round in
+`(at v3.144)` -- the phrase the guard reads as *the current state* -- where every other round in
 the volume writes `(at v3.121)`. They were true when written and false the moment this round added a
 test, and `docs:check` refused all three:
 
@@ -560,7 +560,7 @@ current-state rows are **3** refusals until they are dated.
   written by the coverage step, so a tree that has not run coverage has none, and a gate whose verdict
   depends on whether another command was run is a gate with two meanings]`
 - **A current-state row is dated only when its number moves.** v3.136's three rows were written
-  `(as of this commit)` and were still marked current a round later; what caught them was this round
+  `(at v3.144)` and were still marked current a round later; what caught them was this round
   adding a test. A round that edits only documents moves no count, so the older rows stay marked
   current and a reader comparing two volumes sees two rounds each claiming to be now.
   `[open: whether the guard should refuse a current-state row outside the newest round -- the round is
@@ -629,7 +629,7 @@ line above. A case with two readings of 16 s, appended newest first, is what pin
 
 ### Two rounds, one "now"
 
-v3.137 dated v3.136's three suite rows and wrote down why: `(as of this commit)` is the phrase the
+v3.137 dated v3.136's three suite rows and wrote down why: `(at v3.144)` is the phrase the
 guard reads as *the current state*, and the event that caught the rows was the next round adding a
 test. `O-111` is the residue: a round that only edits documents moves no count, so the older rows
 stay marked current and two rounds each claim to be now.
@@ -860,7 +860,7 @@ two inline comparisons, because the rule asks it twice.
   its `FAILED` site from 403 to 424, and `derive-gate-sites --check` said so before any test could.
 - **This round measured before dating the previous round's rows, and rewrote a record.** The order
   `measure-doc-counts --write-doc` requires is date the old rows, then measure: the writer updates
-  every row that still says `(as of this commit)` and leaves dated rows alone. This round measured
+  every row that still says `(at v3.144)` and leaves dated rows alone. This round measured
   first, so v3.138's three suite rows took this round's numbers -- **6,897** became **6,909** in a
   record of a round that never published 6,909 -- and it was caught by reading the diff, not by a
   gate. Both numbers are restored here. Nothing in the tree would have refused the false record,
@@ -1428,7 +1428,7 @@ span's end with the count the round published of itself.
 
 "What the round published of itself" is the whole difficulty. The volumes quote each other's rows on
 purpose -- v3.141's ledger carries three rows dated `(at v3.140)` -- so the reader takes only the two
-spellings that claim the round: `(as of this commit)` under it, and `(at vN)` where N is the round it
+spellings that claim the round: `(at v3.144)` under it, and `(at vN)` where N is the round it
 sits under. A row that says neither is a number quoted from somewhere, and a rule that took the last
 row under a heading would let a copied record decide whether the round's own span is true.
 
@@ -1663,7 +1663,7 @@ have been refused with a coordinate that sends its reader to the wrong attempt.
   carry `attempt`, so four `toEqual` expectations gained the field; `worstReadingFor`'s case in
   `ci-readings.test.ts` gained it too.
 - **The ledger's previous round was still marked current.** v3.142's three suite rows said
-  `(as of this commit)` and this round's suite is 23 tests larger, which `check-doc-counts` refused
+  `(at v3.144)` and this round's suite is 23 tests larger, which `check-doc-counts` refused
   -- the same mechanism finding 643 described, applied in the right direction: the rows are dated
   `(at v3.142)` with the numbers v3.142 measured, not with today's.
 
@@ -1848,9 +1848,9 @@ is re-run, which is the ordinary way a red tree is retried.
 | --- | --- |
 | CI | run `45421625317` on `9a96f0be`: **8 of 8 jobs success**, 924 s, the run that published v3.143 and the thirty-sixth reading. No second attempt, so the history's only pair is still run `45351350110`'s |
 | `pnpm run docs:check` | **23 steps, exit 0** |
-| `core` test suite | **260 files, 6988 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7175 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 6988 tests passed** (at v3.144) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.144) |
+| repo test suite | **264 files, 7175 tests passed** (at v3.144) |
 | new tests | **6,979 -> 6,988, +9**: three for the recorder's ordering (an older attempt refused, a newer one recorded and named, a recording that cannot be read refused in two shapes), two for seeds at an older and a newer attempt, and four for the ordering and the name themselves. Counted from the suite, not from this sentence |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged, because every line this round added is in `scripts/` and the instrument reads `src/` |
 | the ordering's callers | **4**: the two sorts, `R10`'s two directions, and the recorder's block; `coordinateOf` gained **5** more sentences -- two report lines and three refusals that print both sides |
@@ -1870,3 +1870,126 @@ is re-run, which is the ordinary way a red tree is retried.
   in the file -- the seconds are the machine's either way, and `R10`'s denominator is the worst day
   rather than the greenest one -- and whether a step whose seconds equal its bound exactly is a
   reading or the bound read back as one]`
+
+## v3.145 — a number the run did not measure, and the bound `R4` then asked to be doubled
+
+`O-127` recorded two states: the recorder recorded a run that failed, and a step that expired spent exactly
+its own bound. Both are one defect about **what a number in the recording means**. `R4` asks a bound to be
+at least twice the number beside it, which is an argument only when that number is a duration the command
+spent; a step killed at its bound reports the bound, so the rule compared a bound with itself and advised
+doubling it -- a hang turning into slack.
+
+### Three shapes, and what each one does to the gate
+
+| the shape | what the number is | what `R4` then asks |
+| --- | --- | --- |
+| a step killed at its own `timeout-minutes` | the bound, read back | `bound >= 2 * bound` -- unsatisfiable while the step keeps timing out |
+| a step stopped early (`cancelled`) | a lower bound on the command | a small bound, which every rule passes |
+| a run that failed | the later steps never ran | a bound per step of a job the run did not finish |
+
+### The population says it was latent
+
+| fact | value |
+| --- | --- |
+| runs in the history | **36** |
+| their conclusions, asked of the API one by one | **36 `success`** |
+| bounded step-seconds in the history | **1,394** |
+| equal to their bound / within 6 s of it | **0 / 0** |
+| the recording's closest step | `verify / Lint (…)` at **531 s of 1080 s** |
+
+So no shipped row is a non-duration, and the new refusals fire on the next red run somebody records --
+which is the ordinary way a red tree is retried.
+
+### The second question, answered as arithmetic
+
+Whether a step whose seconds equal its bound is a reading or the bound read back: the latter, and the
+reason is the direction of the inequality. **A step that ends on its own ends before its bound**, because
+the bound is when the runner kills it. Two shapes produce the equality -- a kill whose failure was allowed
+to pass, and a step finishing inside the last second of its allowance -- and no field separates them, so the
+recorder refuses and names both plus the act. The rule is **not** `>=`: a number above today's bound is a
+run measured before the bound was tightened, and that act is `R4`'s.
+
+### The first question, answered asymmetrically
+
+The recording is refused for any run whose conclusion is not `success`; a seed is not, and the difference is
+what each file claims. A recording **describes this workflow**, and GitHub computes a run's conclusion from
+its steps, so a green run is one in which every step that ran succeeded -- the per-step question would be a
+branch that cannot fire. A seed **is a day the commands ran**, so a red day is appended with the numbers
+that finished: `failure` kept (a command that ran and returned non-zero spent that long), `cancelled` /
+`skipped` / no-conclusion dropped and named.
+
+Two smaller shapes fell out of the same predicate: a skipped step was refused as one the job does not have,
+which is false about the job; and a seeded job left with nothing said the tree had lost its steps whatever
+the reason.
+
+### The round's own defects
+
+- **This suite's derived worker count is not safe in this container.** Three consecutive full runs at the
+  derived three workers each failed four or five *different* files with `STACK_TRACE_ERROR` -- vitest's
+  placeholder for a hook that timed out -- and collection alone took 336 s; at two workers the same suite
+  was **7,183 of 7,183** green with collection at 10 s. CI's 4-vCPU runner is green at the same derived
+  count, so the tree is not the variable and this container is: recorded as `O-129` with the numbers rather
+  than papered over with a retry.
+- **A hook that timed out reports as an error with no message.** The failure surfaces as
+  `Error: STACK_TRACE_ERROR` against a test that passes alone, which reads like a broken subject; the
+  message is the placeholder `withTimeout` installs, and only the hook's own budget explains it.
+- **Two apostrophes in test names.** `it('… the gate's question …')` is a syntax error inside a
+  single-quoted title, and both of this round's were written that way first: `Transform failed with 1
+  error: Expected ")" but found "s"`, twice.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| the recording is taken from any run, whatever it concluded | 1 |
+| the conclusion rule applies to a seed as well | 5 |
+| only `failure` is refused, so the conclusion a job timeout reports is recorded | 1 |
+| a step that failed is read as one that did not finish | 2 |
+| a step the report says nothing about is read as one that finished | 1 |
+| an absent conclusion is read as success | 1 |
+| a step whose seconds are its own bound is recorded | 1 |
+| the equality is read as `>=` | 1 |
+| the equality compares seconds with minutes | 1 |
+| a borrowed number is held to the bound of the job that will enforce it | 1 |
+| a step with no times is reported as one the job does not have | 1 |
+| a seeded job left with nothing says the tree lost its steps | 1 |
+
+**12 mutations, 17 reds**, measured on the green tree, no survivors.
+
+### Readings
+
+> Ledger for `v3.145`.
+
+| item | value |
+| --- | --- |
+| CI | run `45445200416` on `61d433dd`: **8 of 8 jobs success**, 891 s, the run that published v3.144 and the thirty-seventh reading (`45393534319` is the thirty-fifth, `45421625317` the thirty-sixth) |
+| `pnpm run docs:check` | **23 steps, exit 0** |
+| `core` test suite | **260 files, 7000 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **264 files, 7187 tests passed** (as of this commit) |
+| new tests | **6,988 -> 7,000, +12**: eleven for the recorder's three shapes (a red run refused twice over, a step above its bound accepted, an equality refused, one second inside it accepted, a skipped step, a red seed's kept and dropped steps, a seed step with no conclusion, a seeded job with nothing left, a borrowed number), and one for the two sorts of empty seeded job |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: every line this round added is in `scripts/`, and the instrument reads `src/` |
+| the recorder's refusals | **3** new in the block that decides what may be written: a run that did not succeed, a step that never started, and a step whose number is its own bound -- beside one filter and two gap sentences |
+| the gate's inventory | **146** failure site(s) across 69 script(s); throws **19 fatal, 77 unguarded, 1 guarded, 10 rethrow** -- 107 partitioned, **239** proved claims |
+| the population | **37** readings, **36** runs, **35** trees; **1** run holds two measurements |
+| `docs/acceptance.md` | **59** clauses across **41** rounds |
+| the census | **4** coincidences, unchanged |
+
+### Left open
+
+- `O-128` · **A step killed at its own bound in a red seed enters the history as the bound it was killed
+  by.** A seed keeps the steps that ended on their own, and the report calls a kill `failure`, so the seed
+  path cannot separate it from a duration -- and the bound that was in force that day is not one the
+  recorder reads, because it reads today's workflow.
+  `[open: whether the recorder should fetch `.github/workflows/ci.yml` at the seed's `head_sha` and compare
+  each step's number with the bound in force then -- one request per seed, and a workflow from before a
+  syntax change may not parse -- or whether a seed should keep only `success` steps, which would lose the
+  slowest day of the command that failed]`
+- `O-129` · **The worker cap is derived from the CPU count, and this container's derived count makes four
+  files fail per run.** Two workers here is 7,183 of 7,183 green and three is four failures a run, which is
+  a fact about this box rather than about the tree: the entry holds the numbers and the two ways to answer
+  them.
+  `[open: whether the cap should read measured contention (load average, or a collection-time budget)
+  rather than only the CPU allowance, and whether the files that spawn processes should declare their own
+  hook budgets instead -- the two are one question about where a machine's slowness is allowed to be
+  answered, and neither can be decided from this container alone]`
