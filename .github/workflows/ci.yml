@@ -397,7 +397,15 @@ jobs:
     # 2520 s; with 5 s of overhead doubled that is 1990 s, and R13's bounds
     # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
     # per setup step was paying for cold runners that cannot happen.
-    timeout-minutes: 35
+    #
+    # 43 from v3.150. The sites bound moved from 22 to 30 minutes because the battery it
+    # bounds costs 880 s on this runner -- measured twice, on two attempts of one commit,
+    # 881 s and 880 s -- and 22 minutes is under twice that. The ceiling follows from the
+    # same arithmetic one level up: the bounds inside this job now add up to 39 minutes,
+    # plus the 3-minute allowance for the prefix, so a ceiling that holds them is 43. That
+    # is a slow job, and the defect is the battery's cost rather than the number: the
+    # claims it runs cost a whole file each, and six of them added in v3.148 cost 282 s.
+    timeout-minutes: 43
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -483,7 +491,7 @@ jobs:
       # day and 1500 s of deadline, which fits. Narrowing the bound is what makes the
       # ceiling unnecessary rather than the other way round.
       - name: Every proved exit can disappear without a word
-        timeout-minutes: 22
+        timeout-minutes: 30
         run: node scripts/verify-sites-are-sensitive.mjs --shard 1/2
 
       - name: Every exemption's claim can be made false
@@ -513,7 +521,11 @@ jobs:
     # 2460 s; with 5 s of overhead doubled that is 1930 s, and R13's bounds
     # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
     # per setup step was paying for cold runners that cannot happen.
-    timeout-minutes: 34
+    #
+    # 42 from v3.150, by the arithmetic of the job above: this shard's own bound moved to
+    # 30 minutes on a measurement of 880 s taken twice, and its bounds now add up to 38
+    # minutes, so the ceiling that holds them is 42.
+    timeout-minutes: 42
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -547,7 +559,7 @@ jobs:
       # A shard whose files never arrive would be a green job that measured nothing.
       # `verify-sites-are-sensitive.mjs` refuses an empty shard before spawning a child.
       - name: Every proved exit can disappear without a word (shard 2 of 2)
-        timeout-minutes: 22
+        timeout-minutes: 30
         run: node scripts/verify-sites-are-sensitive.mjs --shard 2/2
 
   # The injection batteries. This is the long pole -- everything else in the workflow

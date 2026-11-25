@@ -14,7 +14,7 @@ import {
   mergeReading,
   readReadings,
   stepsOf,
-  worstReadingFor,
+  worstCostFor,
 } from '../../../scripts/ci-budget.mjs';
 import { readWorkflow } from '../../../scripts/gate-steps.mjs';
 
@@ -128,7 +128,10 @@ function historyOf(entries: Array<[number, Record<string, Record<string, [number
           byJob[jobId][name] = { seconds, command };
         }
       }
-      return { run, commit: 'c'.repeat(40), measured: '2026-11-06', jobs: byJob };
+      // One commit per run, because two runs that measured the same tree are the pair `R14`
+      // reads -- a fixture that gave every day one commit would be claiming that the whole
+      // history measured one tree, and the cost of that tree would then be its fastest day.
+      return { run, commit: String(run).padStart(40, '0'), measured: '2026-11-06', jobs: byJob };
     }),
   };
 }
@@ -264,8 +267,18 @@ describe('the history of readings, read', () => {
         [11, { batteries: { A: [90, 'same'] } }],
       ]),
     ).rows;
-    expect(worstReadingFor(rows, 'same')).toEqual({ seconds: 90, run: 11, attempt: 1, job: 'batteries', step: 'A' });
-    expect(worstReadingFor(rows, 'nothing ran this')).toBe(null);
+    expect(worstCostFor(rows, 'same')).toEqual({
+      seconds: 90,
+      run: 11,
+      attempt: 1,
+      job: 'batteries',
+      step: 'A',
+      // The tree it was measured on, and every attempt that timed it: one, here, because each
+      // run below is its own commit. `R14` reads the list, and a single reading is the state of
+      // a cost nobody has replicated rather than a cost with no evidence.
+      attempts: [{ seconds: 90, run: 11, attempt: 1, job: 'batteries', step: 'A' }],
+    });
+    expect(worstCostFor(rows, 'nothing ran this')).toBe(null);
   });
 
   it('writes one entry per run, replacing a run it already holds and keeping the file in run order', () => {
@@ -352,7 +365,7 @@ describe('a bound is divided by the slowest reading of the command it bounds', (
       [900, { batteries: { Lint: [347, commandOfStep('Lint')] } }],
     ]);
     const errors = budgetErrors(workflow, recording, null, null, history);
-    expect(errors).toEqual([expect.stringContaining('the same command took 361 s')]);
+    expect(errors).toEqual([expect.stringContaining('the same command cost 361 s on the slowest tree that ran it')]);
     expect(errors[0]).toContain('bounded at 12 min');
     expect(errors[0]).toContain('run 898');
   });
@@ -405,7 +418,7 @@ describe('a bound is divided by the slowest reading of the command it bounds', (
     // The 20-minute copy is fine at 6x; the 3-minute copy is refused, and the sentence
     // names the job that supplied the slow day rather than the job being refused.
     expect(errors).toEqual([expect.stringContaining('`batteries / Install the shells` is bounded at 3 min')]);
-    expect(errors[0]).toContain('took 153 s in `artefacts / Install the shells`');
+    expect(errors[0]).toContain('cost 153 s on the slowest tree that ran it, in `artefacts / Install the shells`');
   });
 
   it('does not bind one command to another command in a job that is slower', () => {
@@ -440,7 +453,7 @@ describe('a bound is divided by the slowest reading of the command it bounds', (
     const recording = recordingOf({ batteries: { steps: { 'Slow battery': 120 } } });
     const errors = budgetErrors(workflow, recording, null, null, historyOfRecording(workflow, recording));
     expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain('is bounded at 3 min and measured 120 s');
+    expect(errors[0]).toContain('is bounded at 3 min and the tree spent 120 s on it');
   });
 
   it('groups a step that uses an action by the action, because the action is what costs', () => {
@@ -521,8 +534,8 @@ describe('an action is identified by the action, not by the name of the step tha
         [11, { batteries: { 'Check out': [20, 'uses:actions/checkout@v4'] } }],
       ]),
     ).rows;
-    expect(worstReadingFor(rows, 'uses:actions/checkout@v4')?.seconds).toBe(20);
-    expect(worstReadingFor(rows, 'uses:actions/checkout@v3')?.seconds).toBe(500);
+    expect(worstCostFor(rows, 'uses:actions/checkout@v4')?.seconds).toBe(20);
+    expect(worstCostFor(rows, 'uses:actions/checkout@v3')?.seconds).toBe(500);
   });
 
   it('keeps a series through a rename, because a name is a label and the action is what ran', () => {

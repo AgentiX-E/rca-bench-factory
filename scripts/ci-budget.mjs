@@ -906,12 +906,32 @@ export function readingsOfCommand(rows, command) {
   let slowest = null;
   let count = 0;
   const spent = [];
+  // `R14` -- the same readings, held by the tree they were taken on.
+  //
+  // A bound is a multiple of what a **tree** costs, and the history is a list of days. Those
+  // are two different quantities the moment one commit is measured twice: the same bytes were
+  // timed at 880 s and at 600 s on `v3.150`, and only one of those numbers is about the
+  // program. So the walk below keeps the readings twice -- once as the series it is, once by
+  // commit and attempt -- and the second account answers the question `R10` divides by.
+  //
+  // One walk and not two, for the reason the doc comment above gives: two walks are two
+  // answers to "which readings belong to this command", and a bound argued from one while the
+  // refusal prints the other is the shape finding 588 is about.
+  const byCommit = new Map();
   for (const row of rows) {
     for (const one of row.steps.values()) {
       if (one.command !== command) continue;
       count += 1;
       spent.push(one.seconds);
       const reading = { seconds: one.seconds, run: row.run, attempt: row.attempt, job: one.job, step: one.step };
+      const held = byCommit.get(row.commit) ?? new Map();
+      const key = `${String(row.run)}#${String(row.attempt)}`;
+      // One attempt can run the same command in two jobs -- the five that install the shells
+      // do -- and the cost of *that attempt* is the slower of them: a bound on either job has
+      // to cover the day, and picking the fast job's number would size it from a mirror hit.
+      const day = held.get(key);
+      if (day === undefined || reading.seconds > day.seconds) held.set(key, reading);
+      byCommit.set(row.commit, held);
       if (
         fastest === null ||
         reading.seconds < fastest.seconds ||
@@ -932,7 +952,27 @@ export function readingsOfCommand(rows, command) {
       }
     }
   }
-  return count === 0 ? null : { fastest, slowest, count, middle: middleOf(spent) };
+  if (count === 0) return null;
+  // `R14` -- a tree costs the faster of its attempts, and the slowest tree is what a bound is
+  // sized from. The attempts travel with the answer rather than being left in the file: a
+  // refusal that says `880 s` about a tree whose other attempt spent `600 s` reads as a bound
+  // with no room, and the pair is the only thing that says which of the two was the machine.
+  let slowestCost = null;
+  for (const held of byCommit.values()) {
+    const attempts = [...held.values()].sort((a, b) => a.run - b.run || a.attempt - b.attempt);
+    let cost = attempts[0];
+    for (const one of attempts) if (one.seconds < cost.seconds) cost = one;
+    if (
+      slowestCost === null ||
+      cost.seconds > slowestCost.seconds ||
+      (cost.seconds === slowestCost.seconds &&
+        (cost.run > slowestCost.run ||
+          (cost.run === slowestCost.run && cost.attempt > slowestCost.attempt)))
+    ) {
+      slowestCost = { ...cost, attempts };
+    }
+  }
+  return { fastest, slowest, slowestCost, count, middle: middleOf(spent) };
 }
 
 /**
@@ -1022,14 +1062,53 @@ export function noiseFloorOf(rows) {
 }
 
 /**
- * The slowest reading of one command, across every run and every job that ran it.
+ * The slowest **tree** that ran one command, and every attempt that timed it (`R14`).
  *
  * A view of `readingsOfCommand` rather than a second walk: the denominator `R10` refuses
  * against and the spread printed beside the multiple have to be the same set of readings.
+ *
+ * It used to answer with the slowest *reading*, and the difference is the whole of `R14`.
+ * A reading is one day on one box; a tree is the bytes, and `v3.150` measured one commit at
+ * 880 s and at 600 s -- the second shard of the sites battery, on a shared runner, forty
+ * minutes apart. Twice 880 s is a thirty-minute bound for a step that can do the work in
+ * ten, and the bound would then be paying, on every future hang, for one afternoon's load.
+ * The tree's cost is the faster attempt, and `readingsOfCommand` holds the pair so that a
+ * refusal can print both numbers rather than the one it chose.
  */
-export function worstReadingFor(rows, command) {
+export function worstCostFor(rows, command) {
   const found = readingsOfCommand(rows, command);
-  return found === null ? null : found.slowest;
+  return found === null ? null : found.slowestCost;
+}
+
+/**
+ * What one **step** cost on one tree, as the faster of the attempts that measured it (`R14`).
+ *
+ * `R4` asks the question of the recording's own day, and `R10` asks it of every other day and
+ * every other job; both divide a bound by what the tree costs, so both read it here. The
+ * lookup is by commit, job and step rather than by command, because this is the question
+ * "what did *this* step spend", which is the one `R4` asks -- and the answer is `null` when
+ * the recording names a commit the history has no second attempt for, so the caller falls
+ * back to the number the recording holds.
+ *
+ * `attempts` is every reading of that step on that tree, oldest first. Two is the only length
+ * that matters, and one is the normal case: a reading that was never replicated is a tree
+ * whose cost is unknown between the program and the box, which is why the pair is printed
+ * beside the number rather than folded into it.
+ */
+export function costOfStep(rows, at) {
+  if (rows === null || at === null || at === undefined) return null;
+  const attempts = [];
+  for (const row of rows) {
+    if (String(row.commit) !== String(at.commit)) continue;
+    const one = row.steps.get(`${String(at.job)}\u0000${String(at.step)}`);
+    if (one === undefined || one.command !== at.command) continue;
+    attempts.push({ seconds: one.seconds, run: row.run, attempt: row.attempt, job: one.job, step: one.step });
+  }
+  if (attempts.length === 0) return null;
+  attempts.sort((a, b) => a.run - b.run || a.attempt - b.attempt);
+  let cost = attempts[0];
+  for (const one of attempts) if (one.seconds < cost.seconds) cost = one;
+  return { ...cost, attempts };
 }
 
 /**
@@ -1639,11 +1718,35 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
         );
       } else if (step.inheritedFrom === 'step' && typeof seconds === 'number') {
         const bound = step.minutes * 60;
-        if (bound < MULTIPLE * seconds) {
+        // R14 -- the multiple divides the **tree's** cost, not the day's.
+        //
+        // `R4` said "twice this step's reading", and a reading is one box on one afternoon.
+        // `v3.150` measured one commit's second shard at 880 s and at 600 s, so the same bytes
+        // had two costs and the rule would have taken the slower one as the program's: thirty
+        // minutes of bound for a step that can do the work in ten, spent on every future hang.
+        // A tree measured twice costs the faster attempt, because the difference between the
+        // two cannot be the tree -- it did not change -- and can only be the machine.
+        //
+        // The fallback is the recording's own number, and it is the normal case: a tree read
+        // once has no pair, and this rule refuses to invent one from the history's other days,
+        // which are other trees.
+        const cost = historyKnown
+          ? costOfStep(parsedReadings.rows, {
+              commit: baseline.commit,
+              job: job.id,
+              step: step.name,
+              command: commandOf(step),
+            })
+          : null;
+        const spent = cost ?? { seconds, attempts: [] };
+        const other = spent.attempts.filter((one) => one.seconds !== spent.seconds);
+        if (bound < MULTIPLE * spent.seconds) {
           errors.push(
-            `\`${step.name}\` is bounded at ${String(step.minutes)} min and measured ${String(seconds)} s: ` +
-              `the bound is under ${String(MULTIPLE)} times the measurement, so a runner twice as slow is ` +
-              'refused for being slow rather than for hanging',
+            `\`${step.name}\` is bounded at ${String(step.minutes)} min and the tree spent ` +
+              `${String(spent.seconds)} s on it` +
+              `${other.length === 0 ? '' : ` (the other attempt of the same commit read ${String(other[0]?.seconds)} s)`}` +
+              `: the bound is under ${String(MULTIPLE)} times what the tree costs, so a runner twice as ` +
+              'slow is refused for being slow rather than for hanging',
           );
         }
         // The floor is not asked of a work step any more (finding 622). It is asked of the
@@ -1657,20 +1760,41 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
         // for every other day and every other job that ran the same command, so a step
         // that is under twice its own measurement is refused once rather than twice.
         if (historyKnown) {
-          const worst = worstReadingFor(parsedReadings.rows, commandOf(step));
+          const found = readingsOfCommand(parsedReadings.rows, commandOf(step));
+          const worst = found === null ? null : found.slowestCost;
           const ownDay =
             worst !== null &&
             worst.run === baseline.run &&
+            worst.attempt === (baseline.attempt ?? 1) &&
             worst.job === job.id &&
             worst.seconds === seconds;
+          // `R14` -- twice the **tree's** cost, plus the floor the days already spent put under
+          // it. The second clause is not the first one restated: when one command has two modes
+          // (`O-126`: a package store hit at 10 s, a miss at 109 s) the faster attempt of a tree
+          // is the cheap mode, twice that is twenty seconds, and a bound sized by the multiple
+          // alone would fire on the mode the same tree has already been seen in. So a bound is
+          // at least twice what the tree costs **and** at least the worst day this command has
+          // actually spent -- the multiple is an argument about the program, the floor is a fact
+          // about the machine, and neither one implies the other any more.
+          const other = worst === null ? [] : worst.attempts.filter((one) => one.seconds !== worst.seconds);
           if (worst !== null && !ownDay && bound < MULTIPLE * worst.seconds) {
             errors.push(
               `\`${job.id} / ${step.name}\` is bounded at ${String(step.minutes)} min and the same command ` +
-                `took ${String(worst.seconds)} s in \`${worst.job} / ${worst.step}\` in ` +
-                `${coordinateOf(worst)}: the bound is under twice the slowest day already recorded, so a ` +
-                'run that meets the day this repository has met before is refused for being slow rather ' +
-                'than for hanging -- size the bound from that reading, or say in the history why it is not ' +
-                'comparable',
+                `cost ${String(worst.seconds)} s on the slowest tree that ran it, in \`${worst.job} / ` +
+                `${worst.step}\` in ${coordinateOf(worst)}` +
+                `${other.length === 0 ? '' : ` (the other attempt of that commit read ${String(other[0]?.seconds)} s)`}` +
+                ': the bound is under twice the slowest tree already recorded, so a run that meets the tree ' +
+                'this repository has met before is refused for being slow rather than for hanging -- size the ' +
+                'bound from that reading, or say in the history why it is not comparable',
+            );
+          } else if (worst !== null && !ownDay && found.slowest !== null && bound < found.slowest.seconds) {
+            errors.push(
+              `\`${job.id} / ${step.name}\` is bounded at ${String(step.minutes)} min and the same command ` +
+                `spent ${String(found.slowest.seconds)} s in \`${found.slowest.job} / ${found.slowest.step}\` ` +
+                `in ${coordinateOf(found.slowest)}: the bound is under a day already recorded, so that day is ` +
+                'refused for being slow rather than for hanging -- the multiple is twice what the tree costs ' +
+                '(`R14`), and a bound that does not cover the days this command has already spent is not a ' +
+                'bound',
             );
           }
         }
@@ -1962,7 +2086,7 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   let jobCount = 0;
   let ceilings = 0;
   const excused = [];
-  let tightest = { name: '', ratio: Infinity, worst: null, command: null, boundSeconds: 0 };
+  let tightest = { name: '', ratio: Infinity, worst: null, cost: null, spentWorst: null, command: null, boundSeconds: 0 };
   // The other end of the same axis (`O-113`). `tightest` is the bound closest to the worst day its
   // command has had; this is the bound furthest above the best day, which is where the room `R13`
   // adds up actually goes. The measure is **seconds of headroom** and not a multiple, because a
@@ -2072,22 +2196,32 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
         bounded += 1;
         bounds += step.minutes * 60;
         jobBounds += step.minutes * 60;
-        // The denominator is the slowest reading of the command when there is a history
-        // to ask, because that is the number `R10` refuses against -- a summary computed
-        // from the recording alone would report a ratio the gate does not use.
+        // The denominator is what `R10` refuses against: twice the slowest **tree** that ran the
+        // command, floored by the worst day it has actually spent (`R14`). A summary computed from
+        // the recording alone would report a ratio the gate does not use, and one computed from the
+        // slowest reading alone would report a ratio twice as pessimistic as the rule on any command
+        // that has been replicated.
         const command = commandOf(step);
-        // One reader for both ends: `readingsOfCommand` answers the fastest and the slowest of
-        // the same set, so the denominator below and the headroom beside it cannot disagree about
-        // which readings belong to this command.
+        // One reader for both ends: `readingsOfCommand` answers the fastest, the slowest and the
+        // slowest cost of the same set, so the denominator below and the headroom beside it cannot
+        // disagree about which readings belong to this command.
         const found = historyKnown ? readingsOfCommand(parsedReadings.rows, command) : null;
-        const slowest = found === null ? null : found.slowest;
-        const denominator = slowest === null ? seconds : Math.max(seconds, slowest.seconds);
+        const cost = found === null ? null : found.slowestCost;
+        const spentWorst = found === null ? null : found.slowest;
+        // The multiple `R4` and `R10` divide is twice the **tree's** cost (`R14`), floored by the
+        // recording's own day, so the ratio printed here is the ratio the gate computes.
+        const denominator = found === null ? seconds : Math.max(seconds, cost?.seconds ?? 0);
+        // The reading the printed ratio divides is the one the denominator came from, so a reader
+        // comparing the summary with a refusal is comparing the same number.
+        const slowest = found !== null && cost !== null && denominator === cost.seconds ? cost : null;
         const ratio = denominator === 0 ? Infinity : (step.minutes * 60) / denominator;
         if (ratio < tightest.ratio) {
           tightest = {
             name: `${job.id} / ${step.name}`,
             ratio,
             worst: slowest,
+            cost,
+            spentWorst,
             command,
             boundSeconds: step.minutes * 60,
           };
@@ -2283,14 +2417,31 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
       `${String(found.slowest.seconds)} s${middleClause(found)}`
     );
   };
+  // `R14` -- a tree measured twice costs the faster attempt, and the faster attempt is the number
+  // the multiple divides. Without the other attempt beside it the sentence reads as a bound with
+  // more room than it has: `22 min, 1.1x of 600 s` on a command the file also holds at 881 s is
+  // two facts, and printing the first alone is how a reader concludes the multiple hides the load
+  // it was measured under.
+  const replicatedText = () => {
+    const cost = tightest.cost;
+    if (cost === null) return '';
+    const others = cost.attempts.filter((one) => one.seconds !== cost.seconds);
+    if (others.length === 0) return '';
+    return (
+      `; the same tree was read again at ${others
+        .map((one) => `${String(one.seconds)} s (run ${String(one.run)} attempt ${String(one.attempt)})`)
+        .join(', ')} and a tree costs the faster of its attempts`
+    );
+  };
   const tightestText =
     bounded === 0
       ? 'no step carries a bound of its own, so nothing here is tight'
       : `${tightest.name} at ${Number.isFinite(tightest.ratio) ? tightest.ratio.toFixed(1) : 'unmeasured'}x` +
         (tightest.worst === null
           ? ''
-          : ` of the slowest reading of its command (${String(tightest.worst.seconds)} s in ` +
+          : ` of what the slowest tree its command ran on costs (${String(tightest.worst.seconds)} s in ` +
             `\`${tightest.worst.job} / ${tightest.worst.step}\`, ${coordinateOf(tightest.worst)})`) +
+        replicatedText() +
         spreadText();
   // The other end of the axis, and the reason it is a clause rather than a second summary
   // (`O-113`). The spread above says how far the command the tightest bound divides by has moved;

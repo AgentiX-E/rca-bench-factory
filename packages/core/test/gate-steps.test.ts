@@ -1949,8 +1949,9 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     // 3 -> 4 in v3.52: the sensitivity job's one battery became two, because a step can
     // now be declared for one recording instead of being folded into a neighbour's name.
     // The clause it was asserted through is empty in this workflow as of v3.132 (finding
-    // 622), so what is asserted is the pool line the same four steps are counted on.
-    expect(result.stdout).toContain('sensitivity 35m across 4 step(s)');
+    // 622), so what is asserted is the pool line the same four steps are counted on. The
+    // ceiling reads 43 from v3.150 for the reason the comment below gives.
+    expect(result.stdout).toContain('sensitivity 43m across 4 step(s)');
     expect(result.stdout).not.toContain('sensitivity bounds all');
     // 18 -> 19 in v3.50: the fresh recording measured the site-proofs step at 542 s,
     // and twice that is 1084 s, which is 4 s past 18 minutes. The bound follows the
@@ -1961,8 +1962,10 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     // 20 -> 25 and 21 -> 26 in v3.53's close-out: 626 s in run 42131836805 needs 1252 s,
     // and 22 s of setup puts the 1500 s bound's deadline at 1522 s.
     // 26 -> 47 in v3.129, for the same reason: eight bounds of 2 760 s (finding 619). 34 in
-    // v3.132, where the four setup steps' bounds became one allowance (finding 622).
-    expect(result.stdout).toContain('sensitivity 35m across 4 step(s)');
+    // v3.132, where the four setup steps' bounds became one allowance (finding 622). 43 in
+    // v3.150: the sites bound moved 22 -> 30 minutes on a measurement of 880 s taken twice, and
+    // the ceiling is the bounds it holds plus the prefix allowance (finding 653).
+    expect(result.stdout).toContain('sensitivity 43m across 4 step(s)');
     expect(result.stdout).not.toContain("largest 22m of the job");
     // `batteries` had every one of its fourteen steps bounded at the floor until v3.132; the
     // pool line is where its 54 minutes and its fourteen steps are counted now (finding 622).
