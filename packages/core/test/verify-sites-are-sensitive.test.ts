@@ -472,6 +472,82 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
     }
   });
 
+  it('charges the mutant runs to the claimant that paid for them', () => {
+    // The defect this exists for is a number that could not be divided. `v3.150` added
+    // six claims to one file and charged them 282 s, which was the difference between
+    // two afternoons: the battery printed one total and the recorder saw only the step.
+    // A total cannot be divided after the fact, so the rows below are the division --
+    // and the assertion is that a claimant's row exists, not that a duration is this
+    // or that: seconds belong to the machine, and a fixture that wrote them down would
+    // be the flaky row this campaign keeps removing.
+    // Two claimants, both proving the exit that fires under `PICK one`: the fixture's
+    // second exit is unreachable there, and a claim on it would be a survivor rather
+    // than a row -- which is a different case, and one this file already has.
+    const tree = fixture(
+      [
+        { line: 1, file: 'packages/core/test/one.test.ts' },
+        { line: 1, file: 'packages/core/test/two.test.ts' },
+      ],
+      { assert: true },
+    );
+    try {
+      const result = runGate(tree);
+      expect(result.status).toBe(0);
+      // One row per claimant, carrying its own claims and runs.
+      expect(result.stdout).toContain('packages/core/test/one.test.ts -- 1 claim(s) in 1 run(s),');
+      expect(result.stdout).toContain('packages/core/test/two.test.ts -- 1 claim(s) in 1 run(s),');
+      // And a total that says how many runs it is made of, so the two halves can be
+      // reconciled by a reader instead of taken on trust.
+      expect(result.stdout).toContain('2 mutant run(s) cost');
+      expect(result.stdout).toContain('the dearest claimant is');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('asks the run whose verdict is an exit code to stop at the first red', () => {
+    // A mutant is proved by *a* test going red; what the rest of the file does after
+    // that red adds nothing to the proof and is charged to the claim anyway. `--bail`
+    // stops there. The baseline cannot take the same flag -- its verdict is a duration,
+    // and a run that stopped early would report the longest test of a file it had not
+    // finished -- which is why this flag is asserted on the mutant's argv and its
+    // absence on the baseline's, in the case below.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      assert: true,
+      argv: true,
+    });
+    try {
+      const result = runGate(tree);
+      expect(result.status).toBe(0);
+      const argv = readFileSync(join(tree, 'argv.txt'), 'utf8');
+      expect(argv).toContain('--bail');
+      // And the mutant still pays no per-test report: its verdict is the exit code.
+      expect(argv).not.toContain('--reporter=json');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('does not ask the baseline to stop, because its verdict is a duration', () => {
+    // The other half of the boundary, taken from the run that survives the flag: a
+    // baseline is red here, so no mutant runs and `argv.txt` holds the baseline's own
+    // arguments. A `--bail` that reached this run would make the margin sentence report
+    // the longest test of a file that stopped, which is a number about a subset.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      red: true,
+      argv: true,
+    });
+    try {
+      const result = runGate(tree);
+      expect(result.status).toBe(1);
+      const argv = readFileSync(join(tree, 'argv.txt'), 'utf8');
+      expect(argv).not.toContain('--bail');
+      expect(argv).toContain('--reporter=json');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
   it('separates a claimant that did not finish from one that is red', () => {
     // Two sentences for two findings. "Does not pass on its own" sends a reader to the
     // test; a file that ran out of budget sends them to the number, and until this case
@@ -557,7 +633,11 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
         'the longest single test of any claimant is 2400 ms of the 120000 ms it is given (2%)',
       );
       expect(result.stdout).toContain('packages/core/test/one.test.ts: the long one');
-      expect(result.stdout).not.toContain('wall clock');
+      // The fallback sentence is the one that must not appear -- asserted by its own
+      // words rather than by `wall clock`, which the per-claimant census prints for a
+      // reason of its own (v3.153). A word was standing in for a sentence, and this
+      // round's new line is what made the difference visible.
+      expect(result.stdout).not.toContain('and no run wrote a per-test report');
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }

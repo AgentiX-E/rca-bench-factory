@@ -366,6 +366,22 @@ function runOnce(file, site) {
       // gate prints is a per-test fact and the dot reporter only says how long the
       // file took. Mutant runs do not need it: their verdict is the exit code.
       ...(site === null ? ['--reporter=json', `--outputFile=${report}`] : []),
+      // And the same division of labour decides this flag, in the other direction.
+      //
+      // A mutant's verdict is "some test went red", and the first red is that test.
+      // What the file does afterwards is charged to the claim and adds nothing to the
+      // proof: a survivor still runs every test, because a survivor's verdict *is* the
+      // whole file staying green, so `--bail` cannot hide one. The baseline cannot take
+      // it -- its verdict is a duration ("the longest single test of this file"), and a
+      // run that stopped at the first red would report the longest test of a file it
+      // had not finished, which is a number about a subset printed as a number about
+      // the file.
+      //
+      // Measured on this tree (v3.153, second shard, same box, minutes apart): the 129
+      // mutant runs cost 402 s of child time before the flag. See the volume for the
+      // pair; the flag is asserted on the mutant's argv and its absence on the
+      // baseline's, in `verify-sites-are-sensitive.test.ts`.
+      ...(site === null ? [] : ['--bail=1']),
       '--maxWorkers=1',
       `--testTimeout=${String(CLAIMANT_TIMEOUT_MS)}`,
     ],
@@ -712,6 +728,51 @@ process.stdout.write(
     `(${String(truncated.length)} truncated by a budget, ${String(unrecorded.length)} exited without recording ` +
     `the mutant, ${String(survivors.length)} survived, ${String(unmeasured.length)} unmeasured)\n`,
 );
+
+// What each claimant's mutant runs cost, charged to the claimant that paid for them.
+//
+// Until v3.153 this gate printed one total, and the recorder only ever saw the step's
+// wall clock. A round that added six claims to one file then charged them the
+// difference between two afternoons: a shard's clock is not a claim's price, and a
+// total cannot be divided after the fact. The rows below are the division -- runs and
+// seconds measured around each claimant's own children, so the next claim added is
+// charged to the file it was added to.
+const paid = new Map();
+for (const outcome of mutants) {
+  const row = paid.get(outcome.file) ?? { claims: 0, runs: 0, ms: 0, slowest: 0 };
+  row.runs += 1;
+  row.ms += outcome.elapsedMs;
+  row.slowest = Math.max(row.slowest, outcome.elapsedMs);
+  paid.set(outcome.file, row);
+}
+for (const { file } of claims) {
+  const row = paid.get(file);
+  if (row !== undefined) row.claims += 1;
+}
+const seconds = (ms) => `${(ms / 1000).toFixed(1)} s`;
+const dearer = [...paid.entries()].sort(
+  (left, right) => right[1].ms - left[1].ms || left[0].localeCompare(right[0]),
+);
+const mutantMs = dearer.reduce((total, [, row]) => total + row.ms, 0);
+for (const [file, row] of dearer) {
+  process.stdout.write(
+    `verify-sites-are-sensitive: ${file} -- ${String(row.claims)} claim(s) in ${String(row.runs)} run(s), ` +
+      `${seconds(row.ms)} (slowest ${seconds(row.slowest)})\n`,
+  );
+}
+if (dearer.length > 0 && mutantMs > 0) {
+  // The clock can be too short to divide: a fixture's runs finish inside a second, and
+  // a ratio against zero is a number that would be printed as `Infinity`.
+  const clock = Number(minutes);
+  const parallel =
+    clock > 0 ? `, ${(mutantMs / 60000 / clock).toFixed(1)}x the clock with ${String(CONCURRENCY)} at a time` : '';
+  const [dearest, row] = dearer[0];
+  process.stdout.write(
+    `verify-sites-are-sensitive: ${String(claims.length)} mutant run(s) cost ${seconds(mutantMs)} of child time ` +
+      `inside ${minutes} min of wall clock${parallel}; the dearest claimant is ${dearest} at ` +
+      `${String(Math.round((row.ms / mutantMs) * 100))}% of that\n`,
+  );
+}
 
 if (failures > 0) {
   if (survivors.length > 0) {
