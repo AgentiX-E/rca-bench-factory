@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 260 core + 4 cli |
-| Test lines | 119,593 core + 3,242 cli |
-| Tests | 7,007 core + 187 cli |
+| Test lines | 119,863 core + 3,242 cli |
+| Tests | 7,014 core + 187 cli |
 | Tracked files | 679 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.146: **47** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.147: **47** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1098,16 +1098,8 @@ is a row about rather than paraphrase one that no `grep` will find.
   `v3.146` measured it once more: at the same derived three workers the full suite was **7,007 of 7,007**
   green in 92 s, so the four failures a round are intermittent rather than necessary -- which is why the
   entry is not closed: a rule that fires one run in four is not answered by a run in which it did not.
-- O-131 · **A red day's bound is looked up by step name, and a step's identity in this file is its command.**
-  `boundsOfThatDay` keys that day's bounds by `step.name` and the recorder looks today's step up by the
-  same name, so a step renamed between the two days -- the bound still managing the same command -- reads
-  as a step that day gave no bound, and a number equal to that bound is kept. Everywhere else a reading is
-  keyed by `commandOf(step)`, because `R10`'s denominator is a series over commands rather than over names.
-  `[open: whether the lookup should key on the command, which is the identity the rest of this file uses,
-  or keep the name and accept the gap -- a command match would also have to decide what two steps of one
-  job that ran the same command mean, and a bound is one number while a command can be run twice]`
 - O-130 · **A seed whose commit predates a syntax this reader accepts can no longer be appended at all.**
-  `boundsOfThatDay` walks that day's `ci.yml` with the same strict line reader the gate uses, and a shape it
+  `workflowOfThatDay` walks that day's `ci.yml` with the same strict line reader the gate uses, and a shape it
   does not recognise is a refusal (`O-128`'s repair) -- so a day from before a syntax change is unseedable,
   where `v3.145` would have appended it with a bound nobody could read. The alternative is a second,
   permissive reader for that day alone, which is a bound decided by a rule no gate enforces.
@@ -1115,6 +1107,16 @@ is a row about rather than paraphrase one that no `grep` will find.
   refused for a day it could read, and a different proposition for one it cannot -- or whether the reader
   should return the bounds it did recognise alongside its errors, so a day is refused for the steps it
   cannot place rather than as a whole]`
+- O-132 · **A step with no `run:` is identified by its name, so an action's version is invisible to the
+  comparison.**
+  `commandOf` answers `step:<name>` for a `uses:` step, and that is the identity the history stores and the
+  comparison this round added reads. So `actions/checkout@v3` and `actions/checkout@v4` under one step name are
+  one command to this file, and a reading of the old action enters the new action's series. The steps this
+  affects are the prefix steps, which carry no bound of their own -- so no `R10` multiple divides by them
+  today -- and the identity claim is nonetheless weaker than the one the rest of the file makes.
+  `[open: whether a `uses:` step should be identified by its action and version, which would give the history
+  a series per version and split one step's readings across two, or keep the name and say in the file that an
+  action's version is not part of a reading's identity]`
 
 ## Pass log
 
@@ -1152,7 +1154,7 @@ and this table.
 | [volume-17.md](progress/volume-17.md) | 13 | v3.99 | v3.111 |
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
-| [volume-20.md](progress/volume-20.md) | 13 | v3.134 | v3.146 |
+| [volume-20.md](progress/volume-20.md) | 14 | v3.134 | v3.147 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

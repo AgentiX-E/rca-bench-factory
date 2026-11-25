@@ -2097,9 +2097,9 @@ alone now, and the seed's version is the red-day comparison. Two relations, two 
 | --- | --- |
 | CI | run `45518129185` on `36a299c8`: **8 of 8 jobs success**, 909 s -- the thirty-eighth reading |
 | `pnpm run docs:check` | **23 steps, exit 0** |
-| `core` test suite | **260 files, 7007 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7194 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 7007 tests passed** (at v3.146) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.146) |
+| repo test suite | **264 files, 7194 tests passed** (at v3.146) |
 | new tests | **7,000 -> 7,007, +7**: a red day's step at the bound it enforced (dropped), a step that spent today's bound while that day allowed more (kept), a day that gave the step no bound of its own (kept), a day whose workflow cannot be read (seed refused), a day whose workflow does not parse (seed refused), a green day that is not asked at all, and a step of a job that day's workflow does not have (dropped, with the fact named) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: every line this round added is in `scripts/`, and the instrument reads `src/` |
 | the recorder's refusals | **2** new: a red seed whose day's workflow cannot be read, at the top level, and one this reader cannot walk, thrown from `boundsOfThatDay` |
@@ -2115,20 +2115,153 @@ alone now, and the seed's version is the red-day comparison. Two relations, two 
 a rule that fires one run in four is not answered by a run in which it did not.
 
 - `O-130` · **A seed whose commit predates a syntax this reader accepts can no longer be appended at all.**
-  `boundsOfThatDay` walks that day's `ci.yml` with the same strict line reader the gate uses, and a shape it
+  `workflowOfThatDay` walks that day's `ci.yml` with the same strict line reader the gate uses, and a shape it
   does not recognise is a refusal -- so a day from before a syntax change is unseedable, where `v3.145`
   would have appended it (with a bound it could not recognise). The alternative is a second, permissive
-  reader for that day alone, which is a bound read by a rule no gate enforces.
+  reader for that day alone, which is a bound read by a rule no gate enforces. `v3.147` widened it: the
+  request is made for every seed now, so a day this reader cannot walk is not just unprovable about a bound
+  but unattributable about a command.
   `[open: whether a refused day should be appended with only its `success` steps -- which is the route
   `O-128` refused for a day it could read, and a different proposition for one it cannot -- or whether the
   reader should return the bounds it did recognise alongside its errors, so a day is refused for the steps
   it cannot place rather than as a whole]`
-- `O-131` · **A red day's bound is looked up by step name, and a step's identity in this file is its
-  command.** `boundsOfThatDay` keys that day's bounds by `step.name` and the recorder looks today's step up
+- `O-131` · ~~**A red day's bound is looked up by step name, and a step's identity in this file is its
+  command.**~~ `boundsOfThatDay` keys that day's bounds by `step.name` and the recorder looks today's step up
   by the same name, so a step renamed between the two days -- the bound still managing the same command --
   reads as a step that day gave no bound, and a number equal to that bound is kept. Everywhere else a
   reading is keyed by `commandOf(step)`, because `R10`'s denominator is a series over commands rather than
-  over names.
-  `[open: whether the lookup should key on the command, which is the identity the rest of this file uses,
-  or keep the name and accept the gap -- a command match would also have to decide what two steps of one
-  job that ran the same command mean, and a bound is one number while a command can be run twice]`
+  over names. ~~`[open: whether the lookup should key on the command, which is the identity the rest of this
+  file uses, or keep the name and accept the gap -- a command match would also have to decide what two steps
+  of one job that ran the same command mean, and a bound is one number while a command can be run twice]`~~
+  **Closed by finding 650**: neither route, and the mechanism was not the one this entry described -- both
+  sides of the comparison come from that day, so what was wrong was the attribution of the number to today's
+  command, not the bound it was read against.
+
+## v3.147 — the command beside the number
+
+`v3.146` closed `O-128` and opened `O-131` with a mechanism: *the bound is looked up by step name*. The entry
+was right that something crossed two trees and wrong about what. Both sides of that comparison come from that
+day, so the bound *was* the bound of the step whose seconds were being read; what crossed the trees was the
+**command**, and it crossed in the one place nobody was looking -- the field written beside the number.
+
+### A reading is a pair, and only the recorder could keep it a pair
+
+`R10` divides a bound by the slowest reading **of the command the bound bounds**, which is why the history
+stores a command with every number (`commands[name] = commandOf(step)`) rather than a step name. The gate never
+reads that command: it only divides. So the pair can only be broken by the recorder, and it was, on both paths:
+
+| the path | where the number came from | where the command came from |
+| --- | --- | --- |
+| a seed | that day's report, looked up by step **name** | **today's** `ci.yml`, by the same name |
+| a recording | the run's report | **whatever was on disk**, never compared with the run's commit |
+
+A name is a label, and a label survives a change of the line under it -- the ordinary way a workflow moves.
+
+### Two rows in the shipped history, not a hypothetical day
+
+Asked of all **3,134** step rows against `.github/workflows/ci.yml` at each row's own commit:
+
+| fact | before the repair | now |
+| --- | --- | --- |
+| step rows in the history | **3,134** | **3,217** |
+| rows carrying the command their commit's file states | **3,132** | **3,217** |
+| rows carrying another command | **2** | **0** |
+
+| fact | value |
+| --- | --- |
+| trees in the history that differ from today's at a shared step name | **7 of 37** |
+| (job, step) pairs that differ across those trees | **9** |
+| steps today has that an older tree does not | **20** |
+
+The two rows are runs `42131836805` (`7484b1a`, 626 s) and `42142175689` (`89775da`, 633 s), both the
+`sensitivity` step, both recorded under `--shard 1/2` while the file at those commits runs the battery whole.
+So shard 1's slowest day in the series `R10` divides read **633 s** where the slowest day a shard 1 spent is
+**519 s**: its 25-minute bound was 2.4x a number no shard spent, where the honest reading of that series is
+2.9x. Both rows are corrected; the numbers stay where they are, because they are the run's, and the command is
+a fact about the commit.
+
+Which path wrote them, the file cannot say: a seed and a recording taken on a moved tree produce the same two
+fields, and no field records which tree a command was read from. That is why both paths are closed rather than
+the likelier one.
+
+### One document, two questions, in the order that matters
+
+`boundsOfThatDay` -- a map of bounds, fetched only for a seed holding a stopped step -- is now
+`workflowOfThatDay`, returning the parsed workflow, fetched for **every** seed and **every** recording.
+
+| the relation | the questions, in order | what a disagreement does |
+| --- | --- | --- |
+| a seed | placement, then command, then bound | the step is dropped, naming which fact it is |
+| a recording | is the disk the tree that ran (both directions) | refused before either file is written |
+
+The order is the rule: a number and a bound that belong to another command are not a pair to compare at all,
+so the bound question may not be asked first. A `--borrow` is not drift -- the borrowed job exists only on
+disk by construction, and the entry says so in `derived`.
+
+### The cost, restated
+
+`v3.146` priced the request at the days holding a stopped step, and that price was right for the question it
+asked. The attribution question is asked of every step, so every seed pays one request, and every recording
+pays one -- two a round, against a run that costs sixteen minutes.
+
+### The round's own defects
+
+- **A rule that asks for a new document is a rule every fixture of the recorder has to answer.** The first full
+  run failed six cases in `ci-readings.test.ts` and three in `ci-budget.test.ts` for a fixture reason -- no
+  answer at the contents endpoint -- rather than for a rule. The harness now says once what the file at the
+  run's commit is, and a case that needs another day answers for it.
+- **A case whose fixture made the rule unreachable.** The renamed-job case of `v3.146` had one job; with
+  placement required, nothing in it could be placed, so the seed was refused for sharing no command and the
+  case measured the wrong sentence. It is two jobs now: one unplaceable and one that still lands.
+- **A return value read from a file a refusal never writes.** The new fixture read the recording
+  unconditionally, so three refusal cases failed with `ENOENT` -- a test failing for its own plumbing.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| a step the day cannot place is attributed to today rather than dropped | 2 |
+| a step that ran another command that day is attributed to today's command | 2 |
+| the bound of the day is compared with `>`, so a step that spent exactly it is kept | 1 |
+| a day whose workflow cannot be read falls back on today's file instead of refusing | 13 |
+| the disk is never held to the tree the run used | 3 |
+| the comparison is made only of steps the disk has, so a number the run measured is dropped in silence | 2 |
+| the two trees are compared by step name rather than by the command the name runs | 1 |
+| a job only the run has is skipped rather than refused | 1 |
+| the job left with nothing does not say which facts it was | 1 |
+| the check for the tree that ran is applied to the seed as well as to the recording | 3 |
+
+**10 mutations, 29 reds**, measured on the green tree, no survivors.
+
+### Readings
+
+> Ledger for `v3.147`.
+
+| item | value |
+| --- | --- |
+| CI | run `45531664638` on `3d69ada9`: **8 of 8 jobs success**, 992 s -- the thirty-ninth reading |
+| `pnpm run docs:check` | **23 steps, exit 0** |
+| `core` test suite | **260 files, 7014 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **264 files, 7201 tests passed** (as of this commit) |
+| new tests | **7,007 -> 7,014, +7**: a recording whose disk runs another command (refused), one whose run measured a step the disk lacks (refused), one whose run measured a job the disk lacks (refused), a borrow that is not drift (accepted), a seeded step whose command that day was another (dropped), a seeded step the day does not place (dropped), and a seeded failed step asked about its command before its bound |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: every line this round added is in `scripts/` |
+| the recorder's refusals | **1** new: a recording whose tree on disk is not the tree the run used. The two of `v3.146` changed sentences rather than count |
+| the gate's inventory | **146** failure site(s) across 69 script(s); throws **21 fatal, 78 unguarded, 1 guarded, 10 rethrow** -- 110 partitioned, **242** proved claims |
+| the population | **39** readings, **38** runs, **38** trees; **1** pair measured one tree; **3,217** step rows, all of them now carrying the command their own commit states, **2** of them corrected |
+| `docs/acceptance.md` | **61** clauses across **43** rounds |
+| the census | **4** coincidences, unchanged |
+
+### Left open
+
+`O-129` is unchanged and unmeasured this round: the worker cap and this container's contention are the same
+question they were at `v3.146`, and nothing here touched it.
+
+- `O-132` · **A step with no `run:` is identified by its name, so an action's version is invisible to the
+  comparison.** `commandOf` answers `step:<name>` for a `uses:` step, which is the identity the history stores
+  and the comparison this round added reads, so `actions/checkout@v3` and `actions/checkout@v4` under one name
+  are one command. The steps affected are the prefix steps, which carry no bound of their own -- so no `R10`
+  multiple divides by them today -- and the identity claim is weaker than the one the rest of the file makes.
+  `[open: whether a `uses:` step should be identified by its action and version, which would give the history
+  a series per version and split one step's readings across two, or keep the name and say in the file that an
+  action's version is not part of a reading's identity]`

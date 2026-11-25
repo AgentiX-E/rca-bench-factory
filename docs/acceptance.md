@@ -69,6 +69,7 @@ before the layer above it is meaningful.
 | A measurement is written where it is the newest one | v3.144 |
 | Only a number the run measured is a reading | v3.145 |
 | A red day's number is read against the bound it enforced | v3.146 |
+| A reading is a number beside the command that spent it | v3.147 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -159,7 +160,7 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   the `sensitivity` job runs `verify-sites-are-sensitive.mjs`, which asks whether that
   file **notices** the exit's absence -- one run per claim with that site's code
   replaced by success, and a baseline run per file so a red claimant cannot be
-  credited with catching anything. Measured at **241 of 241** claim(s) across 68 file(s) -- two more
+  credited with catching anything. Measured at **242 of 242** claim(s) across 68 file(s) -- two more
   than v3.140's 232, because an attempt that does not exist and an attempt with no job in it are two
   refusals `measure-ci-baseline.mjs` did not have before, and each carries a proof; two more again
   at v3.144, because a recording that cannot say which measurement is the newest and a measurement
@@ -167,7 +168,9 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   more at v3.145, because a run that did not succeed, a step that never started, and a step whose
   number is its own bound are three shapes in which a number is not a duration; and two more at
   v3.146, because a red seed's day can fail to answer in two ways -- a workflow its reader cannot
-  walk, and one the API will not return.
+  walk, and one the API will not return; and one more at v3.147, because a recording whose tree on
+  disk is not the tree that ran is a refusal the recorder did not have, and it is the fetch above it
+  that answers which tree that is.
   The figure was 105 of 105 in both halves at v3.41, and it drifted for twenty-four rounds
   because nothing read the sentence -- an external reviewer quoted the 105 as the current
   state, which is what a number with no reader costs. `check-doc-counts` reads it now:
@@ -2734,3 +2737,37 @@ from an anecdote again.
   a whole, and the alternative -- a permissive second reader for that day -- would be a bound decided by a
   rule no gate enforces (`O-130`).
 - **Falsified by** 10 mutations, 30 reds, no survivor, measured on the green tree.
+
+### A reading is a number beside the command that spent it (v3.147)
+
+- **`R10` divides a bound by the slowest reading of the command it bounds, so a reading is a pair.** The
+  history stores the command with every number for exactly this reason, and the gate never reads it -- it only
+  divides. The pair's correctness therefore rests on the recorder alone (finding 650).
+- **Both paths took the two halves from different trees.** A seed took the number from that day's report and
+  the command from **today's** `ci.yml`, by step **name**; a recording took the numbers from a run and the
+  commands from **whatever was on disk**, never compared with the run's commit. A name is a label, and a label
+  survives a change of the line under it.
+- **The shipped history proves it rather than a hypothetical day.** Of **3,134** step rows, **3,132** carried
+  the command their own commit's file states and **2** did not: runs `42131836805` and `42142175689` recorded
+  the **unsharded** battery's 626 s and 633 s under `--shard 1/2`, giving shard 1 a slowest day of 633 s where
+  the slowest day a shard 1 spent is 519 s. Both are corrected, and the file now reads **3,217 of 3,217** --
+  the thirty-ninth reading brought its own 83 rows, all of them from the tree that ran.
+- **One document, read at the run's commit, answers both questions.** `workflowOfThatDay` replaces a fetch that
+  returned only bounds and was made only for a seed holding a stopped step; it is made for **every** seed and
+  **every** recording.
+- **A seed's step is asked three questions in order.** Placement (does that day's workflow have this job and
+  this step name), command (does that name run the same command), bound (did that day's own bound stop a
+  `failure`). The order is the rule: a number and a bound belonging to another command are not a pair to
+  compare at all. A step that fails placement or the command is dropped with a line naming which fact it is.
+- **A recording's disk is held to the tree that ran, in both directions.** A step the two trees have under two
+  commands, a step only one of them has, and a job only the run has are all the same mistake -- the tree is
+  not *at* the commit -- and all three refuse the recording before either file is written.
+- **A `--borrow` is not drift.** The borrowed job exists only on disk by construction, and its seconds are
+  another job's measurement of the same commands, which the entry states in `derived`.
+- **The cost is two requests a round.** `v3.146` priced the request at the days holding a stopped step, which
+  was the price of the bound question; the attribution question is asked of every step, so every seed pays it.
+  A recording pays it once a round, against a run that costs ten minutes.
+- **Not claimed.** That a step with no `run:` can be told from the same step after its action's version
+  changed: its identity in this file is its name (`step:<name>`), so a version bump is invisible to the
+  comparison (`O-132`).
+- **Falsified by** 10 mutations, 29 reds, no survivor, measured on the green tree.

@@ -1,7 +1,7 @@
 # Audit · volume 14
 
-Findings 579–649, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md`,
-`progress/volume-19.md` and `progress/volume-20.md` as `v3.115` through `v3.146`.
+Findings 579–650, from the rounds recorded in `progress/volume-17.md`, `progress/volume-18.md`,
+`progress/volume-19.md` and `progress/volume-20.md` as `v3.115` through `v3.147`.
 
 ## Finding 579 — the refusal for a third spelling was written as a prefix of the first two
 
@@ -4651,3 +4651,116 @@ bound may be read by a rule no gate enforces, and the answer this round took is 
 | a seed is held to today's bound as well, which is a different day's | 1 |
 
 **10 mutations, 30 reds**, measured on the green tree, no survivors.
+
+## Finding 650 — a reading is a number beside the command that spent it, and both paths took the command from another tree
+
+`R10` divides a bound by the slowest reading **of the command the bound bounds**. That sentence is why the
+history stores a command with every number (`commands[name] = commandOf(step)`) rather than a step name --
+"a history that named steps would lose a series to a rename". But the gate never reads the command; it only
+divides. So the correctness of the pair rests entirely on the recorder, and the recorder took the two halves
+from two different trees:
+
+| the path | where the number came from | where the command came from |
+| --- | --- | --- |
+| a seed | that day's report, looked up by step **name** | **today's** `ci.yml`, by the same name |
+| a recording | the run's report | **whatever was on disk**, never compared with the run's commit |
+
+A step's name is its label, and a label survives a change of the line under it -- which is the ordinary way a
+workflow moves. When it does, the entry records that today's command took a number another command spent, and
+the multiple on today's bound is argued from a day that command never had.
+
+### The shipped history already holds two rows this rule would have refused
+
+The question is not hypothetical, and it does not need a hypothetical day to answer. Asked of all **3,134**
+step rows in `golden-master/ci-readings.json`, against `.github/workflows/ci.yml` at each row's own commit:
+
+| fact | before the repair | now |
+| --- | --- | --- |
+| step rows in the history | **3,134** | **3,217** |
+| rows carrying the command their commit's file states | **3,132** | **3,217** |
+| rows carrying another command | **2** | **0** |
+
+and, across the trees rather than the rows:
+
+| fact | value |
+| --- | --- |
+| trees in the history whose file differs from today's at a shared step name | **7 of 37** |
+| (job, step) pairs that differ across those trees | **9** |
+| steps today has that an older tree does not | **20** |
+
+The two rows are the same step on the same day, from two runs:
+
+| run | commit | seconds recorded | command recorded | command that commit's `ci.yml` states |
+| --- | --- | --- | --- | --- |
+| 42131836805 | `7484b1a` | 626 | `node scripts/verify-sites-are-sensitive.mjs --shard 1/2` | `node scripts/verify-sites-are-sensitive.mjs` |
+| 42142175689 | `89775da` | 633 | `node scripts/verify-sites-are-sensitive.mjs --shard 1/2` | `node scripts/verify-sites-are-sensitive.mjs` |
+
+Both were recorded under the sharded command, and both numbers are the **unsharded** battery's: the file at
+each commit runs it whole, and `ci.yml`'s own comment beside the shard plan says each runner "spends roughly
+half of 626 s". So shard 1 of 2 had a slowest day of **633 s** in the series `R10` divides, where the slowest
+day a shard 1 really spent is **519 s** -- and its 25-minute bound was therefore 2.4x a number no shard ever
+spent, where the honest reading of that series is 2.9x.
+
+### Which of the two paths wrote them, and why the file cannot say
+
+A seed writes today's command beside an older day's number; a recording taken on a tree that had moved on
+writes exactly the same thing. The entry holds `commit` and `command` and **no field says which tree the
+command was read from**, so the two are indistinguishable from their output. That is the argument for
+repairing both paths rather than the one that looks more likely: a rule that closed only the seed would leave
+the same two rows writable by the other act.
+
+Both rows are corrected here, to the command their commit's file states. The numbers are the run's and stay
+where they are; the command is a fact about the commit, and it is the one that was wrong.
+
+### One document, two questions
+
+`boundsOfThatDay` returned a map of bounds and was fetched only for a seed that held a stopped step. It is now
+`workflowOfThatDay`, returning the parsed workflow, and it is fetched for **every** seed and **every**
+recording -- because it answers two questions and the second one is asked of every step:
+
+| the relation | the question | what a disagreement does |
+| --- | --- | --- |
+| a seed | which command spent this number, and what bound could have stopped it | the step is dropped, naming the fact: not placeable on that day, or another command that day |
+| a recording | is the tree on disk the tree that ran | the recording is refused, naming the step or job and the two commands |
+
+The seed's answers are now three at once, and they are asked in order: **placement** (does that day's workflow
+have this job and this step name), then **command** (does that name run the same command), then **bound** (did
+that day's own bound stop a `failure`). The order is the rule: a number and a bound that belong to another
+command are not a pair to compare at all, so the bound question may not be asked first.
+
+The recording's answers are two, one per direction, and both are the same mistake: a step the two trees have
+under two commands (the tree is at another commit) and a step only one of them has (the tree is not *at* the
+commit). A `--borrow` is not drift: the borrowed job exists only on disk by construction, and the entry says
+so in `derived`.
+
+### The cost, restated
+
+`v3.146` priced the request at the days that hold a stopped step, and that price was right for the question it
+asked -- a bound. The attribution question is asked of every step, so **every seed pays one request**, and so
+does every recording, which is one per round. A seed is a deliberate act appending a past day; the price is
+two requests a round against a run that costs ten minutes.
+
+### What it costs in the inventory
+
+**21 fatal** throws in `measure-ci-baseline.mjs` rather than 20, **110** partitioned statements rather than
+109, and **242** proved claims rather than 241: the recording's drift refusal ends the process one line below
+the fetch whose document it read. The seed's refusals did not grow in number -- the two `v3.146` added changed
+their sentences rather than their count -- and the third one, the placement gap, is a line in `seedGaps`
+rather than a throw.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| a step the day cannot place is attributed to today rather than dropped | 2 |
+| a step that ran another command that day is attributed to today's command | 2 |
+| the bound of the day is compared with `>`, so a step that spent exactly it is kept | 1 |
+| a day whose workflow cannot be read falls back on today's file instead of refusing | 13 |
+| the disk is never held to the tree the run used | 3 |
+| the comparison is made only of steps the disk has, so a number the run measured is dropped in silence | 2 |
+| the two trees are compared by step name rather than by the command the name runs | 1 |
+| a job only the run has is skipped rather than refused | 1 |
+| the job left with nothing does not say which facts it was | 1 |
+| the check for the tree that ran is applied to the seed as well as to the recording | 3 |
+
+**10 mutations, 29 reds**, measured on the green tree, no survivors.

@@ -909,3 +909,30 @@
   readings of **37** runs, every run `success`, **3,134** step entries, **0** of them from a run that holds a
   `failure` step. The residue is `O-130`: a seed whose commit predates a syntax this reader accepts is now
   unseedable, where it would have been appended with an unrecognised bound.
+- O-131 · ~~**A red day's bound is looked up by step name, and a step's identity in this file is its
+  command.**~~ The entry's mechanism was wrong and the defect was one level up, which is why it is closed by a
+  finding rather than by the repair it named: `boundsOfThatDay` and the report it compares against **both**
+  come from that day, so the bound *was* the bound of the step whose seconds were being read, and a renamed
+  step did not read as "that day gave no bound" -- it read as "did not run", because the report is matched by
+  name too. What was wrong is the **attribution**: the entry writes `commandOf(step)` from **today's** workflow
+  beside a number that day spent, so a step that kept its name through a change of its `run:` line put today's
+  command in front of another command's seconds, and `R10` then divided today's bound by a day that command
+  never had. ~~`[open: whether the lookup should key on the command, which is the identity the rest of this
+  file uses, or keep the name and accept the gap -- a command match would also have to decide what two steps
+  of one job that ran the same command mean, and a bound is one number while a command can be run twice]`~~
+  **Closed by finding 650**, and the answer to the entry's own question is *neither*: the workflow of that day
+  is read for every seed, the step is placed by name and then **held to the command that name ran**, and a step
+  the day cannot place or places under another command is dropped with a line naming which fact it is. The
+  double-command worry the entry carried turns out to be no worry at all: the comparison is one step against
+  one step of the same name, and the two-steps-one-command case never enters it.
+  The same defect had a second path, and the history proved it before the repair did: of **3,134** step rows,
+  **3,132** carry the command their own commit's file states and **2** do not -- runs `42131836805` (`7484b1a`)
+  and `42142175689` (`89775da`) hold the **unsharded** battery's 626 s and 633 s under `--shard 1/2`, so shard
+  1's slowest day in the series `R10` divides read 633 s where the slowest day a shard 1 spent is 519 s. A
+  recording took its commands from whatever was on disk, and the entry has no field saying which tree a
+  command came from, so the two paths were indistinguishable from their output -- which is why both are closed:
+  the disk is now held to the workflow at the run's commit, in both directions, and `--borrow` is carved out
+  because its job exists only on disk by construction. Both rows are corrected to the command that spent them.
+  **Ten mutations, 29 reds**, no survivors; **21** fatal throws in the recorder rather than 20, **110**
+  partitioned statements rather than 109, **242** proved claims rather than 241. The residue is `O-132`: a step
+  with no `run:` is identified by its name, so an action's version is invisible to the comparison.
