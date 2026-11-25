@@ -1980,6 +1980,19 @@ So the critical path moves a second time, and to a job with three steps over 88 
 `batteries` at **1036 s**, then `verify` at **544 s** (of which `Lint` is **378 s**), then
 `sensitivity-shard` at **464 s**.
 
+### A bound that could not fire, because the job had stopped reporting
+
+The refresh run -- the one this ledger's row does *not* cite, since `R7` reads a recording against the run
+that produced it -- exposed a limit of a different kind. Its `sensitivity-shard` job sat `in_progress` for
+**45 minutes** while the run's own `updated_at` stayed frozen at second 4, past both the step's
+**30**-minute bound and the job's **42**-minute ceiling, and neither one fired. The same shard, on this
+box, passes in **3.1 min** over **129** claims in **34** files and **0** survivors -- so the bounds were
+not set wrongly and the tree was not slow: the thing that evaluates a timeout had stopped reporting, and
+a timeout is only a number when something is counting. `cancel` and `rerun` is the whole repair, and the
+observation belongs here rather than in a finding because it is not a defect in this repository's
+guards: a bound enforced by an agent that has stopped answering cannot be a third thing for the tree to
+prove.
+
 ### Six things this round did wrong
 
 - **The first version of the new test wrote the probe back over itself.** `run_probe` restores
