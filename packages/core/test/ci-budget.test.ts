@@ -1633,7 +1633,17 @@ async function withApi<T>(
   const workflow = join(dir, 'ci.yml');
   writeFileSync(workflow, source);
   const server = createServer((req, res) => {
-    const found = answer(req.url ?? '');
+    const url = req.url ?? '';
+    // The file at the run's commit is this fixture's workflow unless a case says otherwise. A recording
+    // has to agree with the tree it ran on, and a seed's day is a workflow a case describes -- so the
+    // default is the one tree these fixtures know about, and a case that needs another day answers for
+    // it. Stated once here rather than in every fixture: a fixture that had to repeat it would be a
+    // fixture about the request rather than about the rule.
+    const found =
+      answer(url) ??
+      (url.includes('/contents/.github/workflows/ci.yml')
+        ? { status: 200, body: { content: Buffer.from(source, 'utf8').toString('base64'), encoding: 'base64' } }
+        : null);
     if (found === null) {
       res.writeHead(404).end();
       return;
@@ -2561,7 +2571,13 @@ describe('a number the run did not measure', () => {
   const DAY = '/repos/AgentiX-E/rca-bench-factory/contents/.github/workflows/ci.yml?ref=deadbeef';
 
   /** Run the recorder against one answer, and say what it left on disk. */
-  const record = (conclusion: string, jobs: unknown, args: string[] = ['7'], thatDay: string | null = WORKFLOW) =>
+  const record = (
+    conclusion: string,
+    jobs: unknown,
+    args: string[] = ['7'],
+    thatDay: string | null = WORKFLOW,
+    source: string = WORKFLOW,
+  ) =>
     withApi(
       (url) => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
@@ -2570,8 +2586,13 @@ describe('a number the run did not measure', () => {
         if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100') {
           return { status: 200, body: jobs };
         }
-        if (thatDay !== null && url === DAY) {
-          return { status: 200, body: { content: Buffer.from(thatDay, 'utf8').toString('base64'), encoding: 'base64' } };
+        if (url === DAY) {
+          // `null` is the day the API will not return, and it is answered here rather than left to the
+          // fixture's default: a seed refused for its day has to be refused by a 404, not by a day that
+          // happens to be the tree the fixture already describes.
+          return thatDay === null
+            ? { status: 404, body: { message: 'Not Found' } }
+            : { status: 200, body: { content: Buffer.from(thatDay, 'utf8').toString('base64'), encoding: 'base64' } };
         }
         return null;
       },
@@ -2600,7 +2621,7 @@ describe('a number the run did not measure', () => {
             : null,
         };
       },
-      WORKFLOW,
+      source,
     );
 
   it('refuses a recording from a run that did not succeed, and names the seed that keeps what it did measure', async () => {
@@ -2807,53 +2828,81 @@ describe('a number the run did not measure', () => {
     expect(result.history.readings[0].jobs.batteries['Slow battery'].seconds).toBe(3000);
   });
 
-  it('refuses a red seed whose day it cannot read, because a bound cannot be told from a duration', async () => {
-    // The cost of the rule above, stated rather than paid quietly: a `failure` step's number is a reading
-    // only if that day's workflow says it was not stopped, and a workflow the API will not return leaves
-    // the question open. Dropping the step silently would append a day with the slow steps missing, which
-    // is the population `R10` divides by -- so the day is refused and the reader is told why.
+  it('refuses a seed whose day cannot be read, because a number has to be placed on the command that spent it', async () => {
+    // The cost of the rule, stated rather than paid quietly: a number is a reading only beside the command
+    // that spent it, and that command is a fact about **that day's** workflow. A day the API will not
+    // return leaves the question open, and a seed that answered it with today's file would write today's
+    // command beside another command's seconds -- so the day is refused and the reader is told why.
     const result = await record('failure', reported({ seconds: 300, conclusion: 'failure' }), ['7', '--seed'], null);
     expect(result.out.status).toBe(1);
-    expect(result.out.stderr).toContain('the bound that day enforced cannot be read');
-    expect(result.out.stderr).toContain('a seed may not append a number it cannot tell from a bound');
+    expect(result.out.stderr).toContain('the workflow of that day cannot be read');
+    expect(result.out.stderr).toContain('a seed may not append a number beside a command it cannot say ran it');
     expect(result.history).toBeNull();
   });
 
-  it('refuses a red seed whose day’s workflow does not parse, for the same reason a missing one is refused', async () => {
+  it('refuses a seed whose day’s workflow does not parse, for the same reason a missing one is refused', async () => {
     // Two ways to have no answer, and one sentence: a 404 and a file this reader cannot walk both leave the
-    // question of what stopped the step unanswered, and a rule that only handled the first would let the
-    // second decide a bound by falling through.
+    // question of which command spent the number unanswered, and a rule that only handled the first would
+    // let the second decide an attribution by falling through to today's file.
     const result = await record('failure', reported({ seconds: 300, conclusion: 'failure' }), ['7', '--seed'], 'not: a workflow\n');
     expect(result.out.status).toBe(1);
-    expect(result.out.stderr).toContain('the bound that day enforced cannot be read');
+    expect(result.out.stderr).toContain('the workflow of that day cannot be read');
     expect(result.history).toBeNull();
   });
 
-  it('does not fetch the workflow of a green day, because no step of it was stopped', async () => {
-    // The request is the price of the rule, and a green day has nothing to ask: every step that ran
-    // succeeded, and `success` is the conclusion of a command that reached its own end. A recorder that
-    // fetched anyway would fail a seed on a network error that no number in it depended on.
+  it('asks a green day which commands it ran, which is the inversion of what v3.146 pinned', async () => {
+    // `v3.146` priced this request at the days that hold a stopped step, and that price was right for the
+    // question it asked: a bound. The attribution question is asked of **every** step, and a green day
+    // answers it too -- so a green day the API will not return is refused rather than recorded with
+    // today's commands, and the entry it would have written is the entry `R10` divides by.
     const result = await record('success', reported({ seconds: 49, conclusion: 'success' }), ['7', '--seed'], null);
-    expect(result.out.stderr).toBe('');
-    expect(result.out.status).toBe(0);
-    expect(result.history.readings[0].jobs.batteries['Slow battery'].seconds).toBe(49);
+    expect(result.out.status).toBe(1);
+    expect(result.out.stderr).toContain('the workflow of that day cannot be read');
+    expect(result.history).toBeNull();
   });
 
-  it('drops a seeded failed step of a job the workflow of that day does not have', async () => {
-    // The one gap the day's workflow can leave: a job renamed between then and now. The step may well have
-    // run with a bound that day, and this reader has no way to find it -- so the number is dropped and the
-    // gap says which of the two facts it is, because "the tree changed" and "the day stopped it" are
-    // different acts for the reader who comes next.
-    const renamed = workflowText([
-      { id: 'batteries-old', minutes: 60, steps: [...step('Check out', 3), ...step('Slow battery', 5)] },
+  it('drops a seeded step whose job the workflow of that day does not have, and keeps the day’s other job', async () => {
+    // A job id renamed between then and now. Nothing about `batteries` can be placed: that day's file has
+    // no such job, so neither its bound nor its command is knowable, and the number is dropped with a line
+    // that names the fact -- "the tree changed" and "the day stopped it" are different acts for the reader
+    // who comes next. The day's other job is an ordinary reading, and it still lands: one unplaceable job
+    // is a gap, not a reason to lose the day.
+    const today = workflowText([
+      { id: 'batteries', minutes: 25, steps: [...step('Check out', 3), ...step('Slow battery', 12)] },
+      { id: 'artefacts', minutes: 25, steps: [...step('Check out', 3)] },
     ]);
-    const result = await record('failure', reported({ seconds: 3000, conclusion: 'failure' }), ['7', '--seed'], renamed);
+    const thatDay = workflowText([
+      { id: 'batteries-old', minutes: 25, steps: [...step('Check out', 3), ...step('Slow battery', 5)] },
+      { id: 'artefacts', minutes: 25, steps: [...step('Check out', 3)] },
+    ]);
+    const two = {
+      jobs: [
+        {
+          name: 'batteries',
+          started_at: '2026-11-02T10:00:00Z',
+          completed_at: '2026-11-02T10:30:00Z',
+          steps: [
+            { name: 'Check out', conclusion: 'success', started_at: '2026-11-02T10:00:00Z', completed_at: '2026-11-02T10:00:02Z' },
+            { name: 'Slow battery', conclusion: 'failure', started_at: '2026-11-02T10:02:00Z', completed_at: '2026-11-02T10:52:00Z' },
+          ],
+        },
+        {
+          name: 'artefacts',
+          started_at: '2026-11-02T10:00:00Z',
+          completed_at: '2026-11-02T10:04:00Z',
+          steps: [
+            { name: 'Check out', conclusion: 'success', started_at: '2026-11-02T10:00:00Z', completed_at: '2026-11-02T10:00:02Z' },
+          ],
+        },
+      ],
+    };
+    const result = await record('failure', two, ['7', '--seed'], thatDay, today);
     expect(result.out.stderr).toBe('');
     expect(result.out.status).toBe(0);
     expect(result.out.stdout).toContain(
-      '`batteries / Slow battery` did not end on its own (failure, in a job the workflow of that day does not have)',
+      '`batteries / Slow battery` cannot be placed on the day it was measured: the workflow of that day has no job `batteries`',
     );
-    expect(Object.keys(result.history.readings[0].jobs.batteries)).toEqual(['Check out']);
+    expect(Object.keys(result.history.readings[0].jobs)).toEqual(['artefacts']);
   });
 
   it('says a seeded job measured nothing that finished, rather than that the tree has none of its steps', async () => {
@@ -2923,7 +2972,7 @@ describe('a number the run did not measure', () => {
     );
     expect(result.out.stderr).toBe('');
     expect(result.out.status).toBe(0);
-    expect(result.out.stdout).toContain('`artefacts` measured no step that ended on its own');
+    expect(result.out.stdout).toContain('`artefacts` measured no step this tree can be sized from (did not end on its own)');
     expect(result.out.stdout).toContain('`artefacts / Upload` did not end on its own (cancelled)');
     // The other job's numbers are still evidence, and the day is still a day.
     expect(Object.keys(result.history.readings[0].jobs)).toEqual(['batteries']);
@@ -2983,6 +3032,211 @@ describe('a number the run did not measure', () => {
     expect(result.out.stdout).toContain('seeded run 7 with 1 of 1 job(s) and 2 step(s)');
     // And the recording is the one the fixture wrote, untouched: a seed never describes the tree.
     expect(result.recording).toBe(true);
+  });
+});
+
+/**
+ * A number beside the command that spent it (`O-131`).
+ *
+ * `R10` divides a bound by the slowest reading **of the command the bound bounds**, so a reading is not a
+ * number: it is a number and the command that spent it, and the history states both. The recorder takes
+ * the number from a run and the command from a workflow, and until this round it never asked which
+ * workflow: a seed took today's, and a recording took whatever was on disk. A name is not a command, so
+ * both paths could write today's command beside another command's seconds -- and the multiple would then
+ * divide today's bound by a number nothing of today ever spent.
+ */
+describe('a number beside the command that spent it', () => {
+  /** One job, two steps, the second bounded at twelve minutes: the shape every case here needs. */
+  const TODAY = workflowText([
+    { id: 'batteries', minutes: 25, steps: [...step('Check out', 3), ...step('Slow battery', 12)] },
+  ]);
+
+  /** The same job as the API reports it, with the two things a case varies. */
+  const ran = (battery: { seconds: number; conclusion: string }) => ({
+    jobs: [
+      {
+        name: 'batteries',
+        started_at: '2026-11-02T10:00:00Z',
+        completed_at: '2026-11-02T10:30:00Z',
+        steps: [
+          { name: 'Check out', conclusion: 'success', started_at: '2026-11-02T10:00:00Z', completed_at: '2026-11-02T10:00:02Z' },
+          {
+            name: 'Slow battery',
+            conclusion: battery.conclusion,
+            started_at: '2026-11-02T10:02:00Z',
+            completed_at: new Date(Date.parse('2026-11-02T10:02:00Z') + battery.seconds * 1000).toISOString(),
+          },
+        ],
+      },
+    ],
+  });
+
+  /** The one request that answers both questions, at the commit every fixture run reports. */
+  const DAY_OF_RUN = '/repos/AgentiX-E/rca-bench-factory/contents/.github/workflows/ci.yml?ref=deadbeef';
+
+  /**
+   * Run the recorder against one answer: run 7, its jobs, and the workflow **at its commit**.
+   *
+   * The third argument is the whole subject: it is what the tree that ran says, as opposed to `atDisk`,
+   * which is the file the recorder reads. Two documents rather than one, because the defect this block
+   * is about is exactly the difference between them.
+   */
+  const record = (args: string[], jobs: unknown, atCommit = TODAY, atDisk = TODAY) =>
+    withApi(
+      (url) => {
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7') {
+          return { status: 200, body: { head_sha: 'deadbeef', conclusion: 'success', updated_at: '2026-11-02T10:31:00Z' } };
+        }
+        if (url === '/repos/AgentiX-E/rca-bench-factory/actions/runs/7/jobs?per_page=100') {
+          return { status: 200, body: jobs };
+        }
+        if (url === DAY_OF_RUN) {
+          return { status: 200, body: { content: Buffer.from(atCommit, 'utf8').toString('base64'), encoding: 'base64' } };
+        }
+        return null;
+      },
+      async (env) => {
+        // A seed is appended beside a recording, and a fixture without one would be refused for its
+        // placement rather than for the command -- a case passing for the wrong reason.
+        if (args.includes('--seed')) {
+          writeFileSync(
+            env['RCA_CI_OUT'] as string,
+            JSON.stringify({
+              run: 9,
+              attempt: 1,
+              commit: 'c'.repeat(40),
+              measured: '2026-11-03',
+              jobs: { batteries: { name: 'batteries', timeoutMinutes: 25, total: 53, steps: { 'Slow battery': 49 } } },
+            }),
+          );
+        }
+        const out = await runRecorder(args, env);
+        return {
+          out,
+          recording: existsSync(env['RCA_CI_OUT'] as string),
+          written: existsSync(env['RCA_CI_OUT'] as string)
+            ? JSON.parse(readFileSync(env['RCA_CI_OUT'] as string, 'utf8'))
+            : null,
+          history: existsSync(env['RCA_CI_READINGS'] as string)
+            ? JSON.parse(readFileSync(env['RCA_CI_READINGS'] as string, 'utf8'))
+            : null,
+        };
+      },
+      atDisk,
+    );
+
+
+  it('refuses a recording whose tree on disk is not the tree the run used', async () => {
+    // A recording writes `commit: <head_sha>` and the gate never reads it, so nothing compared the numbers
+    // with the commands: the file on disk could be any tree. Here `Slow battery` gained a different
+    // command after the run -- the ordinary way a workflow moves -- and recording it would have written
+    // today's command beside that run's seconds.
+    const moved = workflowText([
+      { id: 'batteries', minutes: 25, steps: [...step('Check out', 3), ...step('Slow battery', 12, 'node scripts/new-battery.mjs')] },
+    ]);
+    const result = await record(['7'], ran({ seconds: 49, conclusion: 'success' }), TODAY, moved);
+    expect(result.out.status).toBe(1);
+    expect(result.out.stderr).toContain(
+      '`batteries / Slow battery` runs `node scripts/new-battery.mjs` on disk and ran ' +
+        '`node scripts/inject-slow-battery.mjs` in the tree this run used (deadbee)',
+    );
+    expect(result.out.stderr).toContain('a recording writes the command beside each number');
+    // Nothing is written: the refusal is taken before either file, which is the rule every refusal here
+    // keeps -- a half-written pair is the state the two-files-disagree rule exists to refuse.
+    expect(result.recording).toBe(false);
+    expect(result.history).toBeNull();
+  });
+
+  it('refuses a recording whose run measured a step the tree on disk does not have', async () => {
+    // The other direction, and the other act: the disk is *older* than the run. Recording it would leave a
+    // number the run measured out of both files, and the entry would describe a tree that is not the one
+    // whose numbers it holds.
+    const older = workflowText([{ id: 'batteries', minutes: 25, steps: [...step('Check out', 3)] }]);
+    const result = await record(['7'], ran({ seconds: 49, conclusion: 'success' }), TODAY, older);
+    expect(result.out.status).toBe(1);
+    expect(result.out.stderr).toContain(
+      '`batteries / Slow battery` is a step of the tree this run used (deadbee) and not of the one on disk',
+    );
+    expect(result.recording).toBe(false);
+  });
+
+  it('refuses a recording whose run measured a job the tree on disk does not have', async () => {
+    // The same fact one level up. A job that exists in the tree that ran and not in the one on disk is a
+    // whole job's numbers missing from the file every bound is a multiple of, which is the gap `R9`
+    // expires a promise against.
+    const extra = workflowText([
+      { id: 'batteries', minutes: 25, steps: [...step('Check out', 3), ...step('Slow battery', 12)] },
+      { id: 'artefacts', minutes: 25, steps: [...step('Check out', 3)] },
+    ]);
+    const result = await record(['7'], ran({ seconds: 49, conclusion: 'success' }), extra, TODAY);
+    expect(result.out.status).toBe(1);
+    expect(result.out.stderr).toContain('`artefacts` is a job of the tree this run used (deadbee) and not of the one on disk');
+    expect(result.recording).toBe(false);
+  });
+
+  it('does not read a borrow as drift, because the borrowed job did not exist in that run', async () => {
+    // A split is the one moment the two trees *must* differ: the new job exists only in the workflow the
+    // round is about to push, and its seconds are another job's measurement of the same commands. A rule
+    // that refused every difference would refuse the act the recording exists for.
+    const split = workflowText([
+      { id: 'batteries', minutes: 40, steps: [...step('Check out', 3), ...step('Slow battery', 30)] },
+      { id: 'batteries-heavy', minutes: 40, steps: [...step('Check out', 3), ...step('Slow battery', 30)] },
+    ]);
+    const before = workflowText([
+      { id: 'batteries', minutes: 40, steps: [...step('Check out', 3), ...step('Slow battery', 30)] },
+    ]);
+    const result = await record(['7', '--borrow', 'batteries-heavy=batteries'], ran({ seconds: 49, conclusion: 'success' }), before, split);
+    expect(result.out.stderr).toBe('');
+    expect(result.out.status).toBe(0);
+    expect(Object.keys(result.written.jobs)).toEqual(['batteries', 'batteries-heavy']);
+    // And the entry says where the second job's seconds came from, so the difference between the two trees
+    // is written down rather than left for a reader to infer from a commit id that describes only one.
+    expect(result.written.derived['batteries-heavy']).toContain('its steps ran inside `batteries`');
+  });
+
+  it('drops a seeded step whose command that day was another one, because the seconds are that command’s', async () => {
+    // The seed's half. `Slow battery` kept its name and changed its command before today, so the run's 49
+    // seconds were spent by `node scripts/old-battery.mjs` -- and writing them beside today's command
+    // would put them in a series they do not belong to, where `R10` divides today's bound by them.
+    const then = workflowText([
+      { id: 'batteries', minutes: 25, steps: [...step('Check out', 3), ...step('Slow battery', 12, 'node scripts/old-battery.mjs')] },
+    ]);
+    const result = await record(['7', '--seed'], ran({ seconds: 49, conclusion: 'success' }), then);
+    expect(result.out.stderr).toBe('');
+    expect(result.out.status).toBe(0);
+    expect(result.out.stdout).toContain(
+      '`batteries / Slow battery` ran a different command that day (`node scripts/old-battery.mjs`), and a ' +
+        'reading is a number beside the command that spent it',
+    );
+    expect(Object.keys(result.history.readings[0].jobs.batteries)).toEqual(['Check out']);
+  });
+
+  it('drops a seeded step the workflow of that day does not place at all', async () => {
+    // The day has the job and not the step: the run reported a step of that name, so the name existed that
+    // day -- and a file that cannot find it cannot say what it ran. Dropping is the only honest act, and
+    // the gap names the fact rather than saying the step "did not run", which would be false.
+    const then = workflowText([{ id: 'batteries', minutes: 25, steps: [...step('Check out', 3)] }]);
+    const result = await record(['7', '--seed'], ran({ seconds: 49, conclusion: 'success' }), then);
+    expect(result.out.status).toBe(0);
+    expect(result.out.stdout).toContain(
+      '`batteries / Slow battery` cannot be placed on the day it was measured: the workflow of that day ' +
+        'has no step named `Slow battery` in that job',
+    );
+    expect(Object.keys(result.history.readings[0].jobs.batteries)).toEqual(['Check out']);
+  });
+
+  it('drops a seeded failed step on its command before it asks about the bound of that day', async () => {
+    // 300 s is exactly the five-minute bound that day stated, so the bound rule would drop it too -- and
+    // the command is the reason that comes first, because a number and a bound that belong to another
+    // command are not a pair to compare at all. A rule that asked the bound first would report a kill that
+    // never happened.
+    const then = workflowText([
+      { id: 'batteries', minutes: 25, steps: [...step('Check out', 3), ...step('Slow battery', 5, 'node scripts/old-battery.mjs')] },
+    ]);
+    const result = await record(['7', '--seed'], ran({ seconds: 300, conclusion: 'failure' }), then);
+    expect(result.out.status).toBe(0);
+    expect(result.out.stdout).toContain('ran a different command that day (`node scripts/old-battery.mjs`)');
+    expect(result.out.stdout).not.toContain('bound in force that day');
   });
 });
 

@@ -696,6 +696,19 @@ async function withApi<T>(
       res.end(JSON.stringify(every));
       return;
     }
+    if (url.includes('/contents/.github/workflows/ci.yml')) {
+      // The file at the run's commit is the workflow this fixture wrote: these cases record the tree they
+      // wrote, and a case about a tree that moved on is `ci-budget.test.ts`, where the two documents are
+      // the subject rather than the setup.
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          content: Buffer.from(readFileSync(workflow, 'utf8'), 'utf8').toString('base64'),
+          encoding: 'base64',
+        }),
+      );
+      return;
+    }
     res.writeHead(404).end();
   });
   const port = await new Promise<number>((done) => {

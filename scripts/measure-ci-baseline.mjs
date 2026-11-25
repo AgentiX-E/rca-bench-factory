@@ -89,10 +89,37 @@
  *    answered it by guessing would append a day with its slow steps missing. The day is
  *    refused, and the reader is told which request failed.
  *
- * The request is only made when the run holds a stopped step, because a green day has
- * none: `success` is what a command that reached its own end reports. A seed of a green run
- * therefore costs what it always did, and the price of the rule is paid exactly by the days
- * that need it.
+ * ## Why every seed is asked which command it ran, and not only a red one
+ *
+ * A reading is not a number. `R10` divides a bound by the slowest reading **of the command
+ * the bound bounds**, so every entry in the history is a number beside the command that
+ * spent it, and the whole file is keyed that way -- `commandOf(step)`, not `step.name`.
+ *
+ * A seed takes its numbers from a run and its commands from **today's** workflow: the loop
+ * walks today's steps, finds the run's step of the same name, and writes today's command
+ * beside the run's seconds. A name is not a command. The two diverge the ordinary way --
+ * a step whose `run:` line gained an argument under the same label -- and when they do, the
+ * history records that today's command took a number another command spent, and `R10`
+ * sizes today's bound from it. Seven of the thirty-seven trees in the shipped history
+ * differ from today's at a shared step name, so this is not a hypothetical day.
+ *
+ * So the request is made for **every** seed, not only one that holds a stopped step, and
+ * it answers two questions at once: which command spent this number, and what bound could
+ * have stopped it. A step the day does not place, or places under another command, is
+ * dropped with a line that says which of the two facts it is. A green day pays the same
+ * request, because it is asked the first question too -- `v3.146` priced the request at the
+ * days that hold a stopped step, which was the price of the bound question alone.
+ *
+ * ## Why a recording asks the same question of the tree on disk
+ *
+ * A recording takes the numbers from a run and the commands from the file on disk, and
+ * nothing compared the two: the reading says `commit: <head_sha>` and the gate never reads
+ * it. A recording taken on a tree that had moved on therefore wrote today's command beside
+ * an older command's seconds, which is the seed's mistake one path over. The same document
+ * answers it -- the workflow at the run's commit -- and the disk is held to it: a step the
+ * two trees have under two commands, or a step only one of them has, refuses the recording.
+ * A `--borrow` is not drift: the borrowed job exists only on disk by construction, and its
+ * seconds are another job's measurement of the same commands, which the entry states.
  *
  * Usage: `node scripts/measure-ci-baseline.mjs <run-id> [--borrow <job>=<ran>] [--seed]`
  * with `GITHUB_TOKEN` set.
@@ -298,35 +325,105 @@ function endedOnItsOwn(conclusion) {
 }
 
 /**
- * The step bounds a seed's own day enforced, keyed by job and then by step.
+ * The workflow the run used, read from the commit the run reports.
  *
- * Read from the workflow at the commit the run reports, with the same line reader the gate
- * uses on today's. The strict reader is the point: a file it refuses may hold a
- * `timeout-minutes` at an indent this repository never writes, and a bound read from the
- * wrong line is a bound that decides whether a duration enters the history. So a refusal
- * here is an answer -- *this day cannot be asked* -- rather than a reason to fall back on
- * today's numbers, which are a different day's.
+ * Read with the same line reader the gate uses on today's file, and the strict reader is the
+ * point: a file it refuses may hold a `timeout-minutes` at an indent this repository never
+ * writes, and a bound read from the wrong line decides whether a duration enters the history.
+ * So a refusal here is an answer -- *this tree cannot be asked* -- rather than a reason to
+ * fall back on today's numbers, which are a different tree's.
  *
- * Only a bound of the step's own is recorded: a step that inherits its job's budget is
- * stopped by the job's timeout, and GitHub reports that as `cancelled`, which a seed already
- * drops. A job that is absent from that day's workflow has no entry at all, which is what
- * lets the caller say "this day cannot prove it" instead of "this day had no bound".
+ * One document, two questions. A seed needs the commands its numbers were spent on and the
+ * bounds that could have stopped them; a recording needs the commands it is about to write
+ * beside numbers taken from a run, so that the tree on disk can be held to the tree that ran.
  */
-async function boundsOfThatDay(headSha) {
+async function workflowOfThatDay(headSha) {
   const body = await get(`/contents/.github/workflows/ci.yml?ref=${encodeURIComponent(headSha)}`);
   const text =
     typeof body?.content === 'string' ? Buffer.from(body.content, 'base64').toString('utf8') : '';
   const then = readWorkflow(text);
   if (then.errors.length > 0) throw new Error(String(then.errors[0]));
+  return then;
+}
+
+/**
+ * One workflow's steps, by job and then by name: the command it runs, and the bound of its own.
+ *
+ * The name is the key because a name is what the two trees can be compared by -- the API reports
+ * steps by name, and no field of a report carries the command. The command is what the reading is
+ * keyed by, which is why every caller compares the two before it writes anything.
+ *
+ * Only a bound of the step's own is recorded: a step that inherits its job's budget is stopped by
+ * the job's timeout, and GitHub reports that as `cancelled`, which a seed already drops. A job or a
+ * step absent from the workflow has no entry, which is what lets a caller say "this workflow cannot
+ * place it" rather than "it had no bound".
+ */
+function stepsOfDay(workflow) {
   const byJob = new Map();
-  for (const job of jobsOf(then)) {
-    const bounds = new Map();
-    for (const step of stepsOf(then, job.id)) {
-      if (step.inheritedFrom === 'step') bounds.set(step.name, step.minutes);
+  for (const job of jobsOf(workflow)) {
+    const steps = new Map();
+    for (const step of stepsOf(workflow, job.id)) {
+      steps.set(step.name, {
+        command: commandOf(step),
+        minutes: step.inheritedFrom === 'step' ? step.minutes : null,
+      });
     }
-    byJob.set(job.id, bounds);
+    byJob.set(job.id, steps);
   }
   return byJob;
+}
+
+/**
+ * Where the workflow on disk stops being the workflow the run used, or `null` when they are one tree.
+ *
+ * A recording takes the numbers from a run and the commands from the file on disk, and until this
+ * round nothing compared the two: the entry says `commit: <head_sha>` and the gate never reads it, so
+ * a recording taken on a tree that had moved on wrote today's command beside an older command's
+ * seconds -- and `R10` then divided today's bound by a number a different command spent.
+ *
+ * Both directions are refused, because both are the same mistake, and the two acts that fix them are
+ * different: a step the two trees have under two commands means the tree is at another commit, and a
+ * step only one of them has means the tree is older or newer than the run rather than *at* it.
+ *
+ * A `--borrow` is not drift. The borrowed job exists only on disk, by construction, and its seconds
+ * are another job's measurement of the same commands -- which the entry says in `derived`. The same
+ * holds for a job this run did not report at all: the loop's own sentence covers it, and a declared
+ * job waiting for its first run is a state the gate is green in.
+ */
+function driftOf(onDisk, committed, headSha) {
+  const at = String(headSha).slice(0, 7);
+  for (const [jobId, steps] of onDisk) {
+    const then = committed.get(jobId);
+    if (then === undefined) continue;
+    for (const [name, mine] of steps) {
+      const theirs = then.get(name);
+      if (theirs === undefined || theirs.command === mine.command) continue;
+      return (
+        `\`${jobId} / ${name}\` runs \`${mine.command}\` on disk and ran \`${theirs.command}\` in the tree ` +
+        `this run used (${at}): a recording writes the command beside each number, so the two have to be ` +
+        'the same command -- check out that commit, or commit this workflow and record the run of it'
+      );
+    }
+  }
+  for (const [jobId, steps] of committed) {
+    const mine = onDisk.get(jobId);
+    if (mine === undefined) {
+      return (
+        `\`${jobId}\` is a job of the tree this run used (${at}) and not of the one on disk: the workflow ` +
+        'here is at another commit, so recording this run would leave the job out of both files -- check ' +
+        'out that commit, or commit this workflow and record the run of it'
+      );
+    }
+    for (const name of steps.keys()) {
+      if (mine.has(name)) continue;
+      return (
+        `\`${jobId} / ${name}\` is a step of the tree this run used (${at}) and not of the one on disk: ` +
+        'recording it would leave that number out of every file -- check out that commit, or commit this ' +
+        'workflow and record the run of it'
+      );
+    }
+  }
+  return null;
 }
 
 const workflow = readWorkflow(readFileSync(workflowPath(), 'utf8'));
@@ -468,31 +565,34 @@ const byId = new Map(jobsOf(workflow).map((one) => [one.id, one]));
 
 const recorded = {};
 const derived = {};
-// Which of this run's steps the runner may have stopped, which is the only kind of day that has to be
-// asked for its workflow. `success` is a command that reached its own end; `failure` is the ambiguous
-// one, and a green run holds none of them because GitHub computes a run's conclusion from its steps.
-const holdsStoppedStep = atAttempt.some((one) =>
-  (one.steps ?? []).some((step) => step.conclusion === 'failure'),
-);
-// A seed's red day costs one request, and only a red day does (`O-128`): the seconds of a stopped step
-// are either a duration or the bound it was killed by, and the bound that separates the two is the one
-// **that day** enforced. Today's `ci.yml` may state a wider or a narrower number, so reading it here
-// would refuse a real duration or keep a bound -- and the reader who asks which of the two happened is
-// asking about the workflow at this run's commit.
-let thatDay = new Map();
-if (SEED && holdsStoppedStep) {
-  try {
-    thatDay = await boundsOfThatDay(run.head_sha);
-  } catch (error) {
-    throw new Error(
-      `run ${RUN} holds a step that stopped rather than finished, so its seconds have to be read against ` +
-        'the bound that day enforced -- and the bound that day enforced cannot be read ' +
-        `(\`.github/workflows/ci.yml\` at ${String(run.head_sha).slice(0, 7)}: ` +
-        `${error instanceof Error ? error.message : String(error)}): a seed may not append a number it ` +
-        'cannot tell from a bound, because `R10` divides by what it appends and would then ask for a bound ' +
-        'twice the number the run was killed by',
-    );
-  }
+// One request, two questions. A seed's numbers have to be placed on the commands that spent them, and
+// those commands are the ones the workflow of **that day** states -- a name is not a command, and the
+// shipped history already holds seven trees where a step kept its name and changed its `run:` line. A
+// recording's numbers are written beside today's commands, so the tree on disk has to be the tree that
+// ran. `v3.146` priced this request at the days that hold a stopped step, which was the price of the
+// bound question alone (`O-131`).
+let thatDay;
+try {
+  thatDay = stepsOfDay(await workflowOfThatDay(run.head_sha));
+} catch (error) {
+  const why = error instanceof Error ? error.message : String(error);
+  throw new Error(
+    SEED
+      ? `run ${RUN} is a day whose numbers have to be placed on the commands that spent them, and the ` +
+        'workflow of that day cannot be read ' +
+        `(\`.github/workflows/ci.yml\` at ${String(run.head_sha).slice(0, 7)}: ${why}): a seed may not ` +
+        'append a number beside a command it cannot say ran it, because `R10` divides by what it appends ' +
+        "and would then size today's bound from a command that did not run that day"
+      : `run ${RUN} is the whole of a recording, and the workflow at its commit cannot be read ` +
+        `(\`.github/workflows/ci.yml\` at ${String(run.head_sha).slice(0, 7)}: ${why}): a recording writes ` +
+        "today's command beside each number, so that command has to be the one that ran -- check out that " +
+        'commit, or commit this workflow and record the run of it. `--seed` appends a day to the history ' +
+        'and leaves the recording where it is',
+  );
+}
+if (!SEED) {
+  const drift = driftOf(stepsOfDay(workflow), thatDay, run.head_sha);
+  if (drift !== null) throw new Error(drift);
 }
 // The command each step ran, per job, kept beside the seconds so the entry appended to
 // the history is self-describing: `R10` compares a bound with every reading of *the
@@ -558,9 +658,11 @@ for (const job of jobsOf(workflow)) {
   const measured = secondsByName(source);
   const steps = {};
   const commands = {};
-  // How many of this job's numbers a seed refused, so that a job left with none says which of the two
-  // reasons it was: a step this workflow no longer has, or a step that did not finish.
+  // How many of this job's numbers a seed refused, and why, in the order the reasons first appear: a job
+  // left with nothing says which facts it is, because "the tree changed" and "the day stopped it" are
+  // different acts for the reader who comes next.
   let dropped = 0;
+  const reasons = new Set();
   for (const step of stepsOf(workflow, job.id)) {
     const found = measured.get(step.name);
     if (found === undefined) {
@@ -578,6 +680,7 @@ for (const job of jobsOf(workflow)) {
       // workflow, so it has no number to offer here; a seed is partial by construction and says so.
       if (SEED) {
         dropped += 1;
+        reasons.add('did not run');
         seedGaps.push(`\`${job.id} / ${step.name}\` did not run`);
         continue;
       }
@@ -588,26 +691,50 @@ for (const job of jobsOf(workflow)) {
           'workflow -- record a run of this tree in which it ran',
       );
     }
-    // A red day's stopped step, held against the bound of its own day (`O-128`). `failure` covers a
-    // command that returned non-zero and a step the runner killed, and the report says which only in the
-    // number: at or above the bound in force that day, it is that bound. Below it, or with no bound that
-    // day, it is a duration the command spent.
-    if (SEED && found.conclusion === 'failure') {
-      const boundsThen = thatDay.get(job.id);
-      if (boundsThen === undefined) {
+    // A seed's number has to be placed on the command that spent it, and on the bound that could have
+    // stopped it -- and both are questions about the workflow of **that day**. The report answers neither:
+    // it names a step and gives a number, while a reading is keyed by the command, so a step that kept its
+    // name through a change of its `run:` line would write today's command beside an older command's
+    // seconds and `R10` would divide today's bound by them.
+    if (SEED) {
+      const jobThen = thatDay.get(job.id);
+      const stepThen = jobThen?.get(step.name);
+      if (stepThen === undefined) {
         dropped += 1;
+        reasons.add('could not be placed on that day');
         seedGaps.push(
-          `\`${job.id} / ${step.name}\` did not end on its own (failure, in a job the workflow of that ` +
-            'day does not have)',
+          `\`${job.id} / ${step.name}\` cannot be placed on the day it was measured: the workflow of that ` +
+            `day ${
+              jobThen === undefined
+                ? `has no job \`${job.id}\``
+                : `has no step named \`${step.name}\` in that job`
+            }`,
         );
         continue;
       }
-      const boundThen = boundsThen.get(step.name);
-      if (boundThen !== undefined && found.seconds >= boundThen * 60) {
+      if (stepThen.command !== commandOf(step)) {
         dropped += 1;
+        reasons.add('ran a different command that day');
+        seedGaps.push(
+          `\`${job.id} / ${step.name}\` ran a different command that day (\`${stepThen.command}\`), and a ` +
+            'reading is a number beside the command that spent it',
+        );
+        continue;
+      }
+      // A red day's stopped step, held against the bound of its own day (`O-128`). `failure` covers a
+      // command that returned non-zero and a step the runner killed, and the report says which only in the
+      // number: at or above the bound in force that day, it is that bound. Below it, or with no bound that
+      // day, it is a duration the command spent.
+      if (
+        found.conclusion === 'failure' &&
+        stepThen.minutes !== null &&
+        found.seconds >= stepThen.minutes * 60
+      ) {
+        dropped += 1;
+        reasons.add('did not end on its own');
         seedGaps.push(
           `\`${job.id} / ${step.name}\` did not end on its own (failure at the ` +
-            `${String(boundThen)} min bound in force that day)`,
+            `${String(stepThen.minutes)} min bound in force that day)`,
         );
         continue;
       }
@@ -618,6 +745,7 @@ for (const job of jobsOf(workflow)) {
     // run's conclusion from its steps, while "red" says nothing about *which* step stopped early.
     if (SEED && !endedOnItsOwn(found.conclusion)) {
       dropped += 1;
+      reasons.add('did not end on its own');
       // A report that names no conclusion for a step with times is a report that cannot say the step
       // finished, and a seed may not turn "cannot say" into "did".
       seedGaps.push(
@@ -651,13 +779,13 @@ for (const job of jobsOf(workflow)) {
   // A job none of whose steps this workflow still has is a job from a different tree
   // altogether: its seconds measure nothing a bound of today could be written against.
   if (Object.keys(steps).length === 0) {
-    // Two different facts, and only one of them is about the tree: a job from a workflow that had other
-    // steps, and a job whose every step was reported and stopped early. The first says the run and this
-    // workflow share nothing; the second says the day measured nothing that finished.
+    // The one fact that is true of every case, and the facts it is made of. A job from a workflow that had
+    // other steps says the run and this workflow share nothing; a job whose steps were stopped, placed on
+    // another command, or not placeable at all says the day measured nothing this tree can be sized from.
     seedGaps.push(
       dropped === 0
         ? `\`${job.id}\` ran no step this workflow still has`
-        : `\`${job.id}\` measured no step that ended on its own`,
+        : `\`${job.id}\` measured no step this tree can be sized from (${[...reasons].join('; ')})`,
     );
     continue;
   }
