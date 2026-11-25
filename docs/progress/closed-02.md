@@ -936,3 +936,38 @@
   **Ten mutations, 29 reds**, no survivors; **21** fatal throws in the recorder rather than 20, **110**
   partitioned statements rather than 109, **242** proved claims rather than 241. The residue is `O-132`: a step
   with no `run:` is identified by its name, so an action's version is invisible to the comparison.
+- O-132 · ~~**A step with no `run:` is identified by its name, so an action's version is invisible to the
+  comparison.** `commandOf` answers `step:<name>` for a `uses:` step, and that is the identity the history
+  stores and the comparison this round added reads. So `actions/checkout@v3` and `actions/checkout@v4` under one
+  step name are one command to this file, and a reading of the old action enters the new action's series. The
+  steps this affects are the prefix steps, which carry no bound of their own -- so no `R10` multiple divides by
+  them today -- and the identity claim is nonetheless weaker than the one the rest of the file makes.~~
+  ~~`[open: whether a `uses:` step should be identified by its action and version, which would give the history
+  a series per version and split one step's readings across two, or keep the name and say in the file that an
+  action's version is not part of a reading's identity]`~~
+  **Closed by finding 651**, and the answer to the entry's own question is the first, with the second half of
+  its arithmetic removed: the identity is `uses:<action@reference>`, and the version does **not** split one
+  step's readings, because the **name** is not part of the identity at all. The entry framed it as a choice
+  between "a series per version" and "say the version does not count", and both of those keep the name --
+  the first would have made a rename lose a series, which is losing the slow day `R10` divides by, and the
+  second would have said that two programs are one command. What the entry could not see from where it stood
+  is that the name was the thing doing the splitting: an action's reference survives a rename, so the series
+  is *longer* than it was, not shorter.
+  The history proved the defect latent before the repair did: of **994** rows that named a step, across 40
+  readings on 39 trees, **994** ran the action today's tree states, read from each row's own commit -- so no
+  day in this repository was ever spent by another version, and no bound divides by an action's series
+  (`R14` forbids a prefix step a bound of its own). The rows are still rewritten, because the reason to
+  rewrite them is not the bound that would have divided badly but the reader who asks what a checkout has
+  cost and would otherwise be told about the newest days only: `--relabel-actions` read 39 trees and changed
+  **994 of 3,300** rows, and a second run changed **0 of 3,300**, byte for byte identical.
+  The same identity reaches two more places. `sharedPrefixOf` compared a name and an empty string for every
+  action step while its own docstring said "name and command both", so two jobs at two versions of one action
+  shared a prefix they did not share. And the recorder now holds the tree on disk to the action version: a
+  run whose step used `@v3`, recorded against a tree at `@v4`, is drift, which nothing else in this
+  repository could have seen -- the step keeps its name, its position and its inputs.
+  **Ten mutations, 32 reds**, no survivors; the seven new claims in the inventory (one exit, six throws) are
+  7 of 7 credited by the sensitivity battery; **248** proved claims rather than 242, **116** partitioned
+  throw statements rather than 110, **22** fatal rather than 21 -- the flag's refusal at the top level, with
+  the mode's five inside `relabelActions`, which is the `unguarded` basket. The mode's success exit is a
+  `process.exit(0)`, which is a call and not a site: `165` calls became `166`, and the inventory stayed at
+  **146**.

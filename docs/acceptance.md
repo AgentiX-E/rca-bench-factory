@@ -70,6 +70,7 @@ before the layer above it is meaningful.
 | Only a number the run measured is a reading | v3.145 |
 | A red day's number is read against the bound it enforced | v3.146 |
 | A reading is a number beside the command that spent it | v3.147 |
+| An action is identified by the action, not by the name of the step that uses it | v3.148 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -160,7 +161,7 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   the `sensitivity` job runs `verify-sites-are-sensitive.mjs`, which asks whether that
   file **notices** the exit's absence -- one run per claim with that site's code
   replaced by success, and a baseline run per file so a red claimant cannot be
-  credited with catching anything. Measured at **242 of 242** claim(s) across 68 file(s) -- two more
+  credited with catching anything. Measured at **248 of 248** claim(s) across 68 file(s) -- two more
   than v3.140's 232, because an attempt that does not exist and an attempt with no job in it are two
   refusals `measure-ci-baseline.mjs` did not have before, and each carries a proof; two more again
   at v3.144, because a recording that cannot say which measurement is the newest and a measurement
@@ -168,9 +169,11 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   more at v3.145, because a run that did not succeed, a step that never started, and a step whose
   number is its own bound are three shapes in which a number is not a duration; and two more at
   v3.146, because a red seed's day can fail to answer in two ways -- a workflow its reader cannot
-  walk, and one the API will not return; and one more at v3.147, because a recording whose tree on
+  walk, and one the API will not return; one more at v3.147, because a recording whose tree on
   disk is not the tree that ran is a refusal the recorder did not have, and it is the fetch above it
-  that answers which tree that is.
+  that answers which tree that is; and six more at v3.148, because a history written before an action
+  had a name of its own needs six refusals to rewrite it safely -- and the usage check that gained the
+  mode's clause is the same one site, so the exits did not move.
   The figure was 105 of 105 in both halves at v3.41, and it drifted for twenty-four rounds
   because nothing read the sentence -- an external reviewer quoted the 105 as the current
   state, which is what a number with no reader costs. `check-doc-counts` reads it now:
@@ -2767,7 +2770,46 @@ from an anecdote again.
 - **The cost is two requests a round.** `v3.146` priced the request at the days holding a stopped step, which
   was the price of the bound question; the attribution question is asked of every step, so every seed pays it.
   A recording pays it once a round, against a run that costs ten minutes.
-- **Not claimed.** That a step with no `run:` can be told from the same step after its action's version
-  changed: its identity in this file is its name (`step:<name>`), so a version bump is invisible to the
-  comparison (`O-132`).
+- **Not claimed at v3.147, and claimed from v3.148.** That a step with no `run:` can be told from the
+  same step after its action's version changed: at v3.147 its identity in this file was its name
+  (`step:<name>`), so a version bump was invisible to the comparison (`O-132`, closed at v3.148).
 - **Falsified by** 10 mutations, 29 reds, no survivor, measured on the green tree.
+
+### An action is identified by the action, not by the name of the step that uses it (v3.148)
+
+- **`commandOf` decides which series `R10` divides by, and for a `uses:` step it named the step.** A step
+  with a `run:` was keyed by its command from the beginning; a step with a `uses:` was keyed by
+  `step:<name>`, so `actions/checkout@v3` and `actions/checkout@v4` -- two programs, one of which has
+  replaced the other on every runner in the world at some point -- were one command. Two consequences, and
+  the second is the one nobody would have noticed: an upgrade moved the program without moving the identity,
+  and a **rename** lost the series, which is losing the slow day a bound is sized from.
+- **The identity is `uses:<action@reference>`.** The version is which program ran; the name is a label, and a
+  label survives a change of the line under it. The prefix rule now compares this identity too: its own
+  docstring has said "name and command both" since it was written, while comparing the name and an empty
+  string for every action step -- the one kind of step a workflow writes most often.
+- **The shipped history is the evidence, and it says the defect was latent.** 994 of the history's 3,300
+  rows named a step, across 40 readings on 39 trees, and the workflow at each row's own commit says every
+  one of them ran the action today's tree states: **994 of 994**, so no reading in this repository was ever
+  spent by another version. It is the shape `v3.146` met with `failure` steps and it is repaired for the
+  same reason -- a rule that is right only because nothing has moved is a rule nobody has seen work.
+- **The repair is a derivation, not a rewrite from memory.** `--relabel-actions` reads each row's own commit,
+  rewrites only the rows whose stored command is a step name over a step the commit runs as an action, and
+  refuses a row that contradicts its commit in either direction (another action, or a name where the commit
+  runs a command). Measured on the shipped file: **994 of 3,300 rows rewritten, 39 trees read**; run again,
+  **0 of 3,300**, byte for byte identical, which is what makes it safe to run against a file in git.
+- **No bound moved, and that is the claim rather than a coincidence.** The action steps in this workflow are
+  the prefix, `R14` forbids a prefix step a bound of its own, and no other `uses:` step carries one -- so
+  `R10` divides by no action's series today, and the gate's whole summary is unchanged to the second: the
+  same 36 bounds, the same multiples, the same middles. The identity is now true, which is the difference
+  between a rule that works and a rule that is followed.
+- **The recorder holds the tree on disk to the action version as well.** A run at a commit whose step used
+  `actions/checkout@v3`, recorded against a tree at `@v4`, is drift: the step kept its name, its position and
+  its inputs, so nothing else in this repository could have seen the difference.
+- **Not claimed.** That an action's `with:` block is part of the identity: it is not, and the shipped
+  workflow holds the pair this leaves pooled -- `backend / Check out` clones shallow and the other seven
+  clone the full history, one series. The choice errs in `R10`'s direction, since pooling makes the
+  denominator the slower of the two shapes. Nor is a local action (`uses: ./x`) separable from a change to
+  its code: the workflow names a path and does not say what is behind it. Nothing here uses one.
+- **Falsified by** 10 mutations, 32 reds, no survivor, measured on the green tree; and, for the seven new
+  claims in the inventory (one exit, six throws; the exit is where the mode's clause lives), 7 mutant runs
+  of which every one is credited -- 1 exit hollowed, 6 throws removed, 0 survivors.

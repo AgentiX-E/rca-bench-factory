@@ -2241,9 +2241,9 @@ pays one -- two a round, against a run that costs sixteen minutes.
 | --- | --- |
 | CI | run `45531664638` on `3d69ada9`: **8 of 8 jobs success**, 992 s -- the thirty-ninth reading |
 | `pnpm run docs:check` | **23 steps, exit 0** |
-| `core` test suite | **260 files, 7014 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7201 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 7014 tests passed** (at v3.147) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.147) |
+| repo test suite | **264 files, 7201 tests passed** (at v3.147) |
 | new tests | **7,007 -> 7,014, +7**: a recording whose disk runs another command (refused), one whose run measured a step the disk lacks (refused), one whose run measured a job the disk lacks (refused), a borrow that is not drift (accepted), a seeded step whose command that day was another (dropped), a seeded step the day does not place (dropped), and a seeded failed step asked about its command before its bound |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: every line this round added is in `scripts/` |
 | the recorder's refusals | **1** new: a recording whose tree on disk is not the tree the run used. The two of `v3.146` changed sentences rather than count |
@@ -2265,3 +2265,143 @@ question they were at `v3.146`, and nothing here touched it.
   `[open: whether a `uses:` step should be identified by its action and version, which would give the history
   a series per version and split one step's readings across two, or keep the name and say in the file that an
   action's version is not part of a reading's identity]`
+
+## v3.148 — an action is identified by the action
+
+`v3.147` closed the pair -- a number and the command that spent it -- and left one row of the history whose
+command was a **label**: a step with no `run:` was identified by its name, so `actions/checkout@v3` and
+`actions/checkout@v4` were one command, and the entry it opened (`O-132`) offered two answers, both of which
+kept the name.
+
+### The entry's two answers were both wrong, for one reason
+
+| the entry's option | what it does with `actions/checkout@v3` → `@v4` | what it does with a rename |
+| --- | --- | --- |
+| a series per version | splits the readings across two | keeps them -- correctly |
+| say the version is not part of the identity | keeps them -- wrongly | keeps them -- correctly |
+
+Each option is right about one movement and wrong about the other, and the reason is that the name is in both.
+A name is a label, and the file's own thesis since `v3.147` is that a reading is a number beside the command
+that spent it. The command of a `uses:` step is the action **and its version**; the name is the thing above it,
+and it was doing the splitting in the first option and the merging in the second.
+
+### 994 rows, and not one of them spent by another action
+
+The history records its commit, so the file at each commit can be asked what the step ran. One request per
+tree -- 39 trees, 40 readings:
+
+| fact | value |
+| --- | --- |
+| step rows in the history | **3,300** |
+| rows whose command is a step name | **994** |
+| trees those rows were measured on | **39** |
+| of the 994, rows whose own commit runs another action | **0** |
+
+Latent, then, in the shape `v3.146` met with `failure` steps: no reading here was ever spent by another
+version, and no bound divides by any of the 994 -- the first three actions are the prefix (`R14` forbids a
+prefix step a bound of its own) and `actions/upload-artifact@v4` carries none. So the gate's summary after the
+repair is unchanged to the second: the same 36 bounds, the same multiples, the same middles. That is the claim
+rather than a coincidence -- what changed is whether the identity is true, not what any bound divides by.
+
+### A mode, not a re-recording
+
+`--relabel-actions` reads each reading's commit and replaces the command beside the number, and nothing else.
+Three refusals make it safe: a row that names a step its commit does not have, a row that carries a command
+its commit does not state (in either direction -- another action, or a name where the commit runs a command),
+and a tree whose workflow cannot be read.
+
+| the run | rows relabelled | trees read |
+| --- | --- | --- |
+| the first | **994 of 3,300** | 39 |
+| the second | **0 of 3,300** | 39 |
+
+The second run is byte-identical, which is the property that makes a rewrite of a committed file defensible:
+the mode is also the audit that the history agrees with the trees it names.
+
+### Two more places the identity reaches
+
+**The prefix.** `sharedPrefixOf` has said "name and command both" since it was written, and it compared the
+name and an empty string for every action step, because it read `run:` and an action has none. Two jobs at two
+versions of one action are two things, and the shared run of setup steps now stops there.
+
+**The recorder.** `v3.147` held the tree on disk to the tree the run used, and with the version in the identity
+that comparison reaches actions: a run whose step used `@v3`, recorded against a tree at `@v4`, is drift. The
+step keeps its name, its position and its inputs, so nothing else in this repository could have seen it.
+
+### What it does not claim
+
+An action's `with:` block is not part of the identity. This workflow holds the pair that leaves pooled:
+`backend / Check out` clones shallow, the other seven clone the full history, one series. The choice errs in
+`R10`'s direction -- pooling makes the denominator the slower of the two shapes -- and it is the answer the
+file already gave for `env:` on a `run:` step. A local action (`uses: ./x`) is the residual: the workflow names
+a path and not the bytes behind it, and nothing here uses one.
+
+### The round's own defects
+
+- **A mutation survived the case written to kill it.** "The file is written even when nothing was relabelled"
+  left the suite green, because the idempotence case wrote its fixture in the same two-space layout the mode
+  writes: *left alone* and *rewritten identically* were the same bytes. The fixture is compact now, and the
+  mutation dies.
+- **A refusal with an unreachable half.** The first draft refused a row when its command was not a step name
+  **or** when its commit's command was itself a step name -- and the second clause could not be reached,
+  because the equality test above it had already continued. The case that needs the refusal is a row naming a
+  step where its commit runs a **command**, which no recorder in this tree ever wrote.
+- **A usage text moved into a constant and the inventory noticed.** Two `process.exit(2)` sites sharing one
+  usage string is one string in the source and no `diagnostic` at either site, which
+  `gate-sites-are-proven.test.ts`'s fifth rule refused. The two checks are one refusal now -- token, or a run
+  id that is not the mode -- so the site count did not move and the sentence is written once.
+
+### Falsifications
+
+| the mutation | reds |
+| --- | --- |
+| an action step is identified by its name again, so a version bump is invisible | 8 |
+| the prefix compares a name and an empty string for every action step | 1 |
+| the action a step uses is not carried out of the reader | 6 |
+| the history is rewritten without asking what each row's commit states | 2 |
+| a row that names a step where the commit runs a command is rewritten instead of refused | 1 |
+| the file is written even when nothing was relabelled | 1 |
+| a row no tree can place is carried rather than refused | 1 |
+| a tree whose workflow cannot be read is walked as an empty tree | 4 |
+| the mode is not a mode: the flag is parsed and never branches | 7 |
+| the mode takes a measurement and ignores it | 1 |
+
+**10 mutations, 32 reds**, measured on the green tree, no survivors. The seven new claims -- the usage site
+with its second clause, and the mode's six throws -- are 7 of 7 credited by the sensitivity battery.
+
+### Readings
+
+> Ledger for `v3.148`.
+
+| item | value |
+| --- | --- |
+| CI | run `45545113405` on `91806080`: **8 of 8 jobs success**, 744 s -- the fortieth reading |
+| `pnpm run docs:check` | **23 steps, exit 0** |
+| `core` test suite | **260 files, 7026 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **264 files, 7213 tests passed** (as of this commit) |
+| new tests | **7,014 -> 7,026, +12**: four on the identity (a `uses:` step keyed by its action, two versions as two series, a rename that keeps its series, a prefix that stops at a version) and eight on the mode (a row given its action, a second run that writes nothing, an unplaceable row, a row that contradicts its commit, a history that cannot be parsed, one with no reading, a commit whose file cannot be read, and a flag given a measurement) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: the round's code is in `scripts/` |
+| the recorder's refusals | **6** new: five in the mode, and one at the top level for a mode given a measurement |
+| the gate's inventory | **146** failure site(s) across 69 script(s); throws **22 fatal, 83 unguarded, 1 guarded, 10 rethrow** -- 116 partitioned, **248** proved claims; 166 exit calls, of which 20 are zero |
+
+### Left open
+
+`O-130` is unchanged: a day whose workflow this reader cannot walk is still unseedable as a whole, and the
+round that closes it has to decide whether the reader returns the bounds it recognised alongside its errors.
+It is the next P1 on the path, and the mode this round added does not touch it -- a seed is a measurement and
+the mode measures nothing.
+
+`O-126` (an install step whose bound depends on which of two modes ran) and `O-108` (the two `lint` spawners)
+are unchanged and unmeasured here for the same reason: both need a run whose shape this round did not produce.
+
+The one entry this round opens is the limit of the identity it just made true:
+
+- `O-133` · **A local action is identified by its path, so a change to the action's own code is invisible to
+  the comparison.** `commandOf` answers `uses:./x` for a local action, and the workflow names a path rather
+  than the bytes behind it, so an edit to that action moves the program without moving the identity -- the
+  shape `O-132` closed one level up, where a remote action's reference at least changes when the program does.
+  Nothing in this workflow uses a local action, so no reading is affected today.
+  `[open: whether a local action's identity should carry a digest of the files behind it, which no reading of
+  `ci.yml` can supply -- the identity would then have to be written by something that reads the tree -- or
+  whether a step whose `uses:` names a path should be refused a bound outright]`
