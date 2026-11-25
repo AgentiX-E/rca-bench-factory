@@ -2854,7 +2854,10 @@ from an anecdote again.
   cost of the program, and a history entry is one afternoon on one box. When one commit has been measured more
   than once, its cost is the **faster** attempt: the bytes did not change between the two, so the difference
   cannot be the tree. The case is measured -- the sites battery's second shard read **881 s** and **880 s** on
-  two attempts of one commit, while its sibling shard moved 17% in the same window.
+  two attempts of one commit -- and so is the limit of the instrument: a third measurement, on the tree this
+  round ships, read **621 s**, with three earlier readings at 629, 635 and 636. So a re-run proves that a bound
+  is not left sized from one afternoon's slow reading; it does **not** prove the faster attempt is the
+  program's cost, and the file cannot yet mark a reading as not comparable (`O-139`).
 - **The minimum is taken over one tree's attempts, never over the history and never over one attempt's jobs.**
   Two commits are two programs, so the file's other days cannot lower this one; and one attempt that ran the
   command in two jobs is one day, whose cost is the slower job -- otherwise a package-mirror hit sizes the
@@ -2870,9 +2873,13 @@ from an anecdote again.
   reader comparing a sentence with the file is comparing the same numbers.
 - **What it changes here.** Both sites bounds **22 -> 30 min**, `sensitivity`'s ceiling **35 -> 43**, its
   shard's **34 -> 42**, the file's declared bound-minutes **247 -> 263**; the forty-first reading is run
-  `45595594712` attempt 2, with attempt 1 seeded beside it -- **42** readings over **40** commits.
-- **Not claimed.** That a tree measured once is priced correctly: it is priced from one afternoon, which is
-  `O-138`. Nor that the machine caused the previous round's numbers, or that it did not: two samples of one
-  afternoon cannot say. Nor that a bound's absolute size is right -- only that the multiple it is argued from
-  is a multiple of the program, and that a bound under a day already spent is refused.
+  `45595594712` attempt 2, with attempt 1 seeded beside it, and the forty-second is run `45615317655` -- the tree
+  this round ships -- for **43** readings over **41** commits.
+- **What that costs is stated as a defect, not as a choice.** 30 minutes against a 620 s cluster is 2.9x, where
+  the multiple would be satisfied at 22; `R10` cannot accept 22 while 880 s is a tree's cost in the file, and
+  marking a reading as not comparable needs evidence the file does not carry (`O-139`).
+- **Not claimed.** That a repeated reading separates the program from the machine -- the round claimed it and
+  the fourth measurement took it back. Nor that a tree measured once is priced correctly: it is priced from one
+  afternoon (`O-138`). Nor that a bound's absolute size is right -- only that it is not left sized from one
+  afternoon's slow reading, and that a bound under a day already spent is refused.
 - **Falsified by** 10 mutations, 62 reds, no survivor, measured on the green tree.

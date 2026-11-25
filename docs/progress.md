@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.150: **50** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.150: **51** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1151,6 +1151,18 @@ is a row about rather than paraphrase one that no `grep` will find.
   re-run should stay the answer for the readings that move a bound, with the recorder printing which of its
   history's trees were measured once, so a reader can see the size of the population instead of taking the
   round's word for it]`
+
+- O-139 · **Two attempts of one commit are one sample of the machine, so `R14`'s minimum divides a day.**
+  A re-run is the only instrument this file has for the machine, and the reach of it is measured: the sites
+  battery's second shard read **881 s** and **880 s** on two attempts of one tree, then **621 s** on the next
+  tree's delivery run, with three earlier readings at 629, 635 and 636. The pair is an outlier 40% above the
+  cluster and it entered the history as that tree's cost, so the gate asks 30 minutes for a step that costs
+  620 s (2.9x, where the multiple would be satisfied at 22) and nothing in the file lets a reader tell a loaded
+  afternoon from a slow program.
+  `[open: whether a reading should be able to carry evidence that it is not comparable -- a load average read
+  beside the job, the runner's own timestamps, or a second measurement far enough away in time to be another
+  draw -- or whether the multiple should divide a robust statistic over the command's series (the middle of the
+  last N trees) rather than one tree's faster attempt, which is a change to `R4`, `R10` and the summary at once]`
 
 ## Pass log
 

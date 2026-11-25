@@ -231,13 +231,26 @@ the recorder gained `--attempt`:
 | the second shard | 881 s | **880 s** | 0.1% apart |
 | the first shard | 501 s | **418 s** | 17% apart |
 
-The same bytes cannot differ by the tree. So the second shard's seconds are the work -- they reproduced to a
-second -- and the sibling shard, 119 claims in both runs, is what the machine's state looks like. A timestamp
-would not have said this, and neither would a load average: both describe the box, and the question is what
-the *same work* would have cost on a quiet one.
+The same bytes cannot differ by the tree, so the pair was read as the work -- and this round's own delivery run
+took that reading back. On the next tree the same step spent **621 s**, with three earlier readings at 629, 635
+and 636:
+
+| the second shard | run | tree | seconds |
+| --- | --- | --- | --- |
+| attempt 1 | 45595594712 | `87d78d97` | 881 |
+| attempt 2 | 45595594712 | `87d78d97` | 880 |
+| the delivery run | 45615317655 | `b3124638` | **621** |
+| three readings before them | 44516888528, 45518129185, 45531664638 | three trees | 629, 635, 636 |
+
+880 and 881 are an outlier pair 40% above a cluster of four readings, and the first shard's delivery reading
+(505 s) sits inside its own cluster. So the agreement was the machine's **persistence** across forty minutes,
+not the program's cost: a re-run inside one congestion window is one sample of the machine. The defect is in
+`R14`'s premise, and it is `O-139`.
 
 **`R14`, and the three clauses it needs.** The rule is one sentence -- a bound is a multiple of what a tree
-costs, not of what a day spent -- and each clause below is a way to get it wrong:
+costs, not of what a day spent -- and each clause below is a way to get it wrong. The premise is weaker than it
+looked when the rule was written: what a repeated attempt proves is that a bound is not sized from one
+afternoon's slow reading, not that the faster attempt is the program's cost.
 
 1. **A tree measured more than once costs the faster attempt.** The minimum is taken over the attempts of one
    commit, never over the history: two trees are two programs, and the file's other days are other trees.
@@ -265,25 +278,32 @@ refusal divides, and prints the slower attempt beside it as a second fact.
 | `sensitivity-shard`'s ceiling | 34 min | **42 min** |
 | bound-minutes declared in the file | 247 | **263** |
 
-The forty-first reading is run `45595594712` attempt 2 -- 8 of 8 jobs success -- and attempt 1 is seeded
-beside it, because the history is where the pair lives: **42** readings over **40** commits, two of which
-measured a tree that another reading also measured.
+The forty-first reading is run `45595594712` attempt 2 -- 8 of 8 jobs success -- with attempt 1 seeded beside it,
+and the forty-second is the tree this round ships, run `45615317655`: **43** readings over **41** commits, three
+of which measured one of two trees twice.
 
-**Why the battery costs 880 s, which is the finding under the reading.** A bound that rises eight minutes is
-worth asking about. Both shards were compared across the two runs that measured them: the second shard went
-from 123 claims and 157 runs to 129 claims and 163 runs -- 4% more work -- while its wall clock went from
-600 s to 882 s, and the first shard, 119 claims in both, got 14% *faster* in the same window. So the +282 s is
-six claims at **47 s each** against an average claim's 3.8 s, and the cost model says why: a claim runs **its
-whole test file**. `verify-sites-are-sensitive.mjs` spawns `vitest run <file> --maxWorkers=1`, and no claim in
-the inventory names a test -- `provedBy` is a file. That hypothesis is charged to `O-136`, and the instrument
-that would confirm it is `O-137`: the battery prints claims, runs and wall clock, and no per-run seconds, so
-the marginal cost is a difference between two afternoons.
+**What that costs, stated as the defect it is.** The gate asks 30 minutes for a step whose cluster is 620 s, and
+the multiple would be satisfied at 22: 2.9x of room, where `R13` tolerates it because the ceiling it sits under
+is 43. `R10` cannot do better -- it refuses a bound under twice the slowest **tree's** cost, and 880 s is a
+tree's cost in the file until a reading can be marked not comparable *with evidence*. That is `O-139`, and it
+replaces the pair's argument as the round's open question.
 
-**What it does not claim.** That the machine caused `v3.149`'s morning, or that it did not: 881 s and 880 s
-are two samples of one afternoon on one runner class, and a third afternoon could be slower. What the pair
-rules out is the reading being *about the box* in the way the sibling shard's 501 -> 418 s is. Nor that a
-tree measured once is priced correctly -- it is priced from one afternoon, which is `O-138`. The floor clause
-is stated and not exercised by the shipped tree, since no command here has two modes: its case is a fixture.
+**Why the battery costs 620 s, which is the finding under the reading.** Both shards were compared across the
+runs that measured them, with the pair left out of the arithmetic: the second shard went from 123 claims and
+157 runs to 129 claims and 163 runs -- 4% more work -- and its wall clock from 600 s to 621 s, so the six throws
+`v3.148` added cost **3.5 s each**, an average claim's price. `v3.149` read that difference as +282 s and
+attributed it to those six claims; the fourth measurement says it was the box. The price is still worth naming
+for a different reason: a claim runs **its whole test file** -- `verify-sites-are-sensitive.mjs` spawns
+`vitest run <file> --maxWorkers=1`, and no claim names a test, because `provedBy` is a file --
+`ci-budget.test.ts` holds 30 of the 248 claims, and thirty-one runs of it are **372 s of the shard's 621 s**
+(`O-136`, with `O-137` naming the instrument that would charge a claim to itself).
+
+**What it does not claim.** That a repeated reading separates the program from the machine: the round claimed
+it, and then the fourth measurement took it back. What survives is narrower -- a bound is not sized from one
+afternoon's slow reading and left there -- and what does not survive is the sentence this round had already
+written into three documents. Nor that a tree measured once is priced correctly: it is priced from one afternoon
+(`O-138`). The floor clause is stated and not exercised by the shipped tree, since no command here has two modes:
+its case is a fixture.
 
 **The round's own defects.** `budgetSummary`'s denominator was first written as a `Math.max` over three
 candidate numbers with a ternary that then had to work out which of them it had taken; it named a reading
