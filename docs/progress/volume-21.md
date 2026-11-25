@@ -1949,9 +1949,36 @@ Three alternatives were measured or reasoned and refused:
 - **reordering the injections** so the in-package ones are contiguous: 60 builds -> 58, at the price of a
   report whose order is chosen by cost. Two compiles are not worth that.
 
-### What CI said
+### What CI said, and the job that was not in this round
 
-(the round's own run, filled below in `Readings`)
+Reading 48 -- run `45692816682` on `47919682` -- is **8 of 8 jobs success**, and the step this round is
+about fell from **761 s to 325 s**:
+
+| step | reading 47 | reading 48 |
+| --- | --- | --- |
+| Type-miss probe battery | 360 s | **205 s** |
+| Backend-support battery | 379 s | **90 s** |
+| the job, both plus the prefix | 761 s | **325 s** |
+
+The local pairs predicted the shapes and not the sizes, and the difference is the runner rather than the
+repair: a filtered run costs **1.08 s** on a four-vCPU runner where it costs **0.64 s** on this box, so the
+fixed part that `--testNamePattern` cannot remove is 69% of what is left -- which is why the runner keeps
+**76%** of that battery's time where the box kept **85%**. The probe battery has no such gap (**-43.1%**
+against the box's **-43.9%**), because its cost is compiles, and a compile is CPU work on either machine.
+
+**And the run got slower.** It took **1046 s** against 771 s, because `batteries` -- a job this round did
+not touch -- took **1036 s** against 659 s: every one of its steps moved by the same factor, `Every gate
+can be shown to fail` 242 -> **374 s**, the gate-test battery 171 -> **306 s**, the doc-count battery
+52 -> **88 s**, the round-trip record 37 -> **64 s**. On the same run `verify` fell from 732 s to
+**544 s** and both sensitivity jobs held their time, so this is that job's own day and not the runner's.
+The honest reading is the one finding 655 wrote down two rounds ago: **two runs of one tree are only a
+control when they are an hour apart on one box**, and the workflow's wall clock cannot be attributed
+across days at all. What this round can say about CI is its own job's numbers; what it cannot say is that
+the workflow is 275 s slower than it was, because nothing here measured that job again.
+
+So the critical path moves a second time, and to a job with three steps over 88 s:
+`batteries` at **1036 s**, then `verify` at **544 s** (of which `Lint` is **378 s**), then
+`sensitivity-shard` at **464 s**.
 
 ### Six things this round did wrong
 
@@ -2010,8 +2037,11 @@ the list's prices have moved:
 path, and the movement is the other half of this round's result: with both probe batteries at roughly a third
 of what they were, `batteries-heavy` stops holding the workflow and the wall clock moves to `verify`
 (**732 s**, of which `Lint` is **509 s**) and to `batteries` (**659 s**, of which `Every gate can be shown to
-fail` is **242 s**). The next round that wants the wall clock starts with `verify-site-proofs.mjs`, which this
-round timed at **273 s** on this box and which spawns one child per file, serially, over 69 files.
+fail` is **242 s**). Reading 48 moved it again: `batteries` read **1036 s** on a day every one of its steps
+ran 1.5--1.8x its previous time, so the workflow's critical path is that job now, and the two steps worth
+looking at are `Every gate can be shown to fail` (**374 s**) and the gate-test battery (**306 s**).
+`verify-site-proofs.mjs` is still the shape to look at next in `verify`: **273 s** on this box, one child
+per file, serially, over 69 files.
 
 ### Readings
 
@@ -2019,7 +2049,7 @@ round timed at **273 s** on this box and which spawns one child per file, serial
 
 | item | value |
 | --- | --- |
-| CI | **8 of 8 jobs success** -- run `45673244483` on `e2bf2db`, which is the run of the round *before* this one: a round cannot cite the run its own commit causes, and a row that guessed one would be a promise. It is replaced by this round's run in the commit that follows this one, which is the same two-step every round in this log has taken |
+| CI | **8 of 8 jobs success** -- run `45692816682` on `47919682`, **1046 s**, and the **forty-eighth reading**: the two probe batteries read **205 s** and **90 s** against **360 s** and **379 s**, so the job this round repaired fell from **761 s to 325 s**. The run's own wall clock rose from 771 s, which is `batteries` taking **1036 s** against 659 s with every one of its steps 1.5--1.8x its reading-47 time, on a run where `verify` fell to 544 s |
 | `core` test suite | **261 files, 7060 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
 | repo test suite | **265 files, 7247 tests passed** (as of this commit) |
