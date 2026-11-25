@@ -441,9 +441,9 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 260 core + 4 cli |
-| Test lines | 120,747 core + 3,242 cli |
-| Tests | 7,052 core + 187 cli |
-| Tracked files | 680 |
+| Test lines | 120,796 core + 3,242 cli |
+| Tests | 7,054 core + 187 cli |
+| Tracked files | 681 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.151: **50** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.152: **51** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1148,6 +1148,17 @@ is a row about rather than paraphrase one that no `grep` will find.
   absence has to read as *not measured* rather than as a quiet machine -- or whether the pair and the site count
   are the whole of what a reader can be given from a file this repository can read]`
 
+- O-142 · **A round can run the whole gate on a tree the commit will not contain, and nothing says otherwise.**
+  `check-repository-table` now refuses a path that is not in the index, in both of its modes, because one row is
+  cut from `git ls-files` and five are read off the filesystem. The general case is untouched: a tracked file
+  with uncommitted edits is measured *and* committed from two different states, and the reading a round reports
+  is the reading of the worktree it happened to have. The corpus's own practice is to run `docs:check` before
+  `git add`, which is the order that hid this in `v3.151`.
+  `[open: whether the gate should refuse to report a verdict at all while any tracked file is modified, which
+  would make every mid-round run red, or whether the round's ledger should carry the worktree's own digest
+  beside the numbers so a reader can tell which tree was measured -- a refusal that costs a round its feedback
+  loop, against a digest that costs a reader one more number to compare]`
+
 ## Pass log
 
 The rounds are recorded in the volumes below, in the order they were run. They were one
@@ -1185,7 +1196,7 @@ and this table.
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
 | [volume-20.md](progress/volume-20.md) | 8 | v3.134 | v3.141 |
-| [volume-21.md](progress/volume-21.md) | 10 | v3.142 | v3.151 |
+| [volume-21.md](progress/volume-21.md) | 11 | v3.142 | v3.152 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

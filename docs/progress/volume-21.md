@@ -1521,9 +1521,9 @@ state cannot be slower.
 | --- | --- |
 | CI | run `45626206585` on `90303700` -- the tree `v3.150` shipped: **8 of 8 jobs success**, 980 s, and the **forty-fifth reading** (885 s of second shard, 480 s of first); it is this round's recording, because the round before left the recording one run behind |
 | `pnpm run docs:check` | **23 steps, exit 0** |
-| `core` test suite | **260 files, 7052 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **264 files, 7239 tests passed** (as of this commit) |
+| `core` test suite | **260 files, 7052 tests passed** (at v3.151) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.151) |
+| repo test suite | **264 files, 7239 tests passed** (at v3.151) |
 | the history | **45** readings over **43** commits, after the forty-fifth was recorded and the reading before it left untouched |
 | new tests | **7,050 -> 7,052, +2**: twelve on the rule in place of ten (the falsifier at 22 minutes, a recording that landed in the fast state, the worst day of a tree with its attempts, one attempt's two jobs, the worst state over every tree, the pair beside the multiple, the pair in the refusal, the lookup, the control, and the three states of the range's share) less eight that asserted `R14`'s arithmetic |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: every line this round added is in `scripts/` |
@@ -1555,3 +1555,165 @@ of the round:
   the box's state to the reading -- a step that measures the runner rather than the program, and one whose
   absence has to read as *not measured* rather than as a quiet machine -- or whether the pair and the site count
   are the whole of what a reader can be given from a file this repository can read]`
+
+## v3.152 — the mode that judges refuses the tree the mode that repairs refuses
+
+`v3.151` shipped and CI came back **four jobs red out of eight** (run `45643248364`; the anchor round trip
+beside it, `45643248351`, green). One line, printed by four different steps:
+
+```
+  - ## Repository says '680' for Tracked files; the tree says '681'
+check-repository-table: FAILED
+```
+
+The local gate had exited 0 on the same file minutes earlier, on the same bytes. The difference is one
+untracked path: `docs/progress/volume-21.md` was written and not yet staged, so `git ls-files` held 680
+entries and the document's `680` was true of the index. `git add -A` moved the index to 681, the same
+command refused the same table, and the push carried a tree where the guard is right -- because a checkout
+has no untracked files at all.
+
+### The defect, stated as two populations
+
+`check-repository-table` derives eight rows from two different places:
+
+| row | read from | sees an unstaged file? |
+| --- | --- | --- |
+| `Tracked files` | `git ls-files` -- the **index** | no |
+| `Source files`, `Source lines` | `readdirSync` over `packages/*/src` -- the **worktree** | yes |
+| `Test files`, `Test lines` | `readdirSync` over `packages/*/test` | yes |
+| `Tests` | `golden-master/doc-counts.json`, measured by a run | yes, one step later |
+| `Commits`, `Packages` | `git rev-list`, `git ls-files` | no |
+
+With one untracked file present the table is not stale, it is **about two trees**: one row counts the index
+and five count the filesystem, and the arithmetic has no reason to agree. The guard knew this -- it wrote the
+refusal in `v3.83`, after a round published `Tracked files 638` before `git add` and the next check read
+`639` -- and put the refusal **inside `if (writing)`**, the branch only the repairing mode takes. So the mode
+that publishes refused, and the mode that judges could not see the state the publication had been made in.
+
+### The falsifier
+
+Executed, not argued. A fixture tree committed and otherwise green, then one untracked `notes.md`:
+
+```js
+const fixture = makeTree('check-untracked');
+withTable(fixture, defaultTable(fixture.rev));
+expect(run(fixture).status).toBe(0);          // the table is right about the index
+
+writeFileSync(join(fixture.root, 'notes.md'), 'A file the round has not staged yet.\n');
+const rejected = run(fixture);
+expect(rejected.status).toBe(1);              // v3.151: 0, and that is the bug
+```
+
+Under `v3.151` that third line reads `0`: the guard compares `8` against `8` and reports eight rows derived
+from "the tree". Under `v3.152` it refuses and names the file, the rows, and the way out:
+
+```
+  - 1 file(s) exist and are not tracked (first: notes.md), so `Tracked files` would count the index and
+    `Source files` and `Test files` count the worktree, which is one table describing two trees; stage them
+    first (`git add -A`) or remove them
+check-repository-table: FAILED
+```
+
+The second half is the boundary from the other side, because a refusal that persisted after staging would be
+a guard nobody can satisfy and a refusal that went quiet would be the original defect with an extra step:
+`git add -A`, then the same command, and the message **changes kind** -- refusal, then drift --
+`says '8' for Tracked files; the tree says '9'`. `--write` then publishes 9 and the table is green again.
+
+### What the round did to the documents' claims
+
+| claim | before | after | why |
+| --- | --- | --- | --- |
+| failure sites in the inventory | 146 | **146** | the refusal moved out of one branch into two modes; the site at line 466 is the site at 483 |
+| claims covered by `verify-site-proofs` | 248 | **248** | unchanged: the file that drives this guard is the same file |
+| `core` tests | 7,052 | **7,054** | two fixtures for the two sides of the boundary |
+| `core` test lines | 120,747 | **120,796** | the two fixtures and their comments |
+| `Tracked files` | 680 | **681** | `docs/progress/volume-21.md`, the file whose staging started this |
+| `Packages`, `Source files`, `Source lines`, `Test files` | -- | unchanged | no source or test file was added |
+
+`golden-master/gate-sites.json` was re-derived rather than hand-edited, and its only diff is that one line
+number -- which is the useful reading: **moving a guard's refusal between modes does not create a site**. The
+site existed and was proved; what changed is which state reaches it.
+
+### The four red jobs, and what each was reading
+
+The same sentence appears in four steps because four steps read the table:
+
+| job | step | why the number reached it |
+| --- | --- | --- |
+| `golden master / official metric / examples / documents` | 11, documentation guards | the guard is a step of `docs:check` |
+| `cold tree / no build / every precondition declared` | 7, documentation guards that read no build artefact | the same step, run in a job that proves it needs no build |
+| `build / typecheck / lint / coverage / mutation` | 9, lint | `verify-site-proofs` runs the test file that drives this guard, and a proof whose baseline is red proves nothing |
+| `every proved exit can disappear without a word (shard 2 of 2)` | 8, the battery | same reason, from the sensitivity side: the whole file is the claim's witness |
+
+That table is an inference from the steps' names and from what each one spawns, because the job logs are not
+reachable from here -- the logs endpoint redirects to a blob host that resolves to `198.18.0.16` (finding
+655's limit, unchanged, `O-141`). The evidence that the inference is right is that all four commands exit 0
+on this tree after the number was repaired, and the round's own CI run is the confirmation rather than the
+argument.
+
+### Four things this round did wrong, written down
+
+- **The gate was run on a tree that was not the tree the commit carried.** This is the process defect the
+  code defect is a symptom of: `docs:check` exited 0 on a worktree holding an unstaged file, and the round
+  read that as "the tree is green". Running the gate after `git add -A` would have caught it before the push,
+  and nothing in the corpus said so.
+- **The guard's own prose claimed the refusal it did not have.** The docblock's "What is not checked" section
+  did not mention the index/worktree split at all, and the fixture comment in the test file said "the guard
+  now refuses to derive over an untracked file" -- true of `--write`, false of the mode the corpus runs. This
+  is finding 654's shape exactly, one round later: a rule and the sentence describing it, drifting apart in
+  the direction that flatters the rule.
+- **The first repair was in the wrong place.** `v3.83`'s refusal was written where the failure had been seen
+  -- inside the rewrite -- and the round that followed it tested the rewrite. A refusal is a property of the
+  *measurement*, not of the mode that stores it.
+- **The counts were repaired before they were understood.** The first attempt set `Tests` to 7,054 in
+  `docs/progress.md` alone, which the guard refused in the other direction (`the tree says '7,052'`): the row
+  is cut from the snapshot, and the snapshot is cut from a run. The order that works is snapshot, then
+  document, then gate -- and it is written here because the next round will meet it again.
+
+### Not claimed
+
+That `docs:check` cannot go green on a dirty tree. It can, and should: uncommitted *edits* to tracked files
+are measured by the rows and refuse themselves through the numbers, which is the behaviour the docblock
+describes. The refusal here is narrower -- a path that is **not in the index** -- and it is a refusal rather
+than a measurement because there is no number that would be right.
+
+Nor that the four CI jobs failed *only* because of this line. The steps were asked, and the shard's own count
+of red cases is the reading that would have said otherwise; the round re-ran the battery locally and it is
+green at the same 146 sites, which is the strongest statement available from here.
+
+Nor that two fixtures are enough. They exercise the refusal's exit and the sentence that names the rows; the
+message's *wording* is asserted by `toContain` on three fragments, and a rewrite that said the same three
+things in a misleading order would pass.
+
+### Readings
+
+> Ledger for `v3.152`.
+
+| item | value |
+| --- | --- |
+| CI | **8 of 8 jobs success** -- run `45626206585` on `90303700`, the newest green run and the one the recording was taken from; this round adds no reading, because the tree it reports first ran red (below) and a red run's step seconds are the seconds of a step that stopped |
+| the run this round reports | run `45643248364` on `d4ae8d6` -- the tree `v3.151` shipped -- **4 of 8 jobs success**, the four named in the table above; `45643248351` (anchor round trip) was green on the same tree, so the breakage is inside `CI` and not in the tree's own content |
+| `pnpm run docs:check` | **23 steps, exit 0**, after the number and the snapshot were retaken |
+| `core` test suite | **260 files, 7054 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **264 files, 7241 tests passed** (as of this commit) |
+| the history | **45** readings over **43** commits -- unchanged: this round's CI run is the next reading, not this one |
+| new tests | **7,052 -> 7,054, +2**: the refusal in the judging mode, and the same boundary from the other side after `git add` |
+| `golden-master/gate-sites.json` | re-derived; **146 sites across 69 of 103 scripts**, one line number moved (466 -> 483), no site added or removed |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: every line this round added is in `scripts/` |
+| mutation | **3 groups, 6 red cases, 0 survivors**, each measured on the green tree and restored to an identical `md5`: the hoisted refusal deleted (**3** red -- the rewrite refusal, the judging refusal, and the boundary after staging), the two modes made to share one sentence (**1** red, the judging refusal's assertion that the rows are named), and the refusal narrowed back to `--write` (**2** red, which is the v3.151 bug put back) |
+
+### Left open
+
+`O-133`, `O-136`, `O-137`, `O-140`, `O-141`, `O-108` and `O-134` are unchanged. One entry comes out of the
+round:
+
+- `O-142` · **A round can run the whole gate on a tree the commit will not contain, and nothing says
+  otherwise.** The refusal now covers the one state that made the number wrong here -- a path outside the
+  index -- but the general case is unchanged: tracked files with uncommitted edits are measured *and*
+  committed from different states, and the reading a round reports is the reading of the worktree. The
+  corpus's own practice is to run `docs:check` before `git add`, which is the order that hides this.
+  `[open: whether the gate should refuse to report a verdict at all while any tracked file is modified, which
+  would make every mid-round run red, or whether the round's ledger should carry the worktree's own digest
+  beside the numbers so a reader can tell which tree was measured -- a refusal that costs a round its
+  feedback loop, against a digest that costs a reader one more number to compare]`

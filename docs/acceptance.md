@@ -74,6 +74,7 @@ before the layer above it is meaningful.
 | A day is refused for the steps it cannot place | v3.149 |
 | A tree costs the faster of its attempts | v3.150 |
 | A bound covers the state the command was read in | v3.151 |
+| A table has one population, or the guard refuses the tree | v3.152 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -2928,4 +2929,30 @@ from an anecdote again.
   has exactly two modes -- seven readings cannot tell two clusters from a wide spread, and the rule needs only
   that a run can land in a state a bound must cover.
 - **Falsified by** 12 mutations, **54** reds, no survivor, measured on the green tree and restored byte for
+  byte.
+
+### A table has one population, or the guard refuses the tree (v3.152)
+
+- **A refusal belongs to the measurement, not to the mode that stores it.** `## Repository` cuts `Tracked
+  files` from `git ls-files` and the four source and test rows from `readdirSync`, so one untracked path makes
+  the table describe two trees. `check-repository-table` refuses that state in **both** of its modes. The
+  refusal was written inside `if (writing)` at v3.83 and stayed there until v3.152, and the cost of that is
+  measured: a green local `docs:check` with `| Tracked files | 680 |` and an untracked `volume-21.md`, the
+  same command reporting `the tree says '681'` after `git add -A`, and **four of eight** CI jobs red on a tree
+  where nothing can be untracked.
+- **The sentence names the rows that disagree.** A check-mode refusal says *`Tracked files` would count the
+  index and `Source files` and `Test files` count the worktree, which is one table describing two trees*; a
+  rewrite is told the counts it would publish are counts the commit will contradict. Two modes, two sentences,
+  because "the numbers are stale" is not what happened.
+- **Staging the file moves the guard onto the number rather than past it.** The same fixture, after
+  `git add -A`, is refused for drift -- `says '8' for Tracked files; the tree says '9'` -- and `--write`
+  publishes 9. A refusal that persisted would be a guard nobody can satisfy; a silence would be the defect
+  with an extra step.
+- **The repair adds no claim.** `golden-master/gate-sites.json` was re-derived, not edited: **146** sites
+  across 69 of 103 scripts before and after, one coordinate moved (466 -> 483). The site was proved already;
+  what changed is which state reaches it.
+- **Not claimed.** That a green gate means the tree the commit carries is the tree that was measured. A tracked
+  file with uncommitted edits is still measured and committed from two states, which is `O-142`.
+- **Falsified by** 3 mutations -- the refusal deleted, the two modes sharing one sentence, and the refusal
+  narrowed back to `--write` -- **6** reds, no survivor, each measured on the green tree and restored byte for
   byte.

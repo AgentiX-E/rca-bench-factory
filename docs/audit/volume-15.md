@@ -1,7 +1,7 @@
 # Audit · volume 15
 
-Findings 651–655, from the rounds recorded in `progress/volume-20.md` as `v3.148`, `v3.149` and `v3.150`, and
-in `progress/volume-21.md` as `v3.151`.
+Findings 651–656, from the rounds recorded in `progress/volume-20.md` as `v3.148`, `v3.149` and `v3.150`, and
+in `progress/volume-21.md` as `v3.151` and `v3.152`.
 
 ## Finding 651 — an action is identified by the action, not by the name of the step that uses it
 
@@ -426,3 +426,59 @@ the job log that this sandbox cannot fetch.
 not see. Nor that the step has two modes: seven readings are two clusters here because they are 40% apart with
 nothing between them, and a wide spread would look the same at this sample size. The rule needs neither claim --
 only that a run can land in a state the bound must cover.
+
+## Finding 656 — a refusal that only the repairing mode can reach
+
+`check-repository-table` exists because the `## Repository` table published eight numbers and nothing read any
+of them (finding 195's class). Its rows are not cut from one place: `Tracked files` is `git ls-files`, while
+`Source files`, `Source lines`, `Test files` and `Test lines` are `readdirSync` over `packages/*/{src,test}`.
+So an untracked path is counted by five rows and not by the sixth, and with one present the table is not
+stale -- it is about two trees.
+
+The guard has known this since `v3.83`, when a round published `Tracked files 638` before `git add` and the
+next check read `639`. The refusal it wrote lives **inside `if (writing)`**: the branch only the repairing
+mode takes. The mode that publishes refuses the state; the mode that judges cannot see it.
+
+**The measurement, as a CI run.** `v3.151` added `docs/progress/volume-21.md`, ran `docs:check` while the file
+was untracked, and got exit 0 with `| Tracked files | 680 |`. The index held 680, so the row was true of the
+index and the five filesystem rows were true of a directory that held one more file. `git add -A` made the
+same command on the same bytes report
+
+```
+  - ## Repository says '680' for Tracked files; the tree says '681'
+check-repository-table: FAILED
+```
+
+and the push carried a tree where the guard is right, because a checkout has no untracked files. CI run
+`45643248364` came back with **four jobs of eight red** -- the documents job, the cold-tree job, the lint job
+and the second sensitivity shard -- each of them the same line, reached through a different spawner:
+`docs:check` runs the guard, `lint`'s site proofs run the test file that drives it, and the battery runs whole
+test files as one claim's witness.
+
+**The falsifier.** A committed fixture tree with a correct table, then one untracked `notes.md`:
+
+| mode | `v3.151` | `v3.152` |
+| --- | --- | --- |
+| `node scripts/check-repository-table.mjs` | exit 0, "8 row(s), every one derived from the tree" | exit 1, names `notes.md` and the two populations |
+| the same after `git add -A` | exit 1, `says '8' ... the tree says '9'` | the same -- the message changes kind, it does not persist |
+| `--write` with the file untracked | exit 1 | exit 1 (unchanged) |
+
+**The defect.** A refusal is a property of the measurement, not of the mode that stores its result. Written
+where the failure was first seen -- inside the rewrite -- it covered the write and left the read, which is the
+mode the corpus runs on every round and in four CI jobs. And the guard's own prose had already claimed the
+general rule: the docblock's "What is not checked" section never mentioned the index/worktree split, and the
+fixture comment in the test file said *the guard now refuses to derive over an untracked file* -- true of
+`--write`, false of `check`. That is finding 654's shape one round later: the sentence describing a rule
+drifting from the rule in the direction that flatters it.
+
+**The repair.** The refusal is hoisted above the mode split and both modes take it, with the sentence carrying
+what the *mode* is doing: a rewrite is told the counts it would publish are counts the commit will contradict,
+and a check is told which rows disagree -- `` `Tracked files` would count the index and `Source files` and
+`Test files` count the worktree, which is one table describing two trees ``. The inventory moved by nothing but
+a line number (146 sites, the refusal's exit at 466 now at 483), which is the reading that says the round
+added no claim: the site existed and was proved; what changed is which state reaches it.
+
+**What is not claimed.** That a green `docs:check` means the tree a commit carries is the tree that was
+measured. It does not: a tracked file with uncommitted edits is measured and committed from two states, and the
+corpus's own order -- `docs:check` before `git add` -- is the order that hides it. That is `O-142`, and it is
+open because the refusal that would close it (any modified tracked file) costs a round its feedback loop.
