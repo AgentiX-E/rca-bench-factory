@@ -220,7 +220,7 @@ knows how to ask. This round took it.
 where the fastest reading of it is 519 s". The shard spent 881 s; 519 s is a reading of the *first* shard's
 step, in another run. One command's slow day was compared with another command's fast one -- `R10`'s defect,
 in prose rather than in arithmetic -- and it made a 47% gap look like a 38% one. The series the bound is
-actually sized from holds 40 readings before this round: **285 s** fastest, **481 s** middle, **881 s**
+actually sized from held 40 readings before this round: **285 s** fastest, **481 s** middle, **881 s**
 slowest.
 
 **The measurement.** The delivery run was re-run, which GitHub numbers as attempt 2 of the same run id, and

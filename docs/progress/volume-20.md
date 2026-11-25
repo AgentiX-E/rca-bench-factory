@@ -2585,8 +2585,8 @@ it exposed is the one the previous round's prose got wrong.
 
 519 is a real number and it belongs to the other series, so the sentence compared one command's slow day with
 another command's fast one -- the defect `R10` was written to remove, in prose rather than in arithmetic. The
-series the bound is actually sized from has 40 readings: **285 s** at its fastest, **481 s** in the middle,
-**881 s** at its slowest. The round that read 519 as its own made a 47% gap look like a 38% one.
+series the bound was actually sized from held 40 readings before this round: **285 s** at its fastest,
+**481 s** in the middle, **881 s** at its slowest. The round that read 519 as its own made a 47% gap look like a 38% one.
 
 ### The question, and the only instrument that can answer it
 
