@@ -1778,13 +1778,22 @@ The third row is the one that had to be written as a test rather than as a comme
 argv carries `--bail`, the baseline's does not, and the baseline case is taken from a run that never reaches a
 mutant (a claimant that is red on its own).
 
-### What CI has to say, and what this round does not claim
+### What CI said, which is less than the local pair and more useful
 
-Reading 46 (run `45652928012`, the tree `v3.152` shipped) records the two shard steps at **613 s** and **533 s**
-of a 969 s run, so the battery is roughly a quarter of the workflow's wall clock. A 52% cut on the shard that
-the 900 s reading came from is the first change in this campaign that moves the reading rather than the prose
-around it. The next green run records what it actually was, and this round does not claim the CI number: the
-pair above is local, and a local pair is what a machine can be held to.
+Reading 47 -- this round's own run, `45673244483` -- records the two shard steps at **231 s** and **460 s**,
+against **488 s** and **596 s** in reading 46: **-257 s** and **-136 s**. The workflow fell from **969 s to
+771 s** (-20%).
+
+The local pair's 52% did not survive the move to a four-vCPU runner intact: the shard that the 900 s reading
+came from kept **77%** of its time, where the box these were measured on kept 48%. That difference is the
+useful part, because it says what the remaining seconds are: a runner pays more of a run before the first red
+than a 32-vCPU box does -- more startup, more contention, fewer cores for the file's own tests -- and `--bail`
+cannot shorten what it reaches late.
+
+And the critical path is no longer this battery. `batteries-heavy` took **761 s** of the 771 s run, so the
+workflow now waits for the two probe-rewrite batteries, which this round did not touch. The next round that
+wants the wall clock has to look there, and the instrument for it is the one this round built: a probe battery
+that prints per-step seconds the way the sites battery prints per-claimant ones.
 
 ### Four things this round did wrong
 
@@ -1835,7 +1844,8 @@ entry moves, and it is sharpened rather than closed, because the measurement say
 
 | item | value |
 | --- | --- |
-| CI | **8 of 8 jobs success** -- run `45652928012` on `9269682`, 969 s, and the **forty-sixth reading** the recorder takes from it (613 s of second shard, 533 s of first); this is the run the previous round shipped and could not record, taken now so the recording names the tree v3.152 delivered |
+| CI | **8 of 8 jobs success** -- run `45673244483` on `e2bf2db`, **771 s**, and the **forty-seventh reading**: the two shard steps read **231 s** and **460 s**, against **488 s** and **596 s** in the reading before it |
+| the run before it | run `45652928012` on `9269682` -- **8 of 8 jobs success**, 969 s, the **forty-sixth reading**, taken at the start of this round because the previous one shipped that tree and could not record it |
 | `core` test suite | **260 files, 7057 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
 | repo test suite | **264 files, 7244 tests passed** (as of this commit) |

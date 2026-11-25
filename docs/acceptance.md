@@ -2973,8 +2973,10 @@ from an anecdote again.
   the flag, because its verdict is the longest single test of a file it would not have finished.
 - **The boundary is asserted on the argv, in both directions.** The mutant's argv carries `--bail`, the
   baseline's does not, and the baseline case is taken from a run that never reaches a mutant.
-- **Not claimed.** That the CI number moves by the local ratio: reading 46 records the two shard steps at 613 s
-  and 533 s of a 969 s run, and the next green run is what says what the flag did there.
+- **On a runner it is less, and the difference is the reading.** Reading 47 (this round's own run) records the two
+  shard steps at **231 s** and **460 s** against **488 s** and **596 s**: the shard the 900 s reading came from
+  kept **77%** of its time, where the 32-vCPU box kept 48%. The workflow went **969 -> 771 s**, and its critical
+  path moved to `batteries-heavy` at **761 s**, which this round did not touch.
 - **Falsified by** 4 mutations -- the flag removed, the flag given to the baseline, the per-claimant rows
   deleted, and every row charged the whole inventory's claim count -- **4** reds, no survivor, each measured on
   the green tree and restored byte for byte.

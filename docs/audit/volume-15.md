@@ -525,9 +525,13 @@ never bails; and a baseline is **refused** the flag, because its verdict is the 
 it would not have finished. The mutant's record is written when the site executes, which is before the
 failure, so the "recorded its mutant" clause is unaffected -- 129 of 129 runs are still credited.
 
-**What is not claimed.** That the CI number moves by the local ratio. Reading 46 (run `45652928012`) records
-the two shard steps at 613 s and 533 s of a 969 s run; the next green run is what the flag did on a runner,
-and a local pair is not evidence about a four-vCPU box.
+**What CI did with it, which is less than the local ratio.** Reading 47 -- the round's own run,
+`45673244483` -- records the two shard steps at **231 s** and **460 s**, against **488 s** and **596 s** in
+reading 46, and the workflow at **771 s** against **969 s**. The shard the 900 s reading came from kept **77%**
+of its time, where the box the pair was measured on kept 48%: a runner pays more of a run before the first red
+-- more startup, more contention, fewer cores -- and a flag that stops at the first red cannot shorten what it
+reaches late. What it also did is move the critical path: `batteries-heavy` took **761 s** of the 771 s run, so
+the workflow now waits for the two probe-rewrite batteries, which this round did not touch.
 
 **The measurement's own defects, since a paired run has more ways to be wrong than a single one.** The first
 control was run on a tree whose own test asserts the flag, and separately while the counts were mid-edit, so
