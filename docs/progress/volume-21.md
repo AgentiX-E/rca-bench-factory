@@ -2277,6 +2277,16 @@ The reading is the **50th**, and the summary's own sentence moved with it: from 
 their first run` to `no job is declared unmeasured`, 50 readings from run 42131836805 to 45748356774, 41 steps
 carrying a bound of their own.
 
+### The fifty-first, and what it cost to get
+
+Run `45748356774` was green on a tree the round had not finished writing: the fourteenth thing this round got
+wrong was a file count taken while the deletion was still unstaged, so the next commit measured **683** tracked
+files where the tree held **682** and four jobs went red for a number. The fix is one character -- the row says
+682 -- and the run that measured it is the **51st**: `45754575653`, 9 of 9 jobs, 90 steps, recorded with
+`node scripts/measure-ci-baseline.mjs 45754575653`. A reading is not a reward for a green run; it is the only
+thing a bound may be sized from, and this round needed a second one because the first described a tree that
+never existed as a commit.
+
 ### Mutations
 
 | mutation | red |
@@ -2310,7 +2320,7 @@ carrying a bound of their own.
 
 | item | value |
 | --- | --- |
-| CI | run `45748356774` on `631fcb261`: **9 of 9 jobs success** -- the first run that measured the job this round added, and the one this round's recording (reading **50**) is taken from. Its two predecessors on the round's own commits came back 8 of 9, and the section above reads both: `Lint` 301 s red on a stall budget, then 143 s green with the red moved to a missing budget declaration. The ninth job's own first day is **264 s**, the shard inside it **234 s** |
+| CI | run `45748356774` on `631fcb261`: **9 of 9 jobs success** -- the first run that measured the job this round added, and the one this round's recording (reading **50**) is taken from. Its two predecessors on the round's own commits came back 8 of 9, and the section above reads both: `Lint` 301 s red on a stall budget, then 143 s green with the red moved to a missing budget declaration. The ninth job's own first day is **264 s**, the shard inside it **234 s**. Its successor `45751356209` came back 4 of 9 on a tracked-file count, and the run after the one-character fix is reading **51**: `45754575653`, **9 of 9**, 90 steps, 51 readings from run 42131836805 to 45754575653 |
 | `core` test suite | **261 files, 7065 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
 | repo test suite | **265 files, 7252 tests passed** (as of this commit) |
