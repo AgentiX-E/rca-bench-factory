@@ -2063,9 +2063,9 @@ per file, serially, over 69 files.
 | item | value |
 | --- | --- |
 | CI | **8 of 8 jobs success** -- run `45692816682` on `47919682`, **1046 s**, and the **forty-eighth reading**: the two probe batteries read **205 s** and **90 s** against **360 s** and **379 s**, so the job this round repaired fell from **761 s to 325 s**. The run's own wall clock rose from 771 s, which is `batteries` taking **1036 s** against 659 s with every one of its steps 1.5--1.8x its reading-47 time, on a run where `verify` fell to 544 s |
-| `core` test suite | **261 files, 7060 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **265 files, 7247 tests passed** (as of this commit) |
+| `core` test suite | **261 files, 7060 tests passed** (at v3.154) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.154) |
+| repo test suite | **265 files, 7247 tests passed** (at v3.154) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: every line this round added is in `scripts/` |
 | new tests | **7,057 -> 7,060, +3**: the named-test argv and its escaping, the compile schedule, and the `atexit` backstop |
 | the pair, `backend-support` | **347.0 s -> 53.2 s** over 83 runs measured both ways on one tree, **83 of 83** verdicts identical |
@@ -2073,3 +2073,152 @@ per file, serially, over 69 files.
 | the batteries, as run | `type-miss` **74 caught, 0 survived, 0 inert, 0 blind**, 147.7 s of child time in 151 s; `backend-support` **83 caught, 0 survived, 0 inert, 0 misattributed**, 53.0 s in 54 s |
 | mutation | **5 groups, 5 red cases, 0 survivors**, each measured on the green tree and restored to an identical `md5` |
 | the inventory | **146** sites, unmoved: both repairs are in `scripts/injection/`, which `derive-gate-sites` does not scan |
+
+## v3.155 — the price of an audit, and a rule that could not express a promise
+
+v3.154 ended with a sentence about where the wall clock had gone: `batteries` at **1036 s**, and inside it
+`Every gate can be shown to fail` at **374 s**. This round pointed the instrument there, and the instrument
+answered a question nobody had asked: of 374 s, 87% is tests the step was told to run, the dearest of its 69
+subjects is an eighth of the total, and there is no mispriced claim to repair. What there is, is a count --
+and a count can only be answered in another process.
+
+### Finding 660: an audit that reports sixty-nine verdicts and no price
+
+The step was the only one in the workflow that stated no number about itself. It now prints one row per
+subject, and a summary that separates the children's wall clock from what those children said their own tests
+took. On this box: **69 runs, 218.8 s of child time in 223.1 s of wall clock, 190.9 s of it the suites' own
+(87%), 27.9 s of process start at 0.40 s a run, 233 file executions over 93 distinct files**, median 1.5 s,
+44 of 69 at or under 2 s, and the dearest -- `check-official.mjs` -- at **26.1 s, 12%**.
+
+That is a *negative* result and it is the round's most useful one. A repair aimed at the dearest subject would
+have taken 12%; the 88% is the audit doing what it says. The `--list` docblock had said *"104 seconds for the
+37 subjects"* while the list returns **69** -- the third stale figure this file has carried about itself, and
+the reason the number is now printed rather than written down.
+
+### Finding 661: sixty-eight independent claimants, run one after another
+
+`verify-site-proofs.mjs` grouped 68 files, sorted them for the report, and ran them in a `for` loop whose body
+was `spawnSync`: serial because the call blocks, not because the files interact. A bounded pool of
+`availableParallelism()` workers -- `spawn` and await, eight at most -- takes it from **283.0 s to 124.3 s**
+on one tree, back to back, with the same verdicts. The case that keeps it honest reads the overlap out of the
+fixture runner's own two marks rather than a clock: **1** child alive at a time under `--jobs 1`, **at least
+2** under `--jobs 4`.
+
+### What the wall clock does with that
+
+`Lint` held this gate and read **559 s** on attempt 2 of run `45695988542` against **378 s** in run
+`45692816682` an hour earlier -- the same commit. The repair takes about **160 s** out of that step on this
+box's ratio, and the bound moves the other way: `R4` refuses 18 minutes against 559 s, so `Lint` is bounded at
+**19** and `verify`'s ceiling follows it to **42**.
+
+`batteries` is the other pole, and the step inside it is now two shards: `--shard i/n` over the inventory's
+subject list, `--list --shard i/n` printing a slice so the partition is checkable as a set, and two refusals --
+a spec that is not `i/n`, and a slice that selects no gate. The step stays in `batteries` as **shard 1 of 2**
+with its name and its bound untouched, because `R2` pins the recording to the name; the second shard runs in
+`gates-audit`, a ninth job that no run has measured.
+
+### Finding 662: the rule that could not express the state the previous rule existed for
+
+That job could not be published. `R11` compares the newest closing reading's tally with `ci.yml`'s job count,
+so nine jobs against the newest run's `8 of 8` is a refusal -- and the only row that satisfies it is one from
+a run that cannot happen until the commit is pushed. `R9`'s promise was written for exactly this gap and no
+rule could describe it; v3.54 did not hit it because `R11` did not exist yet.
+
+`R11` now subtracts the jobs a declaration is waiting to measure, and refuses the same difference when no
+promise accounts for it -- `R9` already refuses a promise for a job the recording holds, so a promise cannot
+excuse an old reading. The gap is printed twice: `1 job declaration(s) still awaiting their first run`, by the
+gate and by the recorder.
+
+### Twelve things this round did wrong
+
+- **The first parallel run's 16 problems were mine, and I read them as the pool's.** Two were files that
+  failed because the inventory was stale -- I had added two `process.exit` sites and moved others, and
+  `derive-gate-sites --check` is the reader that says so. The other fourteen were claims pointing at line
+  numbers that had moved. A concurrency change is exactly the wrong moment to be uncertain whether a red is
+  yours.
+- **The step-move's first edit put the block back at the end of `batteries`** while the new job was written
+  above it. The YAML parsed, the job had six steps, and the step was still in the old place: a structural
+  mistake that a syntax check cannot see, found by reading the parsed job back.
+- **Three pairing attempts measured a tree that was changing under them.** 2 m 06 s and 4 m 39 s of two
+  runs whose verdicts were about my edits; the numbers only mean something once the tree is green, and the
+  third attempt is the one quoted.
+- **`gate-steps.test.ts` pinned `41m` in two assertions.** A ceiling moved by one minute and two cases that
+  have nothing to do with wall clocks went red -- the same "a number in prose is a status column" one level
+  down, in the file that exists to complain about it.
+- **Two `ci-budget.test.ts` cases assumed every job in the workflow has a recording.** That is the assumption
+  `R9` exists to relax, and the first job-level promise in the tree is what said so: the summary counts the
+  steps a run has *measured*, so the cases now derive that population instead of the workflow's step count.
+- **`check-repository-table` refused a file I had written into `scripts/`** for the pairing measurement -- an
+  untracked copy of the old gate, which would have made the table describe the index and the worktree at
+  once. The measurement moved to `/tmp`, where it belongs.
+- **The busy fixture wrote its own evidence where it stood.** Its runner derived the journal from
+  `import.meta.url`, which is the first clause `tests-do-not-write-inside-the-package` reads -- correctly,
+  and about a string that is source for a child in a scratch tree. The repair is not an exemption: the
+  caller passes the path, so the write lands in the tree the test owns, and a busy run without one is an
+  error rather than a silent `/dev/null`.
+- **Two guards read a sharded command as a foreign one, and one register had to be told about the new job.**
+  `cold-tree-job`'s "not a battery script" pattern ended at `$`, so `--shard 1/2` made the step fail a check
+  whose subject is *which script a step names*; its sibling twenty lines down already carried the comment
+  explaining that defect. The same file's suite register did not hold `gates-audit`, which is the register
+  working: a job that starts a suite is a job that needs `zsh`.
+- **The round published `+3` and the suite counted `+4`.** Nothing compares a Readings row with the report
+  it was derived from; the derivation itself did, one step later, when `--write-doc` printed 7,064 beside a
+  sentence that said 7,063. The count was recomputed from the four cases the round actually added.
+- **`check-repository-table` refused the tree twice, and the second refusal was the interesting one.** The
+  first was a stale figure (121,347). The second came from the hand-set number being written while the file
+  it counts was still being edited -- 121,385 against 121,387 -- which is the same lesson as the pairing
+  runs: a number taken from a moving tree is a number about the movement.
+- **The residual this round opened was written twice, in two different sentences.** `O-143` entered the live
+  list as *"the workflow's critical path is a queue of eighteen steps"*, and the record below restated it as
+  *"the shard moved the queue rather than the run"*, with no open reason at all -- which `check-open-list`
+  refuses twice: a bullet that says neither that it is closed nor why it is open, and a residual whose first
+  twenty characters appear in no entry of `## Open`. A record is a quotation of the list, not a second draft
+  of it.
+- **This list of the round's own mistakes became a record of them.** One bullet quoted the open-reason marker
+  verbatim, and `openEntriesInList` reads a section as a record when its body is nothing but bullets *and* at
+  least one of them carries a reason a reader could act on -- so eleven mistakes were counted as eleven
+  residuals of `v3.155`, and `Mutations` became the round's second `###` section under one heading. The same
+  shape as the file that has to exempt itself from the package-write scan: prose *about* a marker has the
+  marker, and a reader that judges by shape cannot tell the description from the thing.
+
+### Mutations
+
+| mutation | red |
+| --- | --- |
+| the audit's cost is a constant | 1 |
+| the pool has one worker whatever `--jobs` says | 1 |
+| every shard is the first slice | 1 |
+| a slice that selects no gate is measured | 1 |
+| `R11` accepts any gap | 1 |
+
+**5 groups, 5 red cases, 0 survivors**, each measured on the green tree and restored to an identical `md5`.
+
+### Left open
+
+- `O-143` · **The workflow's critical path is a queue of eighteen steps, and sharding one of them moved the
+  queue rather than the run.** The step this round split takes about half of its 374 s out of `batteries`,
+  and that job still stands at roughly **850 s**, because the other eighteen steps in it add up to 662 s on
+  their own. A job that runs nineteen independent things costs the sum of nineteen numbers, so the two
+  members worth sharding next are the gate-test battery (**306 s**, which has no shard support and a
+  published report that a shard would halve) and the fetch-official retry battery (**100 s**).
+  `[open: whether the next cut is a second shard pair for the gate-test battery -- which needs the battery to
+  partition both its injections and the artefact it publishes, so that the report is not half a measurement
+  -- or whether the answer is moving the tail's own smallest members into the job that is now cheapest,
+  which trades one queue for another and needs a reading rather than an argument]`
+
+### Readings
+
+> Ledger for `v3.155`.
+
+| item | value |
+| --- | --- |
+| CI | run `45695988542` on `60aa169e`, attempt 2: **8 of 8 jobs success** -- the run whose two 374 s and 306 s readings reproduced reading 48 exactly, and the one this round's recording is taken from. The ninth job this round adds has not run: `golden-master/ci-declarations.json` promises it, and the next commit settles that promise |
+| `core` test suite | **261 files, 7064 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **265 files, 7251 tests passed** (as of this commit) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
+| new tests | **7,060 -> 7,064, +4**: the audit's per-subject cost and the parts adding to the whole, the shard partition with its two refusals, the `--jobs` count it cannot honour, and the pool's overlap measured from the marks its children write |
+| the audit, as run | **69 runs**, 218.8 s of child time in 223.1 s of wall clock; **190.9 s** reported by the suites (69 of 69); **233** file executions over **93** distinct files; dearest `check-official.mjs` at **26.1 s (12%)** |
+| the pair, `verify-site-proofs` | **283.0 s -> 124.3 s** on one tree, back to back, `--jobs 1` against the default; 68 claimant files, the same verdicts |
+| mutation | **5 groups, 5 red cases, 0 survivors**, each restored to an identical `md5` |
+| the inventory | **149** sites, up 2: the shard spec and the empty slice, each proved by the case that drives it |

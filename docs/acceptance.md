@@ -77,6 +77,7 @@ before the layer above it is meaningful.
 | A table has one population, or the guard refuses the tree | v3.152 |
 | A battery charges each run to its claimant, and stops at the first red | v3.153 |
 | A run pays for the claim it makes, and the compile nobody read | v3.154 |
+| An audit reports what each subject cost, and a job is split on the number | v3.155 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -167,7 +168,7 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   the `sensitivity` job runs `verify-sites-are-sensitive.mjs`, which asks whether that
   file **notices** the exit's absence -- one run per claim with that site's code
   replaced by success, and a baseline run per file so a red claimant cannot be
-  credited with catching anything. Measured at **248 of 248** claim(s) across 68 file(s) -- two more
+  credited with catching anything. Measured at **251 of 251** claim(s) across 68 file(s) -- two more
   than v3.140's 232, because an attempt that does not exist and an attempt with no job in it are two
   refusals `measure-ci-baseline.mjs` did not have before, and each carries a proof; two more again
   at v3.144, because a recording that cannot say which measurement is the newest and a measurement
@@ -183,6 +184,12 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   and one row moved: `workflowOfThatDay`'s throw changed its sentence, the carry matches a sentence, so its
   proof was dropped rather than carried and was re-declared against the test that reaches it. A proof carried
   by a sentence the round had rewritten would be a pointer nobody had checked.
+  Three more at v3.155, because a shard is a plan and a plan can be wrong in two ways: `--shard i/n`
+  is an argument and a count that is not `i/n` is a refusal the gate did not have, and a slice that
+  selects no gate would print a tidy zero-gate summary and exit 0 -- the vacuity shape one level
+  down. The third is the same refusal the audit already made about an empty inventory, re-derived
+  against the pre-shard list, so that a shard nobody selected and an inventory nobody filled do not
+  share one sentence.
   The figure was 105 of 105 in both halves at v3.41, and it drifted for twenty-four rounds
   because nothing read the sentence -- an external reviewer quoted the 105 as the current
   state, which is what a number with no reader costs. `check-doc-counts` reads it now:
@@ -3007,3 +3014,36 @@ from an anecdote again.
 - **Falsified by** 5 mutations -- the whole file asked for again, the name passed unescaped, the restore
   compiled again, a reader left without the committed rule, and the backstop unregistered -- **5** reds, no
   survivor, each measured on the green tree and restored byte for byte.
+
+### An audit reports what each subject cost, and a job is split on the number (v3.155)
+
+- **A step that reports 69 verdicts and no price cannot be reduced without guessing.** `Every gate can be
+  shown to fail` was the second-most expensive step in the workflow (**374 s**, twice, on two runs of one
+  tree) and the only one that stated no cost at all. It now prints one row per subject -- the child's wall
+  clock -- and a summary that separates the suites' own `Duration` from the process start around them:
+  **69 runs, 218.8 s of child time, of which 190.9 s is what the suites said they spent** (87%) and
+  **233 file executions over 93 distinct files**. The dearest subject is **12%** of the total, so the cost is
+  the run count rather than any one gate -- which is why the answer was a shard and not a repair.
+- **An audit whose subjects are independent can be split by position.** `--shard i/n` partitions the
+  inventory's subject list, `--list --shard i/n` prints a slice, and the case asserts the partition as a set:
+  the union of three shards is the list, and no gate is in two. Two refusals come with it -- a spec that is
+  not `i/n`, and a slice that selects no gate, which would otherwise print a tidy zero-gate summary and
+  exit 0.
+- **The split keeps the name the recording knows.** The step stays in `batteries` as shard 1 of 2 with its
+  bound and its name untouched, because `R2` pins the recording to the name; the second shard runs in
+  `gates-audit`, a job no run has measured, which `golden-master/ci-declarations.json` promises for exactly
+  one round (`R9`).
+- **A rule that cannot express the state it exists for is a rule that cannot be used.** Adding a job makes the
+  newest reading's tally one short of `ci.yml`'s job count, and no commit could be published until a run
+  measured the job the commit adds -- which is the state `R9`'s promise is written in. `R11` now subtracts the
+  jobs a declaration is waiting for, and refuses the same difference when no promise accounts for it; the
+  summary prints the gap as `N job declaration(s) still awaiting their first run`.
+- **A serial loop of blocking spawns is serial for a reason that is not a dependency.** `verify-site-proofs`
+  ran 68 claimant files one after another because `spawnSync` blocks, not because they interact: each writes
+  its own trace file and the only shared state is a counter incremented before the child exists. The loop is
+  now a bounded pool of `availableParallelism()` workers, and the case that keeps it honest does not time it:
+  a fixture runner marks its own start and end, and **1** child is alive at a time with `--jobs 1` where **at
+  least 2** are with `--jobs 4`, with the same verdict from both runs.
+- **Falsified by** 5 mutations -- the cost line printing a constant, the pool never overlapping, a shard
+  dropping a subject, a shard selecting nothing, and `R11` accepting a gap no promise explains -- **5** reds,
+  no survivor.

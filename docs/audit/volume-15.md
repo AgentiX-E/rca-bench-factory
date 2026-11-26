@@ -1,7 +1,7 @@
 # Audit · volume 15
 
-Findings 651–659, from the rounds recorded in `progress/volume-20.md` as `v3.148`, `v3.149` and `v3.150`, and
-in `progress/volume-21.md` as `v3.151`, `v3.152`, `v3.153` and `v3.154`.
+Findings 651–662, from the rounds recorded in `progress/volume-20.md` as `v3.148`, `v3.149` and `v3.150`, and
+in `progress/volume-21.md` as `v3.151`, `v3.152`, `v3.153`, `v3.154` and `v3.155`.
 
 ## Finding 651 — an action is identified by the action, not by the name of the step that uses it
 
@@ -621,3 +621,102 @@ can leave, since `_witnesses` journals the source and not the build output. Muta
 remove every compile and double the table into emitted JavaScript while losing the compile check. Reordering
 the injections so the in-package ones are contiguous buys two compiles for a report whose order is chosen by
 cost.
+
+## Finding 660 — an audit that reports sixty-nine verdicts and no price
+
+`verify-gates-are-testable.mjs` is the second-most expensive step in the workflow. Run `45692816682` read it
+at **374 s**, and attempt 2 of `45695988542` -- the same tree, an hour later, every step of its job reading
+the same number twice -- read it at **374 s** again. What it printed, for all 69 subjects, was one line each:
+`CAUGHT <gate> <n> test(s) red in <k> of <m> naming file(s)`. Nothing said what any of them cost, and the
+step was the only one in the workflow that stated no number about itself at all.
+
+That matters because the number was the only thing anybody wanted. v3.154 had taken 84.7% off another battery
+by finding that 83 rows paid for whole files; the same question here -- *is this step paying for what it
+claims* -- could not be asked without knowing which of 69 subjects wanted the 374 s.
+
+**The instrument.** Each subject now carries its child's wall clock, measured around the mutation rather than
+around the loop, and the summary separates two quantities the total cannot separate: the sum of the children's
+wall clocks, and what those children said their own tests took (`Duration`, which vitest prints). The
+difference between them is process start, config load, plugin setup and worker pool -- once per subject.
+
+**The reading, on the development box** (69 subjects, 218.8 s):
+
+| | value |
+| --- | --- |
+| runs | **69**, one `npx vitest run` each |
+| child time | **218.8 s** in 223.1 s of wall clock |
+| what the suites said they spent | **190.9 s** of it, **87%** |
+| process start | **27.9 s**, **0.40 s** a run |
+| file executions | **233** over **93** distinct files |
+| dearest subject | `check-official.mjs`, **26.1 s**, **12%** of the total |
+| distribution | median **1.5 s**; 44 of 69 runs at or under 2 s; 7 over 8 s |
+
+**So there was no hot spot, and that is the finding.** The step is not paying for a claim it does not make:
+87% of its cost is tests it was asked to run, the dearest of 69 subjects is an eighth of the total, and
+amortising every cold start would recover 28 s of 219. A round that had "optimised" this step by trimming the
+dearest subject would have taken 12% and left the other 88% where it was. The cost is the *count* -- 69
+mutations, each needing its own suite -- which is a property of what the audit is, and the only lever on a
+count is to run it in more than one place at once.
+
+The instrument also corrected a number in prose that had gone stale twice: the `--list` docblock said
+*"104 seconds for the 37 subjects"* while the list returns **69**. That is the third time this file has
+carried a stale figure about itself, and it is now printed by the run rather than written into a comment.
+
+## Finding 661 — sixty-eight independent claimants, run one after another
+
+`verify-site-proofs.mjs` asks one question per claim -- *did this file make this exit fire* -- and the answer
+requires running the file, because it installs a hook that records `process.exit`'s caller. The files are
+grouped by claim (`byFile()`), sorted for the report, and then run in a `for` loop whose body was a
+`spawnSync`. Each is a separate `vitest run`; none reads another's state; the only shared thing is a counter,
+incremented on this side of the process boundary before a child exists.
+
+So the loop was serial for a reason that had nothing to do with its subjects: `spawnSync` blocks. On the
+development box that is **283.0 s** for 68 files -- 4.2 s each, of which a `vitest` run of one file is about
+1.5 s.
+
+**The repair** is the shape the loop already wanted: `spawn` and await, so the event loop is free, and a fixed
+set of workers pulling from a cursor so that `limit` is a number rather than a comment. The limit is
+`availableParallelism()`, capped at eight -- a child is a node process plus vitest's worker pool, and past
+eight the children contend for memory bandwidth while a 32-core developer box starts 32 of them at 300 MB
+each.
+
+| | serial (`--jobs 1`) | pooled (default) |
+| --- | --- | --- |
+| wall clock, one tree, back to back | **283.0 s** | **124.3 s** |
+| claimant files | 68 | 68 |
+| verdicts | one unmeasured claim, from a document gate that was red in both runs | the same |
+
+**Why the case does not time it.** A test that asserted "the pooled run is faster" would be a test of the
+machine, and it would pass on a gate whose pool was a loop. The case instead gives the fixture's stand-in
+runner a busy wait and two marks, one either side of it, and reads the overlap out of the marks: **1** child
+alive at a time under `--jobs 1`, **at least 2** (and at most 4, on four files) under `--jobs 4`, with the
+same status and the same stderr from both runs. That is the property the pool is for, and a serial
+implementation cannot satisfy it however fast the machine is.
+
+`--jobs` stays in the interface because the paired measurement is the only thing that can say the verdicts did
+not move with the repair, and the next runner will want the same experiment.
+
+
+## Finding 662 — the rule that could not express the state the previous rule existed for
+
+`R9` was written so a job could be declared before any run measured it. v3.155 is the first round since to
+need that, and the round could not be published at all:
+
+- `ci.yml` declares the new job, so `jobsOf(workflow).length` is 9.
+- The newest reading in the ledger is a run of the 8-job workflow, so its tally is `8 of 8`.
+- `R11` refuses any closing reading whose tally disagrees with the workflow's job count.
+- The only row that would satisfy `R11` is one from a run that has not happened -- and the run cannot happen
+  until the commit is pushed.
+
+The round that added `sensitivity-shard` in v3.54 did not hit this because `R11` did not exist yet: the log's
+newest row had been stale for 65 rounds, and the rule was written afterwards to stop exactly that. So the
+rule set had, in the two rounds that followed, become unable to describe the state its own `R9` creates.
+
+**The repair is one term.** `R11` now subtracts the jobs `golden-master/ci-declarations.json` is waiting to
+measure, and refuses the same difference when no promise accounts for it -- so a promise cannot be used to
+excuse an old reading, because `R9` already refuses a promise for a job the recording holds. The gap is not
+silent: the summary prints `N job declaration(s) still awaiting their first run`, and the recorder prints the
+same sentence when it writes.
+
+**Falsified by** two cases in `ci-budget.test.ts`: a two-job workflow whose newest reading is `1 of 1` is
+accepted with a promise and refused without one.
