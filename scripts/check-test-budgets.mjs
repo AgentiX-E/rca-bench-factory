@@ -68,10 +68,21 @@
  * flattering direction.
  *
  * So the number read is the one in force where the test is written: the timeout the
- * test states for itself, then the one its `describe` states (`suiteBudget`), then
- * the file's largest stated number, then nothing. `budgetInForce` returns the number
- * together with which of the four it was, because a reader who disagrees with a
- * verdict needs to know which declaration to go and argue with.
+ * test states for itself, then the one the `describe` it is written in states, then the
+ * suite-wide default a file sets through `vi.setConfig`, then the file's first suite
+ * budget and its largest stated number -- the two a reader with no position in the file
+ * can give -- and then nothing. `budgetInForce` returns the number together with which of
+ * the arms it was, because a reader who disagrees with a verdict needs to know which
+ * declaration to go and argue with.
+ *
+ * The second of those is not `suiteBudget`, and v3.159 is why: that function returns the
+ * **first** `describe` in a file, so a test in an unbudgeted suite of a file whose first
+ * suite states 120 000 was measured against 120 000 and the floor rule could not fire on
+ * it. Both words were wrong -- "the one its suite states" about a suite that states
+ * nothing, and a denominator 24x the clock the runner would use. It is finding 670, and
+ * the sentence the gate prints for the last arm says "neither the test nor the suite it is
+ * written in states a budget" rather than "the file states no budget", because after that
+ * repair the second can be true while the first is not.
  *
  * The test's number comes first because that is the clock its verdict is decided by.
  * Until v3.104 the suite's came first unconditionally, and CI paid for it: run
@@ -131,7 +142,7 @@ function args(argv) {
   if (options.reports.length === 0) usage('at least one --report is required');
   return options;
 }
-import { STATED_BY, budgetInForce } from './budget-readings.mjs';
+import { STATED_BY, budgetInForce, statedBudgets } from './budget-readings.mjs';
 
 /** Every test in one report, flattened to the slowest per file. */
 function slowestPerFile(report, problems) {
@@ -199,16 +210,22 @@ function main() {
     const inForce = budgetInForce(source, file.title);
     const budget = inForce.ms;
     const share = budget === 0 ? Infinity : file.worst / budget;
-    if (budget > 0) declared += 1;
+    // Counted from the source rather than from the reading. "N state a budget" is a claim
+    // about the files, and since v3.159 a file may state one on a suite while the test this
+    // gate measured is written in another one (finding 670) -- so the reading answers `none`
+    // for a file that states four numbers, and counting readings made the summary say "0
+    // state a budget" under a sentence that says no such thing.
+    if (statedBudgets(source).length > 0) declared += 1;
     if (inForce.statedBy === 'test') onTheTest += 1;
     if (file.worst >= options.floor) nearDefault += 1;
 
     if (inForce.statedBy === 'none') {
       if (file.worst >= options.floor) {
         problems.push(
-          `${basename(file.path)}: its slowest test takes ${Math.round(file.worst)} ms and the file states no ` +
-            `budget, so its verdict is decided by vitest's ${VITEST_DEFAULT_MS} ms default; state one on the ` +
-            `suite -- '${file.title.slice(0, 80)}' is the test that will decide it`,
+          `${basename(file.path)}: its slowest test takes ${Math.round(file.worst)} ms and neither the test nor ` +
+            `the suite it is written in states a budget, so its verdict is decided by vitest's ` +
+            `${VITEST_DEFAULT_MS} ms default; state one on that suite -- '${file.title.slice(0, 80)}' is the ` +
+            `test that will decide it`,
         );
       }
       continue;

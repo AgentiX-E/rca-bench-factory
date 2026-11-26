@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 262 core + 4 cli |
-| Test lines | 122,621 core + 3,242 cli |
-| Tests | 7,100 core + 187 cli |
+| Test lines | 122,829 core + 3,242 cli |
+| Tests | 7,109 core + 187 cli |
 | Tracked files | 685 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.158: **51** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.159: **52** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1174,9 +1174,10 @@ is a row about rather than paraphrase one that no `grep` will find.
   inside the run's longest job, then the gate-test battery at **197 s**, which is 52% of `batteries`' **376 s**.
   Reading 56 (`45832206778`, **9 of 9**) then moved every job on a tree whose commands did not change --
   `batteries` **376 -> 532 s**, `gates-audit` **502 -> 400 s**, `verify` **417 -> 281 s** -- and read the same shard
-  pair **109 / 131 s**, **16.8%** apart with the halves swapped; readings 57 and 58 read **124 / 180 s** and
-  **122 / 147 s** (**31.1%** and **17.0%**), the second half heavier again, so four readings of nearly one tree give
-  a gap that changes sign and size against a division the table makes 0.0% apart. So the queue that reading 55 read is not the queue
+  pair **109 / 131 s**, **16.8%** apart with the halves swapped; readings 57, 58 and 59 read **124 / 180 s**,
+  **122 / 147 s** and **99 / 182 s** (**31.1%**, **17.0%** and **45.6%**), the second half heavier in the last two,
+  so five readings of nearly one tree give a gap that changes sign and size -- and reaches its widest on the run
+  after the one that closed the divide -- against a division the table makes 0.0% apart. So the queue that reading 55 read is not the queue
   reading 56 reads, and what survives both is the *item*: the gate-test battery, **197 + 236 s** of runner time in
   reading 55 and **145 + 174 s** in reading 56, is the largest single thing in the workflow on either reading.
   `[open: the next cut is inside that battery, and the measurement that names it is the battery's own cost line --
@@ -1189,6 +1190,18 @@ is a row about rather than paraphrase one that no `grep` will find.
   line printed 0.0 s of 97.2 on the runner because a `\x1b[22m` sits between `Duration\s+` and the digits, and
   `suiteOwnMs` now strips for itself. A queue read from one run is a queue read from one session, which is why this
   entry no longer names an order]`
+
+- O-144 · **A title is not an address: a formatted test title has no position, and the reader that needs one guesses the file.**
+  v3.159 resolves the suite a test is written in by finding the call that holds it, and the only handle a report gives a
+  reader is the printed title. A title the source does not spell -- `it.each([...])('rejects %s', ...)`, which prints
+  `rejects 1` -- is therefore a position the reader cannot resolve, and `budgetInForce` falls back to the file's first suite
+  budget and then to its largest stated number: the two guesses finding 670 removed for every other test are kept for the
+  shape a formatted title makes. Measured: no file in this tree both states a budget and holds a formatted test at or above
+  the 1 000 ms floor, so the fallback is unused today, and the gate prints it as a fallback ("the largest number the file
+  states") rather than as a suite's clock.
+  `[open: whether the reader should pair the nth `it.each` call with the nth printed name, which the report's order allows
+  until a table's rows are filtered and that pairing becomes a guess, or whether a file that uses a formatted title must
+  state its clock on the suite, since a suite's number is the only clock a reader without a position can place]`
 
 ## Pass log
 
@@ -1228,7 +1241,7 @@ and this table.
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
 | [volume-20.md](progress/volume-20.md) | 8 | v3.134 | v3.141 |
 | [volume-21.md](progress/volume-21.md) | 9 | v3.142 | v3.150 |
-| [volume-22.md](progress/volume-22.md) | 8 | v3.151 | v3.158 |
+| [volume-22.md](progress/volume-22.md) | 9 | v3.151 | v3.159 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

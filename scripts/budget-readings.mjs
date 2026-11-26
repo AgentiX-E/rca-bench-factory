@@ -220,10 +220,23 @@ export function statedBudgets(source) {
 }
 
 /**
- * The budget a `describe` states, which is the one the test runs under.
+ * The first suite budget a file states, which is the file's fallback and not the clock
+ * a given test runs under.
  *
- * `undefined` when the file states none, rather than 0, because 0 is a budget and
- * this is the absence of one.
+ * `undefined` when the file states none, rather than 0, because 0 is a budget and this
+ * is the absence of one.
+ *
+ * ## What this answers, and what it cannot
+ *
+ * It answers "does this file state a suite budget at all", which is the question a
+ * reader with no position in the file can ask. It does **not** answer "what does the
+ * suite this test is written in state": it returns the first `describe` in the file, in
+ * document order. Until v3.159 `budgetInForce` asked it that second question, so a file
+ * with `describe('a', { timeout: 120_000 })` and a second, unbudgeted `describe('b')`
+ * gave every test in `b` a 120 000 ms denominator -- a number it never runs under, whose
+ * verdict was really decided by vitest's 5 000 ms default, and which the floor rule then
+ * could not fire on because the file "stated a budget". That is finding 670;
+ * `suiteBudgetOf` is the function that answers the second question.
  */
 export function suiteBudget(source) {
   const code = stripCommentsAndStrings(source);
@@ -239,20 +252,84 @@ export function suiteBudget(source) {
 }
 
 /**
+ * The suite-wide default a file sets through the `vi` API, which is the fifth spelling.
+ *
+ * `vi.setConfig({ testTimeout: 15_000 })` gives every test in a file a clock without
+ * naming a suite, and `site-proofs.mjs::testBudgetDeclarations` has read it since the
+ * battery needed to price a claimant's own budget. This reader did not, so a file whose
+ * only declaration was that one read as "a file that states no budget" to
+ * `check-test-budgets` and as 15 000 ms to the battery -- two readings of one question,
+ * disagreeing in the direction of a false red, which is the defect this module's own
+ * header says it has paid for three times. That is finding 671.
+ *
+ * It is its own arm rather than a value folded into `statedBudgets`, because the number
+ * a file sets this way is not a bound on one test or one suite: it is the file's own
+ * clock, and the sentence the gate prints has to name it as that.
+ */
+export function setConfigBudget(source) {
+  const code = stripCommentsAndStrings(source);
+  for (const m of code.matchAll(
+    /\bsetConfig\s*\(\s*\{\s*testTimeout\s*:\s*([A-Za-z_$][\w$]*|[0-9][0-9_]*)\s*\}/g,
+  )) {
+    const raw = m[1];
+    if (/^[0-9]/.test(raw)) return Number(raw.replace(/_/g, ''));
+    const resolved = constantValue(code, raw);
+    if (resolved !== undefined) return resolved;
+  }
+  return undefined;
+}
+
+/**
  * The budget the clock that decides a verdict is actually given, and where it is written.
  *
- * The test's own, if it states one, because a `it(name, fn, 120_000)` replaces the
- * suite's number for that test; then the suite's; then the file's largest stated
- * number, which is the best a reader without a resolver can do; then `none`, meaning
- * "inherits the default" and answering the discovery rule rather than the fraction
- * rule. Returning `statedBy` beside the number is what lets the report name the
- * declaration a reader would have to go and argue with.
+ * The order is the language's, not this reader's convenience:
+ *
+ * 1. the number the **test** states, because `it(name, fn, 120_000)` replaces its
+ *    suite's number for that test;
+ * 2. the number the **suite it is written in** states -- the innermost enclosing
+ *    `describe` that states one, because a nested suite that states none inherits;
+ * 3. the number the **file** sets through `vi.setConfig({ testTimeout })`, which is not
+ *    a suite's and not a test's but is still a clock the file asked for;
+ * 4. nothing, meaning "inherits vitest's default", which is the arm the discovery rule
+ *    reads rather than the fraction rule.
+ *
+ * Returning `statedBy` beside the number is what lets the report name the declaration a
+ * reader would have to go and argue with.
+ *
+ * ## The fallbacks are for a title this reader cannot place, and nothing else
+ *
+ * Steps 2 and 3 need to know *which test* the report is talking about, and the only
+ * handle is the printed title: `name` carries the ancestors and the title joined by
+ * spaces. A title the report formats (`it.each([...])('rejects %s', ...)`) or builds
+ * (`vi.setConfig` in one hand, a template in the other) cannot be matched to a call, so
+ * the position is unknown and the reader falls back to the file's first suite budget and
+ * then to its largest stated number. Those two arms are a reader's guesses and the gate
+ * has always printed them as such ("the largest number the file states").
+ *
+ * ## Why this is not a rewording
+ *
+ * Until v3.159 step 2 was `suiteBudget(source)`, the first `describe` in the file. On the
+ * tree it read the same answer for all 262 files, because every file here states its
+ * number on its outer suites -- so the repair changed no verdict, and the shape it
+ * closes is the one that would have: a file whose first suite says 120 000 and whose
+ * second says nothing hid a test at 1 026 ms from the floor rule. That is finding 670,
+ * and the fixture in `timeout-budget.test.ts` is the smallest file that exhibits it.
  */
 export function budgetInForce(source, testName) {
   const own = ownBudget(source, testName);
   if (own !== undefined) return { ms: own, statedBy: 'test' };
+  const placed = testOffset(source, testName);
+  if (placed !== undefined) {
+    const enclosing = suiteBudgetOf(source, placed);
+    if (enclosing !== undefined) return { ms: enclosing, statedBy: 'suite' };
+    const file = setConfigBudget(source);
+    if (file !== undefined) return { ms: file, statedBy: 'file' };
+    return { ms: 0, statedBy: 'none' };
+  }
   const suite = suiteBudget(source);
   if (suite !== undefined) return { ms: suite, statedBy: 'suite' };
+  const file = setConfigBudget(source);
+  if (file !== undefined) return { ms: file, statedBy: 'file' };
   const values = statedBudgets(source);
   if (values.length === 0) return { ms: 0, statedBy: 'none' };
   return { ms: Math.max(...values), statedBy: 'largest' };
@@ -262,6 +339,7 @@ export function budgetInForce(source, testName) {
 export const STATED_BY = {
   test: 'the one that test states',
   suite: 'the one its suite states',
+  file: 'the suite-wide default the file sets through `vi.setConfig`',
   largest: 'the largest number the file states',
 };
 
@@ -362,6 +440,130 @@ function literalText(raw) {
     spelled += text[i];
   }
   return null;
+}
+
+/**
+ * Every `describe` call, the span it owns, and the number it states -- if it states one.
+ *
+ * The span is the whole call, body included, which is what makes "the suite this test is
+ * written in" answerable at all: a test's offset is compared with each call's span, and
+ * the smallest span that contains it is the suite the runner will nest it in. Nothing
+ * here needs the title to match, which is why a suite titled with a template literal --
+ * `describe(`scripts/${GATE} · …`)`, the shape `reader-against-backend.test.ts` uses --
+ * is resolved by position when its title could never be matched by name.
+ *
+ * The number is read only from the arguments *before* the body: `describe('x', () => {
+ * spawnSync(cmd, [], { timeout: RUN_TIMEOUT_MS }) })` holds a `timeout:` that belongs to
+ * a child process, and `typecheck-entrypoint.test.ts` is that shape. Reading the last
+ * argument would hand such a file the child's clock, which is the flattering direction.
+ */
+function describeCalls(source, masked = stripCommentsAndStrings(source)) {
+  const calls = [];
+  for (const found of masked.matchAll(/\b(?:describe|suite)\s*\(/g)) {
+    const open = found.index + found[0].length - 1;
+    const { args, close } = callArguments(masked, open);
+    if (args.length < 2) continue;
+    const title = literalText(source.slice(args[0][0], args[0][1]));
+    let ms;
+    for (let a = 1; a < args.length - 1 && ms === undefined; a += 1) {
+      const option = /^\s*\{[\s\S]*?\btimeout\s*:\s*([A-Za-z_$][\w$]*|[0-9][0-9_]*)/.exec(
+        masked.slice(args[a][0], args[a][1]),
+      );
+      if (option !== null) ms = argumentNumber(masked, option[1]);
+    }
+    calls.push({ title, ms, open, close });
+  }
+  return calls;
+}
+
+/**
+ * The clock of the suite a call at `offset` is written in.
+ *
+ * The **innermost** enclosing `describe` that states a number, because a nested suite
+ * that states none inherits its parent's -- which is what vitest does, and therefore what
+ * the verdict will be decided by. `undefined` means no enclosing suite states one, and
+ * that is a different answer from "states nothing": it is the `none` arm.
+ */
+export function suiteBudgetOf(source, offset) {
+  const masked = stripCommentsAndStrings(source);
+  const holding = describeCalls(source, masked)
+    .filter((call) => offset > call.open && offset < call.close && call.ms !== undefined)
+    .sort((left, right) => left.close - left.open - (right.close - right.open));
+  return holding.length === 0 ? undefined : holding[0].ms;
+}
+
+/**
+ * The titles of the `describe` calls that enclose `offset`, outermost first, or `null`
+ * when one of them is not a literal.
+ *
+ * `null` rather than a partial chain on purpose: a chain with a hole in it cannot be
+ * compared with the name a report prints, and a comparison that ignored the hole would
+ * confirm a position it had not checked.
+ */
+function ancestorTitles(source, masked, offset) {
+  const titles = [];
+  for (const call of describeCalls(source, masked)) {
+    if (offset > call.open && offset < call.close) titles.push(call);
+  }
+  titles.sort((left, right) => right.close - right.open - (left.close - left.open));
+  const spelled = [];
+  for (const call of titles) {
+    if (call.title === null) return null;
+    spelled.push(call.title);
+  }
+  return spelled.join(' ');
+}
+
+/**
+ * Where a test is written, found by the title a report prints.
+ *
+ * ## Two tests of one title, and why the chain decides
+ *
+ * A suffix match on the title alone is ambiguous the moment a file writes `it('a test')`
+ * twice, which this tree does in files of four hundred cases: `ownBudget` can answer such
+ * a file because it takes the smaller of the two numbers, and a *position* cannot be
+ * answered that way -- the first call would be returned for both, and the clock of the
+ * wrong suite would be reported as the one in force. So a candidate is confirmed by the
+ * chain of `describe` titles a report prints in front of the test's own title: it is the
+ * position of that call only if the ancestors spell the same prefix.
+ *
+ * A chain that cannot be spelled -- a `describe` titled with a template literal, the
+ * shape `reader-against-backend.test.ts` uses -- cannot confirm anything, and there the
+ * candidate is taken when it is the **only** one. That is the honest limit: one call with
+ * that title is unambiguous whatever its ancestors are called, and two are not.
+ *
+ * `undefined` means the position is unknown, which is the case for a title the report
+ * formats (`it.each([...])('rejects %s', ...)`): the caller then falls back to the file's
+ * own numbers rather than guessing a suite.
+ */
+export function testOffset(source, testName) {
+  if (typeof testName !== 'string' || testName === '') return undefined;
+  const masked = stripCommentsAndStrings(source);
+  const candidates = [];
+  for (const open of testCallOpeners(masked)) {
+    const { args } = callArguments(masked, open);
+    if (args.length < 2) continue;
+    const title = literalText(source.slice(args[0][0], args[0][1]));
+    if (title === null) continue;
+    const holds =
+      title === testName || testName.endsWith(` ${title}`) || testName.endsWith(` > ${title}`);
+    if (!holds) continue;
+    candidates.push({ title, open });
+  }
+  if (candidates.length === 0) return undefined;
+  let best;
+  for (const candidate of candidates) {
+    const chain = ancestorTitles(source, masked, candidate.open);
+    if (chain === null) continue;
+    const printed = testName
+      .slice(0, testName.length - candidate.title.length)
+      .replace(/[\s>]+$/, '');
+    const spelled = chain.replace(/ /g, ' > ');
+    if (printed !== chain && printed !== spelled) continue;
+    if (best === undefined || candidate.title.length > best.title.length) best = candidate;
+  }
+  if (best !== undefined) return best.open;
+  return candidates.length === 1 ? candidates[0].open : undefined;
 }
 
 /** The number an argument resolves to: a literal, or a name the file declares. */

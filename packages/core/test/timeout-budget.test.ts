@@ -3,9 +3,12 @@ import { describe, expect, it } from 'vitest';
 import {
   STATED_BY,
   budgetInForce,
+  setConfigBudget,
   statedBudgets,
   stripCommentsAndStrings,
   suiteBudget as gateSuite,
+  suiteBudgetOf,
+  testOffset,
 } from '../../../scripts/budget-readings.mjs';
 
 /**
@@ -760,16 +763,33 @@ describe('the budget in force · the test, its suite, the file, or nothing, in t
     expect(budgetInForce(ORDERED, '')).toEqual({ ms: 40_000, statedBy: 'suite' });
   });
 
-  it('takes the largest number a suite-less file states, and names it as the fallback', () => {
+  it('answers none for a test that states nothing, whatever the file declares elsewhere', () => {
+    // A name the file declares is not a clock. `FILE_TIMEOUT_MS` is 30 000 and nothing in
+    // this file runs under it: `it('a')` states 20 000 for itself, and `it('b')` -- which
+    // the reader can place, since its title is one the source spells -- gets the default.
+    // Until v3.159 this answered 30 000 "the largest number the file states" about a test
+    // whose verdict the 5 000 ms default decides, which is finding 670's other half.
     const flat = [
       'const FILE_TIMEOUT_MS = 30_000;',
       "it('a', () => {}, 20_000);",
       "it('b', () => {});",
     ].join('\n');
-    // Largest, not first and not smallest: the three readings are 30 000, 20 000 and 30 000,
-    // and a reader that answered 20 000 would be telling a test it has less room than the
-    // file ever asked for -- the direction that produces a red for a file that is fine.
-    expect(budgetInForce(flat, 'b')).toEqual({ ms: 30_000, statedBy: 'largest' });
+    expect(budgetInForce(flat, 'b')).toEqual({ ms: 0, statedBy: 'none' });
+  });
+
+  it('takes the largest number a suite-less file states, when the title cannot be placed', () => {
+    // The arm survives for the case the position is unknown -- `it.each` prints a title the
+    // source does not spell -- and there the largest number is the best a reader without a
+    // position can do. Largest rather than first: a reader that answered 20 000 would be
+    // telling a test it has less room than the file ever asked for, the direction that
+    // produces a red for a file that is fine.
+    const flat = [
+      'const FILE_TIMEOUT_MS = 30_000;',
+      "describe.each([1])('a suite', () => {",
+      "  it.each([1])('b%s', () => {});",
+      '});',
+    ].join('\n');
+    expect(budgetInForce(flat, 'a suite b1')).toEqual({ ms: 30_000, statedBy: 'largest' });
   });
 
   it('answers none rather than zero, because zero is a budget and this is its absence', () => {
@@ -784,7 +804,10 @@ describe('the budget in force · the test, its suite, the file, or nothing, in t
     // here and not there prints `undefined ms, undefined, which is 0.94 of it`. The three
     // keys are compared as a set rather than one by one, because the defect is a *new* arm
     // whose sentence was never written.
-    expect(Object.keys(STATED_BY).sort()).toEqual(['largest', 'suite', 'test']);
+    // Four keys since v3.159: the fifth spelling a file can use is a clock no suite and
+    // no test states, and finding 671 is what a table without it cost -- the gate said
+    // "states no budget" about a file that had set one through `vi.setConfig`.
+    expect(Object.keys(STATED_BY).sort()).toEqual(['file', 'largest', 'suite', 'test']);
     // The fourth arm is deliberately absent, and that is only safe while the gate answers it
     // before the index. This assertion is the join: the table may lose a row it does not
     // need only as long as the branch that says the sentence exists, and it is written as a
@@ -795,5 +818,130 @@ describe('the budget in force · the test, its suite, the file, or nothing, in t
       'STATED_BY has no sentence for a file that states no budget, so the gate must write its own ' +
         'before it indexes the table -- and it does not',
     ).toBe(true);
+  });
+});
+
+/**
+ * The suite a test is written in, which is not the first suite in the file.
+ *
+ * ## The file this was found in
+ *
+ * `gate-steps.test.ts` states `{ timeout: 4_000 }` on **one** of its twenty-two
+ * top-level suites, and its slowest case lives in another one. v3.158's reader answered
+ * `{ ms: 4_000, statedBy: 'suite' }` for that case -- "the one its suite states" -- when
+ * the suite it is written in states nothing and the clock deciding its verdict is
+ * vitest's 5 000 ms default. The number was wrong in the direction that hides: a file
+ * with `describe('a big', { timeout: 120_000 })` followed by an unbudgeted
+ * `describe('b')` excused every test in `b` with `half of 120 000`, and the floor rule
+ * could not fire either, because the file "stated a budget".
+ *
+ * ## Why the fixtures are nested as well as adjacent
+ *
+ * A resolver that read the *last* number before the test, or the file's largest, would
+ * pass the adjacency case and fail the nested one. Both are written: the number is the
+ * innermost enclosing suite's, because that is what a nested suite with no number of its
+ * own inherits, and a `describe` that states nothing is not a boundary.
+ */
+describe('the suite a test is written in, and the suite that merely comes first', () => {
+  /** One suite that states 120 000, and a sibling that states nothing. */
+  const SIBLINGS = [
+    "describe('a big suite', { timeout: 120_000 }, () => {",
+    "  it('slow', () => {});",
+    '});',
+    "describe('an unbudgeted suite', () => {",
+    "  it('unwatched', () => {});",
+    '});',
+  ].join('\n');
+
+  it('measures a test in a sibling suite by that suite, not by the one before it', () => {
+    // The pair is the finding: under v3.158 both of these answered 120 000.
+    expect(budgetInForce(SIBLINGS, 'a big suite slow')).toEqual({ ms: 120_000, statedBy: 'suite' });
+    expect(budgetInForce(SIBLINGS, 'an unbudgeted suite unwatched')).toEqual({ ms: 0, statedBy: 'none' });
+  });
+
+  it('inherits from the nearest ancestor that states a number, which is what vitest does', () => {
+    // Two tests of one title, and the chain a report prints is the only thing that says
+    // which is which: this is the case a suffix match on the title alone gets wrong.
+    const nested = [
+      "describe('outer', { timeout: 60_000 }, () => {",
+      "  describe('inner', () => {",
+      "    it('a test', () => {});",
+      '  });',
+      "  describe('tighter', { timeout: 10_000 }, () => {",
+      "    it('a test', () => {});",
+      '  });',
+      '});',
+    ].join('\n');
+    expect(budgetInForce(nested, 'outer inner a test')).toEqual({ ms: 60_000, statedBy: 'suite' });
+    expect(budgetInForce(nested, 'outer tighter a test')).toEqual({ ms: 10_000, statedBy: 'suite' });
+    // And a title that is not one of the two, but ends the same way: `a test` is a suffix
+    // of `another a test`, so the chain has to refuse it rather than take it.
+    expect(testOffset(nested, 'nobody a test')).toBeUndefined();
+  });
+
+  it('answers the innermost suite that states a number, which is the clock vitest inherits', () => {
+    // The resolver on its own, so the reader's answer can be argued with where it is
+    // computed rather than through a sentence: a suite that states nothing is not a
+    // boundary, and the boundary is the nearest ancestor that does state one.
+    const nested = [
+      "describe('outer', { timeout: 60_000 }, () => {",
+      "  describe('inner', () => {",
+      "    it('a test', () => {});",
+      '  });',
+      '});',
+    ].join('\n');
+    const at = testOffset(nested, 'outer inner a test');
+    expect(at).toBeTypeOf('number');
+    expect(suiteBudgetOf(nested, at)).toBe(60_000);
+    // An offset outside every `describe` -- the top level of a file -- has no suite to
+    // inherit from, and `undefined` says that rather than 0, which is a clock.
+    expect(suiteBudgetOf(nested, 0)).toBeUndefined();
+  });
+
+  it('does not take a number out of the body of a suite, only out of its arguments', () => {
+    // `spawnSync(…, { timeout: RUN_MS })` inside a body is a child's clock. Reading it as
+    // the suite's is the flattering direction, and `typecheck-entrypoint.test.ts` is the
+    // file that shape belongs to.
+    const source = [
+      'const RUN_MS = 180_000;',
+      "describe('a suite', () => {",
+      '  spawnSync("node", [], { timeout: RUN_MS });',
+      "  it('a test', () => {});",
+      '});',
+    ].join('\n');
+    expect(budgetInForce(source, 'a suite a test')).toEqual({ ms: 0, statedBy: 'none' });
+  });
+
+  it('reads the suite-wide default a file sets through the vi API, which was the fifth spelling', () => {
+    // `site-proofs.mjs` has read this spelling since the battery needed it, and this
+    // reader did not, so a file whose only declaration is this one read as "states no
+    // budget" here and as 15 000 ms there -- finding 671.
+    const source = ["vi.setConfig({ testTimeout: 15_000 });", "it('a test', () => {});"].join('\n');
+    expect(budgetInForce(source, 'a test')).toEqual({ ms: 15_000, statedBy: 'file' });
+    // The arm is not a guess about the largest number: a file that sets 15 000 and then
+    // states 60 000 on one test answers 15 000 for a test outside that one, because
+    // 60 000 was never the clock of anything else in the file.
+    const both = [
+      'vi.setConfig({ testTimeout: 15_000 });',
+      "it('a heavy test', () => {}, 60_000);",
+      "it('a test', () => {});",
+    ].join('\n');
+    expect(budgetInForce(both, 'a test')).toEqual({ ms: 15_000, statedBy: 'file' });
+    expect(setConfigBudget('const T_MS = 9_000;\nvi.setConfig({ testTimeout: T_MS });')).toBe(9_000);
+    // A name the file does not declare is not a number, and 0 here would be a clock.
+    expect(setConfigBudget('vi.setConfig({ testTimeout: UNDECLARED_MS });')).toBeUndefined();
+  });
+
+  it('answers nothing for a title it cannot place, and falls back to the file', () => {
+    // `it.each` prints a title the source does not spell, so there is no position to
+    // resolve. The fallback is the file's first suite number, which is what the gate has
+    // always printed as "the one its suite states" -- a reader's guess, named as one.
+    const formatted = [
+      "describe('a suite', { timeout: 40_000 }, () => {",
+      "  it('rejects %s', () => {});",
+      '});',
+    ].join('\n');
+    expect(testOffset(formatted, 'a suite rejects one')).toBeUndefined();
+    expect(budgetInForce(formatted, 'a suite rejects one')).toEqual({ ms: 40_000, statedBy: 'suite' });
   });
 });

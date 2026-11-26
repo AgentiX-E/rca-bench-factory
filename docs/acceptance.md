@@ -1186,6 +1186,61 @@ one round.
   claimant with one claim and two seconds of runtime -- it costs nothing when it misses, and a
   threshold would be a number nothing measures.
 
+## A budget is read where the test is written
+
+`check-test-budgets` compares a file's slowest test with the budget that decides its verdict, and until v3.159 the
+second number of that pair was read by a function documented as *"the budget a `describe` states, which is the one
+the test runs under"* and implemented as the **first** `describe` in the file. The claim this section makes is
+narrower than "the numbers were right": they were right for every file whose first suite is the one that matters,
+which is all but two in this tree.
+
+- **The number published is the one in force where the test is written.** The test's own timeout, then the
+  **innermost** enclosing `describe` that states one -- a nested suite that states none is not a boundary, because
+  vitest's inheritance is not a boundary either -- then the file's own default from `vi.setConfig({ testTimeout })`,
+  then nothing. (v3.159)
+- **Two files read a number their test never ran under.** `gate-steps.test.ts` has 21 top-level suites, one of which
+  states 4 000 ms; its slowest test (212 ms) is in another and was reported as `4 000 ms, the one its suite states`.
+  `probe-built-module-guards.test.ts` states 30 000 ms on two tests positionally and on no suite; its slowest test
+  (317 ms) was reported as `30 000 ms, the largest number the file states`. Neither verdict was wrong -- both are far
+  under the 1 000 ms floor -- and the shape that hides is the one the gate exists for: a first suite stating 120 000
+  with a 1 026 ms test in a second suite that states nothing, which is `ci-budget.test.ts` on run `45841748590`.
+- **The repair changes 2 of 262 readings and no verdict.** Both files now answer `none`, which is the arm that asks
+  for a declaration the next time one of their tests reaches the floor.
+- **A title is not an address, so a candidate is confirmed by its chain.** A file that writes `it('a test')` twice
+  has two positions one title cannot tell apart; a position is taken only when the `describe` titles a report prints
+  in front of the test spell the same prefix. A chain that cannot be spelled -- a suite titled with a template
+  literal, the shape `reader-against-backend.test.ts` uses -- confirms nothing, and there the candidate is taken only
+  when it is the single one that matches, which is the limit of what a reader with no parser can know.
+- **Two sentences had to move with the number.** The last arm printed `the file states no budget`, which is false
+  about a file that states one on a sibling suite; it now prints `neither the test nor the suite it is written in
+  states a budget`, true in both shapes. And the summary's `N state a budget` counted readings rather than files, so
+  a file stating four numbers could be counted as zero; it counts the source now -- **44** files, **21** of them with
+  a test at or above 1 000 ms.
+- **The fifth spelling.** `vi.setConfig({ testTimeout: 15_000 })` is a clock no suite and no test states.
+  `site-proofs.mjs::testBudgetDeclarations` has read it since v3.155 because the gate-test battery has to price a
+  claimant's budget; `budget-readings.mjs` did not, so a file whose only declaration was that one priced at 15 000 ms
+  to the battery and as *states no budget* to this gate -- the loud direction, where the floor rule demands the
+  budget the file already stated. It is now an arm of its own, `file`, with its own sentence in `STATED_BY`, because
+  the number is neither a test's nor a suite's. No file in this tree uses the spelling today: the defect is latent
+  and the case that pins it drives a one-line fixture. (v3.159, finding 671)
+- **Falsified by** restoring `suiteBudget(source)` in `budgetInForce`, which turns three cases red: the sibling
+  fixture (`{ ms: 120_000, statedBy: 'suite' }` where the test's suite states nothing), the nested one, and the
+  end-to-end fixture in `check-test-budgets.test.ts` where a 1 026 ms test in an unbudgeted second suite is **green**
+  under the old reader. Deleting the `setConfig` arm turns that case red (`expected { ms: 0, statedBy: 'none' } to
+  deeply equal { ms: 15_000, statedBy: 'file' }`), and deleting its sentence from `STATED_BY` turns the arm-set case red
+  (`expected [ 'largest', 'suite', 'test' ] to deeply equal [ 'file', 'largest', 'suite', 'test' ]`) -- the two
+  assertions that keep an arm and the sentence it prints together.
+- **A guard's key is a file *and* a line.** `check-open-list` found the newest round's record with
+  `records.filter((one) => one.owner.line === newestRound.line)`, and the corpus is one document read across 261 files --
+  so `v3.159`'s heading at line 1,461 of `volume-22.md` matched `v2.50`'s at 1,461 of `volume-05.md`, and the guard judged
+  two of `v2.50`'s residuals as this round's while never judging this round's own record. It is the same defect as
+  finding 670's, one kind over: a position without its document is not a position. The key now carries the file, and the
+  falsification is the shipped corpus -- restoring the line-only filter reproduces both messages. (v3.159, finding 672)
+- **What this does not claim.** That a file was mis-verdicted: no test in the guilty shape sits near the floor, so
+  this is a hole found by reading a function against its own comment rather than by a red run. Nor that resolution by
+  title is complete: a formatted title (`it.each`) still has no position, and the fallbacks it lands on are named as
+  fallbacks in the sentence the gate prints.
+
 ## The two directions of a budget change
 
 `R6` compares the ceiling a recording was taken under with the ceiling `ci.yml` declares,

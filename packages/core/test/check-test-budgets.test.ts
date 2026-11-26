@@ -130,8 +130,42 @@ describe('check-test-budgets · the reader', { timeout: SUITE_BUDGET_MS }, () =>
     const report = join(dir, 'report.json');
     writeFileSync(report, reportOf([{ file, durations: [1_000], title: 'the test that will decide it' }]));
     const { status, out } = run('--report', report);
-    expect(out).toContain("the file states no budget, so its verdict is decided by vitest's 5000 ms default");
+    expect(out).toContain(
+      "neither the test nor the suite it is written in states a budget, so its verdict is decided by vitest's 5000 ms default",
+    );
     expect(out).toContain("'the test that will decide it 0' is the test that will decide it");
+    expect(status).toBe(1);
+  });
+
+  it('fails a file whose unbudgeted suite holds the slow test, which a sibling\'s number excused', () => {
+    // Finding 670, end to end. `gate-steps.test.ts` is this file: one budgeted suite
+    // among twenty-two, and the slowest case in another one. Until v3.159 the reader
+    // answered "the one its suite states" with the *first* suite's number, so this
+    // fixture was green at 24x the clock the runner would have used.
+    const source = [
+      'const SUITE_BUDGET_MS = 30_000;',
+      "describe('a big suite', { timeout: SUITE_BUDGET_MS }, () => {",
+      "  it('a test', () => {});",
+      '});',
+      "describe('an unbudgeted suite', () => {",
+      "  it('a slow test', () => {});",
+      '});',
+    ].join('\n');
+    const dir = scratch();
+    const file = fixture(dir, 'k.test.ts', source);
+    const report = join(dir, 'report.json');
+    writeFileSync(
+      report,
+      reportOf([
+        { file, durations: [100, 1_026], names: ['a big suite a test', 'an unbudgeted suite a slow test'] },
+      ]),
+    );
+    const { status, out } = run('--report', report);
+    expect(out).toContain('neither the test nor the suite it is written in states a budget');
+    expect(out).toContain("'an unbudgeted suite a slow test' is the test that will decide it");
+    // And the file is still counted as one that states a budget, which is why the old
+    // sentence ("the file states no budget") would have been false here.
+    expect(out).toContain('1 state a budget');
     expect(status).toBe(1);
   });
 
@@ -303,7 +337,12 @@ describe('check-test-budgets · the reader', { timeout: SUITE_BUDGET_MS }, () =>
     expect(status).toBe(1);
   });
 
-  it('names the largest number in the file when neither the test nor its suite states one', () => {
+  it('does not read a child process\'s timeout as the file\'s clock', () => {
+    // `RUN_TIMEOUT_MS` bounds a gate this file spawns, not a test it runs. The suite states
+    // nothing, so the slow test is decided by the 5 000 ms default and the answer is `none`.
+    // Until v3.159 this fixture printed "against a stated budget of 180000 ms, the largest
+    // number the file states" -- a three-minute clock nothing in the file had, which is the
+    // arm finding 670 narrowed.
     const dir = scratch();
     const source = [
       'const RUN_TIMEOUT_MS = 180_000;',
@@ -314,6 +353,25 @@ describe('check-test-budgets · the reader', { timeout: SUITE_BUDGET_MS }, () =>
     const file = fixture(dir, 'k.test.ts', source);
     const report = join(dir, 'report.json');
     writeFileSync(report, reportOf([{ file, durations: [100_000], names: ['a suite spawns'] }]));
+    const { status, out } = run('--report', report);
+    expect(out).toContain('neither the test nor the suite it is written in states a budget');
+    expect(out).toContain("'a suite spawns' is the test that will decide it");
+    expect(status).toBe(1);
+  });
+
+  it('names the largest number in the file when the title cannot be placed', () => {
+    // The arm survives for the position the reader cannot resolve: a `describe.each` title
+    // is formatted at run time, so nothing in the source spells the name the report prints.
+    const dir = scratch();
+    const source = [
+      'const RUN_TIMEOUT_MS = 180_000;',
+      "describe.each([1])('a suite', () => {",
+      "  it.each([1])('spawns%s', () => {});",
+      '});',
+    ].join('\n');
+    const file = fixture(dir, 'm.test.ts', source);
+    const report = join(dir, 'report.json');
+    writeFileSync(report, reportOf([{ file, durations: [100_000], names: ['a suite spawns1'] }]));
     const { status, out } = run('--report', report);
     expect(out).toContain('against a stated budget of 180000 ms, the largest number the file states');
     expect(status).toBe(1);
@@ -485,7 +543,7 @@ describe('check-test-budgets · the scanner reads code, and only code', { timeou
     const report = join(dir, 'report.json');
     writeFileSync(report, reportOf([{ file, durations: [2_000] }]));
     const { status, out } = run('--report', report);
-    expect(out).toContain('the file states no budget');
+    expect(out).toContain('neither the test nor the suite it is written in states a budget');
     expect(out).toContain('0 state a budget');
     expect(status).toBe(1);
   });

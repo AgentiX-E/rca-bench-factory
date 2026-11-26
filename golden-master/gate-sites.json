@@ -381,7 +381,7 @@
     },
     {
       "script": "scripts/check-open-list.mjs",
-      "line": 2089,
+      "line": 2095,
       "condition": "check() !== 0",
       "diagnostic": "check-open-list: FAILED",
       "status": "proved",
@@ -475,14 +475,14 @@
     },
     {
       "script": "scripts/check-test-budgets.mjs",
-      "line": 105,
+      "line": 116,
       "diagnostic": "usage: check-test-budgets.mjs --report <path>[,<path>] [--floor <ms>] [--share <n>]",
       "status": "proved",
       "provedBy": "packages/core/test/check-test-budgets.test.ts"
     },
     {
       "script": "scripts/check-test-budgets.mjs",
-      "line": 233,
+      "line": 250,
       "condition": "problems.length > 0",
       "diagnostic": "check-test-budgets: FAILED (${problems.length} problem(s) across ${files.length} file(s);",
       "status": "proved",
@@ -490,7 +490,7 @@
     },
     {
       "script": "scripts/check-test-budgets.mjs",
-      "line": 244,
+      "line": 261,
       "condition": "files.length === 0 || tests === 0",
       "diagnostic": "check-test-budgets: FAILED (the report(s) named no test at all, so nothing was measured and this is",
       "status": "proved",

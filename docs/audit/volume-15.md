@@ -1102,3 +1102,128 @@ starts, and that conclusion did not wait for the runner. What is claimed is narr
 line that exists to name the lever printed `0.0 s` in place of `unmeasured` for two readings, and a summary that
 prints a zero where it means "could not read it" is the same defect as a gate that passes on a number it never
 measured -- a sentence true of the file and silent about the tree.
+
+## Finding 670 — the suite a test is written in was read as the first suite in the file
+
+`check-test-budgets` compares a file's slowest test with the budget **in force where the test is written**, and its
+reader put four numbers in order: the test's own, its suite's, the file's largest stated number, and nothing. The
+second of those was `suiteBudget(source)`, whose doc comment read *"The budget a `describe` states, which is the one
+the test runs under"* and whose body returned **the first `describe` in the file**, in document order, with no
+knowledge of where the test is. That sentence was true of the tests in the first suite and of no others.
+
+Two files in this tree are the shape, and neither was red:
+
+| file | top-level suites | suites stating a clock | its slowest test | the reading before | what decides that test's verdict |
+| --- | --- | --- | --- | --- | --- |
+| `gate-steps.test.ts` | 21 | 1 (4 000 ms) | 212 ms | `4 000 ms, the one its suite states` | vitest's 5 000 ms default -- the suite it is written in states nothing |
+| `probe-built-module-guards.test.ts` | 2 | 0 | 317 ms | `30 000 ms, the largest number the file states` | the default -- the 30 000 ms is two tests' own positional budget |
+
+Both verdicts are unchanged by the repair, because both tests are far under the 1 000 ms floor. What was wrong is
+the reading and the sentence: a number no test runs under, printed as "the one its suite states". The direction that
+matters is the other one, and it is the one this gate exists for: a file whose **first** suite states 120 000 and
+whose second states nothing had every test in the second measured against 120 000 -- so a 1 026 ms test read
+`0.01 of 120 000` and passed, and the floor rule could not fire either, because the file "states a budget". That is
+exactly the shape `ci-budget.test.ts` was in when this gate named it on run `45841748590`, and the declaration that
+answered the run was then read file-wide by the same defect.
+
+**The repair resolves the position instead of guessing it.** `testOffset` finds the `it`/`test` call a report means,
+`suiteBudgetOf` returns the **innermost** enclosing `describe` that states a number -- the one vitest's inheritance
+would give the test, since a nested suite without a number is not a boundary -- and `budgetInForce` asks those two
+before it asks the file. Two details are load-bearing because a title is not an address: a file that writes
+`it('a test')` twice has two positions the title cannot tell apart, so a candidate is confirmed only when the
+`describe` titles a report prints in front of it spell the same prefix; and a suite titled with a template literal
+(`describe(`` `scripts/${GATE} · …` ``)`, the shape `reader-against-backend.test.ts` uses) cannot confirm anything,
+so a candidate is taken when it is the **only** one, which is the honest limit of what the reader can know.
+
+**The sentence changed with the reading.** The last arm printed `the file states no budget`, which is false about a
+file that states one on a sibling suite -- and after the repair that file answers `none`. It prints
+`neither the test nor the suite it is written in states a budget`, which is true in both shapes. The summary's own
+counter moved with it: `N state a budget` counted *readings* rather than files, so a file that states four numbers
+would have been counted as zero. On this tree the repair changes the reading of **2 of 262** files and the verdict
+of none, and the counter reads **44** files stating a budget, of which **21** hold a test at or above 1 000 ms.
+
+**Falsification.** The `SIBLINGS` fixture in `timeout-budget.test.ts` is the smallest file that exhibits the defect
+-- one suite stating 120 000, a sibling stating nothing, one test in each -- and under the old line its second
+assertion reads `{ ms: 120_000, statedBy: 'suite' }` where it now reads `{ ms: 0, statedBy: 'none' }`. Two more
+cases fall with it: the nested one, where a `describe` that states nothing must not become a boundary, and the
+end-to-end one in `check-test-budgets.test.ts`, where a fixture with a budgeted first suite and a 1 026 ms test in
+an unbudgeted second is **green** under the old reader and red under this one. Restoring the old line turns those
+three red; the file is restored byte-identical (`md5`).
+
+**What this does not claim.** That any file was mis-verdicted. No test in this tree sits in the guilty shape with a
+cost near the floor -- the two files that do sit in it are 212 and 317 ms -- so this is a hole found by reading the
+code against its own comment, not by a red run. What is claimed is narrower: the number the gate published as the
+clock of a test was, for 2 of 262 files, a number that test never ran under, and the rule that would have caught the
+next such file could not fire because the file stated a budget somewhere else.
+
+## Finding 671 — two readers of one question, and the fifth spelling only one of them knew
+
+`budget-readings.mjs` opens with a paragraph about spellings: a reader that knows fewer of them "fails in the
+direction of a false red and this repository has paid for that three times", naming `reader-against-backend.test.ts`
+(`{ timeout: SUITE_BUDGET_MS }`), `fetch-official.test.ts` (`300_000` positionally) and `check-cli-reference.test.ts`
+(an inline object on each of six tests). It then lists four spellings. There are five: `vi.setConfig({ testTimeout:
+15_000 })` gives every test in a file a clock without naming a suite, and `site-proofs.mjs::testBudgetDeclarations` --
+the reader that prices a claimant's own budget for the gate-test battery -- has read it since v3.155.
+
+So the tree held two readers of one question. A file whose only declaration is that one read as **15 000 ms** to the
+battery and as **"states no budget"** to `check-test-budgets`, and the second reading is the loud one: the floor
+rule fires on a file with a test at 1 000 ms, demands a budget, and the budget it demands is already there. No file
+in this tree uses the spelling today -- the case that pins it drives a one-line fixture -- which makes this a latent
+defect of exactly the kind the module's own header records three times.
+
+**The repair is the fifth arm.** `setConfigBudget` reads `setConfig({ testTimeout: … })`, resolving a name against
+the file's `const` the way the other four do, and `budgetInForce` consults it between the suite and the fallbacks.
+It is its own arm rather than a value folded into `statedBudgets`, because the number a file sets this way is not a
+bound on one test or one suite -- it is the file's own clock, and `STATED_BY` now has a fourth sentence for it:
+*the suite-wide default the file sets through `vi.setConfig`*. The gate's `STATED_BY` set assertion is what keeps
+that honest: it compares the arm set as a set, so an arm with no sentence fails a test rather than printing
+`undefined ms, undefined, which is 0.94 of it`.
+
+**Falsification.** Four cases: the spelling read as a literal, read as a name, a name the file does not declare
+(which must answer `undefined`, not `0`), and a file that sets 15 000 while one test states 60 000 -- where the
+answer must stay 15 000, because 60 000 was never the clock of anything but that test. Deleting the arm turns
+that case red -- `expected { ms: 0, statedBy: 'none' } to deeply equal { ms: 15_000, statedBy: 'file' }` -- and deleting
+its sentence from `STATED_BY` turns the arm-set case red instead (`expected [ 'largest', 'suite', 'test' ] to deeply
+equal [ 'file', 'largest', 'suite', 'test' ]`). The pair is what keeps an arm and the sentence it prints together: the
+gate indexes that table without a guard, so an arm with no sentence prints `undefined ms, undefined, which is 0.94 of
+it`, and an arm whose test was deleted is the way that happens.
+
+## Finding 672 — a heading's line number is not its file, so the newest round judged another volume's record
+
+`check-open-list` decides which record is the **newest round's** by taking the highest round it can see and then
+keeping the records whose owner is that round:
+
+```js
+const sameHeading = records.filter((one) => one.owner.line === newestRound.line);
+```
+
+`owner` is the round heading a `### Left open` sits under, and `line` is its index **within its own file** -- the
+corpus is one document read across 261 files, so every file has a line 1,461. `v3.159`'s heading is at line 1,461 of
+`volume-22.md` and `v2.50`'s is at line 1,461 of `volume-05.md`, and the filter -- which compared the line and
+nothing else -- handed this arm `v2.50`'s record.
+
+The verdict was two problems that no round had written:
+
+```
+docs/progress/volume-05.md: the v2.50 record names a residual the list does not hold -- "**A path built by one module
+and passed to another is still " appears in no entry of `## Open` or `## Closed` ...
+```
+
+and the round whose record the arm was asked about was never judged at all -- its own line, `the v3.159 record's 1
+row(s) were judged`, was replaced by `the v2.50 record's 0 row(s) were judged`. Both statements are about a document,
+and the document they were about was the wrong one.
+
+**The repair is the file in the key.** `records.filter((one) => one.label === newestRound.label && one.owner.line ===
+newestRound.line)`, where both labels are the file the heading was read from -- the round object has carried `label`
+since it was built, and the filter simply did not ask for it. The corpus went from two problems and a wrong subject to
+`the v3.159 record's 1 row(s) were judged, and every one of them matches an entry on its first 20 characters`.
+
+**Falsification, and the gap it names.** Restoring the line-only filter reproduces both messages on the shipped tree,
+which is the state this round found: that is the falsification, and it is not a fixture. A case cannot hold it,
+because a collision needs two files with a heading at one index and this guard reads its volumes from the shipped tree
+-- a fixture would need a switch for the volume directory that no case in `check-open-list.test.ts` has. So the line is
+covered by the shipped-corpus case and the *collision* is not, which is stated here rather than counted as covered.
+
+**What this does not claim.** That a reader of the gate would have noticed from the numbers: the sentence it printed
+named `v2.50` and the round it was judging was `v3.159`, and the only reason this was caught is that the round writing
+itself up was the round whose heading made the collision true.

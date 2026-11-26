@@ -1979,8 +1979,14 @@ function check() {
   // ran twice; keyed by heading, it refuses what it means -- two records under one heading. The
   // scope stays the newest round: a frozen round's second section would be a demand for a repair
   // the corpus forbids. Measured at v3.116, no heading holds two.
+  // The **file** and the line, because a line number is not an address on its own: `v3.159`'s heading sits
+  // at line 1461 of `volume-22.md` and `v2.50`'s at 1461 of `volume-05.md`, so filtering by line alone handed
+  // this arm a record from another volume -- it judged two of `v2.50`'s residuals as the newest round's, and
+  // never looked at the round whose record it was asked about. That is finding 672.
   const sameHeading =
-    newestRound === null ? [] : records.filter((one) => one.owner.line === newestRound.line);
+    newestRound === null
+      ? []
+      : records.filter((one) => one.label === newestRound.label && one.owner.line === newestRound.line);
   if (sameHeading.length > 1) {
     problems.push(
       `${sameHeading[1].label}: the ${newestRound.round} round wrote ${String(sameHeading.length)} records ` +

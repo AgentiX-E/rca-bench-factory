@@ -1451,9 +1451,69 @@ ledger will keep saying about it is which item is largest on every reading: the 
 | one claim, two forms | `measure-ci-baseline.mjs:1043` claimed by `ci-budget.test.ts`: **1,375 ms** aimed at its witness, **5,270 ms** against its whole file, **7,868 ms** for the file's baseline |
 | what the previous table priced | 68 claimants, **2,632.1 s** (**2,180.2 s** mutant, **451.9 s** baseline), of which `ci-budget.test.ts` (**620.8 s**, 30 claims) and `publish.test.ts` (**565.0 s**, 29 claims) were **45%** -- and readings 53/54 read the same partition 0.1% and then 30% apart |
 | the declarations run 45841748590 asked for | **1 334 ms** and **1 026 ms** on the runner against **301 ms** and **133 ms** here -- **4.4x** and **7.7x**, the multiplier of a box shared with three other workers. `SUITE_BUDGET_MS = 10 000` is now stated on the **3** suites of `verify-sites-are-sensitive.test.ts` that spawn the shipped gate and on all **27** top-level suites of `ci-budget.test.ts`, because the gate holds a file to *half* its declaration and **27x** -- the largest multiplier this tree has measured for a process-spawning file -- is what turns 301 ms into 8 127 ms; Test lines **122,574 -> 122,621**, all of the difference a declaration |
-| `core` test suite | **262 files, 7,100 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **266 files, 7,287 tests passed** (as of this commit) |
+| `core` test suite | **262 files, 7,100 tests passed** (at v3.158) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.158) |
+| repo test suite | **266 files, 7,287 tests passed** (at v3.158) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
 | mutation | **7 groups, 7 red, 0 survivors**: the aim passed unescaped, an aim trusted without asking whether *the aimed test* failed, the witness read from `fullName`, the table written with no witnesses, the table read only by a shard, a missed aim not counted, the aim not passed to the run -- each restored to an identical `md5` |
 | new tests | **7,082 -> 7,100, +18**: the failed-test reader (the title, the pending tests after a bail, an empty name, a report it cannot parse), an aim that holds and the escaped pattern on its argv, an aim that misses and is measured against the whole file, the witness written into the table, and the two artifacts cases (a name for every claim; a name that belongs to the file that makes the claim), plus the three the round's own separator found: a published count written `7,094`, a bare count written the same way, and two rows with separators that grew where the digit-by-digit reader said they fell, and finding 668's two halves: a file that stops at an earlier red while bailing is credited from the whole-file run, and one that records nothing however it is run stays refused |
+
+## v3.159 — a budget is read where the test is written
+
+The round before this one ended with two declarations and the sentence `check-test-budgets` printed for a file that
+states no budget. Reading that gate's reader against its own comment found two defects, both latent, both in the
+question "what clock is this test given". `suiteBudget` was documented as *"the budget a `describe` states, which is
+the one the test runs under"* and returned the **first** `describe` in the file -- so a test written in an unbudgeted
+suite of a file whose first suite states 120 000 was measured against 120 000, and the floor rule could not fire on
+it either, because the file "stated a budget". Two files in this tree are that shape: `gate-steps.test.ts` (21
+top-level suites, one stating 4 000 ms, and its slowest test 212 ms in another) read `4 000 ms, the one its suite
+states`, and `probe-built-module-guards.test.ts` (30 000 ms on two tests positionally, on no suite, slowest 317 ms)
+read `30 000 ms, the largest number the file states`. Neither verdict was wrong; both sentences were.
+
+The second defect is the module's own recurring one. Its header lists four spellings and says a reader that knows
+fewer of them "fails in the direction of a false red and this repository has paid for that three times". There are
+five: `vi.setConfig({ testTimeout: 15_000 })`, which `site-proofs.mjs::testBudgetDeclarations` has read since v3.155
+because the gate-test battery has to price a claimant's budget. A file whose only declaration was that one priced at
+15 000 ms to the battery and as *states no budget* to this gate -- a false red manufactured by two readers of one
+question. No file uses the spelling today, which is what makes it a finding rather than a red run.
+
+The repair resolves the position instead of guessing it -- `testOffset` by title and, where a title appears twice, by
+the chain of `describe` titles a report prints in front of it; `suiteBudgetOf` innermost; `setConfigBudget` as an arm
+of its own with its own sentence -- and the two sentences that were false are rewritten: the last arm now says
+`neither the test nor the suite it is written in states a budget`, and the summary's counter counts files rather than
+readings. **2 of 262** readings change on this tree and **0** verdicts. The cost table was rebuilt a fourth time
+because its keys are `file:line` and this round moved three of them.
+
+| | |
+| --- | --- |
+### Readings
+
+> Ledger for `v3.159`.
+
+| item | value |
+| --- | --- |
+| the reading before the repair | `4 000 ms, the one its suite states` for a **212 ms** test in `gate-steps.test.ts` -- 21 top-level suites, **1** stating a timeout -- and `30 000 ms, the largest number the file states` for a **317 ms** test in `probe-built-module-guards.test.ts`, whose two suites state neither |
+| the reading after it | both `{ ms: 0, statedBy: 'none' }`: **2 of 262** readings change and **0** verdicts, because both tests are far under the 1 000 ms floor -- and the arm they now take is the one that asks for a declaration the next time one of them reaches it |
+| the sentence and the counter that had to move with it | `the file states no budget` became `neither the test nor the suite it is written in states a budget`, because after the repair a file can state one on a sibling; `N state a budget` counted readings rather than files and now counts the source -- **44**, of which **21** hold a test at or above 1 000 ms |
+| the fifth spelling | `vi.setConfig({ testTimeout })` was read by `site-proofs.mjs` and by nothing else, so a file declaring only that priced at **15 000 ms** to the gate-test battery and as *states no budget* here, which is the loud direction: the floor rule demanded the budget the file already stated. Latent -- no file in the tree uses it -- and now the `file` arm with its own sentence |
+| the cost table, rebuilt | `--costs` twice, because a table keyed `file:line` moves when a line moves and this round moved ten: 68 claimants, 256 claims, **746.2 s** of child time (**439.7 s** of mutant runs inside **3.2 min**), dearest `ci-budget.test.ts` at **16%** |
+| the tree, per file | `check-test-budgets` reads 262 files and 7,109 tests: **44** state a budget, **11** of them on the test that is slowest, **20** hold a test at or above 1 000 ms, and the closest to its budget is `step-process.test.ts` at **43%** of 8 000 ms |
+| the arm that judged another volume's record (672) | `check-open-list` found the newest round's record by line alone, and `v3.159`'s heading sits at the same index in `volume-22.md` as `v2.50`'s in `volume-05.md`: it printed two of `v2.50`'s residuals as this round's and never judged this round's record. The key is the pair (file, line); the shipped corpus is the falsification, and no fixture can build a collision because the volumes are read from the tree |
+| `core` test suite | **262 files, 7,109 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **266 files, 7,296 tests passed** (as of this commit) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
+| new tests | **7,100 -> 7,109, +9**: the sibling fixture and the nested inheritance with two tests of one title, the refusal to read a `timeout:` out of a suite's body, the `vi.setConfig` arm four ways, the unplaceable-title fallback, `suiteBudgetOf` on its own, and three in `check-test-budgets`: the unbudgeted sibling end to end, the child-timeout fixture, and the `describe.each` title no source spells |
+| CI | run `45847128112` on `0394301`: **9 of 9 jobs success**, **455 s** of wall clock -- the round's first commit, the one that declared the two budgets run `45841748590` named, **8 of 9 -> 9 of 9**. Longest job `gates-audit` at **451 s**, then `batteries` **439 s**; the divided pair read **99 / 182 s** (**45.6%** apart, the first half lighter for the first time in five readings) against a table that makes it 0.0%, and the gate-test battery inside `batteries` cost **231 s** |
+
+### Left open
+
+- `O-144` · **A title is not an address: a formatted test title has no position, and the reader that needs one guesses
+  the file.** v3.159 resolves the suite a test is written in by finding the call that holds it, and the only handle a
+  report gives a reader is the printed title -- so `it.each([...])('rejects %s', ...)`, which prints `rejects 1`, is a
+  position the reader cannot resolve, and `budgetInForce` falls back to the file's first suite budget and then to its
+  largest stated number. The two guesses finding 670 removed for every other test are kept for the shape a formatted
+  title makes, and no file in this tree both states a budget and holds one at or above the 1 000 ms floor, so the
+  fallback is unused today.
+  `[open: whether the reader should pair the nth `it.each` call with the nth printed name, or whether a file that uses
+  a formatted title must state its clock on the suite -- the two answers a reader without a position can be given]`
