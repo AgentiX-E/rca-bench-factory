@@ -184,7 +184,7 @@
     },
     {
       "script": "scripts/check-doc-counts.mjs",
-      "line": 465,
+      "line": 482,
       "diagnostic": "check-doc-counts: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/check-doc-counts.test.ts"
@@ -1126,7 +1126,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 200,
+      "line": 225,
       "condition": "unknown.length > 0 || (shard !== null && !shard.ok)",
       "diagnostic": "usage: node scripts/verify-sites-are-sensitive.mjs [--list] [--shard <i>/<n>] [--costs <path>]\\n",
       "status": "proved",
@@ -1134,7 +1134,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 216,
+      "line": 241,
       "condition": "costsText !== null && (shard !== null || listOnly)",
       "diagnostic": "verify-sites-are-sensitive: --costs writes the table an unsharded run measured -- ${why}\\n",
       "status": "proved",
@@ -1142,7 +1142,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 225,
+      "line": 250,
       "condition": "!Number.isInteger(CONCURRENCY) || CONCURRENCY < 1",
       "diagnostic": "verify-sites-are-sensitive: RCA_SENSITIVE_CONCURRENCY must be a positive integer,",
       "status": "proved",
@@ -1150,7 +1150,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 235,
+      "line": 260,
       "condition": "catch",
       "diagnostic": "verify-sites-are-sensitive: cannot read ${relative(ROOT, INVENTORY) || INVENTORY} -- ${String(error)}\\n",
       "status": "proved",
@@ -1158,7 +1158,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 281,
+      "line": 343,
       "condition": "catch",
       "diagnostic": "a shard is divided by that table and by nothing else; regenerate it with\\n",
       "status": "proved",
@@ -1166,7 +1166,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 293,
+      "line": 355,
       "condition": "wrong.length > 0",
       "diagnostic": "regenerate it with: node scripts/verify-sites-are-sensitive.mjs --costs golden-master/sensitivity-costs.json\\n",
       "status": "proved",
@@ -1174,7 +1174,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 312,
+      "line": 386,
       "condition": "everything.length === 0 || byFile.length === 0",
       "diagnostic": "verify-sites-are-sensitive: ${what}, so this run would pass while measuring nothing\\n",
       "status": "proved",
@@ -1182,7 +1182,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 936,
+      "line": 1158,
       "condition": "failures > 0",
       "diagnostic": "verify-sites-are-sensitive: FAILED -- ${String(failures)} problem(s)\\n",
       "status": "proved",
@@ -2189,7 +2189,7 @@
       },
       {
         "script": "scripts/site-proofs.mjs",
-        "line": 779,
+        "line": 849,
         "disposition": "unguarded",
         "message": "a split into ${String(count)} shard(s) is not a split",
         "status": "proved",
@@ -2197,7 +2197,7 @@
       },
       {
         "script": "scripts/site-proofs.mjs",
-        "line": 787,
+        "line": 857,
         "disposition": "unguarded",
         "message": "new Error( `no measured cost for ${file}, so it cannot be placed on a shard: regenerate ` + 'golden-master/sensitivity-c",
         "status": "proved",

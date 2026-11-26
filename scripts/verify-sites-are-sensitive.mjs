@@ -34,6 +34,30 @@
  * baseline per file -- 144 here -- and it is paid in parallel: four children at a
  * time, measured rather than guessed.
  *
+ * ## The price of a claim, which is the test that can see it (v3.158)
+ *
+ * That cost was, until v3.158, **the whole file, once per claim**: a mutant run went red
+ * somewhere in the file and the run paid for every test up to that point. So the price of
+ * a claim was its neighbours' runtime, and a file's price was its own runtime multiplied
+ * by its claim count. Measured on the tree v3.157 shipped: 68 claimants, 2 632 s of child
+ * time, and two of them -- `ci-budget.test.ts` (30 claims) and `publish.test.ts` (29) --
+ * were **45%** of it. The partition that table described then read 0.1% apart and, one
+ * run later, 30% apart by the runner's own rows: a static table cannot balance a pair
+ * whose price is not stable, and the instability was the shape of the claimant rather
+ * than the partition.
+ *
+ * The report every run now writes names the test that failed, so the table records a
+ * **witness** per claim and the next run is aimed at that one test with
+ * `--testNamePattern`. Measured on this tree (`measure-ci-baseline.mjs:1043`, claimed by
+ * `ci-budget.test.ts`): **1 375 ms** aimed against **7 868 ms** for the whole file.
+ *
+ * The aim cannot make a claim truer. A green aimed run is measured again against the
+ * whole file, and an aim that goes red on some other test is treated the same way: only
+ * a red **on the aimed test**, with the mutant recorded, decides a claim. What the aim
+ * changes is the number of tests a claim pays for, and the summary prints how many aims
+ * held and how many missed, because a witness that has stopped existing looks exactly
+ * like a battery that got slower.
+ *
  * ## Three answers, and the third is about the measurement
  *
  * | what the mutant run did | what it means |
@@ -112,6 +136,7 @@ import {
   claimedSites,
   claimsByFile,
   exhaustedTestBudget,
+  failedTests,
   failureSummary,
   governingTestBudget,
   hungTestClause,
@@ -265,6 +290,43 @@ const COSTS = resolve(
   ROOT,
   process.env['RCA_SENSITIVE_COSTS'] ?? join('golden-master', 'sensitivity-costs.json'),
 );
+/**
+ * The test that noticed each claim the last time it was measured.
+ *
+ * The cost table carries two things now, and they are two halves of one question: what a
+ * claimant costs (`claims`, `runs`, `baselineMs`, `mutantMs`) and **which test can see
+ * each of its claims** (`witnesses`, keyed by site). The second explains the first --
+ * a claim's price is one run of the file it lives in, so a file's price is its own
+ * runtime multiplied by its claim count.
+ *
+ * Measured on the tree v3.157 shipped: 68 claimants, 2 632 s of child time, of which
+ * `ci-budget.test.ts` (30 claims) and `publish.test.ts` (29) were **45%** between them.
+ * No table can balance that pair for long, and reading 54 showed it: the same partition
+ * priced by two consecutive runs' own rows was 0.1% apart and then 30% apart. The
+ * imbalance was never the partition's -- it was the price of a claim.
+ */
+const witnesses = new Map();
+/**
+ * Read the witnesses out of a table, tolerating every shape a file can be in.
+ *
+ * A row for a site this run does not measure is simply never consulted, and a row whose
+ * name has stopped existing is caught by the run rather than here: the aimed run reports
+ * the tests that failed, and an aim that does not appear in that report is measured
+ * against the whole file. That is why this reader refuses nothing -- the aim can only
+ * make a run cheaper, and the run itself is the check that it was aimed at something
+ * real.
+ */
+function readWitnesses(table) {
+  const rows = table?.files;
+  if (rows === null || typeof rows !== 'object') return;
+  for (const row of Object.values(rows)) {
+    const named = row?.witnesses;
+    if (named === null || typeof named !== 'object') continue;
+    for (const [site, name] of Object.entries(named)) {
+      if (typeof name === 'string' && name !== '') witnesses.set(site, name);
+    }
+  }
+}
 let costs = null;
 if (shard !== null) {
   let table;
@@ -293,6 +355,18 @@ if (shard !== null) {
     process.exit(1);
   }
   costs = tableCosts(table);
+  readWitnesses(table);
+} else {
+  // Unsharded, the table is optional: this is the run that **writes** it, so refusing a
+  // table that no longer describes the tree would be refusing the repair. It is read for
+  // its witnesses alone, and a table that cannot be read costs the aim rather than the
+  // run -- which is the direction that leaves the measurement whole.
+  try {
+    readWitnesses(JSON.parse(readFileSync(COSTS, 'utf8')));
+  } catch {
+    // No table, or one this run will replace. Every claim is then measured against the
+    // whole of its file, which is what this battery did before v3.158.
+  }
 }
 
 const byFile =
@@ -405,13 +479,31 @@ function rerun(file) {
 }
 
 /**
- * One claimant run, resolved to the three facts the verdict needs.
+ * A test name as a pattern that matches exactly that name and nothing else.
+ *
+ * `--testNamePattern` is a **regular expression**, so a witness passed through unescaped
+ * is a pattern: `a bound's margin (v3.157)` would open a group and match a family of
+ * names, and a name with `*` or `+` in it would match tests that were never its own.
+ * The aim is a device for measuring one claim cheaply, and a filter that quietly widens
+ * is the one failure mode it must not have -- the run would go red on a test that has
+ * nothing to do with the claim and be credited for it.
+ *
+ * Escaping is the whole of the repair: every metacharacter becomes its own literal, and
+ * `.` becomes `\\.` rather than the pattern it is by default.
+ */
+function escapePattern(name) {
+  return name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * One claimant run, resolved to the four facts the verdict needs.
  *
  * `hollow` is the site whose exit is replaced with success, or `null` for the
- * baseline run. The trace is always written: the baseline needs to know the run could
- * be measured at all, and the mutant run needs to know the mutant arrived.
+ * baseline run. `aim` is the one test a mutant run is pointed at, or `null` for a run
+ * of the whole file. The trace is always written: the baseline needs to know the run
+ * could be measured at all, and the mutant run needs to know the mutant arrived.
  */
-function runOnce(file, site) {
+function runOnce(file, site, aim = null) {
   // `site` is the claim being hollowed, or null for the baseline run.
   const absolute = resolve(ROOT, file);
   if (!existsSync(absolute)) {
@@ -427,6 +519,10 @@ function runOnce(file, site) {
   // computed from. Written by vitest's own JSON reporter into the same scratch
   // directory as the trace, and read back in `close` below: a file's wall clock
   // divided by a per-test budget is a percentage of nothing (finding 528).
+  //
+  // Every run writes it since v3.158, the mutant's included: the baseline's report is
+  // read for the longest *duration*, and the mutant's for the one test that *failed*,
+  // which is the name the next run of the same claim is aimed at.
   const report = join(scratch, `${String(traceCount)}.json`);
   traceCount += 1;
   const env = {
@@ -463,10 +559,19 @@ function runOnce(file, site) {
       'run',
       relative(TESTS, absolute),
       '--reporter=dot',
-      // The baseline also writes a machine-readable report, because the margin this
-      // gate prints is a per-test fact and the dot reporter only says how long the
-      // file took. Mutant runs do not need it: their verdict is the exit code.
-      ...(site === null ? ['--reporter=json', `--outputFile=${report}`] : []),
+      // Every run also writes a machine-readable report, and each is read for a
+      // different fact. The baseline's says how long its longest **test** took, because
+      // the margin this gate prints is a per-test fact and the dot reporter only says
+      // how long the file took. The mutant's says which test **failed**, and since
+      // v3.158 that name is the whole point: the next run of the same claim is aimed at
+      // it, so the claim costs one test instead of one file.
+      //
+      // Two reporters rather than one because the two readings come from the two
+      // streams: `--reporter=json` alone writes the report to its file and prints
+      // nothing, which leaves `failureSummary` and the budget readers examining an
+      // empty console -- the red of a claimant quoting its own output and finding none.
+      '--reporter=json',
+      `--outputFile.json=${report}`,
       // And the same division of labour decides this flag, in the other direction.
       //
       // A mutant's verdict is "some test went red", and the first red is that test.
@@ -483,6 +588,20 @@ function runOnce(file, site) {
       // pair; the flag is asserted on the mutant's argv and its absence on the
       // baseline's, in `verify-sites-are-sensitive.test.ts`.
       ...(site === null ? [] : ['--bail=1']),
+      // The aim, and the one thing it must not do.
+      //
+      // A witness is the test that noticed last time, recorded in the cost table; the
+      // run is pointed at it with `--testNamePattern`, which vitest matches as a
+      // **regular expression**, so the name is escaped rather than passed through -- a
+      // test called `a bound's margin (v3.157)` would otherwise be a pattern that
+      // matches something else. Measured on this tree, one claim of
+      // `ci-budget.test.ts` (v3.158): **1 375 ms** aimed against **7 868 ms** for the
+      // whole file.
+      //
+      // The flag rides on the mutant only. Aiming a baseline would report the longest
+      // test of a file whose other tests were never run, and a claimant's baseline is
+      // also the question "does this file pass on its own".
+      ...(aim === null ? [] : ['-t', escapePattern(aim)]),
       '--maxWorkers=1',
       `--testTimeout=${String(CLAIMANT_TIMEOUT_MS)}`,
     ],
@@ -511,6 +630,7 @@ function runOnce(file, site) {
     });
     child.on('close', (status) => {
       const text = existsSync(trace) ? readFileSync(trace, 'utf8') : '';
+      const reportText = existsSync(report) ? readFileSync(report, 'utf8') : null;
       done({
         file,
         status: status ?? -1,
@@ -520,7 +640,12 @@ function runOnce(file, site) {
         // `null` when the run wrote no report -- a claimant replaced by a stand-in,
         // or a vitest that died before its reporter could write. The margin sentence
         // says which of the two it is looking at rather than reporting zero.
-        longest: existsSync(report) ? longestTest(readFileSync(report, 'utf8')) : null,
+        longest: reportText === null ? null : longestTest(reportText),
+        // The tests that ran and failed. Empty for a green run, for a report that
+        // cannot be parsed, and for an aim that matched nothing -- and the caller
+        // treats all three the same way, by measuring the whole file.
+        failed: reportText === null ? [] : failedTests(reportText),
+        aimedAt: aim,
         output,
       });
     });
@@ -639,7 +764,70 @@ for (const [file] of byFile) {
 undercuts.sort((left, right) => left.ms - right.ms || left.file.localeCompare(right.file));
 
 const claims = runnable.flatMap((file) => (claimsOf.get(file) ?? []).map((claim) => ({ file, claim })));
-const mutants = await pool(claims, CONCURRENCY, ({ file, claim }) => runOnce(file, claim));
+
+/**
+ * Every claim measured twice at most, and the second run only when the first earned it.
+ *
+ * ## What the aim is, and what it cannot be allowed to become
+ *
+ * A mutant run's verdict is "some test went red", and the run that produces it pays for
+ * the whole file. The report of that run names the test, so the next run of the same
+ * claim is pointed at that one test and pays for one test instead. Measured on this tree
+ * (v3.158, one claim of `ci-budget.test.ts`): **1 375 ms** aimed, **7 868 ms** whole.
+ *
+ * The two directions are not symmetric, and that asymmetry is the whole of the design:
+ *
+ *   - An aimed run that goes red **on the aimed test**, with the mutant recorded, is the
+ *     same evidence the whole run would have given -- one test depended on the exit.
+ *   - An aimed run that stays **green** is not evidence of anything, because the other
+ *     tests in the file were never run. It is measured again against the whole file, and
+ *     the whole run decides.
+ *   - An aimed run that goes red on some **other** test is reported the same way: the
+ *     aim matched something, the run failed, and neither fact says the witness noticed.
+ *
+ * So the aim can make a run cheaper and can never make a claim truer. When it misses,
+ * the claim is measured exactly as it was before v3.158 -- and the miss is counted in
+ * the summary, because a witness that has stopped existing is a fact about the table
+ * that a reader has to be able to see.
+ */
+const firstRuns = await pool(claims, CONCURRENCY, ({ file, claim }) =>
+  runOnce(file, claim, witnesses.get(claim.site) ?? null),
+);
+
+/** The claims whose aimed run does not decide them, measured against their whole file. */
+const decided = new Array(claims.length);
+const missed = [];
+for (const [index, outcome] of firstRuns.entries()) {
+  const { claim } = claims[index];
+  const aim = outcome.aimedAt ?? null;
+  const held =
+    aim !== null &&
+    outcome.problem === undefined &&
+    outcome.status !== 0 &&
+    outcome.hollowed.includes(claim.site) &&
+    outcome.failed.includes(aim);
+  if (aim === null || held) {
+    decided[index] = outcome;
+  } else {
+    missed.push(index);
+    decided[index] = null;
+  }
+}
+const secondRuns = await pool(missed, CONCURRENCY, (index) =>
+  runOnce(claims[index].file, claims[index].claim, null),
+);
+for (const [position, index] of missed.entries()) {
+  decided[index] = secondRuns[position];
+}
+/**
+ * Every child this phase started, in the order the claims were measured.
+ *
+ * The decided run is what the verdict reads, and this is what the *cost* reads: a claim
+ * that missed its aim paid for two runs, and a table that counted one would under-report
+ * the price of exactly the rows a reader has to repair.
+ */
+const attempts = [...firstRuns, ...secondRuns].filter((outcome) => outcome.problem === undefined);
+const mutants = decided;
 
 const survivors = [];
 const unmeasured = [];
@@ -706,6 +894,15 @@ for (const [index, outcome] of mutants.entries()) {
       continue;
     }
     credited += 1;
+    // The name the next run of this claim will be aimed at: the test that noticed.
+    //
+    // An aim that held writes back the name it used, so the table keeps a witness the
+    // run has just re-confirmed; a claim measured against its whole file hands over its
+    // witness for the first time. Nothing else writes this map, and it is only written
+    // for a claim the run *credited* -- a survivor has no failed test to name, and an
+    // unmeasured run has nothing to teach the next one.
+    const noticed = outcome.failed[0];
+    if (typeof noticed === 'string' && noticed !== '') witnesses.set(claim.site, noticed);
     continue;
   }
   if (outcome.hollowed.includes(claim.site)) {
@@ -725,7 +922,7 @@ for (const [index, outcome] of mutants.entries()) {
 }
 rmSync(scratch, { recursive: true, force: true });
 
-const runs = baselines.length + mutants.length;
+const runs = baselines.length + firstRuns.length + secondRuns.length;
 const minutes = ((Date.now() - startedAt) / 60000).toFixed(1);
 const failures =
   survivors.length +
@@ -830,6 +1027,31 @@ process.stdout.write(
     `the mutant, ${String(survivors.length)} survived, ${String(unmeasured.length)} unmeasured)\n`,
 );
 
+// Where the seconds went, and the number that says whether the aim is earning its keep.
+//
+// A reader has two questions about this line. The first is how much of the battery is
+// still paying for whole files, and the second is whether the table's witnesses have
+// stopped existing -- a claimant whose tests were renamed is measured in full, which is
+// correct and slow, and the count is the only thing that distinguishes that from a tree
+// where every aim held.
+const aimedHeld = firstRuns.filter(
+  (outcome) =>
+    outcome.aimedAt !== null &&
+    outcome.aimedAt !== undefined &&
+    outcome.status !== 0 &&
+    outcome.failed.includes(outcome.aimedAt),
+).length;
+const aimedAtAll = firstRuns.filter((outcome) => outcome.aimedAt !== null).length;
+process.stdout.write(
+  aimedAtAll === 0
+    ? 'verify-sites-are-sensitive: no claim had a witness in the cost table, so every mutant run measured ' +
+        'its whole file -- regenerate it with --costs to record one per claim\n'
+    : `verify-sites-are-sensitive: ${String(aimedAtAll)} of ${String(mutants.length)} claim(s) named a test ` +
+        `that could see them, and ${String(aimedHeld)} of those aims held; ${String(missed.length)} aim(s) ` +
+        'missed and were measured against the whole file instead, which is what a renamed test looks like ' +
+        'from here\n',
+);
+
 // What each claimant's mutant runs cost, charged to the claimant that paid for them.
 //
 // Until v3.153 this gate printed one total, and the recorder only ever saw the step's
@@ -839,7 +1061,7 @@ process.stdout.write(
 // seconds measured around each claimant's own children, so the next claim added is
 // charged to the file it was added to.
 const paid = new Map();
-for (const outcome of mutants) {
+for (const outcome of attempts) {
   const row = paid.get(outcome.file) ?? { claims: 0, runs: 0, ms: 0, slowest: 0 };
   row.runs += 1;
   row.ms += outcome.elapsedMs;
@@ -947,15 +1169,26 @@ if (costsText !== null) {
   // verdict reads all three, and a round that refreshes the table needs to know which
   // run and which box the numbers belong to before comparing them with the next pair of
   // job seconds.
+  //
+  // Each row also carries `witnesses`: the test that noticed, per claim. It is the same
+  // measurement as the seconds -- both come from the run that credited the claim -- and
+  // it is what makes the seconds *smaller* next time, so a table that carried one and not
+  // the other would describe a battery nobody could re-derive.
   const where = resolve(ROOT, costsText);
   const rows = {};
   for (const [file, claims] of byFile) {
     const row = paid.get(file) ?? { runs: 0, ms: 0 };
+    const seen = {};
+    for (const claim of claims) {
+      const witness = witnesses.get(claim.site);
+      if (typeof witness === 'string' && witness !== '') seen[claim.site] = witness;
+    }
     rows[file] = {
       claims: claims.length,
       runs: row.runs + 1,
       baselineMs: Math.max(1, Math.round(baselineOf.get(file) ?? 0)),
       mutantMs: Math.max(1, Math.round(row.ms)),
+      witnesses: seen,
     };
   }
   const table = {

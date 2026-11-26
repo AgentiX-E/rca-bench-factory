@@ -148,7 +148,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "drop the 'N passed (M files)' shape",
         "  { name: 'N passed (M files)',"
-        " re: /(\\d+)\\s*(?:tests?\\s*)?passed\\s*\\(\\s*(\\d+)\\s*files?\\s*\\)/g },\n",
+        " re: /(\\d[\\d,]*)\\s*(?:tests?\\s*)?passed\\s*\\(\\s*(\\d[\\d,]*)\\s*files?\\s*\\)/g },\n",
         "",
         # Pointed at the *second* test, not the first. The first only asserts exit
         # 0, and the bare shape also makes that row green -- it reads the 2403 and
@@ -240,6 +240,19 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "      if (DATED.test(line)) return;",
         "      if (false) return;",
         "leaves a dated sentence alone, because a record is not a stale claim",
+    ),
+    (
+        # The separator. `7,091` is how this corpus writes a five-digit count, and the reader used to
+        # take it one digit at a time: the pair shapes were `(\d+)`, so `262 files, 7,091 tests passed`
+        # matched no pair, fell through to the bare test count, and was read as **91 tests with no file
+        # count** -- reported as `core tests fell from 7082 to 91`, a refusal naming a number the
+        # document does not contain. The rule is now a normalisation (`countOf`), and this is the
+        # mutation that proves the tests depend on it: `Number('7,091')` is `NaN`, so every row that
+        # writes a separator reads as no number at all.
+        "read a separated count as the string it was written as",
+        "const countOf = (text) => Number(String(text).replaceAll(',', ''));",
+        "const countOf = (text) => Number(text);",
+        "reads a thousands separator in a published count, instead of the last three digits of it",
     ),
 ]
 

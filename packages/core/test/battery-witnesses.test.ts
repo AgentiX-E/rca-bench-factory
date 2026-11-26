@@ -258,7 +258,13 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     // These two were missing from this list while they were missing the mode as
     // well: `--verify-expectations` was ignored and their whole mutation loop ran
     // instead. Finding 163 measures what that cost.
-    ['scripts/injection/doc-counts-shapes.py', 'doc-counts-shapes', 14],
+    //
+    // 14 -> 15 in v3.158: one for the separator the guard writes and used not to read. `7,091` was
+    // taken one digit at a time -- the pair shapes were `(\d+)`, so the row matched no pair, fell
+    // through to the bare test count, and read as 91 tests with no file count. The mutation
+    // restores the reading rather than the spacing (`Number(text)` instead of the normalisation), so
+    // what it proves is that the new cases depend on the number being read whole.
+    ['scripts/injection/doc-counts-shapes.py', 'doc-counts-shapes', 15],
     ['scripts/injection/roundtrip-record.py', 'roundtrip-record', 25],
   ];
 

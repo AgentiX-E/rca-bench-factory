@@ -625,6 +625,76 @@ export function longestTest(report) {
   return best;
 }
 
+/**
+ * The **titles** of the tests a run reports as failed, in the order the report lists them.
+ *
+ * ## What this is for, and why the name rather than the count
+ *
+ * A mutant run's verdict is "some test went red". The battery paid for that sentence
+ * with a whole run of the claimant, once per claim, so a file's price was its *own*
+ * runtime multiplied by its claim count: measured on the tree v3.157 shipped, two
+ * claimants of sixty-eight -- `ci-budget.test.ts` and `publish.test.ts`, 59 of 256
+ * claims between them -- were **45%** of a 2 632 s battery, and the pair divided 0.1%
+ * apart by the table and then 30% apart by the next run's own rows, because the seconds
+ * a static table balances are not stable when one claimant is a quarter of the total.
+ *
+ * The name is what makes the price of a claim the price of *its own* witness: the run
+ * that goes red already reports which test noticed, so the next run of the same claim
+ * can be aimed at that one test -- measured at **1 375 ms against 7 868 ms** for the
+ * same claim in the same file (v3.158, `measure-ci-baseline.mjs:1043`), which is what
+ * the whole battery's imbalance was made of.
+ *
+ * ## Why not "every test that did not pass"
+ *
+ * `--bail=1` stops the file at the first red and vitest marks the rest **pending**, so
+ * a reader that collected everything that is not `passed` would name a hundred and
+ * fifty tests that never ran. Aiming at one of those measures nothing and would look
+ * exactly like a claim that survived. Only `failed` is a statement about a test that
+ * ran.
+ *
+ * An assertion with no name is dropped rather than returned as `''`: `-t ''` is not "no
+ * filter" to vitest, it is a pattern that matches everything, so an empty witness would
+ * turn an aim into a whole-file run that believes it is aimed.
+ *
+ * ## Why the title rather than the full name
+ *
+ * `fullName` joins the suite names to the test's own title with a **space**, so the
+ * string appears nowhere in the file it came from: `scripts/apply-pins.mjs · pinning
+ * measured digests refuses to pin an id the registry does not contain` is a `describe`
+ * and an `it` written on two different lines. That matters because a witness is a name
+ * the artifact has to be held to, and the only check available without running anything
+ * is a text one -- `source.includes(name)`. A full name fails that check for every claim
+ * in the tree (measured: 256 of 256), which would have been a test that says "the artifact
+ * is stale" about an artifact that was just written.
+ *
+ * The title is the one string the file contains verbatim, and it is enough to aim with:
+ * `--testNamePattern` matches against the full name, so a title is a substring of the
+ * name it is trying to reach. Two tests sharing a title in one file both run, which costs
+ * a second and changes nothing -- the verdict is "a test that could see this exit failed".
+ *
+ * Returns `string[]`, empty when the report cannot be parsed or holds no failure.
+ */
+export function failedTests(report) {
+  let parsed;
+  try {
+    parsed = JSON.parse(String(report));
+  } catch {
+    return [];
+  }
+  const suites = Array.isArray(parsed?.testResults) ? parsed.testResults : [];
+  const found = [];
+  for (const suite of suites) {
+    const results = Array.isArray(suite?.assertionResults) ? suite.assertionResults : [];
+    for (const one of results) {
+      if (one?.status !== 'failed') continue;
+      const name = String(one?.title ?? '');
+      if (name === '') continue;
+      if (!found.includes(name)) found.push(name);
+    }
+  }
+  return found;
+}
+
 
 /**
  * Every site the inventory claims is proved, as `{ site, file }`.

@@ -2557,9 +2557,175 @@ themselves -- `ci-budget.test.ts` alone is 30 claims and up to 29% of the batter
 | CI | run `45802469718` on `b24cf16`: **9 of 9 jobs success**, 90 steps, reading **54** -- the tree that ships the rebuilt table, and the last run of this round. Its predecessor `45799554098` (reading **53**) is the first run whose halves were measured rather than positioned. The three pairs are the round: 247 s / 438 s (reading 52, position), **306 s / 362 s** (reading 53, the local table), **427 s / 303 s** (reading 54, the runner's own table) |
 | the two halves, as they were | reading 52: `sensitivity` **247 s** and `sensitivity-shard` **438 s** of `verify-sites-are-sensitive.mjs`, 44% apart, from a split by `position % count` over 44 sorted claimant files |
 | the division the corpus asked for | `docs/acceptance.md`, written at v3.54: *"if that shard approaches twice its own bound the shards should be re-partitioned from a measurement rather than by position"* -- 438 s against a 30-minute bound had not reached twice, and the imbalance was paid for three minutes a run while it waited |
-| `core` test suite | **262 files, 7082 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **266 files, 7269 tests passed** (as of this commit) |
+| `core` test suite | **262 files, 7082 tests passed** (at v3.157) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.157) |
+| repo test suite | **266 files, 7269 tests passed** (at v3.157) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
 | mutation | **8 groups, 8 red, 0 survivors** (the eighth is the provenance rule below): the coverage verdict silenced (3), the placement sorted by name instead of by cost (2), an unpriced claimant given one millisecond (1), the claim count not compared with the claims it prices (1), a table written by a shard (1), the prediction printed under `--list` (1), the baseline counted as a mutant run (1) -- each restored to an identical `md5`. The fifth was a survivor on its first shape, and the case is why: it would have passed on the gate's own "cannot read the table", so the fixture now carries a table the shard *could* use and the assertion is on the refusal's own sentence |
 | new tests | **7,070 -> 7,082, +12**: the cost-based placement and its determinism, the refusal to place an unmeasured claimant, a split into no shards, the coverage verdict in both directions with its count and its provenance, a row that is not a measurement, the gate's `--costs` writer, its refusal of a shard, its refusal of a missing table and of a stale one, and the 15% budget the round commits to |
+
+## v3.158 — a claim's price is the test that can see it
+
+**The imbalance was never the partition.** v3.157 divided the sites battery by a committed cost table, and the
+table was balanced to 0.1%; reading 53 read the two shards **306 s / 362 s** and reading 54, on the same tree,
+**427 s / 303 s**. Priced by its own per-file rows, the same partition was 16.1% apart and then 30% apart. The
+round's own conclusion was that a static table cannot balance a quantity that is not stable -- and the quantity
+was the wrong one. It was not the partition that varied. It was **what a claim cost**.
+
+**A claim cost a whole file.** A mutant run replaces one exit with success and asks whether anything notices; the
+answer is the exit code, so the run is a run of the claimant, and its price is the claimant's runtime. A file
+with thirty claims therefore cost thirty runs of itself, and a file's price was its own runtime multiplied by its
+claim count. Measured in the table v3.157 shipped: 68 claimants, 2,632 s of child time, and two of them --
+`ci-budget.test.ts` (30 claims, 620.8 s) and `publish.test.ts` (29 claims, 565.0 s) -- were **45%** of the whole
+battery. A partition cannot make 45% smaller; it can only decide which half pays it.
+
+**The report already knew which test it was.** A mutant run writes vitest's JSON report, and the report names the
+test that failed. That name is the whole of the answer: the claim is "some test depends on this exit", and the
+test that went red is the one that does. So the report is read for the failed test's title, the table records it
+beside the claim, and the next run of that claim is pointed at that one test with `--testNamePattern`.
+
+The principle is not new here: finding 658 applied it to the 83 rows of the backend-support battery and measured
+**347.0 s -> 53.2 s** with 83 of 83 verdicts identical. What is new is *where the name comes from*. Those rows
+carried the test's name, so the instrument could read it out of the row. A site does not carry one -- nothing in
+`gate-sites.json` says which test would notice -- so the name has to be measured, recorded, and re-checked on
+every run. That is the missing half, and it is the half the table is for.
+
+**The aim can only make a run cheaper, never a claim truer.** Three verdicts, and the asymmetry between them is
+the design:
+
+- an aimed run that goes red **on the aimed test**, with the mutant recorded, is the evidence the whole run would
+  have given -- one test depended on this exit;
+- an aimed run that **passes** is not evidence of anything, because the file's other tests were never run, so the
+  claim is measured again against the whole file;
+- an aimed run that goes red **on some other test** is treated the same way: the aim matched something and the
+  run failed, and neither fact says the witness noticed.
+
+The fallback is the pre-v3.158 instrument, so a table that has gone stale -- a test renamed, a suite rewritten --
+costs a whole-file run and never a wrong verdict. The summary prints the count, because a battery that got
+slower and a table that went stale look identical from a green run:
+`N of M claim(s) named a test that could see them, and K of those aims held; J aim(s) missed and were measured
+against the whole file instead`.
+
+**The escaping is load-bearing, and finding 658 had already said so.** `--testNamePattern` compiles its argument
+as a regular expression, so a title passed through unchanged is a pattern: `a bound (v3.158) is twice the day`
+opens a group and matches a family of names, and a red from one of them would be credited to this claim. The name
+is escaped, and the case asserts both directions on a shipped-shaped name -- the escaped pattern matches it and
+the raw one does not. The two instruments cannot share the function: the backend-support battery is Python
+(`re.escape`) and this one is JavaScript, so the rule is written twice and neither copy can drift into the other.
+
+**What the measurement says.** One tree, one box, four claimants at a time, alternating nothing but the table:
+
+| | before the aim | with the aim |
+| --- | --- | --- |
+| 256 mutant runs, child time | **3,061.7 s** | **924.2 s** |
+| wall clock at 8 at a time | **7.8 min** | **3.3 min** |
+| dearest claimant's share | **29%** | **16%** |
+| aims that held | -- | **256 of 256** |
+
+And the table that is shipped, written by an aimed run (`--costs`): 68 claimants, 256 claims, **1,550.4 s** of
+child time, the two halves dividing **775.2 s / 775.2 s** -- **0.0%** apart, which LPT only reaches when the
+prices are the same size -- and the dearest claimant at **171.8 s, 11.1%** of the battery, where it was 23.6%.
+
+A single claim, measured twice in the same process minutes apart (`measure-ci-baseline.mjs:1043`, claimed by
+`ci-budget.test.ts`): **1,375 ms** aimed at its witness, **5,270 ms** against its whole file, **7,868 ms** for the
+file's baseline.
+
+**Six things this round got wrong.**
+
+1. **A line number is an identity, so adding a function to a script moves sites.** `failedTests` went into
+   `site-proofs.mjs`, which shifted every line below it; eleven claims in the two files that prove *this*
+   instrument stopped being reached, and the battery refused the tree -- *"passed with the exit hollowed but
+   never recorded the mutant"* -- twice, before the inventory was re-derived. The deriver carried all 152 site
+   annotations and all 118 throw annotations by content, which is what it is for.
+2. **The witness was first recorded as the full name, and no file contains a full name.** vitest joins the suite
+   titles to the test's title with a space, so `scripts/apply-pins.mjs · pinning measured digests refuses to pin
+   an id the registry does not contain` is a `describe` and an `it` on two different lines. The artifact's own
+   case -- "the name is one the claimant contains" -- failed on **256 of 256** rows: a check that accuses a
+   file it has just written. The reader now returns the **title**, which is the one string the source has.
+3. **And then it failed on two more rows, for two different reasons.** A title with an apostrophe is written
+   `it('… the repository\'s')`, so the literal differs from the report by the escape; and a title built from a
+   template (`it(\`prints '${word}' …\`)`) appears nowhere in the source at all. The literal check is
+   impossible for both, so it was removed rather than narrowed to the files it happens to work on, and the reason
+   is written where the case would have been. Staleness is held by the run instead: a missed aim is measured
+   against the whole file and counted.
+4. **An assertion survived the world it described.** `loads[0] <= loads[1]` said "shard 1/2 is the cheaper half,
+   because it also carries the 22 s claims battery". While the halves were 15% apart that was an instruction; at
+   **775.2 / 775.2** it is LPT's tie-break, and it failed by 46 ms. The property is now stated on the two *jobs*
+   -- the half holding the claims battery plus those 22 s against the other half -- which is the quantity the
+   workflow actually spends.
+5. **The fixture's witness name shared a line with the next flag.** The stand-in vitest reads a directive line,
+   and `WITNESS a bound (v3.158) is twice the day ARGV` was read as a name ending in `ARGV`: the aim matched
+   nothing, the run fell back, and the case read as a summary about a stale witness. The name now has a line of
+   its own -- a name and a list of flags are different things and one line cannot hold both.
+6. **A battery run refuses an untracked file before it measures anything.** Two of the four full runs died inside
+   `unit-nouns.test.ts` because `check-repository-table` compares the tree with a `git` view of it, and the table
+   the run was about to write was untracked. The same cascade ran through the published counts four times
+   (122 064 -> 122 327 -> 122 338 -> 122 367) as cases were added, and each was fixed by arithmetic first and
+   re-measurement second.
+
+**The round's own numbers found a defect in the gate that reads them.** This ledger's suite rows were written
+the way the corpus writes a five-digit count -- `7,091`, with a separator -- and the gate refused them:
+`core tests fell from 7082 to 91`. The pair shapes were `(\d+)`, so `262 files, 7,091 tests passed` matched no
+pair, fell through to the bare test count, and kept its last three digits; the file count went missing with the
+separator, and the second sentence reads `null files / 91 tests`. Two of the guard's four readers already
+accepted the separator -- the census `COUNT_PHRASE` and the `new tests` span, both `\d[\d,]*`, because that is how
+this corpus writes these numbers -- and the two that decide its verdict did not. That is finding 667. The repair
+is a normalisation and not a wider class, because `Number('7,091')` is `NaN`: every shape now reads its digits
+through `countOf`, and the three cases state the rule rather than today's size -- a published count with
+separators, a bare one (whose refusal must name the whole number, since a bare count cannot be a current-state
+row), and two rows with separators where the suite grew and the old reader said it fell. The test file's own
+third reader of the same rows had the same defect with the quieter failure: it matched nothing and reported
+`no current-state rows found; the shape of the document changed`.
+
+**Falsification.** Seven mutation groups, seven red, no survivors, each restored to a byte-identical file
+(`md5`): the aim passed unescaped; an aim trusted without asking whether *the aimed test* failed; the witness
+read from `fullName`; the table written with no witnesses; the table read only by a shard; a missed aim not
+counted; the aim not passed to the run at all. The first four are the ones that would have shipped a battery
+that was cheap and wrong. The doc-counts gate has its own battery, and the separator earned it an entry:
+restoring `Number(text)` in place of the normalisation makes the new cases red, **15 injections, 15 caught,
+0 survived, 0 inert**, with the gate restored to a byte-identical file afterwards.
+
+**The local readings.** `pnpm docs:check` 23 steps green; `typecheck` 0; `lint` 0 (`verify-site-proofs`: 256
+claims across 68 files, every claim reached by the file that names it); core **262 files / 7,094 cases**, cli
+**4 / 187**, repo **266 / 7,281**; 152 sites, 118 throws, 152 of 152 and 118 of 118 annotations carried.
+
+**The seconds are a session's; the ordering is the tree's.** One battery, one tree, one box, three readings:
+**3,061.7 s** before any claim carried a witness, **924.2 s** with every claim aimed in the session that wrote the
+first table, and **417.7 s** in a quiet run at the default pool of four. The tables those runs priced total
+**2,632.1 s**, **1,550.4 s** and **715.8 s**. A **2.2x** spread between two of them is larger than the effect
+either was measuring, so this round claims the ratio it took *within* one session and the ordering it saw in all
+three -- `ci-budget.test.ts` first, and **29% -> 16%** of the mutant time -- and refuses to claim the seconds. A
+duration taken once, on a box whose load is not part of the record, is a price with an unstated denominator. The
+division reads only the ordering, which is why the split survives it: the two halves are **0.0%** apart in all
+three tables.
+
+**What the round did not decide.** Whether the table should carry a witness for a claim it prices but never
+measured: today a claim with no row is measured against its whole file, which is correct and slow, and the two
+claims in that state after the first aimed run were fixed by the next one. Nor whether the aim is worth its
+complexity at a *small* claimant: a file with one claim and a two-second runtime saves one run of two seconds,
+and the two extra arguments it carries are worth more than that. The threshold is not written down, because the
+mechanism costs nothing when it misses. And this is a prediction until the run that follows it: reading 55 is the first reading of a battery whose price
+is one test per claim, and what it can settle is whether the **924.2 s -> 417.7 s** ordering of claimants holds on
+the runner -- not whether the runner's seconds match this box's, which the three readings above already say they
+will not.
+
+### Readings
+
+> Ledger for `v3.158`.
+
+| item | value |
+| --- | --- |
+| CI | `45802469718` on `b24cf16` is the row that stands until this round's own run is recorded: reading **54**, **9 of 9 jobs success**, the tree this round began from. The row that will replace it is the first run of the tree this commit publishes -- the first whose battery is priced by a witness per claim instead of by the claimant's whole runtime, and therefore the only run whose `batteries` seconds can say whether the aim did what the local measurement says: 256 claims, **3,061.7 s -> 924.2 s** of child time, and no claim made truer by it |
+| the battery, before the aim | 256 mutant runs, **3,061.7 s** of child time inside **7.8 min** of wall clock; the dearest claimant **29%** of that |
+| the battery, with the aim | 256 mutant runs, **924.2 s** inside **3.3 min** on the same session and the same pool; the dearest claimant **16%**; **256 of 256** aims held |
+| the battery, alone at the default pool | 256 mutant runs, **417.7 s** inside **3.0 min** at four claimants at a time, 325 runs in all with the 68 baselines: the reading this table is written from, taken on an idle box |
+| the table it wrote | 68 claimants, 256 claims, **715.8 s** of child time -- **417.7 s** of it the 256 mutant runs and **298.1 s** the 68 baselines; halves **357.9 s / 357.9 s** (**0.0%**, 34 claimants each); dearest `ci-budget.test.ts` at **67.2 s**, **16.1%** of the mutant time and **9.4%** of the whole, where the table v3.157 shipped had it at **23.6%** of the whole |
+| the same battery, three readings | before the aim **3,061.7 s**; aimed in the session that built the first table **924.2 s**; aimed and alone **417.7 s**. The first table this round wrote totalled **1,550.4 s**, this one **715.8 s**, and v3.157's table **2,632.1 s** -- three tables of one tree, one instrument, a **2.2x** spread. What is stable is the ordering: `ci-budget.test.ts` first in all three, and **29% -> 16%** of the mutant time |
+| one claim, two forms | `measure-ci-baseline.mjs:1043` claimed by `ci-budget.test.ts`: **1,375 ms** aimed at its witness, **5,270 ms** against its whole file, **7,868 ms** for the file's baseline |
+| what the previous table priced | 68 claimants, **2,632.1 s** (**2,180.2 s** mutant, **451.9 s** baseline), of which `ci-budget.test.ts` (**620.8 s**, 30 claims) and `publish.test.ts` (**565.0 s**, 29 claims) were **45%** -- and readings 53/54 read the same partition 0.1% and then 30% apart |
+| `core` test suite | **262 files, 7,094 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **266 files, 7,281 tests passed** (as of this commit) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
+| mutation | **7 groups, 7 red, 0 survivors**: the aim passed unescaped, an aim trusted without asking whether *the aimed test* failed, the witness read from `fullName`, the table written with no witnesses, the table read only by a shard, a missed aim not counted, the aim not passed to the run -- each restored to an identical `md5` |
+| new tests | **7,082 -> 7,094, +12**: the failed-test reader (the title, the pending tests after a bail, an empty name, a report it cannot parse), an aim that holds and the escaped pattern on its argv, an aim that misses and is measured against the whole file, the witness written into the table, and the two artifacts cases (a name for every claim; a name that belongs to the file that makes the claim), plus the three the round's own separator found: a published count written `7,094`, a bare count written the same way, and two rows with separators that grew where the digit-by-digit reader said they fell |

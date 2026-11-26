@@ -1137,6 +1137,32 @@ one round.
   claimed: that two shards are the right number. A third job would buy the tail of the slower half
   for another 27 s prefix, and the table prices claimants rather than jobs -- the 22 s
   `verify-claims-are-sensitive` step shares shard 1's job and is charged to that job's reading.
+- **The price that moved was a claim's, so the price of a claim is now the test that can see it**
+  (v3.158). A mutant run's verdict is an exit code, so it was a run of the claimant: a file with
+  thirty claims cost thirty runs of itself, and the table's rows were therefore the product of a
+  file's runtime and its claim count. That is what two claimants of 68 being **45%** of a
+  **2 632 s** battery means, and it is why the pair moved by 30% between two runs of one tree --
+  no partition can make 45% smaller. The report every mutant run writes names the assertion that
+  failed, so the table now carries `witnesses` -- the **title** of the test that noticed, per
+  claim -- and the next run of that claim is aimed at it with `--testNamePattern`, escaped because
+  the flag is a regular expression. An aimed run is credited only when it exits non-zero, records
+  the mutant, **and the report names the aimed test as failed**: a green aimed run and a red one
+  on another test are both re-measured against the whole file, so a stale table costs a whole-file
+  run and never a wrong verdict, and the summary prints how many aims missed. Measured on one
+  tree with only the table changed: **3 061.7 s -> 924.2 s** of child time and **7.8 -> 3.3 min** of
+  wall clock for 256 claims, **256 of 256** aims held; the shipped table was then written by a
+  third run, taken alone at the default pool of four -- **417.7 s** of mutant time inside **3.0 min**,
+  **715.8 s** with its 68 baselines -- and divides **357.9 s / 357.9 s** with the dearest claimant at
+  **16.1%** of the mutant time where v3.157's table had it at 23.6%. The seconds are a session's and
+  the ordering is the tree's: three tables of one tree total **2,632.1**, **1,550.4** and **715.8 s**,
+  a **2.2x** spread, while `ci-budget.test.ts` is the dearest claimant in all three.
+  The principle is finding 658's, measured there on 83 rows that already carried their test's
+  name; what is added is where the name comes from, since a site carries none.
+- **What that does not claim.** That a witness is stable: it is a title, and a renamed test makes
+  the aim miss rather than the claim wrong, which is measured by the count in the summary and by
+  the case that drives a stale table end to end. Nor that the aim is worth its two arguments at a
+  claimant with one claim and two seconds of runtime -- it costs nothing when it misses, and a
+  threshold would be a number nothing measures.
 
 ## The two directions of a budget change
 

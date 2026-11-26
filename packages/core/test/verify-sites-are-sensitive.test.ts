@@ -75,6 +75,17 @@ interface FixtureOptions {
   hangOnMutant?: boolean;
   /** The longest test, in ms, that this claimant's JSON report claims: the margin's subject. */
   report?: number;
+  /**
+   * The test that reports itself as failed, which is the name a witness is made of.
+   *
+   * A mutant run's verdict is "some test went red" and since v3.158 the report says
+   * *which* one, so the next run of the same claim can be aimed at it. The stand-in has
+   * to model that with the same fidelity it models the exit code: a report whose failed
+   * list is filtered by `-t` is what makes an aim either hit or miss.
+   */
+  witness?: string;
+  /** The witness the cost table already names, written before the gate runs. */
+  recorded?: string;
 }
 
 /** A repository the gate can be pointed at: an inventory, a gate, and a runner. */
@@ -117,6 +128,33 @@ function fixture(claims: { line: 1 | 2; file: string }[], options: FixtureOption
     }),
   );
 
+  if (options.recorded !== undefined) {
+    // The table the gate reads before it runs: one claimant, one witness, and the site
+    // the witness is supposed to notice. A witness it can no longer find is the shape
+    // this fixture exists to model -- the aim misses, and the claim is measured against
+    // the whole file exactly as it would have been before v3.158.
+    writeFileSync(
+      join(tree, 'golden-master', 'sensitivity-costs.json'),
+      JSON.stringify({
+        measured: '2026-11-26',
+        machine: 'a fixture',
+        source: 'node scripts/verify-sites-are-sensitive.mjs --costs golden-master/sensitivity-costs.json',
+        files: Object.fromEntries(
+          claims.map((claim) => [
+            claim.file,
+            {
+              claims: 1,
+              runs: 2,
+              baselineMs: 1000,
+              mutantMs: 1000,
+              witnesses: { [`scripts/fake-gate.mjs:${String(exits[claim.line - 1])}`]: options.recorded ?? '' },
+            },
+          ]),
+        ),
+      }),
+    );
+  }
+
   const directive = [
     `PICK ${options.pick ?? 'one'}`,
     options.assert === true ? 'ASSERT' : '',
@@ -139,11 +177,16 @@ function fixture(claims: { line: 1 | 2; file: string }[], options: FixtureOption
     options.budget === undefined
       ? ''
       : `\ndescribe('a fixture', { timeout: ${options.budget} }, () => {});\n`;
+  // The witness is on a line of its own, because it is a **name** and the flags above
+  // are words: a name sharing a line with `ARGV` is read as part of the name, and a
+  // witness one word too long is an aim that misses for a reason nobody would look for.
+  const witnessLine =
+    options.witness === undefined ? '' : `\n// WITNESS ${options.witness}\n`;
   const written = new Set<string>();
   for (const claim of claims) {
     if (written.has(claim.file)) continue;
     written.add(claim.file);
-    writeFileSync(join(tree, claim.file), `${directive}\n${declared}`);
+    writeFileSync(join(tree, claim.file), `${directive}\n${witnessLine}${declared}`);
   }
 
   // The stand-in for vitest. It reads the directive, starts the gate the way every
@@ -167,18 +210,39 @@ function fixture(claims: { line: 1 | 2; file: string }[], options: FixtureOption
     // should change.
     '  writeFileSync(process.env.FIXTURE_ARGV, process.argv.slice(2).join(" "));',
     '}',
-    // The report vitest's json reporter would have written. Only the baseline gets the
-    // flag, so a mutant run finds nothing and writes nothing -- which is the property
-    // the margin sentence relies on when it says a run wrote no per-test report.
-    'if (text.includes("REPORT")) {',
-    '  const asked = process.argv.slice(2).find((one) => one.startsWith("--outputFile=")) || "";',
-    '  if (asked !== "") {',
-    '    const where = asked.slice("--outputFile=".length);',
-    '    writeFileSync(where, JSON.stringify({ testResults: [{ assertionResults: [',
-    '      { fullName: "a short one", duration: 4.5 },',
-    '      { fullName: "the long one", duration: ' + String(options.report ?? 0) + ' },',
-    '    ] }] }));',
-    '  }',
+    // The report vitest's json reporter would have written, at whichever path it was
+    // given. Since v3.158 every run asks for one and the two are read for different
+    // facts -- the baseline's for the longest duration, the mutant's for the test that
+    // failed -- so the stand-in resolves the path the way vitest does: `--outputFile.json=`
+    // when there is more than one reporter, `--outputFile=` when there is one.
+    'const reportPath = (() => {',
+    '  const args = process.argv.slice(2);',
+    '  const named = args.find((one) => one.startsWith("--outputFile."));',
+    '  const asked = named === undefined ? args.find((one) => one.startsWith("--outputFile=")) : named;',
+    '  if (asked === undefined) return null;',
+    '  return asked.slice(asked.indexOf("=") + 1);',
+    '})();',
+    // The aim, read the way vitest reads it: `-t` is a **regular expression**, and the
+    // gate escapes the witness before passing it, so a name with brackets in it filters
+    // to itself. This is the half of the fixture that decides whether an aim hits.
+    'const aim = (() => {',
+    '  const args = process.argv.slice(2);',
+    '  const at = args.indexOf("-t");',
+    '  return at === -1 ? null : new RegExp(args[at + 1]);',
+    '})();',
+    'if (text.includes("REPORT") && reportPath !== null) {',
+    '  writeFileSync(reportPath, JSON.stringify({ testResults: [{ assertionResults: [',
+    '    { fullName: "a short one", duration: 4.5 },',
+    '    { fullName: "the long one", duration: ' + String(options.report ?? 0) + ' },',
+    '  ] }] }));',
+    '}',
+    // A run that reports the test it failed, filtered by the aim: a stale witness
+    // matches nothing, so the report names no test and the caller re-measures the file.
+    'if (text.includes("WITNESS") && reportPath !== null) {',
+    '  const noticed = /WITNESS (.+)/.exec(text)[1].trim();',
+    '  const ran = aim === null || aim.test(noticed) ? [noticed] : [];',
+    '  writeFileSync(reportPath, JSON.stringify({ testResults: [{ assertionResults:',
+    '    ran.map((name) => ({ title: name, fullName: "a suite " + name, status: "failed" })) }] }));',
     '}',
     'if (text.includes("SILENT")) {',
     '  process.stdout.write("[vitest-worker]: Timeout calling " + String.fromCharCode(34) + "onTaskUpdate" + String.fromCharCode(34) + "\\n");',
@@ -521,8 +585,9 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
       expect(result.status).toBe(0);
       const argv = readFileSync(join(tree, 'argv.txt'), 'utf8');
       expect(argv).toContain('--bail');
-      // And the mutant still pays no per-test report: its verdict is the exit code.
-      expect(argv).not.toContain('--reporter=json');
+      // The report rides on both runs since v3.158, for two different readings: the
+      // baseline's longest **test**, and the mutant's the one test that **failed**.
+      expect(argv).toContain('--reporter=json');
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }
@@ -543,6 +608,81 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
       const argv = readFileSync(join(tree, 'argv.txt'), 'utf8');
       expect(argv).not.toContain('--bail');
       expect(argv).toContain('--reporter=json');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('records the test that noticed, so the next run of that claim can be aimed at it', () => {
+    // The claim's price was the whole file, once per claim, so a file's price was its own
+    // runtime multiplied by its claim count: two claimants of sixty-eight were 45% of a
+    // 2 632 s battery, and no static table could balance that pair for longer than one
+    // run. The report a mutant run already writes names the test that failed, and the
+    // table records it here -- which is the whole of what makes the next run cheaper.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      assert: true,
+      witness: 'the test that noticed',
+    });
+    try {
+      const result = runGate(tree, ['--costs', 'written.json']);
+      expect(result.status).toBe(0);
+      const table = JSON.parse(readFileSync(join(tree, 'written.json'), 'utf8'));
+      const row = table.files['packages/core/test/one.test.ts'];
+      expect(Object.values(row.witnesses)).toEqual(['the test that noticed']);
+      // Named by its site, because that is the key the claim is known by: a witness
+      // filed under the file would be ambiguous the moment a file makes two claims.
+      expect(Object.keys(row.witnesses)[0]).toContain('scripts/fake-gate.mjs:');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('aims the mutant at the recorded witness, with the name passed as a literal', () => {
+    // `-t` is a **regular expression** to vitest. A name passed through unescaped is a
+    // pattern that matches a family of tests, and a red from one of them would be
+    // credited to this claim -- a filter that quietly widens is the one failure mode the
+    // aim cannot have. The name here carries both a group and a dot, which is the shape
+    // this tree's own test names have.
+    const name = 'a bound (v3.158) is twice the day';
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      assert: true,
+      argv: true,
+      recorded: name,
+      witness: name,
+    });
+    try {
+      const result = runGate(tree);
+      expect(result.status).toBe(0);
+      const argv = readFileSync(join(tree, 'argv.txt'), 'utf8');
+      expect(argv).toContain('-t a bound \\(v3\\.158\\) is twice the day');
+      // And the aim held: a missed aim is measured again against the whole file, which
+      // is the next case, and a summary that called both of them aims would hide it.
+      expect(result.stdout).toContain('1 of 1 claim(s) named a test that could see them, and 1 of those aims held');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('measures the whole file when the aim misses, and says how many aims missed', () => {
+    // A witness that has stopped existing is what a renamed test looks like from here.
+    // The aimed run goes red -- the gate still fails -- and its report names no test,
+    // which is not evidence about the claim: the other tests in the file were never run.
+    // So the claim is measured again against the whole file, the verdict is the one it
+    // would have had before v3.158, and the count is printed because a battery that got
+    // slower and a table that went stale look identical from a green run.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      assert: true,
+      recorded: 'a test this file no longer has',
+      witness: 'the test that noticed',
+    });
+    try {
+      const result = runGate(tree);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('1 aim(s) missed and were measured against the whole file instead');
+      // Two children, not one: the aimed run and the whole run. A row that said one
+      // would be a table that hides what a stale witness costs.
+      expect(result.stdout).toContain('1 claim(s) in 2 run(s)');
+      expect(result.stdout).toContain('1 of 1 mutant run(s) are credited');
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }
@@ -660,10 +800,12 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
       // And the file it was asked about, relative to the package the run happens in,
       // so the flag is not asserted on a run that measured something else.
       expect(argv).toContain('run test/one.test.ts');
-      // The last run the fixture made is the mutant's, and it carries no report flag:
-      // only the baseline needs per-test durations, and asking a mutant run for a JSON
-      // file would pay for a report nothing reads.
-      expect(argv).not.toContain('--reporter=json');
+      // The last run the fixture made is the mutant's, and it asks for a report too --
+      // since v3.158 the mutant's report is read for the test that failed, which is the
+      // witness the next run of the same claim is aimed at. The two flags are asserted
+      // rather than the absence of one, because what changed is what the report is for.
+      expect(argv).toContain('--reporter=json');
+      expect(argv).toContain('--bail=1');
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }

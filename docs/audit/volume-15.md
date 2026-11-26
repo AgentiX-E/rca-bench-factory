@@ -908,3 +908,114 @@ third job would cost another 27 s prefix to save the tail of the slower half. No
 partition prices claimants, not jobs. And the acceptance is a prediction until the run that follows this commit
 measures it: a table written on a 32-core box prices child seconds, and the runner's ratio between two claimants
 is the thing the division actually depends on.
+
+## Finding 666 — a claim was priced by the file it lives in
+
+The sites battery asks, for each of 256 claims, whether some test notices an exit stop failing. The answer is an
+exit code, so the run is a run of the claimant, and the claim was charged for the whole of it. A file with thirty
+claims therefore cost thirty runs of itself: the price of a claim was its neighbours' runtime, and a file's price
+was its own runtime multiplied by its claim count. Measured in the table v3.157 shipped, two claimants of
+sixty-eight -- `ci-budget.test.ts` (30 claims, 620.8 s) and `publish.test.ts` (29 claims, 565.0 s) -- were **45%**
+of a 2 632 s battery, and no partition can make 45% smaller.
+
+That is why the round before this one could not balance the pair. Its table divided the claimants 0.1% apart and
+the next run read 30% apart, and the conclusion recorded was that a static table cannot balance a quantity that
+is not stable. The quantity was stable. It was the wrong quantity: what varied was not the partition but the
+price of a claim, because a claim's price was "everything in the file up to whichever test noticed".
+
+**The report already named the test.** A mutant run writes vitest's JSON report and the report marks the
+assertion that failed. That title is the answer to the battery's question -- "some test depends on this exit" --
+so the table now records it beside the claim, and the next run of that claim is aimed at one test with
+`--testNamePattern`. Finding 658 measured the principle on the backend-support battery (83 rows, **347.0 s ->
+53.2 s**, 83 of 83 verdicts identical), where the row already carried the name; the difference here is that a
+site carries none, so the name has to be measured, stored in a committed table, and re-checked on every run.
+
+**The aim can only make a run cheaper.** An aimed run is credited only when it exits non-zero, records the
+mutant, **and** the report names the aimed test as failed. A green aimed run is not evidence -- the file's other
+tests were never run -- and a red on some other test is not evidence either, so both are measured again against
+the whole file. A stale table therefore costs a whole-file run and never a wrong verdict, and the summary counts
+the misses rather than leaving a battery that got slower looking like a battery that is fine.
+
+**The escaping is not tidiness.** `--testNamePattern` compiles its argument as a regular expression. A title like
+`a bound (v3.158) is twice the day` unescaped opens a group and matches a family of names, and a red from one of
+them would be credited to this claim. The pattern is escaped, and the case measures both directions on a
+shipped-shaped name.
+
+**Measured, one tree, one box, four claimants at a time:**
+
+| | before | after |
+| --- | --- | --- |
+| 256 mutant runs, child time | 3 061.7 s | **924.2 s** |
+| wall clock | 7.8 min | **3.3 min** |
+| dearest claimant's share | 29% | **16%** |
+| aims that held | -- | **256 of 256** |
+
+The shipped table (68 claimants, 256 claims) was written by a third run, taken alone at the default pool of four:
+**417.7 s** of mutant child time inside **3.0 min**, **715.8 s** with the 68 baselines, the two halves dividing
+**357.9 s / 357.9 s** -- **0.0%** apart, 34 claimants each -- and the dearest claimant at **67.2 s**, **16.1%** of
+the mutant time where v3.157's table had it at 23.6%. One claim, aimed and whole, in the same process minutes
+apart: **1 375 ms** against **5 270 ms**.
+
+**The seconds do not survive a session; the ordering does.** Three readings of one battery on one tree, on one box:
+**3 061.7 s** with no witness recorded, **924.2 s** aimed in the session that wrote the first table, **417.7 s**
+aimed and alone; the three tables those runs priced total **2 632.1 s**, **1 550.4 s** and **715.8 s**. A **2.2x**
+spread between two of them is larger than the effect either was measuring, so the claim is the within-session
+ratio and the ordering -- `ci-budget.test.ts` first in all three -- and not the seconds. A duration taken once on a
+box whose load is not part of the record is a price with an unstated denominator; the division reads only the
+ordering, and it divides **0.0%** apart in all three tables.
+
+**What the artifact cannot check about itself, stated rather than approximated.** The obvious case for the table
+is "each witness names a test the claimant contains", and it is impossible for two shapes in this tree: a title
+with an apostrophe is written with an escape, so the literal differs from the report, and a title built from a
+template appears nowhere in the source at all. Measured on the first version of that case: 256 of 256 rows
+failed, then 2 of 256 after the reader was changed to the title. So the artifact asserts what is statically true
+-- a name for every claim, and a name that belongs to the file making the claim -- and staleness is held where it
+is observable: the aim misses, the claim is measured whole, and the run prints how many missed.
+
+**What this does not decide.** Whether a claimant with one claim and two seconds of runtime is worth the two
+extra arguments: the mechanism costs nothing when it misses, and a threshold would be a number nothing measures.
+Nor whether the table should carry a witness for a claim it prices but never measured -- today that claim is
+measured against its whole file, which is correct and slow.
+
+## Finding 667 — a count written with a separator was read as its last three digits
+
+`check-doc-counts.mjs` reads published counts in four places, and two of the four accepted a thousands
+separator while the two that decide the verdict did not. `COUNT_PHRASE` -- the census that finds a number
+nothing read -- and `SPAN_SHAPES` -- the `7,070 -> 7,082` row -- are both written `\d[\d,]*`, because this
+corpus writes five-digit counts with a comma. `PAIR_SHAPES` and `BARE_TESTS` were written `(\d+)`.
+
+So a row reading `**262 files, 7,091 tests passed**` matched no pair, fell through to the bare test count, and
+was read as **91 tests with no file count**. The round shipped such a row -- it wrote its own suite counts in
+the separator style the prose two rows away uses -- and the gate answered:
+
+```
+docs/progress/volume-21.md:2696: core tests fell from 7082 (…:2560) to 91. A suite that lost tests is
+  a regression or a mislabelled scope; either way it should not pass unremarked.
+docs/progress/volume-21.md:2696: declares the current state of 'core' as null files / 91 tests, but the
+  suite has 262 / 7091.
+```
+
+Both sentences are refusals of a true row, and both name numbers the document does not contain: `91` and
+`null files`. A guard that refuses an honest row with a fabricated diagnosis teaches its reader to rewrite the
+row until the gate stops complaining, which is the one habit a gate exists to prevent.
+
+**Three readers of one line, and two of them failed differently.** The guard has the two shapes above; the test
+file holds a third pattern of its own, in the case that holds the shipped document to the committed
+measurement. That one was `(\d+)` as well, and its failure mode was silence rather than arithmetic: with the row
+written `7,091 tests passed`, the pattern matched nothing, the case found no current-state rows at all, and it
+failed with `no current-state rows found; the shape of the document changed` -- a sentence about the document's
+structure, produced by a number the pattern could not read. A reader that goes quiet is worse than one that is
+wrong, because the sentence it prints sends the next reader to the wrong file.
+
+**The repair is a normalisation, not a wider character class.** Widening the classes is the half that makes the
+match happen; `Number('7,091')` is `NaN`, so the separator also has to be removed where the number becomes one.
+`countOf(text)` -- `Number(text.replaceAll(',', ''))` -- is called by every shape and by the bare count, and the
+three new cases state the rule rather than today's size: a published count written with separators, a bare
+count written the same way (whose refusal must name the whole number, since a bare count cannot be a
+current-state row), and two rows with separators where the suite grew -- which the digit-by-digit reader
+reported as a fall.
+
+**Falsification.** One new injection in `doc-counts-shapes` restores `Number(text)` in place of the
+normalisation; the battery is **15 injections, 15 caught, 0 survived, 0 inert**, and the new one is caught by
+exactly the case written for it. `md5`-identical restoration of the gate after the battery, as the battery
+requires.

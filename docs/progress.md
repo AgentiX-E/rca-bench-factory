@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 262 core + 4 cli |
-| Test lines | 122,064 core + 3,242 cli |
-| Tests | 7,082 core + 187 cli |
+| Test lines | 122,432 core + 3,242 cli |
+| Tests | 7,094 core + 187 cli |
 | Tracked files | 684 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.157: **51** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.158: **51** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1158,17 +1158,20 @@ is a row about rather than paraphrase one that no `grep` will find.
   beside the numbers so a reader can tell which tree was measured -- a refusal that costs a round its feedback
   loop, against a digest that costs a reader one more number to compare]`
 
-- O-143 · **The workflow's critical path: the tail has moved, the widest pair is now divided by cost, and the head is unsplit.**
+- O-143 · **The workflow's critical path: the tail has moved, the widest pair is divided by cost, and both halves of that pair are now the price of a claim.**
   Reading 51 read the two queues at **738 s** and **270 s**, and v3.156 moved **253 s** of batteries into the smaller
-  one (reading 52: **323 s** and **501 s**) without adding a job, a prefix or a step name. v3.157 then took the
-  widest imbalance the workflow still had -- the `sensitivity` pair at **247 s** and **438 s** of one command, 44%
-  apart -- and replaced the positional split with a division by `golden-master/sensitivity-costs.json`, a table of
-  per-claimant seconds written by the gate itself. What is left is the head of the queue: `gates-audit`'s own audit
-  shard at **239 s** and the gate-test battery at **173 s**, which is 54% of `batteries`.
-  `[open: the pair is now divided by a measurement, and two runs of one tree read 0.1% and 30% apart by their own
-  rows -- so the next cut is not another partition but the price of the claimants: ci-budget.test.ts is 30 claims
-  and up to 29% of the battery on its own, and the gate-test battery's 173 s cannot be split without its report
-  becoming a report per shard]`
+  one (reading 52: **323 s** and **501 s**) without adding a job, a prefix or a step name. v3.157 replaced the
+  positional split of the `sensitivity` pair with a division by `golden-master/sensitivity-costs.json`, a table of
+  per-claimant seconds written by the gate itself. v3.158 then found why that pair still moved: a claim was charged
+  for a whole run of its file, so two claimants of 68 were **45%** of a **2 632 s** battery and no partition could
+  balance them for longer than one run. The table now carries the test that noticed each claim, the battery aims
+  each run at it, and the shipped table -- **715.8 s** over 68 claimants, written by a run taken alone at the
+  default pool -- divides **357.9 s / 357.9 s** with the dearest claimant at **16.1%** of the mutant time. What
+  is left is the head of the queue: `gates-audit`'s own audit shard at **239 s** and the gate-test battery at
+  **173 s**, which is 54% of `batteries`.
+  `[open: the price of a claim is now its own witness, 3 061.7 s -> 924.2 s within one session and 417.7 s alone for 256 claims -- so the next cut is
+  the gate-test battery's 173 s, which cannot be split without its report becoming a report per shard, and the
+  audit shard's 239 s, which is one command over 69 subjects and has no claim to aim at]`
 
 ## Pass log
 
@@ -1207,7 +1210,7 @@ and this table.
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
 | [volume-20.md](progress/volume-20.md) | 8 | v3.134 | v3.141 |
-| [volume-21.md](progress/volume-21.md) | 16 | v3.142 | v3.157 |
+| [volume-21.md](progress/volume-21.md) | 17 | v3.142 | v3.158 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

@@ -1,415 +1,807 @@
 {
   "measured": "2026-11-26",
-  "machine": "GitHub ubuntu-latest, 4 vCPU, as run 45799554098",
-  "source": "the per-file rows of run 45799554098, shards 1/2 and 2/2",
+  "machine": "linux x64, 32 cpu",
+  "source": "node scripts/verify-sites-are-sensitive.mjs --costs golden-master/sensitivity-costs.json",
   "files": {
     "packages/core/test/apply-pins.test.ts": {
       "claims": 2,
-      "runs": 3,
-      "baselineMs": 2900,
-      "mutantMs": 4100
+      "runs": 4,
+      "baselineMs": 2116,
+      "mutantMs": 2196,
+      "witnesses": {
+        "scripts/apply-pins.mjs:62": "refuses to pin an id the registry does not contain",
+        "scripts/apply-pins.mjs:190": "--check fails on a mismatch and writes nothing"
+      }
     },
     "packages/core/test/audit-citations.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 1700,
-      "mutantMs": 1700
+      "baselineMs": 1228,
+      "mutantMs": 886,
+      "witnesses": {
+        "scripts/check-citations.mjs:86": "refuses a corpus whose citation names no heading, and says so in the exit code"
+      }
     },
     "packages/core/test/audit-volumes.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 2100,
-      "mutantMs": 2100
+      "baselineMs": 1221,
+      "mutantMs": 975,
+      "witnesses": {
+        "scripts/check-audit-volumes.mjs:44": "exits non-zero on a volume the index never names, and the sentence says which"
+      }
     },
     "packages/core/test/build-example-bundle.test.ts": {
       "claims": 3,
       "runs": 4,
-      "baselineMs": 5700,
-      "mutantMs": 29400
+      "baselineMs": 4447,
+      "mutantMs": 6359,
+      "witnesses": {
+        "scripts/build-example-bundle.mjs:202": "refuses a stale archive",
+        "scripts/build-example-bundle.mjs:55": "refuses an example directory holding no files at all",
+        "scripts/build-example-bundle.mjs:143": "refuses a tree the two enumerations read differently, and names both counts"
+      }
     },
     "packages/core/test/census-corpus-script.test.ts": {
       "claims": 3,
       "runs": 4,
-      "baselineMs": 4300,
-      "mutantMs": 7400
+      "baselineMs": 3191,
+      "mutantMs": 3300,
+      "witnesses": {
+        "scripts/census-corpus.mjs:67": "exits 2 when it was given nothing to census",
+        "scripts/census-corpus.mjs:224": "names the row whose count moved",
+        "scripts/census-corpus.mjs:238": "fails on a fault type no reading names"
+      }
     },
     "packages/core/test/check-acceptance-shape.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 2300,
-      "mutantMs": 2400
+      "baselineMs": 945,
+      "mutantMs": 957,
+      "witnesses": {
+        "scripts/check-acceptance-shape.mjs:30": "refuses a flag that is neither --write nor --check, rather than quietly checking"
+      }
     },
     "packages/core/test/check-aggregate-tables.test.ts": {
       "claims": 3,
       "runs": 4,
-      "baselineMs": 4600,
-      "mutantMs": 5200
+      "baselineMs": 3433,
+      "mutantMs": 3259,
+      "witnesses": {
+        "scripts/check-aggregate-tables.mjs:57": "refuses a corpus root that holds no logts.csv at all",
+        "scripts/check-aggregate-tables.mjs:781": "names the cell when the published table disagrees with the reduction",
+        "scripts/check-aggregate-tables.mjs:793": "refuses a case whose logts.csv has no cluster table beside it"
+      }
     },
     "packages/core/test/check-backend-support.test.ts": {
       "claims": 2,
       "runs": 3,
-      "baselineMs": 1900,
-      "mutantMs": 3400
+      "baselineMs": 1270,
+      "mutantMs": 1868,
+      "witnesses": {
+        "scripts/check-backend-support.mjs:51": "refuses a document with no such table, rather than passing on nothing to read",
+        "scripts/derive-backend-support.mjs:61": "reports a stale snapshot rather than rewriting it"
+      }
     },
     "packages/core/test/check-cli-reference.test.ts": {
       "claims": 2,
       "runs": 3,
-      "baselineMs": 47400,
-      "mutantMs": 15600
+      "baselineMs": 29180,
+      "mutantMs": 5668,
+      "witnesses": {
+        "scripts/check-cli-reference.mjs:51": "refuses a reference with no command table, rather than reporting zero drift",
+        "scripts/check-cli-reference.mjs:301": "refuses a command the binary implements but the reference omits"
+      }
     },
     "packages/core/test/check-comments-language.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 6300,
-      "mutantMs": 2000
+      "baselineMs": 3088,
+      "mutantMs": 1009,
+      "witnesses": {
+        "scripts/check-comments-language.mjs:25": "refuses a comment of Han prose, naming the line and the run"
+      }
     },
     "packages/core/test/check-coverage-readings.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 2300,
-      "mutantMs": 1700
+      "baselineMs": 1086,
+      "mutantMs": 893,
+      "witnesses": {
+        "scripts/check-coverage-readings.mjs:76": "names the dimension, both numbers and the instrument when the page is stale"
+      }
     },
     "packages/core/test/check-doc-counts.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 11300,
-      "mutantMs": 2500
+      "baselineMs": 6468,
+      "mutantMs": 1376,
+      "witnesses": {
+        "scripts/check-doc-counts.mjs:482": "refuses two rows that share a label but not a scope"
+      }
     },
     "packages/core/test/check-docs-language.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 3200,
-      "mutantMs": 1500
+      "baselineMs": 2244,
+      "mutantMs": 915,
+      "witnesses": {
+        "scripts/check-docs-language.mjs:24": "refuses a paragraph of Han prose, naming the line and the run"
+      }
     },
     "packages/core/test/check-fault-cases.test.ts": {
       "claims": 9,
       "runs": 10,
-      "baselineMs": 41900,
-      "mutantMs": 69700
+      "baselineMs": 37019,
+      "mutantMs": 11369,
+      "witnesses": {
+        "scripts/check-fault-cases.mjs:77": "refuses an unknown argument and explains itself on --help",
+        "scripts/check-fault-cases.mjs:92": "refuses a missing index and a missing key by name",
+        "scripts/check-fault-cases.mjs:106": "refuses an index with the wrong schema",
+        "scripts/check-fault-cases.mjs:110": "refuses an index with no cases array",
+        "scripts/check-fault-cases.mjs:122": "refuses an index that does not say what the set is for",
+        "scripts/check-fault-cases.mjs:1663": "refuses a case that does not parse, with exit 1 and the schema message",
+        "scripts/check-fault-cases.mjs:2123": "refuses a key whose vocabulary is not the types its own samples label",
+        "scripts/check-fault-cases.mjs:2132": "refuses a case file the index does not name",
+        "scripts/check-fault-cases.mjs:2140": "refuses a corpus below its own floor"
+      }
     },
     "packages/core/test/check-l4-status.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 2200,
-      "mutantMs": 2000
+      "baselineMs": 1319,
+      "mutantMs": 1069,
+      "witnesses": {
+        "scripts/check-l4-status.mjs:69": "fails when a row states a fetchability the registry contradicts"
+      }
     },
     "packages/core/test/check-no-absolute-paths.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 3700,
-      "mutantMs": 2000
+      "baselineMs": 2202,
+      "mutantMs": 937,
+      "witnesses": {
+        "scripts/check-no-absolute-paths.mjs:152": "fails a string literal under a home directory"
+      }
     },
     "packages/core/test/check-no-unsafe-shell.test.ts": {
       "claims": 2,
       "runs": 3,
-      "baselineMs": 7300,
-      "mutantMs": 9300
+      "baselineMs": 4414,
+      "mutantMs": 2096,
+      "witnesses": {
+        "scripts/check-no-unsafe-shell.mjs:598": "rejects a positional argument instead of silently scanning the tree",
+        "scripts/check-no-unsafe-shell.mjs:674": "scans a non-empty set of files, so the pass is not vacuous"
+      }
     },
     "packages/core/test/check-no-vendored-data.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 2400,
-      "mutantMs": 1400
+      "baselineMs": 1404,
+      "mutantMs": 1007,
+      "witnesses": {
+        "scripts/check-no-vendored-data.mjs:182": "catches an extracted corpus tree"
+      }
     },
     "packages/core/test/check-official-registry.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 2200,
-      "mutantMs": 1400
+      "baselineMs": 1244,
+      "mutantMs": 1060,
+      "witnesses": {
+        "scripts/check-official-registry.mjs:58": "fails when a digest is recorded without a byte count, or the reverse"
+      }
     },
     "packages/core/test/check-official-roundtrip.test.ts": {
       "claims": 5,
       "runs": 6,
-      "baselineMs": 23200,
-      "mutantMs": 41100
+      "baselineMs": 13265,
+      "mutantMs": 8368,
+      "witnesses": {
+        "scripts/check-official.mjs:1034": "rejects a flag with no value instead of reading the next flag as one",
+        "scripts/check-official.mjs:1095": "still prints its verdict and exits 1 when the failure list is non-empty",
+        "scripts/check-official.mjs:1114": "names the fetch command when the corpus directory is absent",
+        "scripts/check-official.mjs:1119": "names the generator when the descriptor file is absent",
+        "scripts/check-official.mjs:1989": "names the fields a case does not satisfy instead of crashing before the sentence"
+      }
     },
     "packages/core/test/check-open-list.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 10800,
-      "mutantMs": 2800
+      "baselineMs": 6123,
+      "mutantMs": 1213,
+      "witnesses": {
+        "scripts/check-open-list.mjs:2089": "reads every Open list, not only the first one"
+      }
     },
     "packages/core/test/check-readme-sample.test.ts": {
       "claims": 2,
       "runs": 3,
-      "baselineMs": 2700,
-      "mutantMs": 4900
+      "baselineMs": 1371,
+      "mutantMs": 2106,
+      "witnesses": {
+        "scripts/check-readme-sample.mjs:48": "refuses a README with no sample block, and says what to do about it",
+        "scripts/check-readme-sample.mjs:84": "fails the sample when the call does not match the real signature"
+      }
     },
     "packages/core/test/check-repository-table.test.ts": {
       "claims": 5,
       "runs": 6,
-      "baselineMs": 4000,
-      "mutantMs": 31700
+      "baselineMs": 2588,
+      "mutantMs": 7842,
+      "witnesses": {
+        "scripts/check-repository-table.mjs:483": "refuses a value that drifted, and says both numbers",
+        "scripts/check-repository-table.mjs:261": "refuses a suite measurement that carries no scope for a row it must derive",
+        "scripts/check-repository-table.mjs:280": "refuses a test-file count the runner and the glob disagree about",
+        "scripts/check-repository-table.mjs:380": "refuses to rewrite a document with no table to rewrite",
+        "scripts/check-repository-table.mjs:388": "stops before writing when a row it must rewrite cannot be derived"
+      }
     },
     "packages/core/test/check-roundtrip-record.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 3300,
-      "mutantMs": 2200
+      "baselineMs": 1826,
+      "mutantMs": 938,
+      "witnesses": {
+        "scripts/check-roundtrip-record.mjs:63": "refuses a record with no anchor"
+      }
     },
     "packages/core/test/check-test-budgets.test.ts": {
       "claims": 3,
       "runs": 4,
-      "baselineMs": 3400,
-      "mutantMs": 8400
+      "baselineMs": 1951,
+      "mutantMs": 3042,
+      "witnesses": {
+        "scripts/check-test-budgets.mjs:105": "refuses an invocation that names no report",
+        "scripts/check-test-budgets.mjs:233": "fails a file whose slowest test takes more than half its own budget",
+        "scripts/check-test-budgets.mjs:244": "refuses a report that names no test at all"
+      }
     },
     "packages/core/test/check-user-guide.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 5600,
-      "mutantMs": 4000
+      "baselineMs": 3714,
+      "mutantMs": 3497,
+      "witnesses": {
+        "scripts/check-user-guide.mjs:114": "executes a bash fence that is indented inside a list item"
+      }
     },
     "packages/core/test/check-workflow-language.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 2600,
-      "mutantMs": 1400
+      "baselineMs": 1628,
+      "mutantMs": 1028,
+      "witnesses": {
+        "scripts/check-workflow-language.mjs:26": "refuses a workflow comment of Han prose, naming the row and the run"
+      }
     },
     "packages/core/test/ci-budget.test.ts": {
       "claims": 30,
       "runs": 31,
-      "baselineMs": 16700,
-      "mutantMs": 604100
+      "baselineMs": 10757,
+      "mutantMs": 67213,
+      "witnesses": {
+        "scripts/check-ci-budget.mjs:83": "exits non-zero on a workflow it cannot read, rather than checking nothing",
+        "scripts/check-ci-budget.mjs:91": "exits non-zero when the recording it is told to read is not there",
+        "scripts/check-ci-budget.mjs:128": "refuses through the gate, with the declarations file named, rather than only inside a function",
+        "scripts/check-ci-budget.mjs:136": "refuses a prefix step through the gate, not only inside a function",
+        "scripts/measure-ci-baseline.mjs:291": "records nothing when it is given no token or no run, and says how to call it",
+        "scripts/measure-ci-baseline.mjs:300": "refuses to be given a measurement, because it measures nothing",
+        "scripts/measure-ci-baseline.mjs:321": "refuses a run that holds no job of that name, and a run the API will not answer",
+        "scripts/measure-ci-baseline.mjs:413": "refuses a seed whose day’s workflow does not parse, for the same reason a missing one is refused",
+        "scripts/measure-ci-baseline.mjs:588": "refuses a history it cannot parse, and one with no reading in it",
+        "scripts/measure-ci-baseline.mjs:596": "refuses a history it cannot parse, and one with no reading in it",
+        "scripts/measure-ci-baseline.mjs:613": "refuses a commit whose workflow cannot be read, naming the run that records it",
+        "scripts/measure-ci-baseline.mjs:634": "refuses a row in a job the commit cannot read, and says which line stopped the reader",
+        "scripts/measure-ci-baseline.mjs:643": "refuses a row that carries a command its own commit does not state",
+        "scripts/measure-ci-baseline.mjs:666": "refuses a workflow it cannot read, rather than recording nothing and saying it did",
+        "scripts/measure-ci-baseline.mjs:676": "refuses an attempt the run has never reached, because no machine spent it",
+        "scripts/measure-ci-baseline.mjs:698": "refuses a recording from a run that did not succeed, and names the seed that keeps what it did measure",
+        "scripts/measure-ci-baseline.mjs:753": "refuses to record when the file it would replace cannot say which day is the newest",
+        "scripts/measure-ci-baseline.mjs:756": "refuses to record when the file it would replace cannot say which day is the newest",
+        "scripts/measure-ci-baseline.mjs:775": "refuses an attempt older than the recording, whose tree `R10` would then refuse",
+        "scripts/measure-ci-baseline.mjs:793": "refuses an attempt the API returns no job for, rather than recording an empty measurement",
+        "scripts/measure-ci-baseline.mjs:814": "refuses a seed whose day cannot be read, because a number has to be placed on the command that spent it",
+        "scripts/measure-ci-baseline.mjs:834": "refuses a recording whose tree on disk is not the tree the run used",
+        "scripts/measure-ci-baseline.mjs:851": "refuses to borrow a declared job, because a borrow is not a run",
+        "scripts/measure-ci-baseline.mjs:862": "refuses a borrow that names no job of the workflow",
+        "scripts/measure-ci-baseline.mjs:873": "refuses to borrow across a budget, because the seconds are the same commands and the ceiling is not",
+        "scripts/measure-ci-baseline.mjs:895": "refuses a run that holds no job of that name, and a run the API will not answer",
+        "scripts/measure-ci-baseline.mjs:912": "refuses to record a step the job it borrowed from never ran",
+        "scripts/measure-ci-baseline.mjs:926": "refuses a step the run reports as skipped, and says it did not run rather than that the job lacks it",
+        "scripts/measure-ci-baseline.mjs:1015": "refuses a step whose seconds are exactly its own bound, which is the bound read back",
+        "scripts/measure-ci-baseline.mjs:1043": "refuses a run that reports no span for a job, because the overhead would then be a guess"
+      }
     },
     "packages/core/test/ci-readings.test.ts": {
       "claims": 5,
       "runs": 6,
-      "baselineMs": 5000,
-      "mutantMs": 51800
+      "baselineMs": 2697,
+      "mutantMs": 9538,
+      "witnesses": {
+        "scripts/check-ci-budget.mjs:110": "refuses when the history it needs is not there, and names the file it looked for",
+        "scripts/measure-ci-baseline.mjs:310": "refuses --seed with --borrow, because a borrowed seed measured nothing",
+        "scripts/measure-ci-baseline.mjs:761": "refuses a run newer than the recording, which is a recording that was not taken",
+        "scripts/measure-ci-baseline.mjs:768": "refuses a seed that is the recording, because one measurement entered twice is one overweighted",
+        "scripts/measure-ci-baseline.mjs:1083": "refuses a run that shares no command with this workflow"
+      }
     },
     "packages/core/test/claims-are-sensitive.test.ts": {
       "claims": 6,
       "runs": 7,
-      "baselineMs": 3100,
-      "mutantMs": 17200
+      "baselineMs": 1515,
+      "mutantMs": 6016,
+      "witnesses": {
+        "scripts/verify-claims-are-sensitive.mjs:103": "refuses an argument it does not know",
+        "scripts/verify-claims-are-sensitive.mjs:116": "refuses an inventory it cannot read",
+        "scripts/verify-claims-are-sensitive.mjs:132": "refuses an inventory whose exemptions are empty, rather than passing while measuring nothing",
+        "scripts/verify-claims-are-sensitive.mjs:172": "fails when the inventory carries an exemption with no mutant",
+        "scripts/verify-claims-are-sensitive.mjs:257": "restores the file when it is signalled in the middle of a mutant",
+        "scripts/verify-claims-are-sensitive.mjs:385": "fails when the test passes with the claim made false"
+      }
     },
     "packages/core/test/data-model-vocabularies.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 1600,
-      "mutantMs": 1600
+      "baselineMs": 1100,
+      "mutantMs": 946,
+      "witnesses": {
+        "scripts/check-data-model-vocabularies.mjs:76": "reports a schema that re-spells a member instead of reading the tuple"
+      }
     },
     "packages/core/test/derive-gate-sites-refusals.test.ts": {
       "claims": 2,
       "runs": 3,
-      "baselineMs": 2800,
-      "mutantMs": 9200
+      "baselineMs": 1303,
+      "mutantMs": 4344,
+      "witnesses": {
+        "scripts/derive-gate-sites.mjs:477": "refuses a file it cannot parse, rather than answering from part of one",
+        "scripts/derive-gate-sites.mjs:546": "refuses `process.exitCode = 1`"
+      }
     },
     "packages/core/test/derive-gate-sites-throws.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 4300,
-      "mutantMs": 5400
+      "baselineMs": 2866,
+      "mutantMs": 2084,
+      "witnesses": {
+        "scripts/derive-gate-sites.mjs:633": "refuses a file it cannot parse, rather than classifying part of it"
+      }
     },
     "packages/core/test/derive-openrca-archive.test.ts": {
       "claims": 3,
       "runs": 4,
-      "baselineMs": 2700,
-      "mutantMs": 11300
+      "baselineMs": 1948,
+      "mutantMs": 4386,
+      "witnesses": {
+        "scripts/derive-openrca-archive.mjs:295": "refuses to guess without an archive, and says how to supply one",
+        "scripts/derive-openrca-archive.mjs:309": "succeeds on --check against what it just wrote, and fails against anything else",
+        "scripts/derive-openrca-archive.mjs:203": "refuses to guess without an archive, and says how to supply one"
+      }
     },
     "packages/core/test/fault-extraction-scripts.test.ts": {
       "claims": 8,
       "runs": 9,
-      "baselineMs": 5800,
-      "mutantMs": 51700
+      "baselineMs": 4431,
+      "mutantMs": 11543,
+      "witnesses": {
+        "scripts/derive-fault-golden.mjs:252": "refuses to run without a key, and names the variable",
+        "scripts/derive-fault-golden.mjs:255": "rejects an unknown argument rather than ignoring it",
+        "scripts/score-fault-extraction.mjs:202": "exits 2, not 1, when the measurement exists and misses the threshold",
+        "scripts/score-fault-extraction.mjs:205": "exits 1 when the prediction count does not match the dataset",
+        "scripts/derive-fault-golden.mjs:77": "rejects an unknown argument rather than ignoring it",
+        "scripts/score-fault-extraction.mjs:62": "rejects an unknown argument rather than ignoring it",
+        "scripts/score-fault-extraction.mjs:93": "exits 1 on an artefact that is an array rather than an envelope",
+        "scripts/score-fault-extraction.mjs:96": "exits 1 on a prediction artefact with the wrong schema"
+      }
     },
     "packages/core/test/fetch-official.test.ts": {
       "claims": 5,
       "runs": 6,
-      "baselineMs": 22300,
-      "mutantMs": 58500
+      "baselineMs": 17166,
+      "mutantMs": 6055,
+      "witnesses": {
+        "scripts/fetch-official.mjs:131": "refuses an absolute --out inside the repository",
+        "scripts/fetch-official.mjs:1002": "refuses an extraction the destination cannot hold, and names both numbers",
+        "scripts/fetch-official.mjs:1012": "fails when the recorded digest does not match the bytes served",
+        "scripts/fetch-official.mjs:1022": "reports an archive that verifies but will not unpack as its own failure class",
+        "scripts/fetch-official.mjs:1031": "retries a short transfer and then reports it as unreachable, not as a pin problem"
+      }
     },
     "packages/core/test/gate-receipt.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 1800,
-      "mutantMs": 2600
+      "baselineMs": 1135,
+      "mutantMs": 1649,
+      "witnesses": {
+        "scripts/gate-receipt.mjs:82": "refuses a name that is not a tree SHA-1, and says what to resolve instead"
+      }
     },
     "packages/core/test/gate-sites-are-proven.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 9600,
-      "mutantMs": 7200
+      "baselineMs": 7687,
+      "mutantMs": 2634,
+      "witnesses": {
+        "scripts/derive-gate-sites.mjs:221": "refuses to write when --check is given and the file has drifted"
+      }
     },
     "packages/core/test/gate-steps.test.ts": {
       "claims": 5,
       "runs": 6,
-      "baselineMs": 4500,
-      "mutantMs": 13200
+      "baselineMs": 4264,
+      "mutantMs": 6362,
+      "witnesses": {
+        "scripts/verify-local.mjs:146": "prints 'VOID' and exits 1 for the 'moved' shape",
+        "scripts/verify-local.mjs:213": "refuses a workflow the plan does not describe, naming the step",
+        "scripts/verify-local.mjs:236": "refuses a shape it does not have, and publishes the ones it does",
+        "scripts/verify-local.mjs:251": "refuses a filter that selects nothing, rather than reporting success",
+        "scripts/verify-local.mjs:307": "turns a rejection that reached the top into one line and a non-zero exit"
+      }
     },
     "packages/core/test/gates-are-testable-is-enumerated.test.ts": {
       "claims": 10,
       "runs": 11,
-      "baselineMs": 33400,
-      "mutantMs": 163500
+      "baselineMs": 16925,
+      "mutantMs": 20088,
+      "witnesses": {
+        "scripts/verify-gates-are-testable.mjs:454": "splits the subject list into shards that cover it once, and refuses one that covers nothing",
+        "scripts/verify-gates-are-testable.mjs:470": "splits the subject list into shards that cover it once, and refuses one that covers nothing",
+        "scripts/verify-gates-are-testable.mjs:509": "refuses a run whose subject list came back empty",
+        "scripts/verify-gates-are-testable.mjs:668": "refuses while a live run holds the tree, and takes over from a dead one",
+        "scripts/verify-gates-are-testable.mjs:706": "refuses to repair a file a live process is holding",
+        "scripts/verify-gates-are-testable.mjs:728": "fails rather than continuing when the journal cannot put the gate back",
+        "scripts/verify-gates-are-testable.mjs:747": "refuses a tree that is already hollowed, rather than measuring one",
+        "scripts/verify-gates-are-testable.mjs:781": "restores the gate and stops the suite when the run is signalled",
+        "scripts/verify-gates-are-testable.mjs:835": "fails when it cannot put a gate back, rather than reporting success",
+        "scripts/verify-gates-are-testable.mjs:975": "refuses to credit a failure that names no failing test"
+      }
     },
     "packages/core/test/gates-are-testable.test.ts": {
       "claims": 2,
       "runs": 3,
-      "baselineMs": 2700,
-      "mutantMs": 3800
+      "baselineMs": 2062,
+      "mutantMs": 1830,
+      "witnesses": {
+        "scripts/check-no-mock.mjs:51": "fails a tree for every construct the gate must keep banning",
+        "scripts/check-no-secrets.mjs:47": "fails a tree carrying a GitHub PAT"
+      }
     },
     "packages/core/test/gen-examples.test.ts": {
       "claims": 8,
       "runs": 9,
-      "baselineMs": 6400,
-      "mutantMs": 85000
+      "baselineMs": 5259,
+      "mutantMs": 16579,
+      "witnesses": {
+        "scripts/gen-examples.mjs:267": "refuses --check when the data file does not exist at all",
+        "scripts/gen-examples.mjs:271": "refuses a stale data file and names the command that fixes it",
+        "scripts/gen-examples.mjs:280": "refuses --check when a doc block disagrees with the export behind it",
+        "scripts/format-spec.mjs:66": "refuses a modality code the specification has no word for",
+        "scripts/gen-examples.mjs:138": "refuses a specification naming a constant the package does not export",
+        "scripts/gen-examples.mjs:209": "refuses an example that names a target the exporters do not produce",
+        "scripts/gen-examples.mjs:211": "refuses an example naming a path the target does not export",
+        "scripts/gen-examples.mjs:251": "refuses a field marker that matches no documented file"
+      }
     },
     "packages/core/test/gen-rcaeval-cases.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 4200,
-      "mutantMs": 2700
+      "baselineMs": 3455,
+      "mutantMs": 1094,
+      "witnesses": {
+        "scripts/gen-rcaeval-cases.mjs:65": "fails when the corpus holds no case directories at all"
+      }
     },
     "packages/core/test/git-hooks.test.ts": {
       "claims": 2,
       "runs": 3,
-      "baselineMs": 2600,
-      "mutantMs": 4400
+      "baselineMs": 1099,
+      "mutantMs": 1966,
+      "witnesses": {
+        "scripts/install-git-hooks.mjs:19": "refuses an argument list it cannot honour rather than installing somewhere unintended",
+        "scripts/install-git-hooks.mjs:41": "refuses a checkout with no hook file, because the clone would be unguarded and silent about it"
+      }
     },
     "packages/core/test/measure-doc-counts-readings.test.ts": {
       "claims": 6,
       "runs": 7,
-      "baselineMs": 2300,
-      "mutantMs": 18500
+      "baselineMs": 1118,
+      "mutantMs": 9593,
+      "witnesses": {
+        "scripts/doc-counts-rows.mjs:267": "says the format may have changed only when there is no summary at all",
+        "scripts/doc-counts-rows.mjs:282": "refuses a red summary instead of calling it an unreadable format",
+        "scripts/doc-counts-rows.mjs:293": "refuses a run where nothing passed, instead of blaming the format",
+        "scripts/doc-counts-rows.mjs:512": "refuses a report of a red run instead of counting the half that passed",
+        "scripts/doc-counts-rows.mjs:533": "refuses the same fact from a report, in the same words",
+        "scripts/doc-counts-rows.mjs:559": "names a test file that belongs to no workspace package"
+      }
     },
     "packages/core/test/measure-doc-counts-red-run.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 1300,
-      "mutantMs": 2700
+      "baselineMs": 907,
+      "mutantMs": 1935,
+      "witnesses": {
+        "scripts/measure-doc-counts.mjs:182": "prints the diagnosis and no stack trace"
+      }
     },
     "packages/core/test/pack-verify-script.test.ts": {
       "claims": 4,
       "runs": 5,
-      "baselineMs": 3600,
-      "mutantMs": 14800
+      "baselineMs": 3001,
+      "mutantMs": 9326,
+      "witnesses": {
+        "scripts/verify-example-pack.mjs:79": "refuses a directory that holds no files, which is the one refusal no pack can produce",
+        "scripts/verify-example-pack.mjs:85": "refuses an extraction that carries no manifest at all",
+        "scripts/verify-example-pack.mjs:105": "rejects a file whose content was altered in transit",
+        "scripts/verify-example-pack.mjs:113": "rejects a manifest whose own count disagrees with the extraction"
+      }
     },
     "packages/core/test/probe-built-module-guards.test.ts": {
       "claims": 5,
       "runs": 6,
-      "baselineMs": 4400,
-      "mutantMs": 13100
+      "baselineMs": 2257,
+      "mutantMs": 5055,
+      "witnesses": {
+        "scripts/measure-doc-counts.mjs:162": "fails with a readable remedy when there is no committed measurement",
+        "scripts/probe-agreement-baseline.mjs:61": "refuses to run when the built module is absent",
+        "scripts/probe-category-derivation.mjs:80": "refuses to run when the built module is absent",
+        "scripts/probe-category-derivation.mjs:90": "refuses to run when the built module is absent",
+        "scripts/probe-denial-inventory.mjs:63": "refuses to run when the built module is absent"
+      }
     },
     "packages/core/test/probe-modality-memory.test.ts": {
       "claims": 2,
       "runs": 3,
-      "baselineMs": 1400,
-      "mutantMs": 3600
+      "baselineMs": 900,
+      "mutantMs": 1842,
+      "witnesses": {
+        "scripts/probe-modality-memory.mjs:50": "refuses when the built module it reads is not there, rather than reporting zero",
+        "scripts/probe-modality-memory.mjs:60": "refuses a row count it cannot use, and says what it got"
+      }
     },
     "packages/core/test/probe-type-misses-refusals.test.ts": {
       "claims": 2,
       "runs": 3,
-      "baselineMs": 2600,
-      "mutantMs": 8300
+      "baselineMs": 1712,
+      "mutantMs": 4461,
+      "witnesses": {
+        "scripts/type-miss-readings.mjs:104": "refuses a run it has not recorded, naming the runs it has",
+        "scripts/type-miss-readings.mjs:143": "refuses a corpus that carries no samples array, and names the file it read"
+      }
     },
     "packages/core/test/probe-z-floor.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 2200,
-      "mutantMs": 2400
+      "baselineMs": 1376,
+      "mutantMs": 1326,
+      "witnesses": {
+        "scripts/probe-z-floor.mjs:86": "refuses a corpus directory that is not one, rather than reporting zero cases"
+      }
     },
     "packages/core/test/progress-volumes.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 1800,
-      "mutantMs": 1700
+      "baselineMs": 1178,
+      "mutantMs": 1043,
+      "witnesses": {
+        "scripts/check-progress-volumes.mjs:28": "exits non-zero on a stale row, and the sentence says which file and which numbers"
+      }
     },
     "packages/core/test/publish-plan.test.ts": {
       "claims": 11,
       "runs": 12,
-      "baselineMs": 3400,
-      "mutantMs": 41400
+      "baselineMs": 2201,
+      "mutantMs": 17223,
+      "witnesses": {
+        "scripts/publish-plan.mjs:78": "refuses when git cannot answer, quoting the command and not a stack frame",
+        "scripts/publish-plan.mjs:80": "refuses when git cannot answer, quoting the command and not a stack frame",
+        "scripts/publish-plan.mjs:88": "refuses a blob whose name is not a SHA, from a listing that arrives over a wire",
+        "scripts/publish-plan.mjs:116": "refuses a line it cannot parse rather than inventing a name",
+        "scripts/publish-plan.mjs:196": "refuses a parent count the commit does not have, rather than guessing which to keep",
+        "scripts/publish-plan.mjs:245": "refuses a gitlink rather than publishing a tree that is missing a directory",
+        "scripts/publish-plan.mjs:296": "refuses a mode a tree entry cannot carry",
+        "scripts/publish-plan.mjs:345": "refuses a truncated listing before it decides what to delete",
+        "scripts/publish-plan.mjs:351": "refuses an empty plan, because a ref moved to where it is is not a push",
+        "scripts/publish-plan.mjs:359": "refuses a merge, whose second parent the remote would never receive",
+        "scripts/publish-plan.mjs:442": "resolves a symbol against the objects that exist, and refuses one that does not"
+      }
     },
     "packages/core/test/publish-readings.test.ts": {
       "claims": 5,
       "runs": 6,
-      "baselineMs": 3000,
-      "mutantMs": 13800
+      "baselineMs": 1995,
+      "mutantMs": 8344,
+      "witnesses": {
+        "scripts/publish-readings-cli.mjs:43": "refuses --file with no value, and an argument it does not know",
+        "scripts/publish-readings-cli.mjs:51": "refuses a file that holds no readings, and names the file it read",
+        "scripts/publish-readings.mjs:321": "refuses to append a push that made no request, and leaves the file untouched",
+        "scripts/publish-readings.mjs:330": "refuses to append to a file that is not JSON, and leaves it untouched",
+        "scripts/publish-readings.mjs:333": "refuses to append to a JSON document that is not a list"
+      }
     },
     "packages/core/test/publish.test.ts": {
       "claims": 29,
       "runs": 30,
-      "baselineMs": 25400,
-      "mutantMs": 539600
+      "baselineMs": 15610,
+      "mutantMs": 61620,
+      "witnesses": {
+        "scripts/publish-cli.mjs:249": "refuses an argument it does not know rather than falling back to a default",
+        "scripts/publish-cli.mjs:252": "refuses to publish without a token, naming what is missing",
+        "scripts/publish-cli.mjs:108": "refuses a local transport with no remote to write",
+        "scripts/publish-cli.mjs:111": "refuses a transport it does not have, and a GitHub push with no repository",
+        "scripts/publish-cli.mjs:113": "refuses a transport it does not have, and a GitHub push with no repository",
+        "scripts/publish.mjs:92": "refuses to name a commit whose tree no gate blessed, because the name publishes that tree",
+        "scripts/publish.mjs:274": "refuses --new-branch for a branch that exists, because the flag is a claim about the remote",
+        "scripts/publish.mjs:298": "refuses a branch that does not exist on a repository that has branches",
+        "scripts/publish.mjs:408": "refuses when the remote holds neither the revision nor any tree of its ancestry",
+        "scripts/publish.mjs:429": "refuses when the remote already carries this tree on a commit that is not this one",
+        "scripts/publish.mjs:486": "refuses a rebuild that lost a byte, rather than describing it as a different history",
+        "scripts/publish.mjs:507": "refuses a rebuilt tip whose tree is not the tree the gate blessed",
+        "scripts/publish.mjs:604": "refuses an empty token rather than sending a request that will answer 401",
+        "scripts/publish.mjs:657": "spends exactly its retry budget on a connection that never answers, then refuses",
+        "scripts/publish.mjs:680": "falls back to a utf-8 body when the base64 one is refused, and the commit is still the local one",
+        "scripts/publish.mjs:695": "spends exactly its retry budget on a connection that never answers, then refuses",
+        "scripts/publish.mjs:698": "refuses a blob the API will not take in either encoding, naming the path",
+        "scripts/publish.mjs:709": "does not retry a failure that is not a broken connection",
+        "scripts/publish.mjs:745": "forwards a refusal on a later page instead of reading it as a repository with no refs",
+        "scripts/publish.mjs:748": "refuses a listing that is not a list, instead of counting it as no refs",
+        "scripts/publish.mjs:779": "forwards a refusal on the question rather than replaying a history it could not read",
+        "scripts/publish.mjs:802": "refuses a tree entry whose blob the executor never read",
+        "scripts/publish.mjs:845": "forwards a refusal on the creation that is not the one of a taken name",
+        "scripts/publish.mjs:846": "turns a branch that appeared during the push into a sentence, and forces nothing",
+        "scripts/publish.mjs:857": "forwards a refusal on the ref write that is not the 422 of a moved branch",
+        "scripts/publish.mjs:859": "turns a moved ref into a sentence about the branch, and forces nothing",
+        "scripts/publish.mjs:962": "refuses a local tree request whose blob is not in hand",
+        "scripts/publish.mjs:998": "refuses to create a branch that appeared between the plan and the ref",
+        "scripts/publish.mjs:1009": "refuses to move a branch to a commit that does not descend from it"
+      }
     },
     "packages/core/test/published-refusals.test.ts": {
       "claims": 8,
       "runs": 9,
-      "baselineMs": 3000,
-      "mutantMs": 44300
+      "baselineMs": 1733,
+      "mutantMs": 13275,
+      "witnesses": {
+        "scripts/check-citations.mjs:50": "rethrows when a document is a directory rather than absent",
+        "scripts/check-citations.mjs:60": "rethrows when a volume directory is a file rather than absent",
+        "scripts/format-spec.mjs:760": "throws for an id no spec declares, and names the id",
+        "scripts/probe-m1-ceiling.mjs:72": "refuses an argument it does not know, and names it",
+        "scripts/probe-type-misses.mjs:1177": "refuses an argument it does not know",
+        "scripts/probe-type-misses.mjs:1196": "refuses a report with no misses array rather than classifying nothing",
+        "scripts/score-fault-extraction.mjs:101": "refuses an artefact that has the schema and no predictions array",
+        "scripts/serve-site.mjs:38": "answers 404 for a path that is not a file, and 200 for the page"
+      }
     },
     "packages/core/test/read-remote-index.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 2600,
-      "mutantMs": 2300
+      "baselineMs": 1679,
+      "mutantMs": 1102,
+      "witnesses": {
+        "scripts/read-remote-index.mjs:66": "exits 1 when the host keeps refusing, and writes nothing"
+      }
     },
     "packages/core/test/reader-against-backend.test.ts": {
       "claims": 2,
       "runs": 3,
-      "baselineMs": 11400,
-      "mutantMs": 16200
+      "baselineMs": 10983,
+      "mutantMs": 4888,
+      "witnesses": {
+        "scripts/verify-reader-against-backend.mjs:250": "stops the server even when the reading fails",
+        "scripts/verify-reader-against-backend.mjs:420": "fails rather than telling a verdict while its server is still listening"
+      }
     },
     "packages/core/test/readings-reconcile.test.ts": {
       "claims": 2,
       "runs": 3,
-      "baselineMs": 1900,
-      "mutantMs": 3700
+      "baselineMs": 825,
+      "mutantMs": 1747,
+      "witnesses": {
+        "scripts/reconcile-readings.mjs:48": "refuses a payload that is not the API shape, instead of reading it as \"no runs\"",
+        "scripts/reconcile-readings.mjs:128": "names an unrecorded run and fails, rather than reporting a total"
+      }
     },
     "packages/core/test/record-reading.test.ts": {
       "claims": 3,
       "runs": 4,
-      "baselineMs": 5200,
-      "mutantMs": 9100
+      "baselineMs": 3067,
+      "mutantMs": 2229,
+      "witnesses": {
+        "scripts/record-reading.mjs:69": "refuses to check a run the record does not carry",
+        "scripts/record-reading.mjs:244": "fails on one wrong answer, naming the sample, the field and both values",
+        "scripts/record-reading.mjs:291": "refuses a run that is not wholly graded, rather than writing a total that disagrees"
+      }
     },
     "packages/core/test/rulegen-agreement.test.ts": {
       "claims": 6,
       "runs": 7,
-      "baselineMs": 1700,
-      "mutantMs": 14400
+      "baselineMs": 1051,
+      "mutantMs": 8768,
+      "witnesses": {
+        "scripts/check-rulegen-agreement.mjs:68": "refuses an argument it does not understand rather than ignoring it",
+        "scripts/check-rulegen-agreement.mjs:77": "refuses a file it cannot read, and names the check that failed",
+        "scripts/check-rulegen-agreement.mjs:94": "refuses an answer set whose verdict it contradicts",
+        "scripts/check-rulegen-agreement.mjs:107": "refuses a refusal that names a different reason than the answer set",
+        "scripts/check-rulegen-agreement.mjs:52": "refuses an argument it does not understand rather than ignoring it",
+        "scripts/check-rulegen-agreement.mjs:58": "refuses an argument it does not understand rather than ignoring it"
+      }
     },
     "packages/core/test/sensitivity-shards.test.ts": {
       "claims": 6,
       "runs": 7,
-      "baselineMs": 1600,
-      "mutantMs": 10400
+      "baselineMs": 997,
+      "mutantMs": 8505,
+      "witnesses": {
+        "scripts/verify-sites-are-sensitive.mjs:225": "refuses a malformed --shard before any claimant could be spawned",
+        "scripts/verify-sites-are-sensitive.mjs:343": "refuses a shard it cannot derive, rather than falling back to a second split",
+        "scripts/verify-sites-are-sensitive.mjs:355": "refuses a table that has gone stale, before a claimant is spawned",
+        "scripts/verify-sites-are-sensitive.mjs:386": "refuses a shard that would run no claimant, rather than passing on an empty measurement",
+        "scripts/site-proofs.mjs:849": "refuses a split into no shards, which would be a plan that runs nowhere",
+        "scripts/site-proofs.mjs:857": "refuses to place a claimant the table has not measured"
+      }
     },
     "packages/core/test/site-proofs.test.ts": {
       "claims": 5,
       "runs": 6,
-      "baselineMs": 6300,
-      "mutantMs": 24600
+      "baselineMs": 3958,
+      "mutantMs": 6152,
+      "witnesses": {
+        "scripts/verify-site-proofs.mjs:117": "refuses an argument it does not understand, rather than measuring anyway",
+        "scripts/verify-site-proofs.mjs:121": "refuses a --jobs count it cannot honour, rather than running one file at a time",
+        "scripts/verify-site-proofs.mjs:131": "refuses an inventory it cannot read instead of reporting no violations",
+        "scripts/verify-site-proofs.mjs:142": "refuses an inventory with no proved site, which would pass while measuring nothing",
+        "scripts/verify-site-proofs.mjs:409": "fails when a claim names a file that reaches the script but not the exit"
+      }
     },
     "packages/core/test/staged-mutation.test.ts": {
       "claims": 2,
       "runs": 3,
-      "baselineMs": 3200,
-      "mutantMs": 4000
+      "baselineMs": 1243,
+      "mutantMs": 2201,
+      "witnesses": {
+        "scripts/check-staged-mutation.mjs:41": "refuses the argument list it cannot honour rather than checking nothing",
+        "scripts/check-staged-mutation.mjs:143": "says the directory is not a checkout, because a hook that cannot see an index has not checked one"
+      }
     },
     "packages/core/test/tree-repair.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 1000,
-      "mutantMs": 1400
+      "baselineMs": 1047,
+      "mutantMs": 1162,
+      "witnesses": {
+        "scripts/verify-local.mjs:261": "stops the gate session before its first step, when the tree is not the repository's"
+      }
     },
     "packages/core/test/unit-nouns.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 12700,
-      "mutantMs": 12000
+      "baselineMs": 7795,
+      "mutantMs": 1196,
+      "witnesses": {
+        "scripts/check-unit-nouns.mjs:164": "refuses an inventory whose vocabulary has stopped describing the gates"
+      }
     },
     "packages/core/test/verify-scorer-stability-script.test.ts": {
       "claims": 1,
       "runs": 2,
-      "baselineMs": 2200,
-      "mutantMs": 2700
+      "baselineMs": 957,
+      "mutantMs": 1007,
+      "witnesses": {
+        "scripts/verify-scorer-stability.mjs:306": "reports a failed property as a property failure, not as a crash"
+      }
     },
     "packages/core/test/verify-sites-are-sensitive.test.ts": {
       "claims": 4,
       "runs": 5,
-      "baselineMs": 6900,
-      "mutantMs": 20700
+      "baselineMs": 4862,
+      "mutantMs": 4179,
+      "witnesses": {
+        "scripts/verify-sites-are-sensitive.mjs:241": "refuses to write a cost table from a shard, which measured half an inventory",
+        "scripts/verify-sites-are-sensitive.mjs:250": "refuses a pool size that would measure nothing",
+        "scripts/verify-sites-are-sensitive.mjs:260": "refuses an inventory it cannot read instead of reporting no survivors",
+        "scripts/verify-sites-are-sensitive.mjs:1158": "fails when the claimant reaches the exit and passes whatever it does"
+      }
     }
   }
 }

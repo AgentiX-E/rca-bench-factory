@@ -209,6 +209,23 @@ function newestRound(rows) {
 // See `doc-counts-vocabulary.mjs` for why this list is not restated here.
 
 /**
+ * A number as a document writes it, read as the number it names.
+ *
+ * `7,091` is one count, and every shape below accepts the separator (`\d[\d,]*`), for the reason
+ * `COUNT_PHRASE` and `SPAN_SHAPES` already did: this corpus writes five-digit counts with a comma
+ * -- `7,183` in the prose, `7,070 -> 7,082` in a `new tests` row -- so a reader that refused the
+ * separator would be refusing the document's own style.
+ *
+ * It did, and the way it failed is the reason this is a function rather than three `Number()` calls.
+ * The pair shapes were written `(\d+)`, so `**262 files, 7,091 tests passed**` matched no pair at all
+ * and then matched the bare test count against its last three digits: the row was read as **91 tests
+ * and no file count**, and rule 1 reported `core tests fell from 7082 to 91` -- a refusal of a true
+ * row that names a number the row does not contain. A wrong number and a wrong diagnosis, from a
+ * separator, on a guard whose subject is numbers that nothing else reads.
+ */
+const countOf = (text) => Number(String(text).replaceAll(',', ''));
+
+/**
  * The shapes that publish a count of files and tests.
  *
  * Ordered, because the first match on a row wins: a row reading
@@ -225,13 +242,13 @@ function newestRound(rows) {
 const PAIR_SHAPES = [
   {
     name: 'N files, M tests passed',
-    re: /(\d+)\s*files?[,\s]+(\d+)\s*(?:tests?\s*)?passed/g,
+    re: /(\d[\d,]*)\s*files?[,\s]+(\d[\d,]*)\s*(?:tests?\s*)?passed/g,
     filesFirst: true,
   },
-  { name: 'N files, M tests', re: /(\d+)\s*files?[,\s]+(\d+)\s*tests?/g, filesFirst: true },
-  { name: 'N passed / M files', re: /(\d+)\s*(?:tests?\s*)?passed\s*\/\s*(\d+)\s*files?/g },
-  { name: 'N tests / M files', re: /(\d+)\s*tests?\s*\/\s*(\d+)\s*files?/g },
-  { name: 'N passed (M files)', re: /(\d+)\s*(?:tests?\s*)?passed\s*\(\s*(\d+)\s*files?\s*\)/g },
+  { name: 'N files, M tests', re: /(\d[\d,]*)\s*files?[,\s]+(\d[\d,]*)\s*tests?/g, filesFirst: true },
+  { name: 'N passed / M files', re: /(\d[\d,]*)\s*(?:tests?\s*)?passed\s*\/\s*(\d[\d,]*)\s*files?/g },
+  { name: 'N tests / M files', re: /(\d[\d,]*)\s*tests?\s*\/\s*(\d[\d,]*)\s*files?/g },
+  { name: 'N passed (M files)', re: /(\d[\d,]*)\s*(?:tests?\s*)?passed\s*\(\s*(\d[\d,]*)\s*files?\s*\)/g },
 ];
 
 /**
@@ -242,7 +259,7 @@ const PAIR_SHAPES = [
  * this shape everywhere would demand a scope word from rows that have no scope to
  * name, and the way to make that failure go away is to stop reading the shape.
  */
-const BARE_TESTS = /(\d+)\s*(?:tests?\s*)?passed/;
+const BARE_TESTS = /(\d[\d,]*)\s*(?:tests?\s*)?passed/;
 
 /**
  * A phrase that carries a count of files or tests: a number and, as its own word,
@@ -544,7 +561,7 @@ function readCounts(text, where = 'docs/progress.md') {
       candidate.re.lastIndex = 0;
       const m = candidate.re.exec(line);
       if (!m) continue;
-      const [a, b] = [Number(m[1]), Number(m[2])];
+      const [a, b] = [countOf(m[1]), countOf(m[2])];
       files = candidate.filesFirst ? a : b;
       tests = candidate.filesFirst ? b : a;
       shape = candidate.name;
@@ -554,7 +571,7 @@ function readCounts(text, where = 'docs/progress.md') {
       BARE_TESTS.lastIndex = 0;
       const m = BARE_TESTS.exec(line);
       if (m) {
-        tests = Number(m[1]);
+        tests = countOf(m[1]);
         shape = 'N passed (no file count)';
       }
     }

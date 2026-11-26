@@ -115,10 +115,18 @@ describe('the cost table the shards are divided by', () => {
     expect(loads.length).toBe(2);
     expect(lighter).toBeGreaterThan(0);
     expect((heavier - lighter) / heavier).toBeLessThan(0.15);
-    // And the half the workflow calls `1/2` is the cheaper one, because the claim
-    // battery it also carries (`verify-claims-are-sensitive`, 22 s) is charged to that
-    // job by the reading and not by this table.
-    expect(loads[0]).toBeLessThanOrEqual(loads[1]);
+    // What the assertion above cannot say, and what the round after v3.158 found it
+    // saying anyway: `shard 1/2` also carries the claims battery (`verify-claims-are-
+    // sensitive`, 22 s), so the two *jobs* are the quantity with a wall clock, not the
+    // two halves. Until the aim, the halves were 15% apart and "shard 1 is the cheaper
+    // one" was a real instruction; now they divide to within a few hundred milliseconds
+    // -- measured **775.2 s / 775.2 s** -- and which of two equal halves lands in index 0
+    // is LPT's tie-break, not a decision anybody made. So the property is stated on the
+    // clocks, which is what the workflow spends: the job holding the claims battery must
+    // not end up the slower one by more than the same 15%.
+    const CLAIMS_BATTERY_MS = 22_000;
+    const clocks = [loads[0] + CLAIMS_BATTERY_MS, loads[1]];
+    expect((Math.max(...clocks) - Math.min(...clocks)) / Math.max(...clocks)).toBeLessThan(0.15);
   });
 
   it('accepts provenance that names the run it was read from, and refuses one that names nothing', () => {
@@ -171,5 +179,83 @@ describe('the cost table the shards are divided by', () => {
       broken.files[Object.keys(broken.files).sort()[0]][field] = 0;
       expect(checkShardCosts(byFile, broken).join('\n')).toContain(field);
     }
+  });
+});
+
+/**
+ * The other half of the same measurement: which test can see each claim.
+ *
+ * A claim's price was, until v3.158, the whole file it lives in -- so a file's price was
+ * its own runtime multiplied by its claim count, and two claimants of sixty-eight were
+ * **45%** of a 2 632 s battery. The table now records the test that noticed each claim,
+ * and the battery aims the next run at it: measured at **1 375 ms against 7 868 ms** for
+ * one claim of `ci-budget.test.ts`.
+ *
+ * These cases hold the artifact to the tree it claims to describe. A witness is a *name*,
+ * and a name is the one thing a rename invalidates without touching a single number --
+ * which is exactly the shape this campaign files as "a published claim nothing reads".
+ *
+ * Two different things are held here, and the split between them is the point. **Coverage
+ * and ownership** are static facts and are asserted: every claim has a name, and a name
+ * belongs to the file that makes the claim. **Whether the name still matches a test** is
+ * not statically checkable in this tree (the cases say why), and it is not a silent
+ * failure either: the aim misses, the claim is measured against the whole file, and the
+ * battery prints how many missed.
+ */
+describe('the witness behind each claim', () => {
+  it('names a test for every claim the table prices, and nothing that is not a name', () => {
+    // Every claim, not most of them: the table is written by a run that measured all of
+    // them, so a claim without a witness is a claim still priced as a whole file -- which
+    // is the 45% the round removed coming back one file at a time.
+    const byFile = byFileOf();
+    const table = shipped();
+    let named = 0;
+    for (const [file, claims] of byFile) {
+      const row = (table.files as Record<string, any>)[file];
+      for (const claim of claims) {
+        const witness = row?.witnesses?.[claim.site];
+        expect(typeof witness, `${claim.site} of ${file}`).toBe('string');
+        // A name and not a paragraph: `-t` takes one pattern, and an empty one matches
+        // every test in the file -- an aim that believes it is aimed.
+        expect(String(witness).trim(), claim.site).not.toBe('');
+        expect(String(witness), claim.site).not.toContain('\n');
+        expect(String(witness).length).toBeLessThan(300);
+        named += 1;
+      }
+    }
+    expect(named).toBe(256);
+  });
+
+  // What this file cannot check, and why it is not checked badly instead.
+  //
+  // The obvious case here is "the name is one the claimant's source contains", and it was
+  // written first. **It is impossible for two shapes in this tree**, measured: a title
+  // with a quote in it is written `it('... the repository\'s')`, so the report's title and
+  // the source's literal differ by the escape; and a title built from a template
+  // (`it(\`prints '${word}' ...\`)`) appears nowhere in the source at all. A case that
+  // asserted the literal membership would fail on those two and be right about nothing.
+  //
+  // So staleness is held where it is observable: the battery aims each run at its
+  // witness, and a name that has stopped existing makes that run miss -- which it reports
+  // (`N aim(s) missed and were measured against the whole file instead`) and which costs a
+  // whole-file run rather than a wrong verdict. `verify-sites-are-sensitive.test.ts` has
+  // that path end to end, including the count.
+
+  it('names a site its own claimant makes, and no other file does', () => {
+    // The witness is filed under the site, and the site is what the run arms. A row under
+    // a site this file does not claim is a row the battery would never consult -- an
+    // artifact half of which nothing reads.
+    const byFile = byFileOf();
+    const table = shipped();
+    const owner = new Map<string, string>();
+    for (const [file, claims] of byFile) for (const claim of claims) owner.set(claim.site, file);
+    let rows = 0;
+    for (const [file, row] of Object.entries(table.files as Record<string, any>)) {
+      for (const site of Object.keys((row as any).witnesses ?? {})) {
+        expect(owner.get(site), site).toBe(file);
+        rows += 1;
+      }
+    }
+    expect(rows).toBeGreaterThan(200);
   });
 });

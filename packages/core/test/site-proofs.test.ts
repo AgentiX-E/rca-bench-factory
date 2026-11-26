@@ -12,6 +12,7 @@ import {
   decoloured,
   exhaustedTestBudget,
   failureSummary,
+  failedTests,
   hungTestClause,
   hungTests,
   longestTest,
@@ -1493,6 +1494,80 @@ describe('site-proofs · the longest test a report names', { timeout: SUITE_BUDG
     expect(longestTest(JSON.stringify({ testResults: [] }))).toBeNull();
     expect(longestTest(JSON.stringify({ testResults: [{ assertionResults: [] }] }))).toBeNull();
     expect(longestTest(JSON.stringify({ testResults: [{}, null] }))).toBeNull();
+  });
+});
+
+/**
+ * The one test that noticed, which is what a mutant run can be aimed at.
+ *
+ * A mutant run's verdict is "some test went red", and until v3.158 the run paid for
+ * every test in the file to learn which one that was: the file that holds thirty claims
+ * paid thirty whole-file runs, so the price of a claim was its neighbours' runtime and
+ * two claimants were 45% of a 2 632 s battery. The name is in the report the run already
+ * writes, and reading it is what turns the next run into one test.
+ *
+ * The reader is deliberately the smallest thing that can be wrong in only one way: a
+ * report it cannot parse names no test, and a run whose verdict is then "aim at nothing"
+ * is a run that measures the whole file, which is what the battery did before.
+ */
+describe('site-proofs · the test a failed run names', { timeout: SUITE_BUDGET_MS }, () => {
+  // The report carries both, and the **title** is the one the artifact keeps: a full name
+  // joins the suite names to the title with a space, so it appears nowhere in the file it
+  // came from and no text check could hold the artifact to the tree. The title is literal.
+  const report = (tests: { name: string; status: string }[]): string =>
+    JSON.stringify({
+      numTotalTests: tests.length,
+      testResults: [
+        {
+          assertionResults: tests.map((one) => ({
+            title: one.name,
+            fullName: `a suite ${one.name}`,
+            status: one.status,
+          })),
+        },
+      ],
+    });
+
+  it('names the failed test, and only it, out of a run that bailed at the first red', () => {
+    // The measured shape: `--bail=1` leaves one failure and then marks every later test
+    // pending, so a reader that collected "not passed" would name a hundred and fifty
+    // tests that never ran -- and an aim at any of them measures nothing.
+    const text = report([
+      { name: 'the first, which passed', status: 'passed' },
+      { name: 'the recorder refuses a run that reports no span for a job', status: 'failed' },
+      { name: 'every test after the red', status: 'pending' },
+    ]);
+    expect(failedTests(text)).toEqual(['the recorder refuses a run that reports no span for a job']);
+  });
+
+  it('names every failed test when more than one went red, because the aim has to be one of them', () => {
+    const text = report([
+      { name: 'one', status: 'failed' },
+      { name: 'two', status: 'passed' },
+      { name: 'three', status: 'failed' },
+    ]);
+    expect(failedTests(text)).toEqual(['one', 'three']);
+  });
+
+  it('names nothing for a report it cannot parse, for one with no test, and for a run that passed', () => {
+    // Three shapes, one answer, and the caller reads it as "no witness was learned": a
+    // parse failure must not be reported as the absence of a witness that the run could
+    // have produced, and a green run has no failed test by definition.
+    expect(failedTests('not json')).toEqual([]);
+    expect(failedTests('')).toEqual([]);
+    expect(failedTests('{}')).toEqual([]);
+    expect(failedTests(JSON.stringify({ testResults: [{ assertionResults: [] }] }))).toEqual([]);
+    expect(failedTests(report([{ name: 'passed', status: 'passed' }]))).toEqual([]);
+  });
+
+  it('skips an assertion with no name rather than aiming at an empty string', () => {
+    // `-t ''` is not "no filter" to vitest -- it is a pattern that matches every test,
+    // so an empty name recorded as a witness would turn the aim into a whole-file run
+    // that believes it is aimed. The reader drops it here, where the shape is visible.
+    const text = JSON.stringify({
+      testResults: [{ assertionResults: [{ status: 'failed' }, { fullName: '', status: 'failed' }] }],
+    });
+    expect(failedTests(text)).toEqual([]);
   });
 });
 

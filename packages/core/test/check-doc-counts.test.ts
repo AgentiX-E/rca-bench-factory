@@ -271,6 +271,55 @@ describe('check-doc-counts', () => {
     expect(r.code).toBe(0);
   });
 
+  /**
+   * The separator this guard writes in one place and reads in another.
+   *
+   * `7,091` is how the same corpus writes a five-digit count two rows away from these, and the
+   * guard's own `COUNT_PHRASE` and `SPAN_SHAPES` accept it (`\d[\d,]*`). The pair shapes were
+   * written `(\d+)`, so the row below was read as **91 tests and no file count** -- and, because
+   * the file count went missing with it, as `core tests fell from 7082 to 91`, a refusal that
+   * names a number the document does not contain.
+   *
+   * The counts are derived, so this is a rule about separators rather than a rule about today's
+   * suite size.
+   */
+  const grouped = (n: number): string => n.toLocaleString('en-US');
+
+  it('reads a thousands separator in a published count, instead of the last three digits of it', () => {
+    const { files, tests } = (JSON.parse(MEASURED) as Record<string, { files: number; tests: number }>)
+      .core!;
+    const r = run(
+      `${HEADER}| core test suite | **${grouped(files)} files, ${grouped(tests)} tests passed**, ` +
+        'as of this commit |\n',
+    );
+    expect(r.out).not.toContain('fell from');
+    expect(r.code).toBe(0);
+  });
+
+  it('reads a thousands separator in a bare test count, and says so in the sentence it refuses with', () => {
+    const { tests } = (JSON.parse(MEASURED) as Record<string, { files: number; tests: number }>).core!;
+    // A bare count cannot be a current-state claim -- rule 3 wants a file count beside it, which is
+    // the reason the corpus's current rows carry both -- so the row is refused. What is asserted is
+    // *which number* the refusal names: `null files / 91 tests` is what the digit-by-digit reader
+    // said, and 91 is not a number this document contains.
+    const r = run(`${HEADER}| core test suite | **${grouped(tests)} passed**, as of this commit |\n`);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain(`null files / ${String(tests)} tests`);
+  });
+
+  it('does not read a suite that grew as one that fell, when both rows carry separators', () => {
+    const { files, tests } = (JSON.parse(MEASURED) as Record<string, { files: number; tests: number }>)
+      .core!;
+    const r = run(
+      `${HEADER}| core test suite | **${grouped(files)} files, ${grouped(tests - 1)} tests passed** ` +
+        '(at v3.0) |\n' +
+        `| core test suite | **${grouped(files)} files, ${grouped(tests)} tests passed**, ` +
+        'as of this commit |\n',
+    );
+    expect(r.out).not.toContain('fell from');
+    expect(r.code).toBe(0);
+  });
+
   // The marker vocabulary is deliberately narrow. `unchanged (docs only)` and
   // `one more than Pass 32` both *look* like current-state claims and are not:
   // each compares a pass to its predecessor, so both are historical by
@@ -346,18 +395,25 @@ describe('check-doc-counts', () => {
     // than by row order matters: this file also carries dated records under the
     // same `N files, M tests passed` shape, and an earlier draft of this test
     // matched one of them and reported a disagreement that was not one.
+    //
+    // The separator is read here for the same reason the guard now reads it: this is a *third*
+    // reader of the same rows, and when the round wrote `7,091 tests passed` the `(\d+)` in this
+    // pattern matched nothing at all, so the test reported `no current-state rows found; the shape
+    // of the document changed` -- a sentence about the document's structure, produced by a number
+    // the pattern could not read. A reader that goes quiet is worse than one that is wrong.
     const claims = [
       ...doc.matchAll(
-        /\|\s*`?(\w+)`? test suite\s*\|\s*\*\*(\d+) files, (\d+) tests passed\*\*[^|]*as of this commit/g,
+        /\|\s*`?(\w+)`? test suite\s*\|\s*\*\*(\d[\d,]*) files, (\d[\d,]*) tests passed\*\*[^|]*as of this commit/g,
       ),
     ];
     expect(claims.length, 'no current-state rows found; the shape of the document changed').toBeGreaterThanOrEqual(3);
 
+    const wholeNumber = (text: string): number => Number(text.replaceAll(',', ''));
     for (const [, scope, files, tests] of claims) {
       const m = live[scope!];
       expect(m, `the document publishes a '${scope}' row that MEASURED does not cover`).toBeTruthy();
       expect(
-        { files: Number(files), tests: Number(tests) },
+        { files: wholeNumber(files!), tests: wholeNumber(tests!) },
         `the '${scope}' row in docs/progress.md disagrees with MEASURED in this file; ` +
           `when the suite grows, both must be retaken together`,
       ).toEqual(m);
