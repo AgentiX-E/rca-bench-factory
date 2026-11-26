@@ -827,6 +827,17 @@ child time, divides **34** against **34**, **1,315.7 s** and **1,316.4 s** (0.1%
 The provenance rule widened to match: `source` names the command that wrote the table or the run it was read
 from, and a sentence naming neither is refused.
 
+**And the second run refused the claim the first one suggested.** The rebuilt table shipped, and reading 54 --
+same tree, 9 of 9 -- read **427 s** against **303 s**, while its own per-file rows put that same partition **30%**
+apart. Two consecutive runs of one tree, pricing one partition: **0.1%** and then **30%**. Per-file costs moved by
+up to **2.42x** between them (`gate-sites-are-proven.test.ts` 16.8 s then 40.6 s), the total by 9%, and the sum of
+the absolute changes is **653 s** -- a quarter of everything the battery spends. A static table balances the
+seconds it was given; on this inventory, where one claimant is 398-829 s and four more are over 90 s, the seconds
+it is given are not a stable quantity. The honest result is therefore narrower than the round's title: the split
+is derived from a measurement instead of from a name, and the residual is run-to-run variance rather than the
+rule. What would move it next is the price of the claimants -- `ci-budget.test.ts` is 30 claims and up to 29% of
+the battery on its own -- not another partition.
+
 **What the round did not decide.** A move is available to exactly one round and to one step at a time -- the
 list is a list, but every entry is a promise nobody has measured, and three at once is already the largest
 number this file has carried. It does not decide whether a step may move *twice*: the second move would leave

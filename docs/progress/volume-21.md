@@ -2493,14 +2493,27 @@ round was built on (32 cores, the same four-way pool): **68** claimants, **1,670
 runs, divided **834.6 s** and **836.3 s** -- 0.2% apart, 33 files against 35, where position would have divided
 the same seconds **674.5** and **996.4** (32% apart).
 
-**And the runner disagreed with it in a way that is the interesting part.** Reading 53 measures the two jobs at
-**306 s** and **362 s** -- 15.5% apart, not the 0.2% the local table predicted. Priced by the **runner's own**
-per-file rows, the very partition that ran is **1,201 s** against **1,432 s**: **16.1%**, which is the 15.5% the
-jobs read. So the partition transferred exactly as the runner's costs say, and the table was the thing measured on
-the wrong machine. The per-file rows the gate prints carry the baseline as of this round, which is what makes the
-repair a reading rather than a re-run: the table was rebuilt from the two shards' own logs of reading 53 --
-**2,632.1 s** of child time, **34** files against **34**, **1,315.7 s** and **1,316.4 s**, 0.1% apart, and **13**
-files change sides. That is the table this round ships, and the next run is the one that measures it.
+**And the runner disagreed twice, which is the round's real result.** Reading 53 measured the two jobs at **306 s**
+and **362 s** -- 15.5% apart, not the 0.2% the local table predicted. Priced by the **runner's own** per-file rows
+of that run, the partition that ran is **1,201 s** against **1,432 s**: **16.1%**, which is the 15.5% the jobs read.
+So the partition transferred exactly as the runner's costs say, and the table was measured on the wrong machine --
+32 cores and 4 vCPUs do not price a claimant proportionally, because contention scales with what a file does.
+
+The repair was available because of the column this round added: the per-file row prints the **baseline** now, so a
+table can be rebuilt from a run's own log instead of re-measured on a developer's box. Rebuilt from reading 53's
+two shards it prices **2,632.1 s** of child time, divides **34** against **34**, **1,315.7 s** and **1,316.4 s**
+(0.1% apart), and moves **13** files. It shipped in `b24cf16`, and reading 54 is what it cost: **427 s** against
+**303 s**.
+
+**That is the finding, and it is not the one the round set out to prove.** The same partition, priced by two
+consecutive runs' own rows, is **0.1%** apart and then **30%** apart -- and the two runs are the same tree. The
+per-file costs moved by up to **2.42x** between them (`gate-sites-are-proven.test.ts` 16.8 s then 40.6 s), the
+total by 9%, and the sum of the absolute changes is **653 s**, a quarter of everything the battery spends. A
+static table balances the seconds it was given; on an inventory where one claimant is **398-829 s** and four more
+are over 90 s, the seconds it is given are not a stable quantity. So the honest summary is: **the split is now
+derived from a measurement rather than from a name, and the residual imbalance is dominated by run-to-run
+variance, not by the rule.** What would move it next is not another partition but the price of the claimants
+themselves -- `ci-budget.test.ts` alone is 30 claims and up to 29% of the battery.
 
 **Five things this round got wrong.**
 
@@ -2521,14 +2534,15 @@ files change sides. That is the table this round ships, and the next run is the 
    `annotations: 148 of 149 carried, 1 dropped` -- because a site is identified partly by what it says. Four new
    exits and two new throws arrived unannotated the same way, and `gate-sites-are-proven` refused the tree with
    six sentences before the battery would have.
-4. **The table was measured on the wrong machine, and the round believed its own prediction.** The first table
-   came from this box -- 32 cores, four-way pool -- and divided the claimants 0.2% apart. The runner read the two
-   jobs **15.5%** apart, and the cause is not the partition: priced by the runner's own rows, the partition that
-   ran is **16.1%** apart. Per-claimant seconds are not proportional between a 32-core box and a 4-vCPU runner --
-   contention scales with what a file does, not with how long it takes -- so a table is only as good as the
-   machine it was taken on, and the machine that matters is the one that will be divided. The repair is the row
-   the gate prints: baseline seconds per claimant, which is what makes the table rebuildable from a run's log.
-   It was rebuilt from reading 53's two shards and **13 files changed sides**; the next run is the acceptance.
+4. **The table was measured on the wrong machine, and then the right machine disagreed with itself.** The first
+   table came from this box -- 32 cores, four-way pool -- and divided the claimants 0.2% apart; the runner read
+   **15.5%**, and priced by its own rows the partition that ran is **16.1%**, so the table was the thing measured
+   in the wrong place. The repair is the column this round added, and it did what it was for: rebuilt from reading
+   53's two shards, the table divided 34 against 34 at 0.1%. Reading 54, on the same tree, read **427 s / 303 s**
+   and its own rows put the same partition **30%** apart. Per-file costs moved by up to **2.42x** between two runs
+   of one tree, **653 s** of churn in all. The round predicted a balanced pair and cannot claim one: what it can
+   claim is that the rule is now a measurement, and that the quantity a static table balances is not stable enough
+   at this inventory to be tuned further.
 5. **A guard with no test is the bound-that-cannot-fire one level down.** `assignShards` refuses a split into
    zero shards, and nothing reached it: `parseShard` refuses that count before the gate asks. It is proved now
    by the case that calls the function with zero, because an unreachable refusal is a line a reader is told to
@@ -2540,7 +2554,7 @@ files change sides. That is the table this round ships, and the next run is the 
 
 | item | value |
 | --- | --- |
-| CI | run `45799554098` on `f3d276c`: **9 of 9 jobs success**, 90 steps, reading **53** -- the first run whose halves were divided by the cost table rather than by position. The pair reads **306 s** and **362 s** of `verify-sites-are-sensitive.mjs`, against **247 s** and **438 s** in reading 52: the imbalance falls from **191 s** to **56 s**, and from 44% to 15.5% of the slower half |
+| CI | run `45802469718` on `b24cf16`: **9 of 9 jobs success**, 90 steps, reading **54** -- the tree that ships the rebuilt table, and the last run of this round. Its predecessor `45799554098` (reading **53**) is the first run whose halves were measured rather than positioned. The three pairs are the round: 247 s / 438 s (reading 52, position), **306 s / 362 s** (reading 53, the local table), **427 s / 303 s** (reading 54, the runner's own table) |
 | the two halves, as they were | reading 52: `sensitivity` **247 s** and `sensitivity-shard` **438 s** of `verify-sites-are-sensitive.mjs`, 44% apart, from a split by `position % count` over 44 sorted claimant files |
 | the division the corpus asked for | `docs/acceptance.md`, written at v3.54: *"if that shard approaches twice its own bound the shards should be re-partitioned from a measurement rather than by position"* -- 438 s against a 30-minute bound had not reached twice, and the imbalance was paid for three minutes a run while it waited |
 | `core` test suite | **262 files, 7082 tests passed** (as of this commit) |

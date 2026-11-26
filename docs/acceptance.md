@@ -1111,10 +1111,13 @@ one round.
   partition under one name. The placement is longest-processing-time first, so the halves are a
   pure function of the table and the inventory. The table is best taken where it is enforced: the
   per-file line prints the baseline as well as the mutants, so a round can rebuild it from a run's
-  own log, and `source` names either the command that wrote it or the run it was read from. Reading
-  53 is the case for that -- a table taken on a 32-core box divided the claimants 0.2% apart and the
-  runner read the two jobs 15.5% apart, because per-claimant seconds are not proportional across
-  machines; rebuilt from that run's rows the halves are 0.1% apart and 13 files change sides.
+  own log, and `source` names either the command that wrote it or the run it was read from. Readings
+  53 and 54 are the case for that and for the limit of it: a table taken on a 32-core box divided the
+  claimants 0.2% apart and the runner read 15.5%; rebuilt from that run's rows it divided 0.1% apart
+  and 13 files changed sides, and the next run of the same tree read **30%** by its own rows, with
+  per-file costs moving by up to 2.42x between two runs. A static table balances the seconds it was
+  given, and on this inventory those seconds are not stable -- so what is claimed is the rule, not a
+  balanced pair, and the next cut is the price of the dearest claimants rather than another split.
 - **The promise's lifetime, measured.** The tree was published with the promise in it and
   `check-ci-budget` green, run `42160224254` measured `sensitivity-shard` at **387 s**, the
   recorder said the declaration could be deleted, and the deletion is in the round's last

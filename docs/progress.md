@@ -1165,9 +1165,10 @@ is a row about rather than paraphrase one that no `grep` will find.
   apart -- and replaced the positional split with a division by `golden-master/sensitivity-costs.json`, a table of
   per-claimant seconds written by the gate itself. What is left is the head of the queue: `gates-audit`'s own audit
   shard at **239 s** and the gate-test battery at **173 s**, which is 54% of `batteries`.
-  `[open: whether the gate-test battery becomes a third job -- which needs the report it publishes to be a report
-  per shard, so that half a measurement is not published as one -- or whether the audit shard's 239 s is the cheaper
-  cut, which needs no new job at all]`
+  `[open: the pair is now divided by a measurement, and two runs of one tree read 0.1% and 30% apart by their own
+  rows -- so the next cut is not another partition but the price of the claimants: ci-budget.test.ts is 30 claims
+  and up to 29% of the battery on its own, and the gate-test battery's 173 s cannot be split without its report
+  becoming a report per shard]`
 
 ## Pass log
 
