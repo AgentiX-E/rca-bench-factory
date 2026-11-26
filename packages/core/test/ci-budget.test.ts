@@ -59,6 +59,26 @@ import { readLedger } from '../../../scripts/ledger-runs.mjs';
 /** The gate this file drives, declared as well as spawned. */
 export const DRIVES = ['scripts/check-ci-budget.mjs', 'scripts/measure-ci-baseline.mjs'];
 
+/**
+ * The clock every suite here runs under, stated rather than inherited.
+ *
+ * CI's `check-test-budgets` named this file on run `45841748590`: a case read **1 026 ms**
+ * and the file stated no budget, so vitest's 5 000 ms default was what decided the
+ * verdict. The same case reads **133 ms** here and the file's slowest **185 ms**, so the
+ * multiplier was **7.7x** -- the coverage run shares the box with three other workers and
+ * the heavier cases here spawn `check-ci-budget.mjs` against a scratch tree.
+ *
+ * Ten seconds is **54x** the local slowest and **9.8x** the reading that named the file.
+ * The gate holds a file to *half* its declaration (**5 000 ms**), which is **27x** the
+ * local slowest -- and 27x is the largest multiplier this tree has measured for a
+ * process-spawning file (`docs-guards-need-history.test.ts`, 55 -> 1 487 ms). So the
+ * declaration is the smallest round number that covers the worst multiplier on record,
+ * and it is stated on every suite rather than once for the file: `suiteBudget` reads the
+ * first `describe` in a file, so a single number here would be a number about one suite
+ * doing duty for 27 of them.
+ */
+const SUITE_BUDGET_MS = 10_000;
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const GATE = join(ROOT, 'scripts', 'check-ci-budget.mjs');
 const MEASURE = join(ROOT, 'scripts', 'measure-ci-baseline.mjs');
@@ -212,7 +232,7 @@ function readingsOf(
   };
 }
 
-describe('the arithmetic of one job', () => {
+describe('the arithmetic of one job', { timeout: SUITE_BUDGET_MS }, () => {
   it('accepts a job whose every step declares its own bound at twice the measurement', () => {
     const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)]);
     const errors = budgetErrors(
@@ -584,7 +604,7 @@ function moveOf(over: Record<string, unknown> = {}) {
   };
 }
 
-describe('the step the recording has not measured yet', () => {
+describe('the step the recording has not measured yet', { timeout: SUITE_BUDGET_MS }, () => {
   it('accepts a declared step whose bound is the one the workflow declares, and refuses it without', () => {
     // The pair is the rule: the same tree is green with the declaration and refused
     // without it, so the case cannot pass by the rule having stopped looking.
@@ -1054,7 +1074,7 @@ describe('the step the recording has not measured yet', () => {
   });
 });
 
-describe('which jobs bound their steps at all', () => {
+describe('which jobs bound their steps at all', { timeout: SUITE_BUDGET_MS }, () => {
   it('refuses a job whose steps cost minutes and none of which declares a bound', () => {
     // The rule v3.48 added, and the reason it was added: `verify` spends nine minutes
     // across eleven steps and named none of them, in the job next door to the one the
@@ -1156,7 +1176,7 @@ function ledgerFixture(over: Record<string, unknown> = {}) {
   };
 }
 
-describe('the recording against the round that reports it', () => {
+describe('the recording against the round that reports it', { timeout: SUITE_BUDGET_MS }, () => {
   it('refuses a recording older than the newest run the ledger reports', () => {
     // The defect the rule exists for, measured rather than imagined: the round that gave
     // the recording its job coverage shipped at `91e320884`, the ledger gained a row citing
@@ -1317,7 +1337,7 @@ function ledgerFrom(sections: { head: string; rows?: string[] }[], name = 'volum
 /** A closing reading in the form `R11` asks for, citing the run this fixture's recording holds. */
 const CLOSING = '| CI | run `41637098008` on `abc1234`: **1 of 1 job success** -- 2 min |';
 
-describe('the round the ledger ends on', () => {
+describe('the round the ledger ends on', { timeout: SUITE_BUDGET_MS }, () => {
   it('refuses a newest round that ends without a closing reading, and counts the rounds since', () => {
     // The defect, measured: the shipped log's newest `| CI |` row sat under `v3.54` while the
     // newest round was `v3.119` -- 65 rounds later. `R7` compares the recording with that row,
@@ -1456,7 +1476,7 @@ describe('the round the ledger ends on', () => {
   });
 });
 
-describe('the recording the gate reads', () => {
+describe('the recording the gate reads', { timeout: SUITE_BUDGET_MS }, () => {
   it('prints what the bounds cost against what the jobs measured', () => {
     const workflow = oneJob([...step('Slow battery', 12), ...step('Quick battery', 3)]);
     const summary = budgetSummary(
@@ -1579,7 +1599,7 @@ describe('the recording the gate reads', () => {
  * history already contradicts, and that is a claim a gate can hold. The summary prints the
  * multiple beside the allowance, so a reader of a green run sees how much of it is argument.
  */
-describe('the allowance against what a prefix actually cost', () => {
+describe('the allowance against what a prefix actually cost', { timeout: SUITE_BUDGET_MS }, () => {
   /** Two jobs sharing one setup step, which is the smallest workflow that has a prefix. */
   function withSetup() {
     const setup = ['      - name: Install', '        run: pnpm install --frozen-lockfile'];
@@ -1856,7 +1876,7 @@ function runRecorder(
   });
 }
 
-describe('the recorder', () => {
+describe('the recorder', { timeout: SUITE_BUDGET_MS }, () => {
   it('records nothing when it is given no token or no run, and says how to call it', () => {
     // The recording is the only thing that may write `ci-baseline.json`, and its one
     // refusal is reachable here because a missing token is not a network call. A probe
@@ -2417,7 +2437,7 @@ function jobDeclarationOf(over: Record<string, unknown> = {}) {
   return { jobs: [jobPromiseOf(over)] };
 }
 
-describe('a job the recording has never measured', () => {
+describe('a job the recording has never measured', { timeout: SUITE_BUDGET_MS }, () => {
   it('accepts a declared job and refuses the same tree without the promise', () => {
     // Cannot produce: a runner spending the promised 25 minutes. The pair is what this
     // case can hold -- green with the promise, `R2` red without it -- so it cannot pass
@@ -2690,7 +2710,7 @@ describe('a job the recording has never measured', () => {
  * wrong. The evidence the recorder has is the run's conclusion and each step's own, and both are read here
  * rather than assumed.
  */
-describe('a number the run did not measure', () => {
+describe('a number the run did not measure', { timeout: SUITE_BUDGET_MS }, () => {
   /** One job, two steps, the second with a bound of its own: the shape every case here needs. */
   const WORKFLOW = workflowText([
     { id: 'batteries', minutes: 25, steps: [...step('Check out', 3), ...step('Slow battery', 12)] },
@@ -3209,7 +3229,7 @@ describe('a number the run did not measure', () => {
  * both paths could write today's command beside another command's seconds -- and the multiple would then
  * divide today's bound by a number nothing of today ever spent.
  */
-describe('a number beside the command that spent it', () => {
+describe('a number beside the command that spent it', { timeout: SUITE_BUDGET_MS }, () => {
   /** One job, two steps, the second bounded at twelve minutes: the shape every case here needs. */
   const TODAY = workflowText([
     { id: 'batteries', minutes: 25, steps: [...step('Check out', 3), ...step('Slow battery', 12)] },
@@ -3524,7 +3544,7 @@ describe('a number beside the command that spent it', () => {
  * the action today's tree states. That is why the mode exists at all: 994 rows are 994 numbers whose
  * series would otherwise start again on the day the identity changed.
  */
-describe('the history, given the action each row spent its seconds on', () => {
+describe('the history, given the action each row spent its seconds on', { timeout: SUITE_BUDGET_MS }, () => {
   const TODAY = workflowText([
     { id: 'batteries', minutes: 25, steps: [...usesOf('Check out', 'actions/checkout@v4'), ...step('Slow battery', 12)] },
   ]);
@@ -3695,7 +3715,7 @@ describe('the history, given the action each row spent its seconds on', () => {
   });
 });
 
-describe('the recorder and a declared job', () => {
+describe('the recorder and a declared job', { timeout: SUITE_BUDGET_MS }, () => {
   it('leaves the gap open when a declared job never ran, and says it is still waiting', async () => {
     // Cannot produce: a run in which GitHub scheduled the job. The server answers with
     // one job and the declaration says the other is waiting, so the recording must keep
@@ -3792,7 +3812,7 @@ describe('the recorder and a declared job', () => {
  * The day term did not go away: it is what a job with no bounds inside it has, which is the
  * shape `R3` excuses.
  */
-describe('the two numbers a ceiling is made of', () => {
+describe('the two numbers a ceiling is made of', { timeout: SUITE_BUDGET_MS }, () => {
   it('adds the bounds a job declares, and only the ones it declares', () => {
     // A step that inherits its job's budget contributes nothing: the job's own ceiling is
     // already that number, and counting it twice would ask a ceiling to hold itself.
@@ -3815,7 +3835,7 @@ describe('the two numbers a ceiling is made of', () => {
   });
 });
 
-describe('the ceiling, and the number it has to hold', () => {
+describe('the ceiling, and the number it has to hold', { timeout: SUITE_BUDGET_MS }, () => {
   it('refuses a ceiling at twice the day when the bounds inside it add up to more', () => {
     // The defect finding 619 is about, in five lines: two bounds of 12 and 3 minutes under a
     // 12-minute ceiling. Twice the day is 710 s and the ceiling is 720, so `R12` was happy --
@@ -3964,7 +3984,7 @@ describe('the ceiling, and the number it has to hold', () => {
   });
 });
 
-describe('one reading, summed into one day', () => {
+describe('one reading, summed into one day', { timeout: SUITE_BUDGET_MS }, () => {
   it('adds the steps of a single reading rather than the slowest reading of each step', () => {
     // The distinction `jobDays` exists for: 351 s and 4 s on the same day is a 355 s day, and
     // a composite of each command's slowest day would be a day no run ever had -- which is
@@ -4001,7 +4021,7 @@ describe('one reading, summed into one day', () => {
   });
 });
 
-describe('the spread of one command, and the multiple that does not say it', () => {
+describe('the spread of one command, and the multiple that does not say it', { timeout: SUITE_BUDGET_MS }, () => {
   /**
    * One day of the history, in the shape the recorder writes: run, job, step, seconds, command.
    *
@@ -4460,7 +4480,7 @@ describe('the spread of one command, and the multiple that does not say it', () 
  * divides by, because a bound has to survive every measurement of it, and it is printed as the
  * noise floor rather than counted as another tree.
  */
-describe('two readings of one tree, and the noise floor they give', () => {
+describe('two readings of one tree, and the noise floor they give', { timeout: SUITE_BUDGET_MS }, () => {
   function day(
     run: number,
     commit: string,
@@ -4616,7 +4636,7 @@ describe('two readings of one tree, and the noise floor they give', () => {
  * measurement silently overwriting another in the file whose whole job is to hold both. The
  * identity of a reading is the measurement, and the measurement is the attempt.
  */
-describe('one run measured twice, which is a re-run and not a second run', () => {
+describe('one run measured twice, which is a re-run and not a second run', { timeout: SUITE_BUDGET_MS }, () => {
   const TREE = 'e'.repeat(40);
   const COMMAND = 'node scripts/inject-one-battery.mjs';
 
@@ -4774,7 +4794,7 @@ describe('one run measured twice, which is a re-run and not a second run', () =>
  * command read at 0 s makes `bound / fastest` infinite, and a summary that printed `Infinity` is
  * finding 121 wearing a new number. Seconds subtract, so the number exists for every pair.
  */
-describe('the bound furthest above a day its command has spent', () => {
+describe('the bound furthest above a day its command has spent', { timeout: SUITE_BUDGET_MS }, () => {
   function day(run: number, jobs: Record<string, Record<string, { seconds: number; command: string }>>) {
     return { run, commit: String(run).padStart(40, '0'), measured: '2026-11-23', jobs };
   }
@@ -4902,7 +4922,7 @@ describe('the bound furthest above a day its command has spent', () => {
  * function; a name is what lets a reader go and look at the measurement, so the name is one function
  * too -- and both are checked here rather than only through the sentences built out of them.
  */
-describe('the order of two readings, and the words one is named by', () => {
+describe('the order of two readings, and the words one is named by', { timeout: SUITE_BUDGET_MS }, () => {
   it('puts the second attempt of one run after the first, where the run id alone says they are equal', () => {
     // The whole of `O-122`: `100 - 100` is zero and `attempt 2 - attempt 1` is one, so the ordering
     // is lexicographic and the run is the high half.
@@ -4948,7 +4968,7 @@ describe('the order of two readings, and the words one is named by', () => {
  * the latest attempt, which may be the other measurement. Every number in this file is one a
  * reader can go and look at, and since a re-run the coordinate that lets them look has two fields.
  */
-describe('a reading is named by its run, and a re-run made one run two readings', () => {
+describe('a reading is named by its run, and a re-run made one run two readings', { timeout: SUITE_BUDGET_MS }, () => {
   const COMMAND = 'node scripts/inject-slow-battery.mjs';
 
   /** One attempt of one run, in the shape the recorder writes, with the recording's run last. */
@@ -5067,7 +5087,7 @@ describe('a reading is named by its run, and a re-run made one run two readings'
  * re-run also meets a different package store -- the two steps that moved most are the two
  * installs, by 9.9x and 1.6x, while six steps did not move at all.
  */
-describe("a bound's margin over the movement one tree has already shown", () => {
+describe("a bound's margin over the movement one tree has already shown", { timeout: SUITE_BUDGET_MS }, () => {
   const TREE_RUN = 100;
   const COMMAND = 'node scripts/inject-slow-battery.mjs';
 
@@ -5255,7 +5275,7 @@ describe("a bound's margin over the movement one tree has already shown", () => 
   });
 });
 
-describe("a bound's margin when the bound is under the day", () => {
+describe("a bound's margin when the bound is under the day", { timeout: SUITE_BUDGET_MS }, () => {
   it('says how short the headroom is rather than printing a negative number', () => {
     // The gate refuses this tree (`R10`), and the summary is what a failing tree is read through:
     // `clears -100 s` is not a measurement, so the two directions are written out.
@@ -5278,7 +5298,7 @@ describe("a bound's margin when the bound is under the day", () => {
   });
 });
 
-describe('the margin is chosen among bounds, and measured against the day the gate refuses on', () => {
+describe('the margin is chosen among bounds, and measured against the day the gate refuses on', { timeout: SUITE_BUDGET_MS }, () => {
   const COMMAND = 'node scripts/inject-slow-battery.mjs';
   const OTHER = 'node scripts/inject-other-battery.mjs';
 
@@ -5380,7 +5400,7 @@ describe('the margin is chosen among bounds, and measured against the day the ga
   });
 });
 
-describe('a step only one of two readings timed', () => {
+describe('a step only one of two readings timed', { timeout: SUITE_BUDGET_MS }, () => {
   it('contributes no movement, whichever of the two readings timed it', () => {
     // The pair is the intersection: a step the later reading added and a step it dropped are both
     // half a pair, and a difference taken against nothing is a movement of the whole reading --
@@ -5439,7 +5459,7 @@ describe('a step only one of two readings timed', () => {
  * So a bound divides the **worst day** the command has spent, the pair travels beside the number as
  * evidence rather than as the denominator, and one clause does what two used to.
  */
-describe('a bound covers the state the command was read in', () => {
+describe('a bound covers the state the command was read in', { timeout: SUITE_BUDGET_MS }, () => {
   const COMMAND = 'node scripts/verify-sites-are-sensitive.mjs --shard 2/2';
   const TREE = 'a'.repeat(40);
   const OTHER_TREE = 'b'.repeat(40);

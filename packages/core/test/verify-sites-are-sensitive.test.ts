@@ -35,6 +35,24 @@ const GATE = resolve(ROOT, 'scripts', 'verify-sites-are-sensitive.mjs');
 const DRIVES = ['scripts/verify-sites-are-sensitive.mjs'];
 
 /**
+ * The clock every suite here runs under, stated rather than inherited.
+ *
+ * CI's `check-test-budgets` named this file on run `45841748590`: its slowest test took
+ * **1 334 ms** and the file stated no budget, so vitest's 5 000 ms default was what
+ * decided the verdict. The same bytes read **301 ms** here, alone -- the coverage run
+ * shares the box with three other workers and every case here spawns the shipped script
+ * against a scratch tree, so the multiplier is the scheduler's.
+ *
+ * Ten seconds is **3.3x** the reading and **7.5x** the local one. The gate holds a file
+ * to *half* its declaration (**5 000 ms**), and the largest multiplier this tree has
+ * measured for a process-spawning file is **27x** (`docs-guards-need-history.test.ts`,
+ * 55 -> 1 487 ms) -- which on 301 ms is 8 127 ms, past the half. So the declaration is
+ * stated on each spawning suite rather than once for the file: a suite that stops
+ * spawning can lose its number, and the next reader can see which clock belongs to what.
+ */
+const SUITE_BUDGET_MS = 10_000;
+
+/**
  * What a fixture's claimant does with the gate it starts.
  *
  * `assert` is the witness: it fails when the child's exit code is not the one the
@@ -356,7 +374,7 @@ function runGate(
  * 2 000 claims is about 160 KB, well past the pipe's own buffer, so the defect is not a
  * race that happens once in twenty runs: the old shape loses its tail every time.
  */
-describe('verify-sites-are-sensitive.mjs · a plan that cannot fit in a pipe', () => {
+describe('verify-sites-are-sensitive.mjs · a plan that cannot fit in a pipe', { timeout: SUITE_BUDGET_MS }, () => {
   it('prints every claim, and exits only after the last one has been written', () => {
     const root = mkdtempSync(join(tmpdir(), 'rca-plan-'));
     const claims = 2000;
@@ -389,7 +407,7 @@ describe('verify-sites-are-sensitive.mjs · a plan that cannot fit in a pipe', (
   });
 });
 
-describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () => {
+describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', { timeout: SUITE_BUDGET_MS }, () => {
   it('passes when the claimant fails as soon as the exit stops failing', () => {
     const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], { assert: true });
     try {
@@ -1041,7 +1059,16 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
   });
 });
 
-describe('scripts/verify-sites-are-sensitive.mjs · the reading it publishes', () => {
+/**
+ * The suite the CI gate named, and the reason its budget is `SUITE_BUDGET_MS`.
+ *
+ * The `1 334 ms` reading that made this file declare a budget at all was a case *here*
+ * -- one reading published from a tree the case had just built -- while the file's own
+ * slowest case above is the heavier one on this box. Both spawn the shipped script, so
+ * both state the same clock; the declaration is repeated rather than shared through a
+ * file-wide default so that a reader can see which suite the number was measured for.
+ */
+describe('scripts/verify-sites-are-sensitive.mjs · the reading it publishes', { timeout: SUITE_BUDGET_MS }, () => {
   it('counts a site once per claim, not once per file', () => {
     // Two exits of one gate, both claimed by the same file, and the claimant checks
     // the one it fires. The other must be reported: a file sensitive to one exit says
