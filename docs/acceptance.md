@@ -1151,11 +1151,11 @@ one round.
   run and never a wrong verdict, and the summary prints how many aims missed. Measured on one
   tree with only the table changed: **3 061.7 s -> 924.2 s** of child time and **7.8 -> 3.3 min** of
   wall clock for 256 claims, **256 of 256** aims held; the shipped table was then written by a
-  third run, taken alone at the default pool of four -- **417.7 s** of mutant time inside **3.0 min**,
-  **715.8 s** with its 68 baselines -- and divides **357.9 s / 357.9 s** with the dearest claimant at
-  **16.1%** of the mutant time where v3.157's table had it at 23.6%. The seconds are a session's and
-  the ordering is the tree's: three tables of one tree total **2,632.1**, **1,550.4** and **715.8 s**,
-  a **2.2x** spread, while `ci-budget.test.ts` is the dearest claimant in all three.
+  run taken alone at the default pool of four -- **420.6 s** of mutant time inside **3.1 min**,
+  **724.7 s** with its 68 baselines -- and divides **362.3 s / 362.4 s** with the dearest claimant at
+  **15.8%** of the mutant time where v3.157's table had it at 23.6%. The seconds are a session's and
+  the ordering is the tree's: four tables of one tree total **2,632.1**, **1,550.4**, **715.8** and
+  **724.7 s**, a **2.2x** spread, while `ci-budget.test.ts` is the dearest claimant in all four.
   The principle is finding 658's, measured there on 83 rows that already carried their test's
   name; what is added is where the name comes from, since a site carries none.
 - **What that does not claim.** That a witness is stable: it is a title, and a renamed test makes

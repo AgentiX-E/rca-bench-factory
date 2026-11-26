@@ -996,8 +996,21 @@ describe('the gate holds the shipped inventory to the shipped gates', () => {
     // The sentence a reader gets, for the noun whose two numbers were never on one line: the volumes
     // of audit and of progress, in two directories that share no file. The first number moved with
     // v3.148, which opened `volume-15.md` at the point the fourteenth crossed its byte budget, and the
-    // second with v3.151, which opened `volume-21.md` at the same wall one directory over.
-    expect(result.stdout).toContain('volume(s) — 15 in check-audit-volumes; 21 in check-progress-volumes —');
+    // second with v3.151, which opened `volume-21.md` at the same wall one directory over -- and again
+    // at v3.158, which opened `volume-22.md` when `volume-21.md` reached its own wall.
+    //
+    // The counts are read from the two gates rather than written here: this line pins that both
+    // numbers arrive **on one line with the relation**, which is the property the reader has to see,
+    // and pinning the numbers themselves is how this assertion went stale in the round that split a
+    // volume. `check-unit-nouns` prints what it counted; the shape is what this case is about.
+    const counted = [
+      ...result.stdout.matchAll(/([\w][\w()]*) — (\d+) in ([\w-]+); (\d+) in ([\w-]+) —/g),
+    ];
+    const volumes = counted.find((one) => one[1] === 'volume(s)');
+    expect(volumes, 'no line names the volume counts of both gates').toBeTruthy();
+    expect(Number(volumes![2])).toBeGreaterThan(0);
+    expect(volumes![3]).toBe('check-audit-volumes');
+    expect(volumes![5]).toBe('check-progress-volumes');
     // And the one the reader could not see past: `round(s)` at 219 in both gates, with the qualifier
     // that finding 600's repair inserted and this round's reader had to learn to reach past.
     // A shape rather than a number: the two gates agree at 219 this round and at 220 the next,

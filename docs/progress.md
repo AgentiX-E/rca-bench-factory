@@ -441,9 +441,9 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 262 core + 4 cli |
-| Test lines | 122,432 core + 3,242 cli |
-| Tests | 7,094 core + 187 cli |
-| Tracked files | 684 |
+| Test lines | 122,517 core + 3,242 cli |
+| Tests | 7,096 core + 187 cli |
+| Tracked files | 685 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -1165,8 +1165,8 @@ is a row about rather than paraphrase one that no `grep` will find.
   per-claimant seconds written by the gate itself. v3.158 then found why that pair still moved: a claim was charged
   for a whole run of its file, so two claimants of 68 were **45%** of a **2 632 s** battery and no partition could
   balance them for longer than one run. The table now carries the test that noticed each claim, the battery aims
-  each run at it, and the shipped table -- **715.8 s** over 68 claimants, written by a run taken alone at the
-  default pool -- divides **357.9 s / 357.9 s** with the dearest claimant at **16.1%** of the mutant time. What
+  each run at it, and the shipped table -- **724.7 s** over 68 claimants, written by a run taken alone at the
+  default pool -- divides **362.3 s / 362.4 s** with the dearest claimant at **15.8%** of the mutant time. What
   is left is the head of the queue: `gates-audit`'s own audit shard at **239 s** and the gate-test battery at
   **173 s**, which is 54% of `batteries`.
   `[open: the price of a claim is now its own witness, 3 061.7 s -> 924.2 s within one session and 417.7 s alone for 256 claims -- so the next cut is
@@ -1210,7 +1210,8 @@ and this table.
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
 | [volume-20.md](progress/volume-20.md) | 8 | v3.134 | v3.141 |
-| [volume-21.md](progress/volume-21.md) | 17 | v3.142 | v3.158 |
+| [volume-21.md](progress/volume-21.md) | 9 | v3.142 | v3.150 |
+| [volume-22.md](progress/volume-22.md) | 8 | v3.151 | v3.158 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

@@ -503,7 +503,7 @@ function escapePattern(name) {
  * of the whole file. The trace is always written: the baseline needs to know the run
  * could be measured at all, and the mutant run needs to know the mutant arrived.
  */
-function runOnce(file, site, aim = null) {
+function runOnce(file, site, aim = null, bail = true) {
   // `site` is the claim being hollowed, or null for the baseline run.
   const absolute = resolve(ROOT, file);
   if (!existsSync(absolute)) {
@@ -587,7 +587,7 @@ function runOnce(file, site, aim = null) {
       // mutant runs cost 402 s of child time before the flag. See the volume for the
       // pair; the flag is asserted on the mutant's argv and its absence on the
       // baseline's, in `verify-sites-are-sensitive.test.ts`.
-      ...(site === null ? [] : ['--bail=1']),
+      ...(site === null || !bail ? [] : ['--bail=1']),
       // The aim, and the one thing it must not do.
       //
       // A witness is the test that noticed last time, recorded in the cost table; the
@@ -819,6 +819,41 @@ const secondRuns = await pool(missed, CONCURRENCY, (index) =>
 for (const [position, index] of missed.entries()) {
   decided[index] = secondRuns[position];
 }
+
+/**
+ * The claims whose file stopped at a red that was not the mutant's, measured again with
+ * the whole file and no `--bail`.
+ *
+ * ## The cost device that became a verdict
+ *
+ * `--bail=1` was added to the mutant run for what it costs: a survivor's verdict is the
+ * whole file staying green, so the flag cannot hide one, and a red claimant can stop at
+ * its first failure. But a file's first red need not be the claim. A claimant whose first
+ * failing test is an unrelated one -- a network probe that timed out, a case that depends
+ * on an earlier one, a budget that fired on a different test -- ends the run before the
+ * armed exit is reached, and the child then exits non-zero having recorded no mutant.
+ *
+ * That run is red and it is not evidence, so the reader below refuses it. The refusal is
+ * correct about the run and wrong about the claim, because the claim was never measured:
+ * the file stopped first. This phase is the difference, and CI found it (run 45804184339,
+ * `scripts/fetch-official.mjs:1002`): one claim of 113 went red without recording, the
+ * gate reported a claimant that cannot be proved, and the claimant passed when run alone.
+ *
+ * The extra run is not a second chance at a verdict. It is the same question asked of a
+ * run that got to the end, and a claimant that records nothing however it is run stays in
+ * the basket, in the same words.
+ */
+const stoppedShort = [];
+for (const [index, outcome] of decided.entries()) {
+  if (outcome === null || outcome.problem !== undefined || outcome.status === 0) continue;
+  if (!outcome.hollowed.includes(claims[index].claim.site)) stoppedShort.push(index);
+}
+const thirdRuns = await pool(stoppedShort, CONCURRENCY, (index) =>
+  runOnce(claims[index].file, claims[index].claim, null, false),
+);
+for (const [position, index] of stoppedShort.entries()) {
+  decided[index] = thirdRuns[position];
+}
 /**
  * Every child this phase started, in the order the claims were measured.
  *
@@ -826,7 +861,9 @@ for (const [position, index] of missed.entries()) {
  * that missed its aim paid for two runs, and a table that counted one would under-report
  * the price of exactly the rows a reader has to repair.
  */
-const attempts = [...firstRuns, ...secondRuns].filter((outcome) => outcome.problem === undefined);
+const attempts = [...firstRuns, ...secondRuns, ...thirdRuns].filter(
+  (outcome) => outcome.problem === undefined,
+);
 const mutants = decided;
 
 const survivors = [];
@@ -922,7 +959,7 @@ for (const [index, outcome] of mutants.entries()) {
 }
 rmSync(scratch, { recursive: true, force: true });
 
-const runs = baselines.length + firstRuns.length + secondRuns.length;
+const runs = baselines.length + firstRuns.length + secondRuns.length + thirdRuns.length;
 const minutes = ((Date.now() - startedAt) / 60000).toFixed(1);
 const failures =
   survivors.length +

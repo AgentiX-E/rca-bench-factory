@@ -86,6 +86,15 @@ interface FixtureOptions {
   witness?: string;
   /** The witness the cost table already names, written before the gate runs. */
   recorded?: string;
+  /**
+   * Stops at an earlier red -- without reaching the gate -- whenever the run is bailing.
+   *
+   * The shape `--bail=1` produces in a file whose first failure is not the claim: vitest
+   * ends the run at the first red, the armed exit is never reached, and the child exits
+   * non-zero having recorded no mutant. `'always'` does the same when the run is not
+   * bailing, which is the state that has to stay a refusal rather than become a credit.
+   */
+  bailDead?: boolean | 'always';
 }
 
 /** A repository the gate can be pointed at: an inventory, a gate, and a runner. */
@@ -165,6 +174,8 @@ function fixture(claims: { line: 1 | 2; file: string }[], options: FixtureOption
     options.namelessTimeout === true ? 'NAMELESS' : '',
     options.crashOnMutant === true ? 'CRASH' : '',
     options.hangOnMutant === true ? 'HANG' : '',
+    options.bailDead === true ? 'BAILDEAD' : '',
+    options.bailDead === 'always' ? 'BAILDEAD BAILALWAYS' : '',
     options.report === undefined ? '' : 'REPORT',
     options.argv === true ? 'ARGV' : '',
   ]
@@ -267,6 +278,19 @@ function fixture(claims: { line: 1 | 2; file: string }[], options: FixtureOption
     '  process.stdout.write("TypeError: Cannot read properties of undefined (reading " + String.fromCharCode(39) + "status" + String.fromCharCode(39) + ")\\n");',
     '  process.stdout.write("\\n      Tests  1 failed (1)\\n");',
     '  process.exit(1);',
+    '}',
+    // A red that is not the mutant's, arrived at by stopping early: the armed exit is
+    // never reached, so nothing is recorded, and the exit code is the one a claimant
+    // that cannot be proved also produces. `BAILALWAYS` does it even when the gate asks
+    // for the whole file, which is the state the extra run must not launder.
+    'const bailing = process.argv.slice(2).includes("--bail=1");',
+    'if (text.includes("BAILDEAD") && (process.env.RCA_HOLLOW_SITE || process.env.RCA_HOLLOW_THROW)) {',
+    '  if (bailing || text.includes("BAILALWAYS")) {',
+    '    process.stdout.write(" FAIL  " + file + " > an earlier test that is not the claim\\n");',
+    '    process.stdout.write("AssertionError: expected 0 to be 1 // Object.is equality\\n");',
+    '    process.stdout.write("\\n      Tests  1 failed | 2 passed (3)\\n");',
+    '    process.exit(1);',
+    '  }',
     '}',
     "const gate = resolve(here, 'scripts', 'fake-gate.mjs');",
     'const env = text.includes("BLIND")',
@@ -441,6 +465,54 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
       expect(result.stderr).toContain('never recorded the mutant');
       expect(result.stderr).not.toContain('can stop failing and no test minds');
       expect(result.stdout).toContain('1 exited without recording the mutant');
+      expect(result.stdout).not.toContain('1 of 1 mutant run(s) are credited');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('measures the claim again without --bail when the file stopped at a red that was not the mutant', () => {
+    // The cost device that became a verdict. `--bail=1` ends a whole-file mutant run at
+    // the first failing test, so a file whose first red is an unrelated test never
+    // reaches the exit it was armed to hollow: red, no mutant recorded, and the reader --
+    // correctly about that run -- refuses to credit it. The refusal is right and the
+    // accusation is not: the claim was never measured. So the file is run again without
+    // the flag, and what decides the claim is the run that got to the end.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      assert: true,
+      bailDead: true,
+      witness: 'notices the exit',
+    });
+    try {
+      const result = runGate(tree);
+      expect(result.stderr).toBe('');
+      expect(result.status).toBe(0);
+      // Two mutant runs -- the one that bailed and the whole file -- plus the baseline,
+      // which the pass line counts and the per-claimant row does not.
+      expect(result.stdout).toContain('1 claim(s) in 2 run(s)');
+      expect(result.stdout).toContain('PASSED (1 claim(s) across 1 file(s), 3 run(s)');
+      expect(result.stdout).toContain('1 of 1 mutant run(s) are credited');
+      expect(result.stdout).toContain('1 claim(s)');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('still refuses when the file records nothing even run to the end', () => {
+    // The other side of the same repair: an extra run is not a second chance at a
+    // verdict. A claimant that never reaches the mutant however it is run is the shape
+    // the basket was built for, and it is refused in the same words.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], {
+      assert: true,
+      bailDead: 'always',
+      witness: 'notices the exit',
+    });
+    try {
+      const result = runGate(tree);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('went red without the mutant');
+      expect(result.stderr).toContain('never recorded the mutant');
+      expect(result.stdout).toContain('1 claim(s) in 2 run(s)');
       expect(result.stdout).not.toContain('1 of 1 mutant run(s) are credited');
     } finally {
       rmSync(tree, { recursive: true, force: true });

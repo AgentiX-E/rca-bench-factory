@@ -496,7 +496,7 @@
           "check-workflow-language"
         ]
       ],
-      "relation": "four walks over four corpora -- the 41 documentation files `check-citations` anchors its findings in, the source walk's 481 (printed by two gates because one takes its denominator from the other), and the 6 workflow files"
+      "relation": "four walks over four corpora -- the documentation files `check-citations` anchors its findings in, the source walk's (printed by two gates because one takes its denominator from the other), and the workflow files. The counts are the numbers above and this sentence copies none of them: it used to name the documentation corpus, and a volume of progress is a documentation file, so that figure moved the first time a round opened a volume"
     },
     {
       "noun": "pair(s)",
@@ -602,7 +602,7 @@
           "check-progress-volumes"
         ]
       ],
-      "relation": "two disjoint directories of volumes -- `docs/audit` holds 15 and `docs/progress` 21, and no file is in both"
+      "relation": "two disjoint directories of volumes -- `docs/audit` and `docs/progress` -- and no file is in both. The counts are the numbers above and this sentence copies none of them: it used to state both, and the second moved the round that opened one more progress volume"
     }
   ]
 }

@@ -951,14 +951,15 @@ shipped-shaped name.
 | aims that held | -- | **256 of 256** |
 
 The shipped table (68 claimants, 256 claims) was written by a third run, taken alone at the default pool of four:
-**417.7 s** of mutant child time inside **3.0 min**, **715.8 s** with the 68 baselines, the two halves dividing
-**357.9 s / 357.9 s** -- **0.0%** apart, 34 claimants each -- and the dearest claimant at **67.2 s**, **16.1%** of
+**420.6 s** of mutant child time inside **3.1 min**, **724.7 s** with the 68 baselines, the two halves dividing
+**362.3 s / 362.4 s** -- **0.0%** apart, 34 claimants each -- and the dearest claimant at **66.4 s**, **15.8%** of
 the mutant time where v3.157's table had it at 23.6%. One claim, aimed and whole, in the same process minutes
 apart: **1 375 ms** against **5 270 ms**.
 
 **The seconds do not survive a session; the ordering does.** Three readings of one battery on one tree, on one box:
-**3 061.7 s** with no witness recorded, **924.2 s** aimed in the session that wrote the first table, **417.7 s**
-aimed and alone; the three tables those runs priced total **2 632.1 s**, **1 550.4 s** and **715.8 s**. A **2.2x**
+**3 061.7 s** with no witness recorded, **924.2 s** aimed in the session that wrote the first table, **417.7 s** and
+then **420.6 s** aimed and alone; the four tables those runs priced total **2 632.1 s**, **1 550.4 s**, **715.8 s** and
+**724.7 s**. A **2.2x**
 spread between two of them is larger than the effect either was measuring, so the claim is the within-session
 ratio and the ordering -- `ci-budget.test.ts` first in all three -- and not the seconds. A duration taken once on a
 box whose load is not part of the record is a price with an unstated denominator; the division reads only the
@@ -1019,3 +1020,35 @@ reported as a fall.
 normalisation; the battery is **15 injections, 15 caught, 0 survived, 0 inert**, and the new one is caught by
 exactly the case written for it. `md5`-identical restoration of the gate after the battery, as the battery
 requires.
+
+## Finding 668 — the run stopped before it reached the mutant, and the claim was blamed for it
+
+`--bail=1` rides on every mutant run, and it was added for what it costs: a survivor's verdict is the whole
+file staying green, so the flag cannot hide one, and a red claimant can stop at its first failure. What no rule
+said is that a file's **first red need not be the claim**. A claimant whose first failing test is an unrelated
+one -- a probe that timed out, a case that depends on an earlier one, a budget that fired on a different test --
+ends the run before the armed exit is ever reached, and the child exits non-zero having recorded no mutant.
+
+The reader was already strict about that state, and correctly: a red without a recorded mutant is a statement
+about the file, not about the mutation, so it is refused in its own basket. It was correct about the run and
+wrong about the claim, because the claim had never been measured: the file stopped first. The sentence it prints
+-- *"which exited 1 with the exit hollowed but never recorded the mutant, so the failure was not the mutant's and
+this claim is not proved by it"* -- is true of the run and sends the reader to the wrong repair.
+
+**Found by CI, on the round that shipped the aim.** Run `45804184339`, `sensitivity-shard` (shard 2 of 2):
+`112 of 113` claims credited, and the one refused was `scripts/fetch-official.mjs:1002`, claimed by
+`fetch-official.test.ts` -- the file the same run had just recorded as holding the longest single test of any
+claimant (8 483 ms of its 30 000 ms), and the file that passed on its own and again on the next run of the same
+shard (`139 of 139` credited, `0 missed`). One flaky red in a file of 43 tests was enough to turn a claim into a
+gate failure, because the run that was supposed to prove it never got far enough to try.
+
+**The repair asks the question of a run that finished.** Claims whose decided run is red and recorded nothing are
+measured once more against the whole file **without** `--bail`, and what decides them is that run: recorded and
+red is a credit, recorded and green is a survivor, unrecorded is the same refusal in the same words. The extra run
+is not a second chance at a verdict -- it is the same question asked of a run that reached the end -- and it costs
+one run in the rare case and nothing otherwise.
+
+**Falsification.** Two cases, and they are the two halves: a fixture that stops at an earlier red while bailing
+is credited from the whole-file run (`1 claim(s) in 2 run(s)`, `3 run(s)` in the pass line), and a fixture that
+records nothing however it is run stays refused with `never recorded the mutant`. Without the second case the
+repair would be a device for turning an unproved claim into a proved one.
