@@ -95,7 +95,14 @@ jobs:
     # 17 -> 18 minutes, so the bounds add up to 2160 s, and 2160 plus the 180 s allowance plus
     # the 8 s of doubled overhead is 2348 s. The ceiling pays for the bounds it holds, and it
     # is the only place that arithmetic can be written down.
-    timeout-minutes: 41
+    #
+    # 41 -> 42 at v3.155, by the same sum one minute later: the lint bound moved 18 -> 19 on
+    # attempt 2 of run `45695988542`, so the bounds are 2280 s, and 2280 + 180 + 8 is 2468 s
+    # -- 41.1 minutes, of which this is the first whole minute above. The step's own cost is
+    # going down in the same commit (`verify-site-proofs` is parallel now); the ceiling moves
+    # because the *bound* moved, and a ceiling that ignored its own steps' bounds would fire
+    # before one of them could.
+    timeout-minutes: 42
     steps:
       # Full history: see the note above `jobs:` (findings 612 and 614). This is the job the
       # first of those two was found in.
@@ -188,7 +195,14 @@ jobs:
         # and not the structural one. What makes this step twice the size of its siblings is that
         # two of its seven members spawn their own copies of the tree and run a suite in each
         # (`verify-scorer-stability`, `verify-site-proofs`), and splitting them out is `O-108`.
-        timeout-minutes: 18
+        #
+        # 19 from v3.155, and this time the number is the day rather than the step: attempt 2 of
+        # run `45695988542` read **559 s** for the same commit that read 378 s in run `45692816682`
+        # an hour earlier, and 18 minutes is 1 080 s -- 1.93x the slower of the two, which `R4`
+        # refuses. The bound goes up by the minute the arithmetic asks for while the step's own
+        # cost goes *down*: `verify-site-proofs` now runs its 68 claimant files eight at a time
+        # instead of one after another, so the next reading measures the repair rather than this.
+        timeout-minutes: 19
         run: pnpm lint
 
       - name: Test with coverage (core + cli, ≥95% per dimension, 100% functions)
@@ -603,6 +617,15 @@ jobs:
     # 2 -> 3 when run 45345210544 read it at 70 s, so the 3,000 s of bounds became 3,060 and `R13`
     # refused the ceiling by 60 seconds. Every other ceiling that moved this campaign moved for the
     # same arithmetic, which is why the rule is written as a sum rather than as a margin.
+    #
+    # 56 held at v3.155, and the reason is that nothing left the job. `Every gate can be shown to
+    # fail` was going to move to a job of its own, and `R13` refused it: a recording that still
+    # holds the step under this job is a recording that outlives the tree, and the step's 374 s
+    # became an overhead nobody measured -- the same arithmetic that makes a split look free is the
+    # one that says the split has to wait for a reading. What the round did instead is the shape
+    # v3.54 used: the step stays, runs **shard 1 of 2**, and a second job runs the other half. This
+    # job's bounds are unchanged, so its ceiling is unchanged, and the job that gained a step is the
+    # one with a promise against it.
     timeout-minutes: 56
     steps:
       - name: Check out
@@ -684,24 +707,17 @@ jobs:
         run: node scripts/inject-m1-ceiling-tests.mjs
 
 
-      # Every gate, emptied and watched.
-      #
-      # `docs/progress.md`'s third clause is that a gate with no test is neither a
-      # threshold nor an enumeration, and the tracking row for this item read
-      # "partially complete (3 of 8 gates)" for several rounds. That number counted
-      # a mechanism -- the gates carrying a dedicated block in
-      # `gates-are-testable.test.ts` -- while the criterion is broader. Measured as
-      # written, by inserting `process.exit(0)` into each gate and running the tests
-      # that name it, all of them are caught. This step is what keeps that true: a
-      # gate that can be emptied without a test noticing, or that no test names at
-      # all, fails the build.
-      #
-      # 13 minutes is 2.12 times the slowest day (368 s on 44576264388); the 10 it replaced
-      # was 1.63 times it, which the multiple refuses -- the second time this bound has been
-      # raised for the same reason, and both times it was the refresh that found it (finding 599).
+      # v3.155: shard 1 of 2, and the name is unchanged on purpose -- `R2` pins the recording
+      # to it, so a name that moved is a name the last reading could not find. The second
+      # shard runs in `gates-audit` beside this job, which is the shape v3.54 gave the sites
+      # battery. The bound did not move with the work: 13 minutes was argued from 374 s, and a
+      # shard is a smaller number the same runner has not yet been watched spending -- narrowing
+      # it here would be a bound sized from arithmetic rather than from a day.
       - name: Every gate can be shown to fail
         timeout-minutes: 13
-        run: node scripts/verify-gates-are-testable.mjs
+        run: node scripts/verify-gates-are-testable.mjs --shard 1/2
+
+
 
       # The three batteries below were written, repaired, and never invoked. Each
       # has carried a restore verdict since finding 142, and each was green when
@@ -839,6 +855,91 @@ jobs:
         run: python3 scripts/injection/scorer-stability-probe.py
 
 
+
+  # The gate audit, on its own -- the move `sensitivity-shard` got in v3.54, applied to the
+  # step that was a third of its job.
+  #
+  # ## Why it left `batteries`
+  #
+  # `Every gate can be shown to fail` read **374 s** twice on the same tree -- reading 48 and
+  # the attempt-2 reproduction of run `45695988542` -- while the nineteen steps it shared a job
+  # with read their own numbers twice as well. A job's wall clock is the sum of its steps, so a
+  # 374 s step in a 1036 s job sets a third of the job's floor, and `batteries` was the floor of
+  # the whole run: **1021 s** against a **1024 s** run. Nothing in the job depends on it. It
+  # empties each gate one at a time and runs the files that name it, which is tree state of its
+  # own, and the only thing the two halves ever shared was a queue.
+  #
+  # ## What the split does not change
+  #
+  # The step's name, its bound and its verdict. `R2` pins the recording to the name, so the name
+  # is written here exactly as it was there, and `13` minutes stays the number the measurement
+  # argued (2.12 times the slowest day, finding 599). What changes is the budget machinery: this
+  # job has never run, so `R6` has nothing to compare it with, and
+  # `golden-master/ci-declarations.json` carries a job promise (`R9`) for this one round -- the
+  # ceiling, the bound on every step, the order they run in, and why the job exists. The first
+  # green run measures it, and the promise is deleted in the commit that records the reading.
+  gates-audit:
+    name: every gate can be shown to fail, in a job of its own
+    runs-on: ubuntu-latest
+    # 26: the three bounds this job holds (7 + 3 + 13) plus the 180 s prefix allowance, which is
+    # 1 560 s and **26.0 minutes** -- `R13`'s arithmetic with no overhead term, because a job no
+    # run has watched has no overhead to double. No measurement is behind any of these numbers: a
+    # ceiling argued from a reading nobody watched is the thing `R9` exists to refuse, and
+    # `R4`/`R5` settle all of them in the commit that records the first green run.
+    #
+    # 3 rather than 1 on the build step is the same rule from the other side -- the floor exists
+    # for a step that has not run yet, and this one has not run in *this job*, whatever the twenty
+    # other jobs do with the same command.
+    timeout-minutes: 26
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `zsh` for `check-no-unsafe-shell.test.ts`, which compares a rule against what the shells
+      # do rather than against a spec -- the strongest acceptance criterion in the tree. Seven
+      # minutes for the reason written on the same step in `verify`: the command's slowest
+      # reading is 197 s, and the jobs that install it rise together.
+      - name: Install the shells the suite cross-checks against
+        timeout-minutes: 7
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
+      - name: Build (core then cli; cli resolves core's dist)
+        timeout-minutes: 3
+        run: pnpm build
+
+      # Every gate, emptied and watched.
+      #
+      # `docs/progress.md`'s third clause is that a gate with no test is neither a
+      # threshold nor an enumeration, and the tracking row for this item read
+      # "partially complete (3 of 8 gates)" for several rounds. That number counted
+      # a mechanism -- the gates carrying a dedicated block in
+      # `gates-are-testable.test.ts` -- while the criterion is broader. Measured as
+      # written, by inserting `process.exit(0)` into each gate and running the tests
+      # that name it, all of them are caught. This step is what keeps that true: a
+      # gate that can be emptied without a test noticing, or that no test names at
+      # all, fails the build.
+      #
+      # 13 minutes is 2.12 times the slowest day (368 s on 44576264388); the 10 it replaced
+      # was 1.63 times it, which the multiple refuses -- the second time this bound has been
+      # raised for the same reason, and both times it was the refresh that found it (finding 599).
+      - name: Every gate can be shown to fail (shard 2 of 2)
+        timeout-minutes: 13
+        run: node scripts/verify-gates-are-testable.mjs --shard 2/2
 
   # The artefacts and the documents: a different kind of check (files and prose rather
   # than behaviour) and a different clock, which is why it is a third job.

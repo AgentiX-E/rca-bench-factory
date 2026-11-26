@@ -61,12 +61,17 @@
  *
  *   node scripts/verify-site-proofs.mjs            # run every claim
  *   node scripts/verify-site-proofs.mjs --list     # print the plan, run nothing
+ *   node scripts/verify-site-proofs.mjs --jobs 1   # one claimant at a time
+ *
+ * `--jobs` exists because the pool replaced a serial loop and a paired measurement is
+ * the only thing that can say the verdicts did not move with it: the same tree, run
+ * once at `--jobs 1` and once at the default.
  */
 
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { availableParallelism, tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -95,10 +100,24 @@ const TESTS = resolve(process.env['RCA_SITE_PROOFS_TESTS'] ?? join(ROOT, 'packag
 
 const args = process.argv.slice(2);
 const listOnly = args.includes('--list');
-const unknown = args.filter((one) => one !== '--list');
+// `--jobs N` is the instrument the default below was chosen by, and the only way to
+// run this gate serially: a paired measurement of the pool is two runs of the same
+// tree, one at `--jobs 1` and one at the default, and asserting that a concurrency
+// change did not change a verdict needs the serial run to still be reachable. Left
+// in the shipped interface rather than deleted after the measurement because the
+// number it produced is a property of the runner, and the next runner will want the
+// same experiment.
+const jobsAt = args.indexOf('--jobs');
+const jobsArg = jobsAt === -1 ? null : args[jobsAt + 1];
+const consumed = jobsAt === -1 ? [] : [String(jobsAt), String(jobsAt + 1)];
+const unknown = args.filter((one, index) => one !== '--list' && !consumed.includes(String(index)));
 if (unknown.length > 0) {
   process.stderr.write(`verify-site-proofs: unknown argument '${unknown[0]}'\n`);
-  process.stderr.write('usage: node scripts/verify-site-proofs.mjs [--list]\n');
+  process.stderr.write('usage: node scripts/verify-site-proofs.mjs [--list] [--jobs N]\n');
+  process.exit(1);
+}
+if (jobsAt !== -1 && !/^[1-9][0-9]*$/.test(jobsArg ?? '')) {
+  process.stderr.write(`verify-site-proofs: --jobs needs a positive integer, not '${jobsArg ?? ''}'\n`);
   process.exit(1);
 }
 
@@ -163,6 +182,45 @@ function rerun(file) {
 }
 
 /**
+ * Start one child and wait for it, without blocking the event loop.
+ *
+ * ## Why this is not `spawnSync`
+ *
+ * `spawnSync` blocks until the child exits, so a loop of them is a serial loop by
+ * construction: the 68 claimants of this inventory are independent files, each a
+ * separate `vitest run`, and 273 s of the runner's time was that loop doing them one
+ * after another. There is no ordering between them -- `byFile()` sorts the list for
+ * the *report*, not for the run -- and the only shared state is `traceCount`, which is
+ * incremented before the spawn on this side of the process boundary.
+ *
+ * The error shape is kept identical to `spawnSync`'s: a child that never starts
+ * (ENOENT, EACCES) comes back as `error` with a message, and a child that starts and
+ * dies comes back as `status`. The two are reported differently by the caller, and
+ * conflating them would turn "the runner is missing" into "the claim did not fire".
+ */
+function run(command, args, options) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { cwd: options.cwd, env: options.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const settle = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    child.stdout?.on('data', (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on('error', (error) => settle({ status: -1, stdout, stderr, error }));
+    child.on('close', (code) => settle({ status: code ?? -1, stdout, stderr }));
+  });
+}
+
+/**
  * The trace of one file, and whether the run itself can be trusted.
  *
  * A file the runner could not start produces no trace, and an empty trace is exactly
@@ -174,16 +232,15 @@ function rerun(file) {
  * test that failed, the error line, the totals. "Unmeasured" alone sent a reader back
  * to the file to work out what the gate had already read.
  */
-function traceOf(file, hook) {
+async function traceOf(file, hook) {
   const absolute = resolve(ROOT, file);
   if (!existsSync(absolute)) {
     return { problem: `${file} does not exist, so its claims are unmeasured`, detail: [] };
   }
   const trace = join(scratch, `${String(traceCount)}.log`);
   traceCount += 1;
-  const result = spawnSync(process.execPath, [vitestEntry(), 'run', relative(TESTS, absolute), '--reporter=dot'], {
+  const result = await run(process.execPath, [vitestEntry(), 'run', relative(TESTS, absolute), '--reporter=dot'], {
     cwd: TESTS,
-    encoding: 'utf8',
     env: {
       ...process.env,
       NODE_OPTIONS: `${process.env['NODE_OPTIONS'] ?? ''} --require=${hook}`.trim(),
@@ -226,14 +283,70 @@ const hook = hookFile(scratch);
 // nothing for an instrument it would not read.
 const witness = claimed.some((claim) => claim.kind === 'throw') ? join(HERE, 'throw-witness.mjs') : '';
 
+/**
+ * How many claimant files this run has in the air at once.
+ *
+ * ## Why the loop was serial, and why that was not a decision
+ *
+ * Each claim names a file, and each file is a separate `vitest run`. The loop that ran
+ * them was `for (const [file] of byFile())`, with a `spawnSync` inside: serial because
+ * the call blocks, not because the files depend on each other. Nothing orders them --
+ * the sort in `byFile()` exists so the *report* is stable -- and the only state shared
+ * across iterations is `traceCount`, which is incremented on this side before a child
+ * exists. On this inventory that was **273 s** of one process waiting, in the job whose
+ * own step is 453 s on the runner: the cost of the run was its seriality, and no
+ * claimant was expensive.
+ *
+ * ## Why the number is the machine's, capped
+ *
+ * A child is a node process plus vitest's worker pool, so the useful count is bounded
+ * by cores rather than by files. `availableParallelism()` is what the container
+ * reports, which is the number the runner actually gives us rather than the number its
+ * marketing page says. The cap is what keeps a 32-core developer machine from starting
+ * 32 vitest instances at 300 MB each: past eight the children are contending for
+ * memory bandwidth and the win flattens, and a gate that OOMs a runner is a gate that
+ * reports UNMEASURED for every claim at once.
+ */
+const JOB_CAP = 8;
+
+function jobs() {
+  if (jobsArg !== null) return Number(jobsArg);
+  const cores = availableParallelism();
+  return Math.max(1, Math.min(JOB_CAP, cores));
+}
+
+const limit = jobs();
+const plan = byFile().map(([file]) => file);
+const outcomes = new Map();
+let cursor = 0;
+
+/**
+ * One worker: take the next file in the plan, wait for it, repeat.
+ *
+ * A fixed set of workers pulling from a cursor, rather than a promise per file: a
+ * promise per file starts all 68 children at once and then relies on the scheduler to
+ * keep only `limit` of them running, which it does not -- `limit` would be a comment.
+ */
+async function claimant() {
+  while (cursor < plan.length) {
+    const file = plan[cursor];
+    cursor += 1;
+    outcomes.set(file, await traceOf(file, hook));
+  }
+}
+
+await Promise.all(Array.from({ length: Math.min(limit, plan.length) }, claimant));
+
 const firedByFile = new Map();
 const blindByFile = new Map();
 const thrownByFile = new Map();
 const reachedByFile = new Map();
 const armedByFile = new Set();
 const problems = [];
-for (const [file] of byFile()) {
-  const outcome = traceOf(file, hook);
+// In the plan's order, so a report of several problems reads the same way twice: the
+// pool finishes in whatever order the children do, and the map it fills is not that.
+for (const file of plan) {
+  const outcome = outcomes.get(file);
   if (outcome.problem !== undefined) {
     problems.push({ head: outcome.problem, detail: outcome.detail });
     continue;
@@ -271,6 +384,9 @@ if (failures > 0) {
 }
 
 const sites = claimed.length;
+process.stdout.write(
+  `verify-site-proofs: ${String(plan.length)} claimant file(s), ${String(Math.min(limit, plan.length))} at a time\n`,
+);
 process.stdout.write(
   `verify-site-proofs: PASSED (${String(sites)} claim(s) across ${String(firedByFile.size)} file(s), ` +
     'every claim reached by the file that names it -- an exit it took, or a throw it ended on)\n',

@@ -124,6 +124,20 @@ interface Outcome {
  * case -- an inventory that names nothing.
  */
 function sandbox(stub: { body: string; status: number }, subject: string | null = 'check-throwaway.mjs'): string {
+  return treeOf(stub, subject === null ? [] : [subject]);
+}
+
+/**
+ * The same tree with any number of subjects.
+ *
+ * One subject is the shape every case above needs, and it is the shape that cannot
+ * ask what a **pair** of runs cost: a total and the sum of its parts are the same
+ * number when there is one part, so an instrument that printed a constant would
+ * pass. Two subjects that differ only in name make the sum a statement -- and the
+ * names are the two the fixtures above already use, because a new name in this file
+ * is a new mention in the corpus the script register scans.
+ */
+function treeOf(stub: { body: string; status: number }, subjects: string[]): string {
   counter += 1;
   const tree = join(scratch, `tree-${counter}`);
   mkdirSync(join(tree, 'scripts'), { recursive: true });
@@ -148,20 +162,22 @@ function sandbox(stub: { body: string; status: number }, subject: string | null 
   // read back by the next, which then refused a gate nobody was holding.
   mkdirSync(join(tree, 'node_modules'), { recursive: true });
   symlinkSync(resolve(ROOT, 'node_modules', 'typescript'), join(tree, 'node_modules', 'typescript'), 'dir');
-  if (subject !== null) {
-    writeFileSync(join(tree, 'scripts', subject), 'process.exit(1);\n');
-    writeFileSync(
-      join(tree, 'packages', 'core', 'test', 'probe.test.ts'),
-      // In code, not in a comment: the audit's denominator is "names it in code"
-      // since finding 200, and this fixture's first version named the subject in a
-      // `//` line -- so the sandbox was measured as "no test names it" and every
-      // case below reported the wrong refusal.
-      `const SUBJECT = 'scripts/${subject}';\n`,
-    );
+  if (subjects.length > 0) {
+    for (const [index, subject] of subjects.entries()) {
+      writeFileSync(join(tree, 'scripts', subject), 'process.exit(1);\n');
+      writeFileSync(
+        join(tree, 'packages', 'core', 'test', `probe-${String(index)}.test.ts`),
+        // In code, not in a comment: the audit's denominator is "names it in code"
+        // since finding 200, and this fixture's first version named the subject in a
+        // `//` line -- so the sandbox was measured as "no test names it" and every
+        // case below reported the wrong refusal.
+        `const SUBJECT = 'scripts/${subject}';\n`,
+      );
+    }
   }
   writeFileSync(
     join(tree, 'golden-master', 'gate-sites.json'),
-    JSON.stringify({ sites: subject === null ? [] : [{ script: `scripts/${subject}` }] }),
+    JSON.stringify({ sites: subjects.map((subject) => ({ script: `scripts/${subject}` })) }),
   );
   const npx = join(tree, 'bin', 'npx');
   writeFileSync(npx, `#!/bin/sh\n${stub.body}\nexit ${stub.status}\n`);
@@ -193,8 +209,8 @@ function listedSubjects(): string[] {
     .sort();
 }
 
-function audit(tree: string): Outcome {
-  const result = spawnSync(process.execPath, [join(tree, 'scripts', AUDIT)], {
+function audit(tree: string, args: string[] = []): Outcome {
+  const result = spawnSync(process.execPath, [join(tree, 'scripts', AUDIT), ...args], {
     encoding: 'utf8',
     cwd: tree,
     env: { ...process.env, PATH: `${join(tree, 'bin')}:${process.env.PATH ?? ''}` },
@@ -799,6 +815,105 @@ describe('scripts/verify-gates-are-testable.mjs · the audit of the audits', { t
     expect(outcome.stdout).toContain('CAUGHT');
     expect(outcome.stdout).toContain('gates: 1  caught: 1  survived: 0  no-test: 0  unattributed: 0');
     expect(outcome.stdout).toContain('OK (1 gate(s)');
+  });
+
+  it('says what each subject cost, and the parts add up to the whole', () => {
+    // ## Why this audit needed a price on it
+    //
+    // It is CI's `Every gate can be shown to fail` step, and it read **374 s twice** --
+    // reading 48 and the attempt-2 reproduction of the same run -- which made it and
+    // the gate-test battery 67% of the `batteries` job, the workflow's critical path.
+    // It was also the one step in the workflow that reported no cost at all: 69
+    // subjects, one `npx vitest` cold start each, and not a single number saying which
+    // subject wanted the time. A step whose cost cannot be attributed is a step whose
+    // cost can only be reduced by guessing, and v3.154's own finding is what guessing
+    // costs: `backend-support` was paying 347 s for claims worth 53 s, and the only
+    // thing that found it was a per-row timer.
+    //
+    // ## What the sandbox makes falsifiable
+    //
+    // Two subjects, one stub that sleeps 0.6 s per run and reports a `Duration` of its
+    // own. So: a total that is the sum of two measured parts (not a constant, not one
+    // number repeated), a child time that is below the wall clock (the timer wraps the
+    // run rather than the loop), and a reported-duration subtotal that separates what
+    // the suites said they spent from what the process start cost -- the split that
+    // decides whether 374 s is 69 cold starts or 69 heavy files.
+    const outcome = audit(
+      treeOf(
+        {
+          body: "sleep 0.6; printf ' Duration  500ms (transform 1ms, setup 0ms, collect 1ms, tests 498ms)\\n'; printf '\\303\\227 void\\n'",
+          status: 1,
+        },
+        ['check-throwaway.mjs', 'gen-throwaway.mjs'],
+      ),
+    );
+    expect(outcome.status).toBe(0);
+
+    const parts = outcome.stdout
+      .split('\n')
+      .filter((line) => /^(CAUGHT|SURVIVED|UNATTRIBUTED) /.test(line))
+      .map((line) => Number(/(\d+\.\d) s\s*$/.exec(line)?.[1]));
+    expect(parts).toHaveLength(2);
+    for (const part of parts) expect(part).toBeGreaterThanOrEqual(0.5);
+
+    const summary = /cost: (\d+) run\(s\), (\d+\.\d) s of child time inside (\d+\.\d) s of wall clock/.exec(
+      outcome.stdout,
+    );
+    expect(summary, 'the run states no cost at all').not.toBeNull();
+    const [, runs, child, wall] = summary as RegExpExecArray;
+    expect(Number(runs)).toBe(2);
+    // The total is the sum of the parts, and the parts are the two numbers printed
+    // against the subjects: this is what a constant cannot satisfy.
+    expect(Math.abs(parts.reduce((sum, part) => sum + part, 0) - Number(child))).toBeLessThanOrEqual(0.2);
+    // The run happened inside the wall clock that contains it.
+    expect(Number(child)).toBeLessThanOrEqual(Number(wall));
+
+    // The suites' own reading of their cost, kept separate from the child time: 500 ms
+    // reported twice is 1.0 s, and the 0.2 s of `sleep`-independent start is the gap.
+    const reported = /(\d+\.\d) s of that the suites reported as their own \((\d+) of (\d+)\)/.exec(outcome.stdout);
+    expect(reported, 'the run does not separate the suites\' own time from the start').not.toBeNull();
+    expect(Number((reported as RegExpExecArray)[1])).toBeCloseTo(1.0, 1);
+    expect((reported as RegExpExecArray)[2]).toBe('2');
+  });
+
+  it('splits the subject list into shards that cover it once, and refuses one that covers nothing', () => {
+    // ## Why a shard at all
+    //
+    // This audit is 374 s of the 1021 s job that set the workflow's wall clock, and the
+    // step's bound is half of the run. v3.54 answered the same shape in the sites battery
+    // by sharding it: the job keeps the step and runs shard 1, a second job runs shard 2
+    // beside it, the step's name does not move so `R2` still finds the recording's row.
+    // A shard is only sound if it is a partition, and a partition is a statement about
+    // sets -- so it is asked as one, against the list the audit itself prints.
+    const listed = listedSubjects();
+    const thirds = [1, 2, 3].map((i) =>
+      spawnSync(process.execPath, [resolve(ROOT, 'scripts', AUDIT), '--list', '--shard', `${String(i)}/3`], {
+        encoding: 'utf8',
+        cwd: ROOT,
+        timeout: 120_000,
+      }).stdout.split('\n').map((line) => line.trim()).filter((line) => line !== ''),
+    );
+    const union = new Set(thirds.flat());
+    // Every gate is in some shard, and no gate is in two: the two halves of "partition".
+    expect(union.size).toBe(listed.length);
+    expect(thirds.flat().length).toBe(listed.length);
+    expect([...union].sort()).toEqual(listed);
+    // And every shard is non-empty, which is the property that makes `R2`'s row for this
+    // step and the promise for the job both about a real measurement.
+    for (const shard of thirds) expect(shard.length).toBeGreaterThan(0);
+
+    // The refusals. A spec nobody can number is a step that measures whatever it selects,
+    // and an empty slice would print a tidy zero-gate summary and exit 0 -- the vacuity
+    // shape this file's first case is about, one level down.
+    const sandboxed = sandbox({ body: "printf '\\303\\227 void\\n'", status: 1 });
+    for (const spec of ['0/2', '3/2', 'abc', '1/', '/2', '1.5/2']) {
+      const refused = audit(sandboxed, ['--shard', spec]);
+      expect(refused.status, `--shard ${spec}`).toBe(1);
+      expect(refused.stderr).toContain('--shard takes <i>/<n>');
+    }
+    const empty = audit(sandboxed, ['--shard', '2/2']);
+    expect(empty.status).toBe(1);
+    expect(empty.stderr).toContain('holds no gate out of the 1');
   });
 
   it('is invoked by a package script and by a workflow, not only by hand', () => {

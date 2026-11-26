@@ -346,6 +346,7 @@ function stopSuite(group, report) {
  * later without touching this process.
  */
 async function runTests(files) {
+  const started = performance.now();
   const child = spawn('npx', ['vitest', 'run', '--root', 'packages/core', ...files], {
     cwd: ROOT,
     detached: true,
@@ -363,10 +364,119 @@ async function runTests(files) {
   });
   const status = await new Promise((resolve) => child.on('close', (code) => resolve(code ?? -1)));
   inFlight = null;
-  return classify(files, { status, stdout: out, stderr: '' });
+  return {
+    outcome: classify(files, { status, stdout: out, stderr: '' }),
+    elapsed: performance.now() - started,
+    reported: suiteReported(out),
+  };
 }
 
-const subjects = gates();
+/**
+ * What the suite said its own tests cost, in milliseconds, or `null` if it did not say.
+ *
+ * ## Why the child's own reading is kept beside the timer
+ *
+ * The two numbers answer different questions and only their difference decides what
+ * to do about 374 s. A `vitest` run is a process start -- config load, plugin setup,
+ * worker pool -- followed by some tests; the child times the second part and calls it
+ * `Duration`. If the sum of those durations is most of the child time, the cost is in
+ * the files and the only lever is running fewer of them. If it is a small part, the
+ * cost is 69 cold starts and the lever is amortising them -- a different change, in a
+ * different place, and the two are indistinguishable from the total alone.
+ *
+ * `null` rather than `0` when the line is absent, because a run that printed no
+ * duration is a run whose silence must not be averaged in as a fast one. The summary
+ * counts them separately.
+ */
+function suiteReported(out) {
+  const match = /Duration\s+([\d.]+)(ms|s)\b/.exec(out);
+  if (match === null) return null;
+  return match[2] === 's' ? Number(match[1]) * 1000 : Number(match[1]);
+}
+
+/**
+ * A duration as the report prints it.
+ *
+ * One decimal and a unit, everywhere: a figure in prose is a status column, and the
+ * way these numbers went stale before was by being written down once and read as
+ * current. Printing them from the run is what keeps the summary a reading.
+ */
+function seconds(ms) {
+  return `${(ms / 1000).toFixed(1)} s`;
+}
+
+/**
+ * The gates this inventory names, before any shard is taken.
+ *
+ * `all` rather than `subjects`, because the two refusals below are different facts: an
+ * inventory with no gate fails whatever shard was asked for, and a shard with no gate
+ * fails in a way that has nothing to say about the inventory. Keeping them apart is the
+ * same distinction `SURVIVED` and `UNATTRIBUTED` make one level down.
+ */
+const all = gates();
+
+/**
+ * Which slice of the subject list this run measures.
+ *
+ * ## Why a shard, and not a job that runs the whole list
+ *
+ * The step is 374 s, twice, on two runs of one tree, and it is 36% of the job it sits
+ * in -- a job that was 1021 s against a 1024 s run, so the step's own bound was half of
+ * the workflow's wall clock. v3.54 met the same shape in the sites battery and answered
+ * it the same way: the job keeps the step and runs **shard 1 of n**, and a second job
+ * runs **shard 2 of n** beside it. The name of the step does not change, so `R2` still
+ * finds the recording's row for it, and the job that gains a step is the one the budget
+ * rules can only accept through a promise (`R9`) -- which is exactly the trade the
+ * earlier round made and wrote down.
+ *
+ * ## Why the partition is by position rather than by name
+ *
+ * A gate is an independent experiment: it hollows one file and runs the tests that name
+ * it, and no other gate's mutation is in the tree at the time. So a partition is sound
+ * whatever it is, and by position is the version whose union is checkable against
+ * `--list` without a second derivation -- `--list --shard i/n` prints the slice, and the
+ * test asks that the slices cover every gate once.
+ *
+ * `i` from 1, so the arithmetic is `(position - (i - 1)) mod n === 0`: a reader counting
+ * shards from zero is a reader who will one day write `0/2`.
+ */
+function shardOf(list) {
+  const at = process.argv.indexOf('--shard');
+  if (at === -1) return list;
+  const spec = process.argv[at + 1];
+  const parsed = /^([1-9][0-9]*)\/([1-9][0-9]*)$/.exec(spec ?? '');
+  if (parsed === null || Number(parsed[1]) > Number(parsed[2])) {
+    console.error('verify-gates-are-testable: FAILED');
+    console.error(
+      `  --shard takes <i>/<n> with 1 <= i <= n, not '${spec ?? ''}': a shard nobody can number ` +
+        'is a step that measures whatever it happens to select',
+    );
+    process.exit(1);
+  }
+  const index = Number(parsed[1]);
+  const total = Number(parsed[2]);
+  const slice = list.filter((_, position) => position % total === index - 1);
+  if (slice.length === 0) {
+    // The vacuity shape one level down: a run that selected nothing would print a tidy
+    // summary of zero gates and exit 0. A plan that hands an empty slice to a job is a
+    // plan whose shard count exceeds its subject count, and no reading of the verdict
+    // could tell that from a job that measured everything and found nothing wrong.
+    console.error('verify-gates-are-testable: FAILED');
+    console.error(
+      `  shard ${String(index)} of ${String(total)} holds no gate out of the ${String(list.length)} ` +
+        'in the inventory: it would pass while measuring nothing, so the plan is wrong rather ' +
+        'than the tree',
+    );
+    process.exit(1);
+  }
+  return slice;
+}
+
+const subjects = shardOf(all);
+const shardLabel = (() => {
+  const at = process.argv.indexOf('--shard');
+  return at === -1 ? '' : ` (shard ${process.argv[at + 1] ?? ''})`;
+})();
 
 /**
  * Report the subject list and stop, touching nothing.
@@ -381,7 +491,9 @@ const subjects = gates();
  * here: a number in prose is a status column, and this pass's own finding is about
  * one of those going stale for a round.)
  * `gates-are-testable-is-enumerated.test.ts` asks with this flag and never runs the
- * audit for real.
+ * audit for real. `--list --shard i/n` prints the slice a shard would measure, which is
+ * how the partition is checked without trusting the filter: the union of the slices is
+ * the list, and no gate is in two of them.
  *
  * It is placed before the sweep and the lock because a query must not repair, must
  * not refuse because somebody else is measuring, and must not take the tree.
@@ -391,7 +503,7 @@ if (process.argv.includes('--list')) {
   process.exit(0);
 }
 
-if (subjects.length === 0) {
+if (all.length === 0) {
   console.error('verify-gates-are-testable: FAILED');
   console.error('  golden-master/gate-sites.json names no gate, so this run would pass while measuring nothing.');
   process.exit(1);
@@ -404,6 +516,18 @@ const unparsable = [];
 const restored = [];
 const silentClaims = [];
 const namesakeSilent = [];
+
+/**
+ * What each executed subject cost, in the order it ran.
+ *
+ * A run that reports a verdict per subject and no price per subject leaves the step's
+ * cost unattributable, and this audit is CI's second-most-expensive step (`374 s` on
+ * both readings of run 45692816682 and its attempt-2 reproduction) without having said
+ * a word about where it went. The list is what the summary sums; it is not written to
+ * disk, because a cost is a property of the machine of the day rather than of the tree,
+ * and every past round that wrote one down had to correct it.
+ */
+const paid = [];
 
 /**
  * The file currently mutated, recorded on disk so a later run can undo it.
@@ -683,6 +807,12 @@ for (const gate of subjects) {
   }
 
   let outcome;
+  // What this subject cost, measured around the mutation rather than around the loop:
+  // the loop also restores the file, reads it back, classifies the output and prints a
+  // line, and none of those are the thing 374 s is spent on. The two numbers the child
+  // can give -- its wall clock and its own `Duration` -- are kept together so the
+  // summary can say which half the time was in.
+  let spend;
   // The record goes down **before** the mutation, so a kill at any point after this
   // leaves a repair. `pid` is what the next run uses to tell this run's death from
   // its life; `suite` is filled in the moment the nested run starts -- it cannot be
@@ -691,11 +821,14 @@ for (const gate of subjects) {
   journalWrite([...journalRead(), { path, original, gate, pid: process.pid, suite: null }]);
   try {
     writeFileSync(path, candidate);
-    outcome = await runTests(files);
+    spend = await runTests(files);
+    outcome = spend.outcome;
   } finally {
     writeFileSync(path, original);
     journalWrite(journalRead().filter((entry) => entry.gate !== gate));
   }
+  paid.push({ gate, files: files.length, elapsed: spend.elapsed, reported: spend.reported });
+  const price = seconds(spend.elapsed).padStart(7);
   const back = readFileSync(path, 'utf8');
   if (back !== original) {
     console.error(`verify-gates-are-testable: FAILED -- could not restore ${gate}`);
@@ -716,7 +849,7 @@ for (const gate of subjects) {
     const silent = visible.filter((one) => !red.includes(one.replace(/^packages\/core\//, '')));
     console.log(
       `CAUGHT      ${gate.padEnd(44)} ${String(outcome.failures.length).padStart(2)} test(s) red ` +
-        `in ${String(red.length)} of ${String(files.length)} naming file(s)`,
+        `in ${String(red.length)} of ${String(files.length)} naming file(s)  ${price}`,
     );
     for (const one of files.filter((file) => !red.includes(file.replace(/^packages\/core\//, '')))) {
       // The one pair that is not incidental: the file named after the gate.
@@ -727,10 +860,12 @@ for (const gate of subjects) {
       for (const one of silent) silentClaims.push({ gate, file: one });
     }
   } else if (outcome.verdict === 'SURVIVED') {
-    console.log(`SURVIVED    ${gate.padEnd(44)} emptied, and nothing failed across ${files.length} file(s)`);
+    console.log(
+      `SURVIVED    ${gate.padEnd(44)} emptied, and nothing failed across ${files.length} file(s)  ${price}`,
+    );
     survived.push(gate);
   } else {
-    console.log(`UNATTRIBUTED ${gate.padEnd(43)} exited ${outcome.status} and named no failing test`);
+    console.log(`UNATTRIBUTED ${gate.padEnd(43)} exited ${outcome.status} and named no failing test  ${price}`);
     unattributed.push(gate);
   }
 }
@@ -739,9 +874,40 @@ console.log('');
 console.log(
   `gates: ${subjects.length}  caught: ${subjects.length - survived.length - unvisited.length - unattributed.length - unparsable.length}  `
   + `survived: ${survived.length}  no-test: ${unvisited.length}  `
-  + `unattributed: ${unattributed.length}  unparsable: ${unparsable.length}`,
+  + `unattributed: ${unattributed.length}  unparsable: ${unparsable.length}${shardLabel}`,
 );
 console.log(`restored byte-for-byte: ${restored.length} of ${subjects.length - unvisited.length - unparsable.length}`);
+
+// What the run cost, and what it was spent on.
+//
+// Printed even on a failing run: the price of a red step is the price somebody will
+// pay again on the next push, and a cost that is only reported when everything passed
+// is a cost reported exactly when nobody is looking for it.
+//
+// The two halves are the point. `child` is the sum of the nested runs' wall clocks --
+// what this process waited for -- and `reported` is what those suites said their own
+// tests took. Their difference is process start, config load, plugin setup and worker
+// pool, once per subject: the number that says whether the lever is fewer boots or
+// fewer files. `unreported` counts runs whose output carried no `Duration` at all, so a
+// silent suite cannot pass for a fast one.
+if (paid.length > 0) {
+  const child = paid.reduce((sum, one) => sum + one.elapsed, 0);
+  const reported = paid.filter((one) => one.reported !== null);
+  const suiteTime = reported.reduce((sum, one) => sum + one.reported, 0);
+  const dearest = paid.reduce((worst, one) => (one.elapsed > worst.elapsed ? one : worst));
+  const executions = paid.reduce((sum, one) => sum + one.files, 0);
+  const distinct = new Set(subjects.flatMap((gate) => referencingTests(gate)));
+  console.log(
+    `cost: ${paid.length} run(s), ${seconds(child)} of child time inside ${seconds(performance.now())} of wall clock; ` +
+      `${seconds(suiteTime)} of that the suites reported as their own ` +
+      `(${reported.length} of ${paid.length})`,
+  );
+  console.log(
+    `      ${executions} file execution(s) over ${distinct.size} distinct file(s); ` +
+      `the dearest is ${dearest.gate} at ${seconds(dearest.elapsed)} ` +
+      `(${Math.round((100 * dearest.elapsed) / child)}% of it)`,
+  );
+}
 if (namesakeSilent.length > 0) {
   console.error('');
   console.error('verify-gates-are-testable: a gate has a test file named after it, and emptying it left');

@@ -1339,7 +1339,7 @@ function roundLabel(head) {
  * `ledger-runs.mjs` predicted and did not prevent. `**<n> of <m> jobs success**` is
  * checkable: `m` against `ci.yml`'s job count, `n` against `m`.
  */
-function closingErrors(ledger, workflow) {
+function closingErrors(ledger, workflow, promisedJobs = null) {
   const sections = Array.isArray(ledger.sections) ? ledger.sections : null;
   // A caller that passed no section index has not asked the question, for the reason
   // `ledger` itself is optional: silence would otherwise be indistinguishable from
@@ -1386,11 +1386,39 @@ function closingErrors(ledger, workflow) {
   }
   const [reported, counted] = [Number(tally[1]), Number(tally[2])];
   const declared = workflow === null || workflow === undefined ? null : jobsOf(workflow).length;
-  if (declared !== null && counted !== declared) {
+  /**
+   * The jobs a run could not have had, because the round that writes the row is the round
+   * that adds them.
+   *
+   * ## The state this rule could not express
+   *
+   * `R9` exists so a job can be declared before any run has measured it, and v3.54 used it
+   * to add `sensitivity-shard`. What no rule said is what the *reading* looks like in that
+   * commit: `ci.yml` has the job, the newest run does not, and the tally is therefore one
+   * short of the workflow's count -- refused, so the commit that adds a job could never be
+   * published, and the promise could never be spent. v3.155 found it by trying to spend one:
+   * nine jobs in `ci.yml`, eight in the run that was the newest green one, and no honest row
+   * that satisfied both.
+   *
+   * ## Why a promise is the only thing allowed to explain the gap
+   *
+   * The count is not compared with a number the round chose; it is compared with the jobs
+   * that `golden-master/ci-declarations.json` says no run has measured. `R9` refuses a
+   * promise for a job the recording *has*, so a promise cannot be used to excuse an old
+   * reading -- it can only name a job whose first run is still ahead. And the gap is a
+   * number the summary prints (`N job declaration(s) still awaiting their first run`), so an
+   * accepted row is not a silent one.
+   */
+  const promised = promisedJobs === null || promisedJobs === undefined ? 0 : promisedJobs.size;
+  if (declared !== null && counted !== declared && counted !== declared - promised) {
     errors.push(
       `the newest round's closing reading (${at}) reports **${String(counted)} job(s)** and \`ci.yml\` ` +
         `declares **${String(declared)}**: a run id is not a CI run id -- \`CI\` and \`Anchor round trip\` ` +
-        'draw from one sequence, so a row can cite a run whose jobs are not these',
+        'draw from one sequence, so a row can cite a run whose jobs are not these' +
+        (promised > 0
+          ? `, and the ${String(promised)} job(s) a declaration is still waiting to measure do not ` +
+            'account for the difference either'
+          : ''),
     );
   }
   if (reported !== counted) {
@@ -1423,12 +1451,12 @@ function closingErrors(ledger, workflow) {
  * would refuse, and so would its repair, for ever. A round cites one run; the refresh run
  * goes uncited, which is why the summary can read `the recording is newer` and be right.
  */
-export function ledgerErrors(baseline, ledger, workflow = null) {
+export function ledgerErrors(baseline, ledger, workflow = null, promisedJobs = null) {
   if (ledger === null || ledger === undefined || ledger.read !== true) return [];
   // The round's reading is asked about before the tail is, because an empty ledger is the
   // case `R11` exists for: a log with no `| CI |` row at all used to end the function here,
   // and the silence that followed was indistinguishable from agreement.
-  const errors = [...closingErrors(ledger, workflow)];
+  const errors = [...closingErrors(ledger, workflow, promisedJobs)];
   if (ledger.tail === null) return errors;
   if (ledger.tail.runs.length === 0) {
     errors.push(
@@ -1481,7 +1509,7 @@ function narrowed(record, job) {
  */
 export function budgetErrors(workflow, baseline, ledger = null, declarations = null, readings = null) {
   const parsed = readDeclarations(workflow, declarations);
-  const errors = [...ledgerErrors(baseline, ledger, workflow), ...parsed.errors];
+  const errors = [...ledgerErrors(baseline, ledger, workflow, parsed.jobs), ...parsed.errors];
   const declared = parsed.declared;
   const declaredJobs = parsed.jobs;
 

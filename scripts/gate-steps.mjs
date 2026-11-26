@@ -597,7 +597,10 @@ export const STEP_PLAN = {
   'batteries / Component rule battery (no survivors, no inert mutations)': { local: true },
   'batteries / M1-ceiling probe battery (no survivors, no inert mutations)': { local: true },
   'batteries / M1-ceiling probe test battery (no survivors, no inert mutations)': { local: true },
-  'batteries / Every gate can be shown to fail': { local: true },
+  'batteries / Every gate can be shown to fail': {
+    local: true,
+    note: 'shard 1 of 2 since v3.155; the other half runs in `gates-audit`',
+  },
   'batteries / Fault-extraction scoring battery (no survivors)': { local: true },
   'batteries / Fault-extraction workflow battery (no survivors, negative control)': { local: true },
   'batteries / Fetch-official retry battery (no survivors)': { local: true },
@@ -612,6 +615,22 @@ export const STEP_PLAN = {
   'batteries / Scorer-stability probe battery (the stability gate refuses a broken scorer)': {
     local: true,
   },
+
+  // ---- gates-audit ----------------------------------------------------------
+  //
+  // The second shard of the gate audit, in a job of its own since v3.155 for the reason
+  // `sensitivity-shard` exists: a job's wall clock is the sum of its steps, and 374 s of a
+  // 1036 s job is a third of the floor of the job that was the run. The plan holds the new
+  // key rather than a wildcard, and the step it names is written exactly as `ci.yml` writes
+  // it -- a promise in `ci-declarations.json` is what lets the job exist before a run has
+  // measured it, and a plan key that disagreed with the step would be a third name for the
+  // same thing.
+  'gates-audit / Install dependencies': { local: true },
+  'gates-audit / Install the shells the suite cross-checks against': {
+    remoteOnly: 'installs zsh through apt, which needs sudo and a package index',
+  },
+  'gates-audit / Build (core then cli; cli resolves core\'s dist)': { local: true },
+  'gates-audit / Every gate can be shown to fail (shard 2 of 2)': { local: true },
 
   // ---- batteries-heavy ------------------------------------------------------
   //

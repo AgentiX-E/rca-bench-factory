@@ -374,8 +374,19 @@ describe('the two baskets are a partition of the calls, not a remainder', { time
     // leaves the inventory at 146. A round that moved both would have had to add a refusal, and this one
     // did: the usage check that used to be one call is now one call with a second clause, which is why
     // the pair is not a line through the origin.
-    expect(calls).toBe(166);
-    expect(sites).toBe(146);
+    // 169/149 is v3.155's, and it is the first round in which the two numbers move by the same
+    // amount for **three separate reasons** rather than one gate's arrival. Two of the three are
+    // the shard parser in `verify-gates-are-testable.mjs`: a `--shard` specification nobody can
+    // number (`<i>/<n>`, 1 <= i <= n) and a slice that selects nothing, which would otherwise
+    // print a tidy summary of zero gates and exit 0. The third is a refusal that had been a
+    // *sentence without a verdict*: `verify-site-proofs.mjs` printed a usage line for an unknown
+    // argument and then carried on measuring, so an argument it had just called unknown had no
+    // effect on its status. That is the same defect as the empty shard one level down -- a gate
+    // whose prose and whose exit disagree -- and it is why this round's pair is not a line
+    // through the origin either: three calls, three sites, and one of the three was already
+    // being printed before it was counted.
+    expect(calls).toBe(169);
+    expect(sites).toBe(149);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

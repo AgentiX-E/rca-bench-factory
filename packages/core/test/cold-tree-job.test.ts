@@ -623,6 +623,10 @@ describe('ci · the shells the suite cross-checks against are installed', () => 
   const SUITE_JOB_IDS = [
     'verify',
     'batteries',
+    // v3.155 split the emptied-every-gate audit across two jobs, and the second one runs
+    // the same script with `--shard 2/2`. Registering it here is what makes the shells
+    // assertion below cover it: a job that starts a suite is a job that needs `zsh`.
+    'gates-audit',
     'batteries-heavy',
     'cold-tree',
     'sensitivity',
@@ -686,7 +690,12 @@ describe('ci · the shells the suite cross-checks against are installed', () => 
     const setup = new Set(['pnpm install --frozen-lockfile', 'pnpm build']);
     const commands = runCommands(body).filter((c) => !setup.has(c) && !c.startsWith('sudo apt-get'));
     expect(commands.length, 'the batteries job runs nothing, so this assertion is vacuous').toBeGreaterThanOrEqual(10);
-    const notAScript = commands.filter((c) => !/^(node|python3) scripts\/\S+$/.test(c));
+    // The command's **first token** is the script; the flags after it are arguments to that
+    // same script. The `$` this pattern used to carry made the sharded step invisible --
+    // `node scripts/verify-gates-are-testable.mjs --shard 1/2` was reported as "not a battery
+    // script" by a guard whose subject is which script a step names, not how it is spelled.
+    // The same defect, and the same repair, as `runsTheSuite` below.
+    const notAScript = commands.filter((c) => !/^(?:node|python3) scripts\/\S+(\s|$)/.test(c));
     expect(
       notAScript,
       'these commands in the batteries job are not battery scripts, so the job is not the list ' +

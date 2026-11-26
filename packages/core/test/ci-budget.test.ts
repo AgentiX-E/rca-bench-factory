@@ -775,10 +775,31 @@ describe('the step the recording has not measured yet', () => {
           else reached += 1;
         }
       }
+      // The population the summary counts is the steps a run has **measured**, and since
+      // v3.155 the workflow can hold a job no run has: `R9`'s promise exists for exactly that
+      // gap, so the sentence is short by the promised job's steps and says so in its own
+      // clause (`1 job(s) declared and awaiting their first run`). This case therefore counts
+      // the same population the summary does -- the workflow's steps minus those of the jobs
+      // the recording does not hold -- and the gap is a number it derives rather than skips.
+      const promiseFile = existsSync(DECLARATIONS) ? JSON.parse(readFileSync(DECLARATIONS, 'utf8')) : null;
+      const declared = [...readDeclarations(workflow, promiseFile).jobs.keys()].filter(
+        (id) => baseline.jobs?.[id] === undefined,
+      );
+      expect(declared.length, 'no job is promised, so this case would not exercise the gap').toBeGreaterThan(0);
+      const measured = workflow.steps.length -
+        declared.reduce((sum, id) => sum + stepsOf(workflow, id).length, 0);
+      for (const id of declared) {
+        for (const step of stepsOf(workflow, id)) {
+          if (step.inheritedFrom === 'step') own -= 1;
+          else if (step.inheritedFrom === 'prefix') allowed -= 1;
+          else if (step.inheritedFrom === 'job') carried -= 1;
+          else reached -= 1;
+        }
+      }
       const summary = budgetSummary(workflow, baseline);
-      expect(own + allowed + carried + reached).toBe(workflow.steps.length);
+      expect(own + allowed + carried + reached).toBe(measured);
       expect(summary).toContain(
-        `${String(own)} of ${String(workflow.steps.length)} step(s) carry their own \`timeout-minutes\``,
+        `${String(own)} of ${String(measured)} step(s) carry their own \`timeout-minutes\``,
       );
       expect(summary).toContain(`${String(carried)} are bounded by their jobs`);
       expect(summary).toContain(`${String(reached)} have none`);
@@ -815,9 +836,15 @@ describe('the step the recording has not measured yet', () => {
         promise.steps.map((one) => `${job} / ${one.name}`),
       ),
     ];
+    // The prefix is not part of the biconditional, and the exclusion is the same one `R9`
+    // makes: the four setup steps carry no bound of their own -- the job's three-minute
+    // allowance answers for them (finding 622) -- so there is no number for a promise to
+    // name. Without this filter the first job-level promise in the tree failed this case with
+    // four steps that have nothing to promise.
     const unmeasured = jobsOf(workflow).flatMap((job) => {
       const record = baseline.jobs?.[job.id];
       return stepsOf(workflow, job.id)
+        .filter((bounded) => bounded.inheritedFrom !== 'prefix')
         .filter((bounded) => typeof record?.steps?.[bounded.name] !== 'number')
         .map((bounded) => `${job.id} / ${bounded.name}`);
     });

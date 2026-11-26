@@ -927,6 +927,15 @@ interface FixtureOptions {
   pick: 1 | 2;
   sight?: 'traced' | 'blind';
   red?: boolean;
+  /**
+   * How long the stand-in runner stays alive, in milliseconds.
+   *
+   * A zero here is a child that starts and exits before the next one is spawned, which
+   * makes a pool of eight indistinguishable from a loop of one: the test below would
+   * pass on a serial gate. The delay is what gives a concurrent run something to
+   * overlap, and the two marks it writes either side of it are the evidence.
+   */
+  busyMs?: number;
 }
 
 /** A repository the gate can be pointed at: an inventory, a gate, and a runner. */
@@ -995,12 +1004,30 @@ function fixture(claims: { line: number; file: string }[], options: FixtureOptio
   // does (traced).
   const runner = [
     "import { spawnSync } from 'node:child_process';",
-    "import { readFileSync } from 'node:fs';",
+    "import { appendFileSync, readFileSync } from 'node:fs';",
     "import { dirname, resolve } from 'node:path';",
     "import { fileURLToPath } from 'node:url';",
     'const here = dirname(fileURLToPath(import.meta.url));',
     'const file = process.argv.find((one) => one.endsWith(".test.ts"));',
     'const text = readFileSync(file, "utf8");',
+    // The two marks and the wait between them exist only when a case asks for them, so
+    // every other fixture in this file runs the child it described before.
+    `const busy = ${String(options.busyMs ?? 0)};`,
+    'let mark = (kind) => {};',
+    'if (busy > 0) {',
+    // The journal's *path* comes from the caller rather than from the runner's own
+    // location. A child that decides where its evidence goes is exactly the shape the
+    // package-write guard is about, and `here` is derived from `import.meta.url` -- a
+    // lexical reading of this fixture cannot tell that the string is source for a child
+    // in a scratch tree, and the guard should not have to.
+    '  const journal = process.env.FIXTURE_JOURNAL ?? "";',
+    '  if (journal === "") throw new Error("a busy runner needs FIXTURE_JOURNAL");',
+    '  mark = (kind) => appendFileSync(journal, `${kind} ${String(Date.now())}\\n`);',
+    '  mark("start");',
+    '  const until = Date.now() + busy;',
+    '  while (Date.now() < until) { /* the point is to stay alive */ }',
+    '  mark("end");',
+    '}',
     'const pick = /FIXTURE_PICK (\\w+)/.exec(text)[1];',
     'if (text.includes("FIXTURE_RED")) {',
     '  process.stdout.write(" FAIL  " + file + " > does the thing\\n");',
@@ -1021,7 +1048,18 @@ function fixture(claims: { line: number; file: string }[], options: FixtureOptio
   return tree;
 }
 
-function runGate(tree: string, args: string[]): { status: number; stdout: string; stderr: string } {
+/**
+ * Runs the gate in a fixture tree.
+ *
+ * `extra` is the seam the busy fixture needs: the runner the gate starts is told where to
+ * write its marks, because a path a child derives for itself is the shape the package-write
+ * guard refuses and the shape this fixture has no reason to keep.
+ */
+function runGate(
+  tree: string,
+  args: string[],
+  extra: NodeJS.ProcessEnv = {},
+): { status: number; stdout: string; stderr: string } {
   const result = spawnSync(process.execPath, [GATE, ...args], {
     encoding: 'utf8',
     cwd: tree,
@@ -1030,9 +1068,38 @@ function runGate(tree: string, args: string[]): { status: number; stdout: string
       RCA_SITE_PROOFS_INVENTORY: join(tree, 'golden-master', 'gate-sites.json'),
       RCA_SITE_PROOFS_VITEST: join(tree, 'runner.mjs'),
       RCA_SITE_PROOFS_TESTS: join(tree, 'packages', 'core'),
+      ...extra,
     },
   });
   return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+}
+
+
+/**
+ * How many children were alive at once, from the journal a busy fixture writes.
+ *
+ * Two marks per child rather than a counter, because the counter is the state the gate
+ * under test would have to maintain: this reads what the children did, which is the
+ * only evidence that a pool overlapped.
+ */
+function widestOverlap(journal: string): number {
+  const events = readFileSync(journal, 'utf8')
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .map((line) => {
+      const [kind, at] = line.split(' ');
+      return { at: Number(at), delta: kind === 'start' ? 1 : -1 };
+    })
+    // Ends before starts at the same millisecond, so a child that finished in the same
+    // tick as another started does not read as overlap.
+    .sort((a, b) => a.at - b.at || a.delta - b.delta);
+  let live = 0;
+  let widest = 0;
+  for (const event of events) {
+    live += event.delta;
+    widest = Math.max(widest, live);
+  }
+  return widest;
 }
 
 describe('scripts/verify-site-proofs.mjs · the experiment, end to end', () => {
@@ -1107,6 +1174,74 @@ describe('scripts/verify-site-proofs.mjs · the experiment, end to end', () => {
       expect(result.status).toBe(1);
       expect(result.stderr).toContain("unknown argument '--fast'");
       expect(result.stderr).toContain('usage:');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a --jobs count it cannot honour, rather than running one file at a time', () => {
+    // The pool is bounded by a number this gate chooses, so the number is an argument,
+    // and an argument reaches it from a workflow file somebody edits. A `--jobs 0` that
+    // was read as "the default" would be a serial run reported as a parallel one, and a
+    // `--jobs four` that was read as `Number('four')` would be `NaN` -- which
+    // `Math.min` turns into `NaN` workers and a plan that never finishes.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }]);
+    try {
+      for (const bad of ['0', 'four', '1.5']) {
+        const result = runGate(tree, ['--jobs', bad]);
+        expect(result.status, `--jobs ${bad}`).toBe(1);
+        expect(result.stderr).toContain('--jobs needs a positive integer');
+      }
+      // And the flag it is not: a value nobody supplies is still a run, not a refusal.
+      const fine = runGate(tree, ['--jobs', '2']);
+      expect(fine.status).toBe(0);
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('gives the same verdict however many claimants it has in the air', () => {
+    // ## What this is the experiment for
+    //
+    // 68 claimant files used to be run one after another, because `spawnSync` blocks:
+    // 273 s of one process waiting on 68 separate `vitest run`s. The pool that replaces
+    // it is only sound if the files do not interact, and "they do not interact" is
+    // exactly the kind of claim this repository refuses to accept from a reading of the
+    // code. So: the same tree, run twice, once serially and once four at a time.
+    //
+    // ## The two things asserted, and why both are needed
+    //
+    // **The verdict is the same.** A pool that changed a verdict would be a pool that
+    // changed the measurement, and the tree is built so every claim fires: four files,
+    // four exits, status 0 both ways.
+    //
+    // **The overlap really happened.** A sleeping runner marks its own start and end,
+    // and the marks say how many were alive at once. Without this the test would pass on
+    // a serially-written gate: the fast run would simply be a loop, and its verdict
+    // would match too. This is the finding-152 shape -- a test that asserts a property
+    // its subject cannot violate.
+    const claims = ['a', 'b', 'c', 'd'].map((name) => ({ line: 1, file: `packages/core/test/${name}.test.ts` }));
+    const tree = fixture(claims, { pick: 1, busyMs: 250 });
+    const journal = join(tree, 'journal.log');
+    try {
+      const serial = runGate(tree, ['--jobs', '1'], { FIXTURE_JOURNAL: journal });
+      expect(serial.status).toBe(0);
+      expect(serial.stderr).toBe('');
+      const serialOverlap = widestOverlap(journal);
+      rmSync(journal);
+
+      const pooled = runGate(tree, ['--jobs', '4'], { FIXTURE_JOURNAL: journal });
+      expect(pooled.status).toBe(0);
+      expect(pooled.stderr).toBe('');
+      const pooledOverlap = widestOverlap(journal);
+
+      expect(serialOverlap).toBe(1);
+      expect(pooledOverlap).toBeGreaterThanOrEqual(2);
+      expect(pooledOverlap).toBeLessThanOrEqual(4);
+      // `--jobs 4` on four files, and the run says so rather than leaving a reader to
+      // infer it from a wall clock.
+      expect(pooled.stdout).toContain('4 claimant file(s), 4 at a time');
+      expect(serial.stdout).toContain('4 claimant file(s), 1 at a time');
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }

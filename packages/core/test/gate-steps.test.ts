@@ -1930,7 +1930,7 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     expect(result.stdout).toContain('artefacts 15m across 9 step(s)');
     expect(result.stdout).toContain('cold-tree 20m across 4 step(s)');
     expect(result.stdout).not.toContain('verify 15m across');
-    expect(result.stdout).toContain('verify 41m across 8 step(s)');
+    expect(result.stdout).toContain('verify 42m across 8 step(s)');
     // 24 -> 25 in v3.126, and the largest step bound with it: the first reading taken after four
     // jobs took the full history put `verify`'s slowest day at 722 s, which is 1.99x of 24 minutes,
     // and `Lint` -- the step that runs the 34 claimants -- at 497 s, which is 1.92x of 16. Both
@@ -1945,7 +1945,7 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     expect(result.stdout).not.toContain('largest 18m of the job');
     // The pool line is where the number went, and a prefix step reads it as its own: this is
     // the step the plan now charges to the job rather than to a bound of its own.
-    expect(result.stdout).toContain('verify / Install dependencies — 41m');
+    expect(result.stdout).toContain('verify / Install dependencies — 42m');
     // 3 -> 4 in v3.52: the sensitivity job's one battery became two, because a step can
     // now be declared for one recording instead of being folded into a neighbour's name.
     // The clause it was asserted through is empty in this workflow as of v3.132 (finding
@@ -2319,7 +2319,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     // what makes a ceiling change a round's decision rather than a silent edit. 40 -> 41 in v3.139,
     // by the same mechanism one level down: the shells command's own reading grew to 197 s, its
     // bound took the minute, and `R13` refused the ceiling by exactly that minute.
-    expect(result.stdout).toContain('of 41m');
+    expect(result.stdout).toContain('of 42m');
   });
 
   it('says a job bounds every step when one does, which no job of this workflow is any more', () => {
