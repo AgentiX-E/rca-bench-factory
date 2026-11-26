@@ -881,16 +881,23 @@ jobs:
   gates-audit:
     name: every gate can be shown to fail, in a job of its own
     runs-on: ubuntu-latest
-    # 26: the three bounds this job holds (7 + 3 + 13) plus the 180 s prefix allowance, which is
-    # 1 560 s and **26.0 minutes** -- `R13`'s arithmetic with no overhead term, because a job no
-    # run has watched has no overhead to double. No measurement is behind any of these numbers: a
-    # ceiling argued from a reading nobody watched is the thing `R9` exists to refuse, and
-    # `R4`/`R5` settle all of them in the commit that records the first green run.
+    # 24: the three bounds this job holds (7 + 3 + 10) plus the 180 s prefix allowance, which is
+    # 1 440 s and **24.0 minutes** -- `R13`'s arithmetic with no overhead term, because a job whose
+    # steps carry their own bounds has no second allowance to add. `R13` asks for a ceiling the
+    # bounds fit *inside*, so the sum is the floor of the number and not the number: 23 is a day
+    # that spends every bound and reaches the ceiling with nothing left over, which names the job
+    # rather than the step that hung.
+    #
+    # All of them settled by the first run that measured this job (`45748356774`): the shard spent
+    # **234 s** there, so 10 is 2.6x it -- wide enough for the runner's variance and narrow enough
+    # that a hang names the shard rather than the job. The promise this job was declared under said
+    # 13 for the shard and 26 for the ceiling, which were the only numbers available before a run
+    # existed; `R4` and `R13` are what replace a guess with a multiple.
     #
     # 3 rather than 1 on the build step is the same rule from the other side -- the floor exists
     # for a step that has not run yet, and this one has not run in *this job*, whatever the twenty
     # other jobs do with the same command.
-    timeout-minutes: 26
+    timeout-minutes: 24
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -934,11 +941,12 @@ jobs:
       # gate that can be emptied without a test noticing, or that no test names at
       # all, fails the build.
       #
-      # 13 minutes is 2.12 times the slowest day (368 s on 44576264388); the 10 it replaced
-      # was 1.63 times it, which the multiple refuses -- the second time this bound has been
-      # raised for the same reason, and both times it was the refresh that found it (finding 599).
+      # 10 minutes is 2.6 times this shard's own first day (**234 s** on 45748356774). The 13 it
+      # replaces came from `batteries`' whole-step reading of 368 s on 44576264388, which is a
+      # different question: a shard holds half the subjects, and the half it holds here is the
+      # cheap one -- 137 s in the sibling step of the same run.
       - name: Every gate can be shown to fail (shard 2 of 2)
-        timeout-minutes: 13
+        timeout-minutes: 10
         run: node scripts/verify-gates-are-testable.mjs --shard 2/2
 
   # The artefacts and the documents: a different kind of check (files and prose rather

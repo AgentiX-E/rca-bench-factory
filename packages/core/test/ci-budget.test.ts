@@ -781,11 +781,17 @@ describe('the step the recording has not measured yet', () => {
       // clause (`1 job(s) declared and awaiting their first run`). This case therefore counts
       // the same population the summary does -- the workflow's steps minus those of the jobs
       // the recording does not hold -- and the gap is a number it derives rather than skips.
+      //
+      // It used to *require* a promised job, and that assertion had to go the round the
+      // promise was settled: a gap is a state this tree passes through, not a property of it,
+      // so a case that demanded one would be red in every round that measures its own job.
+      // What gives this case teeth in both states is the equality below -- the four
+      // populations the summary prints against the steps the workflow holds and the recording
+      // covers -- and it is the same equality whether `declared` is empty or not.
       const promiseFile = existsSync(DECLARATIONS) ? JSON.parse(readFileSync(DECLARATIONS, 'utf8')) : null;
       const declared = [...readDeclarations(workflow, promiseFile).jobs.keys()].filter(
         (id) => baseline.jobs?.[id] === undefined,
       );
-      expect(declared.length, 'no job is promised, so this case would not exercise the gap').toBeGreaterThan(0);
       const measured = workflow.steps.length -
         declared.reduce((sum, id) => sum + stepsOf(workflow, id).length, 0);
       for (const id of declared) {

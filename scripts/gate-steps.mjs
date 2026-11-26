@@ -622,9 +622,11 @@ export const STEP_PLAN = {
   // `sensitivity-shard` exists: a job's wall clock is the sum of its steps, and 374 s of a
   // 1036 s job is a third of the floor of the job that was the run. The plan holds the new
   // key rather than a wildcard, and the step it names is written exactly as `ci.yml` writes
-  // it -- a promise in `ci-declarations.json` is what lets the job exist before a run has
+  // it -- a promise in `ci-declarations.json` is what let the job exist before a run had
   // measured it, and a plan key that disagreed with the step would be a third name for the
-  // same thing.
+  // same thing. That promise was settled and the file deleted by reading 50 (run
+  // 45748356774, the job's first day at 264 s), which is what a promise is for: the file
+  // exists for one round and disappears in the commit that records the run.
   'gates-audit / Install dependencies': { local: true },
   'gates-audit / Install the shells the suite cross-checks against': {
     remoteOnly: 'installs zsh through apt, which needs sudo and a package index',
