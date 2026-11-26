@@ -2374,14 +2374,17 @@ the job as it is, not as it was.
 
 ### The queue, after the move
 
-| | before | after |
-| --- | --- | --- |
-| `batteries` | 738 s (ceiling 56) | **485 s** (ceiling 46) |
-| `gates-audit` | 270 s (ceiling 24) | **523 s** (ceiling 34) |
-| the two queues together | 1 008 s | 1 008 s |
+| | reading 51 | predicted | reading 52 |
+| --- | --- | --- | --- |
+| `batteries` | 738 s (ceiling 56) | 485 s | **323 s** (ceiling 46) |
+| `gates-audit` | 270 s (ceiling 24) | 523 s | **501 s** (ceiling 34) |
 
-The next reading is what says whether 485 and 523 are what the runner does; this round can only state the
-arithmetic and hand the gate the numbers it derives from it.
+The measurement agrees with the shape and not with the size, and the difference is the day rather than the move:
+every job in run `45765112261` came in below the one before it -- `verify` **319 s** against 375, `sensitivity-shard`
+**465 s** against 497, `batteries-heavy` **275 s** against 366 -- so the two numbers to compare are inside that run,
+where `batteries` would have been **576 s** with the three batteries still in it. What the move did is visible
+where it happened: the destination spent **94 + 86 + 62 = 242 s** on the three, and the queue that was the run's
+floor is now the second of the two.
 
 ### Five things this round did wrong
 
@@ -2415,16 +2418,16 @@ arithmetic and hand the gate the numbers it derives from it.
 
 ### Left open
 
-- `O-143` · **The workflow's critical path is a queue of steps, and this round moved the tail rather than
-  splitting the head.** `batteries` is **485 s** now and the gate-test battery inside it is **264 s** -- 54% of
-  the job, and the last member whose cost is a count. Sharding it needs the report it publishes to be a report
-  per shard, because a report of half the injections is exactly the "total that cannot be divided" finding 657
-  removed. Both queues are within 40 s of each other, so the next cut is decided by a reading and not by a
-  preference.
-  `[open: whether the gate-test battery's report should be sharded with it -- one file per shard, published to
-  the same branch, which needs the publisher to survive two jobs writing one ref -- or whether the cheaper cut
-  is now the `sensitivity` pair, whose two shards read 244 s and 478 s on one command and are therefore the
-  widest imbalance the workflow still has]`
+- `O-143` · **The workflow's critical path is a queue of steps, and this round moved the tail rather than splitting
+  the head.** Reading 51 read the two queues at **738 s** and **270 s**; three batteries worth **253 s** went into
+  the smaller one, and reading 52 measures **323 s** and **501 s**. The floor of the run moved to the job that
+  received them, which is what a move does: nothing left the workflow, it was put where there was room. What is
+  left is a partition problem rather than a queue problem -- `gates-audit`'s own audit shard at **239 s**, the
+  gate-test battery at **173 s** (54% of `batteries`), and the widest imbalance in the workflow, the `sensitivity`
+  pair reading **244 s** and **438 s** of one command.
+  `[open: whether the next cut is that pair's partition -- 194 s of imbalance no queue can remove, only a better
+  split of the same claims -- or a third job for the gate-test battery, which needs the report it publishes to be a
+  report per shard, so that half a measurement is not published as one]`
 
 ### Readings
 
@@ -2432,13 +2435,13 @@ arithmetic and hand the gate the numbers it derives from it.
 
 | item | value |
 | --- | --- |
-| CI | run `45754575653` on `37c77e9c`: **9 of 9 jobs success**, 90 steps, reading **51** -- the run this round's arithmetic is argued from, and the newest recording the round may cite. The run after it measured a tree whose only difference is the recording itself, so it cannot be recorded against this one: the recorder compares the two trees in both directions and refuses a number the tree on disk has no step for |
+| CI | run `45765112261` on `a92304e4`: **9 of 9 jobs success**, 90 steps, reading **52** -- the first run that measured the move, and the one the three promises were settled by. Its predecessor `45754575653` (reading **51**) is where the arithmetic came from: 738 s of queue against 270 s. Between them sits `45756585961`, which is 9 of 9 and is not a reading -- it measured a tree whose only difference is the recording, and the recorder compares two trees in both directions |
 | `core` test suite | **261 files, 7070 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
 | repo test suite | **265 files, 7257 tests passed** (as of this commit) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
 | new tests | **7,065 -> 7,070, +5**: the move that lets a step change jobs, the stale entry no move explains, a move into a job that does not hold the step and two that move nothing, a step promised twice with a move that has no argument or no number, and the move that expires when its new job has measured it |
 | the queues, as measured | reading 51: `batteries` **738 s** (`Gate-test` 264, audit shard 1 137, fetch-official 118, doc-count 78, round-trip 57, prefix 25), `gates-audit` **270 s** (shard 2 at 250) |
-| the move | **253 s** from `batteries` to `gates-audit`: 738 -> **485** and 270 -> **523**, at a cost of no new job, no second prefix and no new step name |
+| the move | **253 s** from `batteries` to `gates-audit`, at a cost of no new job, no second prefix and no new step name. Predicted 485 / 523; measured **323 / 501**, in a run where every job came in below the previous one -- so the comparison that means anything is inside reading 52, where `batteries` would have been **576 s** with the three still in it and the destination spent **94 + 86 + 62 = 242 s** on them |
 | the ceilings | `batteries` **56 -> 46 min** (42 of bounds plus the 3-minute allowance, and the departed seconds no longer counted as overhead), `gates-audit` **24 -> 34 min** (30 plus the allowance) |
 | mutation | **5 groups, 5 red, 0 survivors**, each restored to an identical `md5` |

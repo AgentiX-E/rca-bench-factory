@@ -443,7 +443,7 @@ document that described it as downloading the data was describing an intention.
 | Test files | 261 core + 4 cli |
 | Test lines | 121,625 core + 3,242 cli |
 | Tests | 7,070 core + 187 cli |
-| Tracked files | 683 |
+| Tracked files | 682 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -1159,15 +1159,16 @@ is a row about rather than paraphrase one that no `grep` will find.
   loop, against a digest that costs a reader one more number to compare]`
 
 - O-143 · **The workflow's critical path is a queue of steps, and this round moved the tail rather than splitting the head.**
-  v3.156 moved three batteries -- fetch-official retry **118 s**, doc-count shapes **78 s**, round-trip record
-  **57 s** -- out of `batteries` and into `gates-audit`, on reading 51's two numbers: 738 s of queue against
-  270 s. The queues are now **485 s** and **523 s**, the same 1 008 s of work in the same two jobs, and the move
-  cost no new job, no second prefix and no new step name. What is left of the head is the gate-test battery at
-  **264 s** -- 54% of the job it is in, and the last member whose cost is a count rather than a sum.
-  `[open: whether the gate-test battery's report should be sharded with it -- one file per shard, published to the
-  same branch, which needs the publisher to survive two jobs writing one ref -- or whether the cheaper cut is now
-  the `sensitivity` pair, whose two shards read 244 s and 478 s on one command and are therefore the widest
-  imbalance the workflow still has]`
+  Reading 51 read the two queues at **738 s** and **270 s**; v3.156 moved three batteries -- fetch-official retry
+  **118 s**, doc-count shapes **78 s**, round-trip record **57 s** -- into the smaller one, at a cost of no new job,
+  no second prefix and no new step name. Reading 52 measures **323 s** and **501 s**, and the run's floor moved to
+  the job that received them: nothing was removed from the workflow, it was put where there was room. What is left
+  is a partition problem -- `gates-audit`'s own audit shard at **239 s**, the gate-test battery at **173 s** (54% of
+  `batteries`), and the widest imbalance the workflow still has, the `sensitivity` pair reading **244 s** and
+  **438 s** of one command.
+  `[open: whether the next cut is that pair's partition -- 194 s of imbalance no queue can remove, only a better
+  split -- or a third job for the gate-test battery, which needs the report it publishes to be a report per shard,
+  so that half a measurement is not published as one]`
 
 ## Pass log
 
