@@ -1340,10 +1340,33 @@ measured: today a claim with no row is measured against its whole file, which is
 claims in that state after the first aimed run were fixed by the next one. Nor whether the aim is worth its
 complexity at a *small* claimant: a file with one claim and a two-second runtime saves one run of two seconds,
 and the two extra arguments it carries are worth more than that. The threshold is not written down, because the
-mechanism costs nothing when it misses. And this is a prediction until the run that follows it: reading 55 is the first reading of a battery whose price
-is one test per claim, and what it can settle is whether the **924.2 s -> 417.7 s** ordering of claimants holds on
-the runner -- not whether the runner's seconds match this box's, which the three readings above already say they
-will not.
+mechanism costs nothing when it misses.
+
+**Reading 55: the aim held on the shards, and the run did not get shorter.** The first run of this tree
+(`45828223563` on `683bd91`) came back **9 of 9** and is the fifty-fifth reading. The two shard steps -- the same
+command, in the same two jobs, with one table different -- read **131 s** and **113 s**, against **427 s** and
+**303 s** in reading 54: shard 1 fell by **69%**, shard 2 by **63%**, and the pair from **730 s** to **244 s** of
+the runner's own time. That is the ordering the local measurement promised, at a magnitude it did not promise and
+this round does not claim.
+
+The run's wall clock did not fall: **483 s -> 512 s**. In reading 54 the longest job was `sensitivity` at 473 s and
+the run read 483 s; in reading 55 it is `gates-audit` at **502 s**, and the run reads 512 s. The 470 s the aim took
+off the critical path was not the run's to keep, because the critical path moved to a job this round never touched
+-- and moved in it by more than the noise floor: `gates-audit`'s audit shard read **171 s** in reading 54 and
+**236 s** here, on a tree that changed nothing in it, while `verify` read 295 s and then 417 s and `backend` read
+359 s and 36 s on the same two steps. That is the fact the four local readings gave at a smaller scale, and it is
+why the ledger above quotes the shard pair rather than the run: a wall clock is the loudest number in the record and
+the one least about the tree.
+
+**What the reading says about the division, which is not a repair.** The shipped table divides **362.3 s / 362.4 s**
+-- **0.0%** -- and the runner read its two work steps **152 s / 113 s**, **25.7%** apart, the heavier half being the
+one that also pays the **21 s** exemption battery (`verify-claims-are-sensitive`) the placement charges to that job;
+without it the two claim steps are **131 s** against **113 s**. The two *jobs*, which is the quantity
+with a wall clock, read **179 s / 154 s**: **14.0%** apart, inside the 15% the round committed to -- and inside it
+because shard 2's install step took **24 s** against **16 s**, which is a step this battery does not price. A
+division made from one box's prices is exact in that box's units and approximate in the runner's; **30% -> 13.7%**
+by the same arithmetic is the whole of what the aim bought on the halves, and the row that would finish it is a
+table rebuilt from the runner's own per-file rows, which is the second history `checkShardCosts` already accepts.
 
 ### Readings
 
@@ -1351,7 +1374,11 @@ will not.
 
 | item | value |
 | --- | --- |
-| CI | `45802469718` on `b24cf16` is the row that stands until this round's own run is recorded: reading **54**, **9 of 9 jobs success**, the tree this round began from. The row that will replace it is the first run of the tree this commit publishes -- the first whose battery is priced by a witness per claim instead of by the claimant's whole runtime, and therefore the only run whose `batteries` seconds can say whether the aim did what the local measurement says: 256 claims, **3,061.7 s -> 924.2 s** of child time, and no claim made truer by it |
+| CI | run `45828223563` on `683bd91`: **9 of 9 jobs success**, 90 steps, reading **55**, **512 s** of wall clock -- the first run whose battery prices a claim by the test that can see it, and the one that settles this round's prediction. Its two shard steps read **131 s** and **113 s** against **427 s** and **303 s** in reading 54 (**-69%** and **-63%**, the pair **730 s -> 244 s**), and the run's own wall clock rose **483 s -> 512 s** because the critical path is now `gates-audit` at **502 s**, whose audit shard read **171 s -> 236 s** on a step this round did not touch. Its predecessor `45804184339` is the red run finding 668 came from |
+| the aim, read on the runner | reading 54 -> 55, the same two jobs and the same command: `sensitivity` **427 s -> 131 s**, `sensitivity-shard` **303 s -> 113 s**; the pair **730 s -> 244 s** of the runner's time, where this box read **3,061.7 s -> 924.2 s** within one session and **420.6 s** alone |
+| what the runner says about the division | the table divides **362.3 s / 362.4 s** (**0.0%**); the runner's work steps read **152 s / 113 s** (**25.7%**, the heavier one carrying the **21 s** exemption battery) and its two jobs read **179 s / 154 s** (**14.0%**, inside the 15% the round commits to, because shard 2's install took 24 s against 16 s). The same pair read **30%** in reading 54 by the same arithmetic |
+| the run's wall clock | **512 s**, 29 s more than reading 54's **483 s**: the longest job moved from `sensitivity` (**473 s -> 179 s**) to `gates-audit` (**399 s -> 502 s**). Every job in the pair moved by more than the aim saved -- `verify` 295 -> 417 s, `backend` 359 -> 36 s -- which is why the ledger quotes the shard pair and not the run |
+| the queue, as reading 55 reads it | `gates-audit` **502 s** (the audit shard **236 s** of it), `verify` **417 s** (`Lint` 180 s, coverage 204 s), `batteries` **376 s** (the gate-test battery **197 s**, 52%), `batteries-heavy` **285 s** |
 | the battery, before the aim | 256 mutant runs, **3,061.7 s** of child time inside **7.8 min** of wall clock; the dearest claimant **29%** of that |
 | the battery, with the aim | 256 mutant runs, **924.2 s** inside **3.3 min** on the same session and the same pool; the dearest claimant **16%**; **256 of 256** aims held |
 | the battery, alone at the default pool | 256 mutant runs, **420.6 s** inside **3.1 min** at four claimants at a time, 325 runs in all with the 68 baselines: the reading this table is written from, taken on an idle box |

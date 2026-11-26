@@ -854,12 +854,21 @@ jobs:
   gates-audit:
     name: every gate can be shown to fail, in a job of its own
     runs-on: ubuntu-latest
-    # 24: the three bounds this job holds (7 + 3 + 10) plus the 180 s prefix allowance, which is
-    # 1 440 s and **24.0 minutes** -- `R13`'s arithmetic with no overhead term, because a job whose
-    # steps carry their own bounds has no second allowance to add. `R13` asks for a ceiling the
-    # bounds fit *inside*, so the sum is the floor of the number and not the number: 23 is a day
-    # that spends every bound and reaches the ceiling with nothing left over, which names the job
-    # rather than the step that hung.
+    # 35: the six bounds this job holds (7 + 3 + 10 + 4 + 4 + 3) plus the 180 s prefix allowance,
+    # which is 2 100 s and **35.0 minutes** -- `R13`'s arithmetic with no overhead term, because a
+    # job whose steps carry their own bounds has no second allowance to add. `R13` asks for a
+    # ceiling the bounds fit *inside*, so the sum is the floor of the number and not the number:
+    # 34 is a day that spends every bound and reaches the ceiling with nothing left over, which
+    # names the job rather than the step that hung.
+    #
+    # The job was declared at 24 -- `7 + 3 + 10` and the prefix -- and has been raised twice since,
+    # each time by a step that arrived or whose own bound grew: the three batteries written,
+    # repaired and never invoked came in at `4 + 4 + 3`, and reading 55 added the doc-count
+    # battery's fourth minute (`R4` on its 93 s). This is the ceiling doing what it is for and
+    # what it costs: it is the sum of what the steps are allowed to spend, so a bound that grows
+    # inside a full job raises the job's own ceiling, and a job holding six bounds has less room
+    # for each than a job holding three. The next bound that grows here without a step leaving is
+    # the argument for splitting the job rather than for a sixth minute.
     #
     # All of them settled by the first run that measured this job (`45748356774`): the shard spent
     # **234 s** there, so 10 is 2.6x it -- wide enough for the runner's variance and narrow enough
@@ -870,7 +879,7 @@ jobs:
     # 3 rather than 1 on the build step is the same rule from the other side -- the floor exists
     # for a step that has not run yet, and this one has not run in *this job*, whatever the twenty
     # other jobs do with the same command.
-    timeout-minutes: 34
+    timeout-minutes: 35
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -943,7 +952,12 @@ jobs:
         # **70 s** there, and twice that is 140, which is 20 seconds past the 2-minute bound.
         # `R10` refused it, and the growth is the round's own: v3.140 added two shapes to
         # `check-doc-counts`'s fixtures. Three minutes is 180 s, 2.57x the reading.
-        timeout-minutes: 3
+        # 3 -> 4 on reading 55 (run 45828223563): the same step read **93 s** there, where its
+        # slowest day had been 88 s, so twice the reading is 186 against a 180 s bound -- refused
+        # for being 6 s short. The growth is the round's own again (the separator earned the gate
+        # a fifteenth mutation, and every mutation is a whole rewrite of the gate), and four
+        # minutes is 240 s, 2.58x the reading, which is the same headroom the 3-minute bound had.
+        timeout-minutes: 4
         run: python3 scripts/injection/doc-counts-shapes.py
 
       # The fourth anchor's path now runs on the real corpus: run 38250480271

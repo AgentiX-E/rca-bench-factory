@@ -1137,6 +1137,16 @@ one round.
   claimed: that two shards are the right number. A third job would buy the tail of the slower half
   for another 27 s prefix, and the table prices claimants rather than jobs -- the 22 s
   `verify-claims-are-sensitive` step shares shard 1's job and is charged to that job's reading.
+  (v3.158) Reading 55 (`45828223563`, **9 of 9**) is the first reading in which a claim was priced
+  by its own witness: the two shard steps read **131 s** and **113 s** where reading 54 read
+  **427 s** and **303 s**, so the pair fell **730 s -> 244 s** and the gap **30% -> 13.7%** by the
+  same arithmetic, and the run's wall clock still rose **483 s -> 512 s** because the longest job
+  is now `gates-audit` at **502 s**. The budget is asserted on one box's prices and spent on
+  another's: the table divides **0.0%**, the runner's two work steps read **152 s / 113 s**
+  (**25.7%**, the heavier carrying the 21 s exemption battery) and its two *jobs* read
+  **179 s / 154 s** -- **14.0%**, inside the 15%, on an install step that took 24 s against 16 s.
+  What is claimed is therefore the rule and the budget on the quantity the workflow spends, not a
+  division that stays balanced on a machine it was not measured on.
 - **The price that moved was a claim's, so the price of a claim is now the test that can see it**
   (v3.158). A mutant run's verdict is an exit code, so it was a run of the claimant: a file with
   thirty claims cost thirty runs of itself, and the table's rows were therefore the product of a

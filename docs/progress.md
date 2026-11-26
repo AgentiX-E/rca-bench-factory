@@ -1166,12 +1166,18 @@ is a row about rather than paraphrase one that no `grep` will find.
   for a whole run of its file, so two claimants of 68 were **45%** of a **2 632 s** battery and no partition could
   balance them for longer than one run. The table now carries the test that noticed each claim, the battery aims
   each run at it, and the shipped table -- **724.7 s** over 68 claimants, written by a run taken alone at the
-  default pool -- divides **362.3 s / 362.4 s** with the dearest claimant at **15.8%** of the mutant time. What
-  is left is the head of the queue: `gates-audit`'s own audit shard at **239 s** and the gate-test battery at
-  **173 s**, which is 54% of `batteries`.
-  `[open: the price of a claim is now its own witness, 3 061.7 s -> 924.2 s within one session and 417.7 s alone for 256 claims -- so the next cut is
-  the gate-test battery's 173 s, which cannot be split without its report becoming a report per shard, and the
-  audit shard's 239 s, which is one command over 69 subjects and has no claim to aim at]`
+  default pool -- divides **362.3 s / 362.4 s** with the dearest claimant at **15.8%** of the mutant time. Reading
+  55 (`45828223563`, **9 of 9**) is the first run of that battery: its two shard steps read **131 s** and **113 s**
+  against **427 s** and **303 s** in reading 54, so the pair fell **730 s -> 244 s** and its imbalance **30% ->
+  13.7%**, and the run's wall clock still rose **483 s -> 512 s** because the longest job is now `gates-audit` at
+  **502 s**. What is left is the head of the queue, and the reading re-ordered it: the audit shard at **236 s**
+  inside the run's longest job, then the gate-test battery at **197 s**, which is 52% of `batteries`' **376 s**.
+  `[open: the price of a claim is now its own witness -- 3 061.7 s -> 924.2 s within one session, 417.7 s alone for
+  256 claims, and 730 s -> 244 s across the runner's two shards -- so the next cut is the audit shard's 236 s, which
+  is one command over 69 subjects and has no claim to aim at, then the gate-test battery's 197 s, which cannot be
+  split without its report becoming a report per shard; and the division is exact only in the units it was measured
+  in, since the table reads 0.0% where the runner reads 13.7%, which leaves open whether the table should be rebuilt
+  from the runner's own per-file rows -- the second history `checkShardCosts` already accepts]`
 
 ## Pass log
 
