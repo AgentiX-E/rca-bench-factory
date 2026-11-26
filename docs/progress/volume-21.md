@@ -2129,7 +2129,7 @@ promise accounts for it -- `R9` already refuses a promise for a job the recordin
 excuse an old reading. The gap is printed twice: `1 job declaration(s) still awaiting their first run`, by the
 gate and by the recorder.
 
-### Thirteen things this round did wrong
+### Fourteen things this round did wrong
 
 - **The first parallel run's 16 problems were mine, and I read them as the pool's.** Two were files that
   failed because the inventory was stale -- I had added two `process.exit` sites and moved others, and
@@ -2179,6 +2179,13 @@ gate and by the recorder.
   child was several vitest processes, so the cap bounded something other than what it was chosen by.
   The section below is the reading; the round would have shipped a red lane if the suite's own stall
   budget had not been watching a file the workflow's 19-minute bound could not see.
+- **A count of tracked files, measured before the deletion was staged.** `check-repository-table`
+  reads `git ls-files`, so its row describes the *index*; `ci-declarations.json` was removed from the
+  worktree and the gate was run before `git add`, which is the two-states-at-once shape `v3.151` recorded
+  and which this time cost **four jobs**: the row itself in `cold-tree` and `artefacts`, and `verify` and
+  `sensitivity-shard` behind `unit-nouns.test.ts`, which runs that gate and fails with it. The
+  local gate was green on a tree the commit did not contain -- and the difference was one file whose
+  absence the worktree knew about and the row did not.
 - **This list of the round's own mistakes became a record of them.** One bullet quoted the open-reason marker
   verbatim, and `openEntriesInList` reads a section as a record when its body is nothing but bullets *and* at
   least one of them carries a reason a reader could act on -- so the round's mistakes were counted as
