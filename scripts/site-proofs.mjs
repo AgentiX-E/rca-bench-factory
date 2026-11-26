@@ -727,15 +727,184 @@ export function parseShard(text) {
 }
 
 /**
+ * The seconds one claimant has cost, from a row of `golden-master/sensitivity-costs.json`.
+ *
+ * A claimant's price is its baseline run plus one run per claim -- the runs the gate
+ * spawns on its behalf -- so the two halves of the row are the two halves of the work.
+ * Not exported: `tableCosts` is the one way into the table, so the arithmetic has one
+ * spelling and a caller cannot price half a claimant.
+ */
+function claimantCost(row) {
+  return Number(row.baselineMs) + Number(row.mutantMs);
+}
+
+/** The rows of a cost table as the map `assignShards` places claimants from. */
+export function tableCosts(table) {
+  const costs = new Map();
+  for (const [file, row] of Object.entries(table?.files ?? {})) costs.set(file, claimantCost(row));
+  return costs;
+}
+
+/**
+ * Which files belong to which shard, by what each has cost.
+ *
+ * ## What this replaced, and why the old argument does not hold
+ *
+ * Until v3.157 the split was `position % count`: every i-th file of the sorted list.
+ * The reason written down was that "a split by measured seconds would have to be
+ * re-derived after every run and would put the same file in different shards on
+ * different machines", and that a plan in `ci.yml` and a plan checked by a test have to
+ * be the same plan. Both halves are true of a split by *live* seconds, and neither is
+ * true of a split by a **committed table**: the table is a file in the repository, so
+ * every machine reads the same numbers and derives the same halves, and it is
+ * re-derived only when the inventory changes -- which the coverage verdict
+ * (`checkShardCosts`) refuses to let pass unnoticed.
+ *
+ * The cost of the old rule was measured: the two shards read **247 s** and **438 s** of
+ * one command (reading 52), 44% apart, and a runner spent three minutes of the
+ * workflow's second-longest job waiting for the other.
+ *
+ * ## The rule
+ *
+ * Longest-processing-time first: the dearest claimant is placed on the emptiest shard,
+ * and so on down. Ties are broken by file name and by the lower shard index, so the
+ * assignment is a pure function of the table and of the inventory. It is not claimed to
+ * be optimal -- dividing a set of indivisible files is bin packing, and LPT is a
+ * 4/3-approximation -- but it is deterministic and it is the best this much information
+ * buys: with 44 claimants the gap it leaves is a fraction of the dearest file, against
+ * the 44% the positional rule left.
+ */
+export function assignShards(byFile, count, costs) {
+  if (!Number.isInteger(count) || count < 1) {
+    throw new Error(`a split into ${String(count)} shard(s) is not a split`);
+  }
+  const placed = new Array(count).fill(0);
+  const shards = Array.from({ length: count }, () => []);
+  const dearest = byFile
+    .map(([file]) => {
+      const ms = costs instanceof Map ? costs.get(file) : costs?.[file];
+      if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) {
+        throw new Error(
+          `no measured cost for ${file}, so it cannot be placed on a shard: regenerate ` +
+            'golden-master/sensitivity-costs.json with `--costs`',
+        );
+      }
+      return { file, ms };
+    })
+    .sort((left, right) => right.ms - left.ms || left.file.localeCompare(right.file));
+  for (const { file, ms } of dearest) {
+    let pick = 0;
+    for (let one = 1; one < count; one += 1) {
+      if (placed[one] < placed[pick]) pick = one;
+    }
+    placed[pick] += ms;
+    shards[pick].push(file);
+  }
+  // Inventory order inside a shard, so `--list` from a shard and the unsharded list are
+  // comparable line by line and the run order does not depend on where a file landed.
+  const order = new Map(byFile.map(([file], position) => [file, position]));
+  for (const shard of shards) {
+    shard.sort((left, right) => (order.get(left) ?? 0) - (order.get(right) ?? 0));
+  }
+  return shards;
+}
+
+/**
+ * What each shard's claimants have cost, in the order the shards are numbered.
+ *
+ * The one number a split is judged on: the workflow's wall clock is the slower shard,
+ * so a pair that reads 341 s and 345 s spends four seconds waiting and a pair that
+ * reads 247 s and 438 s spends three minutes.
+ */
+export function shardLoad(shards, costs) {
+  return shards.map((files) =>
+    files.reduce((total, file) => total + (costs instanceof Map ? costs.get(file) : costs?.[file] ?? 0), 0),
+  );
+}
+
+/**
  * The claimants of one shard, from the sorted list `claimsByFile` returns.
  *
- * Position rather than file size, deliberately. A split by measured seconds would have
- * to be re-derived after every run and would put the same file in different shards on
- * different machines; a split by sorted position is a pure function of the inventory,
- * so a plan written in `ci.yml` and a plan checked by a test are the same plan.
+ * `costs` is required: a shard cannot be derived without the table, and a fallback
+ * would be a second partition under one name -- the halves `ci.yml` runs would stop
+ * being the halves a local `--shard` runs, in the one place nobody would look.
  */
-export function shardClaims(byFile, index, count) {
-  return byFile.filter((_, position) => position % count === index - 1);
+export function shardClaims(byFile, index, count, costs) {
+  const owner = assignShards(byFile, count, costs);
+  const mine = new Set(owner[index - 1] ?? []);
+  return byFile.filter(([file]) => mine.has(file));
+}
+
+/**
+ * Whether a cost table describes the inventory it is being used to divide.
+ *
+ * A table is a measurement of a tree, and the tree changes: a claimant file is added, a
+ * claim is added to a file that already had some, a file stops making claims. Each of
+ * those leaves the table describing a tree that no longer exists, and a partition
+ * derived from it would be a partition of the wrong set -- silently, because a shard
+ * that received a file the table does not know about would look exactly like a shard
+ * that was given it on purpose.
+ *
+ * So the table is refused in both directions (a file with no row, a row with no file),
+ * and the row's claim count is compared, because the count is part of the cost's
+ * definition: one baseline plus one run per claim. And the provenance is read rather
+ * than carried -- a seconds figure with no day, no machine and no command is a number
+ * from nowhere, and a round that refreshes it needs to know which run to compare with.
+ */
+export function checkShardCosts(byFile, table) {
+  const errors = [];
+  const rows = table?.files;
+  if (rows === null || typeof rows !== 'object' || Array.isArray(rows)) {
+    return ['the cost table has no `files` map, so no claimant can be placed by it'];
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(table?.measured ?? ''))) {
+    errors.push(
+      `the cost table does not say the day it was measured (\`measured\` is ` +
+        `'${String(table?.measured)}'): a seconds figure with no date is a figure about another tree`,
+    );
+  }
+  if (String(table?.machine ?? '').trim() === '') {
+    errors.push('the cost table does not say which machine measured it (`machine`), so its seconds have no owner');
+  }
+  if (!String(table?.source ?? '').includes('--costs')) {
+    errors.push(
+      'the cost table does not say what wrote it (`source` has to be the command that produced it, ' +
+        'which is the gate with `--costs`)',
+    );
+  }
+  const names = new Set(byFile.map(([file]) => file));
+  for (const [file, claims] of byFile) {
+    const row = rows[file];
+    if (row === undefined) {
+      errors.push(
+        `\`${file}\` makes ${String(claims.length)} claim(s) and the cost table does not name it, so no ` +
+          'shard can be told whether it owns it -- regenerate it with ' +
+          '`node scripts/verify-sites-are-sensitive.mjs --costs golden-master/sensitivity-costs.json`',
+      );
+      continue;
+    }
+    if (row.claims !== claims.length) {
+      errors.push(
+        `\`${file}\` makes ${String(claims.length)} claim(s) and the table says ${String(row.claims)}, ` +
+          'so the seconds it carries include a run that no longer exists',
+      );
+    }
+    for (const field of ['baselineMs', 'mutantMs']) {
+      const value = row[field];
+      if (!Number.isInteger(value) || value <= 0) {
+        errors.push(
+          `\`${file}\`'s ${field} is ${String(value)}, which is not a measured number of milliseconds, ` +
+            'so the claimant cannot be priced',
+        );
+      }
+    }
+  }
+  for (const file of Object.keys(rows).sort()) {
+    if (!names.has(file)) {
+      errors.push(`\`${file}\` is in the cost table and makes no claim on this tree, so the table describes another inventory`);
+    }
+  }
+  return errors;
 }
 
 /**
@@ -744,11 +913,15 @@ export function shardClaims(byFile, index, count) {
  * A split is only an improvement if its union is the whole inventory. Each refusal
  * names a different repair: a missing shard, a duplicated one, two shards in one job
  * (which would run serially and save no wall clock), disagreeing counts, a shard with no
- * file, and a claim measured twice or by nobody. It is a function of the inventory and
- * the plan, so a test can reach every verdict without a runner -- which is the only
- * place those verdicts can be reached at all.
+ * file, and a claim measured twice or by nobody. It is a function of the inventory, the
+ * plan and the cost table, so a test can reach every verdict without a runner -- which
+ * is the only place those verdicts can be reached at all.
+ *
+ * `costs` is required since v3.157: the placement it walks is the table's, and a caller
+ * that could omit it would be checking the shape of a plan against a partition it had
+ * not asked for.
  */
-export function checkShardPlan(byFile, specs) {
+export function checkShardPlan(byFile, specs, costs) {
   const errors = [];
   if (specs.length === 0) {
     return [
@@ -760,7 +933,7 @@ export function checkShardPlan(byFile, specs) {
   if (counts.size !== 1) {
     errors.push(
       `the shard calls disagree on the count (${[...counts].join(', ')}): every shard of ` +
-        'one battery has to name the same n, or the modulo assigns the same file twice',
+        'one battery has to name the same n, or the assignment puts the same file on two',
     );
     return errors;
   }
@@ -805,9 +978,16 @@ export function checkShardPlan(byFile, specs) {
   }
 
   const allSites = byFile.flatMap(([, claims]) => claims.map((claim) => claim.site));
+  // The partition is derived from the cost table now, so what is left for this verdict
+  // to check is that every index of that partition is actually called: the placement
+  // itself is `assignShards`' property (it puts each file on exactly one shard) and the
+  // table's coverage is `checkShardCosts`'. Two verdicts, each on the thing it can be
+  // wrong about -- the shape that made the positional rule look checked when it was not.
+  const assigned = assignShards(byFile, count, costs);
+  const claimsOf = new Map(byFile);
   const measured = [];
   for (const one of specs) {
-    const files = shardClaims(byFile, one.index, one.count);
+    const files = assigned[one.index - 1] ?? [];
     if (files.length === 0) {
       errors.push(
         `shard ${String(one.index)}/${String(one.count)} holds no claimant, so that run ` +
@@ -818,8 +998,8 @@ export function checkShardPlan(byFile, specs) {
     // and a `push(...sites)` over it would overflow the argument limit on a tree with
     // enough proved exits. The guard in `spread-append-guard.test.ts` exists for exactly
     // this shape.
-    for (const [, claims] of files) {
-      for (const claim of claims) measured.push(claim.site);
+    for (const file of files) {
+      for (const claim of claimsOf.get(file) ?? []) measured.push(claim.site);
     }
   }
   for (const site of new Set(allSites)) {

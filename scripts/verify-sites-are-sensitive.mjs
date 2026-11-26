@@ -64,14 +64,28 @@
  * alternative is a test that edits a committed file -- which this repository does
  * not do. Same pattern as `RCA_SITE_PROOFS_*`, `RCA_CI_WORKFLOW` and `RCA_CI_BASELINE`.
  *
- * ## A split by sorted position (v3.54, P3)
+ * ## The split, by what each claimant cost (v3.54, then v3.157)
  *
  * The runner measured 626 s for this battery, 52 s short of the bound `R4` asked for,
- * so its claimants are divided across two jobs. `--shard <i>/<n>` takes every
- * `i`-th file of the sorted `claimsByFile` list; with no flag the run measures the whole
- * inventory, which is what a local repair still wants. Position rather than measured
- * cost, because a plan written in `ci.yml` and a plan checked by a test have to be the
- * same plan on every machine.
+ * so its claimants are divided across two jobs. `--shard <i>/<n>` runs one of them;
+ * with no flag the run measures the whole inventory, which is what a local repair still
+ * wants.
+ *
+ * The division was by sorted position until v3.157 -- every i-th file of
+ * `claimsByFile` -- and the reason written down was that a plan in `ci.yml` and a plan
+ * checked by a test have to be the same plan on every machine. Both shards' job seconds
+ * then read **247 s** and **438 s** of the same command (reading 52), 44% apart, because
+ * where a name sorts says nothing about what a file costs. The division is now by
+ * `golden-master/sensitivity-costs.json`: a committed table of one baseline plus one run
+ * per claim for every claimant, written by `--costs` from a run that measured them all.
+ * A **committed** table is what keeps the old argument's conclusion -- every machine
+ * divides identically -- while answering its premise: the numbers are a file, not a
+ * reading taken on the machine that happens to be running.
+ *
+ * The table is refused when it no longer describes the inventory (a file added, a claim
+ * added, a file that stopped making claims) in both directions, and a shard run without
+ * a readable table stops rather than falling back to position: a fallback would be a
+ * second partition under one name.
  *
  * A shard with no claimant is refused, not reported green. Two green jobs, one of which
  * measured nothing, is the shape a split can produce that a single job never can; the
@@ -83,15 +97,18 @@
  *   node scripts/verify-sites-are-sensitive.mjs            # measure every claim
  *   node scripts/verify-sites-are-sensitive.mjs --list     # print the plan, run nothing
  *   node scripts/verify-sites-are-sensitive.mjs --shard 1/2
+ *   node scripts/verify-sites-are-sensitive.mjs --costs golden-master/sensitivity-costs.json
  */
 
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { arch, cpus, platform, tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  assignShards,
+  checkShardCosts,
   claimedSites,
   claimsByFile,
   exhaustedTestBudget,
@@ -106,6 +123,8 @@ import {
   parseShard,
   parseTrace,
   shardClaims,
+  shardLoad,
+  tableCosts,
   testBudgetDeclarations,
 } from './site-proofs.mjs';
 
@@ -150,11 +169,17 @@ const args = process.argv.slice(2);
 const listOnly = args.includes('--list');
 const unknown = [];
 let shardText = null;
+let costsText = null;
 for (let index = 0; index < args.length; index += 1) {
   if (args[index] === '--list') continue;
   if (args[index] === '--shard') {
     shardText = String(args[index + 1] ?? '');
     index += 1; // the value is consumed, not a stray argument
+    continue;
+  }
+  if (args[index] === '--costs') {
+    costsText = String(args[index + 1] ?? '');
+    index += 1; // likewise
     continue;
   }
   unknown.push(args[index]);
@@ -170,7 +195,23 @@ if (unknown.length > 0 || (shard !== null && !shard.ok)) {
       : `invalid --shard '${String(shardText)}': ${shard.error}`;
   process.stderr.write(`verify-sites-are-sensitive: ${reason}\n`);
   process.stderr.write(
-    'usage: node scripts/verify-sites-are-sensitive.mjs [--list] [--shard <i>/<n>]\n',
+    'usage: node scripts/verify-sites-are-sensitive.mjs [--list] [--shard <i>/<n>] [--costs <path>]\n',
+  );
+  process.exit(1);
+}
+// `--costs` writes the table the shards are divided by, so it can only be asked of a
+// run that measured every claimant. A shard measures half an inventory and a `--list`
+// measures none, and either would produce a table that divides the next run by the
+// wrong set -- the second shape with zeros in it, which is worse, because the numbers
+// would look like a measurement.
+if (costsText !== null && (shard !== null || listOnly)) {
+  const why =
+    shard !== null
+      ? `a shard measures ${String(shard.index)}/${String(shard.count)} of the inventory, so the table it wrote would ` +
+        'name half the claimants and omit the rest'
+      : '`--list` runs no claimant, so the table it wrote would be a table of zeros';
+  process.stderr.write(
+    `verify-sites-are-sensitive: --costs writes the table an unsharded run measured -- ${why}\n`,
   );
   process.exit(1);
 }
@@ -210,8 +251,52 @@ try {
  */
 const everything = claimedSites(inventory);
 const allByFile = claimsByFile(everything);
+
+/**
+ * Where the cost table lives, and what a shard does without one.
+ *
+ * The table is a file in the repository rather than a live measurement, which is what
+ * lets `ci.yml`'s two halves and a local `--shard` be the same halves on every machine
+ * (the argument `shardClaims` carries in full). A shard run reads it, refuses it if it
+ * no longer describes the inventory, and stops otherwise -- there is no positional
+ * fallback, because a fallback is a second partition under one name.
+ */
+const COSTS = resolve(
+  ROOT,
+  process.env['RCA_SENSITIVE_COSTS'] ?? join('golden-master', 'sensitivity-costs.json'),
+);
+let costs = null;
+if (shard !== null) {
+  let table;
+  try {
+    table = JSON.parse(readFileSync(COSTS, 'utf8'));
+  } catch (error) {
+    process.stderr.write(
+      `verify-sites-are-sensitive: cannot read ${relative(ROOT, COSTS) || COSTS} -- ${String(error)}\n`,
+    );
+    process.stderr.write(
+      '  a shard is divided by that table and by nothing else; regenerate it with\n' +
+        '  node scripts/verify-sites-are-sensitive.mjs --costs golden-master/sensitivity-costs.json\n',
+    );
+    process.exit(1);
+  }
+  const wrong = checkShardCosts(allByFile, table);
+  if (wrong.length > 0) {
+    process.stderr.write(
+      `verify-sites-are-sensitive: ${relative(ROOT, COSTS) || COSTS} does not describe this inventory, ` +
+        'so no shard can be divided by it:\n',
+    );
+    for (const line of wrong) process.stderr.write(`  ${line}\n`);
+    process.stderr.write(
+      '  regenerate it with: node scripts/verify-sites-are-sensitive.mjs --costs golden-master/sensitivity-costs.json\n',
+    );
+    process.exit(1);
+  }
+  costs = tableCosts(table);
+}
+
 const byFile =
-  shard === null ? allByFile : shardClaims(allByFile, shard.index, shard.count);
+  shard === null ? allByFile : shardClaims(allByFile, shard.index, shard.count, costs);
 if (everything.length === 0 || byFile.length === 0) {
   // The shape that would pass forever: no claims in this run, so nothing to violate,
   // and a summary line that reads like a clean bill of health. A shard past the file
@@ -225,6 +310,22 @@ if (everything.length === 0 || byFile.length === 0) {
     `verify-sites-are-sensitive: ${what}, so this run would pass while measuring nothing\n`,
   );
   process.exit(1);
+}
+
+if (shard !== null && !listOnly) {
+  // What the table says the two jobs will cost. Printed by the shard itself, because
+  // the CI log is where a reader asks "which half is this", and a split whose halves
+  // are only visible in a file is a split nobody checks.
+  const loads = shardLoad(assignShards(allByFile, shard.count, costs), costs);
+  const heavier = Math.max(...loads);
+  const lighter = Math.min(...loads);
+  const apart = heavier > 0 ? ((heavier - lighter) / heavier) * 100 : 0;
+  process.stdout.write(
+    `verify-sites-are-sensitive: the cost table divides ${String(allByFile.length)} claimant(s) as ` +
+      `${loads.map((ms, position) => `${String(position + 1)}/${String(shard.count)}=${(ms / 1000).toFixed(1)} s`).join(', ')} ` +
+      `of child time -- ${apart.toFixed(0)}% apart -- and this run is shard ` +
+      `${String(shard.index)}/${String(shard.count)}\n`,
+  );
 }
 
 const claimed = byFile.flatMap(([, claims]) => claims);
@@ -754,10 +855,16 @@ const dearer = [...paid.entries()].sort(
   (left, right) => right[1].ms - left[1].ms || left[0].localeCompare(right[0]),
 );
 const mutantMs = dearer.reduce((total, [, row]) => total + row.ms, 0);
+// The baseline is half of a claimant's price -- one run of the file, before any mutant
+// -- and until v3.157 it was the half the rows did not print. The cost table is made of
+// these two numbers, so a row that carries only one of them cannot be reconciled with
+// the table from a CI log, which is where the table has to be re-derivable from.
+const baselineOf = new Map(baselines.map((outcome) => [outcome.file, outcome.elapsedMs ?? 0]));
 for (const [file, row] of dearer) {
   process.stdout.write(
     `verify-sites-are-sensitive: ${file} -- ${String(row.claims)} claim(s) in ${String(row.runs)} run(s), ` +
-      `${seconds(row.ms)} (slowest ${seconds(row.slowest)})\n`,
+      `baseline ${seconds(baselineOf.get(file) ?? 0)}, mutants ${seconds(row.ms)} ` +
+      `(slowest ${seconds(row.slowest)})\n`,
   );
 }
 if (dearer.length > 0 && mutantMs > 0) {
@@ -827,6 +934,43 @@ if (failures > 0) {
   process.stderr.write('');
   process.stderr.write(`verify-sites-are-sensitive: FAILED -- ${String(failures)} problem(s)\n`);
   process.exit(1);
+}
+
+if (costsText !== null) {
+  // The table is written only here: after every claimant was measured and nothing
+  // failed. A run that stopped early exits above, so a table can never name a subset
+  // and never carries a number for a run that did not happen.
+  //
+  // The rows are the two halves the per-file lines print -- one baseline and the runs
+  // per claim -- because those are what the pool spends, and the partition balances the
+  // pool. `measured`, `machine` and `source` are the table's provenance: the coverage
+  // verdict reads all three, and a round that refreshes the table needs to know which
+  // run and which box the numbers belong to before comparing them with the next pair of
+  // job seconds.
+  const where = resolve(ROOT, costsText);
+  const rows = {};
+  for (const [file, claims] of byFile) {
+    const row = paid.get(file) ?? { runs: 0, ms: 0 };
+    rows[file] = {
+      claims: claims.length,
+      runs: row.runs + 1,
+      baselineMs: Math.max(1, Math.round(baselineOf.get(file) ?? 0)),
+      mutantMs: Math.max(1, Math.round(row.ms)),
+    };
+  }
+  const table = {
+    measured: new Date().toISOString().slice(0, 10),
+    machine: `${platform()} ${arch()}, ${String(cpus().length)} cpu`,
+    source: `node scripts/verify-sites-are-sensitive.mjs --costs ${relative(ROOT, where) || where}`,
+    files: rows,
+  };
+  writeFileSync(where, `${JSON.stringify(table, null, 2)}\n`);
+  const totalMs = Object.values(rows).reduce((total, row) => total + row.baselineMs + row.mutantMs, 0);
+  process.stdout.write(
+    `verify-sites-are-sensitive: wrote ${relative(ROOT, where) || where} -- ${String(Object.keys(rows).length)} ` +
+      `claimant(s), ${String(claimed.length)} claim(s), ${seconds(totalMs)} of child time measured on ` +
+      `${table.measured} by ${table.machine}\n`,
+  );
 }
 
 const exits = claimed.filter((claim) => claim.kind === 'exit').length;

@@ -1,0 +1,415 @@
+{
+  "measured": "2026-11-26",
+  "machine": "linux x64, 32 cpu",
+  "source": "node scripts/verify-sites-are-sensitive.mjs --costs golden-master/sensitivity-costs.json",
+  "files": {
+    "packages/core/test/apply-pins.test.ts": {
+      "claims": 2,
+      "runs": 3,
+      "baselineMs": 2269,
+      "mutantMs": 2675
+    },
+    "packages/core/test/audit-citations.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 1307,
+      "mutantMs": 1044
+    },
+    "packages/core/test/audit-volumes.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 1317,
+      "mutantMs": 1036
+    },
+    "packages/core/test/build-example-bundle.test.ts": {
+      "claims": 3,
+      "runs": 4,
+      "baselineMs": 4672,
+      "mutantMs": 19255
+    },
+    "packages/core/test/census-corpus-script.test.ts": {
+      "claims": 3,
+      "runs": 4,
+      "baselineMs": 3326,
+      "mutantMs": 6084
+    },
+    "packages/core/test/check-acceptance-shape.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 928,
+      "mutantMs": 1091
+    },
+    "packages/core/test/check-aggregate-tables.test.ts": {
+      "claims": 3,
+      "runs": 4,
+      "baselineMs": 3571,
+      "mutantMs": 3703
+    },
+    "packages/core/test/check-backend-support.test.ts": {
+      "claims": 2,
+      "runs": 3,
+      "baselineMs": 1318,
+      "mutantMs": 2407
+    },
+    "packages/core/test/check-cli-reference.test.ts": {
+      "claims": 2,
+      "runs": 3,
+      "baselineMs": 29452,
+      "mutantMs": 9354
+    },
+    "packages/core/test/check-comments-language.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 3110,
+      "mutantMs": 864
+    },
+    "packages/core/test/check-coverage-readings.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 1036,
+      "mutantMs": 794
+    },
+    "packages/core/test/check-doc-counts.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 6119,
+      "mutantMs": 1266
+    },
+    "packages/core/test/check-docs-language.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 2297,
+      "mutantMs": 947
+    },
+    "packages/core/test/check-fault-cases.test.ts": {
+      "claims": 9,
+      "runs": 10,
+      "baselineMs": 36765,
+      "mutantMs": 53539
+    },
+    "packages/core/test/check-l4-status.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 1327,
+      "mutantMs": 826
+    },
+    "packages/core/test/check-no-absolute-paths.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 2157,
+      "mutantMs": 896
+    },
+    "packages/core/test/check-no-unsafe-shell.test.ts": {
+      "claims": 2,
+      "runs": 3,
+      "baselineMs": 4255,
+      "mutantMs": 5452
+    },
+    "packages/core/test/check-no-vendored-data.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 1396,
+      "mutantMs": 853
+    },
+    "packages/core/test/check-official-registry.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 1278,
+      "mutantMs": 819
+    },
+    "packages/core/test/check-official-roundtrip.test.ts": {
+      "claims": 5,
+      "runs": 6,
+      "baselineMs": 13094,
+      "mutantMs": 23592
+    },
+    "packages/core/test/check-open-list.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 6064,
+      "mutantMs": 1404
+    },
+    "packages/core/test/check-readme-sample.test.ts": {
+      "claims": 2,
+      "runs": 3,
+      "baselineMs": 1422,
+      "mutantMs": 2378
+    },
+    "packages/core/test/check-repository-table.test.ts": {
+      "claims": 5,
+      "runs": 6,
+      "baselineMs": 2575,
+      "mutantMs": 19209
+    },
+    "packages/core/test/check-roundtrip-record.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 1928,
+      "mutantMs": 874
+    },
+    "packages/core/test/check-test-budgets.test.ts": {
+      "claims": 3,
+      "runs": 4,
+      "baselineMs": 1925,
+      "mutantMs": 4297
+    },
+    "packages/core/test/check-user-guide.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 3709,
+      "mutantMs": 3126
+    },
+    "packages/core/test/check-workflow-language.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 1641,
+      "mutantMs": 862
+    },
+    "packages/core/test/ci-budget.test.ts": {
+      "claims": 30,
+      "runs": 31,
+      "baselineMs": 10584,
+      "mutantMs": 387380
+    },
+    "packages/core/test/ci-readings.test.ts": {
+      "claims": 5,
+      "runs": 6,
+      "baselineMs": 2629,
+      "mutantMs": 24091
+    },
+    "packages/core/test/claims-are-sensitive.test.ts": {
+      "claims": 6,
+      "runs": 7,
+      "baselineMs": 1536,
+      "mutantMs": 9296
+    },
+    "packages/core/test/data-model-vocabularies.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 1169,
+      "mutantMs": 996
+    },
+    "packages/core/test/derive-gate-sites-refusals.test.ts": {
+      "claims": 2,
+      "runs": 3,
+      "baselineMs": 1406,
+      "mutantMs": 4145
+    },
+    "packages/core/test/derive-gate-sites-throws.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 2731,
+      "mutantMs": 4140
+    },
+    "packages/core/test/derive-openrca-archive.test.ts": {
+      "claims": 3,
+      "runs": 4,
+      "baselineMs": 1951,
+      "mutantMs": 8113
+    },
+    "packages/core/test/fault-extraction-scripts.test.ts": {
+      "claims": 8,
+      "runs": 9,
+      "baselineMs": 4443,
+      "mutantMs": 33920
+    },
+    "packages/core/test/fetch-official.test.ts": {
+      "claims": 5,
+      "runs": 6,
+      "baselineMs": 16484,
+      "mutantMs": 54057
+    },
+    "packages/core/test/gate-receipt.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 1119,
+      "mutantMs": 1371
+    },
+    "packages/core/test/gate-sites-are-proven.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 7021,
+      "mutantMs": 10247
+    },
+    "packages/core/test/gate-steps.test.ts": {
+      "claims": 5,
+      "runs": 6,
+      "baselineMs": 4326,
+      "mutantMs": 14681
+    },
+    "packages/core/test/gates-are-testable-is-enumerated.test.ts": {
+      "claims": 10,
+      "runs": 11,
+      "baselineMs": 16862,
+      "mutantMs": 75200
+    },
+    "packages/core/test/gates-are-testable.test.ts": {
+      "claims": 2,
+      "runs": 3,
+      "baselineMs": 1971,
+      "mutantMs": 2379
+    },
+    "packages/core/test/gen-examples.test.ts": {
+      "claims": 8,
+      "runs": 9,
+      "baselineMs": 5023,
+      "mutantMs": 63035
+    },
+    "packages/core/test/gen-rcaeval-cases.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 3399,
+      "mutantMs": 2597
+    },
+    "packages/core/test/git-hooks.test.ts": {
+      "claims": 2,
+      "runs": 3,
+      "baselineMs": 1142,
+      "mutantMs": 2520
+    },
+    "packages/core/test/measure-doc-counts-readings.test.ts": {
+      "claims": 6,
+      "runs": 7,
+      "baselineMs": 1153,
+      "mutantMs": 10193
+    },
+    "packages/core/test/measure-doc-counts-red-run.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 1010,
+      "mutantMs": 1970
+    },
+    "packages/core/test/pack-verify-script.test.ts": {
+      "claims": 4,
+      "runs": 5,
+      "baselineMs": 2941,
+      "mutantMs": 11649
+    },
+    "packages/core/test/probe-built-module-guards.test.ts": {
+      "claims": 5,
+      "runs": 6,
+      "baselineMs": 2105,
+      "mutantMs": 7285
+    },
+    "packages/core/test/probe-modality-memory.test.ts": {
+      "claims": 2,
+      "runs": 3,
+      "baselineMs": 1063,
+      "mutantMs": 2266
+    },
+    "packages/core/test/probe-type-misses-refusals.test.ts": {
+      "claims": 2,
+      "runs": 3,
+      "baselineMs": 1510,
+      "mutantMs": 4531
+    },
+    "packages/core/test/probe-z-floor.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 1375,
+      "mutantMs": 1255
+    },
+    "packages/core/test/progress-volumes.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 1172,
+      "mutantMs": 1138
+    },
+    "packages/core/test/publish-plan.test.ts": {
+      "claims": 11,
+      "runs": 12,
+      "baselineMs": 2174,
+      "mutantMs": 21323
+    },
+    "packages/core/test/publish-readings.test.ts": {
+      "claims": 5,
+      "runs": 6,
+      "baselineMs": 1941,
+      "mutantMs": 9359
+    },
+    "packages/core/test/publish.test.ts": {
+      "claims": 29,
+      "runs": 30,
+      "baselineMs": 15679,
+      "mutantMs": 340072
+    },
+    "packages/core/test/published-refusals.test.ts": {
+      "claims": 8,
+      "runs": 9,
+      "baselineMs": 1728,
+      "mutantMs": 20933
+    },
+    "packages/core/test/read-remote-index.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 1698,
+      "mutantMs": 1431
+    },
+    "packages/core/test/reader-against-backend.test.ts": {
+      "claims": 2,
+      "runs": 3,
+      "baselineMs": 11170,
+      "mutantMs": 14623
+    },
+    "packages/core/test/readings-reconcile.test.ts": {
+      "claims": 2,
+      "runs": 3,
+      "baselineMs": 892,
+      "mutantMs": 1401
+    },
+    "packages/core/test/record-reading.test.ts": {
+      "claims": 3,
+      "runs": 4,
+      "baselineMs": 3009,
+      "mutantMs": 4123
+    },
+    "packages/core/test/rulegen-agreement.test.ts": {
+      "claims": 6,
+      "runs": 7,
+      "baselineMs": 1041,
+      "mutantMs": 8946
+    },
+    "packages/core/test/sensitivity-shards.test.ts": {
+      "claims": 6,
+      "runs": 7,
+      "baselineMs": 943,
+      "mutantMs": 6995
+    },
+    "packages/core/test/site-proofs.test.ts": {
+      "claims": 5,
+      "runs": 6,
+      "baselineMs": 3999,
+      "mutantMs": 13426
+    },
+    "packages/core/test/staged-mutation.test.ts": {
+      "claims": 2,
+      "runs": 3,
+      "baselineMs": 1307,
+      "mutantMs": 1909
+    },
+    "packages/core/test/tree-repair.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 1024,
+      "mutantMs": 1431
+    },
+    "packages/core/test/unit-nouns.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 7905,
+      "mutantMs": 7304
+    },
+    "packages/core/test/verify-scorer-stability-script.test.ts": {
+      "claims": 1,
+      "runs": 2,
+      "baselineMs": 946,
+      "mutantMs": 1368
+    },
+    "packages/core/test/verify-sites-are-sensitive.test.ts": {
+      "claims": 4,
+      "runs": 5,
+      "baselineMs": 4338,
+      "mutantMs": 12988
+    }
+  }
+}

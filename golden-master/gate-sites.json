@@ -1126,15 +1126,23 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 175,
+      "line": 200,
       "condition": "unknown.length > 0 || (shard !== null && !shard.ok)",
-      "diagnostic": "usage: node scripts/verify-sites-are-sensitive.mjs [--list] [--shard <i>/<n>]\\n",
+      "diagnostic": "usage: node scripts/verify-sites-are-sensitive.mjs [--list] [--shard <i>/<n>] [--costs <path>]\\n",
       "status": "proved",
       "provedBy": "packages/core/test/sensitivity-shards.test.ts"
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 184,
+      "line": 216,
+      "condition": "costsText !== null && (shard !== null || listOnly)",
+      "diagnostic": "verify-sites-are-sensitive: --costs writes the table an unsharded run measured -- ${why}\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/verify-sites-are-sensitive.test.ts"
+    },
+    {
+      "script": "scripts/verify-sites-are-sensitive.mjs",
+      "line": 225,
       "condition": "!Number.isInteger(CONCURRENCY) || CONCURRENCY < 1",
       "diagnostic": "verify-sites-are-sensitive: RCA_SENSITIVE_CONCURRENCY must be a positive integer,",
       "status": "proved",
@@ -1142,7 +1150,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 194,
+      "line": 235,
       "condition": "catch",
       "diagnostic": "verify-sites-are-sensitive: cannot read ${relative(ROOT, INVENTORY) || INVENTORY} -- ${String(error)}\\n",
       "status": "proved",
@@ -1150,7 +1158,23 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 227,
+      "line": 281,
+      "condition": "catch",
+      "diagnostic": "a shard is divided by that table and by nothing else; regenerate it with\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/sensitivity-shards.test.ts"
+    },
+    {
+      "script": "scripts/verify-sites-are-sensitive.mjs",
+      "line": 293,
+      "condition": "wrong.length > 0",
+      "diagnostic": "regenerate it with: node scripts/verify-sites-are-sensitive.mjs --costs golden-master/sensitivity-costs.json\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/sensitivity-shards.test.ts"
+    },
+    {
+      "script": "scripts/verify-sites-are-sensitive.mjs",
+      "line": 312,
       "condition": "everything.length === 0 || byFile.length === 0",
       "diagnostic": "verify-sites-are-sensitive: ${what}, so this run would pass while measuring nothing\\n",
       "status": "proved",
@@ -1158,7 +1182,7 @@
     },
     {
       "script": "scripts/verify-sites-are-sensitive.mjs",
-      "line": 829,
+      "line": 936,
       "condition": "failures > 0",
       "diagnostic": "verify-sites-are-sensitive: FAILED -- ${String(failures)} problem(s)\\n",
       "status": "proved",
@@ -1169,7 +1193,7 @@
     "rule": "every throw statement, partitioned four ways: `fatal` (no enclosing function, no enclosing try) ends the process and is proved like a site; `unguarded` (in a function, no enclosing try) hands control to its caller, which decides; `guarded` (in a try block) is caught here; `rethrow` (in a catch, rethrowing the caught binding) carries a decision made above. A try or a catch stops at a function boundary, because neither is on the stack when the function runs elsewhere. fatal + unguarded + guarded + rethrow is the number of throw statements; see scripts/derive-gate-sites.mjs",
     "counts": {
       "fatal": 22,
-      "unguarded": 83,
+      "unguarded": 85,
       "guarded": 1,
       "rethrow": 10
     },
@@ -2162,6 +2186,22 @@
         "message": "not a file",
         "status": "proved",
         "provedBy": "packages/core/test/published-refusals.test.ts"
+      },
+      {
+        "script": "scripts/site-proofs.mjs",
+        "line": 779,
+        "disposition": "unguarded",
+        "message": "a split into ${String(count)} shard(s) is not a split",
+        "status": "proved",
+        "provedBy": "packages/core/test/sensitivity-shards.test.ts"
+      },
+      {
+        "script": "scripts/site-proofs.mjs",
+        "line": 787,
+        "disposition": "unguarded",
+        "message": "new Error( `no measured cost for ${file}, so it cannot be placed on a shard: regenerate ` + 'golden-master/sensitivity-c",
+        "status": "proved",
+        "provedBy": "packages/core/test/sensitivity-shards.test.ts"
       },
       {
         "script": "scripts/type-miss-readings.mjs",

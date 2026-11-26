@@ -2436,12 +2436,101 @@ floor is now the second of the two.
 | item | value |
 | --- | --- |
 | CI | run `45765112261` on `a92304e4`: **9 of 9 jobs success**, 90 steps, reading **52** -- the first run that measured the move, and the one the three promises were settled by. Its predecessor `45754575653` (reading **51**) is where the arithmetic came from: 738 s of queue against 270 s. Between them sits `45756585961`, which is 9 of 9 and is not a reading -- it measured a tree whose only difference is the recording, and the recorder compares two trees in both directions |
-| `core` test suite | **261 files, 7070 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **265 files, 7257 tests passed** (as of this commit) |
+| `core` test suite | **261 files, 7070 tests passed** (at v3.156) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.156) |
+| repo test suite | **265 files, 7257 tests passed** (at v3.156) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
 | new tests | **7,065 -> 7,070, +5**: the move that lets a step change jobs, the stale entry no move explains, a move into a job that does not hold the step and two that move nothing, a step promised twice with a move that has no argument or no number, and the move that expires when its new job has measured it |
 | the queues, as measured | reading 51: `batteries` **738 s** (`Gate-test` 264, audit shard 1 137, fetch-official 118, doc-count 78, round-trip 57, prefix 25), `gates-audit` **270 s** (shard 2 at 250) |
 | the move | **253 s** from `batteries` to `gates-audit`, at a cost of no new job, no second prefix and no new step name. Predicted 485 / 523; measured **323 / 501**, in a run where every job came in below the previous one -- so the comparison that means anything is inside reading 52, where `batteries` would have been **576 s** with the three still in it and the destination spent **94 + 86 + 62 = 242 s** on them |
 | the ceilings | `batteries` **56 -> 46 min** (42 of bounds plus the 3-minute allowance, and the departed seconds no longer counted as overhead), `gates-audit` **24 -> 34 min** (30 plus the allowance) |
 | mutation | **5 groups, 5 red, 0 survivors**, each restored to an identical `md5` |
+
+## v3.157 — a split by position is a split by nothing
+
+**The split was by position because nobody had priced the files.** `sensitivity` and `sensitivity-shard` divide
+the sites battery between them, and reading 52 measured the two halves at **247 s** and **438 s** of the same
+command: 44% apart, three minutes in which one runner worked and the other had finished. The corpus had already
+written the repair down. The paragraph in `docs/acceptance.md` that refuses to claim the split balances anything
+ends with *"if that shard approaches twice its own bound the shards should be re-partitioned from a measurement
+rather than by position"*, and this round is that sentence, taken at the point the condition had been met twice.
+
+**Why position was chosen, and which half of the argument was wrong.** The note on `shardClaims` said that a
+split by measured seconds "would have to be re-derived after every run and would put the same file in different
+shards on different machines", and that a plan in `ci.yml` and a plan checked by a test have to be the same
+plan. Both halves are true of a split by **live** seconds. Neither is true of a split by a **committed table**:
+the numbers are a file in the repository, so every machine divides identically, and the table is re-derived only
+when the tree changes -- which is the condition the coverage verdict below refuses to let pass unnoticed. The
+old argument was sound about readings and false about records.
+
+**What the table is.** `golden-master/sensitivity-costs.json`, one row per claimant: `claims`, `runs`,
+`baselineMs`, `mutantMs`. It is written by the instrument that spends the seconds -- `--costs <path>`, after a
+run that measured every claimant -- and it refuses the two requests that would make it a table about something
+else: `--shard` (which measured half an inventory) and `--list` (which measured none). Its provenance is
+`measured`, `machine` and `source`, and `checkShardCosts` reads all three: a seconds figure with no day is a
+figure about another tree, and a round that refreshes the table has to know which run to compare with.
+
+**The division is longest-processing-time first.** The dearest claimant goes on the emptiest shard, then the
+next dearest, ties broken by file name and by the lower shard index, and the result is a pure function of the
+table and the inventory. It is not claimed to be optimal -- dividing indivisible files is bin packing, and LPT
+is a 4/3-approximation -- but it is deterministic, and what it leaves is a fraction of the dearest file against
+the 44% the positional rule left.
+
+**What a table cannot be allowed to do is age.** `checkShardCosts` refuses it in both directions (a claimant
+with no row, a row with no claimant), refuses a row whose claim count disagrees -- the count is part of the
+cost's definition, one baseline plus one run per claim, so a file that gained a claim has seconds describing a
+run that no longer exists -- refuses a row whose seconds are not positive integers, and reads the three
+provenance fields. The gate calls it before it divides anything, so a claimant added in a later round turns
+both jobs red with the one command that regenerates the table, rather than being silently dropped from one half.
+
+**There is no positional fallback, deliberately.** `shardClaims` requires the costs: a shard run without a
+readable table stops with the command that writes one. A fallback would be a second partition under one
+name -- the halves `ci.yml` runs would stop being the halves a local `--shard` runs, in the one place nobody
+would look for the difference.
+
+**Measured on the tree this round publishes.** The table prices **68** claimants at **1,670.9 s** of child time
+(324 runs: one baseline per file and one per claim), and the two halves it divides them into read **834.6 s** and
+**836.3 s** -- 0.2% apart, 33 files against 35. The positional rule it replaced would have divided the same
+seconds **674.5** and **996.4**: 32% apart in child seconds, which is what the 247 s and 438 s of reading 52
+were made of. That pair is a prediction until the run of this commit measures it, because a partition is a claim
+about a runner's clock and this instrument can only price one claim at a time.
+
+**Four things this round got wrong.**
+
+1. **The table's own acceptance cases were put inside a claimant file, and that is a cycle.** The battery runs
+   every file `gate-sites.json` names as a claimant; a case that reads the table would be run by the very
+   instrument that writes it, so the run that produces the table would be red until the table existed. The first
+   attempt failed exactly there -- *"`sensitivity-shards.test.ts` does not pass on its own, so its claims are
+   unmeasured"* -- and the repair is structural rather than a tolerance: the cases that read the artifact moved
+   to `sensitivity-costs.test.ts`, which spawns nothing and therefore is not a claimant. The cases about the
+   *plan* stayed where they were and now price every file the same, so a case about shape is not red because a
+   measurement it does not consult is missing.
+2. **`--list` grew a sentence it had no business printing.** The predicted split was printed by the shard
+   before the plan, and the case that requires a shard's `--list` to be the unsharded list byte for byte caught
+   it at once: two extra lines in a 50-line plan. A plan is one line per claim and nothing else; the prediction
+   is printed by a run.
+3. **Changing a diagnostic's text un-proves its site, and the deriver said so.** Widening the usage string to
+   mention `--costs` dropped the annotation on `verify-sites-are-sensitive.mjs`'s usage refusal --
+   `annotations: 148 of 149 carried, 1 dropped` -- because a site is identified partly by what it says. Four new
+   exits and two new throws arrived unannotated the same way, and `gate-sites-are-proven` refused the tree with
+   six sentences before the battery would have.
+4. **A guard with no test is the bound-that-cannot-fire one level down.** `assignShards` refuses a split into
+   zero shards, and nothing reached it: `parseShard` refuses that count before the gate asks. It is proved now
+   by the case that calls the function with zero, because an unreachable refusal is a line a reader is told to
+   trust and cannot see work.
+
+### Readings
+
+> Ledger for `v3.157`.
+
+| item | value |
+| --- | --- |
+| CI | `45765112261` on `a92304e4` is the row that stands until this round's own run is recorded: reading **52**, **9 of 9 jobs success**, the tree this round began from. The row that will replace it is the first run of the tree this commit publishes -- the first that divides the two shards by the cost table rather than by position, and therefore the only one whose pair of job seconds can say whether the rebalance did what the arithmetic says |
+| the two halves, as they were | reading 52: `sensitivity` **247 s** and `sensitivity-shard` **438 s** of `verify-sites-are-sensitive.mjs`, 44% apart, from a split by `position % count` over 44 sorted claimant files |
+| the division the corpus asked for | `docs/acceptance.md`, written at v3.54: *"if that shard approaches twice its own bound the shards should be re-partitioned from a measurement rather than by position"* -- 438 s against a 30-minute bound had not reached twice, and the imbalance was paid for three minutes a run while it waited |
+| `core` test suite | **262 files, 7081 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **266 files, 7268 tests passed** (as of this commit) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
+| mutation | **7 groups, 7 red, 0 survivors**: the coverage verdict silenced (3), the placement sorted by name instead of by cost (2), an unpriced claimant given one millisecond (1), the claim count not compared with the claims it prices (1), a table written by a shard (1), the prediction printed under `--list` (1), the baseline counted as a mutant run (1) -- each restored to an identical `md5`. The fifth was a survivor on its first shape, and the case is why: it would have passed on the gate's own "cannot read the table", so the fixture now carries a table the shard *could* use and the assertion is on the refusal's own sentence |
+| new tests | **7,070 -> 7,081, +11**: the cost-based placement and its determinism, the refusal to place an unmeasured claimant, a split into no shards, the coverage verdict in both directions with its count and its provenance, a row that is not a measurement, the gate's `--costs` writer, its refusal of a shard, its refusal of a missing table and of a stale one, and the 15% budget the round commits to |

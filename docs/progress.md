@@ -440,10 +440,10 @@ document that described it as downloading the data was describing an intention.
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 98 |
 | Source lines | 34,609 |
-| Test files | 261 core + 4 cli |
-| Test lines | 121,625 core + 3,242 cli |
-| Tests | 7,070 core + 187 cli |
-| Tracked files | 682 |
+| Test files | 262 core + 4 cli |
+| Test lines | 122,045 core + 3,242 cli |
+| Tests | 7,081 core + 187 cli |
+| Tracked files | 684 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.156: **51** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.157: **51** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1158,17 +1158,16 @@ is a row about rather than paraphrase one that no `grep` will find.
   beside the numbers so a reader can tell which tree was measured -- a refusal that costs a round its feedback
   loop, against a digest that costs a reader one more number to compare]`
 
-- O-143 · **The workflow's critical path is a queue of steps, and this round moved the tail rather than splitting the head.**
-  Reading 51 read the two queues at **738 s** and **270 s**; v3.156 moved three batteries -- fetch-official retry
-  **118 s**, doc-count shapes **78 s**, round-trip record **57 s** -- into the smaller one, at a cost of no new job,
-  no second prefix and no new step name. Reading 52 measures **323 s** and **501 s**, and the run's floor moved to
-  the job that received them: nothing was removed from the workflow, it was put where there was room. What is left
-  is a partition problem -- `gates-audit`'s own audit shard at **239 s**, the gate-test battery at **173 s** (54% of
-  `batteries`), and the widest imbalance the workflow still has, the `sensitivity` pair reading **244 s** and
-  **438 s** of one command.
-  `[open: whether the next cut is that pair's partition -- 194 s of imbalance no queue can remove, only a better
-  split -- or a third job for the gate-test battery, which needs the report it publishes to be a report per shard,
-  so that half a measurement is not published as one]`
+- O-143 · **The workflow's critical path: the tail has moved, the widest pair is now divided by cost, and the head is unsplit.**
+  Reading 51 read the two queues at **738 s** and **270 s**, and v3.156 moved **253 s** of batteries into the smaller
+  one (reading 52: **323 s** and **501 s**) without adding a job, a prefix or a step name. v3.157 then took the
+  widest imbalance the workflow still had -- the `sensitivity` pair at **247 s** and **438 s** of one command, 44%
+  apart -- and replaced the positional split with a division by `golden-master/sensitivity-costs.json`, a table of
+  per-claimant seconds written by the gate itself. What is left is the head of the queue: `gates-audit`'s own audit
+  shard at **239 s** and the gate-test battery at **173 s**, which is 54% of `batteries`.
+  `[open: whether the gate-test battery becomes a third job -- which needs the report it publishes to be a report
+  per shard, so that half a measurement is not published as one -- or whether the audit shard's 239 s is the cheaper
+  cut, which needs no new job at all]`
 
 ## Pass log
 
@@ -1207,7 +1206,7 @@ and this table.
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
 | [volume-20.md](progress/volume-20.md) | 8 | v3.134 | v3.141 |
-| [volume-21.md](progress/volume-21.md) | 15 | v3.142 | v3.156 |
+| [volume-21.md](progress/volume-21.md) | 16 | v3.142 | v3.157 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

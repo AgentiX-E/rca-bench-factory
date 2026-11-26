@@ -385,8 +385,12 @@ describe('the two baskets are a partition of the calls, not a remainder', { time
     // whose prose and whose exit disagree -- and it is why this round's pair is not a line
     // through the origin either: three calls, three sites, and one of the three was already
     // being printed before it was counted.
-    expect(calls).toBe(169);
-    expect(sites).toBe(149);
+    // 169/149 -> 172/152 in v3.157, and this pair **is** a line through the origin: the two
+    // refusals a cost table needs at the gate -- one for a table that cannot be read and one for
+    // a table that no longer describes the inventory -- and the refusal of `--costs` on a run
+    // that did not measure the whole inventory.
+    expect(calls).toBe(172);
+    expect(sites).toBe(152);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

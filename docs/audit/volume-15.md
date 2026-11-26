@@ -819,3 +819,69 @@ move with a run rather than with a preference.
 list is a list, but every entry is a promise nobody has measured, and three at once is already the largest
 number this file has carried. It does not decide whether a step may move *twice*: the second move would leave
 two stale entries behind it, and the excusal is keyed by the step's name, not by its history.
+
+## Finding 665 — a split by position is a split by nothing
+
+The sites battery is divided across two jobs, and reading 52 priced the division: `sensitivity` spent **247 s**
+and `sensitivity-shard` **438 s** on the same command, in the same run, on the same runner image. 44% apart. One
+runner worked for three minutes while the other had finished, and the workflow's wall clock is the slower shard,
+so every one of those seconds was paid by the run.
+
+The rule that produced it was `position % count` over the sorted claimant file list, and it was argued for:
+
+> Position rather than file size, deliberately. A split by measured seconds would have to be re-derived after
+> every run and would put the same file in different shards on different machines; a split by sorted position is
+> a pure function of the inventory, so a plan written in `ci.yml` and a plan checked by a test are the same plan.
+
+Both halves of that are true of a split by **live** seconds, and neither is true of a split by a **committed
+table**. The objection was not to measurement; it was to a reading taken on whichever machine happened to be
+running. A table in git is not a reading: every machine reads the same file and derives the same halves.
+
+**What the table holds, and who writes it.** `golden-master/sensitivity-costs.json` carries one row per
+claimant -- `claims`, `runs`, `baselineMs`, `mutantMs` -- and is written by the instrument that spends those
+seconds: `verify-sites-are-sensitive.mjs --costs <path>`, after a run that measured every claimant. Two
+requests are refused, and each for its own reason:
+
+| request | what the run measured | why the table it would write is not one |
+| --- | --- | --- |
+| `--costs … --shard 1/2` | half the inventory | it would name half the claimants and omit the rest, and the next run would divide the inventory by it |
+| `--costs … --list` | nothing | a table of zeros looks more like a measurement than an empty file does |
+
+**Why a table has to be refused rather than trusted.** A table is a measurement *of a tree*, and the tree moves:
+a claimant file is added, a claim is added to a file that already had some, a file stops making claims.
+`checkShardCosts` therefore refuses a claimant with no row and a row with no claimant, refuses a row whose
+`claims` disagrees with the inventory (the count is part of the cost's definition -- one baseline plus one run
+per claim -- so a file that gained a claim carries seconds for a run that no longer exists), refuses a row whose
+seconds are not positive integers, and reads the three provenance fields (`measured`, `machine`, `source`)
+because a seconds figure with no day is a figure about another tree. The gate calls it before it divides
+anything.
+
+**The division itself is longest-processing-time first.** Dearest claimant onto the emptiest shard, ties by file
+name and lower shard index. It is not optimal -- dividing indivisible files is bin packing, and LPT is a
+4/3-approximation -- but it is a pure function of the table and the inventory, which is the property the old rule
+was chosen for. Measured on the tree that publishes it: **68** claimants priced at **1,670.9 s** of child time
+over **324** runs, divided **834.6 s** and **836.3 s** -- 0.2% apart, 33 files against 35. The same seconds
+divided by position read **674.5** and **996.4**, 32% apart, which is the composition of the 247 s and 438 s
+reading 52 measured.
+
+**There is no positional fallback, and the reason is not symmetry.** A shard run without a readable table stops
+with the command that regenerates it. A fallback would be a second partition under one name: the halves
+`ci.yml` runs would stop being the halves a local `--shard` runs, and the difference would appear in the one
+place nobody would look -- a green job that measured a set the plan did not describe.
+
+**The instrument refused the round's first shape, and the shape was wrong.** The cases that read the table were
+written inside `sensitivity-shards.test.ts`, which is a claimant: the battery runs it, and the battery is what
+writes the table. The run that would have produced the table was red until the table existed --
+*"`sensitivity-shards.test.ts` does not pass on its own, so its claims are unmeasured"* -- which is the
+observation that decided the structure. The cases about the artifact moved to
+`packages/core/test/sensitivity-costs.test.ts`, a file that spawns nothing and therefore is not a claimant; the
+cases about the *plan* stayed and price every claimant the same, so a case about shape cannot be red because a
+measurement it does not consult is missing. An artifact whose own acceptance cases live in the file its producer
+runs is an artifact that can never first exist.
+
+**What the round did not decide.** Whether two shards are the right number: the pair is balanced now, and a
+third job would cost another 27 s prefix to save the tail of the slower half. Nor does the table carry the 22 s
+`verify-claims-are-sensitive` step that shares shard 1's job -- the reading charges it to that job, and the
+partition prices claimants, not jobs. And the acceptance is a prediction until the run that follows this commit
+measures it: a table written on a 32-core box prices child seconds, and the runner's ratio between two claimants
+is the thing the division actually depends on.

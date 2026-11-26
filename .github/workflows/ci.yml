@@ -394,9 +394,12 @@ jobs:
     #
     # Two shards, one bound each (v3.54). That 52 s was the closest this campaign has
     # come to `R4` refusing a legitimate run, and the repair is to spend less rather than
-    # to buy another margin: the sorted claimant files are divided across this job and
+    # to buy another margin: the claimant files are divided across this job and
     # `sensitivity-shard`, so each runner spends roughly half of 626 s against the same
     # 25-minute bound and the workflow's wall clock is the slower shard, not their sum.
+    # The division is by `golden-master/sensitivity-costs.json` as of v3.157: the
+    # positional halves it replaced read 247 s and 438 s of one command (reading 52),
+    # 44% apart, because where a name sorts says nothing about what a file costs.
     # The bound is deliberately not tightened in the round that splits -- its measurement
     # is of the unsharded command, and `R4` has to size a bound from a run of the command
     # it will enforce. The first sharded run supplies that measurement.
@@ -496,6 +499,12 @@ jobs:
       # the recording to it, so a recording taken from the unsharded run still names a
       # step that exists. `checkShardPlan` reads both shard calls and the real inventory
       # and refuses a plan whose union is not every proved claim exactly once.
+      #
+      # Which files are "1 of 2" is decided by `golden-master/sensitivity-costs.json`
+      # (v3.157), not by position in the sorted list. The gate refuses to run a shard
+      # against a table that no longer describes the inventory, so a claimant added in a
+      # later round makes these two jobs red with the command that regenerates it rather
+      # than silently re-dividing the halves.
       # 25 until v3.55, and 22 now. The bound was 25 because one day measured 626 s and
       # twice that is 1252; the history holds a 633 s day since, and twice 633 is 1266,
       # which 25 still covers -- but the deadline no longer does. Three minutes of shell

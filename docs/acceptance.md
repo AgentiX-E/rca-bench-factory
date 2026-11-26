@@ -168,7 +168,7 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   the `sensitivity` job runs `verify-sites-are-sensitive.mjs`, which asks whether that
   file **notices** the exit's absence -- one run per claim with that site's code
   replaced by success, and a baseline run per file so a red claimant cannot be
-  credited with catching anything. Measured at **251 of 251** claim(s) across 68 file(s) -- two more
+  credited with catching anything. Measured at **256 of 256** claim(s) across 68 file(s) -- two more
   than v3.140's 232, because an attempt that does not exist and an attempt with no job in it are two
   refusals `measure-ci-baseline.mjs` did not have before, and each carries a proof; two more again
   at v3.144, because a recording that cannot say which measurement is the newest and a measurement
@@ -1096,26 +1096,39 @@ one round.
   report and keeps the gap in the recording; it refuses `--borrow` for a declared job; and the
   first run that reports it records it normally and says the promise can be deleted without
   erasing the sentence itself.
-- **A split proves its union.** Two shards of the sites battery run in two different jobs.
-  `checkShardPlan` reads the real workflow and the real inventory and refuses a missing shard, a
-  duplicated one, two shards in one job, disagreeing counts, an empty shard, and any claim
-  measured zero or two times. The shipped script refuses an empty shard before spawning a child.
-  In v3.54 the two shards measured **87 and 96 claims across 28 files each**, and their combined
-  `--list` output is byte-for-byte the unsharded list.
+- **A split proves its union, and is divided by what each claimant cost.** Two shards of the
+  sites battery run in two different jobs. `checkShardPlan` reads the real workflow, the real
+  inventory and the cost table, and refuses a missing shard, a duplicated one, two shards in one
+  job, disagreeing counts, an empty shard, and any claim measured zero or two times. The shipped
+  script refuses an empty shard before spawning a child, and a shard's `--list` is byte-for-byte
+  its part of the unsharded list. In v3.54 the two shards measured **87 and 96 claims across 28
+  files each**. (v3.157) The division is by `golden-master/sensitivity-costs.json` -- one row per
+  claimant, a baseline plus one run per claim, written by the gate itself with `--costs` and
+  refused by `checkShardCosts` when it stops describing the tree (a claimant with no row, a row
+  with no claimant, a claim count that disagrees, a row that is not a positive integer, a missing
+  day, machine or command). `shardClaims` requires the table: a shard without one stops with the
+  command that regenerates it rather than falling back to position, because a fallback is a second
+  partition under one name. The placement is longest-processing-time first, so the halves are a
+  pure function of the table and the inventory.
 - **The promise's lifetime, measured.** The tree was published with the promise in it and
   `check-ci-budget` green, run `42160224254` measured `sensitivity-shard` at **387 s**, the
   recorder said the declaration could be deleted, and the deletion is in the round's last
   commit. The recording now reads **8 jobs / 82 steps / 54 bounded**, and `R4` accepted 25
   minutes at **3.9x** -- a number only that run could supply.
 - **What is not claimed.** The promise did **not** establish that its budget was enough: it
-  named no seconds, and the bound was settled by the run rather than by the file. Nor does the
-  split balance wall-clock time -- position-based sharding measured **1.6 and 3.4** minutes
-  locally and **248 and 387** seconds on the runner, so the slower shard, not the sum, bounds
-  the workflow; if that shard approaches twice its own bound the shards should be
-  re-partitioned from a measurement rather than by position. The 25-minute bound was
-  deliberately not tightened in the round that split the command, because `R4` has to size a
-  bound from a run of the command it will enforce: at 3.9x it is now the loosest bound in the
-  workflow, and tightening it to 13 minutes is a change that needs its own run.
+  named no seconds, and the bound was settled by the run rather than by the file. The 25-minute
+  bound was deliberately not tightened in the round that split the command, because `R4` has to
+  size a bound from a run of the command it will enforce: at 3.9x it was the loosest bound in the
+  workflow, and tightening it is a change that needs its own run.
+- **The split did not balance wall-clock time for three rounds, and the number is on record.**
+  Position-based sharding measured **1.6 and 3.4** minutes locally, **248 and 387** seconds on the
+  runner, and **247 s** and **438 s** in reading 52 -- 44% apart, with the slower shard bounding the
+  workflow. The paragraph above said *"if that shard approaches twice its own bound the shards
+  should be re-partitioned from a measurement rather than by position"*; v3.157 is that sentence,
+  and it pays for the round that wrote it rather than for the one that needed it. What is still not
+  claimed: that two shards are the right number. A third job would buy the tail of the slower half
+  for another 27 s prefix, and the table prices claimants rather than jobs -- the 22 s
+  `verify-claims-are-sensitive` step shares shard 1's job and is charged to that job's reading.
 
 ## The two directions of a budget change
 

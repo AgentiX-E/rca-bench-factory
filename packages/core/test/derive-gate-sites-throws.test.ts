@@ -331,11 +331,14 @@ describe('the four baskets are a partition of the throws, not a remainder', { ti
     // two refusals v3.146 added are still two -- their sentences changed, not their number -- and this
     // one is new because a recording never asked which tree its commands came from.
     // 110 -> 116 in v3.148 (`O-132`): the six refusals of the history's own rewrite. One ends the process
+    // 116 -> 118 in v3.157: the two throws `assignShards` makes -- a split into no shards, and a
+    // claimant the table has not priced -- both unguarded, because a pure function hands the
+    // decision to its caller.
     // at the top level -- `--relabel-actions` given a measurement -- and the other five sit inside
     // `relabelActions`, which is the basket below rather than this one. Both counts are asserted because
     // the two questions are different: this one is "how many throw statements", the other is "which of
     // them nothing can catch".
-    expect(total).toBe(116);
+    expect(total).toBe(118);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -427,7 +430,10 @@ describe('the four baskets are a partition of the throws, not a remainder', { ti
     // rewrite sit inside `relabelActions` and hand control to their only caller, which is the top level --
     // so the inventory says `unguarded` about five statements that do end the process, and says it for the
     // reason the basket is drawn by syntax rather than by call graph.
-    expect(counts).toEqual({ fatal: 22, unguarded: 83, guarded: 1, rethrow: 10 });
+    // 83 -> 85 in v3.157: the two throws `assignShards` makes -- a split into no shards and a claimant
+    // the table has not priced -- are both inside a function with no `try`, so they are `unguarded` for
+    // the same reason the five above are: the basket is drawn by syntax, and the caller decides.
+    expect(counts).toEqual({ fatal: 22, unguarded: 85, guarded: 1, rethrow: 10 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

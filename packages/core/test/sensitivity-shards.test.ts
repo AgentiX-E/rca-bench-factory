@@ -5,6 +5,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
+  assignShards,
+  checkShardCosts,
   checkShardPlan,
   claimedSites,
   claimsByFile,
@@ -35,6 +37,38 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const GATE = join(ROOT, 'scripts', 'verify-sites-are-sensitive.mjs');
 const WORKFLOW = join(ROOT, '.github', 'workflows', 'ci.yml');
 const INVENTORY = join(ROOT, 'golden-master', 'gate-sites.json');
+
+/**
+ * A cost table for the spawned cases that need one but are not about one.
+ *
+ * The assignment it implies is by count -- every claimant priced the same -- which is
+ * enough for "an index past the file count holds nobody" and keeps the case from
+ * depending on a measurement taken on another day.
+ */
+function flatTable(): string {
+  const where = join(SNAPSHOTS, 'flat-costs.json');
+  const files = Object.fromEntries(
+    byFileOf().map(([file, claims]) => [
+      file,
+      { claims: claims.length, runs: claims.length + 1, baselineMs: 1000, mutantMs: 1000 },
+    ]),
+  );
+  writeFileSync(
+    where,
+    JSON.stringify(
+      {
+        measured: '2026-01-01',
+        machine: 'the case',
+        source: 'node scripts/verify-sites-are-sensitive.mjs --costs golden-master/sensitivity-costs.json',
+        files,
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
+  return where;
+}
 
 /** One file, read by every call this file makes, so the question is the partition. */
 const SNAPSHOTS = mkdtempSync(join(tmpdir(), 'rca-shard-plan-'));
@@ -83,6 +117,19 @@ function byFileOf() {
   return claimsByFile(claimedSites(inventory));
 }
 
+/**
+ * The claimant list with every file priced the same.
+ *
+ * The plan verdicts below are about shape -- which shards are called, how many times,
+ * from how many jobs -- and `checkShardPlan` walks the placement because it was asked
+ * for one. Flat prices keep that walk from reading the shipped table: a case about the
+ * plan must not be red because a measurement it does not consult is absent, which is
+ * the cycle the cost table's own file exists to avoid.
+ */
+function flatCosts() {
+  return new Map(byFileOf().map(([file]) => [file, 1]));
+}
+
 describe('the shard grammar', () => {
   it('reads a one-based i/n and refuses every shape that could measure nothing', () => {
     // Cannot produce: a runner that spends a shard's minutes. The grammar is about the
@@ -95,27 +142,91 @@ describe('the shard grammar', () => {
     expect(parseShard('3/2').ok).toBe(false);
     expect(parseShard('1/0').ok).toBe(false);
   });
+});
 
-  it('divides the sorted claimants by position, with no file in two shards', () => {
-    // Cannot produce: a claimant that is slower on one runner than another. The split is
-    // by file name and not by measured cost, so a slow file stays in the shard it was
-    // assigned and the two shards can be reasoned about without a run.
-    const byFile = [
-      ['a.test.ts', [{ site: 'a:1' }, { site: 'a:2' }]],
-      ['b.test.ts', [{ site: 'b:1' }]],
-      ['c.test.ts', [{ site: 'c:1' }]],
-      ['d.test.ts', [{ site: 'd:1' }]],
-      ['e.test.ts', [{ site: 'e:1' }]],
-    ] as unknown as ReturnType<typeof claimsByFile>;
-    const first = shardClaims(byFile, 1, 2);
-    const second = shardClaims(byFile, 2, 2);
-    expect(first.map(([file]) => file)).toEqual(['a.test.ts', 'c.test.ts', 'e.test.ts']);
-    expect(second.map(([file]) => file)).toEqual(['b.test.ts', 'd.test.ts']);
+/**
+ * Five claimants, and what each has cost.
+ *
+ * The costs are the number the table records -- a baseline run plus one run per claim,
+ * measured around each claimant's own children -- and the case below is the arithmetic
+ * of placing them. A fixture rather than the real inventory for the reason every
+ * arithmetic case here has one: the property has to be readable without a runner, and
+ * `e` deliberately outweighs the rest so that one file decides an assignment.
+ */
+function fiveClaimants() {
+  const one = (site: string, file: string) => [{ site, file, kind: 'exit' }];
+  const byFile = [
+    ['a.test.ts', one('a:1', 'a.test.ts')],
+    ['b.test.ts', one('b:1', 'b.test.ts')],
+    ['c.test.ts', one('c:1', 'c.test.ts')],
+    ['d.test.ts', one('d:1', 'd.test.ts')],
+    ['e.test.ts', one('e:1', 'e.test.ts')],
+  ] as unknown as ReturnType<typeof claimsByFile>;
+  const costs = new Map([
+    ['a.test.ts', 100],
+    ['b.test.ts', 400],
+    ['c.test.ts', 100],
+    ['d.test.ts', 60],
+    ['e.test.ts', 500],
+  ]);
+  return { byFile, costs };
+}
+
+describe('the split, which is by cost rather than by position', () => {
+  it('places the dearest claimant first, on whichever shard is emptiest at the time', () => {
+    // Cannot produce: the seconds a runner spends. What it holds is the arithmetic --
+    // `e` is 500 s of child time against four claimants under half that, so it opens
+    // shard 1, `b` opens shard 2, and the two files that sort **before** `e` land in
+    // shard 2 because that is where the room is. A split by sorted position would have
+    // put `a` and `c` in shard 1 with `e` and called the pair even.
+    const { byFile, costs } = fiveClaimants();
+    const first = shardClaims(byFile, 1, 2, costs);
+    const second = shardClaims(byFile, 2, 2, costs);
+    expect(first.map(([file]) => file)).toEqual(['c.test.ts', 'e.test.ts']);
+    expect(second.map(([file]) => file)).toEqual(['a.test.ts', 'b.test.ts', 'd.test.ts']);
+    // A partition: every claimant on exactly one side, and the seconds 600 against 560.
     const sites = [...first, ...second].flatMap(([, claims]) => claims.map((claim) => claim.site));
-    expect(sites.sort()).toEqual(['a:1', 'a:2', 'b:1', 'c:1', 'd:1', 'e:1'].sort());
-    expect(shardClaims(byFile, 1, 6).length).toBe(1);
-    expect(shardClaims(byFile, 6, 6).length).toBe(0);
+    expect(sites.sort()).toEqual(['a:1', 'b:1', 'c:1', 'd:1', 'e:1'].sort());
+    expect(assignShards(byFile, 2, costs).map((files) => files.length)).toEqual([2, 3]);
   });
+
+  it('is a function of the table and not of the order the inventory was read in', () => {
+    // The same five claimants, handed over in reverse: same partition, because the
+    // assignment sorts by cost and breaks ties by name. A plan that depended on file
+    // order would put a different claimant on each shard on a machine whose directory
+    // read came back differently, which is the objection the positional split was
+    // chosen for -- and it is answered by the table being committed, not by the split
+    // being blind.
+    const { byFile, costs } = fiveClaimants();
+    const reversed = [...byFile].reverse();
+    const forwards = assignShards(byFile, 2, costs);
+    const backwards = assignShards(reversed, 2, costs);
+    for (const [index, files] of forwards.entries()) {
+      expect([...files].sort()).toEqual([...backwards[index]].sort());
+    }
+    // And it is a function: the same call twice is the same answer, which the git-diff
+    // of a regenerated table depends on.
+    expect(assignShards(byFile, 2, costs)).toEqual(forwards);
+  });
+
+  it('refuses a split into no shards, which would be a plan that runs nowhere', () => {
+    // Reachable only through the pure function -- `parseShard` refuses a count below one
+    // before the gate ever asks -- so the guard is proved here rather than by a spawn.
+    const { byFile, costs } = fiveClaimants();
+    expect(() => assignShards(byFile, 0, costs)).toThrow(/not a split/);
+  });
+
+  it('refuses to place a claimant the table has not measured', () => {
+    // The hazard a cost-blind split could not have: a file with no entry would be
+    // placed by a fallback, and a fallback is a second partition under one name --
+    // `ci.yml`'s halves and a local `--shard` would stop being the same halves. The
+    // gate refuses the run before this can happen (the coverage verdict below), so this
+    // is the second line of defence rather than the first.
+    const { byFile, costs } = fiveClaimants();
+    costs.delete('c.test.ts');
+    expect(() => shardClaims(byFile, 1, 2, costs)).toThrow(/no measured cost for c\.test\.ts/);
+  });
+
 });
 
 describe('the shards ci.yml actually calls', () => {
@@ -125,7 +236,7 @@ describe('the shards ci.yml actually calls', () => {
     const plan = planOf();
     expect(plan.errors).toEqual([]);
     expect(plan.calls).toBe(2);
-    expect(checkShardPlan(byFileOf(), plan.specs)).toEqual([]);
+    expect(checkShardPlan(byFileOf(), plan.specs, flatCosts())).toEqual([]);
   });
 
   it('refuses a plan that omits a shard, duplicates one, serialises them, or disagrees on the count', () => {
@@ -137,17 +248,18 @@ describe('the shards ci.yml actually calls', () => {
     // The sentences, not array membership: `checkShardPlan` returns full statements so
     // a reader is told which repair to make, and a substring assertion on the array
     // would be a strict-equality check that passes for no sentence at all.
-    expect(checkShardPlan(byFile, [first]).join('\n')).toContain('is not called');
-    expect(checkShardPlan(byFile, [first, first]).join('\n')).toContain('is called 2 times');
+    const costs = flatCosts();
+    expect(checkShardPlan(byFile, [first], costs).join('\n')).toContain('is not called');
+    expect(checkShardPlan(byFile, [first, first], costs).join('\n')).toContain('is called 2 times');
     expect(
-      checkShardPlan(byFile, [first, { ...second, job: first.job }]).join('\n'),
+      checkShardPlan(byFile, [first, { ...second, job: first.job }], costs).join('\n'),
     ).toContain('two shards');
     expect(
-      checkShardPlan(byFile, [first, { ...second, count: first.count + 1 }]).join('\n'),
+      checkShardPlan(byFile, [first, { ...second, count: first.count + 1 }], costs).join('\n'),
     ).toContain('disagree');
-    expect(checkShardPlan(byFile, []).join('\n')).toContain('no call');
+    expect(checkShardPlan(byFile, [], costs).join('\n')).toContain('no call');
     expect(
-      checkShardPlan(byFile, [{ job: 'only', index: 1, count: 1 }]).join('\n'),
+      checkShardPlan(byFile, [{ job: 'only', index: 1, count: 1 }], costs).join('\n'),
     ).toContain('not a split');
   });
 
@@ -178,12 +290,31 @@ describe('the shards ci.yml actually calls', () => {
     const snapshot = join(SNAPSHOTS, 'gate-sites.json');
     const full = JSON.parse(readFileSync(INVENTORY, 'utf8'));
     const proved = full.sites.filter((site: { status?: string }) => site.status === 'proved').slice(0, 50);
-    writeFileSync(
-      snapshot,
-      JSON.stringify({ ...full, sites: proved, throws: { ...full.throws, rows: [] } }, null, 2),
-      'utf8',
-    );
-    const env = { ...process.env, RCA_SENSITIVE_INVENTORY: snapshot };
+    const sliced = { ...full, sites: proved, throws: { ...full.throws, rows: [] } };
+    writeFileSync(snapshot, JSON.stringify(sliced, null, 2), 'utf8');
+    // A shard is only derivable from a cost table that describes the inventory it is
+    // dividing, so the fifty-site copy comes with its own table -- one row per file the
+    // slice still claims, at a cost that makes the split deliberately uneven (the file
+    // making the most claims is priced highest) so a positional fallback would show.
+    const slicedFiles = claimsByFile(claimedSites(sliced));
+    const table = {
+      measured: '2026-01-01',
+      machine: 'the case',
+      source: 'node scripts/verify-sites-are-sensitive.mjs --costs golden-master/sensitivity-costs.json',
+      files: Object.fromEntries(
+        slicedFiles.map(([file, claims]) => [
+          file,
+          { claims: claims.length, runs: claims.length + 1, baselineMs: 1000, mutantMs: claims.length * 1000 },
+        ]),
+      ),
+    };
+    const costsPath = join(SNAPSHOTS, 'sensitivity-costs.json');
+    writeFileSync(costsPath, JSON.stringify(table, null, 2), 'utf8');
+    const env = {
+      ...process.env,
+      RCA_SENSITIVE_INVENTORY: snapshot,
+      RCA_SENSITIVE_COSTS: costsPath,
+    };
     // The gate resolves its claimants from `process.cwd()`. A suite run from
     // `packages/core` would otherwise look for `packages/core/packages`, and the refusal
     // would be about a directory rather than about the shipped inventory.
@@ -202,6 +333,54 @@ describe('the shards ci.yml actually calls', () => {
       parts.push(...one.stdout.trim().split('\n').filter(Boolean));
     }
     expect(parts.sort()).toEqual(whole);
+  });
+
+  it('refuses a shard it cannot derive, rather than falling back to a second split', () => {
+    // The table is what makes the two jobs' halves the same halves on every machine, so
+    // a shard run without one has no plan to follow. Refused rather than divided by
+    // position: a fallback would be a second partition under one name, and the halves
+    // `ci.yml` runs would stop being the halves this file checks.
+    const one = spawnSync(process.execPath, [GATE, '--list', '--shard', '1/2'], {
+      encoding: 'utf8',
+      env: { ...process.env, RCA_SENSITIVE_COSTS: join(SNAPSHOTS, 'no-such-costs.json') },
+      cwd: ROOT,
+    });
+    expect(one.status).toBe(1);
+    expect(one.stderr).toContain('sensitivity-costs.json');
+    expect(one.stdout).toBe('');
+  });
+
+  it('refuses a table that has gone stale, before a claimant is spawned', () => {
+    // A claimant added to the inventory and not to the table would be placed by nothing
+    // at all -- the gate cannot tell whether the new file belongs to this shard -- so
+    // the run stops while reading, with the command that regenerates the table.
+    const stale = join(SNAPSHOTS, 'stale-costs.json');
+    // Built from the inventory in front of this run rather than from the shipped table:
+    // a case about a stale table must not itself depend on the shipped one being fresh,
+    // or it would be red for the reason it is meant to describe.
+    const table = {
+      measured: '2026-01-01',
+      machine: 'the case',
+      source: 'node scripts/verify-sites-are-sensitive.mjs --costs golden-master/sensitivity-costs.json',
+      files: Object.fromEntries(
+        byFileOf().map(([file, claims]) => [
+          file,
+          { claims: claims.length, runs: claims.length + 1, baselineMs: 1000, mutantMs: 1000 },
+        ]),
+      ),
+    };
+    const dropped = Object.keys(table.files).sort()[0];
+    delete (table.files as Record<string, unknown>)[dropped];
+    writeFileSync(stale, JSON.stringify(table, null, 2), 'utf8');
+    const one = spawnSync(process.execPath, [GATE, '--list', '--shard', '1/2'], {
+      encoding: 'utf8',
+      env: { ...process.env, RCA_SENSITIVE_COSTS: stale },
+      cwd: ROOT,
+    });
+    expect(one.status).toBe(1);
+    expect(one.stderr).toContain('does not name it');
+    expect(one.stderr).toContain('--costs');
+    expect(one.stdout).toBe('');
   });
 
   it('refuses a malformed --shard before any claimant could be spawned', () => {
@@ -223,7 +402,7 @@ describe('the shards ci.yml actually calls', () => {
     // the file count is refused by the shipped script before it spawns anything.
     const one = spawnSync(process.execPath, [GATE, '--list', '--shard', '999/999'], {
       encoding: 'utf8',
-      env: { ...process.env },
+      env: { ...process.env, RCA_SENSITIVE_COSTS: flatTable() },
       cwd: ROOT,
     });
     expect(one.status).toBe(1);

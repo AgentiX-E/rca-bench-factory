@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -746,6 +746,81 @@ describe('scripts/verify-sites-are-sensitive.mjs · the mutant, end to end', () 
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('RCA_SENSITIVE_CONCURRENCY');
       expect(result.stderr).toContain('positive integer');
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('writes the cost table it measured, one row per claimant', () => {
+    // The shards are divided by this table and by nothing else, so the table has to
+    // come out of a run rather than out of an author. The row is the division the
+    // summary already prints -- a baseline and the mutant runs it paid for -- and the
+    // assertion is on the shape, not on a duration: seconds belong to the machine.
+    const tree = fixture(
+      [
+        { line: 1, file: 'packages/core/test/one.test.ts' },
+        { line: 1, file: 'packages/core/test/two.test.ts' },
+      ],
+      { assert: true },
+    );
+    try {
+      const where = join(tree, 'golden-master', 'sensitivity-costs.json');
+      const result = runGate(tree, ['--costs', where]);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('sensitivity-costs.json');
+      const table = JSON.parse(readFileSync(where, 'utf8'));
+      expect(table.measured).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(String(table.machine)).not.toBe('');
+      expect(Object.keys(table.files).sort()).toEqual([
+        'packages/core/test/one.test.ts',
+        'packages/core/test/two.test.ts',
+      ]);
+      for (const row of Object.values(table.files) as { claims: number; runs: number; baselineMs: number; mutantMs: number }[]) {
+        expect(row.claims).toBe(1);
+        expect(row.runs).toBe(2);
+        expect(Number.isInteger(row.baselineMs) && row.baselineMs >= 0).toBe(true);
+        expect(Number.isInteger(row.mutantMs) && row.mutantMs > 0).toBe(true);
+      }
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses to write a cost table from a shard, which measured half an inventory', () => {
+    // A table written by a shard would name the files that shard happened to own and
+    // omit the rest, and the next run would divide the inventory by it. Refused at the
+    // argument, so nothing is measured and nothing is written.
+    const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }], { assert: true });
+    try {
+      const where = join(tree, 'half.json');
+      // A table the shard *could* use, so that the only thing standing between this run
+      // and a half-written table is the refusal itself. Without it the case would pass on
+      // the gate's own "cannot read the table" -- a red for a different reason, which is
+      // the shape a case like this is easiest to be wrong about.
+      const table = join(tree, 'golden-master', 'sensitivity-costs.json');
+      writeFileSync(
+        table,
+        JSON.stringify({
+          measured: '2026-01-01',
+          machine: 'the case',
+          source: 'node scripts/verify-sites-are-sensitive.mjs --costs golden-master/sensitivity-costs.json',
+          files: {
+            'packages/core/test/one.test.ts': {
+              claims: 1,
+              runs: 2,
+              baselineMs: 1000,
+              mutantMs: 1000,
+            },
+          },
+        }),
+        'utf8',
+      );
+      const result = runGate(tree, ['--costs', where, '--shard', '1/2'], {
+        RCA_SENSITIVE_COSTS: table,
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('--costs writes the table an unsharded run measured');
+      expect(existsSync(where)).toBe(false);
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }

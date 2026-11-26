@@ -568,7 +568,7 @@ export const STEP_PLAN = {
   'sensitivity-shard / Build (core then cli; cli resolves core\'s dist)': { local: true },
   'sensitivity-shard / Every proved exit can disappear without a word (shard 2 of 2)': {
     local: true,
-    note: 'the same gate as shard 1 of 2, driven with --shard 2/2; the plan names the pair rather than a wildcard',
+    note: 'the same gate as shard 1 of 2, driven with --shard 2/2 over the files golden-master/sensitivity-costs.json gives it (v3.157); the plan names the pair rather than a wildcard',
   },
 
   // ---- backend --------------------------------------------------------------
