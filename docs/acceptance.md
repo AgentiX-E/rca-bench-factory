@@ -1214,7 +1214,7 @@ which is all but two in this tree.
 - **Two sentences had to move with the number.** The last arm printed `the file states no budget`, which is false
   about a file that states one on a sibling suite; it now prints `neither the test nor the suite it is written in
   states a budget`, true in both shapes. And the summary's `N state a budget` counted readings rather than files, so
-  a file stating four numbers could be counted as zero; it counts the source now -- **44** files, **21** of them with
+  a file stating four numbers could be counted as zero; it counts the source now -- **44** files, **20** of them with
   a test at or above 1 000 ms.
 - **The fifth spelling.** `vi.setConfig({ testTimeout: 15_000 })` is a clock no suite and no test states.
   `site-proofs.mjs::testBudgetDeclarations` has read it since v3.155 because the gate-test battery has to price a

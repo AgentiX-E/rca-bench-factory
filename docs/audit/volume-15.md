@@ -1140,7 +1140,7 @@ file that states one on a sibling suite -- and after the repair that file answer
 `neither the test nor the suite it is written in states a budget`, which is true in both shapes. The summary's own
 counter moved with it: `N state a budget` counted *readings* rather than files, so a file that states four numbers
 would have been counted as zero. On this tree the repair changes the reading of **2 of 262** files and the verdict
-of none, and the counter reads **44** files stating a budget, of which **21** hold a test at or above 1 000 ms.
+of none, and the counter reads **44** files stating a budget, of which **20** hold a test at or above 1 000 ms.
 
 **Falsification.** The `SIBLINGS` fixture in `timeout-budget.test.ts` is the smallest file that exhibits the defect
 -- one suite stating 120 000, a sibling stating nothing, one test in each -- and under the old line its second
