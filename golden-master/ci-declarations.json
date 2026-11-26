@@ -1,0 +1,14 @@
+{
+  "jobs": [
+    {
+      "job": "gates-audit",
+      "timeoutMinutes": 26,
+      "steps": [
+        { "name": "Install the shells the suite cross-checks against", "minutes": 7 },
+        { "name": "Build (core then cli; cli resolves core's dist)", "minutes": 3 },
+        { "name": "Every gate can be shown to fail (shard 2 of 2)", "minutes": 13 }
+      ],
+      "why": "the step is 374 s of the 1036 s job that was the run's whole wall clock, so it runs as shard 2 of 2 beside the shard the injection job keeps; a job no run has measured is the shape R6 cannot compare, and the first green run is the reading this promise waits for"
+    }
+  ]
+}

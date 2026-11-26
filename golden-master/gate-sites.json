@@ -936,15 +936,31 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 397,
-      "condition": "subjects.length === 0",
+      "line": 454,
+      "condition": "parsed === null || Number(parsed[1]) > Number(parsed[2])",
+      "diagnostic": "--shard takes <i>/<n> with 1 <= i <= n, not '${spec ?? ''}': a shard nobody can number",
+      "status": "proved",
+      "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
+    },
+    {
+      "script": "scripts/verify-gates-are-testable.mjs",
+      "line": 470,
+      "condition": "slice.length === 0",
+      "diagnostic": "shard ${String(index)} of ${String(total)} holds no gate out of the ${String(list.length)}",
+      "status": "proved",
+      "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
+    },
+    {
+      "script": "scripts/verify-gates-are-testable.mjs",
+      "line": 509,
+      "condition": "all.length === 0",
       "diagnostic": "golden-master/gate-sites.json names no gate, so this run would pass while measuring nothing.",
       "status": "proved",
       "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 544,
+      "line": 668,
       "condition": "held !== null && isAlive(held.pid)",
       "diagnostic": "two runs cannot measure one tree at the same time",
       "status": "proved",
@@ -952,7 +968,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 582,
+      "line": 706,
       "condition": "inFlight.length > 0",
       "diagnostic": "two runs cannot measure one tree at the same time",
       "status": "proved",
@@ -960,7 +976,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 604,
+      "line": 728,
       "condition": "unrestored.length > 0",
       "diagnostic": "could not repair ${gate} from the journal",
       "status": "proved",
@@ -968,7 +984,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 623,
+      "line": 747,
       "condition": "alreadyHollowed.length > 0",
       "diagnostic": "restore it first: a measurement of a mutated tree is a measurement of nothing",
       "status": "proved",
@@ -976,14 +992,14 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 657,
+      "line": 781,
       "diagnostic": "verify-gates-are-testable: FAILED -- interrupted by ${signal};",
       "status": "proved",
       "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 702,
+      "line": 835,
       "condition": "back !== original",
       "diagnostic": "verify-gates-are-testable: FAILED -- could not restore ${gate}",
       "status": "proved",
@@ -991,7 +1007,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 809,
+      "line": 975,
       "condition": "failed > 0",
       "diagnostic": "${gate} could not be hollowed into valid JavaScript, so it was not measured at all",
       "status": "proved",
@@ -1070,15 +1086,23 @@
     },
     {
       "script": "scripts/verify-site-proofs.mjs",
-      "line": 102,
+      "line": 117,
       "condition": "unknown.length > 0",
-      "diagnostic": "usage: node scripts/verify-site-proofs.mjs [--list]\\n",
+      "diagnostic": "usage: node scripts/verify-site-proofs.mjs [--list] [--jobs N]\\n",
       "status": "proved",
       "provedBy": "packages/core/test/site-proofs.test.ts"
     },
     {
       "script": "scripts/verify-site-proofs.mjs",
-      "line": 112,
+      "line": 121,
+      "condition": "jobsAt !== -1 && !/^[1-9][0-9]*$/.test(jobsArg ?? '')",
+      "diagnostic": "verify-site-proofs: --jobs needs a positive integer, not '${jobsArg ?? ''}'\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/site-proofs.test.ts"
+    },
+    {
+      "script": "scripts/verify-site-proofs.mjs",
+      "line": 131,
       "condition": "catch",
       "diagnostic": "verify-site-proofs: cannot read ${relative(ROOT, INVENTORY) || INVENTORY} -- ${String(error)}\\n",
       "status": "proved",
@@ -1086,7 +1110,7 @@
     },
     {
       "script": "scripts/verify-site-proofs.mjs",
-      "line": 123,
+      "line": 142,
       "condition": "claimed.length === 0",
       "diagnostic": "verify-site-proofs: ${relative(ROOT, INVENTORY) || INVENTORY} holds no proved site,",
       "status": "proved",
@@ -1094,7 +1118,7 @@
     },
     {
       "script": "scripts/verify-site-proofs.mjs",
-      "line": 270,
+      "line": 383,
       "condition": "failures > 0",
       "diagnostic": "verify-site-proofs: FAILED -- ${String(failures)} problem(s)\\n",
       "status": "proved",
