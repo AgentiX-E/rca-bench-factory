@@ -1,6 +1,6 @@
 # Audit · volume 15
 
-Findings 651–662, from the rounds recorded in `progress/volume-20.md` as `v3.148`, `v3.149` and `v3.150`, and
+Findings 651–663, from the rounds recorded in `progress/volume-20.md` as `v3.148`, `v3.149` and `v3.150`, and
 in `progress/volume-21.md` as `v3.151`, `v3.152`, `v3.153`, `v3.154` and `v3.155`.
 
 ## Finding 651 — an action is identified by the action, not by the name of the step that uses it
@@ -720,3 +720,44 @@ same sentence when it writes.
 
 **Falsified by** two cases in `ci-budget.test.ts`: a two-job workflow whose newest reading is `1 of 1` is
 accepted with a promise and refused without one.
+
+## Finding 663 — a pool of eight is eight processes only if a child is one process
+
+CI run `45738320826` came back **8 of 9 jobs green and `Lint` red**, on the round's own change. The sentence
+the step printed was not about a claim:
+
+```
+  packages/core/test/check-doc-counts.test.ts did not pass, so its claims are unmeasured
+    Error: this test file held the event loop for 53800 ms, past the 45000 ms budget. Of that,
+    374 ms were this process's own CPU time
+    Tests  59 passed (59)
+```
+
+Fifty-nine of fifty-nine tests passed. What failed was the **budget** those tests are run under, and the two
+costs that crossed it were both introduced by the pool the same round added:
+
+- **The throw witness was armed for the whole run if any claim anywhere was a throw.** The comment beside it
+  said the opposite -- "asked for only by a run that has a throw claim to settle" -- and a *run* is 68 files:
+  18 of them have throw claims, so **50 paid for an instrument they never read**. The witness is a module
+  loader, so every gate the file spawns pays again: measured on the one file that failed, alone on an idle
+  box, **3.14 s** plain, **3.27 s** with the trace hook, **11.18 s** with the witness registered. Fifty-nine
+  spawned gates at ~135 ms each is the whole of the difference.
+- **Each child was started as `vitest run <file>`, and vitest brings its own pool.** The cap bounds the number
+  of *children*; the number the cap was chosen by is the number of test *processes*, and on a runner with
+  fewer cores than the cap a child is several of those. The pool's name was larger than what it bounded.
+
+The repair is two lines and a derivation: `RCA_THROW_WITNESS` is set for the files whose claims include a
+throw (from `claimsByFile`, the same grouping the plan uses), and each child is started with
+`--maxWorkers=1`, which changes nothing about which tests run -- a child has one file -- and everything about
+how many processes are alive at once. The summary line now ends `the throw witness armed for 18 of them`,
+because "how much of this run was instrumented" is a question about cost that no verdict answers.
+
+**Measured on one green tree, back to back:** **124.3 s -> 79.4 s** at the default eight on this box, and
+**151.6 s -> 92.5 s** under `taskset -c 0-3`, where the gate takes four at a time. The second pair is the one
+that matters: it is the shape of a runner, and the file that failed on CI is one of the 50 that no longer pays
+for the witness.
+
+**The instrument that noticed was the suite's, not the workflow's.** `Lint` has a 19-minute bound and spent
+301 s, so nothing in `ci.yml` was ever going to say this; what said it was `stall-budget`, which exists for a
+file whose loop is blocked, one level down from a job whose budget is not. A gate can be inside its own
+budget and inside no budget at all.

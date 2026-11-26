@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 261 core + 4 cli |
-| Test lines | 121,387 core + 3,242 cli |
-| Tests | 7,064 core + 187 cli |
+| Test lines | 121,474 core + 3,242 cli |
+| Tests | 7,065 core + 187 cli |
 | Tracked files | 683 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -1138,8 +1138,10 @@ is a row about rather than paraphrase one that no `grep` will find.
   The sites battery's 600 s and 900 s readings are 146 identical sites apart, and the only statement the file
   can make about them is that one tree repeated itself to a second. The instrument that would say what the box
   was doing -- `/proc/loadavg`, the cgroup's throttling counters, the runner's own timestamps -- is printed by
-  the job and reachable only through the job log, which this sandbox cannot fetch: the logs endpoint redirects to
-  a blob host that resolves to `198.18.0.16` here.
+  the job and reachable through the job log; this entry was filed saying the log could not be fetched from this
+  box, and `v3.155` found that it can -- `GET /actions/jobs/<id>/logs` answers 200 with the transcript and
+  `GET /actions/runs/<id>/logs` with a zip -- so what is missing is the step that would print the line, not the
+  access that would read it.
   `[open: whether a measured step should print a machine line beside its own output, so the recorder can attach
   the box's state to the reading -- a step that measures the runner rather than the program, and one whose
   absence has to read as *not measured* rather than as a quiet machine -- or whether the pair and the site count

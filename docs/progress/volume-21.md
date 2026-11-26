@@ -2129,7 +2129,7 @@ promise accounts for it -- `R9` already refuses a promise for a job the recordin
 excuse an old reading. The gap is printed twice: `1 job declaration(s) still awaiting their first run`, by the
 gate and by the recorder.
 
-### Twelve things this round did wrong
+### Thirteen things this round did wrong
 
 - **The first parallel run's 16 problems were mine, and I read them as the pool's.** Two were files that
   failed because the inventory was stale -- I had added two `process.exit` sites and moved others, and
@@ -2174,12 +2174,58 @@ gate and by the recorder.
   refuses twice: a bullet that says neither that it is closed nor why it is open, and a residual whose first
   twenty characters appear in no entry of `## Open`. A record is a quotation of the list, not a second draft
   of it.
+- **The pool I added came back red on CI, for two reasons that were both mine.** The witness was armed
+  for the run rather than for the file, so 50 claimant files paid a module loader per spawned gate; and a
+  child was several vitest processes, so the cap bounded something other than what it was chosen by.
+  The section below is the reading; the round would have shipped a red lane if the suite's own stall
+  budget had not been watching a file the workflow's 19-minute bound could not see.
 - **This list of the round's own mistakes became a record of them.** One bullet quoted the open-reason marker
   verbatim, and `openEntriesInList` reads a section as a record when its body is nothing but bullets *and* at
-  least one of them carries a reason a reader could act on -- so eleven mistakes were counted as eleven
+  least one of them carries a reason a reader could act on -- so the round's mistakes were counted as
   residuals of `v3.155`, and `Mutations` became the round's second `###` section under one heading. The same
   shape as the file that has to exempt itself from the package-write scan: prose *about* a marker has the
   marker, and a reader that judges by shape cannot tell the description from the thing.
+
+### The run came back red, and both costs were the pool's
+
+CI run `45738320826` on `4be886d` reported **8 of 9 jobs green**. The ninth job -- `gates-audit`, the one
+`ci-declarations.json` promised rather than recorded -- passed in **227 s**, the shard inside it in **202 s**.
+The red was in `Lint`, and the sentence was not about a claim:
+
+```
+  packages/core/test/check-doc-counts.test.ts did not pass, so its claims are unmeasured
+    Error: this test file held the event loop for 53800 ms, past the 45000 ms budget. Of that,
+    374 ms were this process's own CPU time
+    Tests  59 passed (59)
+```
+
+`59 of 59` passed; the **budget** failed. Two costs crossed it, and both were the pool's:
+
+- **The throw witness was armed for a run, not for a file.** 18 of the 68 claimant files have a throw claim,
+  so 50 paid for an instrument they never read -- and the witness is a module loader, so every gate those
+  files spawn pays again. Measured on the file CI failed, alone on an idle box: **3.14 s** plain, **3.27 s**
+  with the trace hook, **11.18 s** with the witness. Fifty-nine spawns at ~135 ms is the whole of the
+  difference.
+- **A child was `vitest run <file>`, and vitest brings its own pool.** The cap bounded *children*; the number
+  it was chosen by is *test processes*, and on a runner with fewer cores than the cap a child is several of
+  those.
+
+`RCA_THROW_WITNESS` now follows each file's own claims, and each child is started with `--maxWorkers=1` --
+which changes nothing about which tests run, because a child has one file. On one green tree, back to back:
+**124.3 s -> 79.4 s** at the default eight, **151.6 s -> 92.5 s** under `taskset -c 0-3` where the gate takes
+four at a time. The summary line ends `the throw witness armed for 18 of them`, because "how much of this run
+was instrumented" is a question about cost that no verdict answers.
+
+Two things this red taught that no local run could:
+
+- **`Lint`'s 19-minute bound was never going to notice.** The step spent 301 s. What noticed was
+  `stall-budget`, the suite's own instrument, one level down -- a gate can be inside its own budget and
+  inside no budget at all.
+- **The job log is readable from this box after all.** `GET /actions/jobs/<id>/logs` answered **200** with the
+  transcript, and `GET /actions/runs/<id>/logs` answered with a 252 KB zip. `O-141` was filed on the sentence
+  "the logs endpoint redirects to a blob host that resolves to `198.18.0.16` here", and that sentence is now
+  false: what made this red legible in one request was reading it rather than inferring it from a step's
+  name.
 
 ### Mutations
 
@@ -2190,8 +2236,10 @@ gate and by the recorder.
 | every shard is the first slice | 1 |
 | a slice that selects no gate is measured | 1 |
 | `R11` accepts any gap | 1 |
+| the witness is armed for every file again | 1 |
+| a child is started without `--maxWorkers=1` | 1 |
 
-**5 groups, 5 red cases, 0 survivors**, each measured on the green tree and restored to an identical `md5`.
+**7 groups, 7 red cases, 0 survivors**, each measured on the green tree and restored to an identical `md5`.
 
 ### Left open
 
@@ -2212,13 +2260,13 @@ gate and by the recorder.
 
 | item | value |
 | --- | --- |
-| CI | run `45695988542` on `60aa169e`, attempt 2: **8 of 8 jobs success** -- the run whose two 374 s and 306 s readings reproduced reading 48 exactly, and the one this round's recording is taken from. The ninth job this round adds has not run: `golden-master/ci-declarations.json` promises it, and the next commit settles that promise |
-| `core` test suite | **261 files, 7064 tests passed** (as of this commit) |
+| CI | run `45695988542` on `60aa169e`, attempt 2: **8 of 8 jobs success** -- the run whose two 374 s and 306 s readings reproduced reading 48 exactly, and the one this round's recording is taken from. The ninth job this round adds has not been recorded: `golden-master/ci-declarations.json` promises it, and the run that settles that promise is the one this repair ships into, not the round's own commit, which came back red and is read in the section above |
+| `core` test suite | **261 files, 7065 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **265 files, 7251 tests passed** (as of this commit) |
+| repo test suite | **265 files, 7252 tests passed** (as of this commit) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
-| new tests | **7,060 -> 7,064, +4**: the audit's per-subject cost and the parts adding to the whole, the shard partition with its two refusals, the `--jobs` count it cannot honour, and the pool's overlap measured from the marks its children write |
+| new tests | **7,060 -> 7,065, +5**: the audit's per-subject cost and the parts adding to the whole, the shard partition with its two refusals, the `--jobs` count it cannot honour, the pool's overlap measured from the marks its children write, and the witness armed per file with each child asked for one worker |
 | the audit, as run | **69 runs**, 218.8 s of child time in 223.1 s of wall clock; **190.9 s** reported by the suites (69 of 69); **233** file executions over **93** distinct files; dearest `check-official.mjs` at **26.1 s (12%)** |
-| the pair, `verify-site-proofs` | **283.0 s -> 124.3 s** on one tree, back to back, `--jobs 1` against the default; 68 claimant files, the same verdicts |
-| mutation | **5 groups, 5 red cases, 0 survivors**, each restored to an identical `md5` |
+| the pair, `verify-site-proofs` | **283.0 s -> 124.3 s** on one tree, back to back, `--jobs 1` against the default; then, after finding 663, **124.3 s -> 79.4 s** at the default eight and **151.6 s -> 92.5 s** under `taskset -c 0-3`; 68 claimant files, the same verdicts every time, and the witness armed for **18** of them |
+| mutation | **7 groups, 7 red cases, 0 survivors**, each restored to an identical `md5` |
 | the inventory | **149** sites, up 2: the shard spec and the empty slice, each proved by the case that drives it |
