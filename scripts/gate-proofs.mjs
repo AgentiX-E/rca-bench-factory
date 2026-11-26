@@ -304,3 +304,40 @@ export function classify(files, result) {
   if (status === 0) return { verdict: 'SURVIVED', ...shaped };
   return { verdict: 'UNATTRIBUTED', ...shaped, status, files };
 }
+
+/**
+ * What the suite said its own tests cost, in milliseconds, or `null` if it did not say.
+ *
+ * ## Why the child's own reading is kept beside the timer
+ *
+ * The two numbers answer different questions and only their difference decides what to
+ * do about 374 s. A `vitest` run is a process start -- config load, plugin setup,
+ * worker pool -- followed by some tests; the child times the second part and calls it
+ * `Duration`. If that is most of the child time, the cost is in the files and the only
+ * lever is running fewer of them. If it is a small part, the cost is 69 cold starts and
+ * the lever is amortising them -- a different change, in a different place, and the two
+ * are indistinguishable from the total alone.
+ *
+ * `null` rather than `0` when the line is absent, because a run that printed no
+ * duration is a run whose silence must not be averaged in as a fast one. The summary
+ * counts them separately.
+ *
+ * ## Why the escapes are stripped here and not by the caller
+ *
+ * This reader lived in the gate, beside `classify`, and was the only reader of that
+ * output that did its own matching on the raw text -- finding 669. Locally vitest has
+ * no colour and `Duration  1.02s` matches; on a runner the same line is
+ * `\x1b[2m   Duration \x1b[22m 1.02s`, so `Duration\s+` runs into an escape and the
+ * value is unreachable. Every gate printed `0.0 s of that the suites reported as their
+ * own (0 of 35)` for two readings -- the half of the cost line that decides the next
+ * cut, blind exactly where the cut is paid for. `classify` had been repaired for this
+ * same escape years earlier and this function, two dozen lines away, had not.
+ *
+ * So the strip is inside the reader: a caller cannot forget it, and the two readers of
+ * one transcript cannot disagree about what it says.
+ */
+export function suiteOwnMs(out) {
+  const match = /Duration\s+([\d.]+)(ms|s)\b/.exec(stripAnsi(out));
+  if (match === null) return null;
+  return match[2] === 's' ? Number(match[1]) * 1000 : Number(match[1]);
+}

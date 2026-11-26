@@ -148,7 +148,7 @@ state cannot be slower.
 | `cli` test suite | **4 files, 187 tests passed** (at v3.151) |
 | repo test suite | **264 files, 7239 tests passed** (at v3.151) |
 | the history | **45** readings over **43** commits, after the forty-fifth was recorded and the reading before it left untouched |
-| new tests | **7,050 -> 7,052, +2**: twelve on the rule in place of ten (the falsifier at 22 minutes, a recording that landed in the fast state, the worst day of a tree with its attempts, one attempt's two jobs, the worst state over every tree, the pair beside the multiple, the pair in the refusal, the lookup, the control, and the three states of the range's share) less eight that asserted `R14`'s arithmetic |
+| new tests | **7,050 -> 7,052, +2**: twelve on the rule in place of ten (the falsifier at 22 minutes, a recording that landed in the fast state, the worst day of a tree with its attempts, one attempt's two jobs, the worst state over every tree, the pair beside the multiple, the pair in the refusal, the lookup, the control, and the three states of the range's share) less eight that asserted `R14`'s arithmetic |; and this half of the round adds four: the cost reader against a plain summary, against the runner's colourised one (the same number), against escapes wrapped the other way round, and against a transcript that must read `null` rather than `0` |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged: every line this round added is in `scripts/` |
 | mutation | **12 groups, 54 red cases, 0 survivors**, each measured on the green tree and restored byte for byte |
 | the rule's own falsifier | the 22-minute case returns `[]` under a reconstructed `R14` and one refusal under `R16` |
@@ -1368,27 +1368,74 @@ division made from one box's prices is exact in that box's units and approximate
 by the same arithmetic is the whole of what the aim bought on the halves, and the row that would finish it is a
 table rebuilt from the runner's own per-file rows, which is the second history `checkShardCosts` already accepts.
 
+**Reading 56: the same tree, read again, and every job moved.** The run of this round's own commit
+(`45832206778` on `36610f7`, **9 of 9**, **536 s**) is the fifty-sixth reading, and the only thing the tree
+changed under it is the two bounds a reading caused -- no command moved. The two shard steps read **109 s** and
+**131 s**: **13.7%** apart in reading 55 with the first shard heavier, **16.8%** apart here with the second one
+heavier. That is the answer to the question reading 55 left open. The residual between the table's **0.0%** and
+the runner's reading is not a bias the table could be repaired for -- it is the size of the runner's own noise,
+and it points the other way on the next run of the same battery.
+
+Every job moved with it, and by more than the aim had saved in any of them:
+
+| job | reading 55 | reading 56 |
+| --- | --- | --- |
+| `batteries` | 376 s | **532 s** |
+| `gates-audit` | 502 s | **400 s** |
+| `verify` | 417 s | **281 s** |
+| `batteries-heavy` | 285 s | 294 s |
+| `sensitivity` + shard | 179 + 154 s | 173 + 154 s |
+| `backend` | 36 s | 50 s |
+| `artefacts`, `cold-tree` | 54 + 37 s | 47 + 39 s |
+
+The gate-test battery inside those two jobs -- the same two shards, the same 69 gates -- read **197 + 236 s** in
+reading 55 and **145 + 174 s** here. **A queue read from one run is a queue read from one session**: reading 55
+said the head was `gates-audit`'s audit shard, and reading 56 says it is `batteries`' gate-test battery by
+**132 s**. What survives both is the item, not its order: the gate-test battery is the largest single thing in the
+workflow on either reading, and `verify`'s coverage step (**204 s** of its **281 s** here) is the second.
+
+**Finding 669: the line that prices that battery was blind on the runner.** The battery prints its own cost in
+two halves -- the child time it measures, and the suites' own time it reads out of the child's transcript -- and
+the second half decides whether the next cut is fewer process starts or fewer tests. It printed **0.0 s of 97.2
+(0 of 35)** and **0.0 s of 232.1 (0 of 34)** on the runner, in two readings, while the same shards run here read
+**87.2 s of 107.6** (**35 of 35**) and **165.3 s of 185.0** (**34 of 34**). The cause is one escape: a runner's
+vitest colourises, and the summary arrives as `\x1b[2m   Duration \x1b[22m 1.02s`, so `Duration\s+` crosses the
+space, meets the escape and gives up. `classify` -- the reader of the same transcript, two dozen lines away -- had
+been repaired for exactly this class twice; the reader beside it had not. The repair moves it into
+`scripts/gate-proofs.mjs` as `suiteOwnMs`, strips **inside** it so no caller can forget, and deletes the gate's
+own copy, because two readers of one transcript that keep their own patterns are two readers that can disagree.
+Four cases hold the two spellings a runner produces, the `ms` unit, and a transcript that must read `null` rather
+than `0`; restoring the raw read turns the two colour cases red (`expected null to be 1020`,
+`expected null to be 2500`) and the file is restored byte-identical.
+
+What the repair does not do is choose the next cut. The local halves already answer that: **81%** and **89%** of
+the child time is the tests' own, so the lever is running **fewer tests per gate** -- the witness mechanism this
+round built for the sites battery, applied to 69 gates that each run every test in the files that name them.
+
 ### Readings
 
 > Ledger for `v3.158`.
 
 | item | value |
 | --- | --- |
-| CI | run `45828223563` on `683bd91`: **9 of 9 jobs success**, 90 steps, reading **55**, **512 s** of wall clock -- the first run whose battery prices a claim by the test that can see it, and the one that settles this round's prediction. Its two shard steps read **131 s** and **113 s** against **427 s** and **303 s** in reading 54 (**-69%** and **-63%**, the pair **730 s -> 244 s**), and the run's own wall clock rose **483 s -> 512 s** because the critical path is now `gates-audit` at **502 s**, whose audit shard read **171 s -> 236 s** on a step this round did not touch. Its predecessor `45804184339` is the red run finding 668 came from |
+| CI | run `45832206778` on `36610f7`: **9 of 9 jobs success**, 90 steps, reading **56**, **536 s** of wall clock -- the tree of this round's own commit, and the run that read the repair of its two bounds. Its predecessor `45828223563` (reading **55**) is the run that priced a claim by its witness: **131 / 113 s** against reading 54's **427 / 303 s**. This round's reading moved every job on a tree whose commands did not change -- `batteries` **376 -> 532 s**, `gates-audit` **502 -> 400 s**, `verify` **417 -> 281 s** -- and read the shard pair **109 / 131 s**: **16.8%** apart the other way round, where reading 55 read **13.7%** |
 | the aim, read on the runner | reading 54 -> 55, the same two jobs and the same command: `sensitivity` **427 s -> 131 s**, `sensitivity-shard` **303 s -> 113 s**; the pair **730 s -> 244 s** of the runner's time, where this box read **3,061.7 s -> 924.2 s** within one session and **420.6 s** alone |
 | what the runner says about the division | the table divides **362.3 s / 362.4 s** (**0.0%**); the runner's work steps read **152 s / 113 s** (**25.7%**, the heavier one carrying the **21 s** exemption battery) and its two jobs read **179 s / 154 s** (**14.0%**, inside the 15% the round commits to, because shard 2's install took 24 s against 16 s). The same pair read **30%** in reading 54 by the same arithmetic |
+| the same halves, read again | reading 55 **131 / 113 s** with the first shard heavier, reading 56 **109 / 131 s** with the second one heavier: **13.7%** and **16.8%** apart on a battery nothing changed, so the residual between the table's **0.0%** and the runner is the runner's noise rather than a bias a table can be repaired for |
+| the battery's own cost line | what the gate-test battery said its suites spent, here and on the runner: **87.2 s of 107.6** (`35 of 35`) and **165.3 s of 185.0** (`34 of 34`) measured on this box, against **0.0 s of 97.2** (`0 of 35`) and **0.0 s of 232.1** (`0 of 34`) on the runner in two readings -- finding 669, an escape between `Duration\s+` and the digits, and the half of the line that names the lever was unreadable where the lever is paid for |
 | the run's wall clock | **512 s**, 29 s more than reading 54's **483 s**: the longest job moved from `sensitivity` (**473 s -> 179 s**) to `gates-audit` (**399 s -> 502 s**). Every job in the pair moved by more than the aim saved -- `verify` 295 -> 417 s, `backend` 359 -> 36 s -- which is why the ledger quotes the shard pair and not the run |
-| the queue, as reading 55 reads it | `gates-audit` **502 s** (the audit shard **236 s** of it), `verify` **417 s** (`Lint` 180 s, coverage 204 s), `batteries` **376 s** (the gate-test battery **197 s**, 52%), `batteries-heavy` **285 s** |
+| the queue, as two readings read it | reading 55 put `gates-audit` (**502 s**) first and reading 56 put `batteries` (**532 s**) first; what survives both is the item rather than the order -- the gate-test battery (**197 + 236 s** in reading 55, **145 + 174 s** in reading 56), then `verify`'s coverage step (**204 s** of its **281 s**), then the audit shard |
 | the battery, before the aim | 256 mutant runs, **3,061.7 s** of child time inside **7.8 min** of wall clock; the dearest claimant **29%** of that |
 | the battery, with the aim | 256 mutant runs, **924.2 s** inside **3.3 min** on the same session and the same pool; the dearest claimant **16%**; **256 of 256** aims held |
 | the battery, alone at the default pool | 256 mutant runs, **420.6 s** inside **3.1 min** at four claimants at a time, 325 runs in all with the 68 baselines: the reading this table is written from, taken on an idle box |
 | the table it wrote | 68 claimants, 256 claims, **724.7 s** of child time -- **420.6 s** of it the 256 mutant runs and **304.1 s** the 68 baselines; halves **362.3 s / 362.4 s** (**0.0%**, 34 claimants each); dearest `ci-budget.test.ts` at **66.4 s**, **15.8%** of the mutant time and **9.2%** of the whole, where the table v3.157 shipped had it at **23.6%** of the whole |
+| the table this commit ships | rebuilt here because the battery's claim keys are `file:line` and this round moved ten of them: 68 claimants, 256 claims, **785.1 s** of child time (**481.4 s** of mutant runs inside **3.3 min**, the rest the 68 baselines), halves **392.5 s / 392.6 s** (**0.0%**, 34 each), dearest `gates-are-testable-is-enumerated.test.ts` at **95.9 s**, **12.2%** of the whole and **17%** of the mutant time. A table whose keys are line numbers is a measurement of a tree, not of an inventory: the same 256 claims, re-keyed, are the only way it can describe this commit |
 | the same battery, four readings | before the aim **3,061.7 s**; aimed in the session that built the first table **924.2 s**; aimed and alone **417.7 s**, then **420.6 s** on the rebuild the table below ships from. The four tables those runs priced total **2,632.1 s**, **1,550.4 s**, **715.8 s** and **724.7 s** -- one tree, one instrument, a **2.2x** spread between the widest pair. What is stable is the ordering: `ci-budget.test.ts` first in all three, and **29% -> 16%** of the mutant time |
 | one claim, two forms | `measure-ci-baseline.mjs:1043` claimed by `ci-budget.test.ts`: **1,375 ms** aimed at its witness, **5,270 ms** against its whole file, **7,868 ms** for the file's baseline |
 | what the previous table priced | 68 claimants, **2,632.1 s** (**2,180.2 s** mutant, **451.9 s** baseline), of which `ci-budget.test.ts` (**620.8 s**, 30 claims) and `publish.test.ts` (**565.0 s**, 29 claims) were **45%** -- and readings 53/54 read the same partition 0.1% and then 30% apart |
-| `core` test suite | **262 files, 7,096 tests passed** (as of this commit) |
+| `core` test suite | **262 files, 7,100 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **266 files, 7,283 tests passed** (as of this commit) |
+| repo test suite | **266 files, 7,287 tests passed** (as of this commit) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
 | mutation | **7 groups, 7 red, 0 survivors**: the aim passed unescaped, an aim trusted without asking whether *the aimed test* failed, the witness read from `fullName`, the table written with no witnesses, the table read only by a shard, a missed aim not counted, the aim not passed to the run -- each restored to an identical `md5` |
-| new tests | **7,082 -> 7,096, +14**: the failed-test reader (the title, the pending tests after a bail, an empty name, a report it cannot parse), an aim that holds and the escaped pattern on its argv, an aim that misses and is measured against the whole file, the witness written into the table, and the two artifacts cases (a name for every claim; a name that belongs to the file that makes the claim), plus the three the round's own separator found: a published count written `7,094`, a bare count written the same way, and two rows with separators that grew where the digit-by-digit reader said they fell, and finding 668's two halves: a file that stops at an earlier red while bailing is credited from the whole-file run, and one that records nothing however it is run stays refused |
+| new tests | **7,082 -> 7,100, +18**: the failed-test reader (the title, the pending tests after a bail, an empty name, a report it cannot parse), an aim that holds and the escaped pattern on its argv, an aim that misses and is measured against the whole file, the witness written into the table, and the two artifacts cases (a name for every claim; a name that belongs to the file that makes the claim), plus the three the round's own separator found: a published count written `7,094`, a bare count written the same way, and two rows with separators that grew where the digit-by-digit reader said they fell, and finding 668's two halves: a file that stops at an earlier red while bailing is credited from the whole-file run, and one that records nothing however it is run stays refused |

@@ -56,7 +56,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { claimedProofs, classify, namesInCode, namesakeOf, redFiles } from './gate-proofs.mjs';
+import { claimedProofs, classify, namesInCode, namesakeOf, redFiles, suiteOwnMs } from './gate-proofs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -367,31 +367,8 @@ async function runTests(files) {
   return {
     outcome: classify(files, { status, stdout: out, stderr: '' }),
     elapsed: performance.now() - started,
-    reported: suiteReported(out),
+    reported: suiteOwnMs(out),
   };
-}
-
-/**
- * What the suite said its own tests cost, in milliseconds, or `null` if it did not say.
- *
- * ## Why the child's own reading is kept beside the timer
- *
- * The two numbers answer different questions and only their difference decides what
- * to do about 374 s. A `vitest` run is a process start -- config load, plugin setup,
- * worker pool -- followed by some tests; the child times the second part and calls it
- * `Duration`. If the sum of those durations is most of the child time, the cost is in
- * the files and the only lever is running fewer of them. If it is a small part, the
- * cost is 69 cold starts and the lever is amortising them -- a different change, in a
- * different place, and the two are indistinguishable from the total alone.
- *
- * `null` rather than `0` when the line is absent, because a run that printed no
- * duration is a run whose silence must not be averaged in as a fast one. The summary
- * counts them separately.
- */
-function suiteReported(out) {
-  const match = /Duration\s+([\d.]+)(ms|s)\b/.exec(out);
-  if (match === null) return null;
-  return match[2] === 's' ? Number(match[1]) * 1000 : Number(match[1]);
 }
 
 /**

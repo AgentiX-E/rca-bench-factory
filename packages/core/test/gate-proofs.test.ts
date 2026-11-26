@@ -9,6 +9,7 @@ import {
   namesInCode,
   redFiles,
   stripAnsi,
+  suiteOwnMs,
   stripComments,
 } from '../../../scripts/gate-proofs.mjs';
 
@@ -282,5 +283,61 @@ describe('the test file a gate names', () => {
     // the predictor, and the two callers -- "is there a namesake?" and "is the namesake
     // silent?" -- would then disagree about what an absent one means.
     expect(namesakeOf('serve-site.mjs')).toBe('test/serve-site.test.ts');
+  });
+});
+
+/**
+ * What the nested run said its own tests cost.
+ *
+ * ## Why the runner's shape is a fixture and not a run
+ *
+ * The line this reads is printed by vitest, and its colour depends on where it is
+ * printed. Finding 669: locally the summary is `Duration  1.02s`, and on a runner it
+ * is `\x1b[2m   Duration \x1b[22m 1.02s\x1b[2m (transform …)\x1b[22m` -- the dim wraps
+ * the label, not the value, so the escape lands exactly between `Duration\s+` and the
+ * digits. Every gate in two consecutive readings printed `0.0 s of that the suites
+ * reported as their own (0 of 35)`, and no local run could reproduce it: a person's
+ * terminal has no colour when the output is piped, and the runner forces it.
+ */
+describe('what the nested run said its own tests cost', () => {
+  /** The summary as this machine prints it. */
+  const PLAIN = [
+    ' Test Files  1 failed (1)',
+    '      Tests  2 failed | 13 passed (15)',
+    '   Duration  1.02s (transform 57ms, setup 45ms, collect 24ms, tests 810ms)',
+  ].join('\n');
+
+  /** The same summary as a runner prints it: dim label, plain value, dim detail. */
+  const COLOURED = [
+    ' \u001b[2mTest Files \u001b[22m \u001b[1m\u001b[31m1 failed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m',
+    ' \u001b[2m     Tests \u001b[22m \u001b[1m\u001b[31m2 failed\u001b[39m\u001b[22m\u001b[90m | \u001b[39m\u001b[1m\u001b[32m13 passed\u001b[39m\u001b[22m\u001b[90m (15)\u001b[39m',
+    ' \u001b[2m   Duration \u001b[22m 1.02s\u001b[2m (transform 57ms, setup 45ms, collect 24ms, tests 810ms)\u001b[22m',
+  ].join('\n');
+
+  it('reads the duration in milliseconds, whichever unit the summary chose', () => {
+    expect(suiteOwnMs(PLAIN)).toBe(1020);
+    expect(suiteOwnMs('   Duration  985ms (transform 1ms)')).toBe(985);
+  });
+
+  it('reads the runner\'s summary as the same number this machine prints', () => {
+    // The finding, as an assertion: one transcript, two spellings, one reading. A
+    // reader that strips for itself cannot be forgotten by a caller, and the two
+    // readers of one run -- this and `classify` -- cannot disagree about it.
+    expect(suiteOwnMs(COLOURED)).toBe(suiteOwnMs(PLAIN));
+  });
+
+  it('reads a value the escapes were wrapped around, not only a label', () => {
+    // The dim can land on either side: `Duration  \x1b[1m2.5s\x1b[22m` is the same
+    // summary as `\x1b[2mDuration\x1b[22m 2.5s`, and a reader that handled only the
+    // shape its author's terminal produced would be a reader for one machine.
+    expect(suiteOwnMs('   Duration  \u001b[1m2.5s\u001b[22m (transform 1ms)')).toBe(2500);
+  });
+
+  it('answers null rather than zero when the run said nothing', () => {
+    // A run that printed no duration is a run whose silence must not be averaged in
+    // as a fast one: the summary counts these separately, and `0` would make a
+    // transcript the reader could not read look like a suite that took no time.
+    expect(suiteOwnMs('Error: cannot find module')).toBeNull();
+    expect(suiteOwnMs('')).toBeNull();
   });
 });

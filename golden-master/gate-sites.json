@@ -936,7 +936,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 454,
+      "line": 431,
       "condition": "parsed === null || Number(parsed[1]) > Number(parsed[2])",
       "diagnostic": "--shard takes <i>/<n> with 1 <= i <= n, not '${spec ?? ''}': a shard nobody can number",
       "status": "proved",
@@ -944,7 +944,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 470,
+      "line": 447,
       "condition": "slice.length === 0",
       "diagnostic": "shard ${String(index)} of ${String(total)} holds no gate out of the ${String(list.length)}",
       "status": "proved",
@@ -952,7 +952,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 509,
+      "line": 486,
       "condition": "all.length === 0",
       "diagnostic": "golden-master/gate-sites.json names no gate, so this run would pass while measuring nothing.",
       "status": "proved",
@@ -960,7 +960,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 668,
+      "line": 645,
       "condition": "held !== null && isAlive(held.pid)",
       "diagnostic": "two runs cannot measure one tree at the same time",
       "status": "proved",
@@ -968,7 +968,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 706,
+      "line": 683,
       "condition": "inFlight.length > 0",
       "diagnostic": "two runs cannot measure one tree at the same time",
       "status": "proved",
@@ -976,7 +976,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 728,
+      "line": 705,
       "condition": "unrestored.length > 0",
       "diagnostic": "could not repair ${gate} from the journal",
       "status": "proved",
@@ -984,7 +984,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 747,
+      "line": 724,
       "condition": "alreadyHollowed.length > 0",
       "diagnostic": "restore it first: a measurement of a mutated tree is a measurement of nothing",
       "status": "proved",
@@ -992,14 +992,14 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 781,
+      "line": 758,
       "diagnostic": "verify-gates-are-testable: FAILED -- interrupted by ${signal};",
       "status": "proved",
       "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 835,
+      "line": 812,
       "condition": "back !== original",
       "diagnostic": "verify-gates-are-testable: FAILED -- could not restore ${gate}",
       "status": "proved",
@@ -1007,7 +1007,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 975,
+      "line": 952,
       "condition": "failed > 0",
       "diagnostic": "${gate} could not be hollowed into valid JavaScript, so it was not measured at all",
       "status": "proved",

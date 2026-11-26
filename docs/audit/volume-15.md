@@ -1052,3 +1052,53 @@ one run in the rare case and nothing otherwise.
 is credited from the whole-file run (`1 claim(s) in 2 run(s)`, `3 run(s)` in the pass line), and a fixture that
 records nothing however it is run stays refused with `never recorded the mutant`. Without the second case the
 repair would be a device for turning an unproved claim into a proved one.
+
+## Finding 669 — the cost line read the raw transcript, and a runner's transcript is coloured
+
+The gate-test battery prints the price of its own run in two halves, and the second half is the one that decides
+what to do next: `cost: 35 run(s), 97.2 s of child time inside 100.3 s of wall clock; 0.0 s of that the suites
+reported as their own (0 of 35)`. The comment above that line states the purpose in the instrument's own words --
+*"if the sum of those durations is most of the child time, the cost is in the files and the only lever is running
+fewer of them; if it is a small part, the cost is 69 cold starts and the lever is amortising them"* -- so the two
+numbers are the whole of the evidence for choosing a change.
+
+The second number was zero, on every gate, in every reading. Two consecutive readings of one tree:
+
+| | child time | the suites' own | reported |
+| --- | --- | --- | --- |
+| reading 54, shard 1 | 101.2 s | **0.0 s** | **0 of 35** |
+| reading 54, shard 2 | 167.6 s | **0.0 s** | **0 of 34** |
+| reading 55, shard 1 | 97.2 s | **0.0 s** | **0 of 35** |
+| reading 55, shard 2 | 232.1 s | **0.0 s** | **0 of 34** |
+
+and the same two shards run here, on the same tree, minutes later: **87.2 s of 107.6** (`35 of 35`) and
+**165.3 s of 185.0** (`34 of 34`). One reader, two answers, and the answer that says "unmeasured" is the one the
+runner printed.
+
+**The cause is one escape, two dozen lines from a repair that had already been made.** On this machine vitest is
+piped and prints `   Duration  1.02s`; on a runner it colourises, and the summary arrives as
+`\x1b[2m   Duration \x1b[22m 1.02s\x1b[2m (transform 57ms, …)\x1b[22m`. The dim wraps the **label**, not the
+value, so the sequence is `Duration` then a space then `\x1b[22m` then the digits: `Duration\s+([\d.]+)` steps over
+the space, meets the escape and gives up. `classify` -- the reader of the same transcript, in the same file -- had
+been repaired for exactly this class twice (findings 147 and 148: a `×` line that begins with an escape), and it
+calls `stripAnsi`. The function that reads the summary did its own matching on the raw text and never did.
+
+**The repair moves the reader and strips inside it.** `suiteOwnMs` lives in `scripts/gate-proofs.mjs` beside
+`classify`, and it strips for itself rather than asking its caller to -- the defect was a caller that forgot, so the
+shape that cannot be forgotten is the one to ship. The gate's own copy is deleted, which is the second half of the
+fix: two readers of one transcript that keep their own patterns are two readers that can disagree, and this file
+had already recorded where that ends.
+
+**Falsification.** Four cases, and two of them are the runner's shape: the dim on the label, and the escapes the
+other way round (`Duration  \x1b[1m2.5s\x1b[22m`), because a reader written against one terminal's spelling is a
+reader for one machine. The other two hold the ends that must not be confused with a reading: `985ms` is read as
+**985** rather than assumed seconds, and a transcript with no summary is **`null`** rather than `0`, so silence
+cannot be averaged in as a fast suite. Restoring the raw read turns exactly the two colour cases red --
+`expected null to be 1020` and `expected null to be 2500` -- and the file is restored byte-identical (`md5`).
+
+**What this does not claim.** Not that the number was needed to choose the next cut: the local readings already say
+**81%** and **89%** of the child time is the suites' own, so the lever is fewer tests rather than fewer process
+starts, and that conclusion did not wait for the runner. What is claimed is narrower and worse: the half of the
+line that exists to name the lever printed `0.0 s` in place of `unmeasured` for two readings, and a summary that
+prints a zero where it means "could not read it" is the same defect as a gate that passes on a number it never
+measured -- a sentence true of the file and silent about the tree.

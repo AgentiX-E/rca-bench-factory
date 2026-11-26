@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 262 core + 4 cli |
-| Test lines | 122,517 core + 3,242 cli |
-| Tests | 7,096 core + 187 cli |
+| Test lines | 122,574 core + 3,242 cli |
+| Tests | 7,100 core + 187 cli |
 | Tracked files | 685 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -1172,12 +1172,21 @@ is a row about rather than paraphrase one that no `grep` will find.
   13.7%**, and the run's wall clock still rose **483 s -> 512 s** because the longest job is now `gates-audit` at
   **502 s**. What is left is the head of the queue, and the reading re-ordered it: the audit shard at **236 s**
   inside the run's longest job, then the gate-test battery at **197 s**, which is 52% of `batteries`' **376 s**.
-  `[open: the price of a claim is now its own witness -- 3 061.7 s -> 924.2 s within one session, 417.7 s alone for
-  256 claims, and 730 s -> 244 s across the runner's two shards -- so the next cut is the audit shard's 236 s, which
-  is one command over 69 subjects and has no claim to aim at, then the gate-test battery's 197 s, which cannot be
-  split without its report becoming a report per shard; and the division is exact only in the units it was measured
-  in, since the table reads 0.0% where the runner reads 13.7%, which leaves open whether the table should be rebuilt
-  from the runner's own per-file rows -- the second history `checkShardCosts` already accepts]`
+  Reading 56 (`45832206778`, **9 of 9**) then moved every job on a tree whose commands did not change --
+  `batteries` **376 -> 532 s**, `gates-audit` **502 -> 400 s**, `verify` **417 -> 281 s** -- and read the same shard
+  pair **109 / 131 s**, **16.8%** apart with the halves swapped. So the queue that reading 55 read is not the queue
+  reading 56 reads, and what survives both is the *item*: the gate-test battery, **197 + 236 s** of runner time in
+  reading 55 and **145 + 174 s** in reading 56, is the largest single thing in the workflow on either reading.
+  `[open: the next cut is inside that battery, and the measurement that names it is the battery's own cost line --
+  81% and 89% of its child time is the tests' own, not the 69 process starts, so the lever is running fewer tests
+  per gate: the witness mechanism v3.158 built for the sites battery, applied to 69 gates that each run every test
+  in the files that name them, with a stale witness falling back to the whole file as that round's does. What that
+  leaves open is the split: the two shards are positional and read 97 s against 232 s here, and a table of per-gate
+  seconds would balance them by the same LPT rule the sites battery uses -- one artifact, two uses (a price for the
+  division and a witness for the aim) -- but the price has to be readable first, which is finding 669: the cost
+  line printed 0.0 s of 97.2 on the runner because a `\x1b[22m` sits between `Duration\s+` and the digits, and
+  `suiteOwnMs` now strips for itself. A queue read from one run is a queue read from one session, which is why this
+  entry no longer names an order]`
 
 ## Pass log
 

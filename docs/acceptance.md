@@ -1147,6 +1147,18 @@ one round.
   **179 s / 154 s** -- **14.0%**, inside the 15%, on an install step that took 24 s against 16 s.
   What is claimed is therefore the rule and the budget on the quantity the workflow spends, not a
   division that stays balanced on a machine it was not measured on.
+- **A price has to be readable before it can be a reading, and the second half of one was not.**
+  (finding 669) The gate-test battery prints its own cost as the child time it measures and the
+  suites' own time it reads out of the child's transcript, and the second half decides whether the
+  next cut is fewer process starts or fewer tests. On a runner it printed **0.0 s of 97.2**
+  (`0 of 35`) and **0.0 s of 232.1** (`0 of 34`) in two readings, while the same two shards read
+  **87.2 s of 107.6** (`35 of 35`) and **165.3 s of 185.0** (`34 of 34`) on this box. The cause is
+  one escape: a runner's vitest colourises, and `\x1b[2m   Duration \x1b[22m 1.02s` puts the
+  escape between `Duration\s+` and the digits. The reader is now `suiteOwnMs`, in `scripts/gate-proofs.mjs`, strips for itself so no caller can
+  forget it, and the gate's own copy is deleted so two readers of one transcript cannot disagree.
+  The claim is that a summary which cannot read its own line says `null` rather than `0`, and that
+  the runner's spelling and this machine's produce the same number -- four cases, two of them the
+  runner's shapes, falsified by restoring the raw read.
 - **The price that moved was a claim's, so the price of a claim is now the test that can see it**
   (v3.158). A mutant run's verdict is an exit code, so it was a run of the claimant: a file with
   thirty claims cost thirty runs of itself, and the table's rows were therefore the product of a
