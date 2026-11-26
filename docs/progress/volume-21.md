@@ -2227,6 +2227,27 @@ Two things this red taught that no local run could:
   false: what made this red legible in one request was reading it rather than inferring it from a step's
   name.
 
+The next run (`45745150199`, on `6faece8`) answered the repair and found one more thing the round had never
+declared. `Lint` was **green in 143 s**, from 301 s red -- the witness and the pool together. The red had moved
+to `Every test's cost against the budget it declares`, one step further down, and it was mechanical:
+
+```
+check-test-budgets: site-proofs.test.ts: its slowest test takes 1958 ms and the file states no budget,
+so its verdict is decided by vitest's 5000 ms default
+```
+
+A file within a fifth of the default has to state a number, and this file had never stated one because on this
+box no test in it was near the floor: the concurrency case reads **1 561 ms** here and **1 958 ms** on the
+runner. It now declares `SUITE_BUDGET_MS = 30_000` on all twelve of its suites -- the number nine other files
+in this tree use, and 15x the worst reading rather than the 2x the rule asks for, because what the case spends
+is other processes' start-up.
+
+That step also turned its floor on `step-process.test.ts`, on this box only: **3 444 ms** against a declaration
+of **6 000 ms** chosen as 2.1x the three readings the file had seen (1 635, 2 091, 2 873 ms). A fourth reading
+is 1.74x, so the declaration was inside the rule's margin on the three it was sized from and outside it on a
+fourth -- the shape the file's own comment predicted, one reading later. It is **8 000 ms** now, 2.3x of the
+slowest, with the fourth reading written beside the other three.
+
 ### Mutations
 
 | mutation | red |
@@ -2268,5 +2289,5 @@ Two things this red taught that no local run could:
 | new tests | **7,060 -> 7,065, +5**: the audit's per-subject cost and the parts adding to the whole, the shard partition with its two refusals, the `--jobs` count it cannot honour, the pool's overlap measured from the marks its children write, and the witness armed per file with each child asked for one worker |
 | the audit, as run | **69 runs**, 218.8 s of child time in 223.1 s of wall clock; **190.9 s** reported by the suites (69 of 69); **233** file executions over **93** distinct files; dearest `check-official.mjs` at **26.1 s (12%)** |
 | the pair, `verify-site-proofs` | **283.0 s -> 124.3 s** on one tree, back to back, `--jobs 1` against the default; then, after finding 663, **124.3 s -> 79.4 s** at the default eight and **151.6 s -> 92.5 s** under `taskset -c 0-3`; 68 claimant files, the same verdicts every time, and the witness armed for **18** of them |
-| mutation | **7 groups, 7 red cases, 0 survivors**, each restored to an identical `md5` |
+| mutation | **7 groups, 7 red cases, 0 survivors**, each restored to an identical `md5`; the second CI run's red is answered by a declaration rather than by a mutation, because it was a missing number and not a missing branch |
 | the inventory | **149** sites, up 2: the shard spec and the empty slice, each proved by the case that drives it |

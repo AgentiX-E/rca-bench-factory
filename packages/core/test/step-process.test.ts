@@ -192,16 +192,18 @@ beforeAll(async () => {
  * that differed by documentation only, and the number that decided the difference was
  * vitest's 5 000 ms default, which this file never wrote.
  *
- * **6 000 ms**, which is 2.1x the slowest of the three readings the same tree has produced
- * -- 1 635 ms, 2 091 ms and **2 873 ms** -- and 6.4x the isolated one. The reading is not a
- * property of the file alone: this box is four cores inside a shared host, and the three
- * numbers were taken within one afternoon at load averages between 1 and 9. The budget has
- * to cover the slowest of them, because the rule divides by a number the box decides, and
- * the number is not a ceiling until it does. Below vitest's default (5 000 ms) it no longer
- * sits, and that is the cost of a 2.1x margin on a slow day: a hang is caught at six
- * minutes rather than five.
+ * **8 000 ms**, which is 2.3x the slowest of the four readings the same tree has produced
+ * -- 1 635 ms, 2 091 ms, 2 873 ms and **3 444 ms** -- and 8.5x the isolated one. The reading
+ * is not a property of the file alone: this box is four cores inside a shared host, and the
+ * numbers were taken at load averages between 1 and 9. The budget has to cover the slowest of
+ * them, because the rule divides by a number the box decides, and the number is not a ceiling
+ * until it does. The fourth reading arrived at v3.155, when the same tree reported 3 444 ms
+ * under the coverage run and the 6 000 ms declared here was 1.74x of it -- inside the rule's
+ * margin on the three readings it was sized from, and outside it on a fourth. Below vitest's
+ * default (5 000 ms) it no longer sits, and that is the cost of a 2.3x margin on a slow day: a
+ * hang is caught at eight minutes rather than five.
  */
-const SUITE_BUDGET_MS = 6_000;
+const SUITE_BUDGET_MS = 8_000;
 
 describe('one step, run as CI would run it', { timeout: SUITE_BUDGET_MS }, () => {
   it('runs the body from the step the plan produced and returns', async () => {

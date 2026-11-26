@@ -28,6 +28,23 @@ import {
 } from '../../../scripts/site-proofs.mjs';
 
 /**
+ * The budget every suite in this file is run under.
+ *
+ * `check-test-budgets` refused this file on CI run `45745150199`: its slowest test --
+ * the concurrency case, which starts eight children that each sleep 250 ms -- took
+ * **1 958 ms** against vitest's 5 000 ms default, and a file within a fifth of that
+ * default has to state a number. The readings, on the box and on the runner: the case
+ * is **1 561 ms** here and **1 958 ms** there, and what it spends is other processes'
+ * start-up, which the runner charges more for.
+ *
+ * 30 000 ms is the number nine other files in this tree declare, and it is 15x the
+ * worst reading rather than the 2x `check-test-budgets` requires: the margin is for the
+ * machine, not for the test, because the same bytes are up to 3.1x slower under the
+ * suite's own workers.
+ */
+const SUITE_BUDGET_MS = 30_000;
+
+/**
  * A proof claim is a statement that a test makes an exit *fire*, and until this
  * round nothing asked whether it did.
  *
@@ -78,7 +95,7 @@ const TRACE = [
   '/repo/packages/core/test/check-cli-reference.test.ts:88',
 ].join('\n');
 
-describe('site-proofs · reading an exit trace', () => {
+describe('site-proofs · reading an exit trace', { timeout: SUITE_BUDGET_MS }, () => {
   it('keeps the site of every frame and drops the test frames', () => {
     // A test file calls `process.exit` too -- vitest's worker does, and so does a
     // fixture that gives up early. Those frames are not failure sites of a gate,
@@ -114,7 +131,7 @@ describe('site-proofs · reading an exit trace', () => {
   });
 });
 
-describe('site-proofs · what the inventory claims', () => {
+describe('site-proofs · what the inventory claims', { timeout: SUITE_BUDGET_MS }, () => {
   const inventory = {
     sites: [
       { script: 'scripts/a.mjs', line: 4, status: 'proved', provedBy: 'packages/core/test/a.test.ts' },
@@ -290,7 +307,7 @@ describe('site-proofs · what the inventory claims', () => {
   });
 });
 
-describe('site-proofs · what a run started, and whether it could be seen', () => {
+describe('site-proofs · what a run started, and whether it could be seen', { timeout: SUITE_BUDGET_MS }, () => {
   const MIXED = [
     'spawn traced scripts/a.mjs',
     'spawn blind scripts/b.mjs',
@@ -325,7 +342,7 @@ describe('site-proofs · what a run started, and whether it could be seen', () =
   });
 });
 
-describe('site-proofs · what a red run says about itself', () => {
+describe('site-proofs · what a red run says about itself', { timeout: SUITE_BUDGET_MS }, () => {
   const REPORT = [
     '',
     ' RUN  v3.2.4 /repo/packages/core',
@@ -583,7 +600,7 @@ describe('site-proofs · what a red run says about itself', () => {
   });
 });
 
-describe('site-proofs · the hook records what the parser reads', () => {
+describe('site-proofs · the hook records what the parser reads', { timeout: SUITE_BUDGET_MS }, () => {
   it('writes the line of the exit that was taken, and nothing else', () => {
     // The hook and the parser are one contract written in two languages, so it is
     // exercised rather than described: a child is started with the hook installed,
@@ -794,7 +811,7 @@ function throughHelper(sight: 'traced' | 'blind'): { status: number; text: strin
   }
 }
 
-describe('site-proofs · the mutant, which is a value and not an edit', () => {
+describe('site-proofs · the mutant, which is a value and not an edit', { timeout: SUITE_BUDGET_MS }, () => {
   /** A gate with two exits, run once with one of them hollowed. */
   function withHollow(hollow: string | null, pick: 'one' | 'two'): { status: number; text: string } {
     const dir = mkdtempSync(join(tmpdir(), 'site-proofs-hollow-'));
@@ -875,7 +892,7 @@ describe('site-proofs · the mutant, which is a value and not an edit', () => {
   });
 });
 
-describe('site-proofs · the claims grouped by the file that makes them', () => {
+describe('site-proofs · the claims grouped by the file that makes them', { timeout: SUITE_BUDGET_MS }, () => {
   it('groups, sorts by file, and keeps every claim', () => {
     // Both gates ask this question, and `--list` prints the answer: a grouping that
     // sorted one list and not the other would make two plans that cannot be compared.
@@ -890,7 +907,7 @@ describe('site-proofs · the claims grouped by the file that makes them', () => 
   });
 });
 
-describe('site-proofs · the hook through a spawn, which was an assumption until now', () => {
+describe('site-proofs · the hook through a spawn, which was an assumption until now', { timeout: SUITE_BUDGET_MS }, () => {
   it('records an exit taken by a gate that a helper script started', () => {
     // Two levels, because one level is what every other fixture already does and the
     // claim under test is about inheritance. If this failed, every claim proved
@@ -1146,7 +1163,7 @@ function widestOverlap(journal: string): number {
   return widest;
 }
 
-describe('scripts/verify-site-proofs.mjs · the experiment, end to end', () => {
+describe('scripts/verify-site-proofs.mjs · the experiment, end to end', { timeout: SUITE_BUDGET_MS }, () => {
   it('passes when each claimed exit fired in the file that claimed it', () => {
     const tree = fixture([{ line: 1, file: 'packages/core/test/one.test.ts' }]);
     try {
@@ -1432,7 +1449,7 @@ describe('scripts/verify-site-proofs.mjs · the experiment, end to end', () => {
  * second as the first would report a file as giving its tests 30 s when it gives the
  * process it starts 30 s. Both appear in this tree, often in one file.
  */
-describe('site-proofs · the longest test a report names', () => {
+describe('site-proofs · the longest test a report names', { timeout: SUITE_BUDGET_MS }, () => {
   /** The shape vitest's json reporter writes, cut to the three fields this reader uses. */
   const report = (tests: { name: string; duration: unknown }[]): string =>
     JSON.stringify({
@@ -1479,7 +1496,7 @@ describe('site-proofs · the longest test a report names', () => {
   });
 });
 
-describe('site-proofs · the budget a claimant declares', () => {
+describe('site-proofs · the budget a claimant declares', { timeout: SUITE_BUDGET_MS }, () => {
   it('reads a literal budget and a named one, and reports the tighter', () => {
     const source = [
       "import { describe, it } from 'vitest';",
@@ -1578,7 +1595,7 @@ describe('site-proofs · the budget a claimant declares', () => {
  * answer an entry whose `name` is the empty string -- a test that had not yet reported a name --
  * and the sentence then has to fall back to the file rather than print empty backticks.
  */
-describe('site-proofs · the sentence for what a spent budget left running', () => {
+describe('site-proofs · the sentence for what a spent budget left running', { timeout: SUITE_BUDGET_MS }, () => {
   it('says there was no name rather than naming nothing', () => {
     expect(hungTestClause([])).toBe('its own output names no test, only the budget');
   });
