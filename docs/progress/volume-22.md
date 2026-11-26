@@ -1412,17 +1412,31 @@ What the repair does not do is choose the next cut. The local halves already ans
 the child time is the tests' own, so the lever is running **fewer tests per gate** -- the witness mechanism this
 round built for the sites battery, applied to 69 gates that each run every test in the files that name them.
 
+**Reading 57: the repair, read on the runner.** The run of the commit that ships it (`45837753166` on `ca27c0b`,
+**9 of 9**, **467 s**) is the fifty-seventh reading, and the line it was for now reads
+**80.1 s of 96.6** (`35 of 35`) and **177.1 s of 197.7** (`34 of 34`) where the two readings before it read
+**0.0 s of 97.2** and **0.0 s of 232.1**. That is **83%** and **90%** of the child time in the tests themselves,
+which is the same answer this box gave (**81%** and **89%**) and the first time the runner has given one at all:
+the lever is fewer tests per gate, and the number that says so is no longer a zero.
+
+The queue moved again, and the point is that it keeps moving: `gates-audit` **463 s**, `batteries` **351 s**,
+`verify` **340 s**, `batteries-heavy` **275 s**, `sensitivity-shard` **203 s**. Three readings of one round now
+put three different jobs first -- `gates-audit` (55), `batteries` (56), `gates-audit` (57) -- on trees whose
+commands differ only by the repair of a reader. A queue is a reading of a session, and the only thing this
+ledger will keep saying about it is which item is largest on every reading: the gate-test battery.
+
 ### Readings
 
 > Ledger for `v3.158`.
 
 | item | value |
 | --- | --- |
-| CI | run `45832206778` on `36610f7`: **9 of 9 jobs success**, 90 steps, reading **56**, **536 s** of wall clock -- the tree of this round's own commit, and the run that read the repair of its two bounds. Its predecessor `45828223563` (reading **55**) is the run that priced a claim by its witness: **131 / 113 s** against reading 54's **427 / 303 s**. This round's reading moved every job on a tree whose commands did not change -- `batteries` **376 -> 532 s**, `gates-audit` **502 -> 400 s**, `verify` **417 -> 281 s** -- and read the shard pair **109 / 131 s**: **16.8%** apart the other way round, where reading 55 read **13.7%** |
+| CI | run `45837753166` on `ca27c0b`: **9 of 9 jobs success**, 90 steps, reading **57**, **467 s** of wall clock -- the run of the commit that repairs finding 669, and the first reading the repaired line has: **80.1 s of 96.6** (`35 of 35`) and **177.1 s of 197.7** (`34 of 34`) where readings 55 and 56 read **0.0 s of 97.2** (`0 of 35`) and **0.0 s of 232.1** (`0 of 34`). Its predecessor `45832206778` (reading **56**) is the same tree minus the repair, and the two of them are why no queue is quoted: `batteries` **376 -> 532 -> 351 s**, `gates-audit` **502 -> 400 -> 463 s**, `verify` **417 -> 281 -> 340 s** |
 | the aim, read on the runner | reading 54 -> 55, the same two jobs and the same command: `sensitivity` **427 s -> 131 s**, `sensitivity-shard` **303 s -> 113 s**; the pair **730 s -> 244 s** of the runner's time, where this box read **3,061.7 s -> 924.2 s** within one session and **420.6 s** alone |
 | what the runner says about the division | the table divides **362.3 s / 362.4 s** (**0.0%**); the runner's work steps read **152 s / 113 s** (**25.7%**, the heavier one carrying the **21 s** exemption battery) and its two jobs read **179 s / 154 s** (**14.0%**, inside the 15% the round commits to, because shard 2's install took 24 s against 16 s). The same pair read **30%** in reading 54 by the same arithmetic |
 | the same halves, read again | reading 55 **131 / 113 s** with the first shard heavier, reading 56 **109 / 131 s** with the second one heavier: **13.7%** and **16.8%** apart on a battery nothing changed, so the residual between the table's **0.0%** and the runner is the runner's noise rather than a bias a table can be repaired for |
 | the battery's own cost line | what the gate-test battery said its suites spent, here and on the runner: **87.2 s of 107.6** (`35 of 35`) and **165.3 s of 185.0** (`34 of 34`) measured on this box, against **0.0 s of 97.2** (`0 of 35`) and **0.0 s of 232.1** (`0 of 34`) on the runner in two readings -- finding 669, an escape between `Duration\s+` and the digits, and the half of the line that names the lever was unreadable where the lever is paid for |
+| the repaired line, read on the runner | reading 57: **80.1 s of 96.6** (`35 of 35`) and **177.1 s of 197.7** (`34 of 34`) -- **83%** and **90%** of the child time inside the tests, against this box's **81%** and **89%**, and against **0.0 s** in the two readings before it. The lever the line exists to name is the tests, which is why the next cut is a witness per gate rather than a shard or a boot |
 | the run's wall clock | **512 s**, 29 s more than reading 54's **483 s**: the longest job moved from `sensitivity` (**473 s -> 179 s**) to `gates-audit` (**399 s -> 502 s**). Every job in the pair moved by more than the aim saved -- `verify` 295 -> 417 s, `backend` 359 -> 36 s -- which is why the ledger quotes the shard pair and not the run |
 | the queue, as two readings read it | reading 55 put `gates-audit` (**502 s**) first and reading 56 put `batteries` (**532 s**) first; what survives both is the item rather than the order -- the gate-test battery (**197 + 236 s** in reading 55, **145 + 174 s** in reading 56), then `verify`'s coverage step (**204 s** of its **281 s**), then the audit shard |
 | the battery, before the aim | 256 mutant runs, **3,061.7 s** of child time inside **7.8 min** of wall clock; the dearest claimant **29%** of that |
