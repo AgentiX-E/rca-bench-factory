@@ -441,7 +441,7 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 261 core + 4 cli |
-| Test lines | 121,493 core + 3,242 cli |
+| Test lines | 121,499 core + 3,242 cli |
 | Tests | 7,065 core + 187 cli |
 | Tracked files | 683 |
 
@@ -1160,8 +1160,9 @@ is a row about rather than paraphrase one that no `grep` will find.
 
 - O-143 · **The workflow's critical path is a queue of eighteen steps, and sharding one of them moved the queue rather than the run.**
   v3.155 split `Every gate can be shown to fail` into two shards and gave the second one a job, which takes the step
-  from 374 s to about half of that inside `batteries` -- and leaves that job at roughly **850 s**, because the other
-  eighteen steps add up to 662 s on their own. The floor of a job that runs nineteen independent things is the sum of
+  from 374 s to about half of that inside `batteries` -- and left that job at **766 s** on the first run that
+  measured the split (both shards in it, 137 s and 234 s beside each other), because the other eighteen steps add
+  up to 662 s on their own. The floor of a job that runs nineteen independent things is the sum of
   nineteen numbers, and the two that remain worth sharding are the gate-test battery (**306 s**, which has no shard
   support and a published report that a shard would halve) and the fetch-official retry battery (**100 s**).
   `[open: whether the next cut is a second shard pair for the gate-test battery -- which needs the battery to partition

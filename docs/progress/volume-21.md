@@ -2248,6 +2248,28 @@ is 1.74x, so the declaration was inside the rule's margin on the three it was si
 fourth -- the shape the file's own comment predicted, one reading later. It is **8 000 ms** now, 2.3x of the
 slowest, with the fourth reading written beside the other three.
 
+### The promise, settled
+
+`node scripts/measure-ci-baseline.mjs 45748356774` recorded **9 jobs and 90 steps** and printed the one
+sentence the round was waiting for: *1 job declaration(s) are now measured and can be deleted*. What replaces
+the numbers the promise carried is a multiple of a measurement, which is the only kind of number the rules
+accept:
+
+| | promised | measured | settled |
+| --- | --- | --- | --- |
+| `gates-audit` ceiling | 26 min | 264 s (the job) | **24 min** |
+| its shard step | 13 min | 234 s | **10 min** |
+
+10 is 2.6x this shard's own first day; 24 is what `R13` allows over the three bounds the job holds (7 + 3 + 10)
+plus the prefix allowance, and `R13` asks for a ceiling the bounds fit *inside*, so the sum is the floor of the
+number rather than the number. The file went with the promise: `ci-declarations.json` exists for one round --
+the one that adds a job and cannot yet measure it -- and the gate says so in its own words when it is left
+behind.
+
+The reading is the **50th**, and the summary's own sentence moved with it: from `1 job(s) declared and awaiting
+their first run` to `no job is declared unmeasured`, 50 readings from run 42131836805 to 45748356774, 41 steps
+carrying a bound of their own.
+
 ### Mutations
 
 | mutation | red |
@@ -2281,7 +2303,7 @@ slowest, with the fourth reading written beside the other three.
 
 | item | value |
 | --- | --- |
-| CI | run `45695988542` on `60aa169e`, attempt 2: **8 of 8 jobs success** -- the run whose two 374 s and 306 s readings reproduced reading 48 exactly, and the one this round's recording is taken from. The ninth job this round adds has not been recorded: `golden-master/ci-declarations.json` promises it, and the run that settles that promise is the one this repair ships into, not the round's own commit, which came back red and is read in the section above |
+| CI | run `45748356774` on `631fcb261`: **9 of 9 jobs success** -- the first run that measured the job this round added, and the one this round's recording (reading **50**) is taken from. Its two predecessors on the round's own commits came back 8 of 9, and the section above reads both: `Lint` 301 s red on a stall budget, then 143 s green with the red moved to a missing budget declaration. The ninth job's own first day is **264 s**, the shard inside it **234 s** |
 | `core` test suite | **261 files, 7065 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
 | repo test suite | **265 files, 7252 tests passed** (as of this commit) |
