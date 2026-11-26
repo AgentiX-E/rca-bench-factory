@@ -2321,12 +2321,124 @@ never existed as a commit.
 | item | value |
 | --- | --- |
 | CI | run `45748356774` on `631fcb261`: **9 of 9 jobs success** -- the first run that measured the job this round added, and the one this round's recording (reading **50**) is taken from. Its two predecessors on the round's own commits came back 8 of 9, and the section above reads both: `Lint` 301 s red on a stall budget, then 143 s green with the red moved to a missing budget declaration. The ninth job's own first day is **264 s**, the shard inside it **234 s**. Its successor `45751356209` came back 4 of 9 on a tracked-file count, and the run after the one-character fix is reading **51**: `45754575653`, **9 of 9**, 90 steps, 51 readings from run 42131836805 to 45754575653 |
-| `core` test suite | **261 files, 7065 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **265 files, 7252 tests passed** (as of this commit) |
+| `core` test suite | **261 files, 7065 tests passed** (at v3.155) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.155) |
+| repo test suite | **265 files, 7252 tests passed** (at v3.155) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
 | new tests | **7,060 -> 7,065, +5**: the audit's per-subject cost and the parts adding to the whole, the shard partition with its two refusals, the `--jobs` count it cannot honour, the pool's overlap measured from the marks its children write, and the witness armed per file with each child asked for one worker |
 | the audit, as run | **69 runs**, 218.8 s of child time in 223.1 s of wall clock; **190.9 s** reported by the suites (69 of 69); **233** file executions over **93** distinct files; dearest `check-official.mjs` at **26.1 s (12%)** |
 | the pair, `verify-site-proofs` | **283.0 s -> 124.3 s** on one tree, back to back, `--jobs 1` against the default; then, after finding 663, **124.3 s -> 79.4 s** at the default eight and **151.6 s -> 92.5 s** under `taskset -c 0-3`; 68 claimant files, the same verdicts every time, and the witness armed for **18** of them |
 | mutation | **7 groups, 7 red cases, 0 survivors**, each restored to an identical `md5`; the second CI run's red is answered by a declaration rather than by a mutation, because it was a missing number and not a missing branch |
 | the inventory | **149** sites, up 2: the shard spec and the empty slice, each proved by the case that drives it |
+
+## v3.156 — a recording binds a step to a job, so a queue could not be rebalanced
+
+The fifty-first reading put the four queues on one line: `batteries` **738 s**, `sensitivity-shard` **497 s**,
+`verify` **375 s**, `gates-audit` **270 s**. A job's wall clock is the sum of its steps, and `batteries`' 738 s
+is four batteries -- the audit's first shard **137 s**, fetch-official retry **118 s**, the gate-test battery
+**264 s**, doc-count shapes **78 s** -- plus the round-trip record at **57 s**, four small ones under a minute,
+and **25 s** of prefix. Four of those members are independent of each other and of everything else in the job,
+so the repair is a move rather than a shard: **253 s** of batteries into the job that had 270 s to spare.
+
+The move was refused, and the refusal is the finding.
+
+### Finding 664: the recording is keyed by job, and a step can change jobs
+
+```
+the recording holds `Fetch-official retry battery (no survivors)` for `batteries`, which is not a step of
+that job: a recording that outlives its step describes a tree that no longer exists
+```
+
+Both halves of that sentence are true and only one of them was ever a rule. The entry *is* evidence of a tree
+that no longer exists; it is also the only measurement of that command the file holds, and the bound in the new
+job has to be a multiple of something. `--borrow` exists for exactly this shape and refuses it for the reason
+that makes it right -- *"the seconds describe the same commands, but a bound has to fit the job that will
+enforce it, so a borrow is only a substitute for a measurement inside one budget"* -- because a move is defined
+by the two jobs holding different ceilings.
+
+So the state had no sentence, and the only road left was the one this repository does not take: land the move
+in a commit whose gate is red, then re-record. `golden-master/ci-declarations.json` now carries a `moved` list,
+which is `R9`'s promise one level down: it names the job that holds the step, the job whose recording measured
+it, the bound, and why. It excuses the stale entry for one round, enters the new job's pending set so every
+`R8` check applies unchanged, and expires the moment the job that holds the step has measured it there -- three
+behaviours, no new rule, and each of the three is a case in `ci-budget.test.ts`.
+
+### The arithmetic under the ceiling had the same blind spot
+
+`R13` asks for `bounds + 2 x overhead`, and overhead is `total - the steps`. Three steps leave, `measured` falls
+by 253 s, and `total` still holds them -- so the job that gave a step away reports the step's cost as **setup**
+and argues a ceiling from seconds nothing will spend there again. `batteries` was refused at 45 minutes and
+asked for **54**. The departed seconds come off both sides of that subtraction now, and the same tree asks for
+**46**. It is finding 619's shape one level in: the number a ceiling is computed from has to be a number about
+the job as it is, not as it was.
+
+### The queue, after the move
+
+| | before | after |
+| --- | --- | --- |
+| `batteries` | 738 s (ceiling 56) | **485 s** (ceiling 46) |
+| `gates-audit` | 270 s (ceiling 24) | **523 s** (ceiling 34) |
+| the two queues together | 1 008 s | 1 008 s |
+
+The next reading is what says whether 485 and 523 are what the runner does; this round can only state the
+arithmetic and hand the gate the numbers it derives from it.
+
+### Five things this round did wrong
+
+- **The first move script swallowed the step after each one.** The block boundary was "forward to the next
+  `- name:`", which takes the *next* step's comment paragraph with it -- so the gate-test battery's rationale
+  went with the doc-count battery. YAML parsed, the step count was right, and only a diff of the parsed jobs
+  showed it. `git checkout` and a rule that a block ends at a blank line is the repair; the deletion was
+  re-run against a clean file.
+- **`--borrow` looked like the instrument and its refusal is the finding.** The reasoning "a step's cost does
+  not depend on which job it sits in" is true and insufficient, and the recorder's own sentence says why better
+  than the round did before it read it.
+- **The overhead double-count was found by the gate, not by me.** The ceiling asked for 54 where 46 is right,
+  and the 253 s it was charging as setup was the three steps the round had just moved.
+- **A global replace of `timeout-minutes: 45` would have taken `batteries-heavy` with it.** The assertion that
+  the string occurred once refused, and the edit became a line index.
+- **The count measurement refuses a red run, and the run was red because the counts were stale.** The same
+  loop `v3.154` recorded: arithmetic first (7,065 + 5), then the snapshot, then the measurement that confirms
+  it. The suite's own `unit-nouns` case is what noticed, and it noticed by running `check-repository-table`.
+
+### Mutations
+
+| mutation | red |
+| --- | --- |
+| no excusal for a moved step | 3, and the gate refuses the shipped tree |
+| every stale entry excused | 3 |
+| departed seconds counted as overhead | 2, and the gate asks for 54 min |
+| a move may name its own job | 1 |
+| a moved step is not pending in its new job | 12, and the gate refuses the shipped tree |
+
+**5 groups, 5 red, 0 survivors**, each restored to an identical `md5`.
+
+### Left open
+
+- `O-143` · **The workflow's critical path is a queue of steps, and this round moved the tail rather than
+  splitting the head.** `batteries` is **485 s** now and the gate-test battery inside it is **264 s** -- 54% of
+  the job, and the last member whose cost is a count. Sharding it needs the report it publishes to be a report
+  per shard, because a report of half the injections is exactly the "total that cannot be divided" finding 657
+  removed. Both queues are within 40 s of each other, so the next cut is decided by a reading and not by a
+  preference.
+  `[open: whether the gate-test battery's report should be sharded with it -- one file per shard, published to
+  the same branch, which needs the publisher to survive two jobs writing one ref -- or whether the cheaper cut
+  is now the `sensitivity` pair, whose two shards read 244 s and 478 s on one command and are therefore the
+  widest imbalance the workflow still has]`
+
+### Readings
+
+> Ledger for `v3.156`.
+
+| item | value |
+| --- | --- |
+| CI | run `45754575653` on `37c77e9c`: **9 of 9 jobs success**, 90 steps, reading **51** -- the run this round's arithmetic is argued from, and the newest recording the round may cite. The run after it measured a tree whose only difference is the recording itself, so it cannot be recorded against this one: the recorder compares the two trees in both directions and refuses a number the tree on disk has no step for |
+| `core` test suite | **261 files, 7070 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **265 files, 7257 tests passed** (as of this commit) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
+| new tests | **7,065 -> 7,070, +5**: the move that lets a step change jobs, the stale entry no move explains, a move into a job that does not hold the step and two that move nothing, a step promised twice with a move that has no argument or no number, and the move that expires when its new job has measured it |
+| the queues, as measured | reading 51: `batteries` **738 s** (`Gate-test` 264, audit shard 1 137, fetch-official 118, doc-count 78, round-trip 57, prefix 25), `gates-audit` **270 s** (shard 2 at 250) |
+| the move | **253 s** from `batteries` to `gates-audit`: 738 -> **485** and 270 -> **523**, at a cost of no new job, no second prefix and no new step name |
+| the ceilings | `batteries` **56 -> 46 min** (42 of bounds plus the 3-minute allowance, and the departed seconds no longer counted as overhead), `gates-audit` **24 -> 34 min** (30 plus the allowance) |
+| mutation | **5 groups, 5 red, 0 survivors**, each restored to an identical `md5` |

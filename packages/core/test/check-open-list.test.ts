@@ -1348,11 +1348,13 @@ describe('docs · a section that is only entries is a record, whatever its headi
     // number that moved silently is the defect finding 588 is about. The cost is one edit per round,
     // paid where the round is written. v3.155 also moved `wrote none` for the first time in a
     // while -- the round that had opened nothing now opens `O-143`, so the count of rounds that
-    // wrote a record with no rows in it falls by one while the record count rises by one.
+    // wrote a record with no rows in it falls by one while the record count rises by one. v3.156
+    // moved only the left-hand numbers: one more round, one more record under it, and `wrote none`
+    // stayed at seventeen because that round also wrote a record.
     const shipped = spawnSync('node', [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
     expect(shipped.status, shipped.stdout + shipped.stderr).toBe(0);
     expect(shipped.stdout).toContain(
-      '259 record(s): 234 under a round and 25 under none; 250 `vX.YY` round(s) + 1 addendum(s), 17 of them wrote none',
+      '260 record(s): 235 under a round and 25 under none; 251 `vX.YY` round(s) + 1 addendum(s), 17 of them wrote none',
     );
     // One corpus, two readers, one number. `check-progress-volumes` counts these same rounds to
     // print the population beside its heading count, and the agreement between the two is the only

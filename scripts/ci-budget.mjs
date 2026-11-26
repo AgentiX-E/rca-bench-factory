@@ -425,8 +425,23 @@ export function ceilingNeedOf(daySeconds, boundsSeconds, overheadSeconds) {
 export function readDeclarations(workflow, declarations) {
   const declared = new Map();
   const jobs = new Map();
+  /**
+   * The steps that changed jobs, keyed `job/step`, each holding the job whose recording
+   * measured its seconds.
+   *
+   * A recording is keyed by job, so the entry a step leaves behind when it moves is, by
+   * `R2`, an entry that job no longer has -- "a recording that outlives its step describes
+   * a tree that no longer exists". The sentence is right and the state it refuses is real:
+   * a job's wall clock is the sum of its steps, so rebalancing two queues means moving a
+   * step between them. Without a way to say that, the only repair was to land the move in
+   * a commit whose gate is red and re-record after the run -- which is the one thing this
+   * repository does not do. A move is therefore a promise of the same kind as `R9`'s job
+   * promise: it names where the seconds came from, it stands for exactly the round that
+   * makes the move, and the run that measures the step in its new job deletes it.
+   */
+  const moves = new Map();
   const errors = [];
-  if (declarations === null || declarations === undefined) return { declared, jobs, errors };
+  if (declarations === null || declarations === undefined) return { declared, jobs, moves, errors };
   const ids = new Set(jobsOf(workflow).map((job) => job.id));
 
   /**
@@ -437,30 +452,38 @@ export function readDeclarations(workflow, declarations) {
    */
   const hasSteps = Array.isArray(declarations.declared);
   const hasJobs = Array.isArray(declarations.jobs);
+  const hasMoves = Array.isArray(declarations.moved);
   if (declarations.jobs !== undefined && !hasJobs) {
     errors.push(
       'the declarations file has no `jobs` list: a job promise has to be a list, one entry per ' +
         'job that no run has measured, or the key should not be there at all',
     );
   }
-  if (!hasSteps && declarations.jobs === undefined) {
+  if (declarations.moved !== undefined && !hasMoves) {
+    errors.push(
+      'the declarations file has no `moved` list: a step that changed jobs has to be a list, one ' +
+        'entry per step, or the key should not be there at all',
+    );
+  }
+  if (!hasSteps && declarations.jobs === undefined && declarations.moved === undefined) {
     errors.push(
       'the declarations file has no `declared` list, so no step in it can be read: write the ' +
         'list, or delete the file and let the recording speak for the tree',
     );
-    return { declared, jobs, errors };
+    return { declared, jobs, moves, errors };
   }
   const list = hasSteps ? declarations.declared : [];
   const jobList = hasJobs ? declarations.jobs : [];
-  if (list.length === 0 && jobList.length === 0 && errors.length === 0) {
+  const moveList = hasMoves ? declarations.moved : [];
+  if (list.length === 0 && jobList.length === 0 && moveList.length === 0 && errors.length === 0) {
     errors.push(
-      hasJobs && !hasSteps
+      hasJobs && !hasSteps && !hasMoves
         ? 'the declarations file declares no job: an empty `jobs` list describes the state of ' +
           'having no job promise, which is the state of not having the key -- delete it'
         : 'the declarations file declares nothing: an empty list describes the state of having no ' +
           'declarations, which is the state of not having the file -- delete it',
     );
-    return { declared, jobs, errors };
+    return { declared, jobs, moves, errors };
   }
 
   for (const entry of list) {
@@ -497,6 +520,56 @@ export function readDeclarations(workflow, declarations) {
     }
     pending.set(step, { minutes, why });
     declared.set(job, pending);
+  }
+
+  for (const entry of moveList) {
+    const job = String(entry?.job ?? '');
+    const step = String(entry?.step ?? '');
+    const from = String(entry?.from ?? '');
+    const minutes = entry?.minutes;
+    const why = String(entry?.why ?? '');
+    const where = `\`${job} / ${step}\``;
+    if (!ids.has(job) || !ids.has(from)) {
+      const named = ids.has(job) ? from : job;
+      errors.push(
+        `the declarations file names \`${named}\`, which is not a job of ci.yml: a promise about a ` +
+          'job that does not exist is a promise about nothing',
+      );
+      continue;
+    }
+    if (from === job) {
+      errors.push(
+        `${where} is declared as moved from \`${from}\`: a move from a job to itself is a second ` +
+          'name for the entry the recording already holds, and the round that writes it has not ' +
+          'decided where the step goes',
+      );
+      continue;
+    }
+    if (!Number.isInteger(minutes) || minutes < FLOOR_MINUTES) {
+      errors.push(
+        `${where} is declared at ${String(minutes)} min: the floor is ${String(FLOOR_MINUTES)}, because ` +
+          'a measurement cannot see a cold package index or a missed cache, and a declaration sees ' +
+          'less than a measurement does',
+      );
+    }
+    if (why.trim().length < WHY_LENGTH) {
+      errors.push(
+        `${where} is declared without an argument: say what the step is for in at least ` +
+          `${String(WHY_LENGTH)} characters, because the round that reads this file is deciding ` +
+          'whether to believe a number about work it has never seen run',
+      );
+    }
+    const pending = declared.get(job) ?? new Map();
+    if (pending.has(step)) {
+      errors.push(`${where} is declared twice, so a reader cannot tell which bound is meant`);
+      continue;
+    }
+    // The move enters `declared` as well, because everything a promise owes once its step
+    // is known -- the step exists, the bound matches the workflow's, and the entry expires
+    // when the measurement arrives -- is the same work for both kinds.
+    pending.set(step, { minutes, why, movedFrom: from });
+    declared.set(job, pending);
+    moves.set(`${job}/${step}`, { from, minutes, why });
   }
 
   /**
@@ -598,7 +671,7 @@ export function readDeclarations(workflow, declarations) {
     jobs.set(job, { timeoutMinutes: budget, steps: parsedSteps, why });
   }
 
-  return { declared, jobs, errors };
+  return { declared, jobs, moves, errors };
 }
 
 /**
@@ -1512,6 +1585,13 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
   const errors = [...ledgerErrors(baseline, ledger, workflow, parsed.jobs), ...parsed.errors];
   const declared = parsed.declared;
   const declaredJobs = parsed.jobs;
+  // The recording entries a move explains: `source\u0000step`, one per move. The excuse is
+  // narrow on purpose -- it covers the entry the step left behind, not the job it left, so
+  // a source job's other stale entries are still refused.
+  const excused = new Set();
+  for (const [key, move] of parsed.moves) {
+    excused.add(`${move.from}\u0000${key.slice(key.indexOf('/') + 1)}`);
+  }
 
   // R10 -- the history of readings, and the two shapes of a reading that exists in one
   // file and not the other. `readings` is null when the caller has no history to offer,
@@ -1652,12 +1732,15 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
     }
     const names = new Set(steps.map((step) => step.name));
     for (const name of Object.keys(record.steps ?? {})) {
-      if (!names.has(name)) {
-        errors.push(
-          `the recording holds \`${name}\` for \`${job.id}\`, which is not a step of that job: a ` +
-            'recording that outlives its step describes a tree that no longer exists',
-        );
-      }
+      if (names.has(name)) continue;
+      // A step that changed jobs leaves its seconds behind on purpose: they are the only
+      // measurement of that command this file holds, and the promise that moved it says
+      // which job they came from. `R8` below is what makes the promise expire.
+      if (excused.has(`${job.id}\u0000${name}`)) continue;
+      errors.push(
+        `the recording holds \`${name}\` for \`${job.id}\`, which is not a step of that job: a ` +
+          'recording that outlives its step describes a tree that no longer exists',
+      );
     }
 
     // R8 -- what a declaration owes once its step is known. Two of the three are about
@@ -1873,7 +1956,16 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
     // step accounts for is `total - the steps`, and a recording that does not hold it is
     // refused above rather than defaulted -- a margin nobody measured is a margin nobody checked.
     const total = record.total;
-    const overhead = Math.max(0, total - measured);
+    // The seconds of a step that changed jobs are in this record and not in this job. They
+    // are a step's time, not the job's overhead, so the subtraction that answers "what does
+    // no step account for" has to leave them out on both sides -- otherwise a job that gave
+    // a step away would report the step's cost as setup, and its ceiling would be argued
+    // from seconds no step will ever spend there again.
+    const departed = Object.keys(record.steps ?? {}).filter(
+      (name) => !names.has(name) && excused.has(`${job.id}\u0000${name}`),
+    );
+    const departedSeconds = departed.reduce((all, name) => all + (secondsOf(record, name) ?? 0), 0);
+    const overhead = Math.max(0, total - measured - departedSeconds);
     // The ceiling holds the bounds **and the prefix's one allowance**, because the prefix is
     // a number a step can spend: the four setup steps share three minutes between them, and a
     // ceiling that did not hold that number would be a ceiling that fires before the allowance
@@ -2363,6 +2455,14 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
   for (const [job] of parsedDeclarations.jobs) {
     if (recorded[job] === undefined) awaitingJobs.push(job);
   }
+  // The steps that changed jobs. Named separately because the evidence behind their bound
+  // is in a *different* job's entry: a reader who saw the step named as awaiting would look
+  // for its seconds where the step is now, and they are not there.
+  const changedJobs = [];
+  for (const [key, entry] of parsedDeclarations.moves) {
+    const [job, step] = key.split('/');
+    if (secondsOf(recorded[job] ?? {}, step) === null) changedJobs.push(`${job} / ${step} from ${entry.from}`);
+  }
 
   const excusedText =
     excused.length === 0
@@ -2373,6 +2473,11 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
       ? 'no step is declared unmeasured'
       : `${String(awaiting.length)} step(s) declared and awaiting the run that measures them: ` +
         awaiting.join(', ');
+  const changedText =
+    changedJobs.length === 0
+      ? 'no step changed jobs'
+      : `${String(changedJobs.length)} step(s) changed jobs, each standing on the seconds the job it ` +
+        `left measured: ${changedJobs.join(', ')}`;
   const jobsText =
     awaitingJobs.length === 0
       ? 'no job is declared unmeasured'
@@ -2671,7 +2776,7 @@ export function budgetSummary(workflow, baseline, ledger = null, declarations = 
     `run ${String(baseline.run)}${(baseline.attempt ?? 1) === 1 ? '' : ` attempt ${String(baseline.attempt)}`}); bounds total ${String(Math.round(bounds / 60))} min in ` +
     `${String(ceilings)} ceiling(s); ${ceilingText}; tightest ` +
     `${tightestText}${headroomClause}${middleRangeText()}; ` +
-    `${excusedText}; ${declaredText}; ${jobsText}; ${widenedText}; ${narrowedText}; ${readingsText}; ` +
+    `${excusedText}; ${declaredText}; ${changedText}; ${jobsText}; ${widenedText}; ${narrowedText}; ${readingsText}; ` +
     `${ledgerText(ledger, baseline)}`
   );
 }

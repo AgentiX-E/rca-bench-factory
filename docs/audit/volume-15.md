@@ -761,3 +761,61 @@ for the witness.
 301 s, so nothing in `ci.yml` was ever going to say this; what said it was `stall-budget`, which exists for a
 file whose loop is blocked, one level down from a job whose budget is not. A gate can be inside its own
 budget and inside no budget at all.
+
+## Finding 664 — a recording binds a step to a job, so a queue cannot be rebalanced
+
+`v3.155` ended with an arithmetic rather than an opinion: `batteries` spent **738 s** and `gates-audit`
+**270 s** on one tree, and a job's wall clock is the sum of its steps. Three of `batteries`' batteries are
+independent of everything else in it -- fetch-official retry (**118 s**), doc-count shapes (**78 s**),
+round-trip record (**57 s**) -- and moving them leaves **485 s** against **523 s**. The move is 253 s off the
+run's critical path for a cost of zero: no new job, no second prefix, no new step, the same three commands.
+
+`check-ci-budget` refuses it, and the sentence is the recording's:
+
+```
+the recording holds `Fetch-official retry battery (no survivors)` for `batteries`, which is not a step of
+that job: a recording that outlives its step describes a tree that no longer exists
+```
+
+That sentence is right about the shape and wrong about the state. A recording is keyed by **job**, and the
+entry a step leaves behind when it moves is both (a) evidence of a tree that no longer exists and (b) the only
+measurement of that command the file holds. The rule has no word for the second half, so the only way to
+rebalance two jobs was to land the move in a commit whose gate is red and re-record after the run that
+measures it -- which is the one thing this repository does not do, and it is the same defect `v3.155`'s
+finding 662 fixed one level up.
+
+**`--borrow` is not the way out, and its refusal is the reason.** The recorder will record a job's steps from
+another job's seconds, and it refuses when the two jobs hold different ceilings -- *"the seconds describe the
+same commands, but a bound has to fit the job that will enforce it, so a borrow is only a substitute for a
+measurement inside one budget"*. Two jobs that hold different ceilings is exactly the case a move creates, so
+the instrument that exists for "the steps are the same commands" is unavailable for "the step is the same
+command". The two facts are both true and the second one is the one that matters: a step that moves lands in a
+budget it has never been spent inside.
+
+**The repair is a promise of `R9`'s kind.** `golden-master/ci-declarations.json` gains a `moved` list: one
+entry per step, naming the job that holds it now, the job whose recording measured it, the bound, and why. The
+entry then does three things, and each of them is a check that already existed rather than a new one:
+
+| what the move does | which rule it satisfies | which rule still refuses |
+| --- | --- | --- |
+| excuses the stale entry in the job the step left, for that one round | `R2`'s second half | every other stale entry, including the same job's (`still refuses a stale recording entry that no move explains`) |
+| enters the new job's pending set | `R8`: the step must exist there, its bound must be the one `ci.yml` enforces | a move into a job that does not hold the step, a move from a job to itself, a move from a job that is not in the workflow |
+| expires when the job that holds the step has measured it | `R8`: *"was measured at 118 s and the declarations file still says it has not been"* | a move that outlives its measurement, which is a bound standing on the wrong job's seconds |
+
+**The arithmetic under the ceiling needed the same sentence, and it failed silently.** `R13` demands a ceiling
+of `bounds + 2 x overhead`, where `overhead = total - the steps` is what no step accounts for. Three steps
+leave, `measured` falls by 253 s, and `total` still holds them -- so the job that gave a step away reports the
+step's cost as **setup**, and its ceiling is argued from 253 s no step will ever spend there again: `batteries`
+was refused at 45 minutes and asked for **54**. The departed seconds are subtracted from both sides now, and
+the same tree asks for **46**.
+
+**Measured on the shipped tree, by the gate that refused it:** `batteries` **56 -> 46 min** (the bounds it
+still holds, 42, plus its prefix allowance), `gates-audit` **24 -> 34 min** (30 plus the allowance), and the
+sum of the two queues is unchanged at 1 008 s. The reading that follows this commit is what says whether the
+move did what the arithmetic says; this round can only state the arithmetic, which is why the ceiling numbers
+move with a run rather than with a preference.
+
+**What the round did not decide.** A move is available to exactly one round and to one step at a time -- the
+list is a list, but every entry is a promise nobody has measured, and three at once is already the largest
+number this file has carried. It does not decide whether a step may move *twice*: the second move would leave
+two stale entries behind it, and the excusal is keyed by the step's name, not by its history.

@@ -1968,8 +1968,13 @@ describe('scripts/verify-local.mjs as a command', { timeout: SUITE_BUDGET_MS }, 
     expect(result.stdout).toContain('sensitivity 43m across 4 step(s)');
     expect(result.stdout).not.toContain("largest 22m of the job");
     // `batteries` had every one of its fourteen steps bounded at the floor until v3.132; the
-    // pool line is where its 54 minutes and its fourteen steps are counted now (finding 622).
-    expect(result.stdout).toContain('batteries 56m across 14 step(s)');
+    // pool line is where its minutes and its steps are counted now (finding 622).
+    //
+    // 56m across 14 step(s) -> 46m across 11 step(s) in v3.156, and both halves moved for one
+    // reason: three batteries left the job for `gates-audit`, so the ceiling is the bounds it
+    // still holds plus its prefix allowance, and the count is the steps it still runs. The
+    // number is the plan's, which is why it follows the move rather than being adjusted to it.
+    expect(result.stdout).toContain('batteries 46m across 11 step(s)');
     expect(result.stdout).not.toContain('batteries bounds all');
     // 9 -> 10 in v3.120: `Every gate can be shown to fail` measured 295 s, and twice that is 590 s,
     // which is 4 s past ten minutes (finding 599). The assertion follows the bound, which follows

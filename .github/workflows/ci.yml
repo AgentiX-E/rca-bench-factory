@@ -626,7 +626,7 @@ jobs:
     # v3.54 used: the step stays, runs **shard 1 of 2**, and a second job runs the other half. This
     # job's bounds are unchanged, so its ceiling is unchanged, and the job that gained a step is the
     # one with a promise against it.
-    timeout-minutes: 56
+    timeout-minutes: 46
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -745,9 +745,6 @@ jobs:
         timeout-minutes: 1
         run: python3 scripts/injection/fault-extraction-workflow.py
 
-      - name: Fetch-official retry battery (no survivors)
-        timeout-minutes: 4
-        run: python3 scripts/injection/fetch-official-retry.py
 
       # The five gate scripts above are covered by CI *running* them against the
       # real tree, which proves they do not crash and proves nothing about
@@ -768,41 +765,8 @@ jobs:
         timeout-minutes: 12
         run: python3 scripts/injection/gate-tests-battery.py
 
-      # `check-doc-counts.mjs` read three shapes of a published count while the
-      # document used more, and the difference was invisible: a shape a reader
-      # cannot see is indistinguishable from a shape that is not there, so rules
-      # 1 to 3 simply did not apply to 63 of the 88 rows that publish a count.
-      # One of the skipped rows had published the whole workspace's number under
-      # the label `core` since the pass that wrote it (finding 153). This battery
-      # mutates each part of the fix -- the two added shapes, the gate on the bare
-      # shape, rule 4, the exemption table's own validation, and the clause key --
-      # and requires the gate's test file to go red *on the named assertion*.
-      # Its first run reported one SURVIVED, and the mutation was right: the test
-      # that claimed to pin the added shape only asserted exit 0, which the bare
-      # shape also satisfies, so the file count was read but never used.
-      - name: Doc-count shape battery (no survivors, no inert, no misattributed mutations)
-        # 2 -> 3 on the round the recording moved to run 45345210544: the battery was read at
-        # **70 s** there, and twice that is 140, which is 20 seconds past the 2-minute bound.
-        # `R10` refused it, and the growth is the round's own: v3.140 added two shapes to
-        # `check-doc-counts`'s fixtures. Three minutes is 180 s, 2.57x the reading.
-        timeout-minutes: 3
-        run: python3 scripts/injection/doc-counts-shapes.py
 
 
-      # The fourth anchor's path now runs on the real corpus: run 38250480271
-      # round-tripped 375 of 375 RE1 cases at oracle=1.00. This battery keeps the
-      # guard that records it from decaying the way the previous number did --
-      # 'the pass count is still Pass 31's 253 of 375' stood in the present tense
-      # for two passes after the corpus started passing, because the number lived
-      # in a log line and the sentence lived in a document and nothing joined them.
-      # Seventeen injections: the record's provenance, the corpus partition, the
-      # pins against the registry in both directions, and each of the document's
-      # four figures -- plus one that puts back the guard's own first defect, which
-      # scoped the document by any line mentioning the section and so read the
-      # headline table's cross-reference instead of the section.
-      - name: Round-trip record battery (no survivors, no inert, no misattributed mutations)
-        timeout-minutes: 3
-        run: python3 scripts/injection/roundtrip-record.py
 
       # The battery's verdicts, published to a branch so they can be read from
       # anywhere the API is.
@@ -897,7 +861,7 @@ jobs:
     # 3 rather than 1 on the build step is the same rule from the other side -- the floor exists
     # for a step that has not run yet, and this one has not run in *this job*, whatever the twenty
     # other jobs do with the same command.
-    timeout-minutes: 24
+    timeout-minutes: 34
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -948,6 +912,45 @@ jobs:
       - name: Every gate can be shown to fail (shard 2 of 2)
         timeout-minutes: 10
         run: node scripts/verify-gates-are-testable.mjs --shard 2/2
+
+      - name: Fetch-official retry battery (no survivors)
+        timeout-minutes: 4
+        run: python3 scripts/injection/fetch-official-retry.py
+
+      # `check-doc-counts.mjs` read three shapes of a published count while the
+      # document used more, and the difference was invisible: a shape a reader
+      # cannot see is indistinguishable from a shape that is not there, so rules
+      # 1 to 3 simply did not apply to 63 of the 88 rows that publish a count.
+      # One of the skipped rows had published the whole workspace's number under
+      # the label `core` since the pass that wrote it (finding 153). This battery
+      # mutates each part of the fix -- the two added shapes, the gate on the bare
+      # shape, rule 4, the exemption table's own validation, and the clause key --
+      # and requires the gate's test file to go red *on the named assertion*.
+      # Its first run reported one SURVIVED, and the mutation was right: the test
+      # that claimed to pin the added shape only asserted exit 0, which the bare
+      # shape also satisfies, so the file count was read but never used.
+      - name: Doc-count shape battery (no survivors, no inert, no misattributed mutations)
+        # 2 -> 3 on the round the recording moved to run 45345210544: the battery was read at
+        # **70 s** there, and twice that is 140, which is 20 seconds past the 2-minute bound.
+        # `R10` refused it, and the growth is the round's own: v3.140 added two shapes to
+        # `check-doc-counts`'s fixtures. Three minutes is 180 s, 2.57x the reading.
+        timeout-minutes: 3
+        run: python3 scripts/injection/doc-counts-shapes.py
+
+      # The fourth anchor's path now runs on the real corpus: run 38250480271
+      # round-tripped 375 of 375 RE1 cases at oracle=1.00. This battery keeps the
+      # guard that records it from decaying the way the previous number did --
+      # 'the pass count is still Pass 31's 253 of 375' stood in the present tense
+      # for two passes after the corpus started passing, because the number lived
+      # in a log line and the sentence lived in a document and nothing joined them.
+      # Seventeen injections: the record's provenance, the corpus partition, the
+      # pins against the registry in both directions, and each of the document's
+      # four figures -- plus one that puts back the guard's own first defect, which
+      # scoped the document by any line mentioning the section and so read the
+      # headline table's cross-reference instead of the section.
+      - name: Round-trip record battery (no survivors, no inert, no misattributed mutations)
+        timeout-minutes: 3
+        run: python3 scripts/injection/roundtrip-record.py
 
   # The artefacts and the documents: a different kind of check (files and prose rather
   # than behaviour) and a different clock, which is why it is a third job.

@@ -1,0 +1,25 @@
+{
+  "moved": [
+    {
+      "job": "gates-audit",
+      "step": "Fetch-official retry battery (no survivors)",
+      "from": "batteries",
+      "minutes": 4,
+      "why": "the battery mutates one gate script and runs the file that names it, which is the subject of the job that audits gates; its seconds are the 118 s `batteries` recorded for it, and the first run of the job that now holds it replaces them"
+    },
+    {
+      "job": "gates-audit",
+      "step": "Doc-count shape battery (no survivors, no inert, no misattributed mutations)",
+      "from": "batteries",
+      "minutes": 3,
+      "why": "the battery mutates the doc-count gate's fix and requires that gate's test to go red, so it belongs beside the other gate audit; its 78 s is what the job it left measured, and that entry is deleted once this job has timed it"
+    },
+    {
+      "job": "gates-audit",
+      "step": "Round-trip record battery (no survivors, no inert, no misattributed mutations)",
+      "from": "batteries",
+      "minutes": 3,
+      "why": "the battery re-derives the anchor round-trip from a corpus the job already builds, which is why it sits beside the audit rather than in the battery queue; the 57 s it cost in `batteries` is the only measurement of that command this repository holds"
+    }
+  ]
+}

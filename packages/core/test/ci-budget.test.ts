@@ -551,6 +551,39 @@ function declarationOf(over: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * Two jobs, because a move is a statement about a pair of them.
+ *
+ * Neither has a prefix: the four setup steps are what `R14` is about, and a fixture that
+ * has them would make every case here also a case about the allowance.
+ */
+function twoJobs() {
+  return workflowOf([
+    { id: 'batteries', minutes: 20, steps: [...step('Slow battery', 12)] },
+    { id: 'gates-audit', minutes: 20, steps: [...step('Moved battery', 6)] },
+  ]);
+}
+
+/** The tree after the move: the seconds stayed where they were measured. */
+function movedRecording() {
+  return recordingOf({
+    batteries: { minutes: 20, steps: { 'Slow battery': 351, 'Moved battery': 120 } },
+    'gates-audit': { minutes: 20, steps: {} },
+  });
+}
+
+/** A promise that the step's seconds were measured in another job. */
+function moveOf(over: Record<string, unknown> = {}) {
+  return {
+    job: 'gates-audit',
+    step: 'Moved battery',
+    from: 'batteries',
+    minutes: 6,
+    why: 'the battery audits a gate, so it belongs to the job that audits gates; its seconds were measured where it used to run',
+    ...over,
+  };
+}
+
 describe('the step the recording has not measured yet', () => {
   it('accepts a declared step whose bound is the one the workflow declares, and refuses it without', () => {
     // The pair is the rule: the same tree is green with the declaration and refused
@@ -678,10 +711,16 @@ describe('the step the recording has not measured yet', () => {
 
   it('reads nothing out of a tree that has declared nothing, which is the normal state', () => {
     const workflow = oneJob([...step('Slow battery', 12)]);
-    expect(readDeclarations(workflow, null)).toEqual({ declared: new Map(), jobs: new Map(), errors: [] });
+    expect(readDeclarations(workflow, null)).toEqual({
+      declared: new Map(),
+      jobs: new Map(),
+      moves: new Map(),
+      errors: [],
+    });
     expect(readDeclarations(workflow, undefined)).toEqual({
       declared: new Map(),
       jobs: new Map(),
+      moves: new Map(),
       errors: [],
     });
   });
@@ -815,6 +854,86 @@ describe('the step the recording has not measured yet', () => {
       expect(allowed).toBeGreaterThan(0);
       expect(summary).toContain(`${String(allowed)} run before the job's first real step`);
     });
+  });
+
+  /**
+   * A recording binds a step to the job that ran it, so a queue cannot be rebalanced.
+   *
+   * The recording is keyed by job, and `R2` refuses an entry whose step the job no
+   * longer has -- on the reasoning that a recording that outlives its step describes a
+   * tree that no longer exists. That reasoning is right and the rule is incomplete: a
+   * step can leave a job for another one, and then the entry in the job it left is the
+   * only evidence in the file of what that step costs. Without a way to say "this moved",
+   * the only way to rebalance a job was to land a commit whose gate is red and re-record
+   * after the run -- which is the one thing this repository does not do.
+   *
+   * A move is a promise, not a measurement: it names where the seconds came from, and it
+   * expires the moment the job that holds the step now has measured it there.
+   */
+  it('lets a step change jobs by declaring where its seconds were measured', () => {
+    const workflow = twoJobs();
+    const recording = movedRecording();
+    const move = moveOf();
+    const errors = budgetErrors(workflow, recording, null, { moved: [move] }).join('\n');
+    expect(errors).not.toContain('is not a step of that job');
+    expect(errors).toEqual('');
+    // The step is waiting, in the job that holds it now -- the summary is where a reader
+    // of a green run sees that a bound is standing on evidence from another job.
+    const summary = budgetSummary(workflow, recording, null, { moved: [move] });
+    expect(summary).toContain('1 step(s) declared and awaiting the run that measures them');
+    expect(summary).toContain('gates-audit / Moved battery');
+    expect(summary).toContain('1 step(s) changed jobs');
+  });
+
+  it('still refuses a stale recording entry that no move explains', () => {
+    const errors = budgetErrors(twoJobs(), movedRecording()).join('\n');
+    expect(errors).toContain(
+      'the recording holds `Moved battery` for `batteries`, which is not a step of that job',
+    );
+  });
+
+  it('refuses a move into a job that does not hold the step, and one that moves nothing', () => {
+    const workflow = twoJobs();
+    const recording = movedRecording();
+    expect(
+      budgetErrors(workflow, recording, null, { moved: [moveOf({ step: 'Ghost battery' })] }).join('\n'),
+    ).toContain('`gates-audit / Ghost battery`, which is not a step of that job');
+    // A move from a job to itself is a recording entry with a second name, and the second
+    // name is the state the round is in before it decides where the step goes.
+    expect(
+      budgetErrors(workflow, recording, null, { moved: [moveOf({ from: 'gates-audit' })] }).join('\n'),
+    ).toContain('`gates-audit / Moved battery` is declared as moved from `gates-audit`');
+    // A source that is not a job of the workflow is a promise about nothing.
+    expect(
+      budgetErrors(workflow, recording, null, { moved: [moveOf({ from: 'artefacts' })] }).join('\n'),
+    ).toContain('names `artefacts`, which is not a job of ci.yml');
+  });
+
+  it('refuses a step promised twice, and a move with no argument or no number', () => {
+    const workflow = twoJobs();
+    const recording = movedRecording();
+    expect(
+      budgetErrors(workflow, recording, null, {
+        declared: [declarationOf({ job: 'gates-audit', step: 'Moved battery', minutes: 6 })],
+        moved: [moveOf()],
+      }).join('\n'),
+    ).toContain('is declared twice');
+    expect(
+      budgetErrors(workflow, recording, null, { moved: [moveOf({ why: 'because' })] }).join('\n'),
+    ).toContain('is declared without an argument');
+    expect(
+      budgetErrors(workflow, recording, null, { moved: [moveOf({ minutes: 0 })] }).join('\n'),
+    ).toContain('the floor is');
+  });
+
+  it('says the move must be deleted once the job that holds the step has measured it', () => {
+    const measured = recordingOf({
+      batteries: { minutes: 20, steps: { 'Slow battery': 351, 'Moved battery': 120 } },
+      'gates-audit': { minutes: 20, steps: { 'Moved battery': 118 } },
+    });
+    const errors = budgetErrors(twoJobs(), measured, null, { moved: [moveOf()] }).join('\n');
+    expect(errors).toContain('`gates-audit / Moved battery` was measured at 118 s');
+    expect(errors).toContain('delete the entry');
   });
 
   it('keeps the shipped declarations naming exactly the steps the recording has not measured', () => {

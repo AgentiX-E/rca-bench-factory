@@ -441,9 +441,9 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 261 core + 4 cli |
-| Test lines | 121,499 core + 3,242 cli |
-| Tests | 7,065 core + 187 cli |
-| Tracked files | 682 |
+| Test lines | 121,625 core + 3,242 cli |
+| Tests | 7,070 core + 187 cli |
+| Tracked files | 683 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.155: **51** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.156: **51** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1158,17 +1158,16 @@ is a row about rather than paraphrase one that no `grep` will find.
   beside the numbers so a reader can tell which tree was measured -- a refusal that costs a round its feedback
   loop, against a digest that costs a reader one more number to compare]`
 
-- O-143 · **The workflow's critical path is a queue of eighteen steps, and sharding one of them moved the queue rather than the run.**
-  v3.155 split `Every gate can be shown to fail` into two shards and gave the second one a job, which takes the step
-  from 374 s to about half of that inside `batteries` -- and left that job at **766 s** on the first run that
-  measured the split (both shards in it, 137 s and 234 s beside each other), because the other eighteen steps add
-  up to 662 s on their own. The floor of a job that runs nineteen independent things is the sum of
-  nineteen numbers, and the two that remain worth sharding are the gate-test battery (**306 s**, which has no shard
-  support and a published report that a shard would halve) and the fetch-official retry battery (**100 s**).
-  `[open: whether the next cut is a second shard pair for the gate-test battery -- which needs the battery to partition
-  both its injections and the artefact it publishes, so that the report is not half a measurement -- or whether the
-  answer is moving the tail's own smallest members into the job that is now cheapest, which trades one queue for
-  another and needs a reading rather than an argument]`
+- O-143 · **The workflow's critical path is a queue of steps, and this round moved the tail rather than splitting the head.**
+  v3.156 moved three batteries -- fetch-official retry **118 s**, doc-count shapes **78 s**, round-trip record
+  **57 s** -- out of `batteries` and into `gates-audit`, on reading 51's two numbers: 738 s of queue against
+  270 s. The queues are now **485 s** and **523 s**, the same 1 008 s of work in the same two jobs, and the move
+  cost no new job, no second prefix and no new step name. What is left of the head is the gate-test battery at
+  **264 s** -- 54% of the job it is in, and the last member whose cost is a count rather than a sum.
+  `[open: whether the gate-test battery's report should be sharded with it -- one file per shard, published to the
+  same branch, which needs the publisher to survive two jobs writing one ref -- or whether the cheaper cut is now
+  the `sensitivity` pair, whose two shards read 244 s and 478 s on one command and are therefore the widest
+  imbalance the workflow still has]`
 
 ## Pass log
 
@@ -1207,7 +1206,7 @@ and this table.
 | [volume-18.md](progress/volume-18.md) | 9 | v3.112 | v3.120 |
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
 | [volume-20.md](progress/volume-20.md) | 8 | v3.134 | v3.141 |
-| [volume-21.md](progress/volume-21.md) | 14 | v3.142 | v3.155 |
+| [volume-21.md](progress/volume-21.md) | 15 | v3.142 | v3.156 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

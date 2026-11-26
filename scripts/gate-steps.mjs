@@ -603,12 +603,9 @@ export const STEP_PLAN = {
   },
   'batteries / Fault-extraction scoring battery (no survivors)': { local: true },
   'batteries / Fault-extraction workflow battery (no survivors, negative control)': { local: true },
-  'batteries / Fetch-official retry battery (no survivors)': { local: true },
   "batteries / Gate-test battery (each gate's test provably fails when its guard is removed)": {
     local: true,
   },
-  'batteries / Doc-count shape battery (no survivors, no inert, no misattributed mutations)': { local: true },
-  'batteries / Round-trip record battery (no survivors, no inert, no misattributed mutations)': { local: true },
   'batteries / Publish the gate-test battery report': {
     remoteOnly: 'writes to a GitHub artefact/annotation, which needs the run token',
   },
@@ -633,6 +630,24 @@ export const STEP_PLAN = {
   },
   'gates-audit / Build (core then cli; cli resolves core\'s dist)': { local: true },
   'gates-audit / Every gate can be shown to fail (shard 2 of 2)': { local: true },
+
+  // Three batteries that left `batteries` in v3.156, moved by the arithmetic rather than by
+  // the concept: `batteries` was 738 s of wall clock and `gates-audit` 270 s, and a job's
+  // wall clock is the sum of its steps, so the queue with room in it is where a step belongs.
+  // Their plan keys are the names `ci.yml` writes, because `R2` pins the recording to the
+  // name and these three keep theirs -- what changed is which job runs them.
+  'gates-audit / Fetch-official retry battery (no survivors)': {
+    local: true,
+    note: 'moved here from `batteries` in v3.156; the seconds are that job\'s measurement',
+  },
+  'gates-audit / Doc-count shape battery (no survivors, no inert, no misattributed mutations)': {
+    local: true,
+    note: 'moved here from `batteries` in v3.156 for the same reason, and it needs the same build',
+  },
+  'gates-audit / Round-trip record battery (no survivors, no inert, no misattributed mutations)': {
+    local: true,
+    note: 'moved here from `batteries` in v3.156; it reads the anchor data this job already builds',
+  },
 
   // ---- batteries-heavy ------------------------------------------------------
   //
