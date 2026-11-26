@@ -81,7 +81,11 @@ describe('the cost table the shards are divided by', () => {
     // re-measurement from a copy of one.
     expect(table.measured).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(String(table.machine)).not.toBe('');
-    expect(String(table.source)).toContain('--costs');
+    // Either history is a measurement: the gate wrote it with `--costs`, or a round read
+    // it out of a run's own per-file rows (which is the better of the two, because those
+    // seconds belong to the machine that will be divided). What is refused is `source`
+    // naming neither.
+    expect(String(table.source)).toMatch(/--costs|run \d{10,12}/);
     // Every row is a measurement: a baseline and at least one mutant run, since a
     // claimant that makes a claim runs once per claim.
     for (const [file, row] of Object.entries(table.files) as [string, any][]) {
@@ -115,6 +119,21 @@ describe('the cost table the shards are divided by', () => {
     // battery it also carries (`verify-claims-are-sensitive`, 22 s) is charged to that
     // job by the reading and not by this table.
     expect(loads[0]).toBeLessThanOrEqual(loads[1]);
+  });
+
+  it('accepts provenance that names the run it was read from, and refuses one that names nothing', () => {
+    // A table measured by a local run and a table rebuilt from a runner's own per-file
+    // rows are the same artifact with two histories, and the second is the better one:
+    // the seconds that decide a runner's halves should be that runner's. So the field
+    // names either the command that wrote it or the run it was read from -- what it may
+    // not be is a sentence that names neither, which is a number from nowhere.
+    const byFile = byFileOf();
+    const fromRun = fromInventory();
+    fromRun.source = 'the per-file rows of run 45799554098, shards 1/2 and 2/2';
+    expect(checkShardCosts(byFile, fromRun)).toEqual([]);
+    const nowhere = fromInventory();
+    nowhere.source = 'a table somebody wrote down';
+    expect(checkShardCosts(byFile, nowhere).join('\n')).toContain('names neither');
   });
 
   it('refuses a table that names a file this tree does not claim, or misses one it does', () => {

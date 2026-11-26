@@ -866,10 +866,15 @@ export function checkShardCosts(byFile, table) {
   if (String(table?.machine ?? '').trim() === '') {
     errors.push('the cost table does not say which machine measured it (`machine`), so its seconds have no owner');
   }
-  if (!String(table?.source ?? '').includes('--costs')) {
+  // Two ways a table can come by its numbers, and one sentence for both. The gate writes
+  // one with `--costs`; a round can also rebuild it from the per-file rows a shard prints,
+  // which is the same measurement taken where it is enforced. What neither form allows is
+  // a `source` that names nothing -- a figure with no run and no command behind it is a
+  // figure from nowhere, and the round that refreshes it has nothing to compare with.
+  if (!/--costs|run \d{10,12}/.test(String(table?.source ?? ''))) {
     errors.push(
-      'the cost table does not say what wrote it (`source` has to be the command that produced it, ' +
-        'which is the gate with `--costs`)',
+      'the cost table does not say where its numbers came from (`source` names neither the command ' +
+        'that wrote it, `--costs`, nor the run it was read from, `run <id>`)',
     );
   }
   const names = new Set(byFile.map(([file]) => file));

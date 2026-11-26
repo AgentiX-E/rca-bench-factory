@@ -815,6 +815,18 @@ sum of the two queues is unchanged at 1 008 s. The reading that follows this com
 move did what the arithmetic says; this round can only state the arithmetic, which is why the ceiling numbers
 move with a run rather than with a preference.
 
+**The table was measured on the wrong machine, and the row is why that is now fixable.** The first table came from
+the box this round was written on: 32 cores, the same four-way pool, and a partition the table says is 0.2%
+apart. Reading 53 measured the two jobs **306 s** and **362 s** -- 15.5% apart. The partition is not the cause:
+priced by the runner's own per-file rows, the halves that ran are **1,201 s** against **1,432 s**, which is
+**16.1%**. Per-claimant seconds are not proportional between a 32-core box and a 4-vCPU runner, because contention
+scales with what a file does rather than with how long it takes. The repair is the row: as of this round the
+per-file line prints the **baseline** as well as the mutants, so a table can be rebuilt from a run's own log
+rather than re-measured on a developer's machine. Rebuilt from reading 53's two shards it prices **2,632.1 s** of
+child time, divides **34** against **34**, **1,315.7 s** and **1,316.4 s** (0.1% apart), and moves **13** files.
+The provenance rule widened to match: `source` names the command that wrote the table or the run it was read
+from, and a sentence naming neither is refused.
+
 **What the round did not decide.** A move is available to exactly one round and to one step at a time -- the
 list is a list, but every entry is a promise nobody has measured, and three at once is already the largest
 number this file has carried. It does not decide whether a step may move *twice*: the second move would leave

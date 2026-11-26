@@ -1109,7 +1109,12 @@ one round.
   day, machine or command). `shardClaims` requires the table: a shard without one stops with the
   command that regenerates it rather than falling back to position, because a fallback is a second
   partition under one name. The placement is longest-processing-time first, so the halves are a
-  pure function of the table and the inventory.
+  pure function of the table and the inventory. The table is best taken where it is enforced: the
+  per-file line prints the baseline as well as the mutants, so a round can rebuild it from a run's
+  own log, and `source` names either the command that wrote it or the run it was read from. Reading
+  53 is the case for that -- a table taken on a 32-core box divided the claimants 0.2% apart and the
+  runner read the two jobs 15.5% apart, because per-claimant seconds are not proportional across
+  machines; rebuilt from that run's rows the halves are 0.1% apart and 13 files change sides.
 - **The promise's lifetime, measured.** The tree was published with the promise in it and
   `check-ci-budget` green, run `42160224254` measured `sensitivity-shard` at **387 s**, the
   recorder said the declaration could be deleted, and the deletion is in the round's last

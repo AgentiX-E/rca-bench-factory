@@ -2488,14 +2488,21 @@ readable table stops with the command that writes one. A fallback would be a sec
 name -- the halves `ci.yml` runs would stop being the halves a local `--shard` runs, in the one place nobody
 would look for the difference.
 
-**Measured on the tree this round publishes.** The table prices **68** claimants at **1,670.9 s** of child time
-(324 runs: one baseline per file and one per claim), and the two halves it divides them into read **834.6 s** and
-**836.3 s** -- 0.2% apart, 33 files against 35. The positional rule it replaced would have divided the same
-seconds **674.5** and **996.4**: 32% apart in child seconds, which is what the 247 s and 438 s of reading 52
-were made of. That pair is a prediction until the run of this commit measures it, because a partition is a claim
-about a runner's clock and this instrument can only price one claim at a time.
+**Measured on the tree this round publishes, twice.** The first table was written by `--costs` on the box this
+round was built on (32 cores, the same four-way pool): **68** claimants, **1,670.9 s** of child time over 324
+runs, divided **834.6 s** and **836.3 s** -- 0.2% apart, 33 files against 35, where position would have divided
+the same seconds **674.5** and **996.4** (32% apart).
 
-**Four things this round got wrong.**
+**And the runner disagreed with it in a way that is the interesting part.** Reading 53 measures the two jobs at
+**306 s** and **362 s** -- 15.5% apart, not the 0.2% the local table predicted. Priced by the **runner's own**
+per-file rows, the very partition that ran is **1,201 s** against **1,432 s**: **16.1%**, which is the 15.5% the
+jobs read. So the partition transferred exactly as the runner's costs say, and the table was the thing measured on
+the wrong machine. The per-file rows the gate prints carry the baseline as of this round, which is what makes the
+repair a reading rather than a re-run: the table was rebuilt from the two shards' own logs of reading 53 --
+**2,632.1 s** of child time, **34** files against **34**, **1,315.7 s** and **1,316.4 s**, 0.1% apart, and **13**
+files change sides. That is the table this round ships, and the next run is the one that measures it.
+
+**Five things this round got wrong.**
 
 1. **The table's own acceptance cases were put inside a claimant file, and that is a cycle.** The battery runs
    every file `gate-sites.json` names as a claimant; a case that reads the table would be run by the very
@@ -2514,7 +2521,15 @@ about a runner's clock and this instrument can only price one claim at a time.
    `annotations: 148 of 149 carried, 1 dropped` -- because a site is identified partly by what it says. Four new
    exits and two new throws arrived unannotated the same way, and `gate-sites-are-proven` refused the tree with
    six sentences before the battery would have.
-4. **A guard with no test is the bound-that-cannot-fire one level down.** `assignShards` refuses a split into
+4. **The table was measured on the wrong machine, and the round believed its own prediction.** The first table
+   came from this box -- 32 cores, four-way pool -- and divided the claimants 0.2% apart. The runner read the two
+   jobs **15.5%** apart, and the cause is not the partition: priced by the runner's own rows, the partition that
+   ran is **16.1%** apart. Per-claimant seconds are not proportional between a 32-core box and a 4-vCPU runner --
+   contention scales with what a file does, not with how long it takes -- so a table is only as good as the
+   machine it was taken on, and the machine that matters is the one that will be divided. The repair is the row
+   the gate prints: baseline seconds per claimant, which is what makes the table rebuildable from a run's log.
+   It was rebuilt from reading 53's two shards and **13 files changed sides**; the next run is the acceptance.
+5. **A guard with no test is the bound-that-cannot-fire one level down.** `assignShards` refuses a split into
    zero shards, and nothing reached it: `parseShard` refuses that count before the gate asks. It is proved now
    by the case that calls the function with zero, because an unreachable refusal is a line a reader is told to
    trust and cannot see work.
@@ -2525,12 +2540,12 @@ about a runner's clock and this instrument can only price one claim at a time.
 
 | item | value |
 | --- | --- |
-| CI | `45765112261` on `a92304e4` is the row that stands until this round's own run is recorded: reading **52**, **9 of 9 jobs success**, the tree this round began from. The row that will replace it is the first run of the tree this commit publishes -- the first that divides the two shards by the cost table rather than by position, and therefore the only one whose pair of job seconds can say whether the rebalance did what the arithmetic says |
+| CI | run `45799554098` on `f3d276c`: **9 of 9 jobs success**, 90 steps, reading **53** -- the first run whose halves were divided by the cost table rather than by position. The pair reads **306 s** and **362 s** of `verify-sites-are-sensitive.mjs`, against **247 s** and **438 s** in reading 52: the imbalance falls from **191 s** to **56 s**, and from 44% to 15.5% of the slower half |
 | the two halves, as they were | reading 52: `sensitivity` **247 s** and `sensitivity-shard` **438 s** of `verify-sites-are-sensitive.mjs`, 44% apart, from a split by `position % count` over 44 sorted claimant files |
 | the division the corpus asked for | `docs/acceptance.md`, written at v3.54: *"if that shard approaches twice its own bound the shards should be re-partitioned from a measurement rather than by position"* -- 438 s against a 30-minute bound had not reached twice, and the imbalance was paid for three minutes a run while it waited |
-| `core` test suite | **262 files, 7081 tests passed** (as of this commit) |
+| `core` test suite | **262 files, 7082 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **266 files, 7268 tests passed** (as of this commit) |
+| repo test suite | **266 files, 7269 tests passed** (as of this commit) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
-| mutation | **7 groups, 7 red, 0 survivors**: the coverage verdict silenced (3), the placement sorted by name instead of by cost (2), an unpriced claimant given one millisecond (1), the claim count not compared with the claims it prices (1), a table written by a shard (1), the prediction printed under `--list` (1), the baseline counted as a mutant run (1) -- each restored to an identical `md5`. The fifth was a survivor on its first shape, and the case is why: it would have passed on the gate's own "cannot read the table", so the fixture now carries a table the shard *could* use and the assertion is on the refusal's own sentence |
-| new tests | **7,070 -> 7,081, +11**: the cost-based placement and its determinism, the refusal to place an unmeasured claimant, a split into no shards, the coverage verdict in both directions with its count and its provenance, a row that is not a measurement, the gate's `--costs` writer, its refusal of a shard, its refusal of a missing table and of a stale one, and the 15% budget the round commits to |
+| mutation | **8 groups, 8 red, 0 survivors** (the eighth is the provenance rule below): the coverage verdict silenced (3), the placement sorted by name instead of by cost (2), an unpriced claimant given one millisecond (1), the claim count not compared with the claims it prices (1), a table written by a shard (1), the prediction printed under `--list` (1), the baseline counted as a mutant run (1) -- each restored to an identical `md5`. The fifth was a survivor on its first shape, and the case is why: it would have passed on the gate's own "cannot read the table", so the fixture now carries a table the shard *could* use and the assertion is on the refusal's own sentence |
+| new tests | **7,070 -> 7,082, +12**: the cost-based placement and its determinism, the refusal to place an unmeasured claimant, a split into no shards, the coverage verdict in both directions with its count and its provenance, a row that is not a measurement, the gate's `--costs` writer, its refusal of a shard, its refusal of a missing table and of a stale one, and the 15% budget the round commits to |
