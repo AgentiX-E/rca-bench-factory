@@ -1174,7 +1174,9 @@ is a row about rather than paraphrase one that no `grep` will find.
   inside the run's longest job, then the gate-test battery at **197 s**, which is 52% of `batteries`' **376 s**.
   Reading 56 (`45832206778`, **9 of 9**) then moved every job on a tree whose commands did not change --
   `batteries` **376 -> 532 s**, `gates-audit` **502 -> 400 s**, `verify` **417 -> 281 s** -- and read the same shard
-  pair **109 / 131 s**, **16.8%** apart with the halves swapped. So the queue that reading 55 read is not the queue
+  pair **109 / 131 s**, **16.8%** apart with the halves swapped; readings 57 and 58 read **124 / 180 s** and
+  **122 / 147 s** (**31.1%** and **17.0%**), the second half heavier again, so four readings of nearly one tree give
+  a gap that changes sign and size against a division the table makes 0.0% apart. So the queue that reading 55 read is not the queue
   reading 56 reads, and what survives both is the *item*: the gate-test battery, **197 + 236 s** of runner time in
   reading 55 and **145 + 174 s** in reading 56, is the largest single thing in the workflow on either reading.
   `[open: the next cut is inside that battery, and the measurement that names it is the battery's own cost line --
