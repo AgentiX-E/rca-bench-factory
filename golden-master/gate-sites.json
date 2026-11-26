@@ -1118,7 +1118,7 @@
     },
     {
       "script": "scripts/verify-site-proofs.mjs",
-      "line": 383,
+      "line": 409,
       "condition": "failures > 0",
       "diagnostic": "verify-site-proofs: FAILED -- ${String(failures)} problem(s)\\n",
       "status": "proved",

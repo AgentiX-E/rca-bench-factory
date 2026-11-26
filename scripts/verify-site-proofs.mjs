@@ -231,23 +231,46 @@ function run(command, args, options) {
  * A file whose own tests fail is now reported with *why*, quoted from the run: the
  * test that failed, the error line, the totals. "Unmeasured" alone sent a reader back
  * to the file to work out what the gate had already read.
+ *
+ * ## Why the witness is armed per file rather than per run
+ *
+ * Measured on `check-doc-counts.test.ts`, alone on an idle 32-core box: 3.14 s plain,
+ * 3.27 s with the trace hook, and **11.18 s** with the throw witness registered. The
+ * witness is a module loader, so every gate the file spawns pays for it -- 59 spawns
+ * here -- and 50 of the 68 claimant files have no throw claim for it to settle. That
+ * cost is paid inside the file's own stall budget, and on a four-core runner it is what
+ * pushed that budget over (finding 663). So `RCA_THROW_WITNESS` is set for the files
+ * whose claims include a throw, and for no others.
+ *
+ * ## Why each child is asked for one worker
+ *
+ * `JOB_CAP` bounds the children, and a child is `node` plus vitest's own pool: a pool of
+ * eight on a four-core runner is eight vitest instances each starting its own workers
+ * and each running one file. The number the pool promises is the number of *test*
+ * processes, so the child is told to use one: `--maxWorkers=1` changes nothing about
+ * which tests run -- a child has one file -- and everything about how many processes are
+ * alive at once.
  */
-async function traceOf(file, hook) {
+async function traceOf(file, hook, needsWitness) {
   const absolute = resolve(ROOT, file);
   if (!existsSync(absolute)) {
     return { problem: `${file} does not exist, so its claims are unmeasured`, detail: [] };
   }
   const trace = join(scratch, `${String(traceCount)}.log`);
   traceCount += 1;
-  const result = await run(process.execPath, [vitestEntry(), 'run', relative(TESTS, absolute), '--reporter=dot'], {
-    cwd: TESTS,
-    env: {
-      ...process.env,
-      NODE_OPTIONS: `${process.env['NODE_OPTIONS'] ?? ''} --require=${hook}`.trim(),
-      RCA_SITE_TRACE: trace,
-      ...(witness === '' ? {} : { RCA_THROW_WITNESS: witness }),
+  const result = await run(
+    process.execPath,
+    [vitestEntry(), 'run', relative(TESTS, absolute), '--reporter=dot', '--maxWorkers=1'],
+    {
+      cwd: TESTS,
+      env: {
+        ...process.env,
+        NODE_OPTIONS: `${process.env['NODE_OPTIONS'] ?? ''} --require=${hook}`.trim(),
+        RCA_SITE_TRACE: trace,
+        ...(witness === '' || !needsWitness ? {} : { RCA_THROW_WITNESS: witness }),
+      },
     },
-  });
+  );
   if (result.error !== undefined) {
     return {
       problem: `${file} could not be run -- ${result.error.message}`,
@@ -279,9 +302,12 @@ async function traceOf(file, hook) {
 
 const hook = hookFile(scratch);
 // The witness costs a parser load per child that reads a script, so it is asked for
-// only by a run that has a throw claim to settle. A tree with no throw claim pays
-// nothing for an instrument it would not read.
+// only by the files that have a throw claim to settle. It used to be asked for by the
+// whole run if *any* claim anywhere was a throw, which armed it for the 50 files that
+// have none -- a measurement of the instrument rather than of the tree (finding 663).
 const witness = claimed.some((claim) => claim.kind === 'throw') ? join(HERE, 'throw-witness.mjs') : '';
+const claimsByFile = new Map(byFile());
+const witnessFor = (file) => (claimsByFile.get(file) ?? []).some((claim) => claim.kind === 'throw');
 
 /**
  * How many claimant files this run has in the air at once.
@@ -331,7 +357,7 @@ async function claimant() {
   while (cursor < plan.length) {
     const file = plan[cursor];
     cursor += 1;
-    outcomes.set(file, await traceOf(file, hook));
+    outcomes.set(file, await traceOf(file, hook, witnessFor(file)));
   }
 }
 
@@ -384,8 +410,10 @@ if (failures > 0) {
 }
 
 const sites = claimed.length;
+const armed = plan.filter((file) => witnessFor(file)).length;
 process.stdout.write(
-  `verify-site-proofs: ${String(plan.length)} claimant file(s), ${String(Math.min(limit, plan.length))} at a time\n`,
+  `verify-site-proofs: ${String(plan.length)} claimant file(s), ${String(Math.min(limit, plan.length))} at a time, ` +
+    `the throw witness armed for ${String(armed)} of them\n`,
 );
 process.stdout.write(
   `verify-site-proofs: PASSED (${String(sites)} claim(s) across ${String(firedByFile.size)} file(s), ` +

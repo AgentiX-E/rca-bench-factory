@@ -936,6 +936,15 @@ interface FixtureOptions {
    * overlap, and the two marks it writes either side of it are the evidence.
    */
   busyMs?: number;
+  /**
+   * A file that claims a **throw** instead of an exit.
+   *
+   * The witness is armed per file since finding 663, so a fixture that proves it is
+   * armed for the files that need it has to have one such file. The claim is the
+   * gate's second exit, and the runner announces reaching it -- which is what a traced
+   * throw looks like from outside.
+   */
+  throwFor?: string;
 }
 
 /** A repository the gate can be pointed at: an inventory, a gate, and a runner. */
@@ -975,6 +984,18 @@ function fixture(claims: { line: number; file: string }[], options: FixtureOptio
         status: 'proved',
         provedBy: claim.file,
       })),
+      // The throw half of the same inventory, and only when the case asks for it: a
+      // row here makes its file one the witness has to be armed for, which is the
+      // difference the case below measures.
+      ...(options.throwFor === undefined
+        ? {}
+        : {
+            throws: {
+              rows: [
+                { script: 'scripts/fake-gate.mjs', line: exits[1], status: 'proved', provedBy: options.throwFor },
+              ],
+            },
+          }),
     }),
   );
 
@@ -1010,17 +1031,25 @@ function fixture(claims: { line: number; file: string }[], options: FixtureOptio
     'const here = dirname(fileURLToPath(import.meta.url));',
     'const file = process.argv.find((one) => one.endsWith(".test.ts"));',
     'const text = readFileSync(file, "utf8");',
-    // The two marks and the wait between them exist only when a case asks for them, so
-    // every other fixture in this file runs the child it described before.
-    `const busy = ${String(options.busyMs ?? 0)};`,
-    'let mark = (kind) => {};',
-    'if (busy > 0) {',
     // The journal's *path* comes from the caller rather than from the runner's own
     // location. A child that decides where its evidence goes is exactly the shape the
     // package-write guard is about, and `here` is derived from `import.meta.url` -- a
     // lexical reading of this fixture cannot tell that the string is source for a child
     // in a scratch tree, and the guard should not have to.
-    '  const journal = process.env.FIXTURE_JOURNAL ?? "";',
+    'const journal = process.env.FIXTURE_JOURNAL ?? "";',
+    // What this child was told, written down before it is told anything else: whether
+    // the throw witness was armed for it, and the argv the gate started it with. Both
+    // are claims the gate makes about its own cost, and a cost is not observable from
+    // the verdict.
+    'if (journal !== "") {',
+    '  appendFileSync(journal, `argv ${process.argv.slice(2).join(" ")}\\n`);',
+    '  appendFileSync(journal, `witness ${process.env.RCA_THROW_WITNESS ?? ""}\\n`);',
+    '}',
+    // The two marks and the wait between them exist only when a case asks for them, so
+    // every other fixture in this file runs the child it described before.
+    `const busy = ${String(options.busyMs ?? 0)};`,
+    'let mark = (kind) => {};',
+    'if (busy > 0) {',
     '  if (journal === "") throw new Error("a busy runner needs FIXTURE_JOURNAL");',
     '  mark = (kind) => appendFileSync(journal, `${kind} ${String(Date.now())}\\n`);',
     '  mark("start");',
@@ -1036,6 +1065,18 @@ function fixture(claims: { line: number; file: string }[], options: FixtureOptio
     '  process.exit(1);',
     '}',
     "const gate = resolve(here, 'scripts', 'fake-gate.mjs');",
+    // A throw claim is credited when the trace says the witness was installed and that
+    // the line was reached, so a fixture that carries one has to produce both. The exit
+    // line is read back out of the gate rather than written down twice, for the reason
+    // the fixture's own line numbers are.
+    'const trace = process.env.RCA_SITE_TRACE ?? "";',
+    'if ((process.env.RCA_THROW_WITNESS ?? "") !== "" && trace !== "") {',
+    '  const exits = readFileSync(gate, "utf8").split("\\n")',
+    '    .map((one, index) => (one.includes("process.exit") ? index + 1 : 0))',
+    '    .filter((n) => n > 0);',
+    '  appendFileSync(trace, "witness on\\n");',
+    '  appendFileSync(trace, `reached scripts/fake-gate.mjs:${String(exits[pick === "one" ? 0 : 1])}\\n`);',
+    '}',
     'const env = text.includes("FIXTURE_BLIND")',
     '  ? { PATH: process.env.PATH, FIXTURE_PICK: pick }',
     '  : { ...process.env, FIXTURE_PICK: pick };',
@@ -1085,9 +1126,12 @@ function runGate(
 function widestOverlap(journal: string): number {
   const events = readFileSync(journal, 'utf8')
     .split('\n')
-    .filter((line) => line.trim() !== '')
+    // The journal also carries what each child was *told* -- its argv and its witness --
+    // because that is the other cost this fixture measures. Only the marks are events:
+    // a reader that took every line would read `argv node …` as a timestamp of `NaN`.
+    .filter((line) => /^(start|end) \d+$/.test(line.trim()))
     .map((line) => {
-      const [kind, at] = line.split(' ');
+      const [kind, at] = line.trim().split(' ');
       return { at: Number(at), delta: kind === 'start' ? 1 : -1 };
     })
     // Ends before starts at the same millisecond, so a child that finished in the same
@@ -1195,6 +1239,49 @@ describe('scripts/verify-site-proofs.mjs · the experiment, end to end', () => {
       // And the flag it is not: a value nobody supplies is still a run, not a refusal.
       const fine = runGate(tree, ['--jobs', '2']);
       expect(fine.status).toBe(0);
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  it('arms the throw witness for the files that claim a throw, and tells each child to be one worker', () => {
+    // ## Why this is asserted from the child's own record
+    //
+    // The witness is a module loader, and being a loader is what it costs: measured on
+    // `check-doc-counts.test.ts`, alone on an idle box, 3.14 s plain, 3.27 s with the
+    // trace hook and **11.18 s** with the witness registered -- 59 spawned gates each
+    // paying for a loader they never used. Fifty of the 68 claimant files have no throw
+    // claim, and a gate that arms the witness for them is measuring its instrument
+    // (finding 663). A cost is not readable from a verdict, so the fixture's children
+    // write down what they were told: which witness they were given, and with what argv
+    // they were started.
+    //
+    // `--maxWorkers=1` is the second half of the same sentence: a pool of `N` is `N`
+    // test processes only if a child is one process, and vitest's own pool made each
+    // child several on a runner with fewer cores than the cap.
+    const claims = [
+      { line: 2, file: 'packages/core/test/a-exit.test.ts' },
+      { line: 2, file: 'packages/core/test/b-throw.test.ts' },
+    ];
+    const tree = fixture(claims, { pick: 2, throwFor: 'packages/core/test/b-throw.test.ts' });
+    const journal = join(tree, 'journal.log');
+    try {
+      // One at a time so the journal is a sequence rather than an interleaving: the
+      // plan's order is the assertion, and a pool would make it a race to read.
+      const run = runGate(tree, ['--jobs', '1'], { FIXTURE_JOURNAL: journal });
+      expect(run.status, run.stderr).toBe(0);
+      const lines = readFileSync(journal, 'utf8')
+        .split('\n')
+        .filter((line) => line.trim() !== '');
+      expect(lines).toHaveLength(4);
+      const argv = lines.filter((line) => line.startsWith('argv '));
+      expect(argv.every((line) => line.endsWith('--maxWorkers=1'))).toBe(true);
+      // `a` claims an exit and gets no witness; `b` claims a throw and gets one.
+      expect(lines[1]?.trim()).toBe('witness');
+      expect(lines[3]).toContain('throw-witness.mjs');
+      // And the run says what it armed, because the next reader's question is "how much
+      // of this run was instrumented" and the answer cannot be a count of files.
+      expect(run.stdout).toContain('the throw witness armed for 1 of them');
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }
