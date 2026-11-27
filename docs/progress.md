@@ -1210,8 +1210,10 @@ is a row about rather than paraphrase one that no `grep` will find.
   for the same two commands, while the sensitivity pair went the other way (**114 -> 137 s**, **137 -> 155 s**,
   **90 -> 99 s** for the gate-test battery). So the table over-priced one lane by **75 s** and under-priced two by
   **26** and **28**, and the head followed the lanes that grew: **313 s** against the **~284 s** predicted, on a
-  wall clock that went **451 -> 317 s**. What is not settled is whether that is a defect to repair or the error a
-  static table is supposed to print.
+  wall clock that went **451 -> 317 s**. Reading 67, one commit later, then put the head on a **different lane**
+  (**314 s**) with the wall clock at **318 s** and read `Test with coverage` at **133 s** where reading 66 read
+  **217 s** -- the head moves and the queue does not, while the prices move too. What is not settled is whether the
+  drift is a defect to repair or the error a static table is supposed to print.
   `[open: whether the placement should be re-derived each round from the run that ships it -- which buys a head 30 s closer and costs a table whose prices are never the same twice -- or stay one named reading with its error printed, and whether a required check named by its display name outside this repository has to be renamed now that every lane's name says `battery lane N of 5`]`
 - O-149 · **A call states its ceiling and not its patience.**
   Every adapter now sends `max_tokens` (finding 677), and none sends a timeout: `anthropic.ts`, `openai-compat.ts`

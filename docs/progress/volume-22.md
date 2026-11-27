@@ -1964,6 +1964,15 @@ against reading 64's **470 s**, and the difference between the two figures is wh
 baseline rather than a disagreement: the table bought **25 s** more than the even split v3.163
 assumed, because the split it assumed was **288 s** a lane.
 
+**Two runs, and the head changed lane.** The settlement commit's own run is reading 67, and it is the
+sharpest evidence this round has, because it is the same ten jobs one commit later. The head moved from
+`battery lane 5 of 5` (**313 s**) to `battery lane 2 of 5` (**314 s**), and the wall clock moved from
+**317 s** to **318 s**. Over the nine readings before the reshape the head was three different jobs and
+their wall clocks ran **429 -> 536 s**; here the head can change lane and the queue costs the same
+second. That is a property of the **shape**, and the prices are visibly not: `Test with coverage` read
+**217 s** in reading 66 and **133 s** in reading 67, the gate-fail shard **148** then **184 s**. A
+lane's balance is the table's; its seconds are the machine's, and two runs of one tree say so.
+
 **What the run said.** Reading 66 -- the run of the commit that ships this round -- read **317 s** of
 wall clock against reading 65's **451 s**: **134 s** bought, where the table predicted **167 s**. The
 head is a lane, as predicted, and it is **313 s** rather than **~284 s**. Subtracting each lane's
@@ -2062,6 +2071,7 @@ its batteries left, and the claim it guards -- every command there names a scrip
 | the split | `verify` **32 min** across **4** bounded steps, `coverage` **31 min** across **6**; **12** steps moved, **8** batteries and **4** into the new job |
 | what a run can be predicted at | head **~284 s** (**263 s** lane + **~21 s** prefix), `coverage` **~242 s**, against reading 65's **451 s**: **~167 s**, and v3.163's **161 s** was against reading 64's **470 s** |
 | what the run of this commit read | **317 s** of wall clock, head `battery lane 5 of 5` at **313 s**, `battery lane 4 of 5` **305 s**, `coverage` **247 s**, `verify` **149 s**: **134 s** bought of the **167** predicted, and the **33 s** between them is the lanes' own drift |
+| what the next run read, one commit later | **318 s** of wall clock with the head on a **different lane** (`battery lane 2 of 5`, **314 s**): the head moved, the queue did not. `coverage` **155 s** and its suite step **133 s** where reading 66 read **217 s** -- one command, two runs, one tree, **1.63x** |
 | the lanes, as the run read them | bodies **188 / 225 / 242 / 283 / 286** against the table's **263 / 261 / 260 / 257 / 258** -- a **1.52x** spread where the table said **1.02x**; the type-miss probe **211 -> 150 s** and the round-trip battery **52 -> 38 s** in one lane, the sensitivity pair **114 -> 137** and **137 -> 155 s** in two others |
 | the recording, before and after | a job promise beside a step declaration for one job was refused outright -- **46** sentences of `check-ci-budget` -- and `R9` counted **6** steps where the job owns **2**; the pair is now accepted and the overlap (one step, two owners) refused |
 | the arm that was reading a smaller workflow | `artefacts` runs `pnpm docs:check`, which spawns a vitest through the doc guards, and the reader stopped at the command's first token: **8** suite jobs counted, now **9** |
@@ -2073,7 +2083,7 @@ its batteries left, and the claim it guards -- every command there names a scrip
 | new tests | **7,143 -> 7,179, +36**: **35** in `battery-lanes.test.ts` (the unit, the rule, the matching, the reader's refusals, the plan against the workflow, the order, the prefix, the shipped plan, and a second table the reader must also accept) and one net in `ci-budget.test.ts` -- the overlap refused, the pair a split needs accepted |
 | test lines | **123,970 -> 124,474 core** |
 | `Tracked files` | **689 -> 692**: `scripts/lane-costs.mjs`, `golden-master/battery-lanes.json` and `packages/core/test/battery-lanes.test.ts`. `golden-master/ci-declarations.json` was written by this round and deleted by its own settlement -- the twelve `moved` entries and the tenth job's promise are declarations of a state, and the run of the commit that ships them is the thing they were waiting for (`R9`: a promise that outlives its measurement is a bound nobody checked) |
-| CI | run `46000370819` on `ad41a7e`: **10 of 10 jobs success**, **317 s** of wall clock (the head is `battery lane 5 of 5` at **313 s**, `battery lane 4 of 5` **305 s**, `coverage` **247 s**, `verify` **149 s**), reading **66** -- the first run that measures the tenth job, and the run of the commit that ships this round |
+| CI | run `46002813607` on `fc158de`: **10 of 10 jobs success**, **318 s** of wall clock (the head is `battery lane 2 of 5` at **314 s**), reading **67** -- the second run of the ten-job queue, one commit after reading 66, and the one that shows the head changing lane without the queue changing cost |
 
 ### Left open
 
@@ -2086,4 +2096,6 @@ its batteries left, and the claim it guards -- every command there names a scrip
   run of the commit that shipped it, read **188 / 225 / 242 / 283 / 286** -- a **1.52x** spread where the
   table said **1.02x**, because one lane's type-miss probe read **211 -> 150 s** and the round-trip battery
   **52 -> 38 s** while the sensitivity pair read **114 -> 137** and **137 -> 155 s**. The placement is a
-  rule and the balance is a property of the table; the seconds are the machine's day. `[open: whether the placement should be re-derived each round from the run that ships it -- which buys a head 30 s closer and costs a table whose prices are never the same twice -- or stay one named reading with its error printed, and whether a required check named by its display name outside this repository has to be renamed now that every lane's name says `battery lane N of 5`]`
+  rule and the balance is a property of the table; the seconds are the machine's day -- reading 67, one
+  commit later, put the head on a **different lane** (**314 s**) with the wall clock at **318 s**, and read
+  `Test with coverage` at **133 s** where reading 66 read **217 s** for the same command on one tree. `[open: whether the placement should be re-derived each round from the run that ships it -- which buys a head 30 s closer and costs a table whose prices are never the same twice -- or stay one named reading with its error printed, and whether a required check named by its display name outside this repository has to be renamed now that every lane's name says `battery lane N of 5`]`
