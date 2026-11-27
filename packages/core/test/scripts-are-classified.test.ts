@@ -105,10 +105,12 @@ const REGISTER: Record<string, Entry> = {
   'lane-costs.mjs': {
     class: 'data',
     why:
-      'The lane plan: `placeLanes`, `matchJobs` and `laneErrors` over `golden-master/battery-lanes.json`. ' +
-      'It exports functions and has no main and no exit, because the verdict is a test -- ' +
-      '`battery-lanes.test.ts` is the only caller, and it is the gate that refuses the workflow and ' +
-      'the table disagreeing about a step, a lane or an order (v3.164).',
+      'The lane plan and its drift instrument: `placeLanes`, `matchJobs` and `laneErrors` over ' +
+      '`golden-master/battery-lanes.json`, plus `priceOf`, `observeLoads`, `observeDrift` and ' +
+      '`shapeSignature`. It exports functions and has no main and no exit, because the verdict is ' +
+      'a test -- `battery-lanes.test.ts` refuses a workflow and a table that disagree about a step, ' +
+      'a lane or an order (v3.164), and `lane-drift.test.ts` prices the fixed shape under every ' +
+      'readings ledger that can afford it and shows a re-derivation moves the shape (v3.165).',
   },
 
   'reconcile-readings.mjs': {

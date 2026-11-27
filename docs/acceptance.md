@@ -3370,3 +3370,29 @@ claim.
   **~21 s** prefix, against reading 65's **451 s**. A static table balances a quantity that is not stable -- this log
   holds a table balanced to **0.1%** whose shards read **16.1%** apart -- so the receipt is the shape, and the
   reading is `O-150`.
+
+## A drift is a ledger value, and a price has one matcher
+
+- **The question's premise was false.** `O-150` asked whether to re-derive the lane placement from the run that
+  ships each round, on the assumption that only the prices move. `shapeSignature` re-derives the LPT shape from
+  readings **65**, **66** and **67** and gets **three different shapes** from the same twenty commands, because the
+  rule is sensitive to seconds. Re-deriving is a new plan each round -- workflow, `moved` entries and every `R8`
+  order rewritten -- not a correction of one plan. The table keeps one named reading. (`v3.165`, finding 685)
+- **One matcher for one price.** `laneErrors` decided which step of a reading prices a row with an inline rule; the
+  drift instrument needed the same decision. `priceOf` is now the only place that decides it: a named step wins, else
+  the only step under the command, else no price. Both the plan check and the observation call it, so a quoted price
+  and an observed price cannot name different steps -- the defect behind finding 558 one level down. (`v3.165`,
+  finding 684)
+- **An observation keeps the shape and refuses a hole.** `observeLoads` holds every step's lane from the table and
+  re-prices it from a run. A reading that cannot price all **20** batteries is skipped, not summed into a short lane;
+  a row whose command ran twice under names it does not carry is named as ambiguous. `observeDrift` walks all **67**
+  readings, skips the **49** that predate the ten-job tree, and measures the **18** (50..67) that can pay for the
+  shape. (`v3.165`, finding 685)
+- **The drift a reader quotes now has an owner.** Reading 66, the run that shipped the table, paid head **263 -> 285
+  (+22)** and spread **6 -> 97 (+91)** under the fixed shape; `lane-drift.test.ts` fails if the ledger or the rule
+  changes. The prose that said **286** named the job's wall clock with the prefix removed, a different population
+  from the ledger's sum of steps (**285**); both are legitimate and the test owns each in its own assertion.
+  (`v3.165`, finding 685)
+- **What it does not claim.** That a static table's prices stay put. They do not -- that is the finding. What it
+  claims is that the shape is a rule, so it can be held, and the drift is a number, so it can be printed and checked
+  rather than remembered in a sentence.

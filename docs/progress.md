@@ -440,10 +440,10 @@ document that described it as downloading the data was describing an intention.
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 98 |
 | Source lines | 34,654 |
-| Test files | 265 core + 4 cli |
-| Test lines | 124,474 core + 3,242 cli |
-| Tests | 7,179 core + 187 cli |
-| Tracked files | 692 |
+| Test files | 266 core + 4 cli |
+| Test lines | 124,706 core + 3,242 cli |
+| Tests | 7,196 core + 187 cli |
+| Tracked files | 693 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.164: **54** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.165: **52** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1202,28 +1202,6 @@ is a row about rather than paraphrase one that no `grep` will find.
   until a table's rows are filtered and that pairing becomes a guess, or whether a file that uses a formatted title must
   state its clock on the suite, since a suite's number is the only clock a reader without a position can place]`
 
-- O-150 · **A lane's price is one reading, and the lane the table balanced is not the lane the runner ran.**
-  The table priced the five battery bodies at **263 / 261 / 260 / 257 / 258** s from reading 65; reading 66, the run
-  of the commit that shipped it, read **188 / 225 / 242 / 283 / 286** -- a **1.52x** spread where the table said
-  **1.02x**. The cause is in the table's provenance rather than in the rule: reading 65 was an afternoon in which
-  the type-miss probe took **211 s** and the round-trip battery **52 s**, and reading 66 took **150 s** and **38 s**
-  for the same two commands, while the sensitivity pair went the other way (**114 -> 137 s**, **137 -> 155 s**,
-  **90 -> 99 s** for the gate-test battery). So the table over-priced one lane by **75 s** and under-priced two by
-  **26** and **28**, and the head followed the lanes that grew: **313 s** against the **~284 s** predicted, on a
-  wall clock that went **451 -> 317 s**. Reading 67, one commit later, then put the head on a **different lane**
-  (**314 s**) with the wall clock at **318 s** and read `Test with coverage` at **133 s** where reading 66 read
-  **217 s** -- the head moves and the queue does not, while the prices move too. What is not settled is whether the
-  drift is a defect to repair or the error a static table is supposed to print.
-  `[open: whether the placement should be re-derived each round from the run that ships it -- which buys a head 30 s closer and costs a table whose prices are never the same twice -- or stay one named reading with its error printed, and whether a required check named by its display name outside this repository has to be renamed now that every lane's name says `battery lane N of 5`]`
-- O-149 · **A call states its ceiling and not its patience.**
-  Every adapter now sends `max_tokens` (finding 677), and none sends a timeout: `anthropic.ts`, `openai-compat.ts`
-  and `scripts/derive-fault-golden.mjs` all await `fetch` with no `AbortSignal`, so an endpoint that accepts the
-  connection and never answers holds the step until the job's ceiling. That is one number away from a decision
-  rather than a patch: a timeout short enough to fire on a legitimate slow generation is a gate that fails on the
-  harmless case, which this repository has refused twice by name (finding 168's shape), and no run here has ever
-  measured a slow-but-valid completion to size it against.
-  `[open: what timeout a generation may be given, and whether it is one number for every provider or one per adapter, given that no run in this repository has ever measured a slow-but-valid completion]`
-
 ## Pass log
 
 The rounds are recorded in the volumes below, in the order they were run. They were one
@@ -1262,7 +1240,7 @@ and this table.
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
 | [volume-20.md](progress/volume-20.md) | 8 | v3.134 | v3.141 |
 | [volume-21.md](progress/volume-21.md) | 9 | v3.142 | v3.150 |
-| [volume-22.md](progress/volume-22.md) | 14 | v3.151 | v3.164 |
+| [volume-22.md](progress/volume-22.md) | 15 | v3.151 | v3.165 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

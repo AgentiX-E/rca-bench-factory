@@ -1724,3 +1724,46 @@ the exception is the member nobody counts.
 a spawned child four hops down is still invisible, and the arm's evidence is the shape of the chain
 rather than the behaviour of the tool.
 
+
+## Finding 684 — the price of a row had two matchers
+
+**The claim.** `laneErrors` decides which step of a reading prices a table row with an inline
+rule: prefer the step named like the row, else the only step running the command. The drift
+instrument needed the same decision -- a run prices the same twenty rows under the table's
+fixed shape. Two spellings of one decision are free to drift apart, which is the shape finding
+558 removed one level down between a gate and its test.
+
+**The repair.** `priceOf` is the single matcher. It returns `{found, ambiguous, seconds, count}`:
+a named step wins; else the only step under the command; else `seconds: null` with `found: false`
+(no step ran it) or `ambiguous: true` (several did, none named like the row). Both `laneErrors` and
+the observation call it, so a table's quoted price and an observed price cannot name different
+steps. The three refusal sentences are unchanged; a `seen` map written and never read in the
+price loop went with the rewrite.
+
+**Falsification.** `lane-drift.test.ts` drives `priceOf` on a reading where one command runs twice
+under two names: the row naming one of them gets that one's seconds, a row naming neither is
+`ambiguous` with `seconds: null`, and a command the reading never ran is `found: false`. The
+twelve unit cases hold the matcher; the refusals in `battery-lanes.test.ts` hold the old verdict
+word for word.
+
+## Finding 685 — the drift lived in a sentence, in two units
+
+**The claim.** The progress prose said reading 66 measured the five battery bodies at
+**188 / 225 / 242 / 283 / 286** s. Those are job wall clocks with the prefix removed. The
+readings ledger, pricing the same commands under the table's fixed shape, gives
+**188 / 224 / 242 / 283 / 285** -- the sum of step seconds. Both are legitimate measurements of
+different things; quoting them in one sentence as one population was not, and neither number had
+a test that would fail if the ledger changed.
+
+**The repair.** `observeLoads` holds every step's lane from the table and re-prices it from a run;
+it refuses a reading that cannot price all twenty batteries and names a row whose command ran
+twice under names it does not carry. `observeDrift` walks the ledger, skips the **49** readings
+that predate the ten-job tree, and measures the **18** that can pay for the whole shape: head
+**263 -> 285 (+22)**, spread **6 -> 97 (+91)**. `shapeSignature` re-derives the LPT shape from
+readings **65 / 66 / 67** and gets **three** shapes from the same twenty commands, which answers
+the open question directly: re-deriving each round is a different plan each round, not a
+correction of one.
+
+**What is not claimed.** That the wall-clock 286 was wrong. It stays in the v3.164 ledger as the
+wall clock it was; 285 here is the ledger's sum of steps, and `lane-drift.test.ts` owns each in
+its own assertion. A reading that runs a different tree is skipped, not reported as a short lane.

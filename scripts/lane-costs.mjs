@@ -73,6 +73,25 @@ export const ROW_KEYS = ['step', 'command', 'seconds', 'group', 'lane', 'from'];
 export const TABLE_KEYS = ['rule', 'reading', 'run', 'commit', 'measured', 'unit', 'jobs', 'steps'];
 
 /**
+ * The price a reading gives one row: one matcher, used by both the plan check and the
+ * drift observation, so a price quoted in a table and a price observed in a run cannot be
+ * two spellings of "which step is this" (the defect behind finding 558 one level down).
+ *
+ * A command the reading never ran is `found: false`; a command that ran twice under names
+ * the row does not name is `ambiguous: true`, and in neither case is there one price to
+ * quote -- `seconds` is null. The rule is the one `laneErrors` used to carry inline:
+ * prefer the step named like the row, else the only step running the command.
+ */
+export function priceOf(row, steps) {
+  const at = steps.filter((step) => step.command === row.command);
+  if (at.length === 0) return { found: false, ambiguous: false, seconds: null, count: 0 };
+  const named = at.find((step) => step.name === row.step);
+  if (named !== undefined) return { found: true, ambiguous: false, seconds: named.seconds, count: at.length };
+  if (at.length > 1) return { found: true, ambiguous: true, seconds: null, count: at.length };
+  return { found: true, ambiguous: false, seconds: at[0].seconds, count: 1 };
+}
+
+/**
  * The unit a row is placed as: its group, or the step itself when it stands alone.
  *
  * Named rather than inlined because three functions and every message have to agree on it,
@@ -430,24 +449,23 @@ export function laneErrors(table, workflowSteps, readingSteps) {
   // command. A row that quotes another run's number is a plan priced on a tree nobody can
   // look up, and the whole argument for deriving rather than placing is that the numbers
   // are in the repository.
-  const seen = new Map();
   for (const row of rows) {
     if (!Number.isInteger(row.seconds)) continue;
-    const at = readingSteps.filter((step) => step.command === row.command);
-    if (at.length === 0) {
+    // One matcher for the table's price and the drift observation: `priceOf` is the only
+    // place that decides which step of a reading a row names (finding 558's shape, one
+    // level down). The three sentences below are the verdict; the matcher is the rule.
+    const priced = priceOf(row, readingSteps);
+    if (!priced.found) {
       errors.push(`the reading the lane table names holds no step running \`${row.command}\`, so its price for \`${row.step}\` is not that reading's`);
       continue;
     }
-    const named = at.find((step) => step.name === row.step);
-    const seconds = named === undefined ? at[0].seconds : named.seconds;
-    if (at.length > 1 && named === undefined) {
-      errors.push(`the reading holds ${String(at.length)} steps running \`${row.command}\` and none of them is \`${row.step}\`, so the price is ambiguous`);
+    if (priced.ambiguous) {
+      errors.push(`the reading holds ${String(priced.count)} steps running \`${row.command}\` and none of them is \`${row.step}\`, so the price is ambiguous`);
       continue;
     }
-    if (row.seconds !== seconds) {
-      errors.push(`the lane table prices \`${row.step}\` at ${String(row.seconds)} s and the reading it names recorded ${String(seconds)} s: a plan quotes a reading, it does not revise it`);
+    if (row.seconds !== priced.seconds) {
+      errors.push(`the lane table prices \`${row.step}\` at ${String(row.seconds)} s and the reading it names recorded ${String(priced.seconds)} s: a plan quotes a reading, it does not revise it`);
     }
-    seen.set(row.step, seconds);
   }
 
   const loads = laneLoads(placed.lanes);
@@ -463,4 +481,117 @@ export function laneErrors(table, workflowSteps, readingSteps) {
       total: loads.reduce((total, one) => total + one, 0),
     },
   };
+}
+
+/**
+ * The cost of a fixed shape under a different reading: the table says which lane each step
+ * sits in, and this re-prices those steps from a run without moving any of them.
+ *
+ * Moving them is the other question, and reading 65/66/67 answer it: re-deriving the LPT
+ * shape from each reading's own seconds gives three different shapes, because the rule is
+ * sensitive to seconds. The plan therefore fixes the shape once, from one named reading,
+ * and reports what later runs paid for that same shape -- the drift is observable, but it
+ * is not something a re-placement can repair without becoming a different plan each run.
+ *
+ * `complete` is false when a row has no price in the reading (unpriced) or an ambiguous
+ * one (ambiguous, two steps under one command that the row does not name). A partial
+ * observation is named rather than summed, because a head computed over a shape with a
+ * hole in it is a number that looks like a measurement and is not one.
+ */
+export function observeLoads(table, steps) {
+  const counts = Array.isArray(table?.jobs) && table.jobs.length > 0
+    ? table.jobs.map(() => 0)
+    : [];
+  const rows = Array.isArray(table?.steps) ? table.steps : [];
+  // A table whose rows carry lane indices: fall back to the highest index + 1 when the
+  // jobs list is absent, so a fixture written without jobs still gets one slot per lane.
+  let laneCount = counts.length;
+  for (const row of rows) if (Number.isInteger(row?.lane)) laneCount = Math.max(laneCount, row.lane + 1);
+  const loads = new Array(laneCount).fill(0);
+  const unpriced = [];
+  const ambiguous = [];
+  for (const row of rows) {
+    const priced = priceOf(row, steps);
+    if (!priced.found) {
+      unpriced.push(row.step);
+      continue;
+    }
+    if (priced.ambiguous) {
+      ambiguous.push(row.step);
+      continue;
+    }
+    if (Number.isInteger(row?.lane)) loads[row.lane] += priced.seconds;
+  }
+  return {
+    loads,
+    head: loads.length === 0 ? 0 : Math.max(...loads),
+    spread: loads.length === 0 ? 0 : Math.max(...loads) - Math.min(...loads),
+    total: loads.reduce((total, one) => total + one, 0),
+    unpriced,
+    ambiguous,
+    complete: unpriced.length === 0 && ambiguous.length === 0,
+  };
+}
+
+/**
+ * The ledger read as observations of one table's fixed shape.
+ *
+ * The table names a reading (its `reading` and `run`); that reading is the prediction, and
+ * every reading in the ledger that can price all of the table's rows is an observation.
+ * A reading that cannot price a row is skipped rather than reported as a short one: it is
+ * a different tree, not a measurement of this shape. The `reading` number of each row is
+ * its one-based position in the ledger, which is how the recording numbers readings.
+ *
+ * `headDrift` and `spreadDrift` are differences from the prediction, not fresh placements.
+ * They are the numbers the progress volumes quote when they say a table balanced to 1.02x
+ * was measured at 1.52x; putting them here makes that sentence checkable.
+ */
+export function observeDrift(table, ledger) {
+  const readings = Array.isArray(ledger) ? ledger : [];
+  const asSteps = (reading) => {
+    const out = [];
+    const jobs = reading?.jobs ?? {};
+    for (const steps of Object.values(jobs)) {
+      if (!steps || typeof steps !== 'object') continue;
+      for (const [name, one] of Object.entries(steps)) {
+        out.push({ name, command: String(one?.command ?? ''), seconds: Number(one?.seconds ?? 0) });
+      }
+    }
+    return out;
+  };
+  const observations = [];
+  for (const [index, reading] of readings.entries()) {
+    const seen = observeLoads(table, asSteps(reading));
+    if (!seen.complete) continue;
+    observations.push({
+      reading: index + 1,
+      run: reading.run,
+      commit: reading.commit,
+      loads: seen.loads,
+      head: seen.head,
+      spread: seen.spread,
+      total: seen.total,
+    });
+  }
+  const predicted = observations.find((one) => one.reading === table.reading) ?? null;
+  for (const one of observations) {
+    one.headDrift = predicted === null ? null : one.head - predicted.head;
+    one.spreadDrift = predicted === null ? null : one.spread - predicted.spread;
+  }
+  return { predicted, observed: observations, eligible: observations.length };
+}
+
+/**
+ * A shape's signature: which step sits in which lane, as the placement rule derives it.
+ *
+ * Used to answer the question `O-150` left open -- whether to re-derive the placement each
+ * round -- by showing the answer's premise is false: the same commands under different
+ * seconds derive different shapes, so "re-derive each round" is "a different plan each
+ * round", not a correction of one plan. Sorting each lane's steps makes the signature a
+ * property of the shape and not of the order the rows were written in.
+ */
+export function shapeSignature(rows, count) {
+  const placed = placeLanes(rows, count);
+  if (placed.error !== null) return null;
+  return placed.lanes.map((lane) => lane.map((row) => String(row.step)).sort().join('\u0000')).join('\u0001');
 }

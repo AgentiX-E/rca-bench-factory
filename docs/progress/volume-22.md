@@ -2076,10 +2076,10 @@ its batteries left, and the claim it guards -- every command there names a scrip
 | the recording, before and after | a job promise beside a step declaration for one job was refused outright -- **46** sentences of `check-ci-budget` -- and `R9` counted **6** steps where the job owns **2**; the pair is now accepted and the overlap (one step, two owners) refused |
 | the arm that was reading a smaller workflow | `artefacts` runs `pnpm docs:check`, which spawns a vitest through the doc guards, and the reader stopped at the command's first token: **8** suite jobs counted, now **9** |
 | the edits' own counting consequences | `gate-sites.json`'s `scanned` **103 -> 104** with the inventory unchanged (**156** sites, **69** scripts), re-derived rather than trusted; `gate-steps` re-pinned **5** jobs (`verify` 32/4, `coverage` 31/6, `sensitivity` 53/7, `batteries` 60/8, `batteries-heavy` 33/4) |
-| `core` test suite | **265 files, 7,179 tests passed** (as of this commit) |
+| `core` test suite | **265 files, 7,179 tests passed** (at v3.164) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- statements, branches, functions and lines, read from `coverage/coverage-summary.json` |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **269 files, 7,366 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.164) |
+| repo test suite | **269 files, 7,366 tests passed** (at v3.164) |
 | new tests | **7,143 -> 7,179, +36**: **35** in `battery-lanes.test.ts` (the unit, the rule, the matching, the reader's refusals, the plan against the workflow, the order, the prefix, the shipped plan, and a second table the reader must also accept) and one net in `ci-budget.test.ts` -- the overlap refused, the pair a split needs accepted |
 | test lines | **123,970 -> 124,474 core** |
 | `Tracked files` | **689 -> 692**: `scripts/lane-costs.mjs`, `golden-master/battery-lanes.json` and `packages/core/test/battery-lanes.test.ts`. `golden-master/ci-declarations.json` was written by this round and deleted by its own settlement -- the twelve `moved` entries and the tenth job's promise are declarations of a state, and the run of the commit that ships them is the thing they were waiting for (`R9`: a promise that outlives its measurement is a bound nobody checked) |
@@ -2099,3 +2099,67 @@ its batteries left, and the claim it guards -- every command there names a scrip
   rule and the balance is a property of the table; the seconds are the machine's day -- reading 67, one
   commit later, put the head on a **different lane** (**314 s**) with the wall clock at **318 s**, and read
   `Test with coverage` at **133 s** where reading 66 read **217 s** for the same command on one tree. `[open: whether the placement should be re-derived each round from the run that ships it -- which buys a head 30 s closer and costs a table whose prices are never the same twice -- or stay one named reading with its error printed, and whether a required check named by its display name outside this repository has to be renamed now that every lane's name says `battery lane N of 5`]`
+
+## v3.165 — a price is a matcher, and a drift is a ledger, not a sentence
+
+The question `O-150` left open was whether to re-derive the lane placement from the run that
+ships each round. Its premise was never tested. This round tested it and found it false: the
+placement rule is sensitive to seconds, so re-deriving from readings **65**, **66** and **67**
+gives **three different shapes** for the same twenty commands. "Re-derive each round" is not a
+correction of one plan -- it is a different plan each round, with the workflow, the `moved`
+entries and every `R8` order rewritten to follow it. The answer is therefore to keep the one
+named reading, and to stop keeping the drift in prose: `lane-costs.mjs` now derives it from the
+readings ledger, and `lane-drift.test.ts` pins the numbers a reader quotes.
+
+**Finding 684 -- the price had two spellings.** `laneErrors` decided which step of a reading a
+table row names with an inline filter: prefer the step named like the row, else the only step
+running the command. The drift instrument needed the same decision. Writing it a second time
+is the defect behind finding 558 one level down -- two readers of one fact, free to disagree.
+`priceOf` is now the single matcher: both the plan check and the observation call it, and a
+table price and an observed price cannot name different steps. The three refusal sentences are
+unchanged; a dead `seen` map in the price loop went with the rewrite.
+
+**Finding 685 -- the drift lived in a sentence, in two units.** The progress volumes said
+reading 66 measured the five bodies at **188 / 225 / 242 / 283 / 286** s. Those are *job wall
+clocks with the prefix removed*. The readings ledger, priced under the table's fixed shape,
+gives **188 / 224 / 242 / 283 / 285** -- *the sum of the step seconds*. Both are legitimate;
+quoting them in one sentence as one population was not. `observeLoads` fixes the shape and
+re-prices it from a run, refuses a reading that cannot price all twenty batteries, and names a
+row whose command ran twice under names it does not carry. `observeDrift` walks the ledger,
+skips the **49** readings that predate the ten-job tree, and measures the **18** that can pay
+for the whole shape. The head drifted **263 -> 285 (+22)** and the spread **6 -> 97 (+91)**;
+those numbers now have a test that fails if the ledger or the rule changes.
+
+**What it deliberately does not do.** It does not call the job wall clock a sum of steps, and
+it does not call a partial observation a measurement. A reading that runs a different tree is
+skipped, not reported as a short lane. The 286 in the v3.164 ledger stays as the wall clock it
+was; the 285 here is the ledger's own sum, and `lane-drift.test.ts` is where each is owned.
+
+### Readings
+
+> Ledger for `v3.165`.
+
+| item | value |
+| --- | --- |
+| the matcher, once | `priceOf` returns `{found, ambiguous, seconds, count}`; a named step wins, else the only step under the command, else `seconds: null`; both `laneErrors` and the observation use it (finding 684) |
+| an observation, not a re-placement | `observeLoads` keeps the table's `lane` for every step and only re-prices it; a reading that cannot price all **20** rows is refused, not summed |
+| the ledger, as a population | `observeDrift` walks **67** readings, skips **49** that cannot price the shape, measures **18** (readings 50..67); the table's reading **65** is the prediction and its drift is **0** |
+| prediction, re-derived | the shipped shape reads **263 / 261 / 260 / 257 / 258**, head **263**, spread **6** -- the same numbers `battery-lanes.test.ts` pins, now from one matcher |
+| what reading 66 paid | the run that shipped the table read **188 / 224 / 242 / 283 / 285** under the fixed shape: head **+22**, spread **+91** against the prediction. The v3.164 prose wrote **286** for the last lane from the job's wall clock; this row is the ledger's sum of steps, and the two are named apart |
+| why no re-derivation | `shapeSignature` over readings **65 / 66 / 67** returns **3** distinct shapes from the same twenty commands: the placement moves with the seconds, so re-deriving is a new plan each run |
+| `core` test suite | **266 files, 7,196 tests passed** (as of this commit) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- statements, branches, functions and lines, read from `coverage/coverage-summary.json` |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **270 files, 7,383 tests passed** (as of this commit) |
+| new tests | **7,179 -> 7,196, +17**: twelve unit cases in `lane-drift.test.ts` (one matcher, fixed-shape observation, ledger drift, shape sensitivity) and five shipped cases that read the ledger and pin the drift and the three-shape result |
+| test lines | **124,474 -> 124,706 core** |
+| `Tracked files` | **692 -> 693**: `packages/core/test/lane-drift.test.ts`; no new script or golden file -- the table's existing test is the ledger's guard, the way `battery-lanes.test.ts` has always guarded the plan |
+| CI | run `46002813607` on `fc158de`: **10 of 10 jobs success**, reading **67** -- the recording this round measures against; the run of the commit that ships the drift instrument is the one that closes `O-150`'s ledger row |
+
+### Left open
+
+- `O-144` · **A title is not an address: a formatted test title has no position, and the reader that needs one guesses the file.**
+  Untouched this round: the drift instrument reads whole commands and step names, not suite
+  titles, so it neither depends on nor repairs the title-position question. `[open: whether a
+  file that uses a formatted title must state its clock on the suite, since a suite's number is
+  the only clock a reader without a position can place]`
