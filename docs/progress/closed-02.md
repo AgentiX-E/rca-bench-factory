@@ -1106,3 +1106,20 @@
   What stays open is what the sites table has had since v3.157 and this one inherits -- a table measured on one machine's
   afternoon, whose staleness is caught for the gate set and the file counts and not for a file that grew under the same
   name (`O-146`).
+- O-146 · ~~**The gates' table is one machine's afternoon, and nothing notices when it stops describing the tree.**~~
+  The entry asked two questions and both were answered by measurement rather than by preference. **Closed by finding
+  676.** A verdict on the table's age would have to be a verdict on the value of a number the tree cannot compare: the
+  file count pins the *set* of naming files, and every round moves the tree inside that set, where a one-line comment
+  and a threefold growth are the same event to `wc -l`. So the row now carries the count -- **69** gates, **282,873 ms**,
+  **231,939** lines, **235** file executions over **95** distinct files, dearest `check-official.mjs` at **27,857 ms
+  (9.8%)** -- and the **value is a reading**: every run that measured a gate prints the drift of the tree from the table
+  and the price the table put on the gates it measured against the seconds they spent, whose first reading weighed the
+  table v3.161 shipped against this tree at **287.5 s** priced and **282.9 s** spent, **-1.6%**. The re-measure the
+  entry worried about is **282.9 s** here, which is why the round bought a reading and not a verdict: a gate that fires
+  on the harmless case is a gate that gets re-measured by habit. What stayed a verdict is the shape, because a row with
+  no `lines` would print a drift total that silently left a gate out. The second question -- whether a re-measure can be
+  asked of CI -- is answered by the same instrument: the readings CI already prints are the per-gate seconds, so the
+  table can be rebuilt from a run rather than from a laptop, and this round's own rebuild read a table against a tree
+  before it changed either.
+  What stays open is the queue: reading 62 made `verify` (**429 s**) the longest job, ahead of `gates-audit`
+  (**417 s**), because `lint` (**186 s**) and `coverage` (**206 s**) share one job (`O-147`).

@@ -441,8 +441,8 @@ document that described it as downloading the data was describing an intention.
 | Source files | 98 |
 | Source lines | 34,609 |
 | Test files | 264 core + 4 cli |
-| Test lines | 123,751 core + 3,242 cli |
-| Tests | 7,137 core + 187 cli |
+| Test lines | 123,859 core + 3,242 cli |
+| Tests | 7,139 core + 187 cli |
 | Tracked files | 689 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.161: **53** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.162: **53** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1202,16 +1202,17 @@ is a row about rather than paraphrase one that no `grep` will find.
   until a table's rows are filtered and that pairing becomes a guess, or whether a file that uses a formatted title must
   state its clock on the suite, since a suite's number is the only clock a reader without a position can place]`
 
-- O-146 · **The gates' table is one machine's afternoon, and nothing notices when it stops describing the tree.**
-  v3.161 divides the gate audit's two jobs by `golden-master/gate-costs.json`, and `checkGateCosts` holds that table to
-  the inventory in both directions -- a gate with no row, a row with no gate -- and to each gate's count of naming test
-  files where the caller knows it, which is a measuring run and not `--list`. What it cannot see is a test file that
-  grows under the same name: the gate's price doubles, the table says what it said before, and the plan balances two
-  halves by numbers from an older tree. The sites table has had the same hole since v3.157 and the same silence, so
-  this is one entry for two tables rather than a third for the second.
-  `[open: whether the age of a table should be a verdict -- `measured` older than N rounds is refused -- or a printed
-  reading a reviewer reads, and whether a re-measure can be asked of CI rather than of a person, since
-  `verify-gates-are-testable.mjs --costs` is five minutes of a runner and the sites battery's is three]`
+- O-147 · **The workflow's longest job is now the one that runs two unrelated things in series.**
+  Reading 62 put `verify` at **429 s** -- `typecheck` 10 s, `lint` **186 s**, `coverage` **206 s** in one job -- with
+  `gates-audit` **417 s** behind it, so the head of the queue is no longer a battery but a job that holds two half-hour
+  commands that know nothing about each other. Run as two jobs they would pay one install and one build more (**~20 s**
+  of the reading) and cut the workflow's wall clock by about **200 s**; what stops it being free is the ledger, because
+  the job count is what every `R11` row's denominator is written against, what the nine ceilings are counted in, and
+  what `check-ci-budget` reconciles the bounds of, and `R11` already refuses a commit that adds a job until a run has
+  measured the job that commit adds.
+  `[open: whether the wall clock should be bought by changing the shape of the queue, and if so which of the two jobs
+  the shared install-and-build prefix belongs to -- a prefix on the longer half is a bound the shorter half does not
+  need, and a prefix on both is how the split pays for itself twice]`
 ## Pass log
 
 The rounds are recorded in the volumes below, in the order they were run. They were one
@@ -1250,7 +1251,7 @@ and this table.
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
 | [volume-20.md](progress/volume-20.md) | 8 | v3.134 | v3.141 |
 | [volume-21.md](progress/volume-21.md) | 9 | v3.142 | v3.150 |
-| [volume-22.md](progress/volume-22.md) | 11 | v3.151 | v3.161 |
+| [volume-22.md](progress/volume-22.md) | 12 | v3.151 | v3.162 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

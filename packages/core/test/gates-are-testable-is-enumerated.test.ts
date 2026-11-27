@@ -194,7 +194,7 @@ function treeOf(stub: { body: string; status: number }, subjects: string[]): str
       measured: '2026-11-27',
       machine: 'fixture, 1 cpu',
       source: 'node scripts/verify-gates-are-testable.mjs --costs golden-master/gate-costs.json',
-      gates: Object.fromEntries(subjects.map((subject) => [subject, { ms: 1, files: 1 }])),
+      gates: Object.fromEntries(subjects.map((subject) => [subject, { ms: 1, files: 1, lines: 1 }])),
     }),
   );
   const npx = join(tree, 'bin', 'npx');

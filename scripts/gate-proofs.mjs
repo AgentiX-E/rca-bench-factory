@@ -381,6 +381,53 @@ export function apartPercent(loads) {
 }
 
 /**
+ * How far the tree has moved from the one the table priced, in lines.
+ *
+ * The reading `O-146` asked for and `checkGateCosts`'s doc comment argues cannot honestly
+ * be a verdict. `rows` is the table's `gates` object, restricted by the caller to the gates
+ * its run measured; `tree` is what those gates' naming files hold now. A gate the tree has
+ * no count for is reported as moved with `to: null` rather than dropped -- the one thing a
+ * reader must not see is a table and a tree agreeing because the tree said nothing.
+ *
+ * `moved` is ordered by the size of the change, widest first, so the sentence a run prints
+ * names the gate whose price is least likely to still be right. `null` when there is no
+ * row to read, because "0 of 0 gates moved" is the arithmetic agreeing with itself.
+ */
+export function gateDrift(rows, tree) {
+  if (rows === null || typeof rows !== 'object' || Array.isArray(rows)) return null;
+  const named = Object.entries(rows);
+  if (named.length === 0) return null;
+  let tableLines = 0;
+  let treeLines = 0;
+  // Ordered by how much moved, widest first. A gate the tree says nothing about counts as a
+  // move of its whole size rather than of nothing: `to: null` is an unread count, and
+  // sorting it by `0 - from` would rank the largest unknown last.
+  const moved = [];
+  const size = (one) => (one.to === null ? one.from : Math.abs(one.to - one.from));
+  for (const [gate, row] of named) {
+    const was = Number(row?.lines);
+    if (!Number.isInteger(was) || was <= 0) continue;
+    tableLines += was;
+    const now = tree.get(gate);
+    if (typeof now !== 'number') {
+      moved.push({ gate, from: was, to: null });
+      continue;
+    }
+    treeLines += now;
+    if (now !== was) moved.push({ gate, from: was, to: now });
+  }
+  moved.sort((one, other) => size(other) - size(one));
+  return {
+    gates: named.length,
+    tableLines,
+    treeLines,
+    change: tableLines === 0 ? null : ((treeLines - tableLines) / tableLines) * 100,
+    moved,
+    widest: moved[0] ?? null,
+  };
+}
+
+/**
  * Whether a cost table describes the inventory it is being used to divide.
  *
  * A table is a measurement of a tree, and the tree moves: a gate is added to the
@@ -396,11 +443,29 @@ export function apartPercent(loads) {
  * asymmetry is why the second element of `byGate` may be `null` -- a caller with no count
  * says so rather than passing a zero that would read as a mismatch.
  *
- * What this cannot see: a test file that keeps its name and changes its contents. A gate
- * whose tests got twice as heavy under the same filename leaves a table that is stale in
- * the direction this verdict calls fine, and only a re-measure finds it. Stated rather
- * than guarded, because a check that claimed to cover it would be the shape finding 168
- * recorded -- a guard reading something adjacent and calling it the property.
+ * What a count cannot see: a test file that keeps its name and changes its contents. A
+ * gate whose tests got twice as heavy under the same filename leaves a table that is
+ * stale in the direction this verdict calls fine, and only a re-measure finds it.
+ *
+ * ## Why the row carries a line count, and why that count is not compared
+ *
+ * `v3.161` left this as `O-146`: the file count is a fingerprint of the *set* of naming
+ * files, and the tree moves inside that set every round -- a test file grows, a `describe`
+ * gains a case, a fixture doubles. The cheapest unit that moves when that happens is the
+ * one every gate's evidence is already made of: the lines of the files that name it. So a
+ * row carries `lines`, written by the same pass that measured the milliseconds, and
+ * `checkGateCosts` refuses a row whose `lines` is not a count -- a table without it would
+ * make a later run's drift blank rather than zero, and blank reads like nothing to report.
+ *
+ * It is deliberately **not** compared, and that is this round's decision rather than an
+ * omission. A verdict on it would make every round that touches one gate's test file an
+ * order to re-measure all 69 on a laptop (287 s), and the tree cannot tell a one-line
+ * comment from a threefold growth -- so the verdict would fire on the harmless case with
+ * the same force as the harmful one, and a gate that fires on the harmless case is a gate
+ * that gets re-measured by habit. What the count buys instead is a reading: `gateDrift`
+ * says how far the tree has moved from the table, on every shard run, and the reader who
+ * sees a gate whose files doubled knows which number to distrust. A verdict here would be
+ * finding 168's shape -- a guard watching something adjacent and calling it the property.
  */
 export function checkGateCosts(byGate, table) {
   const errors = [];
@@ -450,6 +515,13 @@ export function checkGateCosts(byGate, table) {
       errors.push(
         `\`${gate}\`'s ms is ${String(row.ms)}, which is not a measured number of milliseconds, so the ` +
           'gate cannot be priced',
+      );
+    }
+    if (!Number.isInteger(row.lines) || row.lines <= 0) {
+      errors.push(
+        `\`${gate}\`'s lines is ${String(row.lines)}, which is not a count of the lines the files that name ` +
+          'it hold: the table would price the gate and say nothing about which tree it priced, and a later ' +
+          'run could then neither read the drift nor tell it from zero -- regenerate it with `--costs`',
       );
     }
   }

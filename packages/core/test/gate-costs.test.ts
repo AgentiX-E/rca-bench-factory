@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { apartPercent, checkGateCosts, gateShardPlan } from '../../../scripts/gate-proofs.mjs';
+import { apartPercent, checkGateCosts, gateDrift, gateShardPlan } from '../../../scripts/gate-proofs.mjs';
 
 /**
  * The table the gate audit's two shards are divided by.
@@ -33,6 +33,18 @@ import { apartPercent, checkGateCosts, gateShardPlan } from '../../../scripts/ga
  * `--shard` divides by it with the same longest-processing-time rule the sites battery
  * uses, and this file holds both halves of that: the table's verdicts (which are about
  * whether the table describes *this* tree) and the plan's (which are about the split).
+ *
+ * ## The half v3.161 left open, and what was decided
+ *
+ * `O-146`: the table's file count pins the *set* of files that name a gate, and every round
+ * moves the tree inside that set -- a test file grows, a case is added. So a row also
+ * carries `lines`, the count its evidence held when the table was written, and every run
+ * prints the drift between the table and the tree it is dividing. It is a **reading** and
+ * not a verdict, because a verdict would make every round that edits one gate's tests an
+ * order to re-measure all 69 on a laptop, and the tree cannot tell a one-line comment from
+ * a threefold growth -- a gate that fires on the harmless case is one re-measured by habit.
+ * What is a verdict is the shape: a row without a line count is refused, because a run
+ * would otherwise print a total that silently left a gate out, and blank reads as zero.
  *
  * ## Why the assertions are shaped the way they are
  *
@@ -66,13 +78,20 @@ afterAll(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
-/** A table row as `--costs` writes it: the seconds a gate cost and how many files it ran. */
+/**
+ * A table row as `--costs` writes it: the seconds a gate cost, how many files it ran, and
+ * how many lines those files held.
+ *
+ * The line count is the fingerprint `O-146` asked for, and `40` is deliberately not the
+ * line count of any fixture here: a table that agreed with the tree would make the drift
+ * reading print zero and the test that reads it pass for the wrong reason.
+ */
 function table(gates: Record<string, number>, extra: Record<string, unknown> = {}) {
   return {
     measured: '2026-11-27',
     machine: 'linux x64, 32 cpu',
     source: 'node scripts/verify-gates-are-testable.mjs --costs golden-master/gate-costs.json',
-    gates: Object.fromEntries(Object.entries(gates).map(([gate, ms]) => [gate, { ms, files: 1 }])),
+    gates: Object.fromEntries(Object.entries(gates).map(([gate, ms]) => [gate, { ms, files: 1, lines: 40 }])),
     ...extra,
   };
 }
@@ -169,7 +188,7 @@ const SUITE_BUDGET_MS = 60_000;
 describe('scripts/gate-proofs.mjs · the table the gate audit is divided by', { timeout: SUITE_BUDGET_MS }, () => {
   it('refuses a table that cannot price a gate, one refusal at a time', () => {
     const inventory: [string, number | null][] = [['a.mjs', 1]];
-    const shippedRow = { ms: 10, files: 1 };
+    const shippedRow = { ms: 10, files: 1, lines: 40 };
     const cases: [string, Record<string, unknown>, string][] = [
       ['no map at all', { ...table({}), gates: undefined }, 'no `gates` map'],
       ['gates as a list', { ...table({}), gates: [] }, 'no `gates` map'],
@@ -186,6 +205,20 @@ describe('scripts/gate-proofs.mjs · the table the gate audit is divided by', { 
         { ...table({ 'a.mjs': 10 }), gates: { 'a.mjs': { ms: 10, files: 2 } } },
         'is named by 1 test file(s) and the table says 2',
       ],
+      // `O-146`: the fingerprint the drift reading is computed from. A row without one is
+      // refused rather than read as "no drift", because the run would then print a total
+      // that silently left a gate out -- blank reading as zero.
+      ['no line count', { ...table({ 'a.mjs': 10 }), gates: { 'a.mjs': { ms: 10, files: 1 } } }, "`a.mjs`'s lines is undefined"],
+      [
+        'a line count that is not a count',
+        { ...table({ 'a.mjs': 10 }), gates: { 'a.mjs': { ms: 10, files: 1, lines: 'many' } } },
+        "`a.mjs`'s lines is many",
+      ],
+      [
+        'a line count of zero',
+        { ...table({ 'a.mjs': 10 }), gates: { 'a.mjs': { ms: 10, files: 1, lines: 0 } } },
+        'is not a count of the lines',
+      ],
     ];
     for (const [what, broken, said] of cases) {
       const errors = checkGateCosts(inventory, broken);
@@ -198,7 +231,7 @@ describe('scripts/gate-proofs.mjs · the table the gate audit is divided by', { 
   });
 
   it('prices every gate the shipped inventory names, and no gate it does not', () => {
-    const rows = (shipped() as { gates: Record<string, { ms: number; files: number }> }).gates;
+    const rows = (shipped() as { gates: Record<string, { ms: number; files: number; lines: number }> }).gates;
     const inventory = listedSubjects();
     // Identity in both directions: a table that has lost a row cannot divide the tree, and
     // a table that holds a row for a gate nobody has was measured on a tree that moved.
@@ -206,6 +239,10 @@ describe('scripts/gate-proofs.mjs · the table the gate audit is divided by', { 
     for (const gate of inventory) {
       expect(Number.isInteger(rows[gate]?.ms), gate).toBe(true);
       expect(rows[gate]?.ms, gate).toBeGreaterThan(0);
+      // The fingerprint `O-146` added: every shipped row says how many lines its evidence
+      // held when the table was written, so a later run can read the drift.
+      expect(Number.isInteger(rows[gate]?.lines), gate).toBe(true);
+      expect(rows[gate]?.lines, gate).toBeGreaterThan(0);
     }
     // And the verdict agrees, which is what the script acts on rather than what this file
     // reads: the counts are passed as `null` because `--list` does not sweep the test
@@ -245,6 +282,45 @@ describe('scripts/gate-proofs.mjs · the table the gate audit is divided by', { 
       const positions = shard.map((gate) => inventory.indexOf(gate));
       expect([...positions].sort((left, right) => left - right)).toEqual(positions);
     }
+  });
+
+  it('reads how far the tree has moved from the table, in the lines its evidence holds', () => {
+    // `O-146`, decided as a reading rather than a verdict: a test file that keeps its name
+    // and grows is invisible to the file count, and a verdict on the line count would make
+    // every round that edits one gate's tests an order to re-measure all 69.
+    const rows = {
+      'a.mjs': { ms: 1, files: 1, lines: 100 },
+      'b.mjs': { ms: 1, files: 1, lines: 40 },
+      'c.mjs': { ms: 1, files: 1, lines: 10 },
+    };
+    const same = gateDrift(rows, new Map([['a.mjs', 100], ['b.mjs', 40], ['c.mjs', 10]]));
+    expect(same).toEqual({ gates: 3, tableLines: 150, treeLines: 150, change: 0, moved: [], widest: null });
+    // One gate doubled: the change is of the total, and the widest is named so the sentence
+    // a run prints points at the number least likely to still be right.
+    const grown = gateDrift(rows, new Map([['a.mjs', 300], ['b.mjs', 40], ['c.mjs', 10]]));
+    // 150 lines became 350: the change is of the total, so one gate tripling is +133%.
+    expect(grown?.change).toBeCloseTo(((350 - 150) / 150) * 100, 6);
+    expect(grown?.moved).toEqual([{ gate: 'a.mjs', from: 100, to: 300 }]);
+    expect(grown?.widest?.gate).toBe('a.mjs');
+    // Ordered by how much moved, not by name: +50 lines outranks +10 even though `a.mjs`
+    // sorts first, because the order exists to say which price to distrust most.
+    expect(gateDrift(rows, new Map([['a.mjs', 110], ['b.mjs', 90], ['c.mjs', 10]]))?.moved.map((one) => one.gate)).toEqual([
+      'b.mjs',
+      'a.mjs',
+    ]);
+    // A gate the tree says nothing about is a move of its whole size with an unread end --
+    // not a gate that did not move, which is what `0 - from` would have made it.
+    const silent = gateDrift(rows, new Map([['a.mjs', 100], ['b.mjs', 40]]));
+    expect(silent?.moved).toEqual([{ gate: 'c.mjs', from: 10, to: null }]);
+    expect(silent?.treeLines).toBe(140);
+    // Nothing to compare is `null` rather than a tidy zero.
+    expect(gateDrift({}, new Map())).toBeNull();
+    // A row with no line count is skipped, and the verdict above is what refuses it: a
+    // drift that read the missing count as zero would report a fall nobody measured.
+    const unreadable = gateDrift({ 'a.mjs': { ms: 1, files: 1 } }, new Map([['a.mjs', 10]]));
+    expect(unreadable?.tableLines).toBe(0);
+    expect(unreadable?.change).toBeNull();
+    expect(unreadable?.moved).toEqual([]);
   });
 
   it('refuses to place a gate the table does not price', () => {
@@ -346,7 +422,7 @@ describe('scripts/gate-proofs.mjs · the table the gate audit is divided by', { 
       measured: string;
       machine: string;
       source: string;
-      gates: Record<string, { ms: number; files: number }>;
+      gates: Record<string, { ms: number; files: number; lines: number }>;
     };
     expect(written.measured).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(written.machine.trim()).not.toBe('');
@@ -361,7 +437,14 @@ describe('scripts/gate-proofs.mjs · the table the gate audit is divided by', { 
     for (const gate of Object.keys(written.gates)) {
       expect(written.gates[gate]?.files, gate).toBe(1);
       expect(written.gates[gate]?.ms, gate).toBeGreaterThanOrEqual(300);
+      // The fingerprint, from the tree the run measured: each probe file is one line of
+      // source and the newline that ends it, so a writer that counted nothing would be
+      // caught here rather than by a reader wondering why the drift is always zero.
+      expect(written.gates[gate]?.lines, gate).toBe(2);
     }
+    // There was no table in this tree before the run, so the drift line says so instead of
+    // printing a comparison against nothing.
+    expect(run.stdout).toContain('drift: no cost table in this tree, so this run has nothing to be read against');
     // The prices are the ones the run printed, so the table is the summary rather than a
     // second measurement of the same subjects.
     const parts = run.stdout
@@ -378,6 +461,29 @@ describe('scripts/gate-proofs.mjs · the table the gate audit is divided by', { 
     expect(shard.status, shard.stderr).toBe(0);
     expect(shard.stderr).toContain('1/2=');
     expect(shard.stderr).toContain('2/2=');
+  });
+
+  it("prints the tree's drift from the table, and this half against the price it was given", () => {
+    const tree = treeOf(['check-throwaway.mjs', 'gen-throwaway.mjs'], {
+      'check-throwaway.mjs': 10_000,
+      'gen-throwaway.mjs': 10_000,
+    });
+    const run = audit(tree, ['--shard', '1/2']);
+    expect(run.status, run.stderr).toBe(0);
+    // Two rows of 40 lines in the table, two probe files of two lines each in the tree, and
+    // one of the two gates on this shard: the reading is of the half this run measured, so
+    // the totals are that half's rows against that half's files.
+    expect(run.stdout).toContain('drift: the table priced these 1 gate(s) when their naming files held 40 line(s)');
+    expect(run.stdout).toContain('this tree holds 2 (-95.0%)');
+    expect(run.stdout).toContain('40 -> 2 line(s)');
+    // The plan against the machine: the table prices this half at 10.0 s, and the stub's
+    // own seconds are whatever they were. The two numbers belong on one line because
+    // neither answers the question on its own -- v3.157 measured the same table balancing
+    // one tree at 0.1% and the next reading of it at 30%.
+    expect(run.stdout).toMatch(
+      /half: the table prices the gate\(s\) this run measured at 10\.0 s; they spent [\d.]+ s \([+-][\d.]+%\)/,
+    );
+    expect(run.stdout).toContain('a plan is of a table, the seconds are of this machine');
   });
 
   it('refuses to write a table from a run that did not measure every gate', () => {

@@ -61,6 +61,7 @@ import {
   checkGateCosts,
   claimedProofs,
   classify,
+  gateDrift,
   gateShardPlan,
   namesInCode,
   namesakeOf,
@@ -97,9 +98,11 @@ const INVENTORY_JSON = JSON.parse(readFileSync(INVENTORY, 'utf8'));
  * ## What the table is, and what `--costs` refuses
  *
  * `golden-master/gate-costs.json`: one row per gate, the milliseconds its own nested runs
- * cost and how many test files it ran. `--costs` writes it from a run that measured
- * **every** gate, because a table written by a shard would price half an inventory and
- * call it the tree -- the same refusal the sites battery makes for the same reason.
+ * cost, how many test files it ran, and how many lines those files held -- the last of the
+ * three being what a later run reads the tree's drift against (`O-146`). `--costs` writes it
+ * from a run that measured **every** gate, because a table written by a shard would price
+ * half an inventory and call it the tree -- the same refusal the sites battery makes for the
+ * same reason.
  *
  * A shard without the table is refused rather than fallen back to position: a fallback
  * would be a second partition under one name, and the halves `ci.yml` runs would stop
@@ -112,6 +115,23 @@ const INVENTORY_JSON = JSON.parse(readFileSync(INVENTORY, 'utf8'));
 const COSTS_AT = process.argv.indexOf('--costs');
 const COSTS_TEXT = COSTS_AT === -1 ? null : String(process.argv[COSTS_AT + 1] ?? '');
 const COSTS_PATH = resolve(ROOT, process.env['RCA_GATE_COSTS'] ?? join('golden-master', 'gate-costs.json'));
+
+/**
+ * The table, parsed once, or the reason it could not be.
+ *
+ * Two readers ask for it: the shard plan, which refuses without it, and the two readings a
+ * run prints when it is done -- how far the tree has moved from the table, and what this
+ * half spent against the price the table put on it. A shard cannot run without the first,
+ * so the second reads the same object instead of parsing the file again.
+ */
+function costTable() {
+  try {
+    return { table: JSON.parse(readFileSync(COSTS_PATH, 'utf8')) };
+  } catch (error) {
+    return { error: error };
+  }
+}
+
 const USAGE =
   'usage: node scripts/verify-gates-are-testable.mjs [--list] [--shard <i>/<n>] [--costs <path>]\n';
 if (COSTS_TEXT !== null) {
@@ -176,6 +196,20 @@ function referencingTests(gate) {
     .filter((name) => namesInCode(readFileSync(resolve(TESTS, name), 'utf8'), gate))
     .map((name) => `test/${name}`)
     .sort();
+}
+
+/**
+ * The lines the file a gate's evidence lives in holds, so a table can say which tree it
+ * priced.
+ *
+ * The `lines` a row carries is the sum of this over the gate's naming files. It is the
+ * cheapest unit that moves when the tree moves *inside* the set the file count pins -- one
+ * `readFileSync` per naming file, on files this run is about to execute anyway -- and it is
+ * a reading rather than a verdict for the reason `gateDrift` and `checkGateCosts` give in
+ * `gate-proofs.mjs` just above their own definitions.
+ */
+function linesIn(file) {
+  return readFileSync(resolve(ROOT, 'packages', 'core', file), 'utf8').split('\n').length;
 }
 
 /**
@@ -503,10 +537,8 @@ function shardOf(list) {
   }
   const index = Number(parsed[1]);
   const total = Number(parsed[2]);
-  let table;
-  try {
-    table = JSON.parse(readFileSync(COSTS_PATH, 'utf8'));
-  } catch (error) {
+  const { table, error } = costTable();
+  if (table === undefined) {
     console.error('verify-gates-are-testable: FAILED');
     console.error(
       `  no cost table at ${COSTS_PATH} -- ${String(error)}: the two jobs that run this step are divided ` +
@@ -909,7 +941,13 @@ for (const gate of subjects) {
     writeFileSync(path, original);
     journalWrite(journalRead().filter((entry) => entry.gate !== gate));
   }
-  paid.push({ gate, files: files.length, elapsed: spend.elapsed, reported: spend.reported });
+  paid.push({
+    gate,
+    files: files.length,
+    lines: files.reduce((sum, one) => sum + linesIn(one), 0),
+    elapsed: spend.elapsed,
+    reported: spend.reported,
+  });
   const price = seconds(spend.elapsed).padStart(7);
   const back = readFileSync(path, 'utf8');
   if (back !== original) {
@@ -989,6 +1027,53 @@ if (paid.length > 0) {
       `the dearest is ${dearest.gate} at ${seconds(dearest.elapsed)} ` +
       `(${Math.round((100 * dearest.elapsed) / child)}% of it)`,
   );
+
+  // What the table said, against what this run found.
+  //
+  // Two readings, both printed by every run that measured anything, because both are
+  // facts a reader otherwise has to reconstruct by hand from two files:
+  //
+  // `drift` is the tree moving *inside* the set of files the table's file count pins --
+  // a test file that grew under its own name -- which `checkGateCosts` cannot refuse
+  // without making every round that edits a test file an order to re-measure 69 gates.
+  // Printing it is the alternative: the reader who sees a gate whose files doubled knows
+  // which number to distrust, and the round that re-measures has a reason to.
+  //
+  // `half` is the plan against the machine. The table's promise is that a partition is a
+  // pure function of it; its non-promise is that the halves will cost what it says, which
+  // v3.157 measured twice on one tree (0.1%, then 30%). A shard that prints its own
+  // seconds against its own price turns that from a surprise into a number per push.
+  const { table } = costTable();
+  const priced = table?.gates ?? null;
+  if (priced === null) {
+    console.log('drift: no cost table in this tree, so this run has nothing to be read against');
+  } else {
+    const mine = Object.fromEntries(
+      paid.filter((one) => priced[one.gate] !== undefined).map((one) => [one.gate, priced[one.gate]]),
+    );
+    const drift = gateDrift(mine, new Map(paid.map((one) => [one.gate, one.lines])));
+    if (drift !== null) {
+      const change =
+        drift.change === null ? 'no table lines to divide' : `${drift.change >= 0 ? '+' : ''}${drift.change.toFixed(1)}%`;
+      console.log(
+        `drift: the table priced these ${String(drift.gates)} gate(s) when their naming files held ` +
+          `${String(drift.tableLines)} line(s); this tree holds ${String(drift.treeLines)} (${change}), and ` +
+          `${String(drift.moved.length)} of them moved` +
+          (drift.widest === null
+            ? ''
+            : ` -- widest \`${drift.widest.gate}\` ${String(drift.widest.from)} -> ` +
+              `${String(drift.widest.to)} line(s)`),
+      );
+    }
+    const price = paid.reduce((sum, one) => sum + (Number(priced[one.gate]?.ms) || 0), 0);
+    if (price > 0) {
+      const apart = ((child - price) / price) * 100;
+      console.log(
+        `half: the table prices the gate(s) this run measured at ${seconds(price)}; they spent ${seconds(child)} ` +
+          `(${apart >= 0 ? '+' : ''}${apart.toFixed(1)}%) -- a plan is of a table, the seconds are of this machine`,
+      );
+    }
+  }
 }
 
 /**
@@ -1020,7 +1105,7 @@ if (COSTS_TEXT !== null) {
   }
   const target = resolve(ROOT, COSTS_TEXT);
   const rows = {};
-  for (const one of paid) rows[one.gate] = { ms: Math.round(one.elapsed), files: one.files };
+  for (const one of paid) rows[one.gate] = { ms: Math.round(one.elapsed), files: one.files, lines: one.lines };
   // Named relative to the repository when it is inside it: an absolute path is a fact about
   // this machine rather than about the tree, and `check-no-absolute-paths` refuses one in a
   // committed file -- the same sentence, one gate over.

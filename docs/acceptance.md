@@ -78,6 +78,7 @@ before the layer above it is meaningful.
 | A battery charges each run to its claimant, and stops at the first red | v3.153 |
 | A run pays for the claim it makes, and the compile nobody read | v3.154 |
 | An audit reports what each subject cost, and a job is split on the number | v3.155 |
+| A cost table says which tree it priced, and every run reads its own half against it | v3.162 |
 <!-- acceptance-index: end -->
 
 ## L0 — Deterministic core correctness
@@ -3256,3 +3257,39 @@ claim.
   table, and `--costs` on a run that skipped a gate. And the sensitivity battery falsified the new claim once on its
   own: the sentence for a gate `gateShardPlan` cannot price was asserted loosely enough to accept `assignShards`'
   message next door, so replacing the throw with success left the test green. The assertion names this table now.
+
+### A cost table says which tree it priced, and every run reads its own half against it (v3.162)
+
+- **The hole is inside the set, not beside it.** `checkGateCosts` pins the *set* of test files that name a gate, and
+  every round moves the tree inside that set: a test file grows, a case is added, a fixture doubles. A gate whose
+  tests got twice as heavy under the same filename leaves a table that is stale in the direction the file count calls
+  fine, and the plan then balances two halves by numbers from an older tree. (`v3.162`, `O-146`)
+- **The fingerprint is the cheapest unit that moves.** Each row carries `lines`, the count its naming files held when
+  the milliseconds were measured, written by the same pass. It is one `readFileSync` per naming file, on files the run
+  is about to execute anyway.
+- **A shape is a verdict; a value is a reading.** A row with no `lines`, a `lines` that is not a count, and a `lines`
+  of zero are refused, because a run would otherwise print a drift total that silently left a gate out. The **value**
+  is not refused: a verdict there would make every round that edits one gate's test file an order to re-measure all 69
+  on a laptop (**282.9 s**), and the tree cannot tell a one-line comment from a threefold growth -- a gate that fires
+  on the harmless case is a gate that gets re-measured by habit.
+- **Two sentences every run prints.** The drift -- the table's lines against this tree's, as a total and as the widest
+  gate -- and the half -- the price the table put on the gates this run measured against the seconds they spent. The
+  first reading of the second instrument weighed the table v3.161 shipped against the tree: **287.5 s** priced,
+  **282.9 s** spent, **-1.6%**.
+- **The table is re-measured, not patched.** The fingerprint has to describe the same tree as the milliseconds, so this
+  round re-ran `--costs` rather than editing rows: **69** gates, **282,873 ms**, **231,939** lines, **235** file
+  executions over **95** distinct files, dearest `check-official.mjs` **27,857 ms (9.8%)**; the plan **140.8 / 142.1 s**
+  (**0.89%**) against position's **102.7 / 180.1 s** (**43.0%**) on the same numbers.
+- **An address is not an identity.** Inserting the reader moved 17 rows of `gate-sites.json`, and the one annotation
+  that did not carry was the exit whose condition changed with the refactor (`catch` to `table === undefined`); it was
+  re-carried by its condition and diagnostic and re-proved by the same test. `sensitivity-costs.json` had 16 witness
+  keys keyed by `script:line`; 15 were renumbered by site identity and 1 by that same identity change, and the battery
+  then re-measured the seconds itself.
+- **The falsification.** `gate-costs.test.ts` asserts the drift arithmetic (150 lines to 350 is **+133%** -- the first
+  version of that assertion said +100%, so the run corrected the test rather than the code), the ordering by size, the
+  unread end ranked by its whole size, `null` for nothing to compare, the three refusals one at a time with a positive
+  control, and a spawned shard run printing both sentences. `derive-gate-sites --check` and `derive-gate-sites`' own
+  counts hold the renumbering.
+- **What it does not claim.** Not that the drift bounds the seconds: lines are a proxy for weight, and a slow test is
+  often a test that spawns processes rather than a long one. Not that a re-measure is cheap: it is **282.9 s** of this
+  box's afternoon, which is why the reading, and not a verdict, is what the round bought.

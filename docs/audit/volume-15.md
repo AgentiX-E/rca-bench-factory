@@ -1396,3 +1396,53 @@ gate's own name. And `verify-sites-are-sensitive` falsified the new claim once o
 `gateShardPlan` cannot price was asserted loosely enough to accept `assignShards`' sentence next door, so replacing
 that throw with success left the test green -- `scripts/gate-proofs.mjs:498 ... the file passes with that exit replaced
 by success`. The assertion now names this table's own sentence.
+
+## Finding 676 — a fingerprint of the set is not a fingerprint of the files
+
+**Defect.** `golden-master/gate-costs.json` pins, per gate, how many test files name it. The set is the part that
+moves when a gate arrives or loses a naming file, and `checkGateCosts` refuses the table when it moves (§ Finding 675).
+The part that moves *inside* the set moves every round and nothing looked at it: a test file keeps its name and grows,
+a `describe` gains a case, a fixture doubles, and the table goes on balancing two halves by numbers measured on a tree
+that no longer exists -- stale in the direction the file count calls fine. `O-146` was that sentence, and it had been
+true of `sensitivity-costs.json` since v3.157 with the same silence.
+
+**Reproduction, and the first number the repair printed.** The row was written as a reading before it was written as
+code. Re-measuring the gates' table with the instrument the round added, against the tree that shipped it:
+
+```
+half: the table prices the gate(s) this run measured at 287.5 s; they spent 282.9 s (-1.6%)
+```
+
+The table v3.161 shipped was **1.6%** heavy on this afternoon's tree -- small, and unreadable before this round: the
+ledger could say what the table claimed (287.5 s) and what the runner spent (reading 62: shard 1 133 s, shard 2
+163 s), and nothing could say what the *table* would say about *this* tree, because no row carried anything about its
+own inputs except a count of files.
+
+**Fix.** Every row carries `lines` -- what its naming files held when the milliseconds were measured -- written by the
+same pass that measured them: **69** gates, **282,873 ms**, **231,939** lines, **235** file executions over **95**
+distinct files, dearest `check-official.mjs` at **27,857 ms (9.8%)**. The plan is **140.8 / 142.1 s** (**0.89%**)
+against **102.7 / 180.1 s** (**43.0%**) for the same numbers split by position. Two sentences are printed by every run
+that measured a gate: the **drift** of the tree from the table (total change, and the widest gate by name), and the
+**half** -- the price the table put on the gates this run measured, against the seconds they spent.
+
+**What was deliberately not built.** A verdict on `lines`. It would fire on the harmless case with the same force as
+the harmful one -- the tree cannot tell a one-line comment from a threefold growth -- and it would make every round
+that edits one gate's test file an order to re-measure all 69 on a laptop (**282.9 s** here). A gate that fires on the
+harmless case is a gate that gets re-measured by habit, and a habit is what the ledger's own history warns about. What
+*is* a verdict is the shape: a row with no `lines`, a `lines` that is not a count, and a `lines` of zero are refused,
+because a run would otherwise print a drift total that silently left a gate out -- blank reads as zero.
+
+**Falsification.** Two new tests and three new refusals. The drift arithmetic, which the round got wrong first: the
+assertion said one gate tripling (+200 of 150) is `+100%`, and the run answered `133.33333333333331` -- the defect was
+in the test, and it is recorded here because the numbers in this file are the ones a reader checks. Then the ordering
+(50 lines of growth outranks 10 even when it sorts later), the unread end (`to: null` ranked by its whole size rather
+than by `0 - from`, which would have ranked the largest unknown last), `null` for nothing to compare, and a spawned
+shard run whose two sentences are asserted by their numbers (`40 line(s)`, `this tree holds 2 (-95.0%)`,
+`40 -> 2 line(s)`, `at 10.0 s`).
+
+**Two counting accidents, and what they say about addresses.** Inserting the reader moved **17** rows of
+`gate-sites.json`, and exactly one annotation did not carry -- the "no cost table" exit, whose condition changed from
+`catch` to `table === undefined` when the parse moved into `costTable()`. `sensitivity-costs.json` had **16** witness
+keys keyed by `script:line`: 15 renumbered by site identity (condition and diagnostic), 1 by that same identity
+change; the battery then re-measured the seconds itself. An address is not an identity, and this round had to use the
+identity to move the addresses -- which is `O-146`'s own lesson one level down.

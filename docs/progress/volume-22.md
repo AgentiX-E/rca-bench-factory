@@ -1661,10 +1661,10 @@ it and no longer the head.
 | what `--costs` refuses to write | a table from a run that skipped a gate, because a table is a measurement of every subject or it is not a table -- and the sentence names the gates that were not measured |
 | the partition | `--list --shard i/2` prints the slice this run would measure; the union of the slices is the inventory, no gate is in two, and neither is empty |
 | falsification | eleven new tests: seven table verdicts one refusal at a time with a positive control, the LPT placement against a split that can be worked out on paper, purity and inventory order, the shipped partition and the claim that the plan is closer than position's split of the same numbers, and three spawned refusals; plus the one the sensitivity battery found in the test itself |
-| `core` test suite | **264 files, 7,137 tests passed** (as of this commit) |
+| `core` test suite | **264 files, 7,137 tests passed** (at v3.161) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged by the round, which added a test file and no source line |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **268 files, 7,324 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.161) |
+| repo test suite | **268 files, 7,324 tests passed** (at v3.161) |
 | new tests | **7,126 -> 7,137, +11** in one new file (`gate-costs.test.ts`) |
 | the three counts that had to move with it | `calls / sites` in the inventory **172/152 -> 176/156** (four exits, two throws), the throw baskets **118 -> 120**, and the sites cost table rebuilt because the new file proves six sites and a claimant with no row cannot be divided |
 | `Tracked files` | **687 -> 689**: the cost table and the new test file |
@@ -1679,3 +1679,74 @@ it and no longer the head.
   hole since v3.157 and the same silence.
   `[open: whether the age of a table should be a verdict (`measured` older than N rounds is refused) or a printed
   reading the reviewer reads, and whether a re-measure can be asked of CI rather than of a person]`
+
+---
+
+## v3.162 — the table says which tree it priced, and every run reads its own half against it
+
+v3.161 closed with `O-146` and one sentence: the table pins the **set** of test files that name each gate, and
+every round moves the tree *inside* that set -- a file grows, a case is added, a fixture doubles -- so a gate whose
+tests got twice as heavy under the same filename leaves a table that is stale in the direction the file count calls
+fine. The round's own instrument then said how much that costs before this round touched anything: the `--costs` run
+below printed **`half: the table prices the gate(s) this run measured at 287.5 s; they spent 282.9 s (-1.6%)`** --
+the table v3.161 shipped, weighed against this afternoon's tree, in one line.
+
+The shape of the repair is the one the open item asked for and the answer is the one it doubted: **a reading, not a
+verdict**. A verdict on the line count would make every round that edits one gate's test file an order to re-measure
+all 69 on a laptop (**282.9 s** here), and the tree cannot tell a one-line comment from a threefold growth -- so the
+verdict would fire on the harmless case with the same force as the harmful one, and a gate that fires on the harmless
+case is a gate that gets re-measured by habit. What is a verdict is the **shape**: a row without `lines` is refused,
+because a run would otherwise print a total that silently left a gate out, and blank reads as zero. What the count
+buys is two sentences printed by every run that measured anything -- the drift of the tree from the table, and the
+seconds this half spent against the price the table put on it. The second one is the one that matters: v3.157 measured
+a table balancing one tree at 0.1% and the next reading of it at 30%, and reading 62 measured a plan at 0.89% while
+the runner read 18.4%. A plan is of a table; the seconds are of a machine. Now both are on screen.
+
+The table was re-measured rather than patched, because the fingerprint has to describe the same tree as the
+milliseconds: **69** gates, **282,873 ms** of child time, **231,939** lines across them (summed per gate, so a file
+that names three gates counts three times), **235** file executions over 95 distinct files, dearest
+`check-official.mjs` at **27,857 ms (9.8%)**. The plan is **140.8 s / 142.1 s**, **0.89%** apart; the same numbers
+split by position are **102.7 / 180.1**, **43.0%** apart.
+
+Two counting accidents came with the insertion, and both are the kind this log exists to notice. `gate-sites.json`
+renumbered: 17 rows moved by the lines added above them, and **one annotation did not carry** -- the "no cost table"
+exit, whose condition changed from `catch` to `table === undefined` when the parse moved into `costTable()`. It was
+re-carried by identity and re-proved by the same test, which is why the spawn case for it is named in the record.
+`sensitivity-costs.json` had **16** witness keys keyed by `script:line`: 15 renumbered by site identity (the
+condition and the diagnostic are the identity; the line is an address) and 1 by the same identity change. The battery
+then rebuilt the measured seconds itself, so the keys are derived rather than typed.
+
+### Readings
+
+> Ledger for `v3.162`.
+
+| item | value |
+| --- | --- |
+| what a row carries now | `ms`, `files`, and `lines` -- the last being the fingerprint, the lines its naming files held when the table was written |
+| the table this round ships | **69** gates, **282,873 ms** of child time on this box, **231,939** lines, **235** file executions over **95** distinct files; dearest `check-official.mjs` **27,857 ms (9.8%)** |
+| the plan | **140.8 s / 142.1 s**, **0.89%** apart, 34 and 35 gates; the same numbers by position **102.7 / 180.1 s**, **43.0%** apart |
+| the instrument's first reading | before this round changed anything, the `--costs` run weighed the shipped table against the tree: **287.5 s** priced, **282.9 s** spent, **-1.6%** |
+| the drift reading | printed by every run that measured a gate: the table's lines against this tree's, as a total and as the widest gate, so a price that has stopped describing its files is visible without a re-measure |
+| the half reading | printed beside it: the price the table put on the gates this run measured, against the seconds they spent. It is the number reading 62 could only be read by hand |
+| the pair, second reading | reading **63** measures the same partition on the same tree: **196 s / 195 s**, **0.5%** apart, against the plan's **0.89%** -- where reading 62 read **133 / 163 s** (**18.4%**) on that tree. Two readings of one partition, **296 s** and **391 s** of gates time, **32%** apart: the balance is a property of the plan and the totals are the machine's day |
+| the three refusals | a row with no `lines`, a `lines` that is not a count, and a `lines` of zero -- the shape, not the value |
+| what is deliberately not a verdict | the value of `lines`. A verdict there costs a 282.9 s re-measure per round that edits a test file and cannot tell a comment from a growth |
+| falsification | two new tests and three new refusals: the drift arithmetic (150 lines to 350 is **+133%**, and the first version of the assertion said +100% -- the run caught the test, not the code), the ordering by size, the unread end (`to: null`) ranked by its whole size, `null` for nothing to compare, and a spawned shard run printing both sentences |
+| `core` test suite | **264 files, 7,139 tests passed** (as of this commit) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- statements, branches, functions and lines, read from `coverage/coverage-summary.json`; the round added tests and no source line, so the four figures are the ones v3.161 closed on |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **268 files, 7,326 tests passed** (as of this commit) |
+| new tests | **7,137 -> 7,139, +2** in `gate-costs.test.ts` |
+| test lines | **123,751 -> 123,859 core** |
+| `Tracked files` | **689**, unchanged: the round added no file, and the two tables it rewrote were already tracked |
+| CI | | CI | run `45936208473` on `050d107`: **9 of 9 jobs success**, **467 s** of wall clock (the longest job is `gates-audit` at **467 s**, `batteries` **401 s** behind it), reading **63** -- the last green run of this workflow, which closed `v3.161`; the run of the commit that ships this round's table cannot close the round it is green on until it has run, so the row that closes `v3.162` is written by the next commit, from that commit's run | |
+
+### Left open
+
+- `O-147` · **The workflow's longest job is now the one that runs two unrelated things in series.**
+  Reading 62 put `verify` at **429 s** -- `typecheck` 10 s, `lint` **186 s**, `coverage` **206 s** in one job -- with
+  `gates-audit` **417 s** behind it. The two halves are independent; run as two jobs they would cost one install and
+  one build more (**~20 s**) and cut the workflow's wall clock by about **200 s**. What stops it being free is the
+  ledger: the job count is what every `R11` row's denominator is written against, what the nine ceilings are counted
+  in, and what `check-ci-budget` reconciles the bounds of. `[open: whether the wall clock should be bought by
+  changing the shape of the queue -- and if so, which of the two jobs the shared prefix belongs to]`
