@@ -593,13 +593,6 @@ export function readDeclarations(workflow, declarations) {
       errors.push(`${where} is declared as a job twice, so a reader cannot tell which promise is meant`);
       continue;
     }
-    if (declared.has(job)) {
-      errors.push(
-        `${where} has both a job promise and a step declaration: two promises about one job, and ` +
-          '`R8` and `R9` cannot both own the same gap in the recording',
-      );
-      continue;
-    }
     const extra = Object.keys(entry ?? {}).filter((key) => !JOB_PROMISE_KEYS.includes(key));
     if (extra.length > 0) {
       for (const key of extra) {
@@ -668,6 +661,25 @@ export function readDeclarations(workflow, declarations) {
       parsedSteps.push({ name, minutes });
     }
     if (bad) continue;
+
+    // A job promise and the steps that arrived in the job are two promises about *different*
+    // steps, and until `O-148` the file refused the pair outright. The refusal was written
+    // when a job promise was the only way to describe an unmeasured job, so a step
+    // declaration for the same job could only be a second, contradictory description of the
+    // same gap. A **split** is the shape that was not imagined: the job is unmeasured because
+    // it is new, and some of its steps were measured -- in the job they left. The job's own
+    // budget is `R9`'s; the bounds of the steps that arrived are `R8`'s, and they are
+    // measurements rather than promises. What remains refused is the overlap: one step owned
+    // by both, which is two answers to one question.
+    const arrived = declared.get(job) ?? new Map();
+    const owned = parsedSteps.filter((one) => arrived.has(one.name));
+    for (const one of owned) {
+      errors.push(
+        `${where} promises \`${one.name}\` and the step declarations also name it: one step, two owners, ` +
+          'and a reader cannot tell which of the two bounds the runner will enforce',
+      );
+    }
+    if (owned.length > 0) continue;
     jobs.set(job, { timeoutMinutes: budget, steps: parsedSteps, why });
   }
 
@@ -2062,8 +2074,11 @@ export function budgetErrors(workflow, baseline, ledger = null, declarations = n
     // The promise names the steps that carry a bound, and not the prefix: the prefix has no
     // bound of its own to promise, and asking a never-run job to promise the three minutes the
     // job's allowance already answers for would be a promise about a number nobody measures
-    // (finding 622).
-    const steps = stepsOf(workflow, id).filter((step) => !step.inPrefix);
+    // (finding 622). Neither does it name a step that arrived in this job from another one: that
+    // step's bound is a measurement, its entry in the declarations file is `R8`'s, and the
+    // promise is about the job's own budget rather than about the steps the round moved in.
+    const arrived = declared.get(id) ?? new Map();
+    const steps = stepsOf(workflow, id).filter((step) => !step.inPrefix && !arrived.has(step.name));
     if (promise.steps.length !== steps.length) {
       errors.push(
         `\`${id}\` promises ${String(promise.steps.length)} step(s) and ci.yml has ` +

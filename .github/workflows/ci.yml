@@ -52,62 +52,9 @@ jobs:
   # 637d11494 they summed to 1213 s before the budget killed the job at the round-trip
   # record battery.
   verify:
-    name: build / typecheck / lint / coverage / mutation
+    name: build / typecheck / lint
     runs-on: ubuntu-latest
-    # Not a performance assertion: a job that hangs has to be reported as a budget
-    # being spent rather than six hours later.
-    #
-    # 15 until v3.55, 18 from v3.55, and 21 from v3.123.
-    #
-    # v3.55 raised it to 18 because the deadline was being argued from a fast day:
-    # `Lint`'s 14-minute bound plus the steps in front of it is 1019 s once each of those
-    # steps is counted at its slowest recorded day, and 1019 does not fit in 900.
-    #
-    # That answers where a *bound* sits. v3.123 asked the other question -- does the
-    # ceiling hold a slower *day* -- and found 18 minutes over this job's slowest day of
-    # 601 s (run 44656781771), which is 1.80x. A day eleven per cent slower reaches the
-    # ceiling with every step still inside its own bound, and the sentence the run reports
-    # names the job rather than a step, which is the defect every bound in this file
-    # exists to remove. 21 minutes is twice that day, rounded up to the next whole minute,
-    # and `check-ci-budget`'s `R12` is the rule that says so.
-    #
-    # 24 from v3.124: the recording moved to run 44698243645, where this job's slowest day
-    # is 696 s, and 21 minutes was 1.81x it. `R12` named the number; the day moved because
-    # two test files were added, not because anything in the job changed.
-    #
-    # 58 from v3.129, and the arithmetic changed shape rather than the job (finding 619).
-    # Twelve bounds add up to 3 420 s, and a step dies at its own bound -- so that sum, not
-    # the day, is the longest this job can legitimately live. A day that spent a third of
-    # each bound reached 25 minutes with every step still inside its own, which is the
-    # silent death the bounds exist to remove. The runner's own seconds, which belong to no
-    # step, are measured by the recorder (5 s) and doubled like every bound: 3 430 s, 58
-    # minutes. `verify` is the job where the day rule is widest of all -- 1 204 s of day
-    # against 3 430 s of bound -- and that gap is the shape of the whole workflow.
-    # 39 from v3.132 (finding 622). The floor stopped being a property of a step: the 4
-    # setup steps this job shares with every other carry no bound of their own and the job allows
-    # 3 minutes for the whole prefix, while the 5 work step(s) that sat at the floor are bounded by
-    # twice their own day. The bounds add up to 2100 s plus the 180 s allowance where they added up to
-    # 2820 s; with 4 s of overhead doubled that is 2288 s, and R13's bounds
-    # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
-    # per setup step was paying for cold runners that cannot happen.
-    #
-    # 40 from v3.136 (finding 628), for the same reason one line down: the lint bound moved
-    # 17 -> 18 minutes, so the bounds add up to 2160 s, and 2160 plus the 180 s allowance plus
-    # the 8 s of doubled overhead is 2348 s. The ceiling pays for the bounds it holds, and it
-    # is the only place that arithmetic can be written down.
-    #
-    # 41 -> 42 at v3.155, by the same sum one minute later: the lint bound moved 18 -> 19 on
-    # attempt 2 of run `45695988542`, so the bounds are 2280 s, and 2280 + 180 + 8 is 2468 s
-    # -- 41.1 minutes, of which this is the first whole minute above. The step's own cost is
-    # going down in the same commit (`verify-site-proofs` is parallel now); the ceiling moves
-    # because the *bound* moved, and a ceiling that ignored its own steps' bounds would fire
-    # before one of them could.
-    #
-    # 42 -> 43 at v3.162, by the same sum: the coverage bound moved 7 -> 8 minutes on reading 64
-    # (211 s on a step that had 420 s of bound), so the bounds are 2340 s, and 2340 + 180 + 8 is
-    # 2528 s -- 42.1 minutes, of which this is the first whole minute above. The step's own day
-    # moved 206 -> 211 s, which is 4% of a bound, and the ceiling moves because the bound moved.
-    timeout-minutes: 43
+    timeout-minutes: 32
     steps:
       # Full history: see the note above `jobs:` (findings 612 and 614). This is the job the
       # first of those two was found in.
@@ -210,6 +157,65 @@ jobs:
         timeout-minutes: 19
         run: pnpm lint
 
+  # The suite, and the numbers it publishes -- split out of `verify` by `O-148`.
+  #
+  # `verify` ran typecheck (10 s), lint (196 s) and coverage (216 s) in one job, and the three
+  # never read each other's results: a lint failure says nothing about coverage. A job's wall
+  # clock is the sum of its steps, so the workflow waited 447 s for work two runners do in 226
+  # and 241. The steps that *read* the coverage report came with it -- the published counts, the
+  # mutation suite, the per-test budget check -- because a second copy of the suite is exactly
+  # the cost this split exists to avoid.
+  coverage:
+    name: coverage / published counts / per-test budgets
+    runs-on: ubuntu-latest
+    timeout-minutes: 31
+    steps:
+      # Full history: see the note above `jobs:` (findings 612 and 614). This is the job the
+      # first of those two was found in.
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install the shells the suite cross-checks against
+        timeout-minutes: 7
+        # `check-no-unsafe-shell.test.ts` compares the gate's rule against what
+        # `zsh` and `bash` actually do with the same string, which is the
+        # strongest acceptance criterion in the tree: the thing being modelled is
+        # installed, so the verdict is a measurement rather than a reading of a
+        # spec.
+        #
+        # `bash` is on the runner; `zsh` is not, and the workflow never installed
+        # it. The fixture therefore passed here and failed on `ubuntu-24.04`
+        # (finding 130): a missing binary produced `status: null` from spawnSync,
+        # and `null !== 0` read that as "zsh rejected it". The fixture now reports
+        # the missing binary honestly, which is why this step exists rather than
+        # an exemption for the runner.
+        #
+        # Seven minutes because run `45319505174` read this command at **197 s** --
+        # the slowest of its 29 readings -- and twice that is 394 s, which the 360 s
+        # this replaced no longer covers (`R10`). The five ceilings above the same
+        # command rose with it, because a step bound that the ceiling cannot hold is
+        # a bound that never fires (`R13`).
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
+      - name: Build (core then cli; cli resolves core's dist)
+        timeout-minutes: 3
+        run: pnpm build
+
       - name: Test with coverage (core + cli, ≥95% per dimension, 100% functions)
         # 6 until v3.124 and 7 until v3.162: run 44698243645 measured 187 s, and twice 187 is 374,
         # which is 51 s past 360. `R10`.
@@ -249,11 +255,11 @@ jobs:
       # comparison happen: `docs:check` runs the same script without it, because that
       # gate does not run the suite and a cold tree has no report to read.
       - name: Published suite counts, read from that run rather than taken again
-        timeout-minutes: 1
+        timeout-minutes: 3
         run: node scripts/measure-doc-counts.mjs --check --from packages/core/node_modules/.cache/vitest-report.json,packages/cli/node_modules/.cache/vitest-report.json && node scripts/check-coverage-readings.mjs --require
 
       - name: Mutation suite (gate + export, 100% interception)
-        timeout-minutes: 1
+        timeout-minutes: 3
         run: pnpm exec vitest run --root packages/core mutation.test.ts
 
       # Every test's cost, against the budget its own file declares.
@@ -271,8 +277,9 @@ jobs:
       # `gates-are-testable-is-enumerated.test.ts`, slowest test 1 015 ms and no
       # budget -- which is this reader finding the thing before a red run had to.
       - name: Every test's cost against the budget it declares
-        timeout-minutes: 1
+        timeout-minutes: 3
         run: node scripts/check-test-budgets.mjs --report packages/core/node_modules/.cache/vitest-report.json,packages/cli/node_modules/.cache/vitest-report.json
+
 
       # One reader, against a server this repository did not write.
       #
@@ -386,56 +393,28 @@ jobs:
   # so it would be safe beside the coverage run, but three more minutes inside a
   # fifteen-minute budget that already spends six is a bound waiting to fire. Parallel,
   # so the workflow's wall clock is still the batteries.
+
+  # Battery lane 5 of 5, and the plan is what decides what is in it.
+  #
+  # The five lane jobs used to be placed by hand: every battery was argued into a job on its
+  # own, and reading 64 measured what that produced -- 443 / 376 / 371 / 134 / 115 s of battery
+  # work on one tree, a 3.9x spread, and a run waiting on the first of them (`O-148`).
+  # `golden-master/battery-lanes.json` prices every battery from one recorded run, and
+  # `scripts/lane-costs.mjs` places them dearest first onto the emptiest lane. This job is that
+  # plan's lane, in the plan's order: `battery-lanes.test.ts` refuses the workflow and the table
+  # disagreeing about a step, a lane or an order.
+  #
+  # 5 step(s), 258 s of the table's seconds, and the six steps above them are
+  # one install, one shell install and one build -- paid once per lane. The ceiling is the sum of
+  # this lane's bounds plus the allowance and the runner's own seconds, which is `R13`.
   sensitivity:
-    name: every proved exit can disappear without a word
+    name: battery lane 5 of 5 (the queue's steps, placed by golden-master/battery-lanes.json)
     runs-on: ubuntu-latest
-    # Measured twice, because the first number was this machine's and the second is a
-    # runner's: 3 min 20 s for 150 runs at four at a time while writing it, and **7.0
-    # minutes** end to end on `ubuntu-latest` in run 41416005911 -- install, shells,
-    # build and pass together, which is 2.1 times the local figure. The budget is a
-    # little over twice the runner's measurement, and it is bounded so that a hang is
-    # reported as a budget being spent rather than six hours later.
-    #
-    # It is 26 rather than 21 as of v3.53's close-out, and the number is derived rather
-    # than chosen: the sites battery measured 626 s in run 42131836805, so `R4` asks for
-    # 1252 s of bound and 20 minutes (1200 s) is 52 s short. 25 minutes is 1500 s -- 2.4
-    # times the measurement, the same margin this job had at 20 minutes against 482 s --
-    # and the 22 s of setup in front of the step puts its deadline at 1522 s. A ceiling
-    # of 25 would kill the job before the step's own bound could fire, which is the defect
-    # step bounds exist to remove (`ci-budget.mjs`, `R5`). The ceiling is `ceil(1522/60)`.
-    #
-    # Two shards, one bound each (v3.54). That 52 s was the closest this campaign has
-    # come to `R4` refusing a legitimate run, and the repair is to spend less rather than
-    # to buy another margin: the claimant files are divided across this job and
-    # `sensitivity-shard`, so each runner spends roughly half of 626 s against the same
-    # 25-minute bound and the workflow's wall clock is the slower shard, not their sum.
-    # The division is by `golden-master/sensitivity-costs.json` as of v3.157: the
-    # positional halves it replaced read 247 s and 438 s of one command (reading 52),
-    # 44% apart, because where a name sorts says nothing about what a file costs.
-    # The bound is deliberately not tightened in the round that splits -- its measurement
-    # is of the unsharded command, and `R4` has to size a bound from a run of the command
-    # it will enforce. The first sharded run supplies that measurement.
-    #
-    # 47 from v3.129 (`R13`, finding 619): the eight bounds add up to 2 760 s and the
-    # runner's own seconds are 5, doubled to 10 -- 2 770 s, 47 minutes. The 26 this job had
-    # held its slowest day four times over and its bounds not at all.
-    # 34 from v3.132 (finding 622). The floor stopped being a property of a step: the 4
-    # setup steps this job shares with every other carry no bound of their own and the job allows
-    # 3 minutes for the whole prefix, while the 2 work step(s) that sat at the floor are bounded by
-    # twice their own day. The bounds add up to 1800 s plus the 180 s allowance where they added up to
-    # 2520 s; with 5 s of overhead doubled that is 1990 s, and R13's bounds
-    # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
-    # per setup step was paying for cold runners that cannot happen.
-    #
-    # 43 from v3.150. The sites bound moved from 22 to 30 minutes because the battery it
-    # bounds costs 880 s on this runner -- measured twice, on two attempts of one commit,
-    # 881 s and 880 s -- and 22 minutes is under twice that. The ceiling follows from the
-    # same arithmetic one level up: the bounds inside this job now add up to 39 minutes,
-    # plus the 3-minute allowance for the prefix, so a ceiling that holds them is 43. That
-    # is a slow job, and the defect is the battery's cost rather than the number: the
-    # claims it runs cost a whole file each, and six of them added in v3.148 cost 282 s.
-    timeout-minutes: 43
+    timeout-minutes: 53
     steps:
+
+      # Full history: see the note above `jobs:` (findings 612 and 614). This is the job the
+      # first of those two was found in.
       - name: Check out
         uses: actions/checkout@v4
         with:
@@ -454,16 +433,26 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # The claimants are the same files `verify` runs, so this job needs the same
-      # shells: the pass spawns each claimant, not a subset of them. Registered in
-      # `SUITE_JOB_IDS` for that reason -- a job that runs the suite without the
-      # shells the suite cross-checks against is a job whose verdicts depend on which
-      # runner it landed on (finding 130).
       - name: Install the shells the suite cross-checks against
         timeout-minutes: 7
-        # Seven minutes for the reason written on this step in `verify`: the command's
-        # slowest reading is 197 s (run `45319505174`), and the five jobs that install
-        # it rose together.
+        # `check-no-unsafe-shell.test.ts` compares the gate's rule against what
+        # `zsh` and `bash` actually do with the same string, which is the
+        # strongest acceptance criterion in the tree: the thing being modelled is
+        # installed, so the verdict is a measurement rather than a reading of a
+        # spec.
+        #
+        # `bash` is on the runner; `zsh` is not, and the workflow never installed
+        # it. The fixture therefore passed here and failed on `ubuntu-24.04`
+        # (finding 130): a missing binary produced `status: null` from spawnSync,
+        # and `null !== 0` read that as "zsh rejected it". The fixture now reports
+        # the missing binary honestly, which is why this step exists rather than
+        # an exemption for the runner.
+        #
+        # Seven minutes because run `45319505174` read this command at **197 s** --
+        # the slowest of its 29 readings -- and twice that is 394 s, which the 360 s
+        # this replaced no longer covers (`R10`). The five ceilings above the same
+        # command rose with it, because a step bound that the ceiling cannot hold is
+        # a bound that never fires (`R13`).
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
@@ -533,6 +522,25 @@ jobs:
         timeout-minutes: 1
         run: node scripts/verify-claims-are-sensitive.mjs
 
+      - name: Fetch-official retry battery (no survivors)
+        timeout-minutes: 4
+        run: python3 scripts/injection/fetch-official-retry.py
+
+      - name: Fault-extraction workflow battery (no survivors, negative control)
+        timeout-minutes: 3
+        run: python3 scripts/injection/fault-extraction-workflow.py
+
+      # The second half of the same standard, applied to the assertions about the
+      # probe rather than to the probe. Its first run had three survivors and two
+      # misclassified mutations: `failed > 0` counts a suite that never ran as a
+      # survivor, because zero failures is also what a passing suite reports. A
+      # mutation the runner cannot survive and a mutation nothing detects must not
+      # print the same word, so the battery now reads the total test count.
+      - name: M1-ceiling probe test battery (no survivors, no inert mutations)
+        timeout-minutes: 3
+        run: node scripts/inject-m1-ceiling-tests.mjs
+
+
   # The second shard of the sites battery, in its own job so the two run at once.
   #
   # A new job is the one shape the budget rules could not accept: its ceiling is part of
@@ -543,112 +551,28 @@ jobs:
   # why the job exists. It carries no seconds, run id or date, because its writer has
   # watched none of those happen. The first green run measures the job, `R4`/`R5` settle
   # the bounds, and the promise is deleted in the commit that records it.
-  sensitivity-shard:
-    name: every proved exit can disappear without a word (shard 2 of 2)
-    runs-on: ubuntu-latest
-    # 44 from v3.129 (`R13`, finding 619): seven bounds adding up to 2 580 s plus the 8 s
-    # the runner spends outside them, doubled -- 2 596 s, 44 minutes. The 26 it was declared
-    # with held half the job's bounds, which is the defect the split was supposed to fix.
-    # 33 from v3.132 (finding 622). The floor stopped being a property of a step: the 4
-    # setup steps this job shares with every other carry no bound of their own and the job allows
-    # 3 minutes for the whole prefix, while the 1 work step(s) that sat at the floor are bounded by
-    # twice their own day. The bounds add up to 1740 s plus the 180 s allowance where they added up to
-    # 2460 s; with 5 s of overhead doubled that is 1930 s, and R13's bounds
-    # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
-    # per setup step was paying for cold runners that cannot happen.
-    #
-    # 42 from v3.150, by the arithmetic of the job above: this shard's own bound moved to
-    # 30 minutes on a measurement of 880 s taken twice, and its bounds now add up to 38
-    # minutes, so the ceiling that holds them is 42.
-    timeout-minutes: 42
-    steps:
-      - name: Check out
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Install the shells the suite cross-checks against
-        timeout-minutes: 7
-        # Seven minutes for the reason written on this step in `verify`: the command's
-        # slowest reading is 197 s (run `45319505174`), and the five jobs that install
-        # it rose together.
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
-
-      - name: Build (core then cli; cli resolves core's dist)
-        timeout-minutes: 1
-        run: pnpm build
-
-      # A shard whose files never arrive would be a green job that measured nothing.
-      # `verify-sites-are-sensitive.mjs` refuses an empty shard before spawning a child.
-      - name: Every proved exit can disappear without a word (shard 2 of 2)
-        timeout-minutes: 30
-        run: node scripts/verify-sites-are-sensitive.mjs --shard 2/2
-
-  # The injection batteries. This is the long pole -- everything else in the workflow
-  # fits in two minutes -- so it gets its own job and its own budget.
+  # Battery lane 3 of 5, and the plan is what decides what is in it.
   #
-  # Measured: 746 s of steps on 5dcabae61 and 1092 s on 637d11494, where the old
-  # single job's 20-minute budget was exhausted mid-step. The 30-minute budget is
-  # above the worst measurement with room for a slower runner, and the workflow's wall
-  # clock is now bounded by this job rather than by the sum of every step.
-  batteries:
-    name: injection batteries, one step each (no survivors, no inert)
+  # The five lane jobs used to be placed by hand: every battery was argued into a job on its
+  # own, and reading 64 measured what that produced -- 443 / 376 / 371 / 134 / 115 s of battery
+  # work on one tree, a 3.9x spread, and a run waiting on the first of them (`O-148`).
+  # `golden-master/battery-lanes.json` prices every battery from one recorded run, and
+  # `scripts/lane-costs.mjs` places them dearest first onto the emptiest lane. This job is that
+  # plan's lane, in the plan's order: `battery-lanes.test.ts` refuses the workflow and the table
+  # disagreeing about a step, a lane or an order.
+  #
+  # 2 step(s), 260 s of the table's seconds, and the six steps above them are
+  # one install, one shell install and one build -- paid once per lane. The ceiling is the sum of
+  # this lane's bounds plus the allowance and the runner's own seconds, which is `R13`.
+  sensitivity-shard:
+    name: battery lane 3 of 5 (the queue's steps, placed by golden-master/battery-lanes.json)
     runs-on: ubuntu-latest
-    # 30 until v3.121, 25 in v3.121, 34 from v3.123, and 84 from v3.129.
-    #
-    # v3.121 lowered it to 25 on the argument that a job's budget has to hold the bounds of
-    # its own steps. v3.123 measured the argument and refused it: the six preparation steps
-    # carry a three-minute floor each, so *every* job in this workflow holds more bounds than
-    # any ceiling it could be given (this one: 83 minutes), and a ceiling sized to hold them
-    # would be a ceiling that cannot fire either -- the same defect as a bound that cannot.
-    #
-    # v3.129 reversed that, and the reversal is the argument (finding 619). The two cannot-fire
-    # shapes are not symmetric. A **bound** that cannot fire leaves nothing behind it: the job
-    # dies at the ceiling and the verdict names the job. A **ceiling** that cannot fire has
-    # every step's bound behind it, and each of those names its step -- so the ceiling's job is
-    # not to name anything, it is the last-resort number that stops a job from spending six
-    # hours when a bound fails to fire. Twenty bounds add up to 4 980 s; the runner spends 8 s
-    # outside them; doubled, 4 996 s, which is 84 minutes. A day that spends a third of each
-    # bound reaches 34 with all twenty still inside their own, which is exactly the silent
-    # death this file is about -- and the price of 84 is that a hang no bound catches burns
-    # minutes rather than dying at 34. That price is paid in wall clock, and the alternative
-    # was paid in the verdict.
-    # 54 from v3.132 (finding 622). The floor stopped being a property of a step: the 4
-    # setup steps this job shares with every other carry no bound of their own and the job allows
-    # 3 minutes for the whole prefix, while the 11 work step(s) that sat at the floor are bounded by
-    # twice their own day. The bounds add up to 3000 s plus the 180 s allowance where they added up to
-    # 3720 s; with 4 s of overhead doubled that is 3188 s, and R13's bounds
-    # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
-    # per setup step was paying for cold runners that cannot happen.
-    #
-    # 55 -> 56 at v3.140, and by exactly the minute the doc-count shape battery took: its bound rose
-    # 2 -> 3 when run 45345210544 read it at 70 s, so the 3,000 s of bounds became 3,060 and `R13`
-    # refused the ceiling by 60 seconds. Every other ceiling that moved this campaign moved for the
-    # same arithmetic, which is why the rule is written as a sum rather than as a margin.
-    #
-    # 56 held at v3.155, and the reason is that nothing left the job. `Every gate can be shown to
-    # fail` was going to move to a job of its own, and `R13` refused it: a recording that still
-    # holds the step under this job is a recording that outlives the tree, and the step's 374 s
-    # became an overhead nobody measured -- the same arithmetic that makes a split look free is the
-    # one that says the split has to wait for a reading. What the round did instead is the shape
-    # v3.54 used: the step stays, runs **shard 1 of 2**, and a second job runs the other half. This
-    # job's bounds are unchanged, so its ceiling is unchanged, and the job that gained a step is the
-    # one with a promise against it.
-    timeout-minutes: 46
+    timeout-minutes: 40
     steps:
+
+      # Full history: see the note above `jobs:` (findings 612 and 614). This is the job the
+      # first of those two was found in.
       - name: Check out
         uses: actions/checkout@v4
         with:
@@ -682,51 +606,16 @@ jobs:
         # the missing binary honestly, which is why this step exists rather than
         # an exemption for the runner.
         #
-        # Seven minutes for the reason written on this step in `verify`: the command's
-        # slowest reading is 197 s (run `45319505174`), and the five jobs that install
-        # it rose together.
+        # Seven minutes because run `45319505174` read this command at **197 s** --
+        # the slowest of its 29 readings -- and twice that is 394 s, which the 360 s
+        # this replaced no longer covers (`R10`). The five ceilings above the same
+        # command rose with it, because a step bound that the ceiling cannot hold is
+        # a bound that never fires (`R13`).
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
         timeout-minutes: 1
         run: pnpm build
-
-      - name: Scorer stability battery (no survivors, no inert mutations)
-        timeout-minutes: 1
-        run: node scripts/inject-stability.mjs
-
-      # The `component` rule battery, for the same reason as the one above and
-      # with a sharper history. Finding 75's assertions were written three times:
-      # the first asserted a literal against an identical literal, the second a
-      # count with a `>=` bound, and only the third -- a contrast between the
-      # rule's behaviour on right and wrong answers -- could be mutated at all.
-      # Each rewrite was driven by this battery reporting SURVIVED, so it is the
-      # reason the assertions are load-bearing rather than decorative.
-      - name: Component rule battery (no survivors, no inert mutations)
-        timeout-minutes: 1
-        run: node scripts/inject-component-rule.mjs
-
-      # The M1-ceiling probe reports the number the milestone's exit condition is
-      # read against, so it is held to the same standard as any other figure this
-      # repository publishes: it must move when what it measures moves. The probe
-      # partitions the ground truth into recoverable and unrecoverable components
-      # and reports the strict ceiling under two definitions; the battery drives
-      # both halves of that, and its partition guard is what makes an injection
-      # which lets the two halves disagree fail rather than print a tidy number.
-      - name: M1-ceiling probe battery (no survivors, no inert mutations)
-        timeout-minutes: 1
-        run: python3 scripts/injection/m1-ceiling-probe.py
-
-      # The second half of the same standard, applied to the assertions about the
-      # probe rather than to the probe. Its first run had three survivors and two
-      # misclassified mutations: `failed > 0` counts a suite that never ran as a
-      # survivor, because zero failures is also what a passing suite reports. A
-      # mutation the runner cannot survive and a mutation nothing detects must not
-      # print the same word, so the battery now reads the total test count.
-      - name: M1-ceiling probe test battery (no survivors, no inert mutations)
-        timeout-minutes: 1
-        run: node scripts/inject-m1-ceiling-tests.mjs
-
 
       # v3.155: shard 1 of 2, and the name is unchanged on purpose -- `R2` pins the recording
       # to it, so a name that moved is a name the last reading could not find. The second
@@ -738,34 +627,98 @@ jobs:
         timeout-minutes: 13
         run: node scripts/verify-gates-are-testable.mjs --shard 1/2
 
-
-
-      # The three batteries below were written, repaired, and never invoked. Each
-      # has carried a restore verdict since finding 142, and each was green when
-      # run by hand -- which is exactly why nobody noticed that no job, and no
-      # package script, named any of them. The repair was verifiable only by
-      # whoever remembered to type its path, so the guard that holds it
-      # (`batteries-verify-their-restore.test.ts`) had to read them statically and
-      # records a blind spot for one of them as a result.
+      # P1-5 asks for T2's six backends to be measured and the unsupported ones
+      # declared. That declaration has three links -- the document matrix, the
+      # derived snapshot, and the registry that says which backend has a pull
+      # path -- and this battery removes one link at a time: seven refusals from
+      # the document guard, the stale-snapshot branch of the derive script, six
+      # branches of the wire reader, and the registry's agreement with its own
+      # snapshot. Its first run reported one INERT, which is the outcome the
+      # vocabulary exists for: the anchor had the wrong indentation, so nothing
+      # was mutated, and a mutation that never applied is not evidence about
+      # anything.
       #
-      # Wiring them exposed a second defect in the same family as finding 147, and
-      # it is the reason they could not simply be added. All three read the
-      # runner's summary out of the captured text, and none of them stripped the
-      # ANSI escapes the runner emits, so on CI every injection would have been
-      # reported as MISSED -- the battery blaming its own suite for a reader that
-      # could not see the number. Two of the three did it by walking lines and
-      # testing `startswith("Tests ")`, which is false when the line begins with
-      # `\x1b[2m`. Measured against the captured bytes in
-      # `battery-summary-survives-ci-output.test.ts`, alongside the two readers
-      # finding 147 fixed.
-      - name: Fault-extraction scoring battery (no survivors)
-        timeout-minutes: 1
-        run: python3 scripts/injection/fault-extraction-scoring.py
+      # 379 s on run 45673244483, for 83 claims that one named test goes red. Each was
+      # measured by running the whole file; v3.154 measured the same claims by asking for
+      # the named test, in a paired run on one tree where 83 of 83 verdicts agreed and the
+      # child time fell from 347.0 s to 53.2 s (finding 658).
+      - name: Backend-support battery (no survivors, no inert, no misattributed mutations)
+        timeout-minutes: 15
+        run: python3 scripts/injection/backend-support.py
 
-      - name: Fault-extraction workflow battery (no survivors, negative control)
-        timeout-minutes: 1
-        run: python3 scripts/injection/fault-extraction-workflow.py
 
+  # The injection batteries. This is the long pole -- everything else in the workflow
+  # fits in two minutes -- so it gets its own job and its own budget.
+  #
+  # Measured: 746 s of steps on 5dcabae61 and 1092 s on 637d11494, where the old
+  # single job's 20-minute budget was exhausted mid-step. The 30-minute budget is
+  # above the worst measurement with room for a slower runner, and the workflow's wall
+  # clock is now bounded by this job rather than by the sum of every step.
+
+  # Battery lane 4 of 5, and the plan is what decides what is in it.
+  #
+  # The five lane jobs used to be placed by hand: every battery was argued into a job on its
+  # own, and reading 64 measured what that produced -- 443 / 376 / 371 / 134 / 115 s of battery
+  # work on one tree, a 3.9x spread, and a run waiting on the first of them (`O-148`).
+  # `golden-master/battery-lanes.json` prices every battery from one recorded run, and
+  # `scripts/lane-costs.mjs` places them dearest first onto the emptiest lane. This job is that
+  # plan's lane, in the plan's order: `battery-lanes.test.ts` refuses the workflow and the table
+  # disagreeing about a step, a lane or an order.
+  #
+  # 8 step(s), 257 s of the table's seconds, and the six steps above them are
+  # one install, one shell install and one build -- paid once per lane. The ceiling is the sum of
+  # this lane's bounds plus the allowance and the runner's own seconds, which is `R13`.
+  batteries:
+    name: battery lane 4 of 5 (the queue's steps, placed by golden-master/battery-lanes.json)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+
+      # Full history: see the note above `jobs:` (findings 612 and 614). This is the job the
+      # first of those two was found in.
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install the shells the suite cross-checks against
+        timeout-minutes: 7
+        # `check-no-unsafe-shell.test.ts` compares the gate's rule against what
+        # `zsh` and `bash` actually do with the same string, which is the
+        # strongest acceptance criterion in the tree: the thing being modelled is
+        # installed, so the verdict is a measurement rather than a reading of a
+        # spec.
+        #
+        # `bash` is on the runner; `zsh` is not, and the workflow never installed
+        # it. The fixture therefore passed here and failed on `ubuntu-24.04`
+        # (finding 130): a missing binary produced `status: null` from spawnSync,
+        # and `null !== 0` read that as "zsh rejected it". The fixture now reports
+        # the missing binary honestly, which is why this step exists rather than
+        # an exemption for the runner.
+        #
+        # Seven minutes because run `45319505174` read this command at **197 s** --
+        # the slowest of its 29 readings -- and twice that is 394 s, which the 360 s
+        # this replaced no longer covers (`R10`). The five ceilings above the same
+        # command rose with it, because a step bound that the ceiling cannot hold is
+        # a bound that never fires (`R13`).
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
+      - name: Build (core then cli; cli resolves core's dist)
+        timeout-minutes: 1
+        run: pnpm build
 
       # The five gate scripts above are covered by CI *running* them against the
       # real tree, which proves they do not crash and proves nothing about
@@ -785,9 +738,6 @@ jobs:
       - name: Gate-test battery (each gate's test provably fails when its guard is removed)
         timeout-minutes: 12
         run: python3 scripts/injection/gate-tests-battery.py
-
-
-
 
       # The battery's verdicts, published to a branch so they can be read from
       # anywhere the API is.
@@ -830,6 +780,50 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      # The three batteries below were written, repaired, and never invoked. Each
+      # has carried a restore verdict since finding 142, and each was green when
+      # run by hand -- which is exactly why nobody noticed that no job, and no
+      # package script, named any of them. The repair was verifiable only by
+      # whoever remembered to type its path, so the guard that holds it
+      # (`batteries-verify-their-restore.test.ts`) had to read them statically and
+      # records a blind spot for one of them as a result.
+      #
+      # Wiring them exposed a second defect in the same family as finding 147, and
+      # it is the reason they could not simply be added. All three read the
+      # runner's summary out of the captured text, and none of them stripped the
+      # ANSI escapes the runner emits, so on CI every injection would have been
+      # reported as MISSED -- the battery blaming its own suite for a reader that
+      # could not see the number. Two of the three did it by walking lines and
+      # testing `startswith("Tests ")`, which is false when the line begins with
+      # `\x1b[2m`. Measured against the captured bytes in
+      # `battery-summary-survives-ci-output.test.ts`, alongside the two readers
+      # finding 147 fixed.
+      - name: Fault-extraction scoring battery (no survivors)
+        timeout-minutes: 1
+        run: python3 scripts/injection/fault-extraction-scoring.py
+
+      # The `component` rule battery, for the same reason as the one above and
+      # with a sharper history. Finding 75's assertions were written three times:
+      # the first asserted a literal against an identical literal, the second a
+      # count with a `>=` bound, and only the third -- a contrast between the
+      # rule's behaviour on right and wrong answers -- could be mutated at all.
+      # Each rewrite was driven by this battery reporting SURVIVED, so it is the
+      # reason the assertions are load-bearing rather than decorative.
+      - name: Component rule battery (no survivors, no inert mutations)
+        timeout-minutes: 1
+        run: node scripts/inject-component-rule.mjs
+
+      # The M1-ceiling probe reports the number the milestone's exit condition is
+      # read against, so it is held to the same standard as any other figure this
+      # repository publishes: it must move when what it measures moves. The probe
+      # partitions the ground truth into recoverable and unrecoverable components
+      # and reports the strict ceiling under two definitions; the battery drives
+      # both halves of that, and its partition guard is what makes an injection
+      # which lets the two halves disagree fail rather than print a tidy number.
+      - name: M1-ceiling probe battery (no survivors, no inert mutations)
+        timeout-minutes: 1
+        run: python3 scripts/injection/m1-ceiling-probe.py
+
       # The scorer-stability gate is only worth its green if it would refuse a
       # scorer that lost a stability property. Four of its properties were
       # previously unfalsifiable -- the fixture could not exhibit the failure they
@@ -838,6 +832,13 @@ jobs:
       - name: Scorer-stability probe battery (the stability gate refuses a broken scorer)
         timeout-minutes: 1
         run: python3 scripts/injection/scorer-stability-probe.py
+
+      # A shard whose files never arrive would be a green job that measured nothing.
+      # `verify-sites-are-sensitive.mjs` refuses an empty shard before spawning a child.
+      - name: Every proved exit can disappear without a word (shard 2 of 2)
+        timeout-minutes: 30
+        run: node scripts/verify-sites-are-sensitive.mjs --shard 2/2
+
 
 
 
@@ -863,36 +864,28 @@ jobs:
   # `golden-master/ci-declarations.json` carries a job promise (`R9`) for this one round -- the
   # ceiling, the bound on every step, the order they run in, and why the job exists. The first
   # green run measures it, and the promise is deleted in the commit that records the reading.
+
+  # Battery lane 2 of 5, and the plan is what decides what is in it.
+  #
+  # The five lane jobs used to be placed by hand: every battery was argued into a job on its
+  # own, and reading 64 measured what that produced -- 443 / 376 / 371 / 134 / 115 s of battery
+  # work on one tree, a 3.9x spread, and a run waiting on the first of them (`O-148`).
+  # `golden-master/battery-lanes.json` prices every battery from one recorded run, and
+  # `scripts/lane-costs.mjs` places them dearest first onto the emptiest lane. This job is that
+  # plan's lane, in the plan's order: `battery-lanes.test.ts` refuses the workflow and the table
+  # disagreeing about a step, a lane or an order.
+  #
+  # 3 step(s), 261 s of the table's seconds, and the six steps above them are
+  # one install, one shell install and one build -- paid once per lane. The ceiling is the sum of
+  # this lane's bounds plus the allowance and the runner's own seconds, which is `R13`.
   gates-audit:
-    name: every gate can be shown to fail, in a job of its own
+    name: battery lane 2 of 5 (the queue's steps, placed by golden-master/battery-lanes.json)
     runs-on: ubuntu-latest
-    # 35: the six bounds this job holds (7 + 3 + 10 + 4 + 4 + 3) plus the 180 s prefix allowance,
-    # which is 2 100 s and **35.0 minutes** -- `R13`'s arithmetic with no overhead term, because a
-    # job whose steps carry their own bounds has no second allowance to add. `R13` asks for a
-    # ceiling the bounds fit *inside*, so the sum is the floor of the number and not the number:
-    # 34 is a day that spends every bound and reaches the ceiling with nothing left over, which
-    # names the job rather than the step that hung.
-    #
-    # The job was declared at 24 -- `7 + 3 + 10` and the prefix -- and has been raised twice since,
-    # each time by a step that arrived or whose own bound grew: the three batteries written,
-    # repaired and never invoked came in at `4 + 4 + 3`, and reading 55 added the doc-count
-    # battery's fourth minute (`R4` on its 93 s). This is the ceiling doing what it is for and
-    # what it costs: it is the sum of what the steps are allowed to spend, so a bound that grows
-    # inside a full job raises the job's own ceiling, and a job holding six bounds has less room
-    # for each than a job holding three. The next bound that grows here without a step leaving is
-    # the argument for splitting the job rather than for a sixth minute.
-    #
-    # All of them settled by the first run that measured this job (`45748356774`): the shard spent
-    # **234 s** there, so 10 is 2.6x it -- wide enough for the runner's variance and narrow enough
-    # that a hang names the shard rather than the job. The promise this job was declared under said
-    # 13 for the shard and 26 for the ceiling, which were the only numbers available before a run
-    # existed; `R4` and `R13` are what replace a guess with a multiple.
-    #
-    # 3 rather than 1 on the build step is the same rule from the other side -- the floor exists
-    # for a step that has not run yet, and this one has not run in *this job*, whatever the twenty
-    # other jobs do with the same command.
-    timeout-minutes: 35
+    timeout-minutes: 29
     steps:
+
+      # Full history: see the note above `jobs:` (findings 612 and 614). This is the job the
+      # first of those two was found in.
       - name: Check out
         uses: actions/checkout@v4
         with:
@@ -911,16 +904,30 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # `zsh` for `check-no-unsafe-shell.test.ts`, which compares a rule against what the shells
-      # do rather than against a spec -- the strongest acceptance criterion in the tree. Seven
-      # minutes for the reason written on the same step in `verify`: the command's slowest
-      # reading is 197 s, and the jobs that install it rise together.
       - name: Install the shells the suite cross-checks against
         timeout-minutes: 7
+        # `check-no-unsafe-shell.test.ts` compares the gate's rule against what
+        # `zsh` and `bash` actually do with the same string, which is the
+        # strongest acceptance criterion in the tree: the thing being modelled is
+        # installed, so the verdict is a measurement rather than a reading of a
+        # spec.
+        #
+        # `bash` is on the runner; `zsh` is not, and the workflow never installed
+        # it. The fixture therefore passed here and failed on `ubuntu-24.04`
+        # (finding 130): a missing binary produced `status: null` from spawnSync,
+        # and `null !== 0` read that as "zsh rejected it". The fixture now reports
+        # the missing binary honestly, which is why this step exists rather than
+        # an exemption for the runner.
+        #
+        # Seven minutes because run `45319505174` read this command at **197 s** --
+        # the slowest of its 29 readings -- and twice that is 394 s, which the 360 s
+        # this replaced no longer covers (`R10`). The five ceilings above the same
+        # command rose with it, because a step bound that the ceiling cannot hold is
+        # a bound that never fires (`R13`).
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: pnpm build
 
       # Every gate, emptied and watched.
@@ -942,10 +949,6 @@ jobs:
       - name: Every gate can be shown to fail (shard 2 of 2)
         timeout-minutes: 10
         run: node scripts/verify-gates-are-testable.mjs --shard 2/2
-
-      - name: Fetch-official retry battery (no survivors)
-        timeout-minutes: 4
-        run: python3 scripts/injection/fetch-official-retry.py
 
       # `check-doc-counts.mjs` read three shapes of a published count while the
       # document used more, and the difference was invisible: a shape a reader
@@ -972,20 +975,10 @@ jobs:
         timeout-minutes: 4
         run: python3 scripts/injection/doc-counts-shapes.py
 
-      # The fourth anchor's path now runs on the real corpus: run 38250480271
-      # round-tripped 375 of 375 RE1 cases at oracle=1.00. This battery keeps the
-      # guard that records it from decaying the way the previous number did --
-      # 'the pass count is still Pass 31's 253 of 375' stood in the present tense
-      # for two passes after the corpus started passing, because the number lived
-      # in a log line and the sentence lived in a document and nothing joined them.
-      # Seventeen injections: the record's provenance, the corpus partition, the
-      # pins against the registry in both directions, and each of the document's
-      # four figures -- plus one that puts back the guard's own first defect, which
-      # scoped the document by any line mentioning the section and so read the
-      # headline table's cross-reference instead of the section.
-      - name: Round-trip record battery (no survivors, no inert, no misattributed mutations)
+      - name: Scorer stability battery (no survivors, no inert mutations)
         timeout-minutes: 3
-        run: python3 scripts/injection/roundtrip-record.py
+        run: node scripts/inject-stability.mjs
+
 
   # The artefacts and the documents: a different kind of check (files and prose rather
   # than behaviour) and a different clock, which is why it is a third job.
@@ -1259,28 +1252,28 @@ jobs:
   #
   # What is left behind measures 674 s and what is here measures 914 s, so the wall clock
   # the run waits for is the longer of the two rather than their sum.
+
+  # Battery lane 1 of 5, and the plan is what decides what is in it.
+  #
+  # The five lane jobs used to be placed by hand: every battery was argued into a job on its
+  # own, and reading 64 measured what that produced -- 443 / 376 / 371 / 134 / 115 s of battery
+  # work on one tree, a 3.9x spread, and a run waiting on the first of them (`O-148`).
+  # `golden-master/battery-lanes.json` prices every battery from one recorded run, and
+  # `scripts/lane-costs.mjs` places them dearest first onto the emptiest lane. This job is that
+  # plan's lane, in the plan's order: `battery-lanes.test.ts` refuses the workflow and the table
+  # disagreeing about a step, a lane or an order.
+  #
+  # 2 step(s), 263 s of the table's seconds, and the six steps above them are
+  # one install, one shell install and one build -- paid once per lane. The ceiling is the sum of
+  # this lane's bounds plus the allowance and the runner's own seconds, which is `R13`.
   batteries-heavy:
-    name: injection batteries, the two that rewrite a probe a hundred times
+    name: battery lane 1 of 5 (the queue's steps, placed by golden-master/battery-lanes.json)
     runs-on: ubuntu-latest
-    # 914 s measured, 22 min for the bound chain, 25 declared -- 27 from v3.55, when the
-    # deadline started counting the prefix at its slowest recorded day: the 15-minute
-    # backend-support bound plus 632 s in front of it is 1532 s, which is 25.5 minutes and
-    # does not fit in 25.
-    #
-    # 31 from v3.123, and it is the other question: this job's slowest day is 921 s (run
-    # 44576264388), 27 minutes was 1.76x it, and 31 is twice it.
-    #
-    # 55 from v3.129 (`R13`, finding 619): six bounds adding up to 3 240 s and 3 s of
-    # runner's own time, doubled to 6 -- 3 246 s, 55 minutes. 31 held two thirds of that.
-    # 44 from v3.132 (finding 622). The floor stopped being a property of a step: the 4
-    # setup steps this job shares with every other carry no bound of their own and the job allows
-    # 3 minutes for the whole prefix, while the 1 work step(s) that sat at the floor are bounded by
-    # twice their own day. The bounds add up to 2400 s plus the 180 s allowance where they added up to
-    # 3120 s; with 5 s of overhead doubled that is 2590 s, and R13's bounds
-    # term is the one that names it. A cold runner is cold once, and a ceiling that paid for one
-    # per setup step was paying for cold runners that cannot happen.
-    timeout-minutes: 45
+    timeout-minutes: 33
     steps:
+
+      # Full history: see the note above `jobs:` (findings 612 and 614). This is the job the
+      # first of those two was found in.
       - name: Check out
         uses: actions/checkout@v4
         with:
@@ -1299,15 +1292,26 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # `backend-support.py` runs targeted vitest invocations, and every job that runs
-      # vitest installs the shells its fixtures spawn -- the equality in
-      # `cold-tree-job.test.ts` asks for that of a job rather than of the job the rule was
-      # written about, which is how this step was found missing here.
       - name: Install the shells the suite cross-checks against
         timeout-minutes: 7
-        # Seven minutes for the reason written on this step in `verify`: the command's
-        # slowest reading is 197 s (run `45319505174`), and the five jobs that install
-        # it rose together.
+        # `check-no-unsafe-shell.test.ts` compares the gate's rule against what
+        # `zsh` and `bash` actually do with the same string, which is the
+        # strongest acceptance criterion in the tree: the thing being modelled is
+        # installed, so the verdict is a measurement rather than a reading of a
+        # spec.
+        #
+        # `bash` is on the runner; `zsh` is not, and the workflow never installed
+        # it. The fixture therefore passed here and failed on `ubuntu-24.04`
+        # (finding 130): a missing binary produced `status: null` from spawnSync,
+        # and `null !== 0` read that as "zsh rejected it". The fixture now reports
+        # the missing binary honestly, which is why this step exists rather than
+        # an exemption for the runner.
+        #
+        # Seven minutes because run `45319505174` read this command at **197 s** --
+        # the slowest of its 29 readings -- and twice that is 394 s, which the 360 s
+        # this replaced no longer covers (`R10`). The five ceilings above the same
+        # command rose with it, because a step bound that the ceiling cannot hold is
+        # a bound that never fires (`R13`).
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       - name: Build (core then cli; cli resolves core's dist)
@@ -1343,21 +1347,18 @@ jobs:
         timeout-minutes: 18
         run: python3 scripts/injection/type-miss-probe.py
 
-      # P1-5 asks for T2's six backends to be measured and the unsupported ones
-      # declared. That declaration has three links -- the document matrix, the
-      # derived snapshot, and the registry that says which backend has a pull
-      # path -- and this battery removes one link at a time: seven refusals from
-      # the document guard, the stale-snapshot branch of the derive script, six
-      # branches of the wire reader, and the registry's agreement with its own
-      # snapshot. Its first run reported one INERT, which is the outcome the
-      # vocabulary exists for: the anchor had the wrong indentation, so nothing
-      # was mutated, and a mutation that never applied is not evidence about
-      # anything.
-      #
-      # 379 s on run 45673244483, for 83 claims that one named test goes red. Each was
-      # measured by running the whole file; v3.154 measured the same claims by asking for
-      # the named test, in a paired run on one tree where 83 of 83 verdicts agreed and the
-      # child time fell from 347.0 s to 53.2 s (finding 658).
-      - name: Backend-support battery (no survivors, no inert, no misattributed mutations)
-        timeout-minutes: 15
-        run: python3 scripts/injection/backend-support.py
+      # The fourth anchor's path now runs on the real corpus: run 38250480271
+      # round-tripped 375 of 375 RE1 cases at oracle=1.00. This battery keeps the
+      # guard that records it from decaying the way the previous number did --
+      # 'the pass count is still Pass 31's 253 of 375' stood in the present tense
+      # for two passes after the corpus started passing, because the number lived
+      # in a log line and the sentence lived in a document and nothing joined them.
+      # Seventeen injections: the record's provenance, the corpus partition, the
+      # pins against the registry in both directions, and each of the document's
+      # four figures -- plus one that puts back the guard's own first defect, which
+      # scoped the document by any line mentioning the section and so read the
+      # headline table's cross-reference instead of the section.
+      - name: Round-trip record battery (no survivors, no inert, no misattributed mutations)
+        timeout-minutes: 3
+        run: python3 scripts/injection/roundtrip-record.py
+

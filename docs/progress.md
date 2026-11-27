@@ -440,10 +440,10 @@ document that described it as downloading the data was describing an intention.
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 98 |
 | Source lines | 34,654 |
-| Test files | 264 core + 4 cli |
-| Test lines | 123,970 core + 3,242 cli |
-| Tests | 7,143 core + 187 cli |
-| Tracked files | 689 |
+| Test files | 265 core + 4 cli |
+| Test lines | 124,474 core + 3,242 cli |
+| Tests | 7,179 core + 187 cli |
+| Tracked files | 693 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.163: **54** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.164: **54** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1202,17 +1202,17 @@ is a row about rather than paraphrase one that no `grep` will find.
   until a table's rows are filtered and that pairing becomes a guess, or whether a file that uses a formatted title must
   state its clock on the suite, since a suite's number is the only clock a reader without a position can place]`
 
-- O-148 · **The queue's wall clock is bounded by a series of batteries, and the shape only pays as a pair.**
-  Five jobs are series of independent mutation batteries -- `gates-audit` **443 s** in four, `batteries-heavy`
-  **376 s** in two, `batteries` **371 s** in eleven, `sensitivity` **134 s** in two, `sensitivity-shard` **115 s**
-  in one -- and the wall clock is the heaviest lane. The three prices, from reading 64's own steps: splitting
-  `verify` alone buys **0 s** (the head stays `gates-audit` at **470 s**, which is why `O-147`'s premise was one
-  reading of a moving head), rebalancing the five lanes alone buys **33 s** (the head becomes `verify` at **437 s**),
-  and both buy **161 s**, by bringing the head to **309 s** for one more install and build that is already inside
-  that figure. The ledger side is what a tenth job costs: every `R11` row's denominator, the nine ceilings' counting
-  unit, and `check-ci-budget`'s reconciliation all move with it, and `R11` refuses a commit that adds a job until a
-  run has measured the job that commit adds.
-  `[open: whether the lane-to-battery assignment is derived from a committed cost table or placed by hand -- and whether the tenth job's ledger cost is paid before or with the split of verify]`
+- O-150 · **A tenth job is a promise, and the run that settles it has not happened.**
+  `coverage` is declared in `golden-master/ci-declarations.json` as a **31-minute** job whose two bounded steps are
+  the shells install and the build; `R9` refuses every commit after this one until a run has measured it, and `R11`
+  counts it as a declaration awaiting its first run. Three things follow from that and none of them is a measurement
+  yet: whether the head lands on a lane at **~284 s** (**263 s** of table plus a **~21 s** prefix) or on `coverage` at
+  **~242 s**; whether the five lane ceilings (**27 / 49 / 40 / 60 / 33** minutes) still bound steps that moved lanes,
+  against `R10`'s "twice the slowest reading of that step"; and whether anything outside this repository names a
+  check by its old display name, since every lane's `name:` changed to `battery lane N of 5` in the commit that
+  reshaped the queue. The first two are answers a run gives; the third is not, and that is why it is written beside
+  them rather than left to the round that reads the run.
+  `[open: which job the queue's head is on the first run that measures all ten, and whether a check named by its display name outside this repository has to be renamed before that run can be required]`
 - O-149 · **A call states its ceiling and not its patience.**
   Every adapter now sends `max_tokens` (finding 677), and none sends a timeout: `anthropic.ts`, `openai-compat.ts`
   and `scripts/derive-fault-golden.mjs` all await `fetch` with no `AbortSignal`, so an endpoint that accepts the
@@ -1260,7 +1260,7 @@ and this table.
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
 | [volume-20.md](progress/volume-20.md) | 8 | v3.134 | v3.141 |
 | [volume-21.md](progress/volume-21.md) | 9 | v3.142 | v3.150 |
-| [volume-22.md](progress/volume-22.md) | 13 | v3.151 | v3.163 |
+| [volume-22.md](progress/volume-22.md) | 14 | v3.151 | v3.164 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

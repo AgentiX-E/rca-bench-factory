@@ -1,0 +1,105 @@
+{
+  "moved": [
+    {
+      "job": "batteries-heavy",
+      "step": "Round-trip record battery (no survivors, no inert, no misattributed mutations)",
+      "from": "gates-audit",
+      "minutes": 3,
+      "why": "the battery re-derives the anchor round-trip from the corpus the lane already builds, and the 52 s it cost in `gates-audit` is the only measurement of that command this repository holds; three minutes is the floor a step pays in a lane that has not measured it yet"
+    },
+    {
+      "job": "gates-audit",
+      "step": "Scorer stability battery (no survivors, no inert mutations)",
+      "from": "batteries",
+      "minutes": 3,
+      "why": "the battery mutates the shipped scorer and requires the stability gate to name the property that broke, which is the audit the rest of this lane performs; its 8 s is what `batteries` measured, and the floor is what this lane has not"
+    },
+    {
+      "job": "sensitivity-shard",
+      "step": "Every gate can be shown to fail",
+      "from": "batteries",
+      "minutes": 13,
+      "why": "the first half of the gate-fail pair is 167 s and the plan puts it on the lane the derivation left lightest, so neither half waits for the other; `batteries` measured it"
+    },
+    {
+      "job": "sensitivity-shard",
+      "step": "Backend-support battery (no survivors, no inert, no misattributed mutations)",
+      "from": "batteries-heavy",
+      "minutes": 15,
+      "why": "the battery mutates a backend adapter this repository did not write, and the 93 s `batteries-heavy` spent on it is its only measurement; it reads nothing the other batteries of that lane produce"
+    },
+    {
+      "job": "batteries",
+      "step": "Every proved exit can disappear without a word (shard 2 of 2)",
+      "from": "sensitivity-shard",
+      "minutes": 30,
+      "why": "the second half of the sensitivity pair, which the cost table that split it now places; its 137 s is what `sensitivity-shard` measured, and the first half stays on the lane beside it"
+    },
+    {
+      "job": "sensitivity",
+      "step": "Fetch-official retry battery (no survivors)",
+      "from": "gates-audit",
+      "minutes": 4,
+      "why": "the retry battery is a gate audit that went on costing 108 s; it shares no file with the lanes around it, and this is the lane whose table left it a place"
+    },
+    {
+      "job": "sensitivity",
+      "step": "Fault-extraction workflow battery (no survivors, negative control)",
+      "from": "batteries",
+      "minutes": 3,
+      "why": "the negative control of the fault-extraction pair is 11 s and independence from its sibling is the property it asserts, so a lane of its own is the honest place for it"
+    },
+    {
+      "job": "sensitivity",
+      "step": "M1-ceiling probe test battery (no survivors, no inert mutations)",
+      "from": "batteries",
+      "minutes": 3,
+      "why": "the battery drives `m1-ceiling-probe.test.ts` against mutations of the probe source in its own copy of the tree, so it needs nothing the probe battery writes; 8 s in `batteries`"
+    },
+    {
+      "job": "coverage",
+      "step": "Test with coverage (core + cli, ≥95% per dimension, 100% functions)",
+      "from": "verify",
+      "minutes": 8,
+      "why": "the suite is 216 s of the 447 s `verify` spent, and it shares no input with lint or typecheck; the job it left measured it, and the steps behind it read the report it writes"
+    },
+    {
+      "job": "coverage",
+      "step": "Published suite counts, read from that run rather than taken again",
+      "from": "verify",
+      "minutes": 3,
+      "why": "the step reads the coverage report this job writes and the report `verify` used to write; it cost 0 s there, and three minutes is the floor a step pays in a job no run has measured"
+    },
+    {
+      "job": "coverage",
+      "step": "Mutation suite (gate + export, 100% interception)",
+      "from": "verify",
+      "minutes": 3,
+      "why": "the suite runs against the report the coverage step writes, which is why it followed the step rather than staying beside lint; 2 s in `verify`, and the floor here"
+    },
+    {
+      "job": "coverage",
+      "step": "Every test's cost against the budget it declares",
+      "from": "verify",
+      "minutes": 3,
+      "why": "the check reads the same report and answers a question about the run that produced it; 3 s in `verify`, and three minutes is the floor a job without a measurement pays"
+    }
+  ],
+  "jobs": [
+    {
+      "job": "coverage",
+      "timeoutMinutes": 31,
+      "steps": [
+        {
+          "name": "Install the shells the suite cross-checks against",
+          "minutes": 7
+        },
+        {
+          "name": "Build (core then cli; cli resolves core's dist)",
+          "minutes": 3
+        }
+      ],
+      "why": "the suite and the three steps that read the report it writes were 216 s of `verify`'s 447 s and share nothing with lint or typecheck, so they run on their own runner; a job no run has measured is the shape `R6` cannot compare, and the first green run is the reading this promise waits for"
+    }
+  ]
+}

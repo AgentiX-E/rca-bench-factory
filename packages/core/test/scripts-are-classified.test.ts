@@ -102,6 +102,15 @@ const REGISTER: Record<string, Entry> = {
       'file that states 30 000 ms as stating none (finding 558).',
   },
 
+  'lane-costs.mjs': {
+    class: 'data',
+    why:
+      'The lane plan: `placeLanes`, `matchJobs` and `laneErrors` over `golden-master/battery-lanes.json`. ' +
+      'It exports functions and has no main and no exit, because the verdict is a test -- ' +
+      '`battery-lanes.test.ts` is the only caller, and it is the gate that refuses the workflow and ' +
+      'the table disagreeing about a step, a lane or an order (v3.164).',
+  },
+
   'reconcile-readings.mjs': {
     class: 'gate',
     why:

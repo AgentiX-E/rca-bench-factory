@@ -1848,10 +1848,10 @@ the day a rebalanced queue is measured, the head is whichever lane the runner wa
 | the drift reading, before and after | a tree that could count two of three gates read **-6.7%**; it now reads **0.0%** over the **2** gates both sides counted, with **1** named as uncounted |
 | falsification | the two request bodies this tree already pinned went red the moment `max_tokens` arrived, and a third test reads the wire (`maxTokens: 512` must post **512**); the drift test now pins `read`, `unread`, `readLines` and `change` where it pinned only `moved` and `treeLines`, and the spawned shard run pins the sentence by its numbers |
 | the edits' own counting consequences | `gate-sites.json` moved **17** rows and carried **156 / 156** site annotations and **120 / 120** throw annotations by identity (inventory unchanged: **156** sites, **69** scripts); `sensitivity-costs.json` renumbered **143** witness keys, re-derived by `--costs` (**69** claimants, **262** claims, **734.4 s**, **332** runs in **3.1 min**) and re-proved all **262** claims (**149** exits hollowed, **113** throws removed) |
-| `core` test suite | **264 files, 7,143 tests passed** (as of this commit) |
-| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- statements, branches, functions and lines, read from `coverage/coverage-summary.json` |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **268 files, 7,330 tests passed** (as of this commit) |
+| `core` test suite | **264 files, 7,143 tests passed** (at v3.163) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- statements, branches, functions and lines, read from `coverage/coverage-summary.json` (at v3.163) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.163) |
+| repo test suite | **268 files, 7,330 tests passed** (at v3.163) |
 | new tests | **7,139 -> 7,143, +4**: one for the ceiling on the wire, one for each adapter passing it down, and one for the exported constant |
 | test lines | **123,859 -> 123,970 core** |
 | `Tracked files` | **689**, unchanged: the round added no file |
@@ -1874,3 +1874,197 @@ the day a rebalanced queue is measured, the head is whichever lane the runner wa
   bound on a hung request is the workflow. What makes this a decision rather than a patch is the
   number: a timeout short enough to fire on a legitimate slow generation is a gate that fails on
   the harmless case, and this repository has refused that shape twice. `[open: what timeout a generation may be given, and whether it is one number for every provider or one per adapter, given that no run in this repository has ever measured a slow-but-valid completion]`
+
+## v3.164 — the lanes are placed by a table, and the recording refused the shape a split makes
+
+`O-148` left exactly one question: the reshape pays **161 s**, but **where does the lane-to-battery
+assignment come from**? A hand-placed split would be the second partition this repository has
+refused by name -- `assignShards` exists so that the sites battery and the gate-cost table each have
+one placement rule. This round answers with a committed table, one rule over it, and the queue that
+rule derives. Getting there ran into a bound nobody had written down, and the bound is the more
+interesting half of the round: **the recording could not describe a job created by a split** -- it
+refused the truthful spelling twice, for two different reasons (findings 681 and 682) -- and an
+unrelated arm turned out to have been looking at a **smaller workflow than the one that runs**
+(finding 683).
+
+**The table.** `golden-master/battery-lanes.json` prices the **20** steps the five battery jobs are
+made of, from **one** reading -- reading 65, run `45973021889`, commit `3673a82d` -- and names that
+reading in its own header (`reading`, `run`, `commit`, `measured`). So the only hand-written thing
+is the *selection* of a run: `laneErrors` refuses a row whose seconds the named run did not record,
+and it refuses a row whose `command` is not the command the workflow runs. **1,299 s** of battery
+work in twenty rows.
+
+**The rule.** `scripts/lane-costs.mjs` places them longest-processing-time first: the dearest unit
+on the emptiest lane, ties broken by key, so the placement is a pure function of the table's numbers
+and names rather than of the order somebody typed the rows in. LPT is a 4/3-approximation to bin
+packing and is not claimed to be optimal. What it buys here is measurable against the queue that was
+placed by hand, one battery at a time, each move argued on its own:
+
+| queue | lane loads | spread |
+| --- | --- | --- |
+| placed by hand, one battery at a time (reading 64) | **443 / 376 / 371 / 134 / 115** | **3.9x** |
+| placed by the table (reading 65) | **263 / 261 / 260 / 257 / 258** | **6 s, 2.3%** |
+
+No five-lane split of **1,299 s** can put less than **259.8 s** on its heaviest lane (the dearest
+unit is the type-miss probe at **211 s**, below the even share), and the table reads **263 s**:
+**1.2%** off the bound. That is the whole of what a static table can be asked for, and the round
+does not claim more -- this log has already recorded a table balanced to **0.1%** whose shards read
+**16.1%** apart, because the seconds are the machine's day and the balance is the table's property.
+
+**A unit is not always a step.** `python3 scripts/publish-battery-report.py` writes the report
+`gate-tests-battery.py` produced and `actions/upload-artifact@v4` attaches that same file, so a lane
+that placed them apart would publish under a job that never ran the battery and upload nothing. A
+row may therefore carry a `group`, and a group is placed as one unit: its steps share a lane and
+keep the table's order inside it. The shipped table has one -- `gate-tests-battery`, **96 s** across
+three steps (**90 + 4 + 2**) -- and `laneErrors` refuses a group split across two lanes.
+
+**The ids are addresses, not descriptions.** `R11` counts them, the recording is keyed by them, and
+`moved` is defined by a step leaving one and arriving at another -- so a lane cannot be given a fresh
+id in the same commit that empties its old one. `matchJobs` therefore tries all **120** assignments
+of five lanes to the tree's five existing ids and keeps the one that leaves the most rows where they
+already are, ties broken by the permutation that sorts first, so the answer does not depend on the
+order the permutations were generated in. The cost is visible and is paid in the open: `batteries`
+now holds the sensitivity battery's second shard and `sensitivity-shard` holds the gate-fail pair's
+first, because those are the rows the matching kept in place. A reader would have read those ids as
+descriptions, so every lane's `name:` now says `battery lane N of 5` and the description moved into
+the table -- the id stayed put, which is what the recording needs, and the sentence saying what the
+job does stopped pretending to be the id.
+
+**A row says where it was measured, and that decides the order.** `from` is a fact about the reading
+rather than about the plan, and `laneOrderOf` reads it: a lane writes the rows whose `from` is
+itself first and the rest after them, in table order. The reason is `R8`: a step no recording has
+measured *in its new job* is a step whose deadline would be argued from a sum with a hole, so it can
+only sit at the end. The shipped queue obeys it -- `batteries` runs seven steps it measured and the
+sensitivity shard last, `sensitivity-shard` runs two steps it has never run because that lane is new
+work. Once a reading has measured a lane's steps inside that lane, every `from` equals the lane and
+the rule collapses into the table's own order.
+
+**The split.** `verify` is now two jobs. `coverage` runs the suite and the three steps that read the
+report that suite writes; `verify` keeps the four steps that share nothing with them.
+
+| job | ceiling | bounded steps | what it runs |
+| --- | --- | --- | --- |
+| `verify` | **32 min** | 4 | shells, build, type-check, lint |
+| `coverage` | **31 min** | 6 | shells, build, the suite, published counts, the mutation suite, per-test budgets |
+
+**12** steps moved: **8** batteries between lanes and **4** from `verify` to `coverage`. Every one
+carries a `moved` entry naming the job it left, the bound it now has, and why that bound -- and a
+rearrangement of this size is exactly what `R8`'s "a step that has not been measured in its new job
+pays the floor" is for: the four batteries that went to lanes which had never run them are at
+**3 / 3 / 13 / 30** minutes against measured **8 / 11 / 167 / 137** s, and the floor is what a lane
+that has not measured a step can honestly be given.
+
+The prediction, from the table rather than from a hope: the head is the heaviest lane, **263 s**,
+plus a **~21 s** prefix -- **~284 s** -- with `coverage` at **~242 s** and the rest of the queue
+under both. Against reading 65's **451 s** that is **~167 s**. The **161 s** v3.163 priced was
+against reading 64's **470 s**, and the difference between the two figures is which reading is the
+baseline rather than a disagreement: the table bought **25 s** more than the even split v3.163
+assumed, because the split it assumed was **288 s** a lane.
+
+**Four defects, and three of them were in the readers rather than in the queue.**
+
+**The lane assignment had no rule** (finding 680). The five lane bodies were **443 / 376 / 371 /
+134 / 115** s after nine rounds of moving one battery at a time, and every one of those moves was
+argued from the battery being moved. A partition placed that way is a partition whose provenance is
+the order the arguments were made in -- the same shape as the split by `position % count` that
+`assignShards` replaced in v3.157, one level up. The rule is now in the repository with the numbers
+it reads, and a hand-placed table is refused by the table's own re-derivation.
+
+**The recording refused the shape a split creates** (finding 681). `ci-declarations.json` allowed
+either a **job promise** -- "this job has never run, here is its budget" -- or **step declarations**
+for a job, and refused a file that had both. That refusal was written when a job promise was the
+only way to describe an unmeasured job, so a step declaration for the same job could only be a
+second, contradictory description of one gap. A split is the shape nobody imagined: the job is
+unmeasured because it is new, and **some of its steps were measured -- in the job they left**. The
+file now accepts the pair and refuses the overlap: one step, two owners, which is two answers to one
+question. Measured on the round's own recording, this refusal was **46** sentences of
+`check-ci-budget` before the shape could be expressed at all.
+
+**A promise counted the steps that arrived** (finding 682). `R9` compares the steps a promise names
+with the steps the job has, and the set it counted was every non-prefix step -- including the four
+that had just arrived from `verify`. So the truthful promise (`coverage`'s own two: shells and
+build) was refused for naming **2** where the job had **6**, and the only spelling the check would
+accept was one that named two **measurements** as promises. The set now excludes the steps a
+declaration already owns, which is what makes the honest file the accepted one: a promise is about
+the job's own budget, and a bound that came with a step from another job is a measurement.
+
+**An arm was reading a smaller workflow than the one that runs** (finding 683). The shells install
+in every job that starts a suite is checked by an arm that asks which jobs start a suite, and the
+reader behind it stopped at the command's first token: `node scripts/x.mjs` was followed, `pnpm
+docs:check` was not. `artefacts` runs `pnpm docs:check`, which spawns a vitest through the doc
+guards, so it had been starting a suite all along and the arm had never counted it -- installing
+`zsh` and `bash` for a reason nothing stated. The reader now follows a command into `package.json`
+(three hops, which is what `test:coverage` -> `--filter core test:coverage` -> `vitest run` costs)
+and the equality stayed an equality instead of growing an exception: **8** jobs, then **9**.
+
+**What the edits cost in counting.** `lane-costs.mjs` is a script with no `exit`, so
+`gate-sites.json`'s `scanned` moved **103 -> 104** and the inventory did not: still **156** sites,
+still **69** scripts carrying them, re-derived by `derive-gate-sites.mjs` rather than trusted. The
+plan's pinned numbers in `gate-steps.test.ts` moved with the 12 steps, and each of them was retaken
+rather than edited: `verify` **32 min across 4 step(s)**, `coverage` **31 min across 6**,
+`sensitivity` **53 min across 7**, `batteries` **60 min across 8**, `batteries-heavy` **33 min
+across 4**. `batteries`'s floor in `cold-tree-job.test.ts` fell **10 -> 7** commands because four of
+its batteries left, and the claim it guards -- every command there names a script under `scripts/`
+-- is unchanged; the floor exists so the claim is not made about nothing.
+
+**What this round got wrong.**
+
+1. **The first plan named the lanes semantically.** It read `sensitivity-shard` on the lane that
+   holds both gate-fail shards, which is a description the id does not support and the matching
+   does not choose. The repair was not to force the ids to match the work -- that would have meant a
+   fresh id in the commit that empties the old one -- it was to stop letting the ids describe
+   anything: `battery lane N of 5`, and the table is the place a reader learns what a lane holds.
+2. **The table's group was noticed by the rule, not by the reading.** The first draft placed
+   `publish` and `upload` where the placement put them, which was a different lane from the battery
+   that writes the file they carry. A lane that uploads nothing is green, so nothing would have
+   failed: the constraint had to be stated as a field before it could be refused, and it is now a
+   unit rather than three rows that happen to be near each other.
+3. **The re-derivation caught the placement, not the prices.** `laneErrors` checks that the table's
+   own rule produces the table's own lanes, and the first hand-written version of the shipped table
+   did not survive that: 211 s on the emptiest lane, then the 174 s row where the rule puts it. The
+   lesson is the one the sites table already taught -- a table a reader can re-derive is a table
+   whose author cannot quietly prefer a lane.
+4. **The doc counts had to be split from the round that took them.** The ledger that measured
+   **7,143** was still marked `(as of this commit)` when this round measured **7,179**, so two
+   rounds claimed to be now. `check-doc-counts` had said so for a while; what it could not say is
+   which of the two to date. Both are dated now, and only the newest round is "now".
+
+### Readings
+
+> Ledger for `v3.164`.
+
+| item | value |
+| --- | --- |
+| the queue, as the table prices it | **1,299 s** over **20** steps in five lanes -- **263 / 261 / 260 / 257 / 258** -- against **443 / 376 / 371 / 134 / 115** placed by hand on reading 64 |
+| where the table was read | reading **65**, run `45973021889`, commit `3673a82d`, `measured` 2026-11-27: one run, named in the table, and the only hand-written thing is the selection of it |
+| the bound the placement is measured against | **259.8 s** a lane (1,299 / 5, and the dearest unit **211 s** does not raise it); the table reads **263 s**, **1.2%** off |
+| the ids, and what they cost | **120** assignments tried, the one kept leaves the most rows in place; `batteries` gained the sensitivity shard 2 of 2, `sensitivity-shard` gained the gate-fail pair's first, and every lane's `name:` now says `battery lane N of 5` |
+| the split | `verify` **32 min** across **4** bounded steps, `coverage` **31 min** across **6**; **12** steps moved, **8** batteries and **4** into the new job |
+| what a run can be predicted at | head **~284 s** (**263 s** lane + **~21 s** prefix), `coverage` **~242 s**, against reading 65's **451 s**: **~167 s**, and v3.163's **161 s** was against reading 64's **470 s** |
+| the recording, before and after | a job promise beside a step declaration for one job was refused outright -- **46** sentences of `check-ci-budget` -- and `R9` counted **6** steps where the job owns **2**; the pair is now accepted and the overlap (one step, two owners) refused |
+| the arm that was reading a smaller workflow | `artefacts` runs `pnpm docs:check`, which spawns a vitest through the doc guards, and the reader stopped at the command's first token: **8** suite jobs counted, now **9** |
+| the edits' own counting consequences | `gate-sites.json`'s `scanned` **103 -> 104** with the inventory unchanged (**156** sites, **69** scripts), re-derived rather than trusted; `gate-steps` re-pinned **5** jobs (`verify` 32/4, `coverage` 31/6, `sensitivity` 53/7, `batteries` 60/8, `batteries-heavy` 33/4) |
+| `core` test suite | **265 files, 7,179 tests passed** (as of this commit) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- statements, branches, functions and lines, read from `coverage/coverage-summary.json` |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **269 files, 7,366 tests passed** (as of this commit) |
+| new tests | **7,143 -> 7,179, +36**: **35** in `battery-lanes.test.ts` (the unit, the rule, the matching, the reader's refusals, the plan against the workflow, the order, the prefix, the shipped plan, and a second table the reader must also accept) and one net in `ci-budget.test.ts` -- the overlap refused, the pair a split needs accepted |
+| test lines | **123,970 -> 124,474 core** |
+| `Tracked files` | **689 -> 693**: `scripts/lane-costs.mjs`, `golden-master/battery-lanes.json`, `golden-master/ci-declarations.json` (written this round rather than earlier) and `packages/core/test/battery-lanes.test.ts` |
+| CI | run `45973021889` on `3673a82d`: **9 of 9 jobs success**, **451 s** of wall clock, reading **65** -- the run the lane table's seconds were read from, and the last run before the one that ships this round. The tenth job cannot appear in a reading until a run has measured it, so the row that answers `R7` here is the reading the plan was priced on; the run of this commit is the settlement, and `R9` refuses every later commit until it exists |
+
+### Left open
+
+- `O-149` · **A call states its ceiling and not its patience.**
+  Unchanged from v3.163, and no part of this round touched it: every adapter sends `max_tokens` and
+  none sends an `AbortSignal`, so a connection that is accepted and never answered is bounded by the
+  job's ceiling rather than by the call. `[open: what timeout a generation may be given, given that nothing in this repository has measured a slow-but-valid completion to size one against, and that a timeout which fires on the harmless case is the shape this log has refused twice]`
+- `O-150` · **A tenth job is a promise, and the run that settles it has not happened.**
+  `coverage` is declared in `golden-master/ci-declarations.json` as a **31-minute** job whose two
+  bounded steps are the shells install and the build; `R9` refuses every commit after this one until
+  a run has measured it, and `R11` counts it as a declaration awaiting its first run. Three things
+  follow from that and none of them is a measurement yet: whether the head lands on a lane at
+  **~284 s** or on `coverage` at **~242 s**; whether the five lane ceilings (**27 / 49 / 40 / 60 /
+  33** minutes) still bound steps that moved lanes, against **R10**'s "twice the slowest reading";
+  and whether anything outside this repository names a check by its old display name, since every
+  lane's `name:` changed to `battery lane N of 5` in the same commit. `[open: which job the queue's head is on the first run that measures all ten, and whether a check named by its display name outside this repository has to be renamed before that run can be required]`

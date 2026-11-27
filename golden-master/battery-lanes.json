@@ -1,0 +1,160 @@
+{
+  "rule": "golden-master/battery-lanes.json",
+  "reading": 65,
+  "run": 45973021889,
+  "commit": "3673a82d3aa6ee0753dc53c32cdab5a8790813aa",
+  "measured": "2026-11-27",
+  "unit": "seconds",
+  "jobs": [
+    "batteries-heavy",
+    "gates-audit",
+    "sensitivity-shard",
+    "batteries",
+    "sensitivity"
+  ],
+  "steps": [
+    {
+      "step": "Type-miss probe battery (no survivors, no inert, no blind mutations)",
+      "command": "python3 scripts/injection/type-miss-probe.py",
+      "seconds": 211,
+      "from": "batteries-heavy",
+      "lane": 0
+    },
+    {
+      "step": "Round-trip record battery (no survivors, no inert, no misattributed mutations)",
+      "command": "python3 scripts/injection/roundtrip-record.py",
+      "seconds": 52,
+      "from": "gates-audit",
+      "lane": 0
+    },
+    {
+      "step": "Every gate can be shown to fail (shard 2 of 2)",
+      "command": "node scripts/verify-gates-are-testable.mjs --shard 2/2",
+      "seconds": 174,
+      "from": "gates-audit",
+      "lane": 1
+    },
+    {
+      "step": "Doc-count shape battery (no survivors, no inert, no misattributed mutations)",
+      "command": "python3 scripts/injection/doc-counts-shapes.py",
+      "seconds": 79,
+      "from": "gates-audit",
+      "lane": 1
+    },
+    {
+      "step": "Scorer stability battery (no survivors, no inert mutations)",
+      "command": "node scripts/inject-stability.mjs",
+      "seconds": 8,
+      "from": "batteries",
+      "lane": 1
+    },
+    {
+      "step": "Every gate can be shown to fail",
+      "command": "node scripts/verify-gates-are-testable.mjs --shard 1/2",
+      "seconds": 167,
+      "from": "batteries",
+      "lane": 2
+    },
+    {
+      "step": "Backend-support battery (no survivors, no inert, no misattributed mutations)",
+      "command": "python3 scripts/injection/backend-support.py",
+      "seconds": 93,
+      "from": "batteries-heavy",
+      "lane": 2
+    },
+    {
+      "step": "Every proved exit can disappear without a word (shard 2 of 2)",
+      "command": "node scripts/verify-sites-are-sensitive.mjs --shard 2/2",
+      "seconds": 137,
+      "from": "sensitivity-shard",
+      "lane": 3
+    },
+    {
+      "step": "Gate-test battery (each gate's test provably fails when its guard is removed)",
+      "command": "python3 scripts/injection/gate-tests-battery.py",
+      "seconds": 90,
+      "from": "batteries",
+      "group": "gate-tests-battery",
+      "lane": 3
+    },
+    {
+      "step": "Publish the gate-test battery report",
+      "command": "python3 scripts/publish-battery-report.py",
+      "seconds": 4,
+      "from": "batteries",
+      "group": "gate-tests-battery",
+      "lane": 3
+    },
+    {
+      "step": "Upload the gate-test battery report",
+      "command": "uses:actions/upload-artifact@v4",
+      "seconds": 2,
+      "from": "batteries",
+      "group": "gate-tests-battery",
+      "lane": 3
+    },
+    {
+      "step": "Fault-extraction scoring battery (no survivors)",
+      "command": "python3 scripts/injection/fault-extraction-scoring.py",
+      "seconds": 13,
+      "from": "batteries",
+      "lane": 3
+    },
+    {
+      "step": "Component rule battery (no survivors, no inert mutations)",
+      "command": "node scripts/inject-component-rule.mjs",
+      "seconds": 10,
+      "from": "batteries",
+      "lane": 3
+    },
+    {
+      "step": "M1-ceiling probe battery (no survivors, no inert mutations)",
+      "command": "python3 scripts/injection/m1-ceiling-probe.py",
+      "seconds": 1,
+      "from": "batteries",
+      "lane": 3
+    },
+    {
+      "step": "Scorer-stability probe battery (the stability gate refuses a broken scorer)",
+      "command": "python3 scripts/injection/scorer-stability-probe.py",
+      "seconds": 0,
+      "from": "batteries",
+      "lane": 3
+    },
+    {
+      "step": "Every proved exit can disappear without a word",
+      "command": "node scripts/verify-sites-are-sensitive.mjs --shard 1/2",
+      "seconds": 114,
+      "from": "sensitivity",
+      "lane": 4
+    },
+    {
+      "step": "Fetch-official retry battery (no survivors)",
+      "command": "python3 scripts/injection/fetch-official-retry.py",
+      "seconds": 108,
+      "from": "gates-audit",
+      "lane": 4
+    },
+    {
+      "step": "Every exemption's claim can be made false",
+      "command": "node scripts/verify-claims-are-sensitive.mjs",
+      "seconds": 17,
+      "from": "sensitivity",
+      "lane": 4
+    },
+    {
+      "step": "Fault-extraction workflow battery (no survivors, negative control)",
+      "command": "python3 scripts/injection/fault-extraction-workflow.py",
+      "seconds": 11,
+      "from": "batteries",
+      "lane": 4
+    },
+    {
+      "step": "M1-ceiling probe test battery (no survivors, no inert mutations)",
+      "command": "node scripts/inject-m1-ceiling-tests.mjs",
+      "seconds": 8,
+      "from": "batteries",
+      "lane": 4
+    }
+  ]
+}

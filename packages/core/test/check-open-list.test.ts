@@ -1361,10 +1361,14 @@ describe('docs · a section that is only entries is a record, whatever its headi
     // v3.163 moved the left two for the same reason and in the same direction, and `wrote none`
     // stayed at nineteen again: the round closed `O-147` and opened two entries -- the queue's
     // shape and the missing timeout -- so its record has rows in it.
+    // v3.164 is the fourth round in a row to move the left two and leave `wrote none` alone: it
+    // closed `O-148` and opened `O-150`, so its record has rows, and the count of rounds which
+    // wrote none is a count of rounds that had nothing to say rather than of rounds that said
+    // nothing here.
     const shipped = spawnSync('node', [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
     expect(shipped.status, shipped.stdout + shipped.stderr).toBe(0);
     expect(shipped.stdout).toContain(
-      '265 record(s): 240 under a round and 25 under none; 258 `vX.YY` round(s) + 1 addendum(s), 19 of them wrote none',
+      '266 record(s): 241 under a round and 25 under none; 259 `vX.YY` round(s) + 1 addendum(s), 19 of them wrote none',
     );
     // One corpus, two readers, one number. `check-progress-volumes` counts these same rounds to
     // print the population beside its heading count, and the agreement between the two is the only

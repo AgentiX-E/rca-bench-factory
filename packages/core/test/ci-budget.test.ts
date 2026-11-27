@@ -2594,14 +2594,44 @@ describe('a job the recording has never measured', { timeout: SUITE_BUDGET_MS },
     expect(errors).toContain('is declared as a job twice');
   });
 
-  it('refuses a job with both a job promise and a step declaration', () => {
-    // Cannot produce: one run answering two promises in different ways. The two files
-    // would be edited by the same round, and `R8` and `R9` cannot both own the gap.
+  it('refuses a step that a job promise and a declaration both own', () => {
+    // Cannot produce: one run answering two promises in different ways. Two owners of one
+    // step is two numbers for one bound, and a reader cannot tell which one the runner
+    // enforces -- so the overlap is refused even though the pair is now a shape a split needs.
     const errors = budgetErrors(splitWorkflow(), splitRecording(), null, {
       declared: [declarationOf({ job: 'batteries-heavy', step: 'Slow battery', minutes: 16 })],
       jobs: [jobPromiseOf()],
     }).join('\n');
-    expect(errors).toContain('both a job promise and a step declaration');
+    expect(errors).toContain('and the step declarations also name it: one step, two owners');
+  });
+
+  it('accepts a job promise beside the step a split brought into the same job', () => {
+    // Cannot produce: a run that measures a job that does not exist yet. This is `O-148`'s
+    // shape -- a job created by splitting another -- and until v3.164 the file refused it
+    // outright, because a job promise used to be the only way to describe an unmeasured job
+    // and a step declaration for the same job could only be a second answer to one question.
+    // The two promises are now about *different* steps: the job's own budget, and the bounds
+    // of the steps that arrived from the job they were measured in.
+    const split = readWorkflow(
+      TWO_JOBS.replace(
+        "      - name: Slow battery\n        timeout-minutes: 16\n        run: node scripts/inject-slow-battery-heavy.mjs",
+        "      - name: Slow battery\n        timeout-minutes: 16\n        run: node scripts/inject-slow-battery-heavy.mjs\n" +
+          '      - name: Arrived battery\n        timeout-minutes: 3\n        run: node scripts/inject-arrived.mjs',
+      ),
+    );
+    expect(split.errors).toEqual([]);
+    const declarations = {
+      declared: [declarationOf({ job: 'batteries-heavy', step: 'Arrived battery', minutes: 3, why: 'the step was measured in the job it left, and this job has never run' })],
+      jobs: [jobPromiseOf()],
+    };
+    expect(budgetErrors(split, splitRecording(), null, declarations)).toEqual([]);
+    // The promise names the job's own steps and not the one that arrived: naming it would be
+    // the overlap above, wearing a second spelling.
+    const both = budgetErrors(split, splitRecording(), null, {
+      ...declarations,
+      jobs: [jobPromiseOf({ steps: [{ name: 'Slow battery', minutes: 16 }, { name: 'Arrived battery', minutes: 3 }] })],
+    }).join('\n');
+    expect(both).toContain('one step, two owners');
   });
 
   it('refuses a promise carrying a measurement, because its writer has not seen the job run', () => {

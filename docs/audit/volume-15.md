@@ -1605,3 +1605,122 @@ committed table are balanced *by the table*, and this log has already recorded w
 a plan at **0.89%** against readings of **18.4%**, **0.5%** and **1.0%**, because the seconds are
 the machine's day and the balance is the table's property. The claim is the shape of the
 dependence -- **0, 33, 161** -- and that no half of it is worth a tenth job.
+
+## Finding 680 — the lanes were placed by the order the arguments were made in
+
+**The claim.** Finding 679 priced the reshape and left one question: where the lane-to-battery
+assignment comes from. The five jobs that are series of independent batteries held **443 / 376 /
+371 / 134 / 115** s of battery work after nine rounds, and every one of those nine rounds moved one
+battery and argued that move on the battery's own seconds. That is a partition whose provenance is
+the order its arguments happened to be made in -- the same defect as the split by
+`position % count` that `assignShards` replaced in v3.157, one level up, and the same one the sites
+battery and the gate-cost table were each given a rule for.
+
+**What replaced it.** `golden-master/battery-lanes.json` prices the **20** steps from **one** reading
+-- reading 65, run `45973021889`, commit `3673a82d` -- and names that reading in its header, so the
+only hand-written thing is the *selection* of a run. `scripts/lane-costs.mjs` places it
+longest-processing-time first: the dearest unit on the emptiest lane, ties broken by key, which makes
+the placement a pure function of the table's numbers and names. Measured:
+
+| queue | lane loads | spread |
+| --- | --- | --- |
+| placed by hand (reading 64) | **443 / 376 / 371 / 134 / 115** | **3.9x** |
+| placed by the rule (reading 65) | **263 / 261 / 260 / 257 / 258** | **6 s, 2.3%** |
+
+The floor is arithmetic rather than a target: no five-lane split of **1,299 s** can put less than
+**259.8 s** on its heaviest lane, because the dearest unit (**211 s**, the type-miss probe) is below
+the even share. The table reads **263 s**, **1.2%** off that bound.
+
+**The unit is not always a step.** `publish-battery-report.py` writes the report
+`gate-tests-battery.py` produced and `upload-artifact` attaches the same file, so a lane that placed
+them apart publishes under a job that never ran the battery and uploads nothing -- and it is green
+while doing it. A row may carry a `group`, placed as one unit with the table's order inside it, and
+`laneErrors` refuses a group split across lanes.
+
+**The ids are addresses.** `R11` counts job ids, the recording is keyed by them, and `moved` is
+defined by a step leaving one and arriving at another, so a lane cannot get a fresh id in the commit
+that empties its old one. `matchJobs` tries all **120** assignments of five lanes to five ids and
+keeps the one leaving the most rows where they are. The shipped consequence is visible and is not
+hidden: `batteries` now runs the sensitivity battery's second shard and `sensitivity-shard` the
+gate-fail pair's first. Every lane's `name:` therefore says `battery lane N of 5` -- the description
+moved into the table, and the id stayed where the recording needs it.
+
+**What the rule refuses.** A hand-placed table. `laneErrors` re-derives the placement from the
+table's own seconds and refuses a `lane` field its own rule does not produce, which is what happened
+to the first version of the shipped table; it also refuses a battery the table does not price, a row
+about a step no lane runs, a price of a command the workflow no longer runs, a step in a lane the
+table did not put it on, an order the plan does not have, and a price the named reading did not
+record.
+
+**What is not claimed.** That **263 s** is what the next run measures. A static table balances a
+quantity that is not stable: this log has a table balanced to **0.1%** whose shards read **16.1%**
+apart. The claim is that the placement is now re-derivable from the repository, and that the spread
+is bounded by the dearest unit rather than by the order of the arguments.
+
+## Finding 681 — the recording refused the shape a split creates
+
+**The claim.** `golden-master/ci-declarations.json` could describe an unmeasured job in exactly two
+ways -- a **job promise** (its budget and the steps that carry bounds) or **step declarations** (one
+bound per step, each with the job it left) -- and `readDeclarations` refused a file that used both
+for one job: *"two promises about one job, and `R8` and `R9` cannot both own the same gap in the
+recording"*. The refusal was right about the files it had seen. It was written when a job promise
+was the only way to describe a job that had never run, so a step declaration for the same job could
+only be a second, contradictory description of one gap.
+
+**Why a split is neither.** A job created by splitting another is unmeasured *and* partly measured:
+its own two steps (the shells install and the build) have never run in it, and four of its steps were
+measured in the job they arrived from. Those are different steps and different kinds of number -- a
+promise and a measurement -- and until this round the file could express one or the other and not
+both. Measured: expressing the shipped split produced **46** sentences of `check-ci-budget`, and the
+one the reader produced was about a pair of promises rather than about a wrong number.
+
+**What the reader says now.** The pair is accepted and the **overlap** is refused: a step named by a
+job promise and by a declaration is *"one step, two owners, and a reader cannot tell which of the two
+bounds the runner will enforce"*. That is the property the old refusal was reaching for -- two
+answers to one question -- stated over the population where it is true.
+
+## Finding 682 — a promise counted the steps that arrived
+
+**The claim.** `R9` compares the steps a job promise names with the steps the job has, so that a
+promise cannot describe a job that changed shape underneath it. The set it counted was every step
+that is not part of the shared prefix -- and after the split that included the **four** steps which
+had just arrived from `verify`. The truthful promise for `coverage` names its own two (shells,
+build); against **6** it was refused, and the only spelling the check accepted was one that named two
+**measurements** as promises: a job promising to keep the bounds of steps another job measured.
+
+**The arithmetic.** The population of a promise is the steps the job owns, not the steps the job
+runs. A bound that arrived with a step from elsewhere is already owned -- by the `moved` entry that
+brought it -- and a promise that repeated it would be the overlap finding 681 refuses, wearing a
+second spelling. The set is now the non-prefix steps minus the ones a declaration owns, and both
+sides of the relation are populations rather than line counts.
+
+**What the pair costs.** Two promises about one job are only distinguishable because they name
+different steps. That is a narrower fact than it looks: it means the recording can describe a split
+only while every arrived step has a declaration, which is what a `moved` entry is.
+
+## Finding 683 — an arm was reading a smaller workflow than the one that runs
+
+**The claim.** Every job that starts a suite must install `zsh` and `bash`, because
+`check-no-unsafe-shell.test.ts` compares the gate's rule against what those shells do with the same
+string; the arm that enforces it asks which jobs start a suite and compares that set with a list of
+job ids. The reader behind the question followed one shape of command -- `node scripts/x.mjs`,
+`python3 scripts/y.py` -- and stopped at the command's **first token**. A suite started through a
+package script was invisible: `pnpm docs:check` runs the doc guards, one of which spawns a vitest per
+claimant.
+
+**What it was seeing.** `artefacts` runs `pnpm docs:check`. It has been starting a suite since the
+doc guards became gates, and it has installed the shells the whole time -- so the claim the arm makes
+was true, and the arm had never seen that job ask for it. The population was **8** jobs; adding the
+split's `coverage` made it **9**, and the ninth is the one that had been missing, not the one that
+arrived.
+
+**The repair.** The reader follows a command into `package.json` and splits on `&&`, three hops,
+which is what `test:coverage` -> `--filter core test:coverage` -> `vitest run` costs. The depth limit
+is stated because a reader should be able to see where the search stops. The equality in that arm
+stayed an equality: an arm whose subject is a set must not grow a hand-written exception, because
+the exception is the member nobody counts.
+
+**What is not claimed.** That three hops reach everything. A command that starts a suite from inside
+a spawned child four hops down is still invisible, and the arm's evidence is the shape of the chain
+rather than the behaviour of the tool.
+

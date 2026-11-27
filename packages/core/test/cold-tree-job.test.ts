@@ -622,6 +622,9 @@ describe('ci · the shells the suite cross-checks against are installed', () => 
    */
   const SUITE_JOB_IDS = [
     'verify',
+    // v3.164 split the suite into its own job (`O-148`): `coverage` runs it and the three
+    // steps that read its report, so it is a job that starts a suite and needs the shells.
+    'coverage',
     'batteries',
     // v3.155 split the emptied-every-gate audit across two jobs, and the second one runs
     // the same script with `--shard 2/2`. Registering it here is what makes the shells
@@ -629,6 +632,11 @@ describe('ci · the shells the suite cross-checks against are installed', () => 
     'gates-audit',
     'batteries-heavy',
     'cold-tree',
+    // v3.164: the scan follows a step's command into `package.json` now, so a job whose suite
+    // runs inside a package script is visible instead of being invisible. `artefacts` runs
+    // `pnpm docs:check`, which spawns a suite through the doc guards -- it installed the shells
+    // all along, and nothing said so.
+    'artefacts',
     'sensitivity',
     'sensitivity-shard',
   ];
@@ -689,7 +697,11 @@ describe('ci · the shells the suite cross-checks against are installed', () => 
     const body = jobBody('batteries');
     const setup = new Set(['pnpm install --frozen-lockfile', 'pnpm build']);
     const commands = runCommands(body).filter((c) => !setup.has(c) && !c.startsWith('sudo apt-get'));
-    expect(commands.length, 'the batteries job runs nothing, so this assertion is vacuous').toBeGreaterThanOrEqual(10);
+    // 10 -> 7 at v3.164: the lane table moved four of this job's batteries to other lanes, so
+    // the floor is what the job still runs rather than what it used to. The claim is unchanged --
+    // every command here names a script under `scripts/` -- and the floor is what keeps the
+    // claim from being made about nothing.
+    expect(commands.length, 'the batteries job runs nothing, so this assertion is vacuous').toBeGreaterThanOrEqual(7);
     // The command's **first token** is the script; the flags after it are arguments to that
     // same script. The `$` this pattern used to carry made the sharded step invisible --
     // `node scripts/verify-gates-are-testable.mjs --shard 1/2` was reported as "not a battery
@@ -721,21 +733,47 @@ describe('ci · the shells the suite cross-checks against are installed', () => 
     // instead, and those scripts are where the word lives. A reader following a step to
     // the script it runs is what the guard now does, so the equality below can stay an
     // equality instead of growing a hand-written exception.
+    // A step that names a package script rather than a file is one hop further from the word:
+    // `pnpm lint` is eight gates, one of which spawns a vitest per claimant. Following the name
+    // into `package.json` -- three hops, which is what `test:coverage` -> `--filter core
+    // test:coverage` -> `vitest run` costs -- is what let the equality below stay an equality
+    // after v3.164 moved the suite out of `verify`: the job still starts a suite through `lint`,
+    // and it still needs the shells.
+    const PACKAGE_SCRIPTS = (
+      JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
+    ).scripts;
+
+    /**
+     * Whether one command starts a vitest anywhere down the chain it names.
+     *
+     * Three shapes, in the order they are cheap: a command that says `vitest`; a command that
+     * names a script under `scripts/`, read for the word; and a command that names a package
+     * script, followed into `package.json` and split on `&&`. The depth limit is the third hop,
+     * which is where this suite's own chain bottoms out -- a limit that is stated because a
+     * reader should be able to see where the search stops, not because a fourth hop is wrong.
+     */
+    const startsSuite = (command: string, depth: number): boolean => {
+      if (depth > 3) return false;
+      const text = command.trim();
+      if (text.includes('vitest')) return true;
+      const target = /^(?:node|python3) (scripts\/\S+)/.exec(text)?.[1];
+      if (target !== undefined) {
+        const full = resolve(ROOT, target);
+        return existsSync(full) && readFileSync(full, 'utf8').includes('vitest');
+      }
+      const named = /^pnpm (?:--filter \S+ )?(?:run )?([a-z0-9:-]+)$/.exec(text)?.[1];
+      if (named === undefined) return false;
+      return (PACKAGE_SCRIPTS[named] ?? '')
+        .split('&&')
+        .some((part: string) => startsSuite(part, depth + 1));
+    };
+
     const runsTheSuite = (id: string): boolean => {
       const body = jobBody(id);
       if (body.includes('vitest')) return true;
-      return runCommands(body).some((command) => {
-        // The `$` this used to carry made a command with arguments invisible: the
-        // sharded battery runs `node scripts/verify-sites-are-sensitive.mjs --shard 1/2`,
-        // and a guard that stops reading at the first space answers "this job runs no
-        // suite" about a job that does nothing else. The script is the first token; the
-        // flags after it are arguments to that same script, not a second command.
-        const target = /^(?:node|python3) (scripts\/\S+)/.exec(command)?.[1];
-        if (target === undefined) return false;
-        const full = resolve(ROOT, target);
-        return existsSync(full) && readFileSync(full, 'utf8').includes('vitest');
-      });
+      return runCommands(body).some((command) => startsSuite(command, 0));
     };
+
     const jobs = jobIds();
     const withVitest = jobs.filter((id) => runsTheSuite(id));
     const registered = withVitest.filter((id) => SUITE_JOB_IDS.includes(id));

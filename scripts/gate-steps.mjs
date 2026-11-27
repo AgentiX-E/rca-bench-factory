@@ -518,9 +518,14 @@ export const SETUP_ACTIONS = {
  */
 export const STEP_PLAN = {
   // ---- verify ---------------------------------------------------------------
+  //
+  // Typecheck and lint, and nothing that reads the suite's own report: `coverage` below runs
+  // the suite and the three checks that read what it wrote, split out of this job by `O-148`.
+  // The two halves never read each other's results, and a job's wall clock is the sum of its
+  // steps -- 447 s of work that two runners do in 226 and 241.
   'verify / Install dependencies': {
     local: true,
-    note: 'also proves the lockfile is complete; the other three jobs repeat it because they are separate runners',
+    note: 'also proves the lockfile is complete; the other nine jobs repeat it because they are separate runners',
   },
   'verify / Install the shells the suite cross-checks against': {
     remoteOnly: 'installs zsh through apt, which needs sudo and a package index',
@@ -531,44 +536,170 @@ export const STEP_PLAN = {
     local: true,
     note: 'the site-proof gate spawns one vitest per claimant file, measured at ~110 s',
   },
-  'verify / Test with coverage (core + cli, ≥95% per dimension, 100% functions)': {
-    local: true,
-    note: 'the slowest step; it also writes the reports the counts step reads',
+
+  // ---- coverage -------------------------------------------------------------
+  //
+  // The suite and the numbers it publishes, split out of `verify` by `O-148` (v3.164). The
+  // plan holds them by their new keys, and the four steps that read the coverage report are
+  // here rather than beside lint for the only reason that matters: a second run of the suite
+  // is the cost the split exists to avoid.
+  'coverage / Install dependencies': { local: true },
+  'coverage / Install the shells the suite cross-checks against': {
+    remoteOnly: 'installs zsh through apt, which needs sudo and a package index',
   },
-  'verify / Every test\'s cost against the budget it declares': {
+  'coverage / Build (core then cli; cli resolves core\'s dist)': { local: true },
+  'coverage / Test with coverage (core + cli, ≥95% per dimension, 100% functions)': {
     local: true,
-    note: 'reads the reports the coverage step wrote, and nothing else',
+    note: 'the slowest step; it also writes the reports the three steps below read',
   },
-  'verify / Published suite counts, read from that run rather than taken again': {
+  'coverage / Published suite counts, read from that run rather than taken again': {
     local: true,
     note: 'depends on the coverage step having written both reports, which the order guarantees',
   },
-  'verify / Mutation suite (gate + export, 100% interception)': { local: true },
-  'sensitivity / Install dependencies': { local: true },
-  'sensitivity / Install the shells the suite cross-checks against': {
-    remoteOnly: 'installs zsh through apt, which needs sudo and a package index',
-  },
-  'sensitivity / Build (core then cli; cli resolves core\'s dist)': { local: true },
-  'sensitivity / Every proved exit can disappear without a word': { local: true },
-  'sensitivity / Every exemption\'s claim can be made false': {
+  'coverage / Mutation suite (gate + export, 100% interception)': { local: true },
+  'coverage / Every test\'s cost against the budget it declares': {
     local: true,
-    note: 'twelve single-file suites, one per exemption; ~36 s on a runner, which is why it is the only step bounded at the floor',
+    note: 'reads the reports the coverage step wrote, and nothing else',
   },
 
-  // ---- sensitivity-shard ----------------------------------------------------
+
+  // ---- batteries-heavy --------------------------------------------------------
   //
-  // The second half of the sites battery, split out in v3.54 so the runner spends
-  // roughly half of 626 s in each of two jobs. The plan holds the new job by its own
-  // keys rather than by a wildcard: a wildcard would let a shard be added that runs
-  // nowhere in particular locally and still counts as covered.
+  // Battery lane 1 of 5. The steps are the ones golden-master/battery-lanes.json
+  // places here, in the order `laneOrderOf` gives them, and the plan names each by the key
+  // `ci.yml` writes: a lane's contents are the table's business, so the keys follow the
+  // table and `battery-lanes.test.ts` is what refuses the two disagreeing. A step that
+  // arrived from another lane says which lane it came from, because until this one has run
+  // it, the seconds behind its bound are the other lane's measurement.
+  'batteries-heavy / Install dependencies': { local: true },
+  'batteries-heavy / Install the shells the suite cross-checks against': {
+    remoteOnly: 'installs zsh through apt, which needs sudo and a package index',
+  },
+  'batteries-heavy / Build (core then cli; cli resolves core\'s dist)': { local: true },
+  'batteries-heavy / Type-miss probe battery (no survivors, no inert, no blind mutations)': {
+    local: true,
+    note: 'the first battery here whose injections are paired; it also runs the probe twice per case',
+  },
+  'batteries-heavy / Round-trip record battery (no survivors, no inert, no misattributed mutations)': {
+    local: true,
+    note: 'arrived from `gates-audit` by the lane table (v3.164); the seconds it costs here are that lane\'s measurement until this one runs it',
+  },
+
+  // ---- gates-audit ------------------------------------------------------------
+  //
+  // Battery lane 2 of 5. The steps are the ones golden-master/battery-lanes.json
+  // places here, in the order `laneOrderOf` gives them, and the plan names each by the key
+  // `ci.yml` writes: a lane's contents are the table's business, so the keys follow the
+  // table and `battery-lanes.test.ts` is what refuses the two disagreeing. A step that
+  // arrived from another lane says which lane it came from, because until this one has run
+  // it, the seconds behind its bound are the other lane's measurement.
+  'gates-audit / Install dependencies': { local: true },
+  'gates-audit / Install the shells the suite cross-checks against': {
+    remoteOnly: 'installs zsh through apt, which needs sudo and a package index',
+  },
+  'gates-audit / Build (core then cli; cli resolves core\'s dist)': { local: true },
+  'gates-audit / Every gate can be shown to fail (shard 2 of 2)': {
+    local: true,
+    note: 'the same gate as shard 1 of 2, driven with --shard 2/2 over the gates golden-master/gate-costs.json gives it (v3.161); the plan names the pair rather than a wildcard',
+  },
+  'gates-audit / Doc-count shape battery (no survivors, no inert, no misattributed mutations)': {
+    local: true,
+    note: 'moved here from `batteries` in v3.156 for the same reason, and it needs the same build',
+  },
+  'gates-audit / Scorer stability battery (no survivors, no inert mutations)': {
+    local: true,
+    note: 'arrived from `batteries` by the lane table (v3.164); the seconds it costs here are that lane\'s measurement until this one runs it',
+  },
+
+  // ---- sensitivity-shard ------------------------------------------------------
+  //
+  // Battery lane 3 of 5. The steps are the ones golden-master/battery-lanes.json
+  // places here, in the order `laneOrderOf` gives them, and the plan names each by the key
+  // `ci.yml` writes: a lane's contents are the table's business, so the keys follow the
+  // table and `battery-lanes.test.ts` is what refuses the two disagreeing. A step that
+  // arrived from another lane says which lane it came from, because until this one has run
+  // it, the seconds behind its bound are the other lane's measurement.
   'sensitivity-shard / Install dependencies': { local: true },
   'sensitivity-shard / Install the shells the suite cross-checks against': {
     remoteOnly: 'installs zsh through apt, which needs sudo and a package index',
   },
   'sensitivity-shard / Build (core then cli; cli resolves core\'s dist)': { local: true },
-  'sensitivity-shard / Every proved exit can disappear without a word (shard 2 of 2)': {
+  'sensitivity-shard / Every gate can be shown to fail': {
     local: true,
-    note: 'the same gate as shard 1 of 2, driven with --shard 2/2 over the files golden-master/sensitivity-costs.json gives it (v3.157); the plan names the pair rather than a wildcard',
+    note: 'arrived from `batteries` by the lane table (v3.164); the seconds it costs here are that lane\'s measurement until this one runs it',
+  },
+  'sensitivity-shard / Backend-support battery (no survivors, no inert, no misattributed mutations)': {
+    local: true,
+    note: 'arrived from `batteries-heavy` by the lane table (v3.164); the seconds it costs here are that lane\'s measurement until this one runs it',
+  },
+
+  // ---- batteries --------------------------------------------------------------
+  //
+  // Battery lane 4 of 5. The steps are the ones golden-master/battery-lanes.json
+  // places here, in the order `laneOrderOf` gives them, and the plan names each by the key
+  // `ci.yml` writes: a lane's contents are the table's business, so the keys follow the
+  // table and `battery-lanes.test.ts` is what refuses the two disagreeing. A step that
+  // arrived from another lane says which lane it came from, because until this one has run
+  // it, the seconds behind its bound are the other lane's measurement.
+  'batteries / Install dependencies': { local: true },
+  'batteries / Install the shells the suite cross-checks against': {
+    remoteOnly: 'installs zsh through apt, which needs sudo and a package index',
+  },
+  'batteries / Build (core then cli; cli resolves core\'s dist)': { local: true },
+  'batteries / Gate-test battery (each gate\'s test provably fails when its guard is removed)': {
+    local: true,
+  },
+  'batteries / Publish the gate-test battery report': {
+    remoteOnly: 'writes to a GitHub artefact/annotation, which needs the run token',
+  },
+  'batteries / Fault-extraction scoring battery (no survivors)': {
+    local: true,
+  },
+  'batteries / Component rule battery (no survivors, no inert mutations)': {
+    local: true,
+  },
+  'batteries / M1-ceiling probe battery (no survivors, no inert mutations)': {
+    local: true,
+  },
+  'batteries / Scorer-stability probe battery (the stability gate refuses a broken scorer)': {
+    local: true,
+  },
+  'batteries / Every proved exit can disappear without a word (shard 2 of 2)': {
+    local: true,
+    note: 'arrived from `sensitivity-shard` by the lane table (v3.164); the seconds it costs here are that lane\'s measurement until this one runs it',
+  },
+
+  // ---- sensitivity ------------------------------------------------------------
+  //
+  // Battery lane 5 of 5. The steps are the ones golden-master/battery-lanes.json
+  // places here, in the order `laneOrderOf` gives them, and the plan names each by the key
+  // `ci.yml` writes: a lane's contents are the table's business, so the keys follow the
+  // table and `battery-lanes.test.ts` is what refuses the two disagreeing. A step that
+  // arrived from another lane says which lane it came from, because until this one has run
+  // it, the seconds behind its bound are the other lane's measurement.
+  'sensitivity / Install dependencies': { local: true },
+  'sensitivity / Install the shells the suite cross-checks against': {
+    remoteOnly: 'installs zsh through apt, which needs sudo and a package index',
+  },
+  'sensitivity / Build (core then cli; cli resolves core\'s dist)': { local: true },
+  'sensitivity / Every proved exit can disappear without a word': {
+    local: true,
+  },
+  'sensitivity / Every exemption\'s claim can be made false': {
+    local: true,
+    note: 'twelve single-file suites, one per exemption; ~36 s on a runner, which is why it is the only step bounded at the floor',
+  },
+  'sensitivity / Fetch-official retry battery (no survivors)': {
+    local: true,
+    note: 'arrived from `gates-audit` by the lane table (v3.164); the seconds it costs here are that lane\'s measurement until this one runs it',
+  },
+  'sensitivity / Fault-extraction workflow battery (no survivors, negative control)': {
+    local: true,
+    note: 'arrived from `batteries` by the lane table (v3.164); the seconds it costs here are that lane\'s measurement until this one runs it',
+  },
+  'sensitivity / M1-ceiling probe test battery (no survivors, no inert mutations)': {
+    local: true,
+    note: 'arrived from `batteries` by the lane table (v3.164); the seconds it costs here are that lane\'s measurement until this one runs it',
   },
 
   // ---- backend --------------------------------------------------------------
@@ -585,94 +716,6 @@ export const STEP_PLAN = {
   },
   'backend / A reader, against that backend': {
     remoteOnly: 'reads from the prometheus the step above installed',
-  },
-
-  // ---- batteries ------------------------------------------------------------
-  'batteries / Install dependencies': { local: true },
-  'batteries / Install the shells the suite cross-checks against': {
-    remoteOnly: 'installs zsh through apt, which needs sudo and a package index',
-  },
-  'batteries / Build (core then cli; cli resolves core\'s dist)': { local: true },
-  'batteries / Scorer stability battery (no survivors, no inert mutations)': { local: true },
-  'batteries / Component rule battery (no survivors, no inert mutations)': { local: true },
-  'batteries / M1-ceiling probe battery (no survivors, no inert mutations)': { local: true },
-  'batteries / M1-ceiling probe test battery (no survivors, no inert mutations)': { local: true },
-  'batteries / Every gate can be shown to fail': {
-    local: true,
-    note:
-      'shard 1 of 2 since v3.155, divided by golden-master/gate-costs.json since v3.161 -- the same ' +
-      'longest-processing-time placement the sites battery has used since v3.157; the other half runs ' +
-      'in `gates-audit`',
-  },
-  'batteries / Fault-extraction scoring battery (no survivors)': { local: true },
-  'batteries / Fault-extraction workflow battery (no survivors, negative control)': { local: true },
-  "batteries / Gate-test battery (each gate's test provably fails when its guard is removed)": {
-    local: true,
-  },
-  'batteries / Publish the gate-test battery report': {
-    remoteOnly: 'writes to a GitHub artefact/annotation, which needs the run token',
-  },
-  'batteries / Scorer-stability probe battery (the stability gate refuses a broken scorer)': {
-    local: true,
-  },
-
-  // ---- gates-audit ----------------------------------------------------------
-  //
-  // The second shard of the gate audit, in a job of its own since v3.155 for the reason
-  // `sensitivity-shard` exists: a job's wall clock is the sum of its steps, and 374 s of a
-  // 1036 s job is a third of the floor of the job that was the run. The plan holds the new
-  // key rather than a wildcard, and the step it names is written exactly as `ci.yml` writes
-  // it -- a promise in `ci-declarations.json` is what let the job exist before a run had
-  // measured it, and a plan key that disagreed with the step would be a third name for the
-  // same thing. That promise was settled and the file deleted by reading 50 (run
-  // 45748356774, the job's first day at 264 s), which is what a promise is for: the file
-  // exists for one round and disappears in the commit that records the run.
-  'gates-audit / Install dependencies': { local: true },
-  'gates-audit / Install the shells the suite cross-checks against': {
-    remoteOnly: 'installs zsh through apt, which needs sudo and a package index',
-  },
-  'gates-audit / Build (core then cli; cli resolves core\'s dist)': { local: true },
-  'gates-audit / Every gate can be shown to fail (shard 2 of 2)': {
-    local: true,
-    note: 'the same gate as shard 1 of 2, driven with --shard 2/2 over the gates golden-master/gate-costs.json gives it (v3.161); the plan names the pair rather than a wildcard',
-  },
-
-  // Three batteries that left `batteries` in v3.156, moved by the arithmetic rather than by
-  // the concept: `batteries` was 738 s of wall clock and `gates-audit` 270 s, and a job's
-  // wall clock is the sum of its steps, so the queue with room in it is where a step belongs.
-  // Their plan keys are the names `ci.yml` writes, because `R2` pins the recording to the
-  // name and these three keep theirs -- what changed is which job runs them.
-  'gates-audit / Fetch-official retry battery (no survivors)': {
-    local: true,
-    note: 'moved here from `batteries` in v3.156; the seconds are that job\'s measurement',
-  },
-  'gates-audit / Doc-count shape battery (no survivors, no inert, no misattributed mutations)': {
-    local: true,
-    note: 'moved here from `batteries` in v3.156 for the same reason, and it needs the same build',
-  },
-  'gates-audit / Round-trip record battery (no survivors, no inert, no misattributed mutations)': {
-    local: true,
-    note: 'moved here from `batteries` in v3.156; it reads the anchor data this job already builds',
-  },
-
-  // ---- batteries-heavy ------------------------------------------------------
-  //
-  // The two batteries that rewrite a probe a hundred times, split out of `batteries` in
-  // v3.48 because a bound is twice the measurement and the job could not hold its own:
-  // 479 s and 416 s measure 16 and 14 minutes of bound in a job that had 30 for
-  // everything. The plan holds them by their new key rather than by a wildcard, because
-  // a wildcard would let the next battery run nowhere in particular and pass.
-  'batteries-heavy / Install dependencies': { local: true },
-  'batteries-heavy / Install the shells the suite cross-checks against': {
-    remoteOnly: 'installs zsh through apt, which needs sudo and a package index',
-  },
-  'batteries-heavy / Build (core then cli; cli resolves core\'s dist)': { local: true },
-  'batteries-heavy / Type-miss probe battery (no survivors, no inert, no blind mutations)': {
-    local: true,
-    note: 'the first battery here whose injections are paired; it also runs the probe twice per case',
-  },
-  'batteries-heavy / Backend-support battery (no survivors, no inert, no misattributed mutations)': {
-    local: true,
   },
 
   // ---- artefacts ------------------------------------------------------------

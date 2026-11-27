@@ -1139,3 +1139,20 @@
   not *whether* to reshape the queue but **where the lane-to-battery assignment comes from** -- a committed table
   divided by the `assignShards` the sites and gates tables already use, or a hand-placed split, which would be the
   second partition this repository has refused twice.
+- O-148 · ~~**The queue's wall clock is bounded by a series of batteries, and the shape only pays as a pair.**~~
+  The entry asked for the assignment's provenance and for the tenth job's ledger cost to be paid somehow, and it
+  is **Closed by finding 680**, which answered the first with a table and the second by discovering that the
+  recording could not express the shape at all. The table is `golden-master/battery-lanes.json`: **20** battery steps,
+  **1,299 s**, priced from reading 65 (run `45973021889`, commit `3673a82d`) and naming that run in its header, and
+  `scripts/lane-costs.mjs` places it longest-processing-time first -- **263 / 261 / 260 / 257 / 258** s against the
+  **443 / 376 / 371 / 134 / 115** s the hand-placed queue held on reading 64, a **3.9x** spread reduced to **2.3%**,
+  and **1.2%** off the **259.8 s** floor any five-lane split of that total has. The split is shipped with it:
+  `verify` **32 min** across **4** bounded steps and `coverage` **31 min** across **6**, **12** steps moved, and the
+  predicted head **~284 s** against reading 65's **451 s** -- **~167 s**, of which the **161 s** v3.163 priced was
+  measured against reading 64's **470 s**. The ledger cost was not bookkeeping after all: `ci-declarations.json`
+  refused a job promise beside a step declaration for the same job (**finding 681**, **46** sentences of
+  `check-ci-budget`), `R9` counted the **4** steps that arrived from `verify` as the new job's own and so refused the
+  truthful two-step promise and accepted only a promise naming measurements (**finding 682**), and neither could be
+  repaired by writing the file differently -- both were properties of the reader. What stays open as `O-150` is not
+  the question the entry asked but the reading it cannot take: a tenth job is a promise until a run measures it, and
+  `R9` refuses this commit's successors until one has.

@@ -3329,3 +3329,44 @@ claim.
   `gates-audit` at **470 s**), rebalancing the five battery lanes alone buys **33 s**, and both buy **161 s**. Each
   half is cheap to state and the wrong one to buy alone; the receipt is the shape of the dependence, not a promise
   about the next run. (`v3.163`, finding 679)
+
+## A partition is derived from a table, and the table names its reading
+
+- **A split is only as good as its provenance.** The five battery lanes held **443 / 376 / 371 / 134 / 115** s
+  after nine rounds of moving one battery at a time, each move argued on the battery it moved: a **3.9x** spread
+  whose cause was the order the arguments were made in. `golden-master/battery-lanes.json` prices the **20** steps
+  from one named reading and `scripts/lane-costs.mjs` places them longest-processing-time first, which reads
+  **263 / 261 / 260 / 257 / 258** -- **2.3%**, and **1.2%** off the **259.8 s** floor any five-lane split of
+  **1,299 s** has. (`v3.164`, finding 680)
+- **A table re-derives its own placement.** `laneErrors` runs the rule over the table's own seconds and refuses a
+  `lane` field the rule does not produce, so a hand-placed table cannot pass by being written down. The first draft
+  of the shipped table failed exactly there. (`v3.164`, finding 680)
+- **A unit is not always a step.** `publish-battery-report.py` writes the report the battery produced and
+  `upload-artifact` attaches that file, so three rows are one unit: a lane that split them would publish under a job
+  that never ran the battery and upload nothing, greenly. A `group` is placed as one unit with the table's order
+  inside it, and a group split across lanes is refused. (`v3.164`, finding 680)
+- **An id is an address, not a description.** `R11` counts job ids and `moved` is defined by a step leaving one and
+  arriving at another, so a lane keeps the id it had and the description moves into the table -- every lane's `name:`
+  now says `battery lane N of 5`. What the matching costs is stated: `batteries` runs the sensitivity battery's
+  second shard, `sensitivity-shard` the gate-fail pair's first. (`v3.164`, finding 680)
+- **A step that has not been measured where it now runs goes last.** `from` records the job the reading measured a
+  step in, and `laneOrderOf` writes a lane's measured rows first because a bound behind an unmeasured step would be
+  argued from a sum with a hole (`R8`). A lane that has never run its steps says so: `sensitivity-shard` runs two
+  steps it has no reading for. (`v3.164`, finding 680)
+- **A promise is about the steps a job owns, not the steps it runs.** `R9` counted every non-prefix step, so a job
+  created by a split was required to promise the **4** bounds that arrived with its steps -- and the truthful
+  two-step promise was refused in favour of one that named measurements. A bound a `moved` entry brought is owned by
+  that entry. (`v3.164`, finding 682)
+- **A shape the recording cannot express is a shape it cannot ship.** `ci-declarations.json` refused a job promise
+  beside a step declaration for one job, which is the only way to describe a job that is new **and** partly
+  measured: **46** sentences of `check-ci-budget` before the pair could be written. The overlap -- one step, two
+  owners -- is what stays refused, because that is two answers to one question. (`v3.164`, finding 681)
+- **An arm's population is the workflow, not the command shapes it happens to read.** The shells install is
+  required of every job that starts a suite, and the reader behind the question followed `node scripts/x.mjs` and
+  stopped at a package script: `artefacts` runs `pnpm docs:check`, which spawns a vitest, and had been invisible to
+  the arm for as long as it has been doing so. The reader follows `package.json` now (**8** suite jobs, then **9**),
+  and the equality did not grow an exception. (`v3.164`, finding 683)
+- **What it does not claim.** Not that **~284 s** is what the next run measures: that is **263 s** of table plus a
+  **~21 s** prefix, against reading 65's **451 s**. A static table balances a quantity that is not stable -- this log
+  holds a table balanced to **0.1%** whose shards read **16.1%** apart -- so the receipt is the shape, and the
+  reading is `O-150`.
