@@ -1558,11 +1558,14 @@ quote the guard's own summary went unmeasured behind it (**39** claims, in `ci-b
 `unit-nouns.test.ts`), and the site proofs will not call a claim proved by a file that did not pass, so both sensitivity
 shards and the documents job went red with the guard.
 
-What that run did measure is the claim, on the runner rather than on this box: the gate-test battery's step spent **87 s**
-where reading 60 read **306 s** -- **3.52x**, and **31%** of its job where it was **56%** -- and the `batteries` job fell
-**547 s -> 282 s**. The gates division, which this round did not touch, read **116 / 166 s** against reading 60's
-**149 / 239 s**: the same pair, 30.1% apart where the table makes it 0.0%, which is `O-145`'s number and not this round's
-to close.
+That run did measure the claim, and it is the first of **two readings of one tree**: the gate-test battery's step spent
+**87 s** there and **111 s** on the run that closes the round, twelve minutes later, with no line of a test or a script
+differing between the two commits -- a **24 s** spread that is the machine's day rather than the tree's, and the reason
+this row quotes both. Against reading 60's **306 s** the step is **2.76x** to **3.52x** cheaper, and **32%** of its job
+where it was **56%**; the `batteries` job fell **547 s -> 344 s**, and the step's neighbours moved with the day too
+(`Every gate can be shown to fail` read 149 s at reading 60, 116 s in the red run and 146 s in the green one). The gates
+division read **146 / 241 s** in the green run against reading 60's **149 / 239 s**: the same pair, 39.3% and 37.7% apart
+where the table makes it 0.0%, which is `O-145`'s number and not this round's to close.
 
 ### Readings
 
@@ -1584,7 +1587,7 @@ to close.
 | new tests | **7,109 -> 7,126, +17** in one new file (`gate-test-battery-aim.test.ts`): the three arms of the aim driven through the shipped `_measure` with a stub runner, the counters read from that run's own summary, the writing mode's table, the escaping pair, the two spellings, the minimal cover and its unmatchable fallback, the three reconciliation faults with their positive control, and the shipped table's own reconciliation |
 | the tree, per file | `check-test-budgets` reads 263 files and 7,126 tests: the file this round adds declares its own clock (`SUITE_BUDGET_MS`), and the twenty files at or above the 1 000 ms floor are read on the box that measured them |
 | `Tracked files` | **685 -> 687**: the witness table and the new test file -- both counted by `check-repository-table` only once staged, which is the check that refuses a table describing the index and the worktree at once |
-| CI | run `45853859064` on `67ab0a5`: **9 of 9 jobs success**, **551 s** of wall clock, reading **60** -- the last green run of this workflow, and the run the 306 s above is quoted from; this round's own run is red on the closing row it is missing, so the row that closes the round is the next commit's, written from that commit's run |
+| CI | run `45928458435` on `b0683508`: **9 of 9 jobs success**, **519 s** of wall clock, reading **61** -- the run of the commit that closes this round, and the one the numbers above are read from: the gate-test battery's step at **111 s** against reading 60's **306 s**, the `batteries` job **547 s -> 344 s**, the gates pair **146 / 241 s**, and the run that preceded it from the same tree at **87 s** and **5 of 9**, which is the row this one replaces |
 
 ### Left open
 
@@ -1592,7 +1595,7 @@ to close.
   needs: the battery's table prices **injections** in a test file, and the shard divides **gates** in the inventory.
   A table of per-gate seconds could be written by the same instrument -- it already prints each subject's own
   duration, and finding 669's `suiteOwnMs` made that line readable on the runner -- and divided by the LPT rule the
-  sites battery uses for its 68 claimants. The pair reads **116 / 166 s** in this round's own run and **149 / 239 s**
-  in reading 60: 30.1% and 37.7% apart, where the table makes the division 0.0%.
+  sites battery uses for its 68 claimants. The pair reads **146 / 241 s** in this round's own run and **149 / 239 s**
+  in reading 60: 39.3% and 37.7% apart, where the table makes the division 0.0%.
   `[open: whether the per-gate table should be a new file or an arm of `gate-sites.json`, and whether a gate's price is
   its whole run or the arithmetic above its own suite time -- the two numbers the run already prints]`

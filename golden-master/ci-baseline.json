@@ -1,25 +1,25 @@
 {
-  "run": 45853859064,
+  "run": 45928458435,
   "attempt": 1,
-  "commit": "67ab0a5668a43b4c313686a648900e59badf0989",
-  "measured": "2026-11-26",
+  "commit": "b0683508b18fa0242663d9f384630f276733a8ab",
+  "measured": "2026-11-27",
   "jobs": {
     "verify": {
       "name": "build / typecheck / lint / coverage / mutation",
       "timeoutMinutes": 42,
-      "total": 288,
+      "total": 261,
       "steps": {
         "Check out": 2,
         "Set up Node.js": 1,
-        "Set up pnpm": 1,
+        "Set up pnpm": 0,
         "Install dependencies": 1,
         "Install the shells the suite cross-checks against": 8,
-        "Build (core then cli; cli resolves core's dist)": 4,
+        "Build (core then cli; cli resolves core's dist)": 3,
         "Type-check": 6,
-        "Lint (no mock / no secrets / no vendored data / registry / absolute paths / scorer stability / site proofs)": 123,
-        "Test with coverage (core + cli, ≥95% per dimension, 100% functions)": 134,
+        "Lint (no mock / no secrets / no vendored data / registry / absolute paths / scorer stability / site proofs)": 107,
+        "Test with coverage (core + cli, ≥95% per dimension, 100% functions)": 126,
         "Published suite counts, read from that run rather than taken again": 0,
-        "Mutation suite (gate + export, 100% interception)": 2,
+        "Mutation suite (gate + export, 100% interception)": 1,
         "Every test's cost against the budget it declares": 1
       }
     },
@@ -28,63 +28,63 @@
       "timeoutMinutes": 36,
       "total": 42,
       "steps": {
-        "Check out": 1,
-        "Set up Node.js": 1,
+        "Check out": 2,
+        "Set up Node.js": 0,
         "Set up pnpm": 1,
-        "Install dependencies": 2,
+        "Install dependencies": 1,
         "Build (core then cli; cli resolves core's dist)": 5,
-        "Install a backend this repository did not write": 21,
-        "A reader, against that backend": 7
+        "Install a backend this repository did not write": 22,
+        "A reader, against that backend": 6
       }
     },
     "sensitivity": {
       "name": "every proved exit can disappear without a word",
       "timeoutMinutes": 43,
-      "total": 173,
+      "total": 168,
       "steps": {
-        "Check out": 5,
-        "Set up Node.js": 5,
+        "Check out": 3,
+        "Set up Node.js": 0,
         "Set up pnpm": 1,
-        "Install dependencies": 2,
-        "Install the shells the suite cross-checks against": 20,
+        "Install dependencies": 1,
+        "Install the shells the suite cross-checks against": 10,
         "Build (core then cli; cli resolves core's dist)": 4,
-        "Every proved exit can disappear without a word": 111,
-        "Every exemption's claim can be made false": 18
+        "Every proved exit can disappear without a word": 126,
+        "Every exemption's claim can be made false": 20
       }
     },
     "sensitivity-shard": {
       "name": "every proved exit can disappear without a word (shard 2 of 2)",
       "timeoutMinutes": 42,
-      "total": 151,
+      "total": 159,
       "steps": {
-        "Check out": 2,
+        "Check out": 3,
         "Set up Node.js": 0,
         "Set up pnpm": 1,
-        "Install dependencies": 1,
+        "Install dependencies": 2,
         "Install the shells the suite cross-checks against": 9,
         "Build (core then cli; cli resolves core's dist)": 4,
-        "Every proved exit can disappear without a word (shard 2 of 2)": 129
+        "Every proved exit can disappear without a word (shard 2 of 2)": 135
       }
     },
     "batteries": {
       "name": "injection batteries, one step each (no survivors, no inert)",
       "timeoutMinutes": 46,
-      "total": 547,
+      "total": 344,
       "steps": {
         "Check out": 2,
-        "Set up Node.js": 3,
+        "Set up Node.js": 1,
         "Set up pnpm": 1,
         "Install dependencies": 2,
         "Install the shells the suite cross-checks against": 7,
         "Build (core then cli; cli resolves core's dist)": 6,
         "Scorer stability battery (no survivors, no inert mutations)": 8,
-        "Component rule battery (no survivors, no inert mutations)": 12,
-        "M1-ceiling probe battery (no survivors, no inert mutations)": 1,
+        "Component rule battery (no survivors, no inert mutations)": 11,
+        "M1-ceiling probe battery (no survivors, no inert mutations)": 0,
         "M1-ceiling probe test battery (no survivors, no inert mutations)": 10,
-        "Every gate can be shown to fail": 149,
-        "Fault-extraction scoring battery (no survivors)": 17,
-        "Fault-extraction workflow battery (no survivors, negative control)": 14,
-        "Gate-test battery (each gate's test provably fails when its guard is removed)": 306,
+        "Every gate can be shown to fail": 146,
+        "Fault-extraction scoring battery (no survivors)": 16,
+        "Fault-extraction workflow battery (no survivors, negative control)": 13,
+        "Gate-test battery (each gate's test provably fails when its guard is removed)": 111,
         "Publish the gate-test battery report": 4,
         "Upload the gate-test battery report": 1,
         "Scorer-stability probe battery (the stability gate refuses a broken scorer)": 0
@@ -93,18 +93,18 @@
     "gates-audit": {
       "name": "every gate can be shown to fail, in a job of its own",
       "timeoutMinutes": 35,
-      "total": 515,
+      "total": 519,
       "steps": {
-        "Check out": 4,
-        "Set up Node.js": 0,
-        "Set up pnpm": 2,
-        "Install dependencies": 1,
-        "Install the shells the suite cross-checks against": 8,
-        "Build (core then cli; cli resolves core's dist)": 6,
-        "Every gate can be shown to fail (shard 2 of 2)": 239,
-        "Fetch-official retry battery (no survivors)": 92,
-        "Doc-count shape battery (no survivors, no inert, no misattributed mutations)": 96,
-        "Round-trip record battery (no survivors, no inert, no misattributed mutations)": 62
+        "Check out": 2,
+        "Set up Node.js": 1,
+        "Set up pnpm": 1,
+        "Install dependencies": 2,
+        "Install the shells the suite cross-checks against": 7,
+        "Build (core then cli; cli resolves core's dist)": 7,
+        "Every gate can be shown to fail (shard 2 of 2)": 241,
+        "Fetch-official retry battery (no survivors)": 95,
+        "Doc-count shape battery (no survivors, no inert, no misattributed mutations)": 98,
+        "Round-trip record battery (no survivors, no inert, no misattributed mutations)": 61
       }
     },
     "artefacts": {
@@ -112,15 +112,15 @@
       "timeoutMinutes": 15,
       "total": 61,
       "steps": {
-        "Check out": 2,
-        "Set up Node.js": 1,
-        "Set up pnpm": 1,
-        "Install dependencies": 2,
+        "Check out": 3,
+        "Set up Node.js": 0,
+        "Set up pnpm": 2,
+        "Install dependencies": 1,
         "Install the shells the suite cross-checks against": 9,
         "Build (core then cli; cli resolves core's dist)": 6,
         "Golden Master verification": 0,
         "Official-metric regression on the shipped example": 6,
-        "Examples and site data are up to date": 6,
+        "Examples and site data are up to date": 7,
         "Documentation guards are satisfied": 18,
         "Example pack is up to date": 6,
         "Example pack is readable by tar and matches the repository": 0,
@@ -130,31 +130,31 @@
     "cold-tree": {
       "name": "cold tree / no build / every precondition declared",
       "timeoutMinutes": 20,
-      "total": 28,
+      "total": 22,
       "steps": {
-        "Check out": 3,
-        "Set up Node.js": 3,
-        "Set up pnpm": 1,
-        "Install dependencies": 2,
+        "Check out": 2,
+        "Set up Node.js": 1,
+        "Set up pnpm": 2,
+        "Install dependencies": 1,
         "Install the shells the suite cross-checks against": 8,
-        "Documentation guards that read no build artefact": 3,
+        "Documentation guards that read no build artefact": 2,
         "Lint guards that read no build artefact": 1,
-        "The rule that decides which scripts may run here": 1
+        "The rule that decides which scripts may run here": 2
       }
     },
     "batteries-heavy": {
       "name": "injection batteries, the two that rewrite a probe a hundred times",
       "timeoutMinutes": 45,
-      "total": 317,
+      "total": 252,
       "steps": {
         "Check out": 2,
-        "Set up Node.js": 1,
+        "Set up Node.js": 0,
         "Set up pnpm": 1,
         "Install dependencies": 1,
-        "Install the shells the suite cross-checks against": 11,
-        "Build (core then cli; cli resolves core's dist)": 5,
-        "Type-miss probe battery (no survivors, no inert, no blind mutations)": 203,
-        "Backend-support battery (no survivors, no inert, no misattributed mutations)": 89
+        "Install the shells the suite cross-checks against": 8,
+        "Build (core then cli; cli resolves core's dist)": 3,
+        "Type-miss probe battery (no survivors, no inert, no blind mutations)": 164,
+        "Backend-support battery (no survivors, no inert, no misattributed mutations)": 70
       }
     }
   }
