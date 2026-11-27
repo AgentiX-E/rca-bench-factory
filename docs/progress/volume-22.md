@@ -1827,6 +1827,12 @@ key moved: **143** rows were renumbered by re-running the battery that writes th
 **262** claims, **734.4 s** of child time, **332** runs in **3.1 min**), which re-proved all **262** claims on its way
 -- **149** exits hollowed and **113** throws removed, and a test goes red for every one of them.
 
+The head moved once more while this round was being settled: reading **65**, the run of the commit that ships it,
+put `verify` first at **451 s** with `gates-audit` at **437 s** -- the second time in nine readings that `verify` led,
+and the ninth time the head is whatever the afternoon made heaviest. That is not a contradiction of the three prices
+above; it is the reason they are three, and the reason the middle one (rebalance alone, **33 s**) is worth stating:
+the day a rebalanced queue is measured, the head is whichever lane the runner was slow in.
+
 ### Readings
 
 > Ledger for `v3.163`.
@@ -1849,7 +1855,7 @@ key moved: **143** rows were renumbered by re-running the battery that writes th
 | new tests | **7,139 -> 7,143, +4**: one for the ceiling on the wire, one for each adapter passing it down, and one for the exported constant |
 | test lines | **123,859 -> 123,970 core** |
 | `Tracked files` | **689**, unchanged: the round added no file |
-| CI | run `45940813606` on `7275eb38`: **9 of 9 jobs success**, **470 s** of wall clock, reading **64** -- the tree this round started from, and the reading the round's own run replaces in the commit after it, as v3.161's did |
+| CI | run `45973021889` on `3673a82d`: **9 of 9 jobs success**, **451 s** of wall clock (the longest job is `verify` at **451 s**, `gates-audit` **437 s**, `batteries` **344 s**), reading **65** -- the run of the commit that ships this round, and a ninth reading in which the head is a different job from the one before it |
 
 ### Left open
 

@@ -1573,7 +1573,9 @@ answered with a sample of one.
 | 64 | `45940813606` | `gates-audit` | **464** | 433 | 399 | |
 
 `gates-audit` is first in **five**, `batteries` in **two**, `verify` in **one**. The entry was
-written from the one.
+written from the one. Reading **65**, taken on the commit that shipped this finding, is a second
+for `verify` (**451 s** against `gates-audit`'s **437 s**) -- nine readings, and the head has been
+three different jobs.
 
 **What the head is made of.** Subtracting the six setup steps from reading 64 leaves the bodies:
 `gates-audit` **443 s** over **4** steps, `verify` **413 s** over **6**, `batteries-heavy`
