@@ -1728,7 +1728,7 @@ then rebuilt the measured seconds itself, so the keys are derived rather than ty
 | the instrument's first reading | before this round changed anything, the `--costs` run weighed the shipped table against the tree: **287.5 s** priced, **282.9 s** spent, **-1.6%** |
 | the drift reading | printed by every run that measured a gate: the table's lines against this tree's, as a total and as the widest gate, so a price that has stopped describing its files is visible without a re-measure |
 | the half reading | printed beside it: the price the table put on the gates this run measured, against the seconds they spent. It is the number reading 62 could only be read by hand |
-| the pair, second reading | reading **63** measures the same partition on the same tree: **196 s / 195 s**, **0.5%** apart, against the plan's **0.89%** -- where reading 62 read **133 / 163 s** (**18.4%**) on that tree. Two readings of one partition, **296 s** and **391 s** of gates time, **32%** apart: the balance is a property of the plan and the totals are the machine's day |
+| the pair, second reading and third | readings **63** and **64** measure the partition v3.161 made on one tree: **196 / 195 s** (**0.5%**) and **193 / 195 s** (**1.0%**) against a plan that says **0.89%**, where reading **62** read **133 / 163 s** (**18.4%**). Three readings, one partition: the balance is a property of the plan, and the totals -- **296 s**, **391 s**, **388 s** of gates time -- are the machine's day |
 | the three refusals | a row with no `lines`, a `lines` that is not a count, and a `lines` of zero -- the shape, not the value |
 | what is deliberately not a verdict | the value of `lines`. A verdict there costs a 282.9 s re-measure per round that edits a test file and cannot tell a comment from a growth |
 | falsification | two new tests and three new refusals: the drift arithmetic (150 lines to 350 is **+133%**, and the first version of the assertion said +100% -- the run caught the test, not the code), the ordering by size, the unread end (`to: null`) ranked by its whole size, `null` for nothing to compare, and a spawned shard run printing both sentences |
@@ -1739,7 +1739,7 @@ then rebuilt the measured seconds itself, so the keys are derived rather than ty
 | new tests | **7,137 -> 7,139, +2** in `gate-costs.test.ts` |
 | test lines | **123,751 -> 123,859 core** |
 | `Tracked files` | **689**, unchanged: the round added no file, and the two tables it rewrote were already tracked |
-| CI | | CI | run `45936208473` on `050d107`: **9 of 9 jobs success**, **467 s** of wall clock (the longest job is `gates-audit` at **467 s**, `batteries` **401 s** behind it), reading **63** -- the last green run of this workflow, which closed `v3.161`; the run of the commit that ships this round's table cannot close the round it is green on until it has run, so the row that closes `v3.162` is written by the next commit, from that commit's run | |
+| CI | run `45940813606` on `7275eb38`: **9 of 9 jobs success**, **470 s** of wall clock (the longest job is `gates-audit` at **470 s**, `verify` **437 s** and `batteries-heavy` **399 s** behind it), reading **64** -- the run of the commit that ships this round, and the third reading of the partition v3.161 made |
 
 ### Left open
 

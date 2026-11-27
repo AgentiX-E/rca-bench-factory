@@ -102,7 +102,12 @@ jobs:
     # going down in the same commit (`verify-site-proofs` is parallel now); the ceiling moves
     # because the *bound* moved, and a ceiling that ignored its own steps' bounds would fire
     # before one of them could.
-    timeout-minutes: 42
+    #
+    # 42 -> 43 at v3.162, by the same sum: the coverage bound moved 7 -> 8 minutes on reading 64
+    # (211 s on a step that had 420 s of bound), so the bounds are 2340 s, and 2340 + 180 + 8 is
+    # 2528 s -- 42.1 minutes, of which this is the first whole minute above. The step's own day
+    # moved 206 -> 211 s, which is 4% of a bound, and the ceiling moves because the bound moved.
+    timeout-minutes: 43
     steps:
       # Full history: see the note above `jobs:` (findings 612 and 614). This is the job the
       # first of those two was found in.
@@ -206,9 +211,16 @@ jobs:
         run: pnpm lint
 
       - name: Test with coverage (core + cli, ≥95% per dimension, 100% functions)
-        # 6 until v3.124 and 7 now: run 44698243645 measured 187 s, and twice 187 is 374, which
-        # is 51 s past 360. `R10`.
-        timeout-minutes: 7
+        # 6 until v3.124 and 7 until v3.162: run 44698243645 measured 187 s, and twice 187 is 374,
+        # which is 51 s past 360. `R10`.
+        #
+        # 8 from v3.162, and the reading that moved it is the round's own: run `45940813606`
+        # (reading 64) spent **211 s** on this step, and twice 211 is 422 -- two seconds past the
+        # 420 s a 7-minute bound allows, so a day in the state it was read in was refused for being
+        # slow rather than for hanging. The bound pays for the reading, not for the best day: the
+        # same step read 187 s when it was given 7. The ceiling one level up follows by the sum
+        # `R13` names, because a ceiling that ignored its own steps' bounds would fire first.
+        timeout-minutes: 8
         run: pnpm test:coverage
 
       # The published counts, against the run that just happened.
