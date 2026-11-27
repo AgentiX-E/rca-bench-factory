@@ -1,141 +1,141 @@
 {
-  "run": 46002813607,
+  "run": 46018087375,
   "attempt": 1,
-  "commit": "fc158ded24543bde1e20d0222f483b42abac5904",
+  "commit": "491b19e3ff3b936f77397e8f10d1fa7243979003",
   "measured": "2026-11-27",
   "jobs": {
     "verify": {
       "name": "build / typecheck / lint",
       "timeoutMinutes": 32,
-      "total": 165,
+      "total": 224,
       "steps": {
-        "Check out": 5,
-        "Set up Node.js": 5,
-        "Set up pnpm": 1,
-        "Install dependencies": 2,
-        "Install the shells the suite cross-checks against": 14,
-        "Build (core then cli; cli resolves core's dist)": 5,
-        "Type-check": 6,
-        "Lint (no mock / no secrets / no vendored data / registry / absolute paths / scorer stability / site proofs)": 124
+        "Check out": 3,
+        "Set up Node.js": 0,
+        "Set up pnpm": 2,
+        "Install dependencies": 1,
+        "Install the shells the suite cross-checks against": 11,
+        "Build (core then cli; cli resolves core's dist)": 6,
+        "Type-check": 9,
+        "Lint (no mock / no secrets / no vendored data / registry / absolute paths / scorer stability / site proofs)": 186
       }
     },
     "coverage": {
       "name": "coverage / published counts / per-test budgets",
       "timeoutMinutes": 31,
-      "total": 155,
+      "total": 234,
       "steps": {
-        "Check out": 2,
+        "Check out": 3,
         "Set up Node.js": 0,
-        "Set up pnpm": 1,
+        "Set up pnpm": 2,
         "Install dependencies": 1,
-        "Install the shells the suite cross-checks against": 8,
-        "Build (core then cli; cli resolves core's dist)": 4,
-        "Test with coverage (core + cli, ≥95% per dimension, 100% functions)": 133,
-        "Published suite counts, read from that run rather than taken again": 1,
-        "Mutation suite (gate + export, 100% interception)": 1,
-        "Every test's cost against the budget it declares": 1
+        "Install the shells the suite cross-checks against": 26,
+        "Build (core then cli; cli resolves core's dist)": 6,
+        "Test with coverage (core + cli, ≥95% per dimension, 100% functions)": 186,
+        "Published suite counts, read from that run rather than taken again": 0,
+        "Mutation suite (gate + export, 100% interception)": 2,
+        "Every test's cost against the budget it declares": 2
       }
     },
     "backend": {
       "name": "a backend this repository did not write, and a reader against it",
       "timeoutMinutes": 36,
-      "total": 38,
+      "total": 35,
       "steps": {
         "Check out": 1,
         "Set up Node.js": 1,
         "Set up pnpm": 1,
         "Install dependencies": 1,
-        "Build (core then cli; cli resolves core's dist)": 5,
-        "Install a backend this repository did not write": 19,
-        "A reader, against that backend": 6
+        "Build (core then cli; cli resolves core's dist)": 4,
+        "Install a backend this repository did not write": 16,
+        "A reader, against that backend": 7
       }
     },
     "sensitivity": {
       "name": "battery lane 5 of 5 (the queue's steps, placed by golden-master/battery-lanes.json)",
       "timeoutMinutes": 53,
-      "total": 269,
+      "total": 264,
       "steps": {
         "Check out": 2,
-        "Set up Node.js": 0,
+        "Set up Node.js": 1,
         "Set up pnpm": 1,
         "Install dependencies": 1,
         "Install the shells the suite cross-checks against": 9,
         "Build (core then cli; cli resolves core's dist)": 4,
-        "Every proved exit can disappear without a word": 113,
+        "Every proved exit can disappear without a word": 117,
         "Every exemption's claim can be made false": 16,
-        "Fetch-official retry battery (no survivors)": 103,
-        "Fault-extraction workflow battery (no survivors, negative control)": 9,
+        "Fetch-official retry battery (no survivors)": 94,
+        "Fault-extraction workflow battery (no survivors, negative control)": 8,
         "M1-ceiling probe test battery (no survivors, no inert mutations)": 7
       }
     },
     "sensitivity-shard": {
       "name": "battery lane 3 of 5 (the queue's steps, placed by golden-master/battery-lanes.json)",
       "timeoutMinutes": 40,
-      "total": 266,
+      "total": 352,
       "steps": {
         "Check out": 2,
-        "Set up Node.js": 1,
+        "Set up Node.js": 5,
         "Set up pnpm": 1,
-        "Install dependencies": 1,
-        "Install the shells the suite cross-checks against": 10,
-        "Build (core then cli; cli resolves core's dist)": 5,
-        "Every gate can be shown to fail": 156,
-        "Backend-support battery (no survivors, no inert, no misattributed mutations)": 87
+        "Install dependencies": 2,
+        "Install the shells the suite cross-checks against": 19,
+        "Build (core then cli; cli resolves core's dist)": 6,
+        "Every gate can be shown to fail": 196,
+        "Backend-support battery (no survivors, no inert, no misattributed mutations)": 116
       }
     },
     "batteries": {
       "name": "battery lane 4 of 5 (the queue's steps, placed by golden-master/battery-lanes.json)",
       "timeoutMinutes": 60,
-      "total": 258,
+      "total": 344,
       "steps": {
-        "Check out": 4,
-        "Set up Node.js": 4,
-        "Set up pnpm": 1,
-        "Install dependencies": 2,
-        "Install the shells the suite cross-checks against": 14,
-        "Build (core then cli; cli resolves core's dist)": 4,
-        "Gate-test battery (each gate's test provably fails when its guard is removed)": 80,
+        "Check out": 2,
+        "Set up Node.js": 0,
+        "Set up pnpm": 2,
+        "Install dependencies": 1,
+        "Install the shells the suite cross-checks against": 8,
+        "Build (core then cli; cli resolves core's dist)": 6,
+        "Gate-test battery (each gate's test provably fails when its guard is removed)": 112,
         "Publish the gate-test battery report": 4,
-        "Upload the gate-test battery report": 0,
-        "Fault-extraction scoring battery (no survivors)": 13,
-        "Component rule battery (no survivors, no inert mutations)": 7,
-        "M1-ceiling probe battery (no survivors, no inert mutations)": 1,
-        "Scorer-stability probe battery (the stability gate refuses a broken scorer)": 0,
-        "Every proved exit can disappear without a word (shard 2 of 2)": 120
+        "Upload the gate-test battery report": 1,
+        "Fault-extraction scoring battery (no survivors)": 16,
+        "Component rule battery (no survivors, no inert mutations)": 11,
+        "M1-ceiling probe battery (no survivors, no inert mutations)": 0,
+        "Scorer-stability probe battery (the stability gate refuses a broken scorer)": 1,
+        "Every proved exit can disappear without a word (shard 2 of 2)": 176
       }
     },
     "gates-audit": {
       "name": "battery lane 2 of 5 (the queue's steps, placed by golden-master/battery-lanes.json)",
       "timeoutMinutes": 29,
-      "total": 314,
+      "total": 288,
       "steps": {
-        "Check out": 4,
-        "Set up Node.js": 2,
+        "Check out": 3,
+        "Set up Node.js": 0,
         "Set up pnpm": 2,
         "Install dependencies": 1,
-        "Install the shells the suite cross-checks against": 15,
+        "Install the shells the suite cross-checks against": 12,
         "Build (core then cli; cli resolves core's dist)": 5,
-        "Every gate can be shown to fail (shard 2 of 2)": 184,
-        "Doc-count shape battery (no survivors, no inert, no misattributed mutations)": 89,
-        "Scorer stability battery (no survivors, no inert mutations)": 8
+        "Every gate can be shown to fail (shard 2 of 2)": 172,
+        "Doc-count shape battery (no survivors, no inert, no misattributed mutations)": 82,
+        "Scorer stability battery (no survivors, no inert mutations)": 7
       }
     },
     "artefacts": {
       "name": "golden master / official metric / examples / documents",
       "timeoutMinutes": 15,
-      "total": 45,
+      "total": 63,
       "steps": {
-        "Check out": 1,
+        "Check out": 2,
         "Set up Node.js": 1,
         "Set up pnpm": 1,
-        "Install dependencies": 1,
-        "Install the shells the suite cross-checks against": 8,
-        "Build (core then cli; cli resolves core's dist)": 4,
+        "Install dependencies": 2,
+        "Install the shells the suite cross-checks against": 9,
+        "Build (core then cli; cli resolves core's dist)": 6,
         "Golden Master verification": 0,
-        "Official-metric regression on the shipped example": 4,
-        "Examples and site data are up to date": 4,
-        "Documentation guards are satisfied": 12,
-        "Example pack is up to date": 4,
+        "Official-metric regression on the shipped example": 7,
+        "Examples and site data are up to date": 6,
+        "Documentation guards are satisfied": 19,
+        "Example pack is up to date": 6,
         "Example pack is readable by tar and matches the repository": 0,
         "Example pack verifies against its own manifest": 0
       }
@@ -143,13 +143,13 @@
     "cold-tree": {
       "name": "cold tree / no build / every precondition declared",
       "timeoutMinutes": 20,
-      "total": 25,
+      "total": 23,
       "steps": {
-        "Check out": 3,
-        "Set up Node.js": 0,
+        "Check out": 2,
+        "Set up Node.js": 1,
         "Set up pnpm": 1,
-        "Install dependencies": 1,
-        "Install the shells the suite cross-checks against": 11,
+        "Install dependencies": 2,
+        "Install the shells the suite cross-checks against": 10,
         "Documentation guards that read no build artefact": 2,
         "Lint guards that read no build artefact": 1,
         "The rule that decides which scripts may run here": 1
@@ -158,16 +158,16 @@
     "batteries-heavy": {
       "name": "battery lane 1 of 5 (the queue's steps, placed by golden-master/battery-lanes.json)",
       "timeoutMinutes": 33,
-      "total": 247,
+      "total": 354,
       "steps": {
-        "Check out": 2,
-        "Set up Node.js": 1,
+        "Check out": 3,
+        "Set up Node.js": 3,
         "Set up pnpm": 1,
-        "Install dependencies": 1,
-        "Install the shells the suite cross-checks against": 9,
-        "Build (core then cli; cli resolves core's dist)": 4,
-        "Type-miss probe battery (no survivors, no inert, no blind mutations)": 181,
-        "Round-trip record battery (no survivors, no inert, no misattributed mutations)": 42
+        "Install dependencies": 2,
+        "Install the shells the suite cross-checks against": 13,
+        "Build (core then cli; cli resolves core's dist)": 6,
+        "Type-miss probe battery (no survivors, no inert, no blind mutations)": 263,
+        "Round-trip record battery (no survivors, no inert, no misattributed mutations)": 59
       }
     }
   }

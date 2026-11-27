@@ -171,9 +171,10 @@ describe('the shipped drift, read from the readings ledger', () => {
   const drift = observeDrift(shipped, ledger);
 
   it('prices every eligible reading and names the one the table quotes as the prediction', () => {
-    // Eighteen readings (50..67) run every command the table prices. The table quotes
-    // reading 65, so that reading's observation is the prediction and its drift is zero.
-    expect(drift.eligible).toBe(18);
+    // Nineteen readings (50..68) run every command the table prices. Reading 68 is the
+    // run that shipped this instrument. The table quotes reading 65, so that reading's
+    // observation is the prediction and its drift is zero.
+    expect(drift.eligible).toBe(19);
     expect(drift.predicted).not.toBeNull();
     expect(drift.predicted!.reading).toBe(65);
     expect(drift.predicted!.run).toBe(shipped.run);
@@ -199,6 +200,19 @@ describe('the shipped drift, read from the readings ledger', () => {
     expect(shippedRun.spread).toBe(97);
     expect(shippedRun.headDrift).toBe(22);
     expect(shippedRun.spreadDrift).toBe(91);
+  });
+
+  it('measures the run that shipped this instrument, with the head on another lane again', () => {
+    // Reading 68 is the CI run of the commit that added the drift instrument. Same shape,
+    // same twenty commands, third head lane in three settlement runs: the table's shape is
+    // fixed, the machine's head is not. The test owns the number so the prose cannot drift.
+    const settled = drift.observed.find((one: { run: number }) => one.run === 46018087375);
+    expect(settled).toBeDefined();
+    expect(settled.loads).toEqual([322, 261, 312, 321, 242]);
+    expect(settled.head).toBe(322);
+    expect(settled.spread).toBe(80);
+    expect(settled.headDrift).toBe(59);
+    expect(settled.spreadDrift).toBe(74);
   });
 
   it('refuses to price a reading that cannot price every battery', () => {

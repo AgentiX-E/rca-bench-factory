@@ -2126,7 +2126,7 @@ gives **188 / 224 / 242 / 283 / 285** -- *the sum of the step seconds*. Both are
 quoting them in one sentence as one population was not. `observeLoads` fixes the shape and
 re-prices it from a run, refuses a reading that cannot price all twenty batteries, and names a
 row whose command ran twice under names it does not carry. `observeDrift` walks the ledger,
-skips the **49** readings that predate the ten-job tree, and measures the **18** that can pay
+skips the **49** readings that predate the ten-job tree, and measures the **19** that can pay
 for the whole shape. The head drifted **263 -> 285 (+22)** and the spread **6 -> 97 (+91)**;
 those numbers now have a test that fails if the ledger or the rule changes.
 
@@ -2143,16 +2143,17 @@ was; the 285 here is the ledger's own sum, and `lane-drift.test.ts` is where eac
 | --- | --- |
 | the matcher, once | `priceOf` returns `{found, ambiguous, seconds, count}`; a named step wins, else the only step under the command, else `seconds: null`; both `laneErrors` and the observation use it (finding 684) |
 | an observation, not a re-placement | `observeLoads` keeps the table's `lane` for every step and only re-prices it; a reading that cannot price all **20** rows is refused, not summed |
-| the ledger, as a population | `observeDrift` walks **67** readings, skips **49** that cannot price the shape, measures **18** (readings 50..67); the table's reading **65** is the prediction and its drift is **0** |
+| the ledger, as a population | `observeDrift` walks **68** readings, skips **49** that cannot price the shape, measures **19** (readings 50..68); the table's reading **65** is the prediction and its drift is **0** |
 | prediction, re-derived | the shipped shape reads **263 / 261 / 260 / 257 / 258**, head **263**, spread **6** -- the same numbers `battery-lanes.test.ts` pins, now from one matcher |
 | what reading 66 paid | the run that shipped the table read **188 / 224 / 242 / 283 / 285** under the fixed shape: head **+22**, spread **+91** against the prediction. The v3.164 prose wrote **286** for the last lane from the job's wall clock; this row is the ledger's sum of steps, and the two are named apart |
+| what the run that shipped this instrument paid | reading 68 (run `46018087375`, this round's CI) read **322 / 261 / 312 / 321 / 242**: head **+59**, spread **+80**, and the head moved to lane 0 -- the third head lane in three settlement runs. The shape stayed fixed; the machine did not |
 | why no re-derivation | `shapeSignature` over readings **65 / 66 / 67** returns **3** distinct shapes from the same twenty commands: the placement moves with the seconds, so re-deriving is a new plan each run |
-| `core` test suite | **266 files, 7,196 tests passed** (as of this commit) |
+| `core` test suite | **266 files, 7,197 tests passed** (as of this commit) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- statements, branches, functions and lines, read from `coverage/coverage-summary.json` |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **270 files, 7,383 tests passed** (as of this commit) |
-| new tests | **7,179 -> 7,196, +17**: twelve unit cases in `lane-drift.test.ts` (one matcher, fixed-shape observation, ledger drift, shape sensitivity) and five shipped cases that read the ledger and pin the drift and the three-shape result |
-| test lines | **124,474 -> 124,706 core** |
+| repo test suite | **270 files, 7,384 tests passed** (as of this commit) |
+| new tests | **7,179 -> 7,197, +18**: twelve unit cases in `lane-drift.test.ts` (one matcher, fixed-shape observation, ledger drift, shape sensitivity), five shipped cases that read the ledger and pin the drift and the three-shape result, and one settlement case for the run that shipped the instrument |
+| test lines | **124,474 -> 124,720 core** |
 | `Tracked files` | **692 -> 693**: `packages/core/test/lane-drift.test.ts`; no new script or golden file -- the table's existing test is the ledger's guard, the way `battery-lanes.test.ts` has always guarded the plan |
 | CI | run `46002813607` on `fc158de`: **10 of 10 jobs success**, reading **67** -- the recording this round measures against; the run of the commit that ships the drift instrument is the one that closes `O-150`'s ledger row |
 
