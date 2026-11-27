@@ -1,0 +1,408 @@
+{
+  "note": "one row per injection: the tests that failed when the injection was measured against its whole file, and what that run cost. Written by `python3 scripts/injection/gate-tests-battery.py --witnesses`; the run aims each injection at these titles and falls back to the whole file when the aim does not decide it.",
+  "injections": {
+    "README 1. the sample marker stops matching, so nothing is collected": {
+      "tests": [
+        "scripts/check-readme-sample.mjs · what it asserts about a good sample > executes a sample block and reports it by number",
+        "scripts/check-readme-sample.mjs · what it asserts about a good sample > picks the sample out by its import rather than by fence position"
+      ],
+      "wholeFileMs": 995
+    },
+    "README 2. the rewrite pattern stops matching the collection marker": {
+      "tests": [
+        "scripts/check-readme-sample.mjs · what it asserts about a good sample > picks the sample out by its import rather than by fence position"
+      ],
+      "wholeFileMs": 1013
+    },
+    "README 3. a failed sample no longer fails the run": {
+      "tests": [
+        "scripts/check-readme-sample.mjs · the three ways a README can be wrong > fails the sample when the call does not match the real signature",
+        "scripts/check-readme-sample.mjs · the three ways a README can be wrong > reports a partial pass as partial, so one broken sample is not read as all-broken"
+      ],
+      "wholeFileMs": 1344
+    },
+    "README 4. the block is not executed at all, only collected": {
+      "tests": [
+        "scripts/check-readme-sample.mjs · the three ways a README can be wrong > fails the sample when the call does not match the real signature"
+      ],
+      "wholeFileMs": 1038
+    },
+    "BUNDLE 1. the archive comparison always agrees": {
+      "tests": [
+        "scripts/build-example-bundle.mjs · what it refuses > refuses a stale archive",
+        "scripts/build-example-bundle.mjs · what it refuses > refuses a stale metadata file"
+      ],
+      "wholeFileMs": 3466
+    },
+    "BUNDLE 2. only the archive is compared, not the metadata": {
+      "tests": [
+        "scripts/build-example-bundle.mjs · what it refuses > refuses a stale metadata file"
+      ],
+      "wholeFileMs": 3394
+    },
+    "BUNDLE 3. an empty example directory is accepted": {
+      "tests": [
+        "scripts/build-example-bundle.mjs · what it refuses > refuses an example directory holding no files at all"
+      ],
+      "wholeFileMs": 3334
+    },
+    "BUNDLE 4. the manifest's file count stops agreeing with its own listing": {
+      "tests": [
+        "scripts/build-example-bundle.mjs · the build > counts the manifest in the file count it advertises"
+      ],
+      "wholeFileMs": 3378
+    },
+    "BUNDLE 5. the tar stops being reproducible": {
+      "tests": [
+        "scripts/build-example-bundle.mjs · the build > pins every tar field that could vary between machines"
+      ],
+      "wholeFileMs": 3354
+    },
+    "EXAMPLES 1. --check stops comparing the data file": {
+      "tests": [
+        "scripts/gen-examples.mjs · the payload it generates > refuses a stale data file and names the command that fixes it"
+      ],
+      "wholeFileMs": 4141
+    },
+    "EXAMPLES 2. a missing data file stops being reported": {
+      "tests": [
+        "scripts/gen-examples.mjs · the payload it generates > refuses --check when the data file does not exist at all"
+      ],
+      "wholeFileMs": 4195
+    },
+    "EXAMPLES 3. a generated block is left stale instead of planned for rewrite": {
+      "tests": [
+        "scripts/gen-examples.mjs · the doc blocks it rewrites > replaces a stale example block with the real export",
+        "scripts/gen-examples.mjs · the field tables, and what is not checked > regenerates a field table from the specification",
+        "scripts/gen-examples.mjs · the metadata table > replaces every row with a field of the specification"
+      ],
+      "wholeFileMs": 4135
+    },
+    "EXAMPLES 4. a marker naming an unknown target stops throwing": {
+      "tests": [
+        "scripts/gen-examples.mjs · the doc blocks it rewrites > refuses an example that names a target the exporters do not produce"
+      ],
+      "wholeFileMs": 4182
+    },
+    "EXAMPLES 5. a marker naming an unexported path stops throwing": {
+      "tests": [
+        "scripts/gen-examples.mjs · the doc blocks it rewrites > refuses an example naming a path the target does not export"
+      ],
+      "wholeFileMs": 4149
+    },
+    "EXAMPLES 6. a field marker that matches nothing stops throwing": {
+      "tests": [
+        "scripts/gen-examples.mjs · the field tables, and what is not checked > refuses a field marker that matches no documented file"
+      ],
+      "wholeFileMs": 4077
+    },
+    "EXAMPLES 7. the truncate modifier is ignored": {
+      "tests": [
+        "scripts/gen-examples.mjs · the doc blocks it rewrites > honours the truncate modifier rather than writing the whole export"
+      ],
+      "wholeFileMs": 4333
+    },
+    "EXAMPLES 8. --check stops refusing a generated block that disagrees": {
+      "tests": [
+        "scripts/gen-examples.mjs · the field tables, and what is not checked > refuses --check when a doc block disagrees with the export behind it",
+        "scripts/gen-examples.mjs · the field tables, and what is not checked > refuses --check when a field table disagrees with the specification"
+      ],
+      "wholeFileMs": 4148
+    },
+    "EXAMPLES 9. the metadata table is never rewritten": {
+      "tests": [
+        "scripts/gen-examples.mjs · the metadata table > replaces every row with a field of the specification"
+      ],
+      "wholeFileMs": 4158
+    },
+    "EXAMPLES 10. a version that is not a string is printed instead of refused": {
+      "tests": [
+        "scripts/gen-examples.mjs · the metadata table > refuses a specification naming a constant the package does not export"
+      ],
+      "wholeFileMs": 4143
+    },
+    "PAIRS 1. the task-text comparison never reaches its threshold": {
+      "tests": [
+        "G5 · two prompts that say one thing > refuses two prompts that differ only in their function words"
+      ],
+      "wholeFileMs": 914
+    },
+    "PAIRS 2. the window comparison never reaches its threshold": {
+      "tests": [
+        "G5 · two windows that cover one moment > refuses two cases whose windows overlap by nine tenths"
+      ],
+      "wholeFileMs": 911
+    },
+    "PAIRS 3. cases in two systems start being compared": {
+      "tests": [
+        "G5 · two prompts that say one thing > does not compare cases from two systems with each other"
+      ],
+      "wholeFileMs": 929
+    },
+    "PAIRS 4. an unreadable window bound is judged instead of skipped": {
+      "tests": [
+        "G5 · two windows that cover one moment > declines a window it cannot parse rather than throwing"
+      ],
+      "wholeFileMs": 912
+    },
+    "PAIRS 5. the comparison keeps the words that carry no subject": {
+      "tests": [
+        "G5 · two prompts that say one thing > refuses two prompts that differ only in their function words",
+        "G5 · the vocabulary the comparison drops > drops every word the published list names, so the list and the code are one definition"
+      ],
+      "wholeFileMs": 896
+    },
+    "PAIRS 6. a CJK prompt tokenises to nothing": {
+      "tests": [
+        "G5 · two prompts that say one thing > reads a CJK prompt as tokens rather than as nothing"
+      ],
+      "wholeFileMs": 898
+    },
+    "PAIRS 7. a set of one case reports zero duplicates instead of no pair": {
+      "tests": [
+        "G5 · the pairwise reading in one sentence > says that a set of one case offered no pair at all"
+      ],
+      "wholeFileMs": 892
+    },
+    "CLIREF 1. the flag lookup loses its word boundary": {
+      "tests": [
+        "scripts/check-cli-reference.mjs · the drift report > does not accept a longer flag as documentation of a shorter one"
+      ],
+      "wholeFileMs": 24021
+    },
+    "CLIREF 2. an implemented-but-undocumented command stops being reported": {
+      "tests": [
+        "scripts/check-cli-reference.mjs · the drift report > refuses a command the binary implements but the reference omits"
+      ],
+      "wholeFileMs": 24379
+    },
+    "CLIREF 3. a documented-but-unimplemented command stops being reported": {
+      "tests": [
+        "scripts/check-cli-reference.mjs · the drift report > refuses a section heading for a command the binary does not implement"
+      ],
+      "wholeFileMs": 24105
+    },
+    "CLIREF 4. a flag the reference never mentions stops being reported": {
+      "tests": [
+        "scripts/check-cli-reference.mjs · the drift report > refuses a reference that documents no flag at all"
+      ],
+      "wholeFileMs": 24108
+    },
+    "CLIREF 5. only the first disagreement is reported": {
+      "tests": [
+        "scripts/check-cli-reference.mjs · the drift report > reports every disagreement rather than stopping at the first"
+      ],
+      "wholeFileMs": 23894
+    },
+    "RCAEVAL 1. --check stops comparing the descriptor file": {
+      "tests": [
+        "scripts/gen-rcaeval-cases.mjs · --check > refuses a file that has drifted from the corpus"
+      ],
+      "wholeFileMs": 2780
+    },
+    "RCAEVAL 3. the per-suite tally drops the suites with no cases": {
+      "tests": [
+        "scripts/gen-rcaeval-cases.mjs · --check > skips a fourth suite, and its on-demand tally branch is therefore dead"
+      ],
+      "wholeFileMs": 2917
+    },
+    "RCAEVAL 4. the run level is read from one directory deeper": {
+      "tests": [
+        "scripts/gen-rcaeval-cases.mjs · the derivation > recovers a service whose name contains hyphens"
+      ],
+      "wholeFileMs": 2546
+    },
+    "GRID 1. a case's flip point is read from the worst window instead of the best": {
+      "tests": [
+        "the grid the thresholds are read on > reads a case’s flip point from the best window of consecutive samples"
+      ],
+      "wholeFileMs": 904
+    },
+    "GRID 2. the cell boundary stops being inclusive": {
+      "tests": [
+        "the grid the thresholds are read on > admits a case whose best window sits exactly on a |Z| line",
+        "the grid the thresholds are read on > agrees with the gate in every one of its sixteen cells"
+      ],
+      "wholeFileMs": 896
+    },
+    "GRID 3. the default's sample line is only computed when it is on the axis": {
+      "tests": [
+        "the grid the thresholds are read on > says when the default is not a cell of the grid it is printing"
+      ],
+      "wholeFileMs": 908
+    },
+    "LAYOUT 1. a misspelled field is dropped instead of refused": {
+      "tests": [
+        "the shipped layout answer set > refuses the four shapes a model gets wrong, each for its own stated reason",
+        "the shipped layout answer set > prints the two channels, the refusal reasons and the absence of kappa"
+      ],
+      "wholeFileMs": 1202
+    },
+    "LAYOUT 2. a mapping to the wrong column counts as agreement": {
+      "tests": [
+        "the reading over one case > counts an answer that points a field at a real but different column as a contradiction",
+        "the shipped layout answer set > reads both channels, and states which one has a caller"
+      ],
+      "wholeFileMs": 1182
+    },
+    "LAYOUT 3. two cases with one id are accepted, so a rate drops one silently": {
+      "tests": [
+        "the answer set cannot be read as a rate over something else > refuses two cases with one id"
+      ],
+      "wholeFileMs": 1210
+    },
+    "LAYOUT 4. the validator uses a required-field table of its own again": {
+      "tests": [
+        "the fields a layout must map, written once > refuses one missing required field at a time, and names it"
+      ],
+      "wholeFileMs": 857
+    },
+    "SCORE 1. the sentence prints the percentage without the count": {
+      "tests": [
+        "the denominator under a score > never prints the percentage without the count it was computed over"
+      ],
+      "wholeFileMs": 1082
+    },
+    "SCORE 2. the checksum clause is dropped from the sentence": {
+      "tests": [
+        "the denominator under a score > names both denominators once anchors are supplied"
+      ],
+      "wholeFileMs": 1078
+    },
+    "SCORE 3. a partial pass earns credit": {
+      "tests": [
+        "the counts are the same counts the verdict used > gives an empty check list no credit rather than a NaN"
+      ],
+      "wholeFileMs": 1082
+    },
+    "HOLD 1. a hold of zero is accepted, so an excursion lasts no samples": {
+      "tests": [
+        "readSeriesHold · the duration a declaration states, and the three ways it can fail to > refuses a hold outside the samples a side has"
+      ],
+      "wholeFileMs": 834
+    },
+    "HOLD 2. a counter is allowed to hold, so an accumulation becomes a level": {
+      "tests": [
+        "readSeriesHold · the duration a declaration states, and the three ways it can fail to > refuses a hold on an accumulation, because a counter that stops is a level"
+      ],
+      "wholeFileMs": 834
+    },
+    "DURATION 1. two equal numbers are accepted whatever a sample lasts": {
+      "tests": [
+        "the published description > a hold is a count of samples, so its length is the window's > accepts the same two numbers when the window makes a sample one minute"
+      ],
+      "wholeFileMs": 842
+    },
+    "DURATION 2. the guard refuses every duration that is not the hold": {
+      "tests": [
+        "the published description > a hold is a count of samples, so its length is the window's > refuses a duration that reuses the sample count as a length of time"
+      ],
+      "wholeFileMs": 843
+    },
+    "CLAIM 1. a case's own excursions are skipped and its flat series counted": {
+      "tests": [
+        "readEpisodeLength > reads an excursion as its hold times one sample, and ignores a series that never leaves its baseline"
+      ],
+      "wholeFileMs": 811
+    },
+    "CLAIM 2. three lengths are needed before one number stops being the length of them all": {
+      "tests": [
+        "readDurationClaim > refuses one number for a case whose series hold for two different lengths"
+      ],
+      "wholeFileMs": 803
+    },
+    "CLAIM 3. the episode is read as one sample rather than as the samples it holds": {
+      "tests": [
+        "readDurationClaim > refuses a stated length the samples contradict, naming all three numbers"
+      ],
+      "wholeFileMs": 835
+    },
+    "CLAIM 4. the comparison is inverted, so agreement is refused and disagreement accepted": {
+      "tests": [
+        "readDurationClaim > accepts a stated length the samples draw, and reports the episode it was read against"
+      ],
+      "wholeFileMs": 833
+    },
+    "CLAIM 5. a time unit is refused and every other unit is compared as time": {
+      "tests": [
+        "readParameterRoles · the four ways the answer is absent or misplaced > refuses a role on a parameter that is not a length",
+        "readParameterRoles · one episode, the knobs, and the counts left alone > reads the parameter that says it is the episode and the ones that say they are knobs"
+      ],
+      "wholeFileMs": 836
+    },
+    "LEVEL 1. a case standing on its floor counts as claiming above it": {
+      "tests": [
+        "readDifficultyClaim > says nothing about a case at its floor with no note"
+      ],
+      "wholeFileMs": 921
+    },
+    "LEVEL 2. a claim above the floor is refused when it does explain itself": {
+      "tests": [
+        "readDifficultyClaim > refuses a level above the floor that does not say what the chain cannot see"
+      ],
+      "wholeFileMs": 932
+    },
+    "LEVEL 3. any string counts as the sentence a claim needs": {
+      "tests": [
+        "readDifficultyClaim > refuses a note that is a label where a sentence is required",
+        "readDifficultyClaim > accepts a level above the floor whose note is a sentence"
+      ],
+      "wholeFileMs": 970
+    },
+    "LEVEL 4. a note at the floor explains something, and a note below it does too": {
+      "tests": [
+        "readDifficultyClaim > refuses a note at the floor, because there is no gap for it to explain",
+        "readDifficultyClaim > says nothing about a level below the floor, which the shortfall rule already refuses"
+      ],
+      "wholeFileMs": 944
+    },
+    "LEVEL 5. a note on a case that states no level is given a pass": {
+      "tests": [
+        "readDifficultyClaim > refuses a note on a case that states no level at all"
+      ],
+      "wholeFileMs": 940
+    },
+    "LEVEL 6. the hard end of the distribution reads the labels again": {
+      "tests": [
+        "the shipped corpus · the labels and the ladder > cannot be met by relabelling, which is the property the share exists for"
+      ],
+      "wholeFileMs": 900
+    },
+    "REPORT 1. the field-contract branch reads the score report's old field name": {
+      "tests": [
+        "scripts/check-official.mjs · what the round trip refuses to pass > names the fields a case does not satisfy instead of crashing before the sentence"
+      ],
+      "wholeFileMs": 11084
+    },
+    "COVER 1. the coverage sentence counts the samples it does not answer": {
+      "tests": [
+        "the coverage sentence: a reading and the key it claims to answer > names the samples it does not answer, in key order"
+      ],
+      "wholeFileMs": 842
+    },
+    "VOLUME 1. the index is measured against the smallest volume again": {
+      "tests": [
+        "the index has not outgrown the volume it is still being compared with > does not refuse an index that a closed volume can no longer match"
+      ],
+      "wholeFileMs": 1008
+    },
+    "VOCAB 1. a label the prompt does not offer is no longer a refusal": {
+      "tests": [
+        "the vocabulary the prompt states, against the types the corpus labels > names a type the corpus labels and the prompt does not offer"
+      ],
+      "wholeFileMs": 780
+    },
+    "HEAP 1. the budget refusal never fires, and the run dies instead": {
+      "tests": [
+        "scripts/check-official.mjs · what a run leaves behind when it dies > stops at the case that spends the heap, and still says what the slice ships"
+      ],
+      "wholeFileMs": 11183
+    },
+    "CENSUS 1. the census waits for the last case again": {
+      "tests": [
+        "scripts/check-official.mjs · what a run leaves behind when it dies > prints the census before the first case rather than after the last"
+      ],
+      "wholeFileMs": 11241
+    }
+  }
+}

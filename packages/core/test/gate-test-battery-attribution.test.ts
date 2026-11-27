@@ -47,7 +47,7 @@ const ROOT = resolve(import.meta.dirname, '..', '..', '..');
 const BATTERY = resolve(ROOT, 'scripts', 'injection', 'gate-tests-battery.py');
 
 const HARNESS = [
-  'import contextlib, importlib.util, io, json, pathlib, sys',
+  'import contextlib, importlib.util, io, json, pathlib, sys, tempfile',
   `spec = importlib.util.spec_from_file_location('gtb', ${JSON.stringify(BATTERY)})`,
   'module = importlib.util.module_from_spec(spec)',
   'spec.loader.exec_module(module)',
@@ -119,6 +119,14 @@ module.EXPECTATIONS = {SYNTHETIC[0]: ${expectations}}
 module.EXPECTED_SURVIVORS = {}
 module.ORIGINALS = {SYNTHETIC[1]: pathlib.Path(SYNTHETIC[1]).read_text()}
 module.assert_vitest_is_callable = lambda: None
+# A table describing this one synthetic row, because the battery now refuses to run an
+# injection it has no witness for -- the check that keeps the shipped table complete. The
+# row is aimed at a real title of the file it points at, so what this harness exercises is
+# the aim's own path and not a bypass of it.
+table = pathlib.Path(tempfile.mkdtemp()) / 'gate-witnesses.json'
+table.write_text(json.dumps({'injections': {SYNTHETIC[0]: {'tests': [
+    'reads the newly supported shape where the shipped document uses it']}}}))
+module.WITNESSES_PATH = table
 buffer = io.StringIO()
 with contextlib.redirect_stdout(buffer):
     code = module.main()
@@ -135,7 +143,7 @@ SYNTHETIC = (
     lambda text: 'this is not javascript at all\\n' + text,
     'nothing: the mutation is a syntax error',
 )
-module.run_tests = lambda test_file: (_ for _ in ()).throw(
+module.run_tests = lambda test_file, aim=None: (_ for _ in ()).throw(
     AssertionError('the suite was invoked for a mutation that does not parse'))`;
 
 const UNATTRIBUTED_ROW = `
@@ -146,7 +154,7 @@ SYNTHETIC = (
     lambda text: text.replace('const ', 'let ', 1),
     'a test that cannot be named',
 )
-module.run_tests = lambda test_file: (
+module.run_tests = lambda test_file, aim=None: (
     1, '× some other test entirely\\nTests  1 failed (2)\\n', 0.1)`;
 
 /**

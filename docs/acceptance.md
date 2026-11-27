@@ -1241,6 +1241,48 @@ which is all but two in this tree.
   title is complete: a formatted title (`it.each`) still has no position, and the fallbacks it lands on are named as
   fallbacks in the sentence the gate prints.
 
+## An injection is aimed at the test that noticed it
+
+`scripts/injection/gate-tests-battery.py` proves each of its 66 injections by running the **whole test file** the gate
+is tested by, so an injection is charged for its neighbours' runtime. This section states what replaced that, and the
+two numbers it is judged by.
+
+- **The price is the file, not the guard.** Measured at v3.159 on one machine, one process at a time: **260.0 s** of
+  child time for 65 injections, of which `check-cli-reference.test.ts` (five injections, ten tests that each spawn the
+  CLI) is **120.6 s = 46.4%**, `gen-examples.test.ts` 42.7 s and `check-official-roundtrip.test.ts` 33.7 s.
+  `CLIREF 5` alone spends 24.4 s proving one guard. (v3.160, finding 673)
+- **The witness is the test that failed, and the run is aimed at it.** `--witnesses` writes
+  `golden-master/gate-witnesses.json`: one row per injection, holding the titles its whole-file run failed on and what
+  that run cost. The next run appends `-t <pattern>` and the aimed run decides the row **only** when it goes red with
+  the row's declared witnesses among the failures. A green aimed run and a red one on another test both send the row
+  to its whole file, which decides it exactly as before. (v3.160)
+- **The two numbers.** **260.5 s -> 77.4 s** on the same tree and machine, **65 of 65** aims held, **0** missed, one
+  row without a witness (the injection declared to survive). The slowest injection falls **24.4 s -> 4.5 s**.
+- **One failing title per declared witness is enough.** The first table held all 189 failing titles; `attribute` asks
+  whether each declared witness is among the failures, so `witness_titles` keeps the first title containing each and
+  the table holds **78** -- exactly the number of witnesses the rows declare. A witness no failing title contains
+  makes the row record every title instead, because a title `-t` cannot match would make the row miss forever.
+- **A test's printed name is not the name `-t` matches.** The reporter joins suites with ` > ` (`getTestName`) and the
+  filter joins them with a space (`getTaskFullName`), so the table's first aims **all** missed: `0 held, 65 missed
+  (no_red 65)`, every row paying for an aimed run that collected nothing and then for its whole file. Measured on
+  `check-readme-sample.test.ts`: the printed form gives `1 skipped, 9 skipped`, the space-joined form gives
+  `1 passed | 8 skipped`, and both exit 0. The table keeps the printed form -- it is what a reader greps the log for --
+  and `aim_pattern` substitutes. (v3.160, finding 674)
+- **The same form, one layer over, in the reconciliation.** `aim_problems` compared recorded titles against the test
+  file's source; `… > refuses a stale archive` is not a string any file contains, and the first run reported **65 of
+  65** rows as holding a title no test has. It compares the last segment now, and a stale *chain* is caught by the run
+  rather than by the reader.
+- **The table is reconciled three ways and cannot be written by an aimed run.** A key for no injection, an injection
+  with no row, and a title that is not in its file are all failures; `--witnesses` turns the aim off, because a table
+  built from aimed runs would record its own aim and could never repair a witness a rename took away.
+- **Falsified by nine mutations, each caught by the test that names the behaviour:** `plans = [None]` (5 red),
+  `if False:` for the aim rule (6), `escape_pattern` returning the name, no ` > ` -> space join, the whole title
+  compared, `named_tests` at the write site, the writing run aiming too (2), the missing-row check removed, and
+  `aimed_held += 1` removed. Source restored byte-identical after each (`md5sum -c`).
+- **What this does not claim.** That the floor is now the tests: it is the **number of injections**, one process start
+  each. Nor that `verify-gates-are-testable`'s two shards are balanced -- they are still positional and still read
+  **97 s against 232 s**, and a table of per-gate seconds is the artifact that would divide them.
+
 ## The two directions of a budget change
 
 `R6` compares the ceiling a recording was taken under with the ceiling `ci.yml` declares,

@@ -1227,3 +1227,118 @@ covered by the shipped-corpus case and the *collision* is not, which is stated h
 **What this does not claim.** That a reader of the gate would have noticed from the numbers: the sentence it printed
 named `v2.50` and the round it was judging was `v3.159`, and the only reason this was caught is that the round writing
 itself up was the round whose heading made the collision true.
+
+## Finding 673 — an injection paid for the whole file its witness lives in
+
+`gate-tests-battery.py` proves each of its 66 injections by running **the whole test file** the gate is tested by.
+That file's other tests are not evidence about the guard, and their runtime is charged to it all the same. Measured
+on this tree at v3.159, one process at a time, in the table's own order:
+
+| file | injections | whole file | charged | share |
+| --- | --- | --- | --- | --- |
+| `check-cli-reference.test.ts` | 5 | 23.9 s | **120.6 s** | **46.4%** |
+| `gen-examples.test.ts` | 10 | 4.3 s | 42.7 s | 16.4% |
+| `check-official-roundtrip.test.ts` | 3 | 11.3 s | 33.7 s | 13.0% |
+| `build-example-bundle.test.ts` | 5 | 3.5 s | 17.1 s | 6.6% |
+| the other 14 files | 42 | <= 2.8 s each | 45.9 s | 17.6% |
+| **total** | **65** | | **260.0 s** | |
+
+The first row is 46% because its ten tests each spawn the real CLI, so `CLIREF 5` spends 24.4 s proving one guard and
+8 s of that belong to tests it never looks at. This is the same shape the sites battery had until v3.158, and this is
+the same device on it: the report of a run already names the test that failed, the table records it, and the next run
+is aimed at that test with `--testNamePattern`.
+
+**The rule, which is the whole of the design.** An injection with a recorded witness costs at most two runs:
+
+| the aimed run did | what it decides |
+| --- | --- |
+| went red, with the row's declared witnesses among the failures | the row -- one test depends on the guard |
+| stayed green | nothing: the tests the aim skipped never ran, so the **whole file** decides |
+| went red on another test | nothing: the aim matched something, which is not a claim about the guard |
+
+Only `CAUGHT` can be read off an aimed run, and the two ways it can miss are counted and printed separately
+(`aim: 65 held, 0 missed, 1 without a witness`). The one row without a witness is the injection declared to survive,
+which has no failing test to aim at.
+
+**Why the table records the fewest titles.** The first table recorded every failing title -- **189** across the 65
+rows -- and a removed guard often breaks a dozen tests (`README 1` breaks 12). `attribute` asks whether each declared
+witness appears among the failures, so one failing title per witness is enough: `witness_titles` keeps the first title
+containing each, and the table drops from 189 titles to **78**, which is exactly the number of witnesses the rows
+declare. Where a witness matches no failing title the row records every title instead, because a title `-t` cannot
+match would make the row miss on every run.
+
+**Measured, the same machine, the same tree, one process at a time:**
+
+| run | child time | slowest injection |
+| --- | --- | --- |
+| whole files (`--witnesses`, v3.159 tree) | **260.5 s** | 24.4 s (`CLIREF 2`) |
+| aimed (v3.160) | **77.4 s** | 4.5 s (`CLIREF 1`) |
+
+**3.37x**, 65 of 65 aims held, 0 missed. The first 41 s of what is left is `CLIREF`'s five witness tests
+(1.4--4.5 s each, all of them spawning the CLI); the rest is 66 process starts at ~0.9 s.
+
+**Falsification, nine mutations, each caught by the test that names it:**
+
+| mutation | red |
+| --- | --- |
+| `plans = [None]` -- never aim | 5 tests, including both fallback arms |
+| `if False:` -- any aimed verdict decides | 6 tests |
+| `escape_pattern` returns the name | the escaping case |
+| no ` > ` -> space join | the two-spellings case |
+| the whole title compared in the reconciliation | the shipped-table case |
+| `named_tests` instead of `witness_titles` | the writing-mode case |
+| the writing run aims too | 2 tests |
+| the missing-row check removed | the reconciliation case |
+| `aimed_held += 1` removed | the counter case |
+
+**What this does not claim.** That the floor is now the tests: it is the **number of injections**, one process start
+each, and the only lever under it is fewer injections or a runner that can be aimed at several files at once -- which
+this battery cannot be, because every injection needs the tree to itself. Nor that the two shards of
+`verify-gates-are-testable` are balanced: they are still positional and still read 97 s against 232 s, and a table of
+per-gate seconds is what would divide them, exactly as this table divides nothing.
+
+## Finding 674 — a test's printed name is not the name `-t` matches
+
+The battery's first table recorded the failing titles **as the runner printed them**, and every aim built from it
+missed: `0 held, 65 missed (no_red 65)`, each row paying for an aimed run that collected nothing and then for its
+whole file -- 77 s of measurement turned into 150 s.
+
+The cause is two joins of the same segments. The reporter prints a failure with `getTestName(task, ' > ')`, which
+joins the enclosing suites with ` > `; the filter matches `getTaskFullName`, which joins them with a **space**:
+
+```js
+function getTaskFullName(task) {
+  return `${task.suite ? `${getTaskFullName(task.suite)} ` : ""}${task.name}`;
+}
+```
+
+Measured on this tree, `check-readme-sample.test.ts`, same commit, one after the other:
+
+| `-t` pattern | result |
+| --- | --- |
+| `… · what it asserts about a good sample > executes a sample block and reports it by number` | `1 skipped`, `9 skipped` |
+| `… · what it asserts about a good sample executes a sample block and reports it by number` | `1 passed | 8 skipped` |
+
+Both exit 0. The first is the whole of the defect: a pattern that matches nothing is indistinguishable from a run
+whose tests all passed, and the battery's own fallback then paid for the file twice.
+
+**The repair is one substitution in one place.** The table keeps the printed form -- it is the string a reader greps
+the log for, and the string the reconciliation can hold against a test file -- and `aim_pattern` replaces ` > ` with a
+space before escaping. A title that itself contains ` > ` is mangled by that substitution; the pattern then matches
+nothing, the row falls back, and the cost is one run. No title in this tree contains one.
+
+**The same defect in the reconciliation, one layer over.** `aim_problems` compared each recorded title against the
+test file's **source**, and the printed form never appears there: `describe('scripts/build-example-bundle.mjs · what it
+refuses')` and `it('refuses a stale archive')` are two statements, and `… > refuses a stale archive` is one string the
+file does not contain. The first run after the table was written reported **65 of 65** rows as holding a title no test
+file has -- a reader accusing every row of the table it had just been handed. The check now compares the last segment,
+which is the test's own title; a stale *chain* is caught by the run rather than by the reader, because the aim then
+matches nothing and the row falls back as a counted miss.
+
+**Falsification.** Deleting the join turns the two-spellings case red; restoring the whole-title comparison turns the
+shipped-table case red with `'scripts/… > refuses a stale archive' is not a test title in
+build-example-bundle.test.ts`.
+
+**What this does not claim.** That `-t` is an address: two tests with one title in different suites are one pattern,
+and `attribute` cannot tell them apart either -- it asks whether the declared witnesses appear among the failures, and
+a duplicate title makes both appear. The aim inherits that limit rather than creating it.

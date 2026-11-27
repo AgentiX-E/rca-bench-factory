@@ -1500,9 +1500,9 @@ because its keys are `file:line` and this round moved three of them.
 | the tree, per file | `check-test-budgets` reads 262 files and 7,109 tests: **44** state a budget, **11** of them on the test that is slowest, **20** hold a test at or above 1 000 ms, and the closest to its budget is `step-process.test.ts` at **43%** of 8 000 ms |
 | CI | run `45853859064` on `67ab0a5`: **9 of 9 jobs success**, **551 s** of wall clock -- the run of the commit that shipped this round's reader, and reading **60**. Longest job `batteries` **547 s**, then `gates-audit` **515 s**; inside `batteries` the gate-test battery alone cost **306 s** (**56%** of the job), and the divided pair read **111 / 129 s** (**16.2%**, the second half heavier) against a table that makes it 0.0% -- the sixth reading of that division, and the widest remains reading 59's **99 / 182 s** (**45.6%**) |
 | the arm that judged another volume's record (672) | `check-open-list` found the newest round's record by line alone, and `v3.159`'s heading sits at the same index in `volume-22.md` as `v2.50`'s in `volume-05.md`: it printed two of `v2.50`'s residuals as this round's and never judged this round's record. The key is the pair (file, line); the shipped corpus is the falsification, and no fixture can build a collision because the volumes are read from the tree |
-| `core` test suite | **262 files, 7,109 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **266 files, 7,296 tests passed** (as of this commit) |
+| `core` test suite | **262 files, 7,109 tests passed** (at v3.159) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.159) |
+| repo test suite | **266 files, 7,296 tests passed** (at v3.159) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
 | new tests | **7,100 -> 7,109, +9**: the sibling fixture and the nested inheritance with two tests of one title, the refusal to read a `timeout:` out of a suite's body, the `vi.setConfig` arm four ways, the unplaceable-title fallback, `suiteBudgetOf` on its own, and three in `check-test-budgets`: the unbudgeted sibling end to end, the child-timeout fixture, and the `describe.each` title no source spells |
 | CI | run `45847128112` on `0394301`: **9 of 9 jobs success**, **455 s** of wall clock -- the round's first commit, the one that declared the two budgets run `45841748590` named, **8 of 9 -> 9 of 9**. Longest job `gates-audit` at **451 s**, then `batteries` **439 s**; the divided pair read **99 / 182 s** (**45.6%** apart, the first half lighter for the first time in five readings) against a table that makes it 0.0%, and the gate-test battery inside `batteries` cost **231 s** |
@@ -1518,3 +1518,68 @@ because its keys are `file:line` and this round moved three of them.
   fallback is unused today.
   `[open: whether the reader should pair the nth `it.each` call with the nth printed name, or whether a file that uses
   a formatted title must state its clock on the suite -- the two answers a reader without a position can be given]`
+
+## v3.160 — an injection is aimed at the test that noticed it
+
+v3.159 closed with the queue read afresh and one item surviving every reading of it: the gate-test battery, 306 s of
+the `batteries` job's 547 s on reading 60, and 197 + 236 s of runner time in reading 55. The ledger's own sentence
+named the lever and priced it -- *81% and 89% of its child time is the tests' own, not the 69 process starts, so the
+lever is running fewer tests per gate* -- and this round is that sentence, applied.
+
+The battery proves each of its 66 injections by running **the whole test file** its gate is tested by, so an injection
+is charged for its neighbours' runtime. Measured here, one process at a time and in the table's own order: **260.0 s**
+across 65 injections, of which `check-cli-reference.test.ts` -- five injections, ten tests that each spawn the real
+CLI -- is **120.6 s, 46.4%**, `gen-examples.test.ts` 42.7 s (16.4%), `check-official-roundtrip.test.ts` 33.7 s
+(13.0%). `CLIREF 5` spends 24.4 s proving one guard, and 16 s of that belong to tests it never looks at.
+
+The repair is the device v3.158 built for the sites battery, moved to this one: the report of a run already names the
+test that failed, `--witnesses` writes those titles to `golden-master/gate-witnesses.json`, and every later run appends
+`-t <pattern>`. The rule that makes it safe is the asymmetry the sites battery paid for: an aimed run decides a row
+**only** when it goes red with the row's declared witnesses among the failures; a green aimed run and a red one on
+another test both send the row to its whole file, which decides it exactly as before. So the aim can make a run
+cheaper and can never make a claim truer, and the ways it can miss are counted and printed apart.
+
+One failing title per declared witness is enough -- `attribute` asks whether each witness is among the failures -- so
+the table keeps the first title containing each and drops the rest: **189 titles to 78**, which is exactly the number
+of witnesses the 65 rows declare.
+
+Then the run itself found the defect the first table had. The reporter prints a failed test as
+`suite · name > title` (`getTestName` joins with ` > `) and `-t` matches `getTaskFullName`, which joins the same
+segments with a **space** -- so every aim of the first table missed: **0 held, 65 missed (no_red 65)**, 77 s of
+measurement turned into 150 s. Measured on `check-readme-sample.test.ts`: the printed form gives `1 skipped,
+9 skipped`, the space-joined form gives `1 passed | 8 skipped`, and both exit 0. The same form, one layer over, made
+the reconciliation accuse **65 of 65** rows of holding a title no test file contains -- the printed chain is never one
+string in a source that writes `describe('a · b')` and `it('c')` separately.
+
+| | |
+| --- | --- |
+### Readings
+
+> Ledger for `v3.160`.
+
+| item | value |
+| --- | --- |
+| the price of an injection before this round | **260.0 s** of child time for 65 injections, one process at a time: `check-cli-reference.test.ts` **120.6 s (46.4%)**, `gen-examples.test.ts` 42.7 s (16.4%), `check-official-roundtrip.test.ts` 33.7 s (13.0%), `build-example-bundle.test.ts` 17.1 s (6.6%), the other 14 files 45.9 s (17.6%) -- and the slowest single injection `CLIREF 5` at **24.4 s** |
+| what the table holds now | **65 rows** (66 injections less the one declared to survive), **78 titles** -- one per declared witness, down from the **189** failing titles the first table recorded -- plus the whole-file milliseconds each row cost |
+| the run after it | **260.5 s -> 77.4 s** on the same tree and machine, **3.37x**; **65 held, 0 missed**, 1 row without a witness; slowest injection **24.4 s -> 4.5 s** |
+| the aim's four outcomes | red with the declared witnesses present -> the row, one run; green -> nothing, the whole file decides; red on another test -> nothing, the whole file decides; timeout -> `TIMEOUT`, unchanged. Only `CAUGHT` is ever read off an aimed run |
+| the two spellings (674) | `getTestName(task, ' > ')` prints, `getTaskFullName` joins with a space and `-t` matches that: measured `1 skipped, 9 skipped` against `1 passed | 8 skipped`, both exit 0. The first table's aims were all misses (**0 held, 65 missed**), and its whole-title reconciliation reported **65 of 65** rows as holding a title no file has. The table keeps the printed form; `aim_pattern` substitutes; the check compares the last segment |
+| falsification, nine mutations | `plans = [None]` **5** red; `if False:` for the aim rule **6**; `escape_pattern` returning the name **1**; no ` > ` -> space join **1**; the whole title compared **1** (the shipped-table case); `named_tests` at the write site **1**; the writing run aiming too **2**; the missing-row check removed **1**; `aimed_held += 1` removed **1**. Source restored byte-identical after each |
+| what is left inside the battery | **77.4 s**, of which ~41 s is `CLIREF`'s five witness tests (1.4--4.5 s each) and the rest is 66 process starts at ~0.9 s: the floor is the **number of injections**, not the tests they run |
+| `core` test suite | **263 files, 7,126 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **267 files, 7,313 tests passed** (as of this commit) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
+| new tests | **7,109 -> 7,126, +17** in one new file (`gate-test-battery-aim.test.ts`): the three arms of the aim driven through the shipped `_measure` with a stub runner, the counters read from that run's own summary, the writing mode's table, the escaping pair, the two spellings, the minimal cover and its unmatchable fallback, the three reconciliation faults with their positive control, and the shipped table's own reconciliation |
+| the tree, per file | `check-test-budgets` reads 263 files and 7,126 tests: the file this round adds declares its own clock (`SUITE_BUDGET_MS`), and the twenty files at or above the 1 000 ms floor are read on the box that measured them |
+| `Tracked files` | **685 -> 687**: the witness table and the new test file -- both counted by `check-repository-table` only once staged, which is the check that refuses a table describing the index and the worktree at once |
+
+### Left open
+
+- `O-145` · **The two shards of `verify-gates-are-testable` are divided by position, and read 97 s against 232 s.** This round paid the first half (the battery), and the artifact it built is not the one that half
+  needs: the battery's table prices **injections** in a test file, and the shard divides **gates** in the inventory.
+  A table of per-gate seconds could be written by the same instrument -- it already prints each subject's own
+  duration, and finding 669's `suiteOwnMs` made that line readable on the runner -- and divided by the LPT rule the
+  sites battery uses for its 68 claimants.
+  `[open: whether the per-gate table should be a new file or an arm of `gate-sites.json`, and whether a gate's price is
+  its whole run or the arithmetic above its own suite time -- the two numbers the run already prints]`

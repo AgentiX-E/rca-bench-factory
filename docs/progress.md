@@ -440,10 +440,10 @@ document that described it as downloading the data was describing an intention.
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 98 |
 | Source lines | 34,609 |
-| Test files | 262 core + 4 cli |
-| Test lines | 122,829 core + 3,242 cli |
-| Tests | 7,109 core + 187 cli |
-| Tracked files | 685 |
+| Test files | 263 core + 4 cli |
+| Test lines | 123,311 core + 3,242 cli |
+| Tests | 7,126 core + 187 cli |
+| Tracked files | 687 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.159: **52** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.160: **53** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1181,16 +1181,14 @@ is a row about rather than paraphrase one that no `grep` will find.
   0.0% apart. So the queue that reading 55 read is not the queue
   reading 56 reads, and what survives both is the *item*: the gate-test battery, **197 + 236 s** of runner time in
   reading 55 and **145 + 174 s** in reading 56, is the largest single thing in the workflow on either reading.
-  `[open: the next cut is inside that battery, and the measurement that names it is the battery's own cost line --
-  81% and 89% of its child time is the tests' own, not the 69 process starts, so the lever is running fewer tests
-  per gate: the witness mechanism v3.158 built for the sites battery, applied to 69 gates that each run every test
-  in the files that name them, with a stale witness falling back to the whole file as that round's does. What that
-  leaves open is the split: the two shards are positional and read 97 s against 232 s here, and a table of per-gate
-  seconds would balance them by the same LPT rule the sites battery uses -- one artifact, two uses (a price for the
-  division and a witness for the aim) -- but the price has to be readable first, which is finding 669: the cost
-  line printed 0.0 s of 97.2 on the runner because a `\x1b[22m` sits between `Duration\s+` and the digits, and
-  `suiteOwnMs` now strips for itself. A queue read from one run is a queue read from one session, which is why this
-  entry no longer names an order]`
+  `[open: that cut is paid (v3.160, finding 673: the sites battery's witness mechanism applied to 66 injections, whose
+  table records the failing title per row and aims the next run at it -- **260.5 s -> 77.4 s**, 65 of 65 aims held,
+  slowest injection 24.4 s -> 4.5 s), and what remains of this entry is the part the battery cannot price: the split
+  of `verify-gates-are-testable`'s two shards, which is `O-145`'s now. A queue read from one run is a queue read from
+  one session, which is why this entry does not name an order. And the floor under the battery is now
+  the **number of injections** -- one process start each, ~0.9 s here and ~1.3 s on the runner -- not the tests it
+  runs, so the next cut inside the battery is fewer injections or a runner that can be aimed at several files at
+  once, which this battery cannot be while every injection needs the tree to itself]`
 
 - O-144 · **A title is not an address: a formatted test title has no position, and the reader that needs one guesses the file.**
   v3.159 resolves the suite a test is written in by finding the call that holds it, and the only handle a report gives a
@@ -1203,6 +1201,18 @@ is a row about rather than paraphrase one that no `grep` will find.
   `[open: whether the reader should pair the nth `it.each` call with the nth printed name, which the report's order allows
   until a table's rows are filtered and that pairing becomes a guess, or whether a file that uses a formatted title must
   state its clock on the suite, since a suite's number is the only clock a reader without a position can place]`
+
+- O-145 · **The two shards of `verify-gates-are-testable` are divided by position, and read 97 s against 232 s.**
+  `shardOf` takes every subject whose index satisfies `position % total === index - 1`, which is a division by position
+  and by nothing else, and position in the inventory correlates with price: reading 55's gate audit spent **97 s** in
+  one shard and **232 s** in the other, so the workflow's wall clock is the slower half and the faster one waits. The
+  sites battery had this shape twice -- v3.157 divided its pair by `golden-master/sensitivity-costs.json` and v3.158
+  made the table carry a witness per claim -- and the artifact this round built prices **injections** in a test file,
+  while this shard divides **gates** in the inventory, so the battery's table cannot be reused for it. What the gate
+  already prints is the missing input: each subject's own duration, readable on the runner since finding 669's
+  `suiteOwnMs`.
+  `[open: whether the per-gate table should be a new file or an arm of `gate-sites.json`, and whether a gate's price is
+  its whole run or the arithmetic above its own suite time -- the two numbers the run already prints]`
 
 ## Pass log
 
@@ -1242,7 +1252,7 @@ and this table.
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
 | [volume-20.md](progress/volume-20.md) | 8 | v3.134 | v3.141 |
 | [volume-21.md](progress/volume-21.md) | 9 | v3.142 | v3.150 |
-| [volume-22.md](progress/volume-22.md) | 9 | v3.151 | v3.159 |
+| [volume-22.md](progress/volume-22.md) | 10 | v3.151 | v3.160 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
