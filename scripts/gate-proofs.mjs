@@ -17,9 +17,16 @@
  *
  * Nothing. `classify` returns a verdict word and the facts behind it; the gate
  * decides what to do with them.
+ *
+ * It does hold the **shard plan**: which gate belongs to which half, and what the
+ * halves cost. That is a reading of a committed table rather than of a run, and it
+ * lives here for the same reason the parser does -- the gate may not be imported by a
+ * test, so anything about it that needs proving has to be somewhere else.
  */
 
 import ts from 'typescript';
+
+import { assignShards, shardLoad } from './site-proofs.mjs';
 
 
 /**
@@ -340,4 +347,161 @@ export function suiteOwnMs(out) {
   const match = /Duration\s+([\d.]+)(ms|s)\b/.exec(stripAnsi(out));
   if (match === null) return null;
   return match[2] === 's' ? Number(match[1]) * 1000 : Number(match[1]);
+}
+
+/**
+ * The seconds each gate has cost, from a row of `golden-master/gate-costs.json`.
+ *
+ * `null` rather than an empty map when the file has no `gates` object, because the two
+ * are different facts: an empty map is a table that priced nothing and a caller can
+ * refuse it by name, while `undefined` read as "no costs yet" would divide the
+ * inventory by nothing and produce a partition that looks deliberate.
+ */
+function gateCosts(table) {
+  const rows = table?.gates;
+  if (rows === null || typeof rows !== 'object' || Array.isArray(rows)) return null;
+  const costs = new Map();
+  for (const [gate, row] of Object.entries(rows)) costs.set(gate, Number(row?.ms));
+  return costs;
+}
+
+/**
+ * How far apart the two halves are, as a percentage of the heavier one.
+ *
+ * The one number a split is judged on: the workflow's wall clock is the slower shard, so
+ * a pair that reads 240 s and 246 s spends six seconds waiting and a pair that reads
+ * 146 s and 241 s spends a minute and a half. `null` when there is no load to divide by,
+ * because "0.0% apart" for two empty shards is the arithmetic saying nothing.
+ */
+export function apartPercent(loads) {
+  if (!Array.isArray(loads) || loads.length === 0) return null;
+  const heaviest = Math.max(...loads);
+  if (!(heaviest > 0)) return null;
+  return ((heaviest - Math.min(...loads)) / heaviest) * 100;
+}
+
+/**
+ * Whether a cost table describes the inventory it is being used to divide.
+ *
+ * A table is a measurement of a tree, and the tree moves: a gate is added to the
+ * inventory, a test file starts naming a gate, a gate's tests grow. Each of those leaves
+ * the table describing a tree that no longer exists, and a partition derived from it
+ * would be a partition of the wrong set -- silently, because a shard handed a gate the
+ * table never priced would look exactly like a shard that was given it on purpose.
+ *
+ * So the identity is refused in both directions (a gate with no row, a row with no gate),
+ * and a row's price and file count are read as the numbers they claim to be. The count is
+ * compared **where the caller knows it**: `--list` answers a query and does not sweep 254
+ * test files to do it, while a run that measures the gates has already swept them. That
+ * asymmetry is why the second element of `byGate` may be `null` -- a caller with no count
+ * says so rather than passing a zero that would read as a mismatch.
+ *
+ * What this cannot see: a test file that keeps its name and changes its contents. A gate
+ * whose tests got twice as heavy under the same filename leaves a table that is stale in
+ * the direction this verdict calls fine, and only a re-measure finds it. Stated rather
+ * than guarded, because a check that claimed to cover it would be the shape finding 168
+ * recorded -- a guard reading something adjacent and calling it the property.
+ */
+export function checkGateCosts(byGate, table) {
+  const errors = [];
+  const rows = table?.gates;
+  if (rows === null || typeof rows !== 'object' || Array.isArray(rows)) {
+    return ['the cost table has no `gates` map, so no gate can be placed by it'];
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(table?.measured ?? ''))) {
+    errors.push(
+      `the cost table does not say the day it was measured (\`measured\` is ` +
+        `'${String(table?.measured)}'): a seconds figure with no date is a figure about another tree`,
+    );
+  }
+  if (String(table?.machine ?? '').trim() === '') {
+    errors.push('the cost table does not say which machine measured it (`machine`), so its seconds have no owner');
+  }
+  if (!/--costs|run \d{10,12}/.test(String(table?.source ?? ''))) {
+    errors.push(
+      'the cost table does not say where its numbers came from (`source` names neither the command ' +
+        'that wrote it, `--costs`, nor the run it was read from, `run <id>`)',
+    );
+  }
+  for (const [gate, files] of byGate) {
+    const row = rows[gate];
+    if (row === undefined) {
+      errors.push(
+        `\`${gate}\` is in the inventory and the cost table does not name it, so no shard can be told ` +
+          'whether it owns it: regenerate it with ' +
+          '`node scripts/verify-gates-are-testable.mjs --costs golden-master/gate-costs.json`',
+      );
+      continue;
+    }
+    if (files !== null && files !== undefined) {
+      if (!Number.isInteger(row.files) || row.files <= 0) {
+        errors.push(
+          `\`${gate}\`'s files is ${String(row.files)}, which is not a count of the test files that name ` +
+            'it, so the seconds it carries cannot be compared with this tree',
+        );
+      } else if (row.files !== files) {
+        errors.push(
+          `\`${gate}\` is named by ${String(files)} test file(s) and the table says ${String(row.files)}, ` +
+            'so the seconds it carries include a run that no longer exists',
+        );
+      }
+    }
+    if (!Number.isInteger(row.ms) || row.ms <= 0) {
+      errors.push(
+        `\`${gate}\`'s ms is ${String(row.ms)}, which is not a measured number of milliseconds, so the ` +
+          'gate cannot be priced',
+      );
+    }
+  }
+  const known = new Set(byGate.map(([gate]) => gate));
+  for (const gate of Object.keys(rows)) {
+    if (known.has(gate)) continue;
+    errors.push(
+      `the cost table names \`${gate}\` and the inventory does not name it, so the seconds it carries were ` +
+        'measured on a tree that has since changed: regenerate it with `--costs`',
+    );
+  }
+  return errors;
+}
+
+/**
+ * Which gates belong to which shard, by what each has cost.
+ *
+ * ## Why this is the sites battery's rule and not a second spelling of it
+ *
+ * `assignShards` has divided the sites battery's claimants since v3.157, and the argument
+ * for it is one paragraph of arithmetic: longest processing time first, the dearest
+ * subject on the emptiest shard, ties broken by name and by the lower shard index, so the
+ * plan is a pure function of the table and the inventory. Dividing a set of indivisible
+ * subjects is bin packing, and LPT is a 4/3-approximation -- but with 69 gates the gap it
+ * leaves is a fraction of the dearest gate, against the 37% position left.
+ *
+ * The one thing a second spelling would buy is the refusal, and that is cheaper to write
+ * than to keep two partitions in agreement: the price is checked here first, so the
+ * sentence a missing row produces names `gate-costs.json` rather than the sites table.
+ *
+ * ## What it is not claimed to be
+ *
+ * Optimal. The optimal split of 69 gates is not something this file computes, and a table
+ * measured on one machine's afternoon is the wrong input for that claim anyway. What is
+ * claimed is that the plan is deterministic, that it is derived from a number the tree
+ * carries, and that the two jobs wait on each other for a fraction of what they did.
+ */
+export function gateShardPlan(byGate, count, table) {
+  const costs = gateCosts(table);
+  if (costs === null) {
+    throw new Error('the cost table has no `gates` map, so no gate can be placed by it');
+  }
+  for (const [gate] of byGate) {
+    const ms = costs.get(gate);
+    if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) {
+      throw new Error(
+        `no measured cost for ${gate}, so it cannot be placed on a shard: regenerate ` +
+          'golden-master/gate-costs.json with `node scripts/verify-gates-are-testable.mjs --costs ' +
+          'golden-master/gate-costs.json`',
+      );
+    }
+  }
+  const shards = assignShards(byGate.map(([gate]) => [gate]), count, costs);
+  return { shards, loads: shardLoad(shards, costs) };
 }

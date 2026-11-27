@@ -168,7 +168,7 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   the `sensitivity` job runs `verify-sites-are-sensitive.mjs`, which asks whether that
   file **notices** the exit's absence -- one run per claim with that site's code
   replaced by success, and a baseline run per file so a red claimant cannot be
-  credited with catching anything. Measured at **256 of 256** claim(s) across 68 file(s) -- two more
+  credited with catching anything. Measured at **262 of 262** claim(s) across 69 file(s) -- two more
   than v3.140's 232, because an attempt that does not exist and an attempt with no job in it are two
   refusals `measure-ci-baseline.mjs` did not have before, and each carries a proof; two more again
   at v3.144, because a recording that cannot say which measurement is the newest and a measurement
@@ -190,6 +190,12 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   down. The third is the same refusal the audit already made about an empty inventory, re-derived
   against the pre-shard list, so that a shard nobody selected and an inventory nobody filled do not
   share one sentence.
+  Six more at v3.161, because the audit's two halves are divided by a committed table: four exits --
+  `--costs` given a shard, a list, or no path at all; a shard with no table; a table that does not
+  describe this tree; and a `--costs` run that did not measure every gate, which is the writer
+  refusing to price the half of an inventory it skipped -- and two throws inside `gateShardPlan`, a
+  table with no `gates` map and a gate it has not priced, which hand control to the caller the way
+  `assignShards`' two do.
   The figure was 105 of 105 in both halves at v3.41, and it drifted for twenty-four rounds
   because nothing read the sentence -- an external reviewer quoted the 105 as the current
   state, which is what a number with no reader costs. `check-doc-counts` reads it now:
@@ -3213,3 +3219,40 @@ from an anecdote again.
 - **Falsified by** 5 mutations -- the cost line printing a constant, the pool never overlapping, a shard
   dropping a subject, a shard selecting nothing, and `R11` accepting a gap no promise explains -- **5** reds,
   no survivor.
+
+## The halves of the gate audit are divided by what the gates cost
+
+`scripts/verify-gates-are-testable.mjs` runs 69 gates from two jobs, and until v3.160 the two jobs were divided **by
+position**. This section states what divides them now, what the division is measured against, and what it does not
+claim.
+
+- **The price is the gate, and position knows nothing about it.** The two steps read **118 / 198 s** (reading 59),
+  **149 / 239 s** (reading 60) and **146 / 241 s** (reading 61) -- 40.4%, 37.7% and 39.4% apart, against a plan whose
+  arithmetic says 0.0% -- and the workflow's wall clock is the slower of the two. (v3.161, finding 675)
+- **A committed table, not a live measurement.** `--costs <path>` writes `golden-master/gate-costs.json` from a run
+  that measured **every** gate: one row per gate, the milliseconds its nested runs cost, and how many test files it
+  ran. The file is in the repository, so every machine reads the same numbers and derives the same halves; a split by
+  live seconds would not, which is the reason position was chosen in v3.154 and the reason it does not apply here.
+- **One placement rule, borrowed rather than re-spelled.** `--shard i/n` divides the table by longest-processing-time
+  first, through the `assignShards`/`shardLoad` the sites battery has used since v3.157: the dearest gate on the
+  emptiest shard, ties broken by name and by the lower index, inventory order inside each shard so `--list --shard`
+  and the unsharded list compare line by line.
+- **The two numbers.** The shipped table is **69** gates and **287.5 s** of child time, dearest `check-official.mjs`
+  at **28.4 s (9.9%)**. Divided by position it is **106.0 s / 181.6 s** (**41.6%** apart); divided by the table it is
+  **143.1 s / 144.4 s** (**0.89%**), 34 and 35 gates.
+- **Four refusals, none of them a fallback.** A shard with no table is refused, because a fallback would be a second
+  partition under one name and the halves `ci.yml` runs would stop being the halves a local `--shard` runs. A table
+  that does not describe this inventory is refused in both directions -- a gate with no row, a row with no gate -- and
+  a row's file count is compared where the caller knows it, which is a measuring run and not `--list`. `--costs` is
+  refused beside `--shard` or `--list`, and refused on a run that did not measure every gate: a table is a measurement
+  of every subject or it is not a table.
+- **What it does not claim.** Not optimality (dividing indivisible subjects is bin packing, and LPT is a 4/3
+  approximation), not portability of the seconds (the table is one machine's afternoon), and not that a stale table is
+  caught in general: a test file that grows under the same name leaves a table stale in the direction the verdict
+  calls fine. That hole is stated in `gate-proofs.mjs` rather than guarded.
+- **The falsification.** `gate-costs.test.ts` divides the shipped table with both rules and asserts the plan's gap is
+  smaller than position's on the same numbers; the partition case asserts the union of the slices is the inventory
+  and no gate is in two; the refusal cases drive a stale table, a table with a row for a gate that is gone, a missing
+  table, and `--costs` on a run that skipped a gate. And the sensitivity battery falsified the new claim once on its
+  own: the sentence for a gate `gateShardPlan` cannot price was asserted loosely enough to accept `assignShards`'
+  message next door, so replacing the throw with success left the test green. The assertion names this table now.

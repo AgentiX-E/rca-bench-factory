@@ -1564,7 +1564,7 @@ differing between the two commits -- a **24 s** spread that is the machine's day
 this row quotes both. Against reading 60's **306 s** the step is **2.76x** to **3.52x** cheaper, and **32%** of its job
 where it was **56%**; the `batteries` job fell **547 s -> 344 s**, and the step's neighbours moved with the day too
 (`Every gate can be shown to fail` read 149 s at reading 60, 116 s in the red run and 146 s in the green one). The gates
-division read **146 / 241 s** in the green run against reading 60's **149 / 239 s**: the same pair, 39.3% and 37.7% apart
+division read **146 / 241 s** in the green run against reading 60's **149 / 239 s**: the same pair, 39.4% and 37.7% apart
 where the table makes it 0.0%, which is `O-145`'s number and not this round's to close.
 
 ### Readings
@@ -1580,9 +1580,9 @@ where the table makes it 0.0%, which is `O-145`'s number and not this round's to
 | the two spellings (674) | `getTestName(task, ' > ')` prints, `getTaskFullName` joins with a space and `-t` matches that: measured `1 skipped, 9 skipped` against `1 passed | 8 skipped`, both exit 0. The first table's aims were all misses (**0 held, 65 missed**), and its whole-title reconciliation reported **65 of 65** rows as holding a title no file has. The table keeps the printed form; `aim_pattern` substitutes; the check compares the last segment |
 | falsification, nine mutations | `plans = [None]` **5** red; `if False:` for the aim rule **6**; `escape_pattern` returning the name **1**; no ` > ` -> space join **1**; the whole title compared **1** (the shipped-table case); `named_tests` at the write site **1**; the writing run aiming too **2**; the missing-row check removed **1**; `aimed_held += 1` removed **1**. Source restored byte-identical after each |
 | what is left inside the battery | **77.4 s**, of which ~41 s is `CLIREF`'s five witness tests (1.4--4.5 s each) and the rest is 66 process starts at ~0.9 s: the floor is the **number of injections**, not the tests they run |
-| `core` test suite | **263 files, 7,126 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **267 files, 7,313 tests passed** (as of this commit) |
+| `core` test suite | **263 files, 7,126 tests passed** (at v3.160) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.160) |
+| repo test suite | **267 files, 7,313 tests passed** (at v3.160) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** |
 | new tests | **7,109 -> 7,126, +17** in one new file (`gate-test-battery-aim.test.ts`): the three arms of the aim driven through the shipped `_measure` with a stub runner, the counters read from that run's own summary, the writing mode's table, the escaping pair, the two spellings, the minimal cover and its unmatchable fallback, the three reconciliation faults with their positive control, and the shipped table's own reconciliation |
 | the tree, per file | `check-test-budgets` reads 263 files and 7,126 tests: the file this round adds declares its own clock (`SUITE_BUDGET_MS`), and the twenty files at or above the 1 000 ms floor are read on the box that measured them |
@@ -1596,6 +1596,75 @@ where the table makes it 0.0%, which is `O-145`'s number and not this round's to
   A table of per-gate seconds could be written by the same instrument -- it already prints each subject's own
   duration, and finding 669's `suiteOwnMs` made that line readable on the runner -- and divided by the LPT rule the
   sites battery uses for its 68 claimants. The pair reads **146 / 241 s** in this round's own run and **149 / 239 s**
-  in reading 60: 39.3% and 37.7% apart, where the table makes the division 0.0%.
+  in reading 60: 39.4% and 37.7% apart, where the table makes the division 0.0%.
   `[open: whether the per-gate table should be a new file or an arm of `gate-sites.json`, and whether a gate's price is
   its whole run or the arithmetic above its own suite time -- the two numbers the run already prints]`
+
+## v3.161 — the halves of the gate audit are divided by what the gates cost
+
+v3.160 closed with `O-145` open and one sentence in it: the two shards of `verify-gates-are-testable` are divided by
+position, and read **146 s against 241 s**. The reason for position was written down twice -- in the gate and in the
+workflow -- and it is a good reason about the wrong thing: *a split by measured seconds would have to be re-derived
+after every run and would put the same gate in different shards on different machines*, and a plan `ci.yml` runs and a
+plan a test checks have to be the same plan. Both halves are true of **live** seconds. Neither is true of a committed
+table, which is the argument v3.157 already made for the sites battery one directory over.
+
+The cost is arithmetic about two runners. The workflow's wall clock is the **slower** of the two jobs, so every second
+between them is a second one runner spends waiting -- and the three readings of this pair are 40%, 38% and 39% apart
+against a plan whose own arithmetic says 0.0%:
+
+| reading | shard 1 | shard 2 | apart |
+| --- | --- | --- | --- |
+| 59 (`45847128112`) | 118 s | 198 s | **40.4%** |
+| 60 (`45853859064`) | 149 s | 239 s | **37.7%** |
+| 61 (`45928458435`) | 146 s | 241 s | **39.4%** |
+
+The repair is the sites battery's device, moved to the gates: `--costs <path>` writes
+`golden-master/gate-costs.json` from a run that measured **every** gate -- one row per gate, the milliseconds its own
+nested runs cost and how many test files it ran -- and `--shard i/n` divides that table by longest-processing-time
+first through the same `assignShards`/`shardLoad` pair, which is why the placement rule has one spelling rather than
+two. Position's own soundness argument survives: a gate is an independent experiment, so any partition is sound, and
+the union of the slices is still checkable against `--list --shard`. What changed is which partition, and that it is
+now derived from a number the tree carries.
+
+Four refusals came with it, and none of them is a fallback: a shard with no table, a table with a gate the inventory
+does not have (or a row whose file count disagrees, which is a table measured on a tree that moved), `--costs` beside
+`--shard` or `--list`, and `--costs` on a run that did not measure every gate. A fallback to position would be a
+second partition under one name, and the halves `ci.yml` runs would stop being the halves a local `--shard` runs.
+
+The round's own instrument also found a defect in its tests, which is the part worth keeping: `verify-sites-are-sensitive`
+ran the new file's six claims and reported that the refusal for a gate `gateShardPlan` cannot price **reaches** its
+exit without **depending** on it -- the assertion matched `--costs`, and `assignShards` next door refuses the same gate
+with a sentence that also ends in `--costs`. Replacing the throw with success left the test green. The assertion now
+names this table's own file.
+
+### Readings
+
+> Ledger for `v3.161`.
+
+| item | value |
+| --- | --- |
+| the division before this round | by position: **106.0 s / 181.6 s** of the shipped table's **287.5 s** -- **41.6%** apart -- and **118 / 198**, **149 / 239**, **146 / 241 s** on the three readings above |
+| what divides it now | `golden-master/gate-costs.json`: **69** gates, **287.5 s** of child time on this box, dearest `check-official.mjs` at **28.4 s (9.9%)**, mean **4.17 s**; the plan is **143.1 s / 144.4 s**, **0.89%** apart, 34 and 35 gates |
+| the four refusals | a shard with no table; a gate with no row; a row with no gate, or one whose file count disagrees with the tree; and `--costs` beside a shard or a list, or on a run that did not measure every gate |
+| what `--costs` refuses to write | a table from a run that skipped a gate, because a table is a measurement of every subject or it is not a table -- and the sentence names the gates that were not measured |
+| the partition | `--list --shard i/2` prints the slice this run would measure; the union of the slices is the inventory, no gate is in two, and neither is empty |
+| falsification | eleven new tests: seven table verdicts one refusal at a time with a positive control, the LPT placement against a split that can be worked out on paper, purity and inventory order, the shipped partition and the claim that the plan is closer than position's split of the same numbers, and three spawned refusals; plus the one the sensitivity battery found in the test itself |
+| `core` test suite | **264 files, 7,137 tests passed** (as of this commit) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- unchanged by the round, which added a test file and no source line |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **268 files, 7,324 tests passed** (as of this commit) |
+| new tests | **7,126 -> 7,137, +11** in one new file (`gate-costs.test.ts`) |
+| the three counts that had to move with it | `calls / sites` in the inventory **172/152 -> 176/156** (four exits, two throws), the throw baskets **118 -> 120**, and the sites cost table rebuilt because the new file proves six sites and a claimant with no row cannot be divided |
+| `Tracked files` | **687 -> 689**: the cost table and the new test file |
+| CI | run `45928458435` on `b0683508`: **9 of 9 jobs success**, **519 s** of wall clock, reading **61** -- the last green run of this workflow, which closed `v3.160`; the run of the commit that ships this round's table cannot close the round it is red on, so the row that closes `v3.161` is written by the next commit, from that commit's run |
+
+### Left open
+
+- `O-146` · **The gates' table is one machine's afternoon, and nothing notices when it stops describing the tree.**
+  `checkGateCosts` holds the gate set and each gate's file count, so a gate that arrives or loses a naming file is
+  refused -- but a test file that grows under the same name leaves a table that is stale in the direction the verdict
+  calls fine, and the plan then balances two halves by numbers from an older tree. The sites table has had the same
+  hole since v3.157 and the same silence.
+  `[open: whether the age of a table should be a verdict (`measured` older than N rounds is refused) or a printed
+  reading the reviewer reads, and whether a re-measure can be asked of CI rather than of a person]`

@@ -936,7 +936,15 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 431,
+      "line": 129,
+      "condition": "why !== null",
+      "diagnostic": "verify-gates-are-testable: ${why}\\n\\n${USAGE}",
+      "status": "proved",
+      "provedBy": "packages/core/test/gate-costs.test.ts"
+    },
+    {
+      "script": "scripts/verify-gates-are-testable.mjs",
+      "line": 502,
       "condition": "parsed === null || Number(parsed[1]) > Number(parsed[2])",
       "diagnostic": "--shard takes <i>/<n> with 1 <= i <= n, not '${spec ?? ''}': a shard nobody can number",
       "status": "proved",
@@ -944,7 +952,23 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 447,
+      "line": 517,
+      "condition": "catch",
+      "diagnostic": "no cost table at ${COSTS_PATH} -- ${String(error)}: the two jobs that run this step are divided",
+      "status": "proved",
+      "provedBy": "packages/core/test/gate-costs.test.ts"
+    },
+    {
+      "script": "scripts/verify-gates-are-testable.mjs",
+      "line": 527,
+      "condition": "wrong.length > 0",
+      "diagnostic": "verify-gates-are-testable: FAILED -- the shard plan cannot be derived:",
+      "status": "proved",
+      "provedBy": "packages/core/test/gate-costs.test.ts"
+    },
+    {
+      "script": "scripts/verify-gates-are-testable.mjs",
+      "line": 552,
       "condition": "slice.length === 0",
       "diagnostic": "shard ${String(index)} of ${String(total)} holds no gate out of the ${String(list.length)}",
       "status": "proved",
@@ -952,7 +976,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 486,
+      "line": 591,
       "condition": "all.length === 0",
       "diagnostic": "golden-master/gate-sites.json names no gate, so this run would pass while measuring nothing.",
       "status": "proved",
@@ -960,7 +984,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 645,
+      "line": 750,
       "condition": "held !== null && isAlive(held.pid)",
       "diagnostic": "two runs cannot measure one tree at the same time",
       "status": "proved",
@@ -968,7 +992,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 683,
+      "line": 788,
       "condition": "inFlight.length > 0",
       "diagnostic": "two runs cannot measure one tree at the same time",
       "status": "proved",
@@ -976,7 +1000,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 705,
+      "line": 810,
       "condition": "unrestored.length > 0",
       "diagnostic": "could not repair ${gate} from the journal",
       "status": "proved",
@@ -984,7 +1008,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 724,
+      "line": 829,
       "condition": "alreadyHollowed.length > 0",
       "diagnostic": "restore it first: a measurement of a mutated tree is a measurement of nothing",
       "status": "proved",
@@ -992,14 +1016,14 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 758,
+      "line": 863,
       "diagnostic": "verify-gates-are-testable: FAILED -- interrupted by ${signal};",
       "status": "proved",
       "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 812,
+      "line": 917,
       "condition": "back !== original",
       "diagnostic": "verify-gates-are-testable: FAILED -- could not restore ${gate}",
       "status": "proved",
@@ -1007,7 +1031,15 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 952,
+      "line": 1019,
+      "condition": "paid.length !== all.length",
+      "diagnostic": "${String(all.length - paid.length)} of ${String(all.length)} gate(s) were not measured",
+      "status": "proved",
+      "provedBy": "packages/core/test/gate-costs.test.ts"
+    },
+    {
+      "script": "scripts/verify-gates-are-testable.mjs",
+      "line": 1108,
       "condition": "failed > 0",
       "diagnostic": "${gate} could not be hollowed into valid JavaScript, so it was not measured at all",
       "status": "proved",
@@ -1193,7 +1225,7 @@
     "rule": "every throw statement, partitioned four ways: `fatal` (no enclosing function, no enclosing try) ends the process and is proved like a site; `unguarded` (in a function, no enclosing try) hands control to its caller, which decides; `guarded` (in a try block) is caught here; `rethrow` (in a catch, rethrowing the caught binding) carries a decision made above. A try or a catch stops at a function boundary, because neither is on the stack when the function runs elsewhere. fatal + unguarded + guarded + rethrow is the number of throw statements; see scripts/derive-gate-sites.mjs",
     "counts": {
       "fatal": 22,
-      "unguarded": 85,
+      "unguarded": 87,
       "guarded": 1,
       "rethrow": 10
     },
@@ -1438,6 +1470,22 @@
         "message": "unknown format id '${id}'",
         "status": "proved",
         "provedBy": "packages/core/test/published-refusals.test.ts"
+      },
+      {
+        "script": "scripts/gate-proofs.mjs",
+        "line": 493,
+        "disposition": "unguarded",
+        "message": "the cost table has no `gates` map, so no gate can be placed by it",
+        "status": "proved",
+        "provedBy": "packages/core/test/gate-costs.test.ts"
+      },
+      {
+        "script": "scripts/gate-proofs.mjs",
+        "line": 498,
+        "disposition": "unguarded",
+        "message": "new Error( `no measured cost for ${gate}, so it cannot be placed on a shard: regenerate ` + 'golden-master/gate-costs.js",
+        "status": "proved",
+        "provedBy": "packages/core/test/gate-costs.test.ts"
       },
       {
         "script": "scripts/gate-receipt.mjs",

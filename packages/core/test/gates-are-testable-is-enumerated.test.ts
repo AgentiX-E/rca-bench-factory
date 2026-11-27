@@ -150,6 +150,11 @@ function treeOf(stub: { body: string; status: number }, subjects: string[]): str
   // and every refusal below reported a stack trace instead of its sentence. A fixture
   // is a tree the script could run in, and a tree missing a dependency is not one.
   copyFileSync(resolve(ROOT, 'scripts', 'gate-proofs.mjs'), join(tree, 'scripts', 'gate-proofs.mjs'));
+  // That module holds the shard plan and divides by the table, using the LPT placement
+  // `site-proofs.mjs` has carried since v3.157 -- so the fixture needs it too, for the same
+  // reason and one round later. A copy of `scripts/` with a module missing is a tree the
+  // script cannot run in.
+  copyFileSync(resolve(ROOT, 'scripts', 'site-proofs.mjs'), join(tree, 'scripts', 'site-proofs.mjs'));
   // That module now finds comments by asking the compiler where the tokens are, so the
   // dependency it needs is no longer only `gate-proofs.mjs` itself. A copy of `scripts/`
   // with no `node_modules` above it answers `Cannot find package 'typescript'`, which is
@@ -178,6 +183,19 @@ function treeOf(stub: { body: string; status: number }, subjects: string[]): str
   writeFileSync(
     join(tree, 'golden-master', 'gate-sites.json'),
     JSON.stringify({ sites: subjects.map((subject) => ({ script: `scripts/${subject}` })) }),
+  );
+  // The table a shard is divided by, priced flat: this file is about the verdict mechanics
+  // rather than about the split, and a fixture with one subject has no imbalance to remove.
+  // A shard without a table is refused now, so a fixture without one would report that
+  // refusal instead of the behaviour each case is about.
+  writeFileSync(
+    join(tree, 'golden-master', 'gate-costs.json'),
+    JSON.stringify({
+      measured: '2026-11-27',
+      machine: 'fixture, 1 cpu',
+      source: 'node scripts/verify-gates-are-testable.mjs --costs golden-master/gate-costs.json',
+      gates: Object.fromEntries(subjects.map((subject) => [subject, { ms: 1, files: 1 }])),
+    }),
   );
   const npx = join(tree, 'bin', 'npx');
   writeFileSync(npx, `#!/bin/sh\n${stub.body}\nexit ${stub.status}\n`);

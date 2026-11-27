@@ -223,7 +223,10 @@ describe('the witness behind each claim', () => {
         named += 1;
       }
     }
-    expect(named).toBe(256);
+    // 256 -> 262 in v3.161: the new file proves six claims -- four exits of
+    // `verify-gates-are-testable.mjs` and the two throws of `gateShardPlan` -- and every one of
+    // them is in the table with a witness, which is the property this count is a count of.
+    expect(named).toBe(262);
   });
 
   // What this file cannot check, and why it is not checked badly instead.

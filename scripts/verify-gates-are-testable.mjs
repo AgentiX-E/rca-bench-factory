@@ -53,10 +53,20 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { arch, cpus, platform, tmpdir } from 'node:os';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { claimedProofs, classify, namesInCode, namesakeOf, redFiles, suiteOwnMs } from './gate-proofs.mjs';
+import {
+  apartPercent,
+  checkGateCosts,
+  claimedProofs,
+  classify,
+  gateShardPlan,
+  namesInCode,
+  namesakeOf,
+  redFiles,
+  suiteOwnMs,
+} from './gate-proofs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -64,6 +74,61 @@ const TESTS = resolve(ROOT, 'packages', 'core', 'test');
 const INVENTORY = resolve(ROOT, 'golden-master', 'gate-sites.json');
 /** Parsed once: every gate asks it for its claimed proofs, and the file does not change. */
 const INVENTORY_JSON = JSON.parse(readFileSync(INVENTORY, 'utf8'));
+
+/**
+ * The table the two shards are divided by, and the run that can write it.
+ *
+ * ## Why the split stopped being positional
+ *
+ * v3.154 divided the gates by position -- every i-th of the inventory -- because that is
+ * the partition whose union can be checked against `--list` without a second derivation,
+ * and because a split by *live* seconds would put the same gate in different halves on
+ * different machines. The second half of that argument is a fact about live seconds and
+ * not about a **committed table**: the table is a file, so every machine reads the same
+ * numbers and derives the same halves, and it is re-derived only when the tree changes --
+ * which `checkGateCosts` refuses to let pass unnoticed.
+ *
+ * The cost of the old rule was measured six times: the two jobs read 97 / 232 s, then
+ * 99 / 182, 118 / 198, 131 / 113, 122 / 147, 149 / 239 and 146 / 241 -- 30% to 58% apart,
+ * changing sign between readings of nearly one tree, against a plan that says 0.0%. A job
+ * that waits three minutes for its twin is a job whose bound, and the workflow's wall
+ * clock, is chosen by an ordering that knows nothing about price.
+ *
+ * ## What the table is, and what `--costs` refuses
+ *
+ * `golden-master/gate-costs.json`: one row per gate, the milliseconds its own nested runs
+ * cost and how many test files it ran. `--costs` writes it from a run that measured
+ * **every** gate, because a table written by a shard would price half an inventory and
+ * call it the tree -- the same refusal the sites battery makes for the same reason.
+ *
+ * A shard without the table is refused rather than fallen back to position: a fallback
+ * would be a second partition under one name, and the halves `ci.yml` runs would stop
+ * being the halves a local `--shard` runs, in the one place nobody would look.
+ *
+ * The path is a seam (`RCA_GATE_COSTS`) for the same reason `RCA_CI_BASELINE` is one:
+ * three of the refusals below -- no table, a stale table, a table from another tree --
+ * cannot be observed by a run against the shipped tree, where all three are false.
+ */
+const COSTS_AT = process.argv.indexOf('--costs');
+const COSTS_TEXT = COSTS_AT === -1 ? null : String(process.argv[COSTS_AT + 1] ?? '');
+const COSTS_PATH = resolve(ROOT, process.env['RCA_GATE_COSTS'] ?? join('golden-master', 'gate-costs.json'));
+const USAGE =
+  'usage: node scripts/verify-gates-are-testable.mjs [--list] [--shard <i>/<n>] [--costs <path>]\n';
+if (COSTS_TEXT !== null) {
+  const why =
+    COSTS_TEXT === ''
+      ? '`--costs` takes the path to write the table to'
+      : process.argv.includes('--shard')
+        ? 'a shard measures one half of the inventory, so the table it wrote would price the gates it ' +
+          'did not run at nothing'
+        : process.argv.includes('--list')
+          ? '`--list` measures nothing, so a table written by it would be an inventory divided by zeros'
+          : null;
+  if (why !== null) {
+    console.error(`verify-gates-are-testable: ${why}\n\n${USAGE}`);
+    process.exit(1);
+  }
+}
 
 /**
  * Every gate in the tree: the scripts `golden-master/gate-sites.json` says exit
@@ -406,16 +471,22 @@ const all = gates();
  * rules can only accept through a promise (`R9`) -- which is exactly the trade the
  * earlier round made and wrote down.
  *
- * ## Why the partition is by position rather than by name
+ * ## Why the partition is by price rather than by position
  *
  * A gate is an independent experiment: it hollows one file and runs the tests that name
  * it, and no other gate's mutation is in the tree at the time. So a partition is sound
- * whatever it is, and by position is the version whose union is checkable against
- * `--list` without a second derivation -- `--list --shard i/n` prints the slice, and the
- * test asks that the slices cover every gate once.
+ * whatever it is, and position was chosen because its union is checkable against
+ * `--list` without a second derivation. What position cannot be is **fair**: it knows
+ * nothing about what a gate costs, and the two jobs that run it waited on each other by
+ * 30% to 58% on seven readings. The plan is a pure function of a committed table, so the
+ * same check still holds -- `--list --shard i/n` prints the slice this run would measure,
+ * and the test asks that the slices cover every gate once -- and the halves are now
+ * derived from the seconds the tree measured. `gate-costs.test.ts` holds both halves of
+ * that: the partition, and that the plan is closer than position's split of the same
+ * numbers.
  *
- * `i` from 1, so the arithmetic is `(position - (i - 1)) mod n === 0`: a reader counting
- * shards from zero is a reader who will one day write `0/2`.
+ * `i` from 1, so a reader counting shards from zero is a reader who will one day write
+ * `0/2`.
  */
 function shardOf(list) {
   const at = process.argv.indexOf('--shard');
@@ -432,7 +503,41 @@ function shardOf(list) {
   }
   const index = Number(parsed[1]);
   const total = Number(parsed[2]);
-  const slice = list.filter((_, position) => position % total === index - 1);
+  let table;
+  try {
+    table = JSON.parse(readFileSync(COSTS_PATH, 'utf8'));
+  } catch (error) {
+    console.error('verify-gates-are-testable: FAILED');
+    console.error(
+      `  no cost table at ${COSTS_PATH} -- ${String(error)}: the two jobs that run this step are divided ` +
+        'by that table and by nothing else, so a shard without one would be a different partition from the ' +
+        'one `ci.yml` runs. Write it with `node scripts/verify-gates-are-testable.mjs --costs ' +
+        'golden-master/gate-costs.json`',
+    );
+    process.exit(1);
+  }
+  // `--list` answers a query and does not sweep 254 test files to do it, so it checks the
+  // table's identity and prices and leaves the file counts to a run that measures.
+  const counting = !process.argv.includes('--list');
+  const byGate = list.map((gate) => [gate, counting ? referencingTests(gate).length : null]);
+  const wrong = checkGateCosts(byGate, table);
+  if (wrong.length > 0) {
+    console.error('verify-gates-are-testable: FAILED -- the shard plan cannot be derived:');
+    for (const one of wrong) console.error(`  ${one}`);
+    process.exit(1);
+  }
+  const plan = gateShardPlan(byGate, total, table);
+  const slice = plan.shards[index - 1] ?? [];
+  // Printed by every shard, `--list` included: the point of the table is the wall clock the
+  // workflow will pay, and the only place that number is knowable is the plan. It goes to
+  // stderr because `--list`'s stdout is the answer to a question about the inventory.
+  const apart = apartPercent(plan.loads);
+  console.error(
+    'verify-gates-are-testable: the table puts ' +
+      plan.loads.map((ms, which) => `${String(which + 1)}/${String(total)}=${seconds(ms)}`).join(', ') +
+      ` of child time on the halves -- ${apart === null ? 'no load to compare' : `${apart.toFixed(1)}% apart`} ` +
+      `-- and this run is shard ${String(index)}/${String(total)}`,
+  );
   if (slice.length === 0) {
     // The vacuity shape one level down: a run that selected nothing would print a tidy
     // summary of zero gates and exit 0. A plan that hands an empty slice to a job is a
@@ -884,6 +989,57 @@ if (paid.length > 0) {
       `the dearest is ${dearest.gate} at ${seconds(dearest.elapsed)} ` +
       `(${Math.round((100 * dearest.elapsed) / child)}% of it)`,
   );
+}
+
+/**
+ * The table a later shard is divided by.
+ *
+ * Written only by a run that measured **every** gate. A run that skipped one -- NO-TEST,
+ * UNPARSABLE, or a gate the inventory names and the tree does not have -- would write a
+ * table pricing the missing gate at nothing, and the plan derived from it would put that
+ * gate wherever the arithmetic happened to leave a hole. A table is a measurement of
+ * every subject or it is not a table, which is the same refusal `--costs` makes of a
+ * shard one level up.
+ *
+ * The three provenance fields are load-bearing rather than decorative: `checkGateCosts`
+ * refuses a table that does not say the day it was measured, the machine that measured it
+ * and the command that wrote it, because a seconds figure with none of the three is a
+ * figure from nowhere -- and the round that refreshes it has nothing to compare with.
+ */
+if (COSTS_TEXT !== null) {
+  if (paid.length !== all.length) {
+    const missing = [...unvisited, ...unparsable];
+    console.error('verify-gates-are-testable: FAILED');
+    console.error(
+      `  ${String(all.length - paid.length)} of ${String(all.length)} gate(s) were not measured` +
+        (missing.length > 0 ? ` (${missing.join(', ')})` : '') +
+        ', so a table written here would price them at nothing: a table is a measurement of every ' +
+        'gate or it is not a table',
+    );
+    process.exit(1);
+  }
+  const target = resolve(ROOT, COSTS_TEXT);
+  const rows = {};
+  for (const one of paid) rows[one.gate] = { ms: Math.round(one.elapsed), files: one.files };
+  // Named relative to the repository when it is inside it: an absolute path is a fact about
+  // this machine rather than about the tree, and `check-no-absolute-paths` refuses one in a
+  // committed file -- the same sentence, one gate over.
+  const inside = relative(ROOT, target);
+  const shown = inside.startsWith('..') ? target : inside;
+  writeFileSync(
+    target,
+    `${JSON.stringify(
+      {
+        measured: new Date().toISOString().slice(0, 10),
+        machine: `${platform()} ${arch()}, ${String(cpus().length)} cpu`,
+        source: `node scripts/verify-gates-are-testable.mjs --costs ${shown}`,
+        gates: rows,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  console.log(`costs: ${String(paid.length)} gate(s) written to ${target}`);
 }
 if (namesakeSilent.length > 0) {
   console.error('');

@@ -334,11 +334,14 @@ describe('the four baskets are a partition of the throws, not a remainder', { ti
     // 116 -> 118 in v3.157: the two throws `assignShards` makes -- a split into no shards, and a
     // claimant the table has not priced -- both unguarded, because a pure function hands the
     // decision to its caller.
+    // 118 -> 120 in v3.161: the two throws `gateShardPlan` makes -- a table with no `gates` map, and a
+    // gate the table has not priced -- the same shape one round later, in the module that now holds
+    // the gates' own plan rather than the sites'.
     // at the top level -- `--relabel-actions` given a measurement -- and the other five sit inside
     // `relabelActions`, which is the basket below rather than this one. Both counts are asserted because
     // the two questions are different: this one is "how many throw statements", the other is "which of
     // them nothing can catch".
-    expect(total).toBe(118);
+    expect(total).toBe(120);
   });
 
   it('names every throw that ends a process without any of its own code running', () => {
@@ -433,7 +436,11 @@ describe('the four baskets are a partition of the throws, not a remainder', { ti
     // 83 -> 85 in v3.157: the two throws `assignShards` makes -- a split into no shards and a claimant
     // the table has not priced -- are both inside a function with no `try`, so they are `unguarded` for
     // the same reason the five above are: the basket is drawn by syntax, and the caller decides.
-    expect(counts).toEqual({ fatal: 22, unguarded: 85, guarded: 1, rethrow: 10 });
+    // 85 -> 87 in v3.161: the two throws `gateShardPlan` makes -- a table with no `gates` map and a
+    // gate the table has not priced -- are both inside a function with no `try`, so they are
+    // `unguarded` for the syntactic reason the two above are, and the other three dispositions did
+    // not move.
+    expect(counts).toEqual({ fatal: 22, unguarded: 87, guarded: 1, rethrow: 10 });
   });
 
   it('refuses a file it cannot parse, rather than classifying part of it', () => {

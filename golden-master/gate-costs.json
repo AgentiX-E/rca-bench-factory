@@ -1,0 +1,283 @@
+{
+  "measured": "2026-11-27",
+  "machine": "linux x64, 32 cpu",
+  "source": "node scripts/verify-gates-are-testable.mjs --costs golden-master/gate-costs.json",
+  "gates": {
+    "apply-pins.mjs": {
+      "ms": 1608,
+      "files": 4
+    },
+    "build-example-bundle.mjs": {
+      "ms": 3057,
+      "files": 2
+    },
+    "census-corpus.mjs": {
+      "ms": 2146,
+      "files": 2
+    },
+    "check-acceptance-shape.mjs": {
+      "ms": 1340,
+      "files": 3
+    },
+    "check-aggregate-tables.mjs": {
+      "ms": 2195,
+      "files": 3
+    },
+    "check-audit-volumes.mjs": {
+      "ms": 1336,
+      "files": 3
+    },
+    "check-backend-support.mjs": {
+      "ms": 2747,
+      "files": 4
+    },
+    "check-ci-budget.mjs": {
+      "ms": 7745,
+      "files": 3
+    },
+    "check-citations.mjs": {
+      "ms": 1719,
+      "files": 4
+    },
+    "check-cli-reference.mjs": {
+      "ms": 12521,
+      "files": 6
+    },
+    "check-comments-language.mjs": {
+      "ms": 2518,
+      "files": 2
+    },
+    "check-coverage-readings.mjs": {
+      "ms": 1309,
+      "files": 2
+    },
+    "check-data-model-vocabularies.mjs": {
+      "ms": 1347,
+      "files": 3
+    },
+    "check-doc-counts.mjs": {
+      "ms": 4504,
+      "files": 4
+    },
+    "check-docs-language.mjs": {
+      "ms": 1834,
+      "files": 2
+    },
+    "check-fault-cases.mjs": {
+      "ms": 5637,
+      "files": 4
+    },
+    "check-l4-status.mjs": {
+      "ms": 2631,
+      "files": 5
+    },
+    "check-no-absolute-paths.mjs": {
+      "ms": 1546,
+      "files": 3
+    },
+    "check-no-mock.mjs": {
+      "ms": 1430,
+      "files": 4
+    },
+    "check-no-secrets.mjs": {
+      "ms": 1381,
+      "files": 3
+    },
+    "check-no-unsafe-shell.mjs": {
+      "ms": 3315,
+      "files": 4
+    },
+    "check-no-vendored-data.mjs": {
+      "ms": 1376,
+      "files": 4
+    },
+    "check-official-registry.mjs": {
+      "ms": 1357,
+      "files": 3
+    },
+    "check-official.mjs": {
+      "ms": 28415,
+      "files": 7
+    },
+    "check-open-list.mjs": {
+      "ms": 4151,
+      "files": 4
+    },
+    "check-progress-volumes.mjs": {
+      "ms": 1349,
+      "files": 3
+    },
+    "check-readme-sample.mjs": {
+      "ms": 2677,
+      "files": 3
+    },
+    "check-repository-table.mjs": {
+      "ms": 1791,
+      "files": 3
+    },
+    "check-roundtrip-record.mjs": {
+      "ms": 1750,
+      "files": 3
+    },
+    "check-rulegen-agreement.mjs": {
+      "ms": 1288,
+      "files": 2
+    },
+    "check-staged-mutation.mjs": {
+      "ms": 1336,
+      "files": 2
+    },
+    "check-test-budgets.mjs": {
+      "ms": 1608,
+      "files": 3
+    },
+    "check-unit-nouns.mjs": {
+      "ms": 1397,
+      "files": 2
+    },
+    "check-user-guide.mjs": {
+      "ms": 1331,
+      "files": 2
+    },
+    "check-workflow-language.mjs": {
+      "ms": 1565,
+      "files": 2
+    },
+    "derive-backend-support.mjs": {
+      "ms": 1322,
+      "files": 3
+    },
+    "derive-fault-golden.mjs": {
+      "ms": 2978,
+      "files": 3
+    },
+    "derive-gate-sites.mjs": {
+      "ms": 2502,
+      "files": 9
+    },
+    "derive-openrca-archive.mjs": {
+      "ms": 1330,
+      "files": 2
+    },
+    "fetch-official.mjs": {
+      "ms": 12885,
+      "files": 7
+    },
+    "gen-examples.mjs": {
+      "ms": 3640,
+      "files": 2
+    },
+    "gen-rcaeval-cases.mjs": {
+      "ms": 11342,
+      "files": 5
+    },
+    "inject-component-rule.mjs": {
+      "ms": 4758,
+      "files": 4
+    },
+    "inject-m1-ceiling-tests.mjs": {
+      "ms": 4813,
+      "files": 4
+    },
+    "inject-stability.mjs": {
+      "ms": 13357,
+      "files": 7
+    },
+    "install-git-hooks.mjs": {
+      "ms": 1325,
+      "files": 2
+    },
+    "measure-ci-baseline.mjs": {
+      "ms": 3741,
+      "files": 4
+    },
+    "measure-doc-counts.mjs": {
+      "ms": 5216,
+      "files": 7
+    },
+    "probe-agreement-baseline.mjs": {
+      "ms": 1691,
+      "files": 2
+    },
+    "probe-category-derivation.mjs": {
+      "ms": 1747,
+      "files": 2
+    },
+    "probe-denial-inventory.mjs": {
+      "ms": 1670,
+      "files": 2
+    },
+    "probe-m1-ceiling.mjs": {
+      "ms": 4861,
+      "files": 4
+    },
+    "probe-modality-memory.mjs": {
+      "ms": 1479,
+      "files": 3
+    },
+    "probe-type-misses.mjs": {
+      "ms": 2250,
+      "files": 5
+    },
+    "probe-z-floor.mjs": {
+      "ms": 1302,
+      "files": 2
+    },
+    "publish-cli.mjs": {
+      "ms": 13996,
+      "files": 4
+    },
+    "publish-readings-cli.mjs": {
+      "ms": 1674,
+      "files": 2
+    },
+    "read-remote-index.mjs": {
+      "ms": 1469,
+      "files": 2
+    },
+    "reconcile-readings.mjs": {
+      "ms": 1377,
+      "files": 2
+    },
+    "record-reading.mjs": {
+      "ms": 1440,
+      "files": 3
+    },
+    "score-fault-extraction.mjs": {
+      "ms": 2834,
+      "files": 4
+    },
+    "verify-claims-are-sensitive.mjs": {
+      "ms": 6203,
+      "files": 2
+    },
+    "verify-example-pack.mjs": {
+      "ms": 2395,
+      "files": 3
+    },
+    "verify-gates-are-testable.mjs": {
+      "ms": 27939,
+      "files": 3
+    },
+    "verify-local.mjs": {
+      "ms": 14327,
+      "files": 5
+    },
+    "verify-reader-against-backend.mjs": {
+      "ms": 3008,
+      "files": 3
+    },
+    "verify-scorer-stability.mjs": {
+      "ms": 1362,
+      "files": 2
+    },
+    "verify-site-proofs.mjs": {
+      "ms": 1713,
+      "files": 2
+    },
+    "verify-sites-are-sensitive.mjs": {
+      "ms": 8342,
+      "files": 6
+    }
+  }
+}

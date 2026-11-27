@@ -599,7 +599,10 @@ export const STEP_PLAN = {
   'batteries / M1-ceiling probe test battery (no survivors, no inert mutations)': { local: true },
   'batteries / Every gate can be shown to fail': {
     local: true,
-    note: 'shard 1 of 2 since v3.155; the other half runs in `gates-audit`',
+    note:
+      'shard 1 of 2 since v3.155, divided by golden-master/gate-costs.json since v3.161 -- the same ' +
+      'longest-processing-time placement the sites battery has used since v3.157; the other half runs ' +
+      'in `gates-audit`',
   },
   'batteries / Fault-extraction scoring battery (no survivors)': { local: true },
   'batteries / Fault-extraction workflow battery (no survivors, negative control)': { local: true },
@@ -629,7 +632,10 @@ export const STEP_PLAN = {
     remoteOnly: 'installs zsh through apt, which needs sudo and a package index',
   },
   'gates-audit / Build (core then cli; cli resolves core\'s dist)': { local: true },
-  'gates-audit / Every gate can be shown to fail (shard 2 of 2)': { local: true },
+  'gates-audit / Every gate can be shown to fail (shard 2 of 2)': {
+    local: true,
+    note: 'the same gate as shard 1 of 2, driven with --shard 2/2 over the gates golden-master/gate-costs.json gives it (v3.161); the plan names the pair rather than a wildcard',
+  },
 
   // Three batteries that left `batteries` in v3.156, moved by the arithmetic rather than by
   // the concept: `batteries` was 738 s of wall clock and `gates-audit` 270 s, and a job's

@@ -389,8 +389,12 @@ describe('the two baskets are a partition of the calls, not a remainder', { time
     // refusals a cost table needs at the gate -- one for a table that cannot be read and one for
     // a table that no longer describes the inventory -- and the refusal of `--costs` on a run
     // that did not measure the whole inventory.
-    expect(calls).toBe(172);
-    expect(sites).toBe(152);
+    // 172/152 -> 176/156 in v3.161, and a line through the origin again: the same four
+    // refusals the sites battery's table needed at its gate (v3.157), asked of the gate audit's
+    // own table -- `--costs` beside a shard, a list or no path; a table that cannot be read; a
+    // table that does not describe this inventory; and a run that did not measure every gate.
+    expect(calls).toBe(176);
+    expect(sites).toBe(156);
     // Both were filed as `indirect` before v3.44: a real exit whose statement it is
     // not, and the one that carries `main()`'s verdict.
     expect(continuationSites).toEqual([

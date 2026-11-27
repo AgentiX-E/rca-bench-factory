@@ -1089,3 +1089,20 @@
   `two readings of one tree timed that step 141 s apart, 44% of the 319 s between its ends` for the tightest
   bound -- so a reader of a green run can see which part of a spread is measurement and which part is a state
   nobody read twice. **Twelve mutations, 54 reds**, no survivor, measured on the green tree.
+- O-145 · ~~**The two shards of `verify-gates-are-testable` are divided by position, and read 97 s against 232 s.**~~
+  The entry named the artifact the missing half needed: a table of **per-gate** seconds, which the audit already
+  printed per subject since finding 669. **Closed by finding 675**, which is that table and the division it enables:
+  `--costs` writes `golden-master/gate-costs.json` from a run that measured every gate (69 rows, **287.5 s** here,
+  dearest `check-official.mjs` at **28.4 s**, **9.9%**), and `--shard i/n` divides it by longest-processing-time first
+  through the `assignShards` the sites battery has used since v3.157 -- one placement rule, not two. The entry's own
+  numbers were a reading of the runner and the three readings since say the same thing in different sizes: **118 / 198 s**
+  (reading 59), **149 / 239 s** (reading 60) and **146 / 241 s** (reading 61), 40.4%, 37.7% and 39.4% apart, against a
+  plan whose arithmetic says 0.0%. Divided by the shipped table the pair is **143.1 s / 144.4 s -- 0.89%**, 34 and 35
+  gates. The entry asked whether the price should be a gate's whole run or the arithmetic above its own suite time; the
+  answer is the whole run, because the child time is what the runner spends and the suite's own seconds are one of the
+  two numbers the run prints rather than a different price. It also asked whether the table should be a new file or an
+  arm of `gate-sites.json`: a new file, because `gate-sites.json` is an inventory of exits and their proofs and is
+  re-derived on every round, while a table of seconds is a measurement with a day and a machine on it.
+  What stays open is what the sites table has had since v3.157 and this one inherits -- a table measured on one machine's
+  afternoon, whose staleness is caught for the gate set and the file counts and not for a file that grew under the same
+  name (`O-146`).

@@ -1342,3 +1342,57 @@ build-example-bundle.test.ts`.
 **What this does not claim.** That `-t` is an address: two tests with one title in different suites are one pattern,
 and `attribute` cannot tell them apart either -- it asks whether the declared witnesses appear among the failures, and
 a duplicate title makes both appear. The aim inherits that limit rather than creating it.
+
+## Finding 675 — a division by position is a division by nothing
+
+`verify-gates-are-testable.mjs` runs 69 gates, each by emptying one script and running the test files that name it.
+Since v3.154 the two jobs that run it have been divided **by position**: gate `i` goes to shard `i mod n`. The reason
+was written down twice, in the gate and in the workflow: *a split by measured seconds would have to be re-derived
+after every run and would put the same gate in different shards on different machines*, and a plan in `ci.yml` and a
+plan a test checks have to be the same plan.
+
+Both halves are true of **live** seconds and neither is true of a **committed table** -- which is the argument
+v3.157 already made for the sites battery, one directory over, and the same device it used: a file in the repository,
+read by every machine, re-derived only when the tree changes, with a verdict that refuses it when the tree has moved.
+
+**What position cost, measured on the runner.** The two steps are `Every gate can be shown to fail` (inside
+`batteries`) and its shard 2 (inside `gates-audit`), and the workflow's wall clock is the slower of the two:
+
+| reading | shard 1 | shard 2 | apart | the plan's arithmetic |
+| --- | --- | --- | --- | --- |
+| 59 (`45847128112`) | 118 s | 198 s | **40.4%** | 0.0% |
+| 60 (`45853859064`) | 149 s | 239 s | **37.7%** | 0.0% |
+| 61 (`45928458435`) | 146 s | 241 s | **39.4%** | 0.0% |
+
+Three readings, three signs of the same thing: the ordering knows nothing about price, so the two halves differ by
+two to three minutes and the job that finishes first waits. The bound on each step is sized from the slower one, which
+is the bound the faster job never needed.
+
+**The repair is two halves of one device.** `--costs <path>` writes `golden-master/gate-costs.json` from a run that
+measured **every** gate -- one row per gate, the milliseconds its own nested runs cost and how many test files it ran --
+and `--shard i/n` divides that table by longest-processing-time first, through the `assignShards` the sites battery has
+used since v3.157. No second placement rule: the price is checked in the gates' module first so a missing row names
+`gate-costs.json` rather than the sites table, and the partition itself is one function.
+
+| | |
+| --- | --- |
+| the table this round ships | 69 gates, **287.5 s** of child time on this box, dearest `check-official.mjs` at **28.4 s (9.9%)**, mean **4.17 s** |
+| what position leaves | **106.0 s / 181.6 s**, **41.6%** apart |
+| what the table leaves | **143.1 s / 144.4 s**, **0.89%** apart, 34 and 35 gates |
+| the four refusals | no table; a table with no row for a gate; a table with a row for a gate the inventory does not have (and a file count that disagrees); `--costs` beside `--shard` or `--list`, or on a run that did not measure every gate |
+
+**What it does not claim.** Not optimality: dividing indivisible subjects is bin packing, and LPT is a 4/3
+approximation. Not portability of the seconds: the table is one machine's afternoon, which is why the plan is a pure
+function of the file rather than of a run. And not that a stale table is caught in general -- the check holds the gate
+set and each gate's file count, so a test file that grows under the same name leaves a table that is stale in the
+direction the verdict calls fine, and only a re-measure finds it. That hole is stated in the module rather than
+guarded, because a check that claimed to cover it would be reading something adjacent and calling it the property.
+
+**Falsification.** `gate-costs.test.ts` divides the shipped table with both rules and asserts the plan's gap is
+smaller than position's on the same numbers -- the one claim that would make the round pointless if it were false.
+Deleting the table read turns the missing-table case red; making the placement positional again turns the
+`--list --shard` case red against the plan; dropping a row from a fixture table turns the stale-table case red with the
+gate's own name. And `verify-sites-are-sensitive` falsified the new claim once on its own: the refusal for a gate
+`gateShardPlan` cannot price was asserted loosely enough to accept `assignShards`' sentence next door, so replacing
+that throw with success left the test green -- `scripts/gate-proofs.mjs:498 ... the file passes with that exit replaced
+by success`. The assertion now names this table's own sentence.
