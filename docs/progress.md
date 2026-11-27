@@ -443,7 +443,7 @@ document that described it as downloading the data was describing an intention.
 | Test files | 265 core + 4 cli |
 | Test lines | 124,474 core + 3,242 cli |
 | Tests | 7,179 core + 187 cli |
-| Tracked files | 693 |
+| Tracked files | 692 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
 drifted, when a label is one it cannot derive, and when a row has gone missing. That is
@@ -1202,17 +1202,17 @@ is a row about rather than paraphrase one that no `grep` will find.
   until a table's rows are filtered and that pairing becomes a guess, or whether a file that uses a formatted title must
   state its clock on the suite, since a suite's number is the only clock a reader without a position can place]`
 
-- O-150 · **A tenth job is a promise, and the run that settles it has not happened.**
-  `coverage` is declared in `golden-master/ci-declarations.json` as a **31-minute** job whose two bounded steps are
-  the shells install and the build; `R9` refuses every commit after this one until a run has measured it, and `R11`
-  counts it as a declaration awaiting its first run. Three things follow from that and none of them is a measurement
-  yet: whether the head lands on a lane at **~284 s** (**263 s** of table plus a **~21 s** prefix) or on `coverage` at
-  **~242 s**; whether the five lane ceilings (**27 / 49 / 40 / 60 / 33** minutes) still bound steps that moved lanes,
-  against `R10`'s "twice the slowest reading of that step"; and whether anything outside this repository names a
-  check by its old display name, since every lane's `name:` changed to `battery lane N of 5` in the commit that
-  reshaped the queue. The first two are answers a run gives; the third is not, and that is why it is written beside
-  them rather than left to the round that reads the run.
-  `[open: which job the queue's head is on the first run that measures all ten, and whether a check named by its display name outside this repository has to be renamed before that run can be required]`
+- O-150 · **A lane's price is one reading, and the lane the table balanced is not the lane the runner ran.**
+  The table priced the five battery bodies at **263 / 261 / 260 / 257 / 258** s from reading 65; reading 66, the run
+  of the commit that shipped it, read **188 / 225 / 242 / 283 / 286** -- a **1.52x** spread where the table said
+  **1.02x**. The cause is in the table's provenance rather than in the rule: reading 65 was an afternoon in which
+  the type-miss probe took **211 s** and the round-trip battery **52 s**, and reading 66 took **150 s** and **38 s**
+  for the same two commands, while the sensitivity pair went the other way (**114 -> 137 s**, **137 -> 155 s**,
+  **90 -> 99 s** for the gate-test battery). So the table over-priced one lane by **75 s** and under-priced two by
+  **26** and **28**, and the head followed the lanes that grew: **313 s** against the **~284 s** predicted, on a
+  wall clock that went **451 -> 317 s**. What is not settled is whether that is a defect to repair or the error a
+  static table is supposed to print.
+  `[open: whether the placement should be re-derived each round from the run that ships it -- which buys a head 30 s closer and costs a table whose prices are never the same twice -- or stay one named reading with its error printed, and whether a required check named by its display name outside this repository has to be renamed now that every lane's name says `battery lane N of 5`]`
 - O-149 · **A call states its ceiling and not its patience.**
   Every adapter now sends `max_tokens` (finding 677), and none sends a timeout: `anthropic.ts`, `openai-compat.ts`
   and `scripts/derive-fault-golden.mjs` all await `fetch` with no `AbortSignal`, so an endpoint that accepts the

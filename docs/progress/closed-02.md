@@ -1154,5 +1154,7 @@
   `check-ci-budget`), `R9` counted the **4** steps that arrived from `verify` as the new job's own and so refused the
   truthful two-step promise and accepted only a promise naming measurements (**finding 682**), and neither could be
   repaired by writing the file differently -- both were properties of the reader. What stays open as `O-150` is not
-  the question the entry asked but the reading it cannot take: a tenth job is a promise until a run measures it, and
-  `R9` refuses this commit's successors until one has.
+  the question the entry asked but the error the table cannot avoid: reading 66, the run of the commit that shipped
+  it, read the five bodies **188 / 225 / 242 / 283 / 286** s against the table's **263 / 261 / 260 / 257 / 258** --
+  a **1.52x** spread where the table said **1.02x** -- so the placement held and the prices drifted, which is what a
+  static table is and not what it can repair.

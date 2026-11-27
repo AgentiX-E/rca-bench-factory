@@ -1952,7 +1952,10 @@ carries a `moved` entry naming the job it left, the bound it now has, and why th
 rearrangement of this size is exactly what `R8`'s "a step that has not been measured in its new job
 pays the floor" is for: the four batteries that went to lanes which had never run them are at
 **3 / 3 / 13 / 30** minutes against measured **8 / 11 / 167 / 137** s, and the floor is what a lane
-that has not measured a step can honestly be given.
+that has not measured a step can honestly be given. The settlement deletes those twelve entries and
+the tenth job's promise: reading 66 measured every one of them in its new job, and a declaration of
+"not yet measured" that outlives its measurement is a bound nobody checked -- so the file exists in
+the commit that ships the split and not in the commit that records the run that settles it.
 
 The prediction, from the table rather than from a hope: the head is the heaviest lane, **263 s**,
 plus a **~21 s** prefix -- **~284 s** -- with `coverage` at **~242 s** and the rest of the queue
@@ -1960,6 +1963,23 @@ under both. Against reading 65's **451 s** that is **~167 s**. The **161 s** v3.
 against reading 64's **470 s**, and the difference between the two figures is which reading is the
 baseline rather than a disagreement: the table bought **25 s** more than the even split v3.163
 assumed, because the split it assumed was **288 s** a lane.
+
+**What the run said.** Reading 66 -- the run of the commit that ships this round -- read **317 s** of
+wall clock against reading 65's **451 s**: **134 s** bought, where the table predicted **167 s**. The
+head is a lane, as predicted, and it is **313 s** rather than **~284 s**. Subtracting each lane's
+prefix, the five bodies read **188 / 225 / 242 / 283 / 286** against the table's **263 / 261 / 260 /
+257 / 258** -- a **1.52x** spread where the table said **1.02x**. The reason is in the table's own
+provenance and not in the rule: reading 65 was an afternoon in which the type-miss probe took **211 s**
+and the round-trip battery **52 s**, and this run took **150 s** and **38 s** for the same two
+commands, while the sensitivity pair went the other way (**114 -> 137 s** for the first shard,
+**137 -> 155 s** for the second, **90 -> 99 s** for the gate-test battery). So the table over-priced
+one lane by **75 s** and under-priced two by **26** and **28**, and the head followed the lanes that
+grew. What survives that is the shape: the heaviest lane is **286 s** of battery work where reading
+64's hand-placed queue had **443 s** in one job, and the **33 s** between prediction and measurement
+is the drift a static table cannot buy. `coverage` read **247 s** against a predicted **~242 s**, its
+suite step **217 s** against reading 64's **211 s** -- the split's price is stable to **6 s** across
+three readings -- and the heaviest single step anywhere in the ten jobs is **155 s**, inside its bound
+by a factor of **11**.
 
 **Four defects, and three of them were in the readers rather than in the queue.**
 
@@ -2041,6 +2061,8 @@ its batteries left, and the claim it guards -- every command there names a scrip
 | the ids, and what they cost | **120** assignments tried, the one kept leaves the most rows in place; `batteries` gained the sensitivity shard 2 of 2, `sensitivity-shard` gained the gate-fail pair's first, and every lane's `name:` now says `battery lane N of 5` |
 | the split | `verify` **32 min** across **4** bounded steps, `coverage` **31 min** across **6**; **12** steps moved, **8** batteries and **4** into the new job |
 | what a run can be predicted at | head **~284 s** (**263 s** lane + **~21 s** prefix), `coverage` **~242 s**, against reading 65's **451 s**: **~167 s**, and v3.163's **161 s** was against reading 64's **470 s** |
+| what the run of this commit read | **317 s** of wall clock, head `battery lane 5 of 5` at **313 s**, `battery lane 4 of 5` **305 s**, `coverage` **247 s**, `verify` **149 s**: **134 s** bought of the **167** predicted, and the **33 s** between them is the lanes' own drift |
+| the lanes, as the run read them | bodies **188 / 225 / 242 / 283 / 286** against the table's **263 / 261 / 260 / 257 / 258** -- a **1.52x** spread where the table said **1.02x**; the type-miss probe **211 -> 150 s** and the round-trip battery **52 -> 38 s** in one lane, the sensitivity pair **114 -> 137** and **137 -> 155 s** in two others |
 | the recording, before and after | a job promise beside a step declaration for one job was refused outright -- **46** sentences of `check-ci-budget` -- and `R9` counted **6** steps where the job owns **2**; the pair is now accepted and the overlap (one step, two owners) refused |
 | the arm that was reading a smaller workflow | `artefacts` runs `pnpm docs:check`, which spawns a vitest through the doc guards, and the reader stopped at the command's first token: **8** suite jobs counted, now **9** |
 | the edits' own counting consequences | `gate-sites.json`'s `scanned` **103 -> 104** with the inventory unchanged (**156** sites, **69** scripts), re-derived rather than trusted; `gate-steps` re-pinned **5** jobs (`verify` 32/4, `coverage` 31/6, `sensitivity` 53/7, `batteries` 60/8, `batteries-heavy` 33/4) |
@@ -2050,8 +2072,8 @@ its batteries left, and the claim it guards -- every command there names a scrip
 | repo test suite | **269 files, 7,366 tests passed** (as of this commit) |
 | new tests | **7,143 -> 7,179, +36**: **35** in `battery-lanes.test.ts` (the unit, the rule, the matching, the reader's refusals, the plan against the workflow, the order, the prefix, the shipped plan, and a second table the reader must also accept) and one net in `ci-budget.test.ts` -- the overlap refused, the pair a split needs accepted |
 | test lines | **123,970 -> 124,474 core** |
-| `Tracked files` | **689 -> 693**: `scripts/lane-costs.mjs`, `golden-master/battery-lanes.json`, `golden-master/ci-declarations.json` (written this round rather than earlier) and `packages/core/test/battery-lanes.test.ts` |
-| CI | run `45973021889` on `3673a82d`: **9 of 9 jobs success**, **451 s** of wall clock, reading **65** -- the run the lane table's seconds were read from, and the last run before the one that ships this round. The tenth job cannot appear in a reading until a run has measured it, so the row that answers `R7` here is the reading the plan was priced on; the run of this commit is the settlement, and `R9` refuses every later commit until it exists |
+| `Tracked files` | **689 -> 692**: `scripts/lane-costs.mjs`, `golden-master/battery-lanes.json` and `packages/core/test/battery-lanes.test.ts`. `golden-master/ci-declarations.json` was written by this round and deleted by its own settlement -- the twelve `moved` entries and the tenth job's promise are declarations of a state, and the run of the commit that ships them is the thing they were waiting for (`R9`: a promise that outlives its measurement is a bound nobody checked) |
+| CI | run `46000370819` on `ad41a7e`: **10 of 10 jobs success**, **317 s** of wall clock (the head is `battery lane 5 of 5` at **313 s**, `battery lane 4 of 5` **305 s**, `coverage` **247 s**, `verify` **149 s**), reading **66** -- the first run that measures the tenth job, and the run of the commit that ships this round |
 
 ### Left open
 
@@ -2059,12 +2081,9 @@ its batteries left, and the claim it guards -- every command there names a scrip
   Unchanged from v3.163, and no part of this round touched it: every adapter sends `max_tokens` and
   none sends an `AbortSignal`, so a connection that is accepted and never answered is bounded by the
   job's ceiling rather than by the call. `[open: what timeout a generation may be given, given that nothing in this repository has measured a slow-but-valid completion to size one against, and that a timeout which fires on the harmless case is the shape this log has refused twice]`
-- `O-150` · **A tenth job is a promise, and the run that settles it has not happened.**
-  `coverage` is declared in `golden-master/ci-declarations.json` as a **31-minute** job whose two
-  bounded steps are the shells install and the build; `R9` refuses every commit after this one until
-  a run has measured it, and `R11` counts it as a declaration awaiting its first run. Three things
-  follow from that and none of them is a measurement yet: whether the head lands on a lane at
-  **~284 s** or on `coverage` at **~242 s**; whether the five lane ceilings (**27 / 49 / 40 / 60 /
-  33** minutes) still bound steps that moved lanes, against **R10**'s "twice the slowest reading";
-  and whether anything outside this repository names a check by its old display name, since every
-  lane's `name:` changed to `battery lane N of 5` in the same commit. `[open: which job the queue's head is on the first run that measures all ten, and whether a check named by its display name outside this repository has to be renamed before that run can be required]`
+- `O-150` · **A lane's price is one reading, and the lane the table balanced is not the lane the runner ran.**
+  The table priced the five bodies at **263 / 261 / 260 / 257 / 258** s from reading 65; reading 66, the
+  run of the commit that shipped it, read **188 / 225 / 242 / 283 / 286** -- a **1.52x** spread where the
+  table said **1.02x**, because one lane's type-miss probe read **211 -> 150 s** and the round-trip battery
+  **52 -> 38 s** while the sensitivity pair read **114 -> 137** and **137 -> 155 s**. The placement is a
+  rule and the balance is a property of the table; the seconds are the machine's day. `[open: whether the placement should be re-derived each round from the run that ships it -- which buys a head 30 s closer and costs a table whose prices are never the same twice -- or stay one named reading with its error printed, and whether a required check named by its display name outside this repository has to be renamed now that every lane's name says `battery lane N of 5`]`
