@@ -1638,6 +1638,16 @@ exit without **depending** on it -- the assertion matched `--costs`, and `assign
 with a sentence that also ends in `--costs`. Replacing the throw with success left the test green. The assertion now
 names this table's own file.
 
+The run of the commit that ships the table is reading **62**, and it returns **9 of 9** in **429 s** of wall clock with
+the pair at **133 s / 163 s** -- **18.4%** apart where the plan says 0.89%. That is the honest shape of this round, and
+the record keeps both numbers. The ten positional readings of this pair run 16.7% to 60.7% with a mean of 42.4%, so one
+reading at 18.4% is **inside** the old spread and does not by itself prove the partition better; a table read on one
+machine balances a plan and not a day, which v3.157 measured twice on one tree (0.1%, then 30%). What did change is
+where the numbers come from -- two machines now divide the same way, because the partition is a pure function of a file
+in the tree -- and what the round cost: **296 s** of gates time against reading 61's **387 s** on the same 69 gates.
+The reading also moved the queue: the longest job is now `verify` at **429 s**, with `gates-audit` at **417 s** behind
+it and no longer the head.
+
 ### Readings
 
 > Ledger for `v3.161`.
@@ -1646,6 +1656,7 @@ names this table's own file.
 | --- | --- |
 | the division before this round | by position: **106.0 s / 181.6 s** of the shipped table's **287.5 s** -- **41.6%** apart -- and **118 / 198**, **149 / 239**, **146 / 241 s** on the three readings above |
 | what divides it now | `golden-master/gate-costs.json`: **69** gates, **287.5 s** of child time on this box, dearest `check-official.mjs` at **28.4 s (9.9%)**, mean **4.17 s**; the plan is **143.1 s / 144.4 s**, **0.89%** apart, 34 and 35 gates |
+| the pair on the runner | reading **62** (`45935289140`, the run of the commit that ships this table): **133 s / 163 s**, **18.4%** apart, against the plan's 0.89% -- the table balanced a plan and the runner spent its own day. The ten positional readings of this pair (52 to 61) run **16.7%** to **60.7%**, mean **42.4%** and median **39.9%**, so one reading inside that spread proves nothing on its own; what it does show is the shape: **296 s** of gates time here against reading 61's **387 s**, on the same 69 gates |
 | the four refusals | a shard with no table; a gate with no row; a row with no gate, or one whose file count disagrees with the tree; and `--costs` beside a shard or a list, or on a run that did not measure every gate |
 | what `--costs` refuses to write | a table from a run that skipped a gate, because a table is a measurement of every subject or it is not a table -- and the sentence names the gates that were not measured |
 | the partition | `--list --shard i/2` prints the slice this run would measure; the union of the slices is the inventory, no gate is in two, and neither is empty |
@@ -1657,7 +1668,7 @@ names this table's own file.
 | new tests | **7,126 -> 7,137, +11** in one new file (`gate-costs.test.ts`) |
 | the three counts that had to move with it | `calls / sites` in the inventory **172/152 -> 176/156** (four exits, two throws), the throw baskets **118 -> 120**, and the sites cost table rebuilt because the new file proves six sites and a claimant with no row cannot be divided |
 | `Tracked files` | **687 -> 689**: the cost table and the new test file |
-| CI | run `45928458435` on `b0683508`: **9 of 9 jobs success**, **519 s** of wall clock, reading **61** -- the last green run of this workflow, which closed `v3.160`; the run of the commit that ships this round's table cannot close the round it is red on, so the row that closes `v3.161` is written by the next commit, from that commit's run |
+| CI | run `45935289140` on `ebedaba7`: **9 of 9 jobs success**, **429 s** of wall clock, reading **62** -- the run of the commit that ships this table, and the first run whose halves were placed by it. The pair read **133 s / 163 s**, and the longest job is now `verify` at **429 s** with `gates-audit` **417 s** behind it |
 
 ### Left open
 
