@@ -1732,10 +1732,10 @@ then rebuilt the measured seconds itself, so the keys are derived rather than ty
 | the three refusals | a row with no `lines`, a `lines` that is not a count, and a `lines` of zero -- the shape, not the value |
 | what is deliberately not a verdict | the value of `lines`. A verdict there costs a 282.9 s re-measure per round that edits a test file and cannot tell a comment from a growth |
 | falsification | two new tests and three new refusals: the drift arithmetic (150 lines to 350 is **+133%**, and the first version of the assertion said +100% -- the run caught the test, not the code), the ordering by size, the unread end (`to: null`) ranked by its whole size, `null` for nothing to compare, and a spawned shard run printing both sentences |
-| `core` test suite | **264 files, 7,139 tests passed** (as of this commit) |
+| `core` test suite | **264 files, 7,139 tests passed** (at v3.162) |
 | coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- statements, branches, functions and lines, read from `coverage/coverage-summary.json`; the round added tests and no source line, so the four figures are the ones v3.161 closed on |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **268 files, 7,326 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.162) |
+| repo test suite | **268 files, 7,326 tests passed** (at v3.162) |
 | new tests | **7,137 -> 7,139, +2** in `gate-costs.test.ts` |
 | test lines | **123,751 -> 123,859 core** |
 | `Tracked files` | **689**, unchanged: the round added no file, and the two tables it rewrote were already tracked |
@@ -1750,3 +1750,121 @@ then rebuilt the measured seconds itself, so the keys are derived rather than ty
   ledger: the job count is what every `R11` row's denominator is written against, what the nine ceilings are counted
   in, and what `check-ci-budget` reconciles the bounds of. `[open: whether the wall clock should be bought by
   changing the shape of the queue -- and if so, which of the two jobs the shared prefix belongs to]`
+
+## v3.163 — the head of the queue is a shape, and a request that did not state its ceiling
+
+`O-147` asked whether the wall clock should be bought by changing the shape of the queue, and it
+described the purchase from one reading: *"`verify` **429 s** -- `typecheck` 10 s, `lint` **186 s**,
+`coverage` **206 s** in one job -- with `gates-audit` **417 s** behind it"*. The answer this round
+gives is not yes and not no. It is that the entry priced one job and the thing to price is the
+**shape six jobs share**, and that no single half of the purchase is worth making.
+
+The ledger first. Every job's body, from reading 64 (`45940813606` on `7275eb38`), with the six
+setup steps (checkout, Node, pnpm, install, shells, build) subtracted:
+
+| job | total | prefix | body | steps in the body | heaviest step |
+| --- | --- | --- | --- | --- | --- |
+| `gates-audit` | **470 s** | 21 s | **443 s** | 4 | gate-fail shard 2 of 2, **195 s** |
+| `verify` | 437 s | 20 s | 413 s | 6 | coverage, **211 s** |
+| `batteries-heavy` | 399 s | 19 s | 376 s | 2 | type-miss probe, **261 s** |
+| `batteries` | 394 s | 20 s | 371 s | 11 | gate-fail shard 1 of 2, **193 s** |
+| `sensitivity` | 178 s | 37 s | 134 s | 2 | proved exits, **117 s** |
+| `sensitivity-shard` | 150 s | 30 s | 115 s | 1 | proved exits shard 2 of 2, **115 s** |
+| `artefacts` | 61 s | 21 s | 35 s | 7 | doc guards, 17 s |
+| `backend` | 41 s | 11 s | 26 s | 2 | a foreign backend, 20 s |
+| `cold-tree` | 22 s | 15 s | 3 s | 3 | doc guards, 2 s |
+
+Five of those jobs are the same object: a **series of independent mutation batteries**, each
+paying one prefix to run subjects that never read each other's results. Their bodies total
+**1,439 s** across five lanes -- **443, 376, 371, 134, 115** -- and the workflow's wall clock is
+the heaviest lane plus its prefix. So the entry's premise was a reading of a head that moves: of
+the last eight readings, **five** put `gates-audit` first and **one** put `verify` first, and the
+v3.162 record already said so in its own words (*"the queue's head moved twice across three
+runs"*).
+
+Three prices, each measurable from that table:
+
+| move | new head | wall clock | bought |
+| --- | --- | --- | --- |
+| split `verify` into lint+typecheck and coverage, change nothing else | still `gates-audit` at **470 s** | **470 s** | **0 s** |
+| rebalance the five battery lanes only, keep nine jobs | `verify` at **437 s** | **437 s** | **33 s** |
+| both: lanes balanced to **1,439 / 5 = 288 s** + prefix, and `verify` cut to **235 s** | **309 s** | **309 s** | **161 s** |
+
+The middle row is why the entry as written is refused: `verify` split alone buys nothing, because
+the head was never `verify` on the tree the split would ship to. The bottom row is why it is not
+closed as "no": the purchase exists, it costs one more install and build (**~20 s**, which is
+already inside the 309 s) plus the ledger work of a tenth job, and it is worth **161 s** -- but
+only as a pair, and only with the lanes rebalanced by a committed table rather than by hand,
+because a hand-placed assignment is the second partition this repository keeps refusing
+(`assignShards` exists so that there is one). `O-148` is that sentence with its numbers.
+
+Two defects arrived in the same pass, both from auditing the calls this repository makes rather
+than the files it ships.
+
+**The adapters that own the token limit did not state one** (finding 677). `anthropic.ts` sends
+`max_tokens` on every body; `buildOpenAiCompatibleRequest` -- the core behind DeepSeek and OpenAI,
+so two of the three shipped adapters -- sent none, and `scripts/derive-fault-golden.mjs` justified
+having no cap of its own by saying *"the concrete adapters own their own token limits"*. The
+ceiling is now a required field of the request with `OPENAI_COMPATIBLE_DEFAULT_MAX_TOKENS = 4096`,
+all three adapters and the registry accept and forward `maxTokens`, and the arc of a run is
+computable in advance: **34** samples, **19,779** characters of prompt, **34 x 4096 = 139,264**
+completion tokens at the ceiling.
+
+**A percentage divided two populations** (finding 678). `gateDrift`'s `change` summed the tree's
+lines over the gates it could count and divided by the table's lines over every row, so one unread
+gate of three made the reading say the tree had fallen **6.7%** -- the exact arithmetic its own
+`moved` list refuses with `to: null`. `readLines` is now the denominator, `read` and `unread` name
+the split, and the printed sentence says which population the percentage is over. It was latent
+from the day it was written: the one caller hands over a tree keyed exactly as the table, so the
+branch could not be reached -- which is why it is written down here rather than left to the next
+caller to discover.
+
+The edits had their own counting consequences, and they were re-derived rather than trusted. Inserting the ceiling and
+the population moved **17** rows of `golden-master/gate-sites.json`; re-running the deriver carried **156 of 156**
+failure-site annotations and **120 of 120** throw annotations by identity, and the inventory did not move (**156** sites
+across **69** of **103** scripts). `golden-master/sensitivity-costs.json` keys its witnesses by `script:line`, so every
+key moved: **143** rows were renumbered by re-running the battery that writes the table (`--costs`, **69** claimants,
+**262** claims, **734.4 s** of child time, **332** runs in **3.1 min**), which re-proved all **262** claims on its way
+-- **149** exits hollowed and **113** throws removed, and a test goes red for every one of them.
+
+### Readings
+
+> Ledger for `v3.163`.
+
+| item | value |
+| --- | --- |
+| the queue, by body | **1,439 s** of battery work across five lanes: `gates-audit` **443** (4 batteries), `batteries-heavy` **376** (2), `batteries` **371** (11), `sensitivity` **134** (2), `sensitivity-shard` **115** (1); `verify`'s body is **413 s** in 6 steps and is not a battery lane |
+| the head, over eight readings | `gates-audit` first in **five** (`45837753166`, `45847128112`, `45928458435`, `45936208473`, `45940813606`), `batteries` first in **two**, `verify` first in **one** (`45935289140`, the reading `O-147` was written from) |
+| the three prices | split alone **0 s** (head stays `gates-audit`); rebalance alone **33 s** (head becomes `verify`); both **161 s** (head **309 s**) |
+| what the LLM body states now | `max_tokens`, defaulting to **4096**, on all three adapters; `LlmProviderOptions` carries it and `createLlmProvider` forwards it |
+| what a run can be priced at | **34** requests x **4096** tokens = **139,264** completion tokens at the ceiling, over **19,779** characters of prompt in `golden-master/fault-extraction/samples.json`, paced at **250 ms** |
+| what the LLM body still does not state | a timeout -- `O-149`, because a ceiling on tokens does not bound a wait |
+| the drift reading, before and after | a tree that could count two of three gates read **-6.7%**; it now reads **0.0%** over the **2** gates both sides counted, with **1** named as uncounted |
+| falsification | the two request bodies this tree already pinned went red the moment `max_tokens` arrived, and a third test reads the wire (`maxTokens: 512` must post **512**); the drift test now pins `read`, `unread`, `readLines` and `change` where it pinned only `moved` and `treeLines`, and the spawned shard run pins the sentence by its numbers |
+| the edits' own counting consequences | `gate-sites.json` moved **17** rows and carried **156 / 156** site annotations and **120 / 120** throw annotations by identity (inventory unchanged: **156** sites, **69** scripts); `sensitivity-costs.json` renumbered **143** witness keys, re-derived by `--costs` (**69** claimants, **262** claims, **734.4 s**, **332** runs in **3.1 min**) and re-proved all **262** claims (**149** exits hollowed, **113** throws removed) |
+| `core` test suite | **264 files, 7,143 tests passed** (as of this commit) |
+| coverage | core **99.98 / 99.95 / 100 / 99.98**, cli **100 / 100 / 100 / 100** -- statements, branches, functions and lines, read from `coverage/coverage-summary.json` |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **268 files, 7,330 tests passed** (as of this commit) |
+| new tests | **7,139 -> 7,143, +4**: one for the ceiling on the wire, one for each adapter passing it down, and one for the exported constant |
+| test lines | **123,859 -> 123,970 core** |
+| `Tracked files` | **689**, unchanged: the round added no file |
+| CI | run `45940813606` on `7275eb38`: **9 of 9 jobs success**, **470 s** of wall clock, reading **64** -- the tree this round started from, and the reading the round's own run replaces in the commit after it, as v3.161's did |
+
+### Left open
+
+- `O-148` · **The queue's wall clock is bounded by a series of batteries, and the shape only pays as a pair.**
+  Five jobs are series of independent mutation batteries -- `gates-audit` **443 s** in four,
+  `batteries-heavy` **376 s** in two, `batteries` **371 s** in eleven, `sensitivity` **134 s** in two,
+  `sensitivity-shard` **115 s** in one -- and the wall clock is the heaviest lane. Splitting `verify`
+  alone buys **0 s**, rebalancing the lanes alone buys **33 s**, and both buy **161 s** by bringing the
+  head to **309 s**. What is left to decide is the assignment's provenance: a committed table divided
+  by `assignShards` (one placement rule, the sites and gates tables already do this) or a hand-placed
+  split. `[open: whether the lane-to-battery assignment is derived from a committed cost table or placed by hand -- and whether the tenth job's ledger cost is paid before or with the split of verify]`
+- `O-149` · **A call states its ceiling and not its patience.**
+  Every adapter now sends `max_tokens`, and none sends a timeout: an endpoint that accepts the
+  connection and never answers holds the step until the job's ceiling. `anthropic.ts`,
+  `openai-compat.ts` and the derive script all await `fetch` with no `AbortSignal`, so the only
+  bound on a hung request is the workflow. What makes this a decision rather than a patch is the
+  number: a timeout short enough to fire on a legitimate slow generation is a gate that fails on
+  the harmless case, and this repository has refused that shape twice. `[open: what timeout a generation may be given, and whether it is one number for every provider or one per adapter, given that no run in this repository has ever measured a slow-but-valid completion]`

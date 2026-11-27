@@ -3293,3 +3293,39 @@ claim.
 - **What it does not claim.** Not that the drift bounds the seconds: lines are a proxy for weight, and a slow test is
   often a test that spawns processes rather than a long one. Not that a re-measure is cheap: it is **282.9 s** of this
   box's afternoon, which is why the reading, and not a verdict, is what the round bought.
+
+## A request states what it can be charged for
+
+- **The ceiling is part of the request, not of the endpoint's manners.** Every body carries `max_tokens`, defaulting
+  to **4096**, beside `temperature`: both are the caller saying what it will pay for. Until `v3.163` the
+  OpenAI-compatible core -- and therefore two of the three shipped adapters -- sent none, while the Anthropic adapter
+  sent 4096 and `scripts/derive-fault-golden.mjs` justified having no cap of its own by saying the adapters owned
+  their token limits. (`v3.163`, finding 677)
+- **One options shape, including the option that prices a call.** `LlmProviderOptions` carries `maxTokens` and
+  `createLlmProvider` forwards it. A registry whose stated purpose is one shape for every vendor cannot leave the
+  one field that bounds a bill out of that shape. (`v3.163`, finding 677)
+- **A cost that can be computed before the run.** `golden-master/fault-extraction/samples.json` is **34** samples of
+  **19,779** characters, one request each, paced at **250 ms**: the worst case is **139,264** completion tokens plus
+  the prompts, which is a number a price list can be applied to in advance rather than an invoice read afterwards.
+  (`v3.163`, finding 677)
+- **A ceiling on tokens is not a ceiling on waiting.** No adapter sets a timeout; an endpoint that accepts the
+  connection and never answers holds the step until the job's bound. Named rather than half-built, because a timeout
+  short enough to fire on a legitimate slow generation is a gate that fails on the harmless case -- `O-149`.
+  (`v3.163`, finding 677)
+- **A percentage is over one population.** `gateDrift`'s `change` divides by `readLines`, the table's side of the
+  gates **both** sides counted, and reports `read` and `unread` beside it. Dividing by every row booked a gate the
+  tree never counted as a fall of its whole size -- **-6.7%** for one unread gate of three -- which is the arithmetic
+  its own `moved` list refuses with `to: null`. (`v3.163`, finding 678)
+- **A figure that excludes something says what it excludes.** The printed sentence names the population (*"over the
+  1 of them this run could count"*) and adds a clause when a gate could not be counted, because a number that
+  silently leaves a gate out reads as a number about all of them. (`v3.163`, finding 678)
+- **A wire format is pinned by a failing test, not by a paragraph.** Two bodies this tree already pinned went red the
+  moment `max_tokens` arrived, and the factory is proved separately on the wire (`maxTokens: 512` must post **512**),
+  because a repair that satisfies a body builder can still be read and dropped one layer up. (`v3.163`, finding 677)
+- **A decision about a distribution is not answered by one sample.** `O-147` was written from the one reading of
+  eight in which `verify` was the longest job; five of the other seven put `gates-audit` first. A round that reshapes
+  a queue on one reading buys a queue shaped for that afternoon. (`v3.163`, finding 679)
+- **A purchase with two halves is priced as a pair.** Splitting `verify` alone buys **0 s** (the head stays
+  `gates-audit` at **470 s**), rebalancing the five battery lanes alone buys **33 s**, and both buy **161 s**. Each
+  half is cheap to state and the wrong one to buy alone; the receipt is the shape of the dependence, not a promise
+  about the next run. (`v3.163`, finding 679)

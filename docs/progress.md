@@ -439,10 +439,10 @@ document that described it as downloading the data was describing an intention.
 | Commits (at `e22e2de`) | 536 |
 | Packages | `@rca-bench-factory/cli`, `@rca-bench-factory/core` |
 | Source files | 98 |
-| Source lines | 34,609 |
+| Source lines | 34,654 |
 | Test files | 264 core + 4 cli |
-| Test lines | 123,859 core + 3,242 cli |
-| Tests | 7,139 core + 187 cli |
+| Test lines | 123,970 core + 3,242 cli |
+| Tests | 7,143 core + 187 cli |
 | Tracked files | 689 |
 
 `node scripts/check-repository-table.mjs` derives all eight rows and fails when one has
@@ -550,7 +550,7 @@ counted, not remembered.
 Most entries below are **limits** rather than tasks: each names something this repository
 does not do, why, and what would close it.
 
-Checked at v3.162: **53** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.163: **54** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1202,17 +1202,26 @@ is a row about rather than paraphrase one that no `grep` will find.
   until a table's rows are filtered and that pairing becomes a guess, or whether a file that uses a formatted title must
   state its clock on the suite, since a suite's number is the only clock a reader without a position can place]`
 
-- O-147 · **The workflow's longest job is now the one that runs two unrelated things in series.**
-  Reading 62 put `verify` at **429 s** -- `typecheck` 10 s, `lint` **186 s**, `coverage` **206 s** in one job -- with
-  `gates-audit` **417 s** behind it, so the head of the queue is no longer a battery but a job that holds two half-hour
-  commands that know nothing about each other. Run as two jobs they would pay one install and one build more (**~20 s**
-  of the reading) and cut the workflow's wall clock by about **200 s**; what stops it being free is the ledger, because
-  the job count is what every `R11` row's denominator is written against, what the nine ceilings are counted in, and
-  what `check-ci-budget` reconciles the bounds of, and `R11` already refuses a commit that adds a job until a run has
-  measured the job that commit adds.
-  `[open: whether the wall clock should be bought by changing the shape of the queue, and if so which of the two jobs
-  the shared install-and-build prefix belongs to -- a prefix on the longer half is a bound the shorter half does not
-  need, and a prefix on both is how the split pays for itself twice]`
+- O-148 · **The queue's wall clock is bounded by a series of batteries, and the shape only pays as a pair.**
+  Five jobs are series of independent mutation batteries -- `gates-audit` **443 s** in four, `batteries-heavy`
+  **376 s** in two, `batteries` **371 s** in eleven, `sensitivity` **134 s** in two, `sensitivity-shard` **115 s**
+  in one -- and the wall clock is the heaviest lane. The three prices, from reading 64's own steps: splitting
+  `verify` alone buys **0 s** (the head stays `gates-audit` at **470 s**, which is why `O-147`'s premise was one
+  reading of a moving head), rebalancing the five lanes alone buys **33 s** (the head becomes `verify` at **437 s**),
+  and both buy **161 s**, by bringing the head to **309 s** for one more install and build that is already inside
+  that figure. The ledger side is what a tenth job costs: every `R11` row's denominator, the nine ceilings' counting
+  unit, and `check-ci-budget`'s reconciliation all move with it, and `R11` refuses a commit that adds a job until a
+  run has measured the job that commit adds.
+  `[open: whether the lane-to-battery assignment is derived from a committed cost table or placed by hand -- and whether the tenth job's ledger cost is paid before or with the split of verify]`
+- O-149 · **A call states its ceiling and not its patience.**
+  Every adapter now sends `max_tokens` (finding 677), and none sends a timeout: `anthropic.ts`, `openai-compat.ts`
+  and `scripts/derive-fault-golden.mjs` all await `fetch` with no `AbortSignal`, so an endpoint that accepts the
+  connection and never answers holds the step until the job's ceiling. That is one number away from a decision
+  rather than a patch: a timeout short enough to fire on a legitimate slow generation is a gate that fails on the
+  harmless case, which this repository has refused twice by name (finding 168's shape), and no run here has ever
+  measured a slow-but-valid completion to size it against.
+  `[open: what timeout a generation may be given, and whether it is one number for every provider or one per adapter, given that no run in this repository has ever measured a slow-but-valid completion]`
+
 ## Pass log
 
 The rounds are recorded in the volumes below, in the order they were run. They were one
@@ -1251,7 +1260,7 @@ and this table.
 | [volume-19.md](progress/volume-19.md) | 13 | v3.121 | v3.133 |
 | [volume-20.md](progress/volume-20.md) | 8 | v3.134 | v3.141 |
 | [volume-21.md](progress/volume-21.md) | 9 | v3.142 | v3.150 |
-| [volume-22.md](progress/volume-22.md) | 12 | v3.151 | v3.162 |
+| [volume-22.md](progress/volume-22.md) | 13 | v3.151 | v3.163 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

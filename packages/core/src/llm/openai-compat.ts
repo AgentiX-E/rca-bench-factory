@@ -16,9 +16,24 @@ export interface OpenAiCompatibleOptions {
   baseUrl: string;
   /** Provider name used in error messages, e.g. "OpenAI" or "DeepSeek". */
   name: string;
+  /** Completion ceiling in tokens; defaults to `OPENAI_COMPATIBLE_DEFAULT_MAX_TOKENS`. */
+  maxTokens?: number;
   /** Injectable fetch for real-server tests; defaults to the global fetch. */
   fetchImpl?: typeof fetch;
 }
+
+/**
+ * The completion ceiling a request states when its caller names none.
+ *
+ * Same number as `ANTHROPIC_DEFAULT_MAX_TOKENS`, and for the same reason: a call's
+ * cost is its prompt tokens plus at most this many output tokens, so a stated ceiling
+ * is the difference between a bill that can be computed before a run and one that is
+ * discovered after it. Until v3.163 this core stated none, while `Anthropic` stated
+ * 4096 -- and `scripts/derive-fault-golden.mjs` justified having no cap of its own by
+ * saying the limit belonged to the provider layer, which was true of one adapter out
+ * of three.
+ */
+export const OPENAI_COMPATIBLE_DEFAULT_MAX_TOKENS = 4096;
 
 export interface OpenAiCompatibleRequest {
   model: string;
@@ -26,15 +41,22 @@ export interface OpenAiCompatibleRequest {
   /** Zero for reproducible, deterministic rule generation. */
   temperature: number;
   stream: false;
+  /** The most output tokens this request can be charged for. */
+  max_tokens: number;
 }
 
 /** Build the OpenAI-compatible chat-completions request body. */
-export function buildOpenAiCompatibleRequest(prompt: string, model: string): OpenAiCompatibleRequest {
+export function buildOpenAiCompatibleRequest(
+  prompt: string,
+  model: string,
+  maxTokens: number = OPENAI_COMPATIBLE_DEFAULT_MAX_TOKENS,
+): OpenAiCompatibleRequest {
   return {
     model,
     messages: [{ role: 'user', content: prompt }],
     temperature: 0,
     stream: false,
+    max_tokens: maxTokens,
   };
 }
 
@@ -100,11 +122,12 @@ export function parseOpenAiCompatibleResponse(jsonText: string, name: string): s
  */
 export function createOpenAiCompatibleProvider(options: OpenAiCompatibleOptions): LlmProvider {
   const { apiKey, model, baseUrl, name } = options;
+  const maxTokens = options.maxTokens ?? OPENAI_COMPATIBLE_DEFAULT_MAX_TOKENS;
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
 
   return {
     async generate(prompt: string): Promise<string> {
-      const body = buildOpenAiCompatibleRequest(prompt, model);
+      const body = buildOpenAiCompatibleRequest(prompt, model, maxTokens);
       const response = await fetchImpl(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {

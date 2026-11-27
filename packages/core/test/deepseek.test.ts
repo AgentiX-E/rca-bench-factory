@@ -40,12 +40,13 @@ async function withServer(
 }
 
 describe('buildDeepSeekRequest', () => {
-  it('builds an OpenAI-compatible request with deterministic temperature', () => {
+  it('builds an OpenAI-compatible request with deterministic temperature and a stated ceiling', () => {
     expect(buildDeepSeekRequest('map these columns', 'deepseek-flash')).toEqual({
       model: 'deepseek-flash',
       messages: [{ role: 'user', content: 'map these columns' }],
       temperature: 0,
       stream: false,
+      max_tokens: 4096,
     });
   });
 
@@ -91,6 +92,29 @@ describe('parseDeepSeekResponse', () => {
 
   it('throws when the content is not a string', () => {
     expect(() => parseDeepSeekResponse('{"choices":[{"message":{"content":42}}]}')).toThrow(/content/i);
+  });
+});
+
+describe('createDeepSeekProvider - the ceiling', () => {
+  it('sends the ceiling its options name, and the default when they name none', async () => {
+    // The adapter is the layer `scripts/derive-fault-golden.mjs` meant when it said the
+    // concrete adapters own their token limits. This reads the wire twice: once for a caller
+    // that stated a number and once for one that did not, because a factory that re-applied
+    // the default would pass the second case and silently overrule the first.
+    const bodies: string[] = [];
+    const capture = (async (_url: string, init: RequestInit) => {
+      bodies.push(String(init.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    await createDeepSeekProvider({ apiKey: 'k', fetchImpl: capture }).generate('p');
+    await createDeepSeekProvider({ apiKey: 'k', maxTokens: 512, fetchImpl: capture }).generate('p');
+
+    expect(JSON.parse(bodies[0] ?? '{}').max_tokens).toBe(4096);
+    expect(JSON.parse(bodies[1] ?? '{}').max_tokens).toBe(512);
   });
 });
 

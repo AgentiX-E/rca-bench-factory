@@ -1031,7 +1031,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 1104,
+      "line": 1108,
       "condition": "paid.length !== all.length",
       "diagnostic": "${String(all.length - paid.length)} of ${String(all.length)} gate(s) were not measured",
       "status": "proved",
@@ -1039,7 +1039,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 1193,
+      "line": 1197,
       "condition": "failed > 0",
       "diagnostic": "${gate} could not be hollowed into valid JavaScript, so it was not measured at all",
       "status": "proved",
@@ -1473,7 +1473,7 @@
       },
       {
         "script": "scripts/gate-proofs.mjs",
-        "line": 565,
+        "line": 595,
         "disposition": "unguarded",
         "message": "the cost table has no `gates` map, so no gate can be placed by it",
         "status": "proved",
@@ -1481,7 +1481,7 @@
       },
       {
         "script": "scripts/gate-proofs.mjs",
-        "line": 570,
+        "line": 600,
         "disposition": "unguarded",
         "message": "new Error( `no measured cost for ${gate}, so it cannot be placed on a shard: regenerate ` + 'golden-master/gate-costs.js",
         "status": "proved",

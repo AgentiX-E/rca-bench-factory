@@ -392,13 +392,32 @@ export function apartPercent(loads) {
  * `moved` is ordered by the size of the change, widest first, so the sentence a run prints
  * names the gate whose price is least likely to still be right. `null` when there is no
  * row to read, because "0 of 0 gates moved" is the arithmetic agreeing with itself.
+ *
+ * ## Two populations, and the one `change` is over
+ *
+ * A gate the tree cannot count is not a gate that shrank. `moved` has said so since this
+ * function existed -- `to: null` rather than `0` -- and `change` did not: it summed the
+ * tree's lines over the gates it could read and divided by the table's lines over every
+ * row, so an unread gate was booked as a fall of its whole size. `readLines` is the
+ * table's side of the population both sides answered, `change` divides by it, and `read`
+ * and `unread` say how many gates each side of that split holds. `tableLines` still covers
+ * every row, because "how much does this table price" is a fair question about the table
+ * alone.
+ *
+ * The single caller in this tree happens to hand over a tree keyed exactly as the table
+ * is, so the unread branch is unreachable from it and was invisible in every run so far.
+ * It is written down rather than removed because the contract admits the case and the
+ * sentence a run prints would be a lie the first time a second caller existed.
  */
 export function gateDrift(rows, tree) {
   if (rows === null || typeof rows !== 'object' || Array.isArray(rows)) return null;
   const named = Object.entries(rows);
   if (named.length === 0) return null;
   let tableLines = 0;
+  let readLines = 0;
   let treeLines = 0;
+  let priced = 0;
+  let read = 0;
   // Ordered by how much moved, widest first. A gate the tree says nothing about counts as a
   // move of its whole size rather than of nothing: `to: null` is an unread count, and
   // sorting it by `0 - from` would rank the largest unknown last.
@@ -408,11 +427,14 @@ export function gateDrift(rows, tree) {
     const was = Number(row?.lines);
     if (!Number.isInteger(was) || was <= 0) continue;
     tableLines += was;
+    priced += 1;
     const now = tree.get(gate);
     if (typeof now !== 'number') {
       moved.push({ gate, from: was, to: null });
       continue;
     }
+    read += 1;
+    readLines += was;
     treeLines += now;
     if (now !== was) moved.push({ gate, from: was, to: now });
   }
@@ -420,8 +442,16 @@ export function gateDrift(rows, tree) {
   return {
     gates: named.length,
     tableLines,
+    readLines,
     treeLines,
-    change: tableLines === 0 ? null : ((treeLines - tableLines) / tableLines) * 100,
+    read,
+    unread: priced - read,
+    // The percentage is over the gates **both** sides answered, and `readLines` is the
+    // table's side of that same population. Dividing the read total by `tableLines` instead
+    // is what this did until v3.163: one gate the tree never counted, of three, made the
+    // reading say the tree had fallen 6.7% -- a fall nobody measured, in the field a reader
+    // looks at first, and the exact arithmetic the `moved` list was written to refuse.
+    change: readLines === 0 ? null : ((treeLines - readLines) / readLines) * 100,
     moved,
     widest: moved[0] ?? null,
   };

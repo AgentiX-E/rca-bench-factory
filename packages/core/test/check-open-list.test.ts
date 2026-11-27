@@ -1333,7 +1333,7 @@ describe('docs · a section that is only entries is a record, whatever its headi
     expect(r.out).toContain('0 record(s): 0 under a round and 0 under none');
   });
 
-  it('reads the shipped corpus as 263 records, with the addendum counted in', () => {
+  it('reads the shipped corpus as 265 records, with the addendum counted in', () => {
     // The shipped reading, and the rounds it carries: v3.115 found 22 records under two names the
     // guard did not read (218 -> its own), v3.116 found the addendum's record under a name and a form
     // it did not read (219), and the count has moved by one for every round that wrote a record
@@ -1358,10 +1358,13 @@ describe('docs · a section that is only entries is a record, whatever its headi
     // because this round did write one -- it opens `O-144`. v3.162 moved the left two again and
     // `wrote none` stayed at nineteen: it wrote a record and closed `O-146` in the same move.
     // (v3.162)
+    // v3.163 moved the left two for the same reason and in the same direction, and `wrote none`
+    // stayed at nineteen again: the round closed `O-147` and opened two entries -- the queue's
+    // shape and the missing timeout -- so its record has rows in it.
     const shipped = spawnSync('node', [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
     expect(shipped.status, shipped.stdout + shipped.stderr).toBe(0);
     expect(shipped.stdout).toContain(
-      '264 record(s): 239 under a round and 25 under none; 257 `vX.YY` round(s) + 1 addendum(s), 19 of them wrote none',
+      '265 record(s): 240 under a round and 25 under none; 258 `vX.YY` round(s) + 1 addendum(s), 19 of them wrote none',
     );
     // One corpus, two readers, one number. `check-progress-volumes` counts these same rounds to
     // print the population beside its heading count, and the agreement between the two is the only

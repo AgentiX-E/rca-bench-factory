@@ -59,6 +59,11 @@ export interface LlmProviderOptions {
   apiKey: string;
   model?: string;
   baseUrl?: string;
+  /**
+   * Completion ceiling in tokens. Every adapter states one, so a run's cost is
+   * bounded by the call it makes rather than by the endpoint's own default.
+   */
+  maxTokens?: number;
   fetchImpl?: typeof fetch;
 }
 
@@ -123,6 +128,7 @@ export function createLlmProvider(
     apiKey: options.apiKey,
     ...(options.model !== undefined ? { model: options.model } : {}),
     ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
+    ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
     ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {}),
   };
 

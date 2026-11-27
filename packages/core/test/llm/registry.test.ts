@@ -134,6 +134,10 @@ describe('createLlmProvider', () => {
         apiKey: 'k',
         baseUrl: 'https://example.invalid/v1',
         model: 'some-model',
+        // The one option that prices a call belongs in the shape every provider shares
+        // (finding 677). It is passed here rather than only in each adapter's suite because
+        // the failure this arm catches is a registry that reads the option and drops it.
+        maxTokens: 4096,
       });
       const withDefaults = createLlmProvider(id, { apiKey: 'k' });
       expect(withOverrides.ok, `provider ${id} should build with overrides`).toBe(true);

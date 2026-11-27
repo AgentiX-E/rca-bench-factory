@@ -1,4 +1,5 @@
 import {
+  OPENAI_COMPATIBLE_DEFAULT_MAX_TOKENS,
   buildOpenAiCompatibleRequest,
   createOpenAiCompatibleProvider,
   parseOpenAiCompatibleResponse,
@@ -49,6 +50,8 @@ export interface DeepSeekOptions {
   model?: string;
   /** API base URL; defaults to the public DeepSeek endpoint. */
   baseUrl?: string;
+  /** Completion ceiling in tokens; defaults to the OpenAI-compatible default. */
+  maxTokens?: number;
   /** Injectable fetch for real-server tests; defaults to the global fetch. */
   fetchImpl?: typeof fetch;
 }
@@ -56,8 +59,12 @@ export interface DeepSeekOptions {
 export type DeepSeekRequest = OpenAiCompatibleRequest;
 
 /** Build the OpenAI-compatible chat-completions request body. */
-export function buildDeepSeekRequest(prompt: string, model: string): DeepSeekRequest {
-  return buildOpenAiCompatibleRequest(prompt, model);
+export function buildDeepSeekRequest(
+  prompt: string,
+  model: string,
+  maxTokens: number = OPENAI_COMPATIBLE_DEFAULT_MAX_TOKENS,
+): DeepSeekRequest {
+  return buildOpenAiCompatibleRequest(prompt, model, maxTokens);
 }
 
 /**
@@ -79,6 +86,7 @@ export function createDeepSeekProvider(options: DeepSeekOptions): LlmProvider {
     model,
     baseUrl,
     name: 'DeepSeek',
+    ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
     ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {}),
   });
 }

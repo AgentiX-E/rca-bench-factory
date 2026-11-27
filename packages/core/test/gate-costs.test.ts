@@ -294,7 +294,17 @@ describe('scripts/gate-proofs.mjs · the table the gate audit is divided by', { 
       'c.mjs': { ms: 1, files: 1, lines: 10 },
     };
     const same = gateDrift(rows, new Map([['a.mjs', 100], ['b.mjs', 40], ['c.mjs', 10]]));
-    expect(same).toEqual({ gates: 3, tableLines: 150, treeLines: 150, change: 0, moved: [], widest: null });
+    expect(same).toEqual({
+      gates: 3,
+      tableLines: 150,
+      readLines: 150,
+      treeLines: 150,
+      read: 3,
+      unread: 0,
+      change: 0,
+      moved: [],
+      widest: null,
+    });
     // One gate doubled: the change is of the total, and the widest is named so the sentence
     // a run prints points at the number least likely to still be right.
     const grown = gateDrift(rows, new Map([['a.mjs', 300], ['b.mjs', 40], ['c.mjs', 10]]));
@@ -313,14 +323,26 @@ describe('scripts/gate-proofs.mjs · the table the gate audit is divided by', { 
     const silent = gateDrift(rows, new Map([['a.mjs', 100], ['b.mjs', 40]]));
     expect(silent?.moved).toEqual([{ gate: 'c.mjs', from: 10, to: null }]);
     expect(silent?.treeLines).toBe(140);
-    // Nothing to compare is `null` rather than a tidy zero.
-    expect(gateDrift({}, new Map())).toBeNull();
+    // ...and the percentage is over the gates *both* sides answered, because the reading used
+    // to divide 140 by all 150 lines and print -6.7%: a fall of ten lines nobody measured, in
+    // the field a reader looks at first. The `moved` assertion above refuses exactly that
+    // arithmetic, one field over, and this one was its unguarded twin.
+    expect(silent?.read).toBe(2);
+    expect(silent?.unread).toBe(1);
+    expect(silent?.readLines).toBe(140);
+    expect(silent?.change).toBe(0);
+    // A gate the tree answered with nothing readable is not a gate it did not answer: the two
+    // would be the same number here, and the sentence a run prints separates them by name.
     // A row with no line count is skipped, and the verdict above is what refuses it: a
     // drift that read the missing count as zero would report a fall nobody measured.
     const unreadable = gateDrift({ 'a.mjs': { ms: 1, files: 1 } }, new Map([['a.mjs', 10]]));
     expect(unreadable?.tableLines).toBe(0);
+    expect(unreadable?.read).toBe(0);
+    expect(unreadable?.unread).toBe(0);
     expect(unreadable?.change).toBeNull();
     expect(unreadable?.moved).toEqual([]);
+    // Nothing to compare is `null` rather than a tidy zero.
+    expect(gateDrift({}, new Map())).toBeNull();
   });
 
   it('refuses to place a gate the table does not price', () => {
@@ -474,7 +496,9 @@ describe('scripts/gate-proofs.mjs · the table the gate audit is divided by', { 
     // one of the two gates on this shard: the reading is of the half this run measured, so
     // the totals are that half's rows against that half's files.
     expect(run.stdout).toContain('drift: the table priced these 1 gate(s) when their naming files held 40 line(s)');
-    expect(run.stdout).toContain('this tree holds 2 (-95.0%)');
+    // The sentence names the population the percentage is over, because the reading used to
+    // divide the counted lines by every row and print a fall for a gate it never counted.
+    expect(run.stdout).toContain('over the 1 of them this run could count, the tree holds 2 (-95.0%)');
     expect(run.stdout).toContain('40 -> 2 line(s)');
     // The plan against the machine: the table prices this half at 10.0 s, and the stub's
     // own seconds are whatever they were. The two numbers belong on one line because

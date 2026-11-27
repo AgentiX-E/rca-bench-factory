@@ -1257,6 +1257,7 @@ const TESTED = [
   'createDeepSeekProvider',
   'parseDeepSeekResponse',
   // llm/openai-compat.ts
+  'OPENAI_COMPATIBLE_DEFAULT_MAX_TOKENS',
   'buildOpenAiCompatibleRequest',
   'createOpenAiCompatibleProvider',
   'parseOpenAiCompatibleResponse',

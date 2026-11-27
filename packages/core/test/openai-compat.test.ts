@@ -145,13 +145,28 @@ describe('parseOpenAiCompatibleResponse - shape rejection', () => {
 });
 
 describe('buildOpenAiCompatibleRequest', () => {
-  it('asks for a deterministic, non-streamed completion', () => {
+  it('asks for a deterministic, non-streamed completion, and names the length it will pay for', () => {
+    // `max_tokens` was absent from this body until v3.163, and `scripts/derive-fault-golden.mjs`
+    // justified having no cap of its own by saying the limit belongs to the provider layer. It
+    // did not: the Anthropic adapter sent 4096 and this core sent nothing, so the two providers
+    // that go through it were priced by whatever default the endpoint chose. The ceiling is part
+    // of the request for the same reason `temperature` is -- a body that omits it is a request
+    // whose cost the caller did not state.
     expect(buildOpenAiCompatibleRequest('p', 'm')).toEqual({
       model: 'm',
       messages: [{ role: 'user', content: 'p' }],
       temperature: 0,
       stream: false,
+      max_tokens: 4096,
     });
+  });
+
+  it('takes the ceiling from its caller, so a run can pay less than the default', () => {
+    expect(buildOpenAiCompatibleRequest('p', 'm', 256).max_tokens).toBe(256);
+    // Zero is a caller asking for nothing and is passed through, not treated as "unset":
+    // the default is applied once, where the option is read, and a body builder that
+    // re-applied it would silently overrule the adapter.
+    expect(buildOpenAiCompatibleRequest('p', 'm', 0).max_tokens).toBe(0);
   });
 
   it('carries the prompt verbatim, including newlines', () => {
@@ -187,7 +202,24 @@ describe('createOpenAiCompatibleProvider - transport', () => {
       messages: [{ role: 'user', content: 'hello' }],
       temperature: 0,
       stream: false,
+      max_tokens: 4096,
     });
+  });
+
+  it('sends the ceiling its options name, so a run can price itself below the default', async () => {
+    // The end-to-end half of the ceiling: the body builder is pinned above, and a factory
+    // that read the option and dropped it would still pass that. This reads the wire.
+    const seen: string[] = [];
+    const provider = createOpenAiCompatibleProvider({
+      ...options,
+      maxTokens: 512,
+      fetchImpl: (async (_url: string, init: RequestInit) => {
+        seen.push(String(init.body));
+        return ok({ choices: [{ message: { content: 'answer' } }] });
+      }) as unknown as typeof fetch,
+    });
+    await provider.generate('hello');
+    expect(JSON.parse(seen[0] ?? '{}').max_tokens).toBe(512);
   });
 
   it('surfaces a non-2xx status with the provider name and a bounded body', async () => {

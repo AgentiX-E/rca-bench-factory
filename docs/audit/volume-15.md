@@ -1446,3 +1446,160 @@ shard run whose two sentences are asserted by their numbers (`40 line(s)`, `this
 keys keyed by `script:line`: 15 renumbered by site identity (condition and diagnostic), 1 by that same identity
 change; the battery then re-measured the seconds itself. An address is not an identity, and this round had to use the
 identity to move the addresses -- which is `O-146`'s own lesson one level down.
+
+## Finding 677 — the adapters that own the token limit did not state one
+
+**The claim.** A request's cost is its prompt plus its completion, and the completion is the only
+part of that a caller can bound in advance. `packages/core/src/llm/anthropic.ts` bounds it: every
+body it builds carries `max_tokens`, defaulting to `ANTHROPIC_DEFAULT_MAX_TOKENS = 4096`. The
+OpenAI-compatible core that DeepSeek and OpenAI both go through did not — `buildOpenAiCompatibleRequest`
+returned `{model, messages, temperature, stream}` and nothing else — so two of the three shipped
+adapters were priced by whatever default the endpoint chose, and the one file that spends money had
+a comment saying the opposite was true:
+
+> There is deliberately no per-request payload cap here. `LlmProvider` is
+> `generate(prompt) -> text`, and the concrete adapters own their own token limits; adding a cap
+> at this layer would be a second, weaker copy of a limit the adapter already enforces.
+> — `scripts/derive-fault-golden.mjs`
+
+The sentence is the defect. A cap *was* a second copy for Anthropic, which would have made it
+merely redundant; for the two adapters that mattered it was the only cap, and there was none.
+This is the shape this log keeps finding: a comment asserting a property, and the property
+belonging to a neighbour that does not have it.
+
+**Reproduction.** The body, as the tree shipped it before this round:
+
+```
+$ node -e "import('./packages/core/dist/llm/openai-compat.js').then(m=>console.log(JSON.stringify(m.buildOpenAiCompatibleRequest('p','m'))))"
+{"model":"m","messages":[{"role":"user","content":"p"}],"temperature":0,"stream":false}
+```
+
+Against `anthropic.ts`'s `{"model":"m","max_tokens":4096,...}`. The difference was not visible in
+any run: a completion that stops on its own looks exactly like one that stopped at a ceiling, so
+the only reader who could have noticed is the one holding the invoice.
+
+**Fix.** The ceiling is part of the request, beside `temperature`, because both are the caller
+stating what it will pay for: `max_tokens` is a required field of `OpenAiCompatibleRequest`,
+`OPENAI_COMPATIBLE_DEFAULT_MAX_TOKENS = 4096` is the number an unstated caller gets, and
+`buildOpenAiCompatibleRequest` takes it as a third argument so an adapter can pass its own. All
+three adapters accept `maxTokens` in their options; `LlmProviderOptions` gains it and
+`createLlmProvider` forwards it, because a registry whose purpose is one options shape for every
+vendor cannot leave the one option that prices a call out of that shape.
+
+**What this buys, as a number.** `golden-master/fault-extraction/samples.json` holds **34**
+samples of **19,779** characters in total (**582** each on average), and the derive script issues
+one request per sample and paces them at 250 ms. With a stated ceiling the worst case of a run is
+**34 x 4096 = 139,264** completion tokens plus the prompts, which can be multiplied by a price
+list *before* the run; without one it was 34 x (the endpoint's default), which cannot.
+
+**What it does not do.** It states no timeout. An endpoint that accepts a connection and never
+answers still holds the step until the job's ceiling, and a ceiling on tokens does not bound a
+wait. That is a separate defect with a separate price -- a timeout short enough to fire on a
+legitimate slow generation is a gate that fails on the harmless case -- and it is named here
+rather than half-built: `O-149`.
+
+**Falsification.** The two bodies this tree already pinned said `stream: false` and no
+`max_tokens`, and they went red the moment the field arrived (`openai.test.ts`,
+`openai-compat.test.ts`'s transport case), which is the whole value of pinning a wire format: the
+specification is a failing test, not a paragraph. The repair could then satisfy a body builder
+and still be lost at the factory -- options read and dropped -- so a third test reads the wire:
+`createOpenAiCompatibleProvider({maxTokens: 512})` must post `max_tokens: 512`, and the two
+adapters' own builders are pinned to the default. A fourth test asserts `0` is passed through
+rather than read as "unset", because a builder that re-applied the default would silently overrule
+an adapter that had decided otherwise.
+
+## Finding 678 — a percentage divided two populations
+
+**The claim.** `gateDrift` (v3.162) reads how far the tree has moved from `golden-master/gate-costs.json`.
+It has three numbers to reconcile: what the table says the gates' naming files held, what those
+files hold now, and how many gates each side could speak about. It had two, and the third was in
+its own `moved` list.
+
+**Reproduction.** A table of two gates and a tree that can count only the first:
+
+```
+$ node -e "import('./scripts/gate-proofs.mjs').then(m=>console.log(JSON.stringify(m.gateDrift(
+    {'a.mjs':{ms:1,lines:100},'b.mjs':{ms:1,lines:300}}, new Map([['a.mjs',100]])))))"
+{"gates":2,"tableLines":400,"treeLines":100,"change":-75,"moved":[{"gate":"b.mjs","from":300,"to":null}],...}
+```
+
+The tree said nothing about `b.mjs`; the reading says the tree has fallen **75%**. `moved` had
+refused exactly that arithmetic since the field existed — `to: null`, with the comment *"not a
+gate that did not move, which is what `0 - from` would have made it"* — and `change` was the same
+defect one field over: `treeLines` summed the gates the tree answered, `tableLines` summed every
+row, and the division booked the difference as a loss.
+
+**Why nothing had noticed.** The single caller builds the tree's map from the same list it uses to
+filter the table, so the two key sets are identical and the unread branch is unreachable from
+`verify-gates-are-testable.mjs`. It is latent, not live — and latent in the direction that costs
+the most: the sentence a run prints says *"this tree holds N line(s)"* with `N` computed the same
+way, so the first caller that ever handed over a partial tree would print a percentage that was
+wrong and a total that was not the tree's.
+
+**Fix.** `readLines` is the table's side of the population both sides answered; `change` divides
+by it; `read` and `unread` say how many gates each side of that split holds. `tableLines` keeps
+covering every row, because "how much does this table price" is a fair question about the table
+alone. The printed sentence names the population — *"over the 1 of them this run could count"* —
+and adds a clause when a gate could not be counted, because a figure that silently excludes a
+gate reads as a figure about all of them.
+
+**Falsification.** The unit test now pins `read`, `unread`, `readLines` and `change` for a tree
+that can count two of three gates, where it previously pinned only `moved` and `treeLines` — the
+two fields that already refused the defect. The spawned shard run pins the new sentence by its
+numbers (`over the 1 of them this run could count, the tree holds 2 (-95.0%)`), which is the
+assertion that would have caught the old arithmetic had it been measurable from that side. The
+`-95.0%` is unchanged and still honest: it is one gate, 40 lines to 2, both sides counted.
+
+## Finding 679 — the longest job was a reading of a head that moves
+
+**The claim.** `O-147` was written from one reading and said *"the workflow's longest job is now
+the one that runs two unrelated things in series"*, naming `verify` at **429 s** with `gates-audit`
+**417 s** behind it. A round that acts on that sentence adds a tenth job, moves every `R11`
+denominator and every ceiling, and buys whatever the difference between those two numbers was on
+one afternoon. The question the entry asked is a question about a distribution, and it was being
+answered with a sample of one.
+
+**What the readings say.** The eight readings before this round, per job:
+
+| reading | run | first | `gates-audit` | `verify` | `batteries-heavy` | `batteries` |
+| --- | --- | --- | --- | --- | --- | --- |
+| 57 | `45837753166` | `gates-audit` | **458** | 336 | | |
+| 58 | `45839530127` | `batteries` | 508 | 327 | | **550** |
+| 59 | `45847128112` | `gates-audit` | **446** | 348 | | 439 |
+| 60 | `45853859064` | `batteries` | 508 | 283 | | **543** |
+| 61 | `45928458435` | `gates-audit` | **515** | 256 | | 344 |
+| 62 | `45935289140` | `verify` | 412 | **427** | | |
+| 63 | `45936208473` | `gates-audit` | **462** | 340 | | |
+| 64 | `45940813606` | `gates-audit` | **464** | 433 | 399 | |
+
+`gates-audit` is first in **five**, `batteries` in **two**, `verify` in **one**. The entry was
+written from the one.
+
+**What the head is made of.** Subtracting the six setup steps from reading 64 leaves the bodies:
+`gates-audit` **443 s** over **4** steps, `verify` **413 s** over **6**, `batteries-heavy`
+**376 s** over **2**, `batteries` **371 s** over **11**, `sensitivity` **134 s** over **2**,
+`sensitivity-shard` **115 s** over **1**. Five of the nine jobs are the same object -- a series of
+independent mutation batteries, each paying one prefix to run subjects that never read each other's
+answers -- and their bodies total **1,439 s**. A series is why the head moves: the batteries inside
+these lanes vary by hundreds of seconds between runs (gate-fail's two shards read **193** and
+**195** s here, **231** and **306** s in the readings of v3.160), while the lanes they sit in stay
+fixed, so the heaviest lane is whichever lane happened to hold the batteries that were slow.
+
+**The three prices.** These are arithmetic over the table above, not a claim about a future run:
+
+| move | new head | wall clock | bought |
+| --- | --- | --- | --- |
+| split `verify` (lint + typecheck / coverage), nothing else | `gates-audit`, **470 s** | **470 s** | **0 s** |
+| rebalance the five battery lanes, nine jobs kept | `verify`, **437 s** | **437 s** | **33 s** |
+| both: lanes at **1,439 / 5 = 288 s**, `verify` at **235 s** | **309 s** | **309 s** | **161 s** |
+
+The first row is the entry as written, and it is the reason this finding exists: the split would
+ship to a tree whose head is not the job it splits. The third row is the purchase the entry was
+looking for, and it is a pair -- which the entry could not say, because from one reading the two
+moves look independent.
+
+**What is not claimed.** That **309 s** is what the next run will measure. Five lanes balanced to a
+committed table are balanced *by the table*, and this log has already recorded what that is worth:
+a plan at **0.89%** against readings of **18.4%**, **0.5%** and **1.0%**, because the seconds are
+the machine's day and the balance is the table's property. The claim is the shape of the
+dependence -- **0, 33, 161** -- and that no half of it is worth a tenth job.

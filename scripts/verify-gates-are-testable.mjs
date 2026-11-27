@@ -1057,12 +1057,16 @@ if (paid.length > 0) {
         drift.change === null ? 'no table lines to divide' : `${drift.change >= 0 ? '+' : ''}${drift.change.toFixed(1)}%`;
       console.log(
         `drift: the table priced these ${String(drift.gates)} gate(s) when their naming files held ` +
-          `${String(drift.tableLines)} line(s); this tree holds ${String(drift.treeLines)} (${change}), and ` +
+          `${String(drift.tableLines)} line(s); over the ${String(drift.read)} of them this run could count, ` +
+          `the tree holds ${String(drift.treeLines)} (${change}), and ` +
           `${String(drift.moved.length)} of them moved` +
           (drift.widest === null
             ? ''
             : ` -- widest \`${drift.widest.gate}\` ${String(drift.widest.from)} -> ` +
-              `${String(drift.widest.to)} line(s)`),
+              `${String(drift.widest.to)} line(s)`) +
+          (drift.unread === 0
+            ? ''
+            : ` -- ${String(drift.unread)} gate(s) this run could not count, and they are in neither figure`),
       );
     }
     const price = paid.reduce((sum, one) => sum + (Number(priced[one.gate]?.ms) || 0), 0);

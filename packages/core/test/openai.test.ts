@@ -48,13 +48,36 @@ describe('constants', () => {
 });
 
 describe('buildOpenAiRequest', () => {
-  it('builds a chat-completions request with deterministic temperature', () => {
+  it('builds a chat-completions request with deterministic temperature and a stated ceiling', () => {
     expect(buildOpenAiRequest('map these columns', 'gpt-4o-mini')).toEqual({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: 'map these columns' }],
       temperature: 0,
       stream: false,
+      max_tokens: 4096,
     });
+  });
+});
+
+describe('createOpenAiProvider - the ceiling', () => {
+  it('sends the ceiling its options name, and the default when they name none', async () => {
+    // Same two readings as DeepSeek's adapter, and for the same reason: the shared body
+    // builder is pinned once, and each adapter has to prove it passed the number down rather
+    // than letting the builder's default quietly stand in for every caller.
+    const bodies: string[] = [];
+    const capture = (async (_url: string, init: RequestInit) => {
+      bodies.push(String(init.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    await createOpenAiProvider({ apiKey: 'k', fetchImpl: capture }).generate('p');
+    await createOpenAiProvider({ apiKey: 'k', maxTokens: 512, fetchImpl: capture }).generate('p');
+
+    expect(JSON.parse(bodies[0] ?? '{}').max_tokens).toBe(4096);
+    expect(JSON.parse(bodies[1] ?? '{}').max_tokens).toBe(512);
   });
 });
 

@@ -1,4 +1,5 @@
 import {
+  OPENAI_COMPATIBLE_DEFAULT_MAX_TOKENS,
   buildOpenAiCompatibleRequest,
   createOpenAiCompatibleProvider,
   parseOpenAiCompatibleResponse,
@@ -28,6 +29,8 @@ export interface OpenAiOptions {
   model?: string;
   /** API base URL; defaults to the public OpenAI endpoint. */
   baseUrl?: string;
+  /** Completion ceiling in tokens; defaults to the OpenAI-compatible default. */
+  maxTokens?: number;
   /** Injectable fetch for real-server tests; defaults to the global fetch. */
   fetchImpl?: typeof fetch;
 }
@@ -35,8 +38,12 @@ export interface OpenAiOptions {
 export type OpenAiRequest = OpenAiCompatibleRequest;
 
 /** Build the OpenAI chat-completions request body. */
-export function buildOpenAiRequest(prompt: string, model: string): OpenAiRequest {
-  return buildOpenAiCompatibleRequest(prompt, model);
+export function buildOpenAiRequest(
+  prompt: string,
+  model: string,
+  maxTokens: number = OPENAI_COMPATIBLE_DEFAULT_MAX_TOKENS,
+): OpenAiRequest {
+  return buildOpenAiCompatibleRequest(prompt, model, maxTokens);
 }
 
 /**
@@ -58,6 +65,7 @@ export function createOpenAiProvider(options: OpenAiOptions): LlmProvider {
     model,
     baseUrl,
     name: 'OpenAI',
+    ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
     ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {}),
   });
 }

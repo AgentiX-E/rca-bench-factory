@@ -1123,3 +1123,19 @@
   before it changed either.
   What stays open is the queue: reading 62 made `verify` (**429 s**) the longest job, ahead of `gates-audit`
   (**417 s**), because `lint` (**186 s**) and `coverage` (**206 s**) share one job (`O-147`).
+- O-147 · ~~**The workflow's longest job is now the one that runs two unrelated things in series.**~~
+  The entry was written from reading 62, and reading 62 is the only one of the eight before this round in which
+  `verify` was first. **Closed by finding 679**, which weighed every job's body instead of rereading one reading's
+  head: five of the nine jobs are series of independent mutation batteries totalling **1,439 s** across bodies of
+  **443 / 376 / 371 / 134 / 115** s, `verify`'s **413 s** is a separate object (six steps, no batteries), and the
+  workflow's wall clock is the heaviest lane. That gives three prices rather than one -- splitting `verify` alone
+  buys **0 s** because the head stays `gates-audit` at **470 s**, rebalancing the five lanes alone buys **33 s**
+  because the head becomes `verify` at **437 s**, and the pair buys **161 s** by bringing the head to **309 s**.
+  So the entry's question -- *whether the wall clock should be bought by changing the shape of the queue* -- is
+  answered **yes, as a pair, for 161 s**, and its premise -- *the longest job is `verify`* -- is answered **no,
+  not on the tree the split would ship to**. The receipt is the shape of the dependence, **0 / 33 / 161**, which
+  one reading could not produce: from a single afternoon the two moves look independent, and they are not.
+  What the entry could not decide stays open as `O-148`, and it is a narrower question than the one it closes:
+  not *whether* to reshape the queue but **where the lane-to-battery assignment comes from** -- a committed table
+  divided by the `assignShards` the sites and gates tables already use, or a hand-placed split, which would be the
+  second partition this repository has refused twice.
